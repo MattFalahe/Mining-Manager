@@ -1,0 +1,138 @@
+/* Mining Manager Custom Styles */
+
+.mining-dashboard {
+    padding: 20px 0;
+}
+
+.info-box {
+    transition: transform 0.3s;
+}
+
+.info-box:hover {
+    transform: translateY(-5px);
+}
+
+.timeline {
+    position: relative;
+    padding: 20px 0;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 30px;
+    height: 100%;
+    width: 3px;
+    background: #dee2e6;
+}
+
+.timeline-item {
+    position: relative;
+    padding-left: 60px;
+    padding-bottom: 20px;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: 24px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #007bff;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 3px #dee2e6;
+}
+
+.timeline-header {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.timeline-body {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.time {
+    color: #6c757d;
+    font-size: 12px;
+    position: absolute;
+    left: 60px;
+    top: -15px;
+}
+
+/* Chart containers */
+canvas {
+    max-height: 400px;
+}
+
+/* Badge colors for ore rarity */
+.badge-r64 { background-color: #ff6b6b; }
+.badge-r32 { background-color: #ffa94d; }
+.badge-r16 { background-color: #ffd43b; }
+.badge-r8 { background-color: #a9e34b; }
+.badge-r4 { background-color: #69db7c; }
+
+/* Animation for countdown */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.countdown-active {
+    animation: pulse 2s infinite;
+}
+
+/* Responsive tables */
+.table-responsive {
+    min-height: 300px;
+}
+
+/* Card improvements */
+.card {
+    border: none;
+    border-radius: 10px;
+}
+
+.card-header {
+    background-color: transparent;
+    border-bottom: 1px solid rgba(0,0,0,.125);
+}
+
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Loading animation */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #007bff;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
