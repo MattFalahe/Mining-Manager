@@ -1,0 +1,1 @@
+# seat-corp-mining-manager
