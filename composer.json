@@ -1,0 +1,57 @@
+{
+  "name": "mattfalahe/mining-manager",
+  "description": "Comprehensive mining management plugin for SeAT - Track mining activities, manage moon extractions, calculate taxes, and generate detailed reports",
+  "type": "seat-plugin",
+  "keywords": [
+    "seat",
+    "eve",
+    "eveonline",
+    "mining",
+    "corporation",
+    "management",
+    "moon",
+    "tax",
+    "plugin"
+  ],
+  "license": "GPL-2.0-or-later",
+  "authors": [
+    {
+      "name": "Matt Falahe",
+      "email": "mattfalahe@gmail.com"
+    }
+  ],
+  "homepage": "https://github.com/MattFalahe/Mining-Manager",
+  "require": {
+    "php": "^8.0",
+    "laravel/framework": "^10.0",
+    "eveseat/web": "^5.0",
+    "eveseat/services": "^5.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0",
+    "orchestra/testbench": "^8.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "MiningManager\\": "src/",
+      "MiningManager\\Database\\Seeders\\": "src/Database/seeders"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MiningManager\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "MiningManager\\MiningManagerServiceProvider"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
