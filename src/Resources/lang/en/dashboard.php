@@ -1,0 +1,77 @@
+<?php
+
+return [
+    // Dashboard titles
+    'member_dashboard' => 'Mining Dashboard',
+    'director_dashboard' => 'Director Dashboard',
+    
+    // Common
+    'live' => 'Live',
+    'current_month_stats' => 'Current Month Statistics',
+    'last_12_months_stats' => 'Last 12 Months Statistics',
+    'this_month' => 'This Month',
+    'units' => 'units',
+    'rank' => 'Rank',
+    'character' => 'Character',
+    'corporation' => 'Corporation',
+    'value' => 'Value',
+    'your_rank' => 'Your Rank',
+    'all_ore' => 'All Ore',
+    'corp_moon_ore' => 'Corporation Moon Ore',
+    'chart_updated' => 'Chart updated successfully',
+    
+    // Member Dashboard
+    'total_mined_quantity' => 'Total Mined Quantity',
+    'total_mined_volume' => 'Total Mined Volume',
+    'total_mined_isk' => 'Total Mined ISK',
+    'tax_isk' => 'Tax ISK',
+    'total_quantity' => 'Total Quantity',
+    'total_value' => 'Total Value',
+    'total_volume' => 'Total Volume',
+    'avg_per_month' => 'Avg Per Month',
+    'top_miners_all_ore' => 'Top Miners - All Ore',
+    'top_miners_moon_ore' => 'Top Miners - Moon Ore',
+    'mining_performance_last_12_months' => 'Mining Performance Last 12 Months',
+    'mining_volume_per_group' => 'Mining Volume Per Group',
+    'mining_income_last_12_months' => 'Mining Income Last 12 Months',
+    'volume_of' => 'Volume of',
+    
+    // Director Dashboard
+    'corporation_stats' => 'Corporation Statistics',
+    'all_ore_value' => 'All Ore Value',
+    'moon_ore_value' => 'Moon Ore Value',
+    'tax_amount' => 'Tax Amount',
+    'active_miners' => 'Active Miners',
+    'all_ore_total_value' => 'All Ore Total Value',
+    'moon_ore_total_value' => 'Moon Ore Total Value',
+    'top_5_miners_overall' => 'Top 5 Miners (Overall)',
+    'top_5_miners_last_month' => 'Top 5 Miners (Last Month)',
+    'corp_moon_mining_performance' => 'Corporation Moon Mining Performance',
+    'mining_tax_last_12_months' => 'Mining Tax Last 12 Months',
+    'event_tax_last_12_months' => 'Event Tax Last 12 Months',
+    'all_ore_types' => 'All Ore Types',
+    'corp_moons_only' => 'Corporation Moons Only',
+    'event_tax_isk' => 'Event Tax (ISK)',
+    
+    // Chart labels
+    'refined_value' => 'Refined Value',
+    'tax_paid' => 'Tax Paid',
+    'event_bonus' => 'Event Bonus',
+    
+    // Ore groups
+    'ice' => 'Ice',
+    'moon' => 'Moon',
+    'ore' => 'Ore',
+    'gas' => 'Gas',
+    'abyssal' => 'Abyssal',
+    
+    // Tooltips and help
+    'click_to_refresh' => 'Click to refresh chart',
+    'auto_refresh' => 'Auto-refreshes every 5 minutes',
+    'no_data_available' => 'No data available for this period',
+    'loading' => 'Loading...',
+    
+    // Errors
+    'error_loading_data' => 'Error loading dashboard data',
+    'error_refreshing_chart' => 'Error refreshing chart',
+];
