@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::reports.quick_export'))
-@section('page_header', trans('mining-manager::reports.quick_export'))
+@section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -95,6 +95,37 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/reports') && !Request::is('*/reports/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.reports.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
+            </a>
+        </li>
+        @can('mining-manager.reports.generate')
+        <li class="{{ Request::is('*/reports/generate') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.reports.generate') }}">
+                <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/reports/scheduled') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.reports.scheduled') }}">
+                <i class="fas fa-clock"></i> {{ trans('mining-manager::menu.scheduled_reports') }}
+            </a>
+        </li>
+        @endcan
+        <li class="{{ Request::is('*/reports/export') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.reports.export') }}">
+                <i class="fas fa-download"></i> {{ trans('mining-manager::menu.export_data') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="reports-export">
     
     {{-- INFO BANNER --}}
@@ -531,4 +562,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

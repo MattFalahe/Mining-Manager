@@ -173,7 +173,19 @@
                                                 <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32" 
                                                      class="img-circle" 
                                                      style="width: 32px; height: 32px;">
-                                                {{ $miner['character_name'] }}
+                                                <strong>{{ $miner['character_name'] }}</strong>
+                                                @if(!$miner['is_registered'])
+                                                    <span class="badge badge-warning" title="Character not registered in SeAT">
+                                                        <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                    </span>
+                                                @endif
+                                                @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
+                                                    <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
+                                                        <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
+                                                    </span>
+                                                @endif
+                                                <br>
+                                                <small class="text-muted">{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</small>
                                             </td>
                                             <td class="text-right">
                                                 <strong>{{ number_format($miner['total_value'], 0) }}</strong>
@@ -216,7 +228,19 @@
                                                 <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32" 
                                                      class="img-circle" 
                                                      style="width: 32px; height: 32px;">
-                                                {{ $miner['character_name'] }}
+                                                <strong>{{ $miner['character_name'] }}</strong>
+                                                @if(!$miner['is_registered'])
+                                                    <span class="badge badge-warning" title="Character not registered in SeAT">
+                                                        <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                    </span>
+                                                @endif
+                                                @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
+                                                    <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
+                                                        <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
+                                                    </span>
+                                                @endif
+                                                <br>
+                                                <small class="text-muted">{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</small>
                                             </td>
                                             <td class="text-right">
                                                 <strong>{{ number_format($miner['total_value'], 0) }}</strong>
@@ -272,7 +296,19 @@
                                                 <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32" 
                                                      class="img-circle" 
                                                      style="width: 32px; height: 32px;">
-                                                {{ $miner['character_name'] }}
+                                                <strong>{{ $miner['character_name'] }}</strong>
+                                                @if(!$miner['is_registered'])
+                                                    <span class="badge badge-warning" title="Character not registered in SeAT">
+                                                        <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                    </span>
+                                                @endif
+                                                @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
+                                                    <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
+                                                        <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
+                                                    </span>
+                                                @endif
+                                                <br>
+                                                <small class="text-muted">{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</small>
                                             </td>
                                             <td class="text-right">
                                                 <strong>{{ number_format($miner['total_value'], 0) }}</strong>
@@ -311,7 +347,19 @@
                                                 <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32" 
                                                      class="img-circle" 
                                                      style="width: 32px; height: 32px;">
-                                                {{ $miner['character_name'] }}
+                                                <strong>{{ $miner['character_name'] }}</strong>
+                                                @if(!$miner['is_registered'])
+                                                    <span class="badge badge-warning" title="Character not registered in SeAT">
+                                                        <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                    </span>
+                                                @endif
+                                                @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
+                                                    <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
+                                                        <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
+                                                    </span>
+                                                @endif
+                                                <br>
+                                                <small class="text-muted">{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</small>
                                             </td>
                                             <td class="text-right">
                                                 <strong>{{ number_format($miner['total_value'], 0) }}</strong>

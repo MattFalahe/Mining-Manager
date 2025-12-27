@@ -94,7 +94,7 @@ class CalculateMonthlyTaxesCommand extends Command
                 }
 
                 // Calculate tax using service
-                $taxAmount = $this->taxService->calculateMonthlyTax($characterId, $startDate, $endDate);
+                $taxAmount = $this->taxService->calculateMonthlyTaxes($characterId, $startDate, $endDate);
 
                 if ($existingTax) {
                     $existingTax->update([

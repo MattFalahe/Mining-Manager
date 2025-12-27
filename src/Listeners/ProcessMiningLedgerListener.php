@@ -4,8 +4,8 @@ namespace MiningManager\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
-use Seat\Eveapi\Events\CharacterMiningLedgerUpdated;
-use Seat\Eveapi\Models\Character\CharacterMiningLedger;
+use Seat\Eveapi\Events\CharacterMiningUpdated;
+use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
@@ -19,10 +19,10 @@ class ProcessMiningLedgerListener implements ShouldQueue
     /**
      * Handle the event.
      *
-     * @param CharacterMiningLedgerUpdated $event
+     * @param CharacterMiningUpdated $event
      * @return void
      */
-    public function handle(CharacterMiningLedgerUpdated $event)
+    public function handle(CharacterMiningUpdated $event)
     {
         // Check if mining ledger feature is enabled
         if (!config('mining-manager.features.mining_ledger', true)) {
@@ -38,7 +38,7 @@ class ProcessMiningLedgerListener implements ShouldQueue
             // Process entries from the last 30 days
             $cutoffDate = Carbon::now()->subDays(30);
             
-            $ledgerEntries = CharacterMiningLedger::where('character_id', $characterId)
+            $ledgerEntries = CharacterMining::where('character_id', $characterId)
                 ->where('date', '>=', $cutoffDate)
                 ->get();
 
@@ -180,11 +180,11 @@ class ProcessMiningLedgerListener implements ShouldQueue
     /**
      * Handle a job failure.
      *
-     * @param CharacterMiningLedgerUpdated $event
+     * @param CharacterMiningUpdated $event
      * @param \Throwable $exception
      * @return void
      */
-    public function failed(CharacterMiningLedgerUpdated $event, $exception)
+    public function failed(CharacterMiningUpdated $event, $exception)
     {
         Log::error("Mining Manager: Failed to process mining ledger for character {$event->character_id}: " . $exception->getMessage());
     }

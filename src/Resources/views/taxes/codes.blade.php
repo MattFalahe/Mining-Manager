@@ -1,13 +1,58 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::taxes.tax_codes'))
-@section('page_header', trans('mining-manager::taxes.tax_codes'))
+@section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/tax') && !Request::is('*/tax/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.index') }}">
+                <i class="fas fa-chart-pie"></i> {{ trans('mining-manager::menu.tax_overview') }}
+            </a>
+        </li>
+        @can('mining-manager.tax.calculate')
+        <li class="{{ Request::is('*/tax/calculate') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.calculate') }}">
+                <i class="fas fa-calculator"></i> {{ trans('mining-manager::menu.calculate_taxes') }}
+            </a>
+        </li>
+        @endcan
+        <li class="{{ Request::is('*/tax/my-taxes') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.my-taxes') }}">
+                <i class="fas fa-receipt"></i> {{ trans('mining-manager::menu.my_taxes') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/tax/codes') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.codes') }}">
+                <i class="fas fa-barcode"></i> {{ trans('mining-manager::menu.tax_codes') }}
+            </a>
+        </li>
+        @can('mining-manager.tax.generate_invoices')
+        <li class="{{ Request::is('*/tax/contracts') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.contracts') }}">
+                <i class="fas fa-file-contract"></i> {{ trans('mining-manager::menu.tax_contracts') }}
+            </a>
+        </li>
+        @endcan
+        @can('mining-manager.tax.verify_payments')
+        <li class="{{ Request::is('*/tax/wallet') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.taxes.wallet') }}">
+                <i class="fas fa-wallet"></i> {{ trans('mining-manager::menu.wallet_verification') }}
+            </a>
+        </li>
+        @endcan
+    </ul>
+    <div class="tab-content">
+
+
 <div class="tax-codes">
     
     <div class="row">
@@ -109,4 +154,8 @@ function generateCodes() {
 }
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

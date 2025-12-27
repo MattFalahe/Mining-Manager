@@ -4,7 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
-use Seat\Eveapi\Models\Universe\UniverseSystem;
+use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Seat\Web\Models\User;
 
 class MiningEvent extends Model
@@ -62,7 +62,7 @@ class MiningEvent extends Model
      */
     public function solarSystem()
     {
-        return $this->belongsTo(UniverseSystem::class, 'solar_system_id', 'system_id');
+        return $this->belongsTo(MapDenormalize::class, 'solar_system_id', 'itemID');
     }
 
     /**
@@ -167,5 +167,20 @@ class MiningEvent extends Model
         }
 
         return $this->total_mined / $this->participant_count;
+    }
+
+    /**
+     * Check if a user is participating in this event.
+     *
+     * @param \Seat\Web\Models\User|int $user
+     * @return bool
+     */
+    public function isParticipating($user)
+    {
+        $userId = is_object($user) ? $user->id : $user;
+        
+        return $this->participants()
+            ->where('character_id', $userId)
+            ->exists();
     }
 }

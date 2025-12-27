@@ -310,4 +310,8 @@ return [
     // Messages
     'choose_payment_method' => 'Choose Payment Method',
     'payment_method_description' => 'Select how members should pay their mining taxes.',
+    
+    // Additional Settings Terms
+    'clear_cache' => 'Clear Cache',
+    'help_documentation' => 'Help & Documentation',
 ];

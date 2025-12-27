@@ -7,97 +7,91 @@ use Seat\Services\Seeding\AbstractScheduleSeeder;
 class ScheduleSeeder extends AbstractScheduleSeeder
 {
     /**
-     * Returns the schedule definitions for the Mining Manager plugin.
+     * Returns a list of schedules to be added to the schedule table.
      *
      * @return array
      */
     public function getSchedules(): array
     {
         return [
-            // Process mining ledger data - runs hourly at :05 past
+            // Process mining ledger - runs every 4 hours to sync mining data
             [
                 'command' => 'mining-manager:process-ledger',
-                'expression' => '5 * * * *',
+                'expression' => '0 */4 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Update active mining events - runs hourly at :15 past
-            [
-                'command' => 'mining-manager:update-events',
-                'expression' => '15 * * * *',
-                'allow_overlap' => false,
-                'allow_maintenance' => false,
-                'ping_before' => null,
-                'ping_after' => null,
-            ],
-            
-            // Update moon extractions - runs every 30 minutes
+            // Update moon extractions - runs every 6 hours to refresh moon data
             [
                 'command' => 'mining-manager:update-extractions',
-                'expression' => '*/30 * * * *',
+                'expression' => '0 */6 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Cache market prices - runs every 15 minutes
+            // Update mining events - runs every 2 hours
             [
-                'command' => 'mining-manager:cache-prices',
-                'expression' => '*/15 * * * *',
+                'command' => 'mining-manager:update-events',
+                'expression' => '0 */2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Verify wallet payments - runs hourly at :35 past
-            [
-                'command' => 'mining-manager:verify-payments',
-                'expression' => '35 * * * *',
-                'allow_overlap' => false,
-                'allow_maintenance' => false,
-                'ping_before' => null,
-                'ping_after' => null,
-            ],
-            
-            // Calculate monthly taxes - runs on the 1st of each month at 02:00
+            // Calculate monthly taxes - runs daily at 2 AM to update running totals
+            // (Keeps dashboard current with month-to-date tax obligations)
             [
                 'command' => 'mining-manager:calculate-taxes',
-                'expression' => '0 2 1 * *',
+                'expression' => '0 2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Generate tax invoices - runs on the 2nd of each month at 03:00
+            // Generate tax invoices - runs on 1st of each month at 3 AM
             [
                 'command' => 'mining-manager:generate-invoices',
-                'expression' => '0 3 2 * *',
+                'expression' => '0 3 1 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Send tax reminders - runs daily at 10:00 AM
+            // Verify wallet payments - runs every 6 hours
+            [
+                'command' => 'mining-manager:verify-payments',
+                'expression' => '0 */6 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Send tax reminders - runs on 25th of each month at 10 AM
+            // (Reminds miners about upcoming payment due on 1st)
             [
                 'command' => 'mining-manager:send-reminders',
-                'expression' => '0 10 * * *',
+                'expression' => '0 10 25 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            
-            // Generate reports - runs daily at 04:00 AM
+            // Generate reports - runs daily at 4 AM
             [
                 'command' => 'mining-manager:generate-reports',
                 'expression' => '0 4 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Cache price data - runs every hour at :30 past
+            [
+                'command' => 'mining-manager:cache-prices',
+                'expression' => '30 * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
@@ -108,14 +102,15 @@ class ScheduleSeeder extends AbstractScheduleSeeder
 
     /**
      * Returns a list of commands to remove from the schedule.
+     * This is useful for cleanup when commands are renamed or deprecated.
      *
      * @return array
      */
     public function getDeprecatedSchedules(): array
     {
         return [
-            // Add deprecated command names here if you rename commands in future updates
-            // Example: 'old-command-name',
+            // Add any old/deprecated command names here if you rename commands
+            // Example: 'mining-manager:old-command-name',
         ];
     }
 }

@@ -347,7 +347,8 @@ class TaxCalculationService
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
-            if (!$this->shouldTaxOre($entry->type_id)) {
+            // Skip if this ore type should not be taxed
+            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
                 continue;
             }
             
@@ -527,14 +528,35 @@ class TaxCalculationService
      * Determine if ore should be taxed based on settings.
      *
      * @param int $typeId
+     * @param object|null $miningEntry Optional mining ledger entry for corp moon checking
      * @return bool
      */
-    private function shouldTaxOre(int $typeId): bool
+    private function shouldTaxOre(int $typeId, $miningEntry = null): bool
     {
         $taxSelector = $this->settingsService->getTaxSelector();
         
         // Check if it's moon ore
         if ($this->isMoonOre($typeId)) {
+            // If only_corp_moon_ore is enabled, check if it's from corp moon
+            if ($taxSelector['only_corp_moon_ore'] && $miningEntry) {
+                // Need to verify this is from OUR corporation's moon
+                $isCorpMoon = $this->checkIfCorpMoon(
+                    $miningEntry->character_id,
+                    $typeId,
+                    $miningEntry->solar_system_id,
+                    $miningEntry->date->format('Y-m-d')
+                );
+                
+                if (!$isCorpMoon) {
+                    Log::debug("Mining Manager: Skipping moon ore type {$typeId} - not from corp moon");
+                    return false;
+                }
+                
+                Log::debug("Mining Manager: Taxing moon ore type {$typeId} - confirmed corp moon");
+                return true;
+            }
+            
+            // Otherwise, use the all_moon_ore setting
             return $taxSelector['all_moon_ore'];
         }
         
@@ -597,6 +619,52 @@ class TaxCalculationService
     private function isMoonOre(int $typeId): bool
     {
         return $this->getMoonOreRarity($typeId) !== null;
+    }
+
+    /**
+     * Check if moon ore was mined from YOUR corporation's moon.
+     * 
+     * This method queries the corporation_industry_mining_observer_data table
+     * which ONLY contains mining data from YOUR corporation's observers/refineries.
+     * If the mining event exists in this table, it means it was mined from your corp's moon.
+     *
+     * @param int $characterId
+     * @param int $typeId
+     * @param int $solarSystemId
+     * @param string $date Date in 'Y-m-d' format
+     * @return bool True if mined from corp moon, false otherwise
+     */
+    private function checkIfCorpMoon(int $characterId, int $typeId, int $solarSystemId, string $date): bool
+    {
+        // Format date to match the database timestamp format
+        $mDate = $date . " 00:00:00";
+        
+        try {
+            // Query the corporation mining observer data
+            // This table is populated by SeAT from ESI API and ONLY contains
+            // mining data from YOUR corporation's moon mining structures
+            $result = DB::table('corporation_industry_mining_observer_data as d')
+                ->select('d.*')
+                ->join('universe_structures as u', 'd.observer_id', '=', 'u.structure_id')
+                ->where('d.last_updated', '=', $mDate)
+                ->where('d.character_id', '=', $characterId)
+                ->where('d.type_id', '=', $typeId)
+                ->where('u.solar_system_id', '=', $solarSystemId)
+                ->first();
+            
+            // If found, this mining event is from YOUR corp's moon
+            if (!is_null($result)) {
+                Log::debug("Mining Manager: Moon ore type {$typeId} confirmed as CORP MOON for character {$characterId}");
+                return true;
+            } else {
+                Log::debug("Mining Manager: Moon ore type {$typeId} is from OTHER corp's moon for character {$characterId}");
+                return false;
+            }
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error checking corp moon: " . $e->getMessage());
+            // On error, default to false (don't tax)
+            return false;
+        }
     }
     
     /**
@@ -669,7 +737,7 @@ class TaxCalculationService
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
-            if (!$this->shouldTaxOre($entry->type_id)) {
+            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
                 continue;
             }
 
@@ -680,7 +748,7 @@ class TaxCalculationService
             $totalValue += $value;
             $totalTax += $tax;
 
-            // Get ore name from type_id (you might need to join with invTypes table)
+            // Get ore name from type_id (you might need to join with universe_types table)
             $oreName = $this->getOreName($entry->type_id);
             $oreCategory = $this->getOreCategory($entry->type_id);
             $moonRarity = $this->getMoonOreRarity($entry->type_id);
@@ -721,13 +789,13 @@ class TaxCalculationService
      */
     private function getOreName(int $typeId): string
     {
-        // Try to get from invTypes table (SeAT has this)
+        // Try to get from universe_types table (SeAT has this)
         try {
-            $type = DB::table('invTypes')
-                ->where('typeID', $typeId)
+            $type = DB::table('universe_types')
+                ->where('type_id', $typeId)
                 ->first();
             
-            return $type ? $type->typeName : "Unknown Ore ({$typeId})";
+            return $type ? $type->name : "Unknown Ore ({$typeId})";
         } catch (\Exception $e) {
             return "Type {$typeId}";
         }

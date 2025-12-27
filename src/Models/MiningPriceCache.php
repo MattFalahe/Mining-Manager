@@ -3,7 +3,7 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Seat\Eveapi\Models\Universe\UniverseType;
+use Seat\Eveapi\Models\Sde\InvType;
 
 class MiningPriceCache extends Model
 {
@@ -47,7 +47,7 @@ class MiningPriceCache extends Model
      */
     public function type()
     {
-        return $this->belongsTo(UniverseType::class, 'type_id', 'type_id');
+        return $this->belongsTo(InvType::class, 'type_id', 'typeID');
     }
 
     /**

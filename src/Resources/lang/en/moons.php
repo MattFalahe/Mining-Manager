@@ -169,4 +169,8 @@ return [
     'poor' => 'Poor',
     'standard' => 'Standard',
     
+    // Additional Moon Mining Terms
+    'total_ores' => 'Total Ores',
+    'view_all_extractions' => 'View All Extractions',
+    
 ];

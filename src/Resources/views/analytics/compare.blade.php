@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::analytics.comparative_analysis'))
-@section('page_header', trans('mining-manager::analytics.comparative_analysis'))
+@section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -101,6 +101,35 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/analytics') && !Request::is('*/analytics/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.analytics.index') }}">
+                <i class="fas fa-chart-area"></i> {{ trans('mining-manager::menu.analytics_overview') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/analytics/charts') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.analytics.charts') }}">
+                <i class="fas fa-chart-line"></i> {{ trans('mining-manager::menu.performance_charts') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/analytics/tables') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.analytics.tables') }}">
+                <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/analytics/compare') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.analytics.compare') }}">
+                <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="analytics-compare">
     
     {{-- COMPARISON SELECTOR --}}
@@ -808,4 +837,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

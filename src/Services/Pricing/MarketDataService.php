@@ -340,7 +340,7 @@ class MarketDataService
             'cached' => $isCached,
             'last_update' => $lastUpdate,
             'cache_duration' => $this->getCacheDuration(),
-            'provider' => Setting::get('price_provider', 'esi'),
+            'provider' => Setting::getValue('price_provider', 'esi'),
             'ore_count' => count($oreTypeIds)
         ];
     }
@@ -369,7 +369,7 @@ class MarketDataService
     {
         // This could be stored in config or database
         // For now, we'll get it from settings or use a default list
-        $customOres = Setting::get('tracked_ore_types', []);
+        $customOres = Setting::getValue('tracked_ore_types', []);
         
         if (!empty($customOres)) {
             return $customOres;
@@ -426,7 +426,7 @@ class MarketDataService
     protected function getPriceCacheKey(array $typeIds): string
     {
         sort($typeIds);
-        $provider = Setting::get('price_provider', 'esi');
+        $provider = Setting::getValue('price_provider', 'esi');
         return self::CACHE_PREFIX . $provider . '_' . md5(implode(',', $typeIds));
     }
 
@@ -452,7 +452,7 @@ class MarketDataService
      */
     protected function getCacheDuration(): int
     {
-        return Setting::get('price_cache_duration', self::CACHE_DURATION);
+        return Setting::getValue('price_cache_duration', self::CACHE_DURATION);
     }
 
     /**

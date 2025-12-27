@@ -12,10 +12,15 @@ use MiningManager\Console\Commands\VerifyWalletPaymentsCommand;
 use MiningManager\Console\Commands\SendTaxRemindersCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
+use MiningManager\Console\Commands\DiagnosePricesCommand;
+use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
+use MiningManager\Console\Commands\DiagnoseCharacterCommand;
+use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
+use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
 // Import Events
-use Seat\Eveapi\Events\CharacterMiningLedgerUpdated;
+use Seat\Eveapi\Events\CharacterMiningUpdated;
 use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
 use Seat\Eveapi\Events\CharacterContractsUpdated;
 
@@ -58,6 +63,10 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 SendTaxRemindersCommand::class,
                 UpdateMoonExtractionsCommand::class,
                 CachePriceDataCommand::class,
+                DiagnosePricesCommand::class,
+                DiagnoseAffiliationCommand::class,
+                DiagnoseCharacterCommand::class,
+                DiagnoseMoonExtractionsCommand::class,
             ]);
         }
 
@@ -72,14 +81,24 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
      */
     public function register()
     {
-        // Register sidebar configuration
-        $this->mergeConfigFrom(__DIR__ . '/Config/Menu/package.sidebar.php', 'package.sidebar');
+        // Register sidebar configuration (SeAT 5.x method)
+        $this->mergeConfigFrom(
+            __DIR__ . '/Config/Menu/package.sidebar.php', 
+            'package.sidebar'
+        );
         
-        // Register permissions
-        $this->registerPermissions(__DIR__ . '/Config/Permissions/mining-manager.php', 'mining-manager');
+        // Register permissions - FIXED: Use correct file in Permissions subfolder
+        // SeAT v5 expects permissions to be in /Config/Permissions/ folder
+        $this->registerPermissions(
+            __DIR__ . '/Config/Permissions/mining-manager.permissions.php', 
+            'mining-manager'
+        );
         
         // Register config
-        $this->mergeConfigFrom(__DIR__ . '/Config/mining-manager.config.php', 'mining-manager');
+        $this->mergeConfigFrom(
+            __DIR__ . '/Config/mining-manager.config.php', 
+            'mining-manager'
+        );
 
         // Add database seeders
         $this->add_database_seeders();
@@ -88,13 +107,21 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     /**
      * Register event listeners for the plugin
      * 
+     * IMPORTANT: As of v2.0, this plugin uses Corporation Observer data
+     * for COMPLETE moon mining tracking (not character ledgers).
+     * 
+     * The CharacterMiningUpdated listener is kept for backward compatibility
+     * but the primary data source is now corporation_industry_mining_observer_data
+     * which tracks ALL miners at your structures (not just SeAT users).
+     * 
      * @return void
      */
     private function registerEventListeners()
     {
-        // Mining Ledger Updates - Process mining activity
+        // DEPRECATED: Character Mining Updates
+        // Note: Observer-based tracking (via scheduled command) is now primary
         Event::listen(
-            CharacterMiningLedgerUpdated::class,
+            CharacterMiningUpdated::class,
             ProcessMiningLedgerListener::class
         );
 
@@ -133,8 +160,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     private function add_database_seeders()
     {
         $this->registerDatabaseSeeders([
-            // Add seeders here when needed
-            // \MiningManager\Database\Seeders\MiningManagerSeeder::class
+            ScheduleSeeder::class,
         ]);
     }
 

@@ -54,6 +54,7 @@ class SettingsController extends Controller
 
     /**
      * Update general settings
+     * FIXED: Validation now matches actual form fields
      *
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
@@ -61,14 +62,26 @@ class SettingsController extends Controller
     public function updateGeneral(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'corporation_id' => 'nullable|integer',
-            'ore_refining_rate' => 'required|numeric|min:0|max:100',
-            'ore_valuation_method' => 'required|in:ore_price,mineral_price',
-            'price_provider' => 'required|in:eve_market,janice',
-            'price_provider_api_key' => 'nullable|string',
-            'price_modifier' => 'nullable|numeric|min:-100|max:100',
-            'tax_calculation_method' => 'required|in:accumulated,individually',
-            'default_region_id' => 'required|integer',
+            // Corporation Settings
+            'corporation_name' => 'nullable|string|max:255',
+            'corporation_ticker' => 'nullable|string|max:5',
+            
+            // Time Settings
+            'timezone' => 'required|string',
+            'date_format' => 'required|string',
+            'time_format' => 'required|string',
+            
+            // Display Settings
+            'currency_decimals' => 'required|integer|min:0|max:8',
+            'items_per_page' => 'required|integer|min:10|max:100',
+            'compact_mode' => 'nullable|boolean',
+            'show_character_portraits' => 'nullable|boolean',
+            
+            // Notification Settings  
+            'enable_notifications' => 'nullable|boolean',
+            'notify_tax_due' => 'nullable|boolean',
+            'notify_moon_extractions' => 'nullable|boolean',
+            'notify_events' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -126,6 +139,7 @@ class SettingsController extends Controller
 
     /**
      * Update tax rates
+     * FIXED: Validation now matches actual form fields
      *
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
@@ -133,23 +147,34 @@ class SettingsController extends Controller
     public function updateTaxRates(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            // Moon ore tax rates
-            'moon_ore.r64' => 'required|numeric|min:0|max:100',
-            'moon_ore.r32' => 'required|numeric|min:0|max:100',
-            'moon_ore.r16' => 'required|numeric|min:0|max:100',
-            'moon_ore.r8' => 'required|numeric|min:0|max:100',
-            'moon_ore.r4' => 'required|numeric|min:0|max:100',
-            // Other ore types
-            'ice' => 'required|numeric|min:0|max:100',
-            'ore' => 'required|numeric|min:0|max:100',
-            'gas' => 'required|numeric|min:0|max:100',
-            'abyssal_ore' => 'required|numeric|min:0|max:100',
+            // Default Tax Rates
+            'default_ore_tax' => 'required|numeric|min:0|max:100',
+            'default_ice_tax' => 'required|numeric|min:0|max:100',
+            'default_gas_tax' => 'required|numeric|min:0|max:100',
+            'default_moon_tax' => 'required|numeric|min:0|max:100',
+            'default_mercoxit_tax' => 'required|numeric|min:0|max:100',
+            
+            // Tax Payment Method
+            'tax_payment_method' => 'required|in:contract,wallet',
+            'tax_wallet_division' => 'required|integer|min:1000|max:1006',
+            
+            // Tax Code Settings
+            'tax_code_prefix' => 'required|string|max:10',
+            'tax_code_length' => 'required|integer|min:4|max:20',
+            'auto_generate_tax_codes' => 'nullable|boolean',
+            
+            // Tax Period Settings
+            'tax_calculation_period' => 'required|in:monthly,weekly,biweekly',
+            'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
+            'send_tax_reminders' => 'nullable|boolean',
+            'tax_reminder_days' => 'required|integer|min:1|max:30',
         ]);
 
         if ($validator->fails()) {
             return redirect()->back()
                 ->withErrors($validator)
-                ->withInput();
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
         }
 
         try {
@@ -251,10 +276,21 @@ class SettingsController extends Controller
     public function updatePricing(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            // Price provider settings
+            'price_provider' => 'required|in:seat,fuzzwork,janice,custom',
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
             'auto_refresh' => 'boolean',
             'fallback_to_jita' => 'boolean',
+            
+            // Janice-specific settings
+            'janice_api_key' => 'nullable|string|max:255',
+            'janice_market' => 'nullable|in:jita,amarr',
+            'janice_price_method' => 'nullable|in:buy,sell,split',
+            
+            // Refining settings
+            'use_refined_value' => 'nullable|boolean',
+            'refining_efficiency' => 'required|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -264,13 +300,42 @@ class SettingsController extends Controller
         }
 
         try {
-            $this->settingsService->updatePricingSettings($validator->validated());
+            $data = $validator->validated();
+            
+            // Store price provider setting
+            if (isset($data['price_provider'])) {
+                \MiningManager\Models\Setting::setValue('price_provider', $data['price_provider']);
+            }
+            
+            // Store Janice settings if provided
+            // These will override ENV settings when set
+            if (isset($data['janice_api_key'])) {
+                \MiningManager\Models\Setting::setValue('janice_api_key', $data['janice_api_key']);
+            }
+            if (isset($data['janice_market'])) {
+                \MiningManager\Models\Setting::setValue('janice_market', $data['janice_market']);
+            }
+            if (isset($data['janice_price_method'])) {
+                \MiningManager\Models\Setting::setValue('janice_price_method', $data['janice_price_method']);
+            }
+            
+            // Update other pricing settings via service
+            $this->settingsService->updatePricingSettings([
+                'price_type' => $data['price_type'],
+                'cache_duration' => $data['cache_duration'],
+                'auto_refresh' => $request->has('auto_refresh'),
+                'fallback_to_jita' => $request->has('fallback_to_jita'),
+                // Refining settings
+                'use_refined_value' => $request->has('use_refined_value'),
+                'refining_efficiency' => $data['refining_efficiency'],
+            ]);
 
-            // Clear price cache when settings change
+            // Clear price cache AND moon value cache when settings change
             cache()->tags(['mining-manager', 'prices'])->flush();
+            cache()->tags(['mining-manager', 'moon-values'])->flush();
 
             return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Pricing settings updated successfully');
+                ->with('success', 'Pricing settings updated successfully. Moon values will be recalculated on next view.');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
@@ -420,5 +485,15 @@ class SettingsController extends Controller
                 'message' => 'Connection failed: ' . $e->getMessage(),
             ], 400);
         }
+    }
+
+    /**
+     * Display help page
+     *
+     * @return \Illuminate\View\View
+     */
+    public function help()
+    {
+        return view('mining-manager::help.index');
     }
 }

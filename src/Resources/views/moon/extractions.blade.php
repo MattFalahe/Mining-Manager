@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.structure_extractions'))
-@section('page_header', trans('mining-manager::moons.structure_extractions'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -23,6 +23,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="structure-extractions">
     
     {{-- BACK BUTTON --}}
@@ -35,7 +69,7 @@
     </div>
 
     {{-- STRUCTURE INFORMATION --}}
-    @if($structure)
+    @if($extractions->isNotEmpty())
     <div class="row">
         <div class="col-12">
             <div class="structure-header">
@@ -43,7 +77,7 @@
                     <div class="col-md-8">
                         <h2 class="mb-2">
                             <i class="fas fa-building"></i>
-                            {{ $structure->name }}
+                            {{ $extractions->first()->structure_name }}
                         </h2>
                         <p class="mb-1">
                             <i class="fas fa-map-marker-alt"></i>
@@ -170,7 +204,7 @@
                                     </td>
                                     <td>
                                         <i class="fas fa-moon text-info"></i>
-                                        {{ $extraction->moon->name ?? 'Unknown' }}
+                                        {{ $extraction->moon_name ?? 'Unknown Moon' }}
                                     </td>
                                     <td>
                                         <span class="badge badge-{{ 
@@ -345,4 +379,8 @@ new Chart(ctx, {
 </script>
 @endif
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

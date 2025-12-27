@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.moon_mining'))
-@section('page_header', trans('mining-manager::moons.moon_mining'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -36,6 +36,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="moon-extractions">
     
     {{-- QUICK STATS --}}
@@ -124,11 +158,11 @@
                                 @foreach($upcoming as $extraction)
                                 <tr>
                                     <td>
-                                        {{ $extraction->structure->name ?? 'Unknown' }}
+                                        {{ $extraction->structure_name ?? 'Unknown' }}
                                     </td>
                                     <td>
                                         <i class="fas fa-moon text-info"></i>
-                                        {{ $extraction->moon->name ?? 'N/A' }}
+                                        {{ $extraction->moon_name ?? 'N/A' }}
                                     </td>
                                     <td>
                                         {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }}
@@ -243,11 +277,11 @@
                                 <div class="col-md-4">
                                     <h5 class="mb-1">
                                         <i class="fas fa-building text-primary"></i>
-                                        {{ $extraction->structure->name ?? 'Unknown Structure' }}
+                                        {{ $extraction->structure_name ?? 'Unknown Structure' }}
                                     </h5>
                                     <p class="mb-0 text-muted">
                                         <i class="fas fa-moon text-info"></i>
-                                        {{ $extraction->moon->name ?? 'Unknown Moon' }}
+                                        {{ $extraction->moon_name ?? 'Unknown Moon' }}
                                     </p>
                                 </div>
 
@@ -332,4 +366,8 @@ setInterval(function() {
 }, 60000); // Update every minute
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

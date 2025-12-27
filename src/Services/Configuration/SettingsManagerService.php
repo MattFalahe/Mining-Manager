@@ -73,20 +73,33 @@ class SettingsManagerService
 
     /**
      * Get general settings
+     * FIXED: Now retrieves correct field names matching the actual form
      *
      * @return array
      */
     public function getGeneralSettings(): array
     {
         return [
-            'corporation_id' => $this->getSetting('general.corporation_id'),
-            'ore_refining_rate' => $this->getSetting('general.ore_refining_rate', 90.0),
-            'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', 'mineral_price'),
-            'price_provider' => $this->getSetting('general.price_provider', 'eve_market'),
-            'price_provider_api_key' => $this->getSetting('general.price_provider_api_key', ''),
-            'price_modifier' => $this->getSetting('general.price_modifier', 0.0),
-            'tax_calculation_method' => $this->getSetting('general.tax_calculation_method', 'accumulated'),
-            'default_region_id' => $this->getSetting('general.default_region_id', 10000002),
+            // Corporation Settings
+            'corporation_name' => $this->getSetting('general.corporation_name', ''),
+            'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
+            
+            // Time Settings
+            'timezone' => $this->getSetting('general.timezone', 'UTC'),
+            'date_format' => $this->getSetting('general.date_format', 'Y-m-d'),
+            'time_format' => $this->getSetting('general.time_format', 'H:i:s'),
+            
+            // Display Settings
+            'currency_decimals' => $this->getSetting('general.currency_decimals', 2),
+            'items_per_page' => $this->getSetting('general.items_per_page', 25),
+            'compact_mode' => $this->getSetting('general.compact_mode', false),
+            'show_character_portraits' => $this->getSetting('general.show_character_portraits', true),
+            
+            // Notification Settings
+            'enable_notifications' => $this->getSetting('general.enable_notifications', true),
+            'notify_tax_due' => $this->getSetting('general.notify_tax_due', true),
+            'notify_moon_extractions' => $this->getSetting('general.notify_moon_extractions', true),
+            'notify_events' => $this->getSetting('general.notify_events', true),
         ];
     }
 
@@ -151,24 +164,73 @@ class SettingsManagerService
     }
 
     /**
+     * Get payment settings
+     *
+     * @return array
+     */
+    public function getPaymentSettings(): array
+    {
+        return [
+            'method' => $this->getSetting('payment.method', 'contract'),
+            'wallet_division' => $this->getSetting('payment.wallet_division', 1),
+            'payment_character_id' => $this->getSetting('payment.payment_character_id'),
+            'auto_verify' => $this->getSetting('payment.auto_verify', false),
+            'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),
+        ];
+    }
+
+    /**
+     * Update payment settings
+     *
+     * @param array $settings
+     * @return void
+     */
+    public function updatePaymentSettings(array $settings)
+    {
+        DB::beginTransaction();
+        
+        try {
+            foreach ($settings as $key => $value) {
+                $this->updateSetting('payment.' . $key, $value);
+            }
+            
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Get tax rates
+     * FIXED: Now retrieves correct field names matching the actual form
      *
      * @return array
      */
     public function getTaxRates(): array
     {
         return [
-            'moon_ore' => [
-                'r64' => $this->getSetting('tax_rates.moon_ore.r64', 15.0),
-                'r32' => $this->getSetting('tax_rates.moon_ore.r32', 12.0),
-                'r16' => $this->getSetting('tax_rates.moon_ore.r16', 10.0),
-                'r8' => $this->getSetting('tax_rates.moon_ore.r8', 8.0),
-                'r4' => $this->getSetting('tax_rates.moon_ore.r4', 5.0),
-            ],
-            'ice' => $this->getSetting('tax_rates.ice', 10.0),
-            'ore' => $this->getSetting('tax_rates.ore', 10.0),
-            'gas' => $this->getSetting('tax_rates.gas', 10.0),
-            'abyssal_ore' => $this->getSetting('tax_rates.abyssal_ore', 15.0),
+            // Default Tax Rates
+            'default_ore_tax' => $this->getSetting('tax_rates.default_ore_tax', 5.0),
+            'default_ice_tax' => $this->getSetting('tax_rates.default_ice_tax', 5.0),
+            'default_gas_tax' => $this->getSetting('tax_rates.default_gas_tax', 5.0),
+            'default_moon_tax' => $this->getSetting('tax_rates.default_moon_tax', 10.0),
+            'default_mercoxit_tax' => $this->getSetting('tax_rates.default_mercoxit_tax', 5.0),
+            
+            // Tax Payment Method
+            'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'contract'),
+            'tax_wallet_division' => $this->getSetting('tax_rates.tax_wallet_division', 1000),
+            
+            // Tax Code Settings
+            'tax_code_prefix' => $this->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
+            'tax_code_length' => $this->getSetting('tax_rates.tax_code_length', 8),
+            'auto_generate_tax_codes' => $this->getSetting('tax_rates.auto_generate_tax_codes', true),
+            
+            // Tax Period Settings
+            'tax_calculation_period' => $this->getSetting('tax_rates.tax_calculation_period', 'monthly'),
+            'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
+            'send_tax_reminders' => $this->getSetting('tax_rates.send_tax_reminders', true),
+            'tax_reminder_days' => $this->getSetting('tax_rates.tax_reminder_days', 3),
         ];
     }
 
@@ -286,10 +348,22 @@ class SettingsManagerService
     public function getPricingSettings(): array
     {
         return [
+            // Price provider (checks settings first, falls back to ENV)
+            'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'seat')),
             'price_type' => $this->getSetting('pricing.price_type', 'sell'),
             'cache_duration' => $this->getSetting('pricing.cache_duration', 60),
             'auto_refresh' => $this->getSetting('pricing.auto_refresh', true),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
+            
+            // Janice settings (checks settings first, then falls back to ENV)
+            'janice_api_key' => $this->getSetting('janice_api_key') 
+                ?: config('mining-manager.general.price_provider_api_key', ''),
+            'janice_market' => $this->getSetting('janice_market', 'jita'),
+            'janice_price_method' => $this->getSetting('janice_price_method', 'buy'),
+            
+            // Refining settings
+            'use_refined_value' => $this->getSetting('pricing.use_refined_value', false),
+            'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
         ];
     }
 

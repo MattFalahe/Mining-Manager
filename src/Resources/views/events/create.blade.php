@@ -1,13 +1,49 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::events.create_event'))
-@section('page_header', trans('mining-manager::events.create_event'))
+@section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/events') && !Request::is('*/events/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.events.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_events') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/events/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.events.active') }}">
+                <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
+            </a>
+        </li>
+        @can('mining-manager.events.create')
+        <li class="{{ Request::is('*/events/create') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.events.create') }}">
+                <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
+            </a>
+        </li>
+        @endcan
+        <li class="{{ Request::is('*/events/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.events.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/events/my-events') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.events.my-events') }}">
+                <i class="fas fa-user-check"></i> {{ trans('mining-manager::menu.my_events') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="create-event">
     
     <form id="eventForm" action="{{ route('mining-manager.events.store') }}" method="POST">
@@ -209,4 +245,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

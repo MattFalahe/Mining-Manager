@@ -140,12 +140,12 @@
                     
                     {{-- General Settings Tab --}}
                     <div id="general-settings" class="settings-section active">
-                        @include('mining-manager::settings.tabs.general', ['settings' => $settings])
+                        @include('mining-manager::settings.tabs.general', ['settings' => (object)$settings['general']])
                     </div>
 
                     {{-- Tax Rates Tab --}}
                     <div id="tax-rates" class="settings-section">
-                        @include('mining-manager::settings.tabs.tax_rates', ['settings' => $settings])
+                        @include('mining-manager::settings.tabs.tax_rates', ['settings' => (object)$settings['tax_rates']])
                     </div>
 
                     {{-- Pricing Tab --}}
@@ -155,7 +155,7 @@
 
                     {{-- Features Tab --}}
                     <div id="features" class="settings-section">
-                        @include('mining-manager::settings.tabs.features', ['settings' => $settings])
+                        @include('mining-manager::settings.tabs.features', ['settings' => (object)$settings['features']])
                     </div>
 
                     {{-- Advanced Settings --}}

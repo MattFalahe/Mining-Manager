@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.extraction_details'))
-@section('page_header', trans('mining-manager::moons.extraction_details'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -35,6 +35,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="extraction-details">
     
     {{-- BACK BUTTON --}}
@@ -78,13 +112,13 @@
                             <p><strong>{{ trans('mining-manager::moons.structure') }}:</strong></p>
                             <p class="ml-3 mb-3">
                                 <i class="fas fa-building text-primary"></i>
-                                {{ $extraction->structure->name ?? 'Unknown' }}
+                                {{ $extraction->structure_name ?? 'Unknown' }}
                             </p>
 
                             <p><strong>{{ trans('mining-manager::moons.moon') }}:</strong></p>
                             <p class="ml-3 mb-3">
                                 <i class="fas fa-moon text-info"></i>
-                                {{ $extraction->moon->name ?? 'Unknown' }}
+                                {{ $extraction->moon_name ?? 'Unknown' }}
                             </p>
 
                             <p><strong>{{ trans('mining-manager::moons.corporation') }}:</strong></p>
@@ -252,10 +286,29 @@
     <div class="row">
         <div class="col-12">
             <div class="card card-warning">
-                <div class="card-body text-center">
-                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
-                    <h4>{{ trans('mining-manager::moons.no_composition_data') }}</h4>
-                    <p>{{ trans('mining-manager::moons.composition_unavailable') }}</p>
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ trans('mining-manager::moons.no_composition_data') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <h5><i class="fas fa-info-circle"></i> How to Get Moon Composition Data:</h5>
+                        <ol>
+                            <li><strong>Scan the Moon:</strong> Use a Survey Scanner probe in-game to scan this moon</li>
+                            <li><strong>Wait for Sync:</strong> The composition data will be sent to ESI automatically</li>
+                            <li><strong>Refresh SeAT:</strong> Wait for SeAT to sync (usually happens automatically within a few minutes)</li>
+                            <li><strong>Update This Page:</strong> Click the "Refresh Data" button above to fetch the new composition</li>
+                        </ol>
+                    </div>
+                    <p class="text-muted">
+                        <i class="fas fa-moon"></i> <strong>Moon:</strong> {{ $extraction->moon_name ?? 'Unknown' }}<br>
+                        <i class="fas fa-hashtag"></i> <strong>Moon ID:</strong> {{ $extraction->moon_id ?? 'N/A' }}
+                    </p>
+                    <p class="text-muted">
+                        Once this moon is scanned, the ore composition, percentages, and estimated value will appear here.
+                    </p>
                 </div>
             </div>
         </div>
@@ -337,4 +390,8 @@ new Chart(ctx, {
 @endif
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

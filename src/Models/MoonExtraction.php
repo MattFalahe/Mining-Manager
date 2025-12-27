@@ -4,7 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
-use Seat\Eveapi\Models\Universe\UniverseMoon;
+use Carbon\Carbon;
 
 class MoonExtraction extends Model
 {
@@ -56,11 +56,55 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Get the moon.
+     * Get the moon name from SDE data.
+     * Note: Using moons table which has all moon data in SeAT v5
      */
-    public function moon()
+    public function getMoonNameAttribute()
     {
-        return $this->belongsTo(UniverseMoon::class, 'moon_id', 'moon_id');
+        if (!$this->moon_id) {
+            return 'Unknown Moon';
+        }
+
+        // Get moon name from moons table
+        $moon = \DB::table('moons')
+            ->where('moon_id', $this->moon_id)
+            ->first();
+
+        return $moon ? $moon->name : "Moon {$this->moon_id}";
+    }
+
+    /**
+     * Get the structure name.
+     * Checks multiple possible sources for structure names in SeAT v5
+     */
+    public function getStructureNameAttribute()
+    {
+        if (!$this->structure_id) {
+            return 'Unknown Structure';
+        }
+
+        // First, try to get from universe_structures table (this is the primary source)
+        $universeStructure = \DB::table('universe_structures')
+            ->where('structure_id', $this->structure_id)
+            ->first();
+
+        if ($universeStructure && !empty($universeStructure->name)) {
+            return $universeStructure->name;
+        }
+
+        // Fallback: try corporation_structures (though this table doesn't have name column)
+        $corpStructure = \DB::table('corporation_structures')
+            ->where('structure_id', $this->structure_id)
+            ->first();
+
+        if ($corpStructure) {
+            // Structure exists but no name, try to get from universe_structures again
+            // This shouldn't normally happen, but provides a fallback
+            return "Structure {$this->structure_id}";
+        }
+
+        // Fallback: return structure ID
+        return "Unknown Structure";
     }
 
     /**
@@ -69,6 +113,39 @@ class MoonExtraction extends Model
     public function structure()
     {
         return $this->belongsTo(\Seat\Eveapi\Models\Corporation\CorporationStructure::class, 'structure_id', 'structure_id');
+    }
+
+    /**
+     * Check if decay warning should be shown (within 3 hours of decay).
+     *
+     * @return bool
+     */
+    public function shouldShowDecayWarning()
+    {
+        if (!$this->natural_decay_time) {
+            return false;
+        }
+
+        $now = Carbon::now();
+        $threeHoursBeforeDecay = $this->natural_decay_time->copy()->subHours(3);
+
+        // Show warning if we're within 3 hours of decay and haven't decayed yet
+        return $now >= $threeHoursBeforeDecay && $now < $this->natural_decay_time;
+    }
+
+    /**
+     * Get time until decay in human readable format.
+     *
+     * @return string|null
+     */
+    public function getTimeUntilDecay()
+    {
+        if (!$this->natural_decay_time || $this->natural_decay_time->isPast()) {
+            return null;
+        }
+
+        $diff = Carbon::now()->diff($this->natural_decay_time);
+        return sprintf('%dd %dh', $diff->days, $diff->h);
     }
 
     /**

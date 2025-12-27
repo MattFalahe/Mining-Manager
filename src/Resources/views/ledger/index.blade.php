@@ -1,13 +1,37 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::ledger.mining_ledger'))
-@section('page_header', trans('mining-manager::ledger.mining_ledger'))
+@section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 @endpush
 
 @section('full')
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/ledger') && !Request::is('*/ledger/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_ledger') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/ledger/my-mining') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.my-mining') }}">
+                <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
+            </a>
+        </li>
+        @can('mining-manager.ledger.process')
+        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.process') }}">
+                <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
+            </a>
+        </li>
+        @endcan
+    </ul>
+    <div class="tab-content">
+
 <div class="mining-ledger">
     
     {{-- SUMMARY STATISTICS --}}
@@ -129,9 +153,12 @@
                                     <label for="characterFilter">{{ trans('mining-manager::ledger.character') }}</label>
                                     <select class="form-control" id="characterFilter" name="character_id">
                                         <option value="">{{ trans('mining-manager::ledger.all_characters') }}</option>
-                                        @foreach($characters ?? [] as $character)
-                                        <option value="{{ $character->character_id }}" {{ request('character_id') == $character->character_id ? 'selected' : '' }}>
-                                            {{ $character->name }}
+                                        @foreach($characters as $char)
+                                        <option value="{{ $char['character_id'] }}" {{ request('character_id') == $char['character_id'] ? 'selected' : '' }}>
+                                            {{ $char['name'] }}
+                                            @if(!$char['is_registered'])
+                                                (Not Registered)
+                                            @endif
                                         </option>
                                         @endforeach
                                     </select>
@@ -251,8 +278,35 @@
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $entry->character_id }}/portrait?size=32" 
                                              class="img-circle" 
-                                             style="width: 32px; height: 32px;">
-                                        {{ $entry->character->name ?? 'Unknown' }}
+                                             style="width: 32px; height: 32px;"
+                                             alt="{{ $entry->character_info['name'] ?? 'Character' }}">
+                                        
+                                        <strong>{{ $entry->character_info['name'] ?? ($entry->character->name ?? "Character {$entry->character_id}") }}</strong>
+                                        
+                                        @if(isset($entry->character_info))
+                                            {{-- Show "Not Registered" badge for external characters --}}
+                                            @if(!$entry->character_info['is_registered'])
+                                                <span class="badge badge-warning" 
+                                                      title="Character not registered in SeAT" 
+                                                      data-toggle="tooltip">
+                                                    <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                </span>
+                                            @endif
+                                            
+                                            {{-- Show corporation name --}}
+                                            <br>
+                                            <small class="text-muted">
+                                                <i class="fas fa-building"></i>
+                                                {{ $entry->character_info['corporation_name'] }}
+                                            </small>
+                                        @elseif($entry->character)
+                                            {{-- Fallback to relationship if character_info not available --}}
+                                            <br>
+                                            <small class="text-muted">
+                                                <i class="fas fa-building"></i>
+                                                {{ $entry->character->corporation->name ?? 'Unknown Corporation' }}
+                                            </small>
+                                        @endif
                                     </td>
                                     <td>
                                         <img src="https://images.evetech.net/types/{{ $entry->type_id }}/icon?size=32" 
@@ -281,7 +335,15 @@
                                         <small class="text-muted">ISK</small>
                                     </td>
                                     <td>
-                                        <small>{{ $entry->solar_system_name ?? 'Unknown' }}</small>
+                                        @if($entry->solar_system_name)
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <small>{{ $entry->solar_system_name }}</small>
+                                        @elseif($entry->solarSystem)
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <small>{{ $entry->solarSystem->name }}</small>
+                                        @else
+                                            <small class="text-muted">Unknown System</small>
+                                        @endif
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group">
@@ -521,4 +583,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

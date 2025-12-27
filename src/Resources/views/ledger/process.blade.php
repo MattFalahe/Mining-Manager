@@ -1,13 +1,37 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::ledger.process_ledger'))
-@section('page_header', trans('mining-manager::ledger.process_ledger'))
+@section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 @endpush
 
 @section('full')
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/ledger') && !Request::is('*/ledger/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_ledger') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/ledger/my-mining') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.my-mining') }}">
+                <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
+            </a>
+        </li>
+        @can('mining-manager.ledger.process')
+        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.ledger.process') }}">
+                <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
+            </a>
+        </li>
+        @endcan
+    </ul>
+    <div class="tab-content">
+
 <div class="process-ledger">
     
     {{-- PROCESSING STATUS --}}
@@ -474,4 +498,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

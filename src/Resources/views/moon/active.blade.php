@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.active_extractions'))
-@section('page_header', trans('mining-manager::moons.active_extractions'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -50,6 +50,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="active-extractions-view">
     
     {{-- AUTO-REFRESH NOTICE --}}
@@ -150,11 +184,11 @@
                                 <div class="card-body">
                                     <h5 class="mb-1">
                                         <i class="fas fa-building"></i>
-                                        {{ $extraction->structure->name ?? 'Unknown' }}
+                                        {{ $extraction->structure_name ?? 'Unknown' }}
                                     </h5>
                                     <p class="mb-2">
                                         <i class="fas fa-moon"></i>
-                                        {{ $extraction->moon->name ?? 'Unknown Moon' }}
+                                        {{ $extraction->moon_name ?? 'Unknown Moon' }}
                                     </p>
                                     <div class="countdown-timer">
                                         <i class="fas fa-hourglass-half"></i>
@@ -201,11 +235,11 @@
                                 <div class="col-lg-3 col-md-4">
                                     <h5 class="mb-1">
                                         <i class="fas fa-building text-warning"></i>
-                                        {{ $extraction->structure->name ?? 'Unknown' }}
+                                        {{ $extraction->structure_name ?? 'Unknown' }}
                                     </h5>
                                     <p class="mb-1">
                                         <i class="fas fa-moon text-info"></i>
-                                        {{ $extraction->moon->name ?? 'Unknown Moon' }}
+                                        {{ $extraction->moon_name ?? 'Unknown Moon' }}
                                     </p>
                                     <p class="mb-0 text-muted small">
                                         <i class="fas fa-map-marker-alt"></i>
@@ -297,23 +331,18 @@
                                 </div>
                             </div>
 
-                            {{-- Decay Warning --}}
-                            @if($extraction->natural_decay_time)
-                                @php
-                                    $hoursUntilDecay = \Carbon\Carbon::now()->diffInHours($extraction->natural_decay_time, false);
-                                @endphp
-                                @if($hoursUntilDecay < 48 && $hoursUntilDecay > 0)
+                            {{-- Decay Warning (only shows 3h before decay) --}}
+                            @if($extraction->shouldShowDecayWarning())
                                 <div class="row mt-2">
                                     <div class="col-12">
                                         <div class="alert alert-danger mb-0 py-2">
                                             <i class="fas fa-exclamation-triangle"></i>
                                             <strong>{{ trans('mining-manager::moons.decay_warning') }}:</strong>
-                                            {{ trans('mining-manager::moons.decays_in') }} {{ floor($hoursUntilDecay / 24) }}d {{ $hoursUntilDecay % 24 }}h
+                                            {{ trans('mining-manager::moons.decays_in') }} {{ $extraction->getTimeUntilDecay() }}
                                             ({{ $extraction->natural_decay_time->format('M d, H:i') }})
                                         </div>
                                     </div>
                                 </div>
-                                @endif
                             @endif
                         </div>
                     </div>
@@ -358,10 +387,10 @@
                             <tbody>
                                 @foreach($activeExtractions->sortBy('chunk_arrival_time') as $extraction)
                                 <tr>
-                                    <td>{{ $extraction->structure->name ?? 'Unknown' }}</td>
+                                    <td>{{ $extraction->structure_name ?? 'Unknown' }}</td>
                                     <td>
                                         <i class="fas fa-moon text-info"></i>
-                                        {{ $extraction->moon->name ?? 'Unknown' }}
+                                        {{ $extraction->moon_name ?? 'Unknown' }}
                                     </td>
                                     <td>{{ $extraction->chunk_arrival_time->format('M d, Y H:i') }}</td>
                                     <td>
@@ -411,4 +440,8 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

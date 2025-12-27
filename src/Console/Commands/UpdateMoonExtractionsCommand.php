@@ -108,6 +108,7 @@ class UpdateMoonExtractionsCommand extends Command
                             'natural_decay_time' => $extraction['natural_decay_time'],
                             'status' => $this->determineStatus($extraction),
                             'moon_id' => $extraction['moon_id'] ?? null,
+                            'ore_composition' => $extraction['ore_composition'] ?? null,
                             'updated_at' => Carbon::now(),
                         ]);
                         $this->line("  Updated extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
@@ -122,6 +123,7 @@ class UpdateMoonExtractionsCommand extends Command
                             'chunk_arrival_time' => $extraction['chunk_arrival_time'],
                             'natural_decay_time' => $extraction['natural_decay_time'],
                             'status' => $this->determineStatus($extraction),
+                            'ore_composition' => $extraction['ore_composition'] ?? null,
                         ]);
                         $this->line("  Created new extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
                         $created++;

@@ -8,6 +8,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
+/**
+ * Mining Analytics Service for SeAT v5.x
+ * 
+ * This service provides analytics and statistics for mining operations.
+ * Uses SeAT v5.x universe tables (universe_systems, universe_types).
+ */
 class MiningAnalyticsService
 {
     /**
@@ -143,21 +149,27 @@ class MiningAnalyticsService
                 default => 'sell_price',
             };
 
-            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->join('universe_types', 'mining_ledger.type_id', '=', 'universe_types.type_id')
+            // Use InvType model with eager loading (this one works correctly)
+            $results = MiningLedger::with('type')
+                ->whereBetween('mining_ledger.date', [$startDate, $endDate])
                 ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
                     $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
                         ->where('mining_price_cache.region_id', '=', $regionId);
                 })
                 ->select(
                     'mining_ledger.type_id',
-                    'universe_types.typeName as ore_name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as total_value")
                 )
-                ->groupBy('mining_ledger.type_id', 'universe_types.typeName')
+                ->groupBy('mining_ledger.type_id')
                 ->orderByDesc('total_quantity')
                 ->get();
+            
+            // Add ore names from the type relationship
+            return $results->map(function($item) {
+                $item->ore_name = $item->type_name ?? 'Unknown';
+                return $item;
+            });
         });
     }
 
@@ -174,22 +186,28 @@ class MiningAnalyticsService
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->join('universe_systems', 'mining_ledger.solar_system_id', '=', 'universe_systems.system_id')
+            // Use eager loading with Sde\SolarSystem relationship (now works correctly with system_id)
+            $results = MiningLedger::with('solarSystem')
+                ->whereBetween('mining_ledger.date', [$startDate, $endDate])
                 ->select(
                     'mining_ledger.solar_system_id',
-                    'universe_systems.name as system_name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
                 )
-                ->groupBy('mining_ledger.solar_system_id', 'universe_systems.name')
+                ->groupBy('mining_ledger.solar_system_id')
                 ->orderByDesc('total_quantity')
                 ->get();
+            
+            // Add system names from the relationship
+            return $results->map(function($item) {
+                $item->system_name = $item->system_name ?? 'Unknown';
+                return $item;
+            });
         });
     }
 
     /**
-     * Get daily mining trends.
+     * Get daily mining trends in date range.
      *
      * @param Carbon $startDate
      * @param Carbon $endDate
@@ -197,158 +215,39 @@ class MiningAnalyticsService
      */
     public function getDailyTrends(Carbon $startDate, Carbon $endDate)
     {
-        $cacheKey = "mining-analytics:daily-trends:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
-        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
-
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-            $priceType = config('mining-manager.pricing.price_type', 'sell');
-            
-            $priceColumn = match ($priceType) {
-                'buy' => 'buy_price',
-                'average' => 'average_price',
-                default => 'sell_price',
-            };
-
-            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
-                    $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
-                        ->where('mining_price_cache.region_id', '=', $regionId);
-                })
-                ->select(
-                    'mining_ledger.date',
-                    DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
-                    DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as total_value"),
-                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
-                )
-                ->groupBy('mining_ledger.date')
-                ->orderBy('mining_ledger.date')
-                ->get();
-        });
-    }
-
-    /**
-     * Get mining trend data for charts.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function getMiningTrendData(Carbon $startDate, Carbon $endDate): array
-    {
-        $dailyTrends = $this->getDailyTrends($startDate, $endDate);
-
-        return [
-            'labels' => $dailyTrends->pluck('date')->map(fn($date) => Carbon::parse($date)->format('M d'))->toArray(),
-            'datasets' => [
-                [
-                    'label' => 'Total Quantity',
-                    'data' => $dailyTrends->pluck('total_quantity')->toArray(),
-                    'borderColor' => 'rgb(75, 192, 192)',
-                    'tension' => 0.1,
-                ],
-                [
-                    'label' => 'Unique Miners',
-                    'data' => $dailyTrends->pluck('unique_miners')->toArray(),
-                    'borderColor' => 'rgb(153, 102, 255)',
-                    'tension' => 0.1,
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Get ore distribution data for pie charts.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function getOreDistributionData(Carbon $startDate, Carbon $endDate): array
-    {
-        $oreBreakdown = $this->getOreBreakdown($startDate, $endDate);
+        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
+        $priceType = config('mining-manager.pricing.price_type', 'sell');
         
-        // Take top 10 ore types, group rest as "Other"
-        $topOres = $oreBreakdown->take(10);
-        $otherQuantity = $oreBreakdown->skip(10)->sum('total_quantity');
+        $priceColumn = match ($priceType) {
+            'buy' => 'buy_price',
+            'average' => 'average_price',
+            default => 'sell_price',
+        };
 
-        $labels = $topOres->pluck('ore_name')->toArray();
-        $data = $topOres->pluck('total_quantity')->toArray();
-
-        if ($otherQuantity > 0) {
-            $labels[] = 'Other';
-            $data[] = $otherQuantity;
-        }
-
-        return [
-            'labels' => $labels,
-            'datasets' => [
-                [
-                    'data' => $data,
-                    'backgroundColor' => $this->generateColors(count($data)),
-                ],
-            ],
-        ];
+        return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+            ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
+                $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
+                    ->where('mining_price_cache.region_id', '=', $regionId);
+            })
+            ->select(
+                'mining_ledger.date',
+                DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as total_value"),
+                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+            )
+            ->groupBy('mining_ledger.date')
+            ->orderBy('mining_ledger.date')
+            ->get();
     }
 
     /**
-     * Get miner activity data for charts.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function getMinerActivityData(Carbon $startDate, Carbon $endDate): array
-    {
-        $topMiners = $this->getTopMiners($startDate, $endDate, 15);
-
-        return [
-            'labels' => $topMiners->pluck('name')->toArray(),
-            'datasets' => [
-                [
-                    'label' => 'Ore Mined',
-                    'data' => $topMiners->pluck('total_quantity')->toArray(),
-                    'backgroundColor' => 'rgba(54, 162, 235, 0.5)',
-                    'borderColor' => 'rgb(54, 162, 235)',
-                    'borderWidth' => 1,
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Get system activity data for charts.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
-    public function getSystemActivityData(Carbon $startDate, Carbon $endDate): array
-    {
-        $systemBreakdown = $this->getSystemBreakdown($startDate, $endDate)->take(10);
-
-        return [
-            'labels' => $systemBreakdown->pluck('system_name')->toArray(),
-            'datasets' => [
-                [
-                    'label' => 'Total Quantity',
-                    'data' => $systemBreakdown->pluck('total_quantity')->toArray(),
-                    'backgroundColor' => 'rgba(255, 99, 132, 0.5)',
-                    'borderColor' => 'rgb(255, 99, 132)',
-                    'borderWidth' => 1,
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Get detailed miner statistics.
+     * Get character mining statistics.
      *
      * @param Carbon $startDate
      * @param Carbon $endDate
      * @return \Illuminate\Support\Collection
      */
-    public function getMinerStatistics(Carbon $startDate, Carbon $endDate)
+    public function getCharacterStatistics(Carbon $startDate, Carbon $endDate)
     {
         $regionId = config('mining-manager.pricing.default_region_id', 10000002);
         $priceType = config('mining-manager.pricing.price_type', 'sell');
@@ -405,13 +304,13 @@ class MiningAnalyticsService
             })
             ->select(
                 'mining_ledger.type_id',
-                'universe_types.typeName as ore_name',
+                'universe_types.name as ore_name',
                 DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                 DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as total_value"),
                 DB::raw("AVG(mining_price_cache.{$priceColumn}) as average_price"),
                 DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
             )
-            ->groupBy('mining_ledger.type_id', 'universe_types.typeName')
+            ->groupBy('mining_ledger.type_id', 'universe_types.name')
             ->orderByDesc('total_quantity')
             ->get();
     }
@@ -430,13 +329,13 @@ class MiningAnalyticsService
             ->select(
                 'mining_ledger.solar_system_id',
                 'universe_systems.name as system_name',
-                'universe_systems.security as security_status',
+                'universe_systems.security_status',
                 DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                 DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
                 DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
                 DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
             )
-            ->groupBy('mining_ledger.solar_system_id', 'universe_systems.name', 'universe_systems.security')
+            ->groupBy('mining_ledger.solar_system_id', 'universe_systems.name', 'universe_systems.security_status')
             ->orderByDesc('total_quantity')
             ->get();
     }
@@ -469,7 +368,7 @@ class MiningAnalyticsService
             })
             ->select(
                 'character_infos.name as character',
-                'universe_types.typeName as ore_type',
+                'universe_types.name as ore_type',
                 'mining_ledger.quantity',
                 DB::raw("(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as value"),
                 'universe_systems.name as system',
@@ -491,32 +390,84 @@ class MiningAnalyticsService
     }
 
     /**
-     * Generate color palette for charts.
+     * Get mining trend data for charts.
+     * This is an alias for getDailyTrends() to match controller expectations.
      *
-     * @param int $count
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return \Illuminate\Support\Collection
+     */
+    public function getMiningTrendData(Carbon $startDate, Carbon $endDate)
+    {
+        // Return the same data as getDailyTrends()
+        return $this->getDailyTrends($startDate, $endDate);
+    }
+
+    /**
+     * Get miner statistics for tables view.
+     * This is an alias for getCharacterStatistics() to match controller expectations.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return \Illuminate\Support\Collection
+     */
+    public function getMinerStatistics(Carbon $startDate, Carbon $endDate)
+    {
+        // Return the same data as getCharacterStatistics()
+        return $this->getCharacterStatistics($startDate, $endDate);
+    }
+
+    /**
+     * Get ore distribution data for charts.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
      * @return array
      */
-    private function generateColors(int $count): array
+    public function getOreDistributionData(Carbon $startDate, Carbon $endDate)
     {
-        $baseColors = [
-            'rgba(255, 99, 132, 0.6)',
-            'rgba(54, 162, 235, 0.6)',
-            'rgba(255, 206, 86, 0.6)',
-            'rgba(75, 192, 192, 0.6)',
-            'rgba(153, 102, 255, 0.6)',
-            'rgba(255, 159, 64, 0.6)',
-            'rgba(199, 199, 199, 0.6)',
-            'rgba(83, 102, 255, 0.6)',
-            'rgba(255, 99, 255, 0.6)',
-            'rgba(99, 255, 132, 0.6)',
+        $oreBreakdown = $this->getOreBreakdown($startDate, $endDate);
+        
+        return [
+            'labels' => $oreBreakdown->pluck('ore_name')->toArray(),
+            'data' => $oreBreakdown->pluck('total_quantity')->toArray(),
+            'values' => $oreBreakdown->pluck('total_value')->toArray(),
         ];
+    }
 
-        $colors = [];
-        for ($i = 0; $i < $count; $i++) {
-            $colors[] = $baseColors[$i % count($baseColors)];
-        }
+    /**
+     * Get miner activity data for charts.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    public function getMinerActivityData(Carbon $startDate, Carbon $endDate)
+    {
+        $topMiners = $this->getTopMiners($startDate, $endDate, 10);
+        
+        return [
+            'labels' => $topMiners->pluck('name')->toArray(),
+            'data' => $topMiners->pluck('total_quantity')->toArray(),
+            'values' => $topMiners->pluck('total_value')->toArray(),
+        ];
+    }
 
-        return $colors;
+    /**
+     * Get system activity data for charts.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    public function getSystemActivityData(Carbon $startDate, Carbon $endDate)
+    {
+        $systemBreakdown = $this->getSystemBreakdown($startDate, $endDate);
+        
+        return [
+            'labels' => $systemBreakdown->pluck('system_name')->toArray(),
+            'data' => $systemBreakdown->pluck('total_quantity')->toArray(),
+        ];
     }
 
     /**

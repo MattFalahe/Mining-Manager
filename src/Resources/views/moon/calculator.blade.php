@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.moon_calculator'))
-@section('page_header', trans('mining-manager::moons.moon_calculator'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -65,6 +65,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="moon-calculator">
     
     {{-- CALCULATOR EXPLANATION --}}
@@ -535,4 +569,8 @@ function copyToClipboard() {
 }
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

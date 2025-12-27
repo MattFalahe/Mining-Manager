@@ -412,6 +412,37 @@ return [
         
         // Minimum price threshold (ISK)
         'minimum_price' => 0.01,
+        
+        // Default region for price lookups
+        'default_region_id' => 10000002, // The Forge (Jita)
+        
+        // Use refined mineral values instead of raw ore
+        'use_refined_value' => false,
+        
+        // Refining efficiency percentage (for refined value calculations)
+        'refining_efficiency' => 87.5,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Moon Extractions
+    |--------------------------------------------------------------------------
+    */
+    'moon' => [
+        // Estimated chunk size in cubic meters (m³)
+        // Moon chunks typically range from 100,000 to 200,000 m³
+        // Adjust based on your corporation's moon sizes
+        'estimated_chunk_size' => env('MOON_CHUNK_SIZE', 150000),
+        
+        // Hours before extraction to send notifications
+        // Example: [24, 4, 1] sends at 24h, 4h, and 1h before chunk arrival
+        'notification_hours_before' => [24, 4, 1],
+        
+        // Auto-calculate extraction values
+        'auto_calculate_values' => true,
+        
+        // Include unscanned moons in reports
+        'show_unscanned_moons' => true,
     ],
 
 ];

@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.extraction_calendar'))
-@section('page_header', trans('mining-manager::moons.extraction_calendar'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -78,6 +78,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="extraction-calendar">
     
     {{-- CONTROLS --}}
@@ -125,7 +159,7 @@
                     
                     @forelse($todayExtractions as $extraction)
                     <div class="extraction-item status-{{ $extraction->status }}">
-                        <h6 class="mb-1">{{ $extraction->structure->name ?? 'Unknown' }}</h6>
+                        <h6 class="mb-1">{{ $extraction->structure_name ?? 'Unknown' }}</h6>
                         <p class="mb-1 small text-muted">
                             <i class="fas fa-clock"></i> 
                             {{ $extraction->chunk_arrival_time->format('H:i') }}
@@ -174,7 +208,7 @@
                     
                     @forelse($weekExtractions as $extraction)
                     <div class="extraction-item status-{{ $extraction->status }} mb-2">
-                        <h6 class="mb-1">{{ $extraction->structure->name ?? 'Unknown' }}</h6>
+                        <h6 class="mb-1">{{ $extraction->structure_name ?? 'Unknown' }}</h6>
                         <p class="mb-1 small">
                             <i class="fas fa-calendar"></i> 
                             {{ $extraction->chunk_arrival_time->format('D, M d') }}
@@ -237,13 +271,13 @@ document.addEventListener('DOMContentLoaded', function() {
         extractions.forEach(extraction => {
             events.push({
                 id: extraction.id,
-                title: extraction.structure?.name || 'Unknown',
+                title: extraction.structure_name || 'Unknown',
                 start: extraction.chunk_arrival_time,
                 className: 'status-' + extraction.status,
                 extendedProps: {
                     status: extraction.status,
-                    moon: extraction.moon?.name || 'Unknown',
-                    structure: extraction.structure?.name || 'Unknown',
+                    moon: extraction.moon_name || 'Unknown',
+                    structure: extraction.structure_name || 'Unknown',
                     estimatedValue: extraction.estimated_value || 0,
                     oreComposition: extraction.ore_composition
                 }
@@ -306,4 +340,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 @endpush
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

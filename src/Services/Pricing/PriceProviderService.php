@@ -1,11 +1,13 @@
 <?php
 
-namespace MattFalahe\Seat\MiningManager\Services\Pricing;
+namespace MiningManager\Services\Pricing;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use MiningManager\Models\Setting;
+use MiningManager\Models\MiningPriceCache;
+use Carbon\Carbon;
 use Exception;
 
 /**
@@ -108,7 +110,7 @@ class PriceProviderService
      */
     protected function getPricesFromSeAT(array $typeIds): array
     {
-        $priceMethod = Setting::get('price_method', 'average');
+        $priceMethod = Setting::getValue('price_method', 'average');
         
         $prices = [];
 
@@ -147,14 +149,16 @@ class PriceProviderService
      */
     protected function getPricesFromJanice(array $typeIds): array
     {
-        $apiKey = Setting::get('janice_api_key');
+        // Check settings first, then fall back to ENV/config
+        $apiKey = Setting::getValue('janice_api_key') 
+            ?: config('mining-manager.general.price_provider_api_key');
         
         if (empty($apiKey)) {
-            throw new Exception('Janice API key not configured');
+            throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
         $prices = [];
-        $market = Setting::get('janice_market', 'jita'); // jita or amarr
+        $market = Setting::getValue('janice_market', 'jita'); // jita or amarr
 
         // Janice API is more efficient when we call individually for pricing
         // Use the pricer endpoint for single items
@@ -183,7 +187,7 @@ class PriceProviderService
                 $data = $response->json();
                 
                 // Get price based on configured method
-                $priceMethod = Setting::get('janice_price_method', 'buy');
+                $priceMethod = Setting::getValue('janice_price_method', 'buy');
                 
                 if (isset($data['immediatePrices'])) {
                     $prices[$typeId] = match($priceMethod) {
@@ -219,7 +223,7 @@ class PriceProviderService
      */
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
-        $regionId = Setting::get('price_region_id', self::DEFAULT_REGION_ID);
+        $regionId = Setting::getValue('price_region_id', self::DEFAULT_REGION_ID);
         $typeIdsString = implode(',', $typeIds);
 
         $response = Http::get(self::FUZZWORK_MARKET_URL, [
@@ -233,7 +237,7 @@ class PriceProviderService
 
         $data = $response->json();
         $prices = [];
-        $priceMethod = Setting::get('price_method', 'sell');
+        $priceMethod = Setting::getValue('price_method', 'sell');
 
         foreach ($typeIds as $typeId) {
             if (isset($data[$typeId])) {
@@ -269,7 +273,7 @@ class PriceProviderService
      */
     protected function getCustomPrices(array $typeIds): array
     {
-        $customPrices = Setting::get('custom_prices', []);
+        $customPrices = Setting::getValue('custom_prices', []);
         $prices = [];
 
         foreach ($typeIds as $typeId) {
@@ -286,7 +290,7 @@ class PriceProviderService
      */
     protected function getConfiguredProvider(): string
     {
-        return Setting::get('price_provider', self::PROVIDER_SEAT);
+        return Setting::getValue('price_provider', self::PROVIDER_SEAT);
     }
 
     /**
@@ -372,7 +376,7 @@ class PriceProviderService
 
         // Check if required config fields are set
         foreach ($providerConfig['config_fields'] as $field) {
-            if (empty(Setting::get($field))) {
+            if (empty(Setting::getValue($field))) {
                 return false;
             }
         }
@@ -445,5 +449,84 @@ class PriceProviderService
             'cached' => false, // Will be set by MarketDataService
             'fetched_at' => now()->toDateTimeString()
         ];
+    }
+
+    /**
+     * Check if price cache is still fresh for a type ID
+     *
+     * @param int $typeId
+     * @param int $regionId
+     * @return bool
+     */
+    public function isCacheFresh(int $typeId, int $regionId): bool
+    {
+        $cacheEntry = MiningPriceCache::where('type_id', $typeId)
+            ->where('region_id', $regionId)
+            ->first();
+
+        if (!$cacheEntry) {
+            return false;
+        }
+
+        // Check if cache is fresh based on configuration
+        $cacheDuration = config('mining-manager.pricing.cache_duration', 60); // minutes
+        $cacheAge = $cacheEntry->cached_at->diffInMinutes(Carbon::now());
+
+        return $cacheAge < $cacheDuration;
+    }
+
+    /**
+     * Cache price data for a type ID
+     *
+     * @param int $typeId
+     * @param int $regionId
+     * @param array $priceData
+     * @return bool
+     */
+    public function cachePriceData(int $typeId, int $regionId, array $priceData): bool
+    {
+        try {
+            MiningPriceCache::updateOrCreate(
+                [
+                    'type_id' => $typeId,
+                    'region_id' => $regionId,
+                ],
+                [
+                    'sell_price' => $priceData['sell'] ?? 0,
+                    'buy_price' => $priceData['buy'] ?? 0,
+                    'average_price' => $priceData['average'] ?? 0,
+                    'cached_at' => Carbon::now(),
+                ]
+            );
+
+            return true;
+        } catch (Exception $e) {
+            Log::error('Failed to cache price data', [
+                'type_id' => $typeId,
+                'region_id' => $regionId,
+                'error' => $e->getMessage()
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Delete old cache entries
+     *
+     * @param Carbon $cutoffDate
+     * @return int Number of deleted entries
+     */
+    public function deleteOldCache(Carbon $cutoffDate): int
+    {
+        try {
+            return MiningPriceCache::where('cached_at', '<', $cutoffDate)->delete();
+        } catch (Exception $e) {
+            Log::error('Failed to delete old cache entries', [
+                'error' => $e->getMessage()
+            ]);
+
+            return 0;
+        }
     }
 }

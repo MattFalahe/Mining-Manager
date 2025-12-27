@@ -66,7 +66,7 @@ class MoonController extends Controller
             ->orderBy('chunk_arrival_time')
             ->get();
 
-        return view('mining-manager::moons.index', compact('extractions', 'upcoming', 'status'));
+        return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status'));
     }
 
     /**
@@ -77,7 +77,7 @@ class MoonController extends Controller
      */
     public function show($id)
     {
-        $extraction = MoonExtraction::with(['structure', 'corporation', 'moon'])->findOrFail($id);
+        $extraction = MoonExtraction::with(['structure', 'corporation'])->findOrFail($id);
 
         // Calculate estimated value if ore composition available
         $estimatedValue = null;
@@ -97,7 +97,7 @@ class MoonController extends Controller
             $timeUntilDecay = Carbon::now()->diffInHours($extraction->natural_decay_time);
         }
 
-        return view('mining-manager::moons.show', compact(
+        return view('mining-manager::moon.show', compact(
             'extraction',
             'estimatedValue',
             'timeUntilArrival',
@@ -135,7 +135,7 @@ class MoonController extends Controller
             $calendar[$day][] = $extraction;
         }
 
-        return view('mining-manager::moons.calendar', compact('calendar', 'month'));
+        return view('mining-manager::moon.calendar', compact('calendar', 'month'));
     }
 
     /**
@@ -147,7 +147,7 @@ class MoonController extends Controller
     {
         // Get recent extractions with composition data
         $extractions = MoonExtraction::whereNotNull('ore_composition')
-            ->with(['structure', 'moon'])
+            ->with(['structure', 'corporation'])
             ->orderBy('extraction_start_time', 'desc')
             ->limit(50)
             ->get();
@@ -163,7 +163,8 @@ class MoonController extends Controller
             if ($extraction->moon_id) {
                 if (!isset($moonData[$extraction->moon_id])) {
                     $moonData[$extraction->moon_id] = [
-                        'moon' => $extraction->moon,
+                        'moon_id' => $extraction->moon_id,
+                        'moon_name' => $extraction->moon_name, // Use accessor
                         'extractions' => [],
                         'average_value' => 0,
                     ];
@@ -185,7 +186,7 @@ class MoonController extends Controller
             $data['average_value'] = $count > 0 ? $totalValue / $count : 0;
         }
 
-        return view('mining-manager::moons.compositions', compact('moonData'));
+        return view('mining-manager::moon.compositions', compact('moonData'));
     }
 
     /**
@@ -234,7 +235,7 @@ class MoonController extends Controller
      */
     public function data($id)
     {
-        $extraction = MoonExtraction::with(['structure', 'moon'])->findOrFail($id);
+        $extraction = MoonExtraction::with(['structure'])->findOrFail($id);
 
         $data = [
             'id' => $extraction->id,
@@ -260,12 +261,85 @@ class MoonController extends Controller
     public function extractions($structureId)
     {
         $extractions = MoonExtraction::where('structure_id', $structureId)
-            ->with(['structure', 'moon'])
+            ->with(['structure'])
             ->orderBy('extraction_start_time', 'desc')
             ->paginate(20);
 
         $structure = $extractions->first()->structure ?? null;
 
-        return view('mining-manager::moons.extractions', compact('extractions', 'structure'));
+        return view('mining-manager::moon.extractions', compact('extractions', 'structure'));
+    }
+
+    /**
+     * Display active moon extractions
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function active(Request $request)
+    {
+        $corporationId = $request->input('corporation_id');
+
+        // Get active extractions (currently extracting)
+        $query = MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '>=', Carbon::now())
+            ->with(['structure', 'corporation']);
+
+        if ($corporationId) {
+            $query->where('corporation_id', $corporationId);
+        }
+
+        $activeExtractions = $query->orderBy('chunk_arrival_time')->get();
+
+        // Calculate values and times for each extraction
+        foreach ($activeExtractions as $extraction) {
+            // Calculate estimated value if ore composition available
+            if ($extraction->ore_composition) {
+                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            }
+
+            // Calculate time until chunk arrival
+            $extraction->hours_until_arrival = Carbon::now()->diffInHours($extraction->chunk_arrival_time, false);
+            $extraction->time_until_arrival = Carbon::now()->diff($extraction->chunk_arrival_time)->format('%d days, %h hours, %i minutes');
+
+            // Calculate time until natural decay
+            if ($extraction->natural_decay_time) {
+                $extraction->hours_until_decay = Carbon::now()->diffInHours($extraction->natural_decay_time, false);
+                $extraction->time_until_decay = Carbon::now()->diff($extraction->natural_decay_time)->format('%d days, %h hours, %i minutes');
+            }
+        }
+
+        // Get statistics
+        $stats = [
+            'total_active' => $activeExtractions->count(),
+            'arriving_soon' => $activeExtractions->filter(function ($extraction) {
+                return $extraction->hours_until_arrival <= 24;
+            })->count(),
+            'total_estimated_value' => $activeExtractions->sum('calculated_value'),
+        ];
+
+        return view('mining-manager::moon.active', compact('activeExtractions', 'stats'));
+    }
+
+    /**
+     * Display moon value calculator
+     *
+     * @return \Illuminate\View\View
+     */
+    public function calculator()
+    {
+        // Get recent extraction data for presets
+        $recentExtractions = MoonExtraction::whereNotNull('ore_composition')
+            ->with(['structure'])
+            ->orderBy('extraction_start_time', 'desc')
+            ->limit(10)
+            ->get();
+
+        // Calculate values for recent extractions
+        foreach ($recentExtractions as $extraction) {
+            $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+        }
+
+        return view('mining-manager::moon.calculator', compact('recentExtractions'));
     }
 }

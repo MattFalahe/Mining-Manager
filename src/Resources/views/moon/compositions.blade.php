@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::moons.moon_compositions'))
-@section('page_header', trans('mining-manager::moons.moon_compositions'))
+@section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
@@ -42,6 +42,40 @@
 @endpush
 
 @section('full')
+
+
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.index') }}">
+                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.active') }}">
+                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calendar') }}">
+                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.compositions') }}">
+                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+            </a>
+        </li>
+        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
+            <a href="{{ route('mining-manager.moon.calculator') }}">
+                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+
+
 <div class="moon-compositions">
     
     {{-- CONTROLS --}}
@@ -159,7 +193,7 @@
                                         <div class="col-md-4">
                                             <h5 class="mb-1">
                                                 <i class="fas fa-moon text-info"></i>
-                                                {{ $data['moon']->name ?? 'Unknown Moon' }}
+                                                {{ $data['moon_name'] ?? 'Unknown Moon' }}
                                             </h5>
                                             <p class="mb-0 text-muted small">
                                                 {{ count($data['extractions']) }} {{ trans('mining-manager::moons.extractions') }}
@@ -231,7 +265,7 @@
                                             aria-controls="collapse{{ $moonId }}">
                                         <span>
                                             <i class="fas fa-moon text-info"></i>
-                                            {{ $data['moon']->name ?? 'Unknown Moon' }}
+                                            {{ $data['moon_name'] ?? 'Unknown Moon' }}
                                         </span>
                                         <span class="badge badge-success">
                                             {{ number_format($data['average_value'], 0) }} ISK
@@ -312,7 +346,7 @@
                                                     @foreach(collect($data['extractions'])->sortByDesc('extraction_start_time')->take(5) as $extraction)
                                                     <tr>
                                                         <td>{{ $extraction->extraction_start_time->format('M d, Y') }}</td>
-                                                        <td>{{ $extraction->structure->name ?? 'Unknown' }}</td>
+                                                        <td>{{ $extraction->structure_name ?? 'Unknown' }}</td>
                                                         <td class="text-right text-success">
                                                             {{ number_format($extraction->calculated_value ?? 0, 0) }} ISK
                                                         </td>
@@ -351,4 +385,8 @@
     @endif
 
 </div>
+
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
 @endsection

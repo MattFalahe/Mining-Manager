@@ -1,6 +1,5 @@
-<form method="POST" action="{{ route('mining-manager.settings.update') }}">
+<form method="POST" action="{{ route('mining-manager.settings.update-features') }}">
     @csrf
-    @method('PUT')
     
     <h4>
         <i class="fas fa-toggle-on"></i>

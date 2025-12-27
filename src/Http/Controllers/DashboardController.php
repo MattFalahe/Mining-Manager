@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
+use MiningManager\Services\Pricing\MarketDataService;
+use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
@@ -16,12 +18,19 @@ use Carbon\Carbon;
 class DashboardController extends Controller
 {
     protected $metricsService;
+    protected $marketDataService;
+    protected $characterInfoService;
 
-    public function __construct(DashboardMetricsService $metricsService)
-    {
+    public function __construct(
+        DashboardMetricsService $metricsService,
+        MarketDataService $marketDataService,
+        CharacterInfoService $characterInfoService
+    ) {
         $this->metricsService = $metricsService;
+        $this->marketDataService = $marketDataService;
+        $this->characterInfoService = $characterInfoService;
     }
-
+    
     /**
      * Display the appropriate dashboard based on user permissions
      */
@@ -280,6 +289,7 @@ class DashboardController extends Controller
 
     /**
      * Get top miners ranking by account (not individual characters)
+     * UPDATED: Uses CharacterInfoService for proper character/corp names and unregistered character support
      */
     private function getTopMinersRanking($oreType, $startDate, $endDate, $limit = 20)
     {
@@ -292,25 +302,43 @@ class DashboardController extends Controller
             $query->whereIn('type_id', $moonOreTypeIds);
         }
 
-        $miningData = $query->with('character')->get();
-
-        // Group by main character (account)
-        $grouped = $miningData->groupBy(function($entry) {
-            return $this->getMainCharacterIdForCharacter($entry->character_id);
+        $miningData = $query->get();
+        
+        // Get all unique character IDs
+        $characterIds = $miningData->pluck('character_id')->unique()->toArray();
+        
+        // Get character info in batch (optimized)
+        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+        
+        // Group by main character (account) - this sums all alts together
+        $grouped = $miningData->groupBy(function($entry) use ($charactersInfo) {
+            $charInfo = $charactersInfo[$entry->character_id] ?? null;
+            
+            // Use main_character_id if available, otherwise use character_id
+            if ($charInfo && $charInfo['main_character_id']) {
+                return $charInfo['main_character_id'];
+            }
+            
+            return $entry->character_id;
         });
 
         $rankings = [];
         foreach ($grouped as $mainCharId => $entries) {
             $totalValue = $this->calculateTotalValue($entries);
             
-            $character = CharacterInfo::find($mainCharId);
+            // ALWAYS get fresh info for the main character (not from cache of alts)
+            // This ensures we show the MAIN's corporation, not an alt's corporation
+            $mainCharInfo = $this->characterInfoService->getCharacterInfo($mainCharId);
             
             $rankings[] = [
                 'main_character_id' => $mainCharId,
-                'character_name' => $character->name ?? 'Unknown',
-                'corporation_name' => $character->corporation->name ?? 'Unknown',
+                'character_name' => $mainCharInfo['name'],
+                'corporation_name' => $mainCharInfo['corporation_name'],
                 'total_value' => $totalValue,
                 'total_quantity' => $entries->sum('quantity'),
+                'is_registered' => $mainCharInfo['is_registered'],
+                // Count how many alts contributed to this total
+                'alt_count' => $entries->pluck('character_id')->unique()->count() - 1,
             ];
         }
 
@@ -365,24 +393,44 @@ class DashboardController extends Controller
 
     /**
      * Aggregate top miners from mining data
+     * UPDATED: Uses CharacterInfoService for proper character/corp names
      */
     private function aggregateTopMiners($miningData, $limit)
     {
+        // Get all unique character IDs
+        $characterIds = $miningData->pluck('character_id')->unique()->toArray();
+        
+        // Get character info in batch (optimized)
+        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+        
         // Group by main character
-        $grouped = $miningData->groupBy(function($entry) {
-            return $this->getMainCharacterIdForCharacter($entry->character_id);
+        $grouped = $miningData->groupBy(function($entry) use ($charactersInfo) {
+            $charInfo = $charactersInfo[$entry->character_id] ?? null;
+            
+            // Use main_character_id if available, otherwise use character_id
+            if ($charInfo && $charInfo['main_character_id']) {
+                return $charInfo['main_character_id'];
+            }
+            
+            return $entry->character_id;
         });
 
         $miners = [];
         foreach ($grouped as $mainCharId => $entries) {
             $totalValue = $this->calculateTotalValue($entries);
-            $character = CharacterInfo::find($mainCharId);
+            
+            // ALWAYS get fresh info for the main character (not from cache of alts)
+            // This ensures we show the MAIN's corporation, not an alt's corporation
+            $mainCharInfo = $this->characterInfoService->getCharacterInfo($mainCharId);
             
             $miners[] = [
                 'character_id' => $mainCharId,
-                'character_name' => $character->name ?? 'Unknown',
+                'character_name' => $mainCharInfo['name'],
+                'corporation_name' => $mainCharInfo['corporation_name'],
                 'total_value' => $totalValue,
                 'total_quantity' => $entries->sum('quantity'),
+                'is_registered' => $mainCharInfo['is_registered'],
+                'alt_count' => $entries->pluck('character_id')->unique()->count() - 1,
             ];
         }
 
@@ -639,44 +687,332 @@ class DashboardController extends Controller
         ];
     }
 
-    // ==================== UTILITY METHODS ====================
+    // ==================== UTILITY METHODS (ALL FIXED FOR SeAT v5.x) ====================
 
     private function hasDirectorPermissions()
     {
-        return auth()->user()->hasPermission('mining-manager.director');
+        return auth()->user()->can('mining-manager.director');
     }
 
+    /**
+     * FIXED: Get user's character IDs with multiple fallback methods
+     * Addresses SeAT v5.x relationship issues
+     */
     private function getUserCharacterIds($user)
     {
-        return CharacterInfo::where('user_id', $user->id)->pluck('character_id')->toArray();
+        if (!$user) {
+            \Log::warning('getUserCharacterIds: No user provided');
+            return [];
+        }
+        
+        // Method 1: Try the characters relationship (preferred)
+        try {
+            if (method_exists($user, 'characters')) {
+                $characters = $user->characters;
+                if ($characters && $characters->count() > 0) {
+                    $ids = $characters->pluck('character_id')->toArray();
+                    \Log::debug('getUserCharacterIds: Found via characters relationship', [
+                        'user_id' => $user->id,
+                        'count' => count($ids)
+                    ]);
+                    return $ids;
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::warning('getUserCharacterIds: Failed to load characters via relationship', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Method 2: Try to load the relationship explicitly
+        try {
+            $user->load('characters');
+            if ($user->relationLoaded('characters') && $user->characters->count() > 0) {
+                $ids = $user->characters->pluck('character_id')->toArray();
+                \Log::debug('getUserCharacterIds: Found via explicit relationship load', [
+                    'user_id' => $user->id,
+                    'count' => count($ids)
+                ]);
+                return $ids;
+            }
+        } catch (\Exception $e) {
+            \Log::warning('getUserCharacterIds: Failed to explicitly load characters', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Method 3: Direct database query (most reliable fallback)
+        try {
+            $characterIds = DB::table('character_infos')
+                ->where('user_id', $user->id)
+                ->pluck('character_id')
+                ->toArray();
+            
+            if (!empty($characterIds)) {
+                \Log::debug('getUserCharacterIds: Found via direct table query', [
+                    'user_id' => $user->id,
+                    'count' => count($characterIds)
+                ]);
+                return $characterIds;
+            }
+        } catch (\Exception $e) {
+            \Log::error('getUserCharacterIds: Failed to get user characters from database', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        \Log::warning('getUserCharacterIds: No characters found for user', [
+            'user_id' => $user->id
+        ]);
+        
+        return [];
     }
 
+    /**
+     * FIXED: Get main character ID for a user
+     */
     private function getMainCharacterId($user)
     {
-        return $user->main_character_id ?? $this->getUserCharacterIds($user)[0] ?? null;
+        if (!$user) {
+            \Log::warning('getMainCharacterId: No user provided');
+            return null;
+        }
+        
+        // Method 1: Check if user has main_character_id property
+        if (isset($user->main_character_id) && $user->main_character_id) {
+            return $user->main_character_id;
+        }
+        
+        // Method 2: Get the first character from the user's characters
+        $characterIds = $this->getUserCharacterIds($user);
+        
+        if (!empty($characterIds)) {
+            return $characterIds[0];
+        }
+        
+        \Log::warning('getMainCharacterId: No characters found for user', [
+            'user_id' => $user->id
+        ]);
+        
+        return null;
     }
 
+    /**
+     * FIXED: Get user's corporation ID with multiple fallback methods
+     * Addresses SeAT v5.x affiliation relationship issues
+     */
     private function getUserCorporationId()
     {
-        $mainCharId = auth()->user()->main_character_id;
+        $user = auth()->user();
+        
+        if (!$user) {
+            \Log::warning('getUserCorporationId: No authenticated user');
+            return null;
+        }
+        
+        // Get the main/first character ID using our helper method
+        $mainCharId = $this->getMainCharacterId($user);
+        
+        if (!$mainCharId) {
+            \Log::warning('getUserCorporationId: No main character found', ['user_id' => $user->id]);
+            return null;
+        }
+        
+        // Try multiple methods to get corporation ID
         $character = CharacterInfo::find($mainCharId);
-        return $character->corporation_id ?? null;
+        
+        if (!$character) {
+            \Log::warning('getUserCorporationId: Character not found', ['character_id' => $mainCharId]);
+            return null;
+        }
+        
+        // Method 1: Direct property (most reliable in SeAT v5)
+        if (isset($character->corporation_id) && $character->corporation_id) {
+            \Log::debug('getUserCorporationId: Found via direct property', [
+                'character_id' => $mainCharId,
+                'corporation_id' => $character->corporation_id
+            ]);
+            return $character->corporation_id;
+        }
+        
+        // Method 2: Try affiliation relationship if it exists
+        try {
+            // Check if relationship is already loaded
+            if ($character->relationLoaded('affiliation') && $character->affiliation) {
+                $corpId = $character->affiliation->corporation_id ?? null;
+                if ($corpId) {
+                    \Log::debug('getUserCorporationId: Found via loaded affiliation', [
+                        'character_id' => $mainCharId,
+                        'corporation_id' => $corpId
+                    ]);
+                    return $corpId;
+                }
+            }
+            
+            // Try to load the relationship
+            $character->load('affiliation');
+            if ($character->affiliation && isset($character->affiliation->corporation_id)) {
+                $corpId = $character->affiliation->corporation_id;
+                \Log::debug('getUserCorporationId: Found via affiliation relationship', [
+                    'character_id' => $mainCharId,
+                    'corporation_id' => $corpId
+                ]);
+                return $corpId;
+            }
+        } catch (\Exception $e) {
+            \Log::warning('getUserCorporationId: Failed to load affiliation relationship', [
+                'character_id' => $mainCharId,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Method 3: Query the character_affiliations table directly
+        try {
+            $affiliation = DB::table('character_affiliations')
+                ->where('character_id', $mainCharId)
+                ->first();
+            
+            if ($affiliation && isset($affiliation->corporation_id)) {
+                \Log::debug('getUserCorporationId: Found via direct table query', [
+                    'character_id' => $mainCharId,
+                    'corporation_id' => $affiliation->corporation_id
+                ]);
+                return $affiliation->corporation_id;
+            }
+        } catch (\Exception $e) {
+            \Log::error('getUserCorporationId: Failed to query affiliations table', [
+                'character_id' => $mainCharId,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        \Log::warning('getUserCorporationId: No corporation found for character', [
+            'character_id' => $mainCharId,
+            'user_id' => $user->id
+        ]);
+        
+        return null;
     }
 
+    /**
+     * FIXED: Get all characters for a corporation with multiple fallback methods
+     */
     private function getCorporationCharacterIds($corporationId)
     {
-        return CharacterInfo::where('corporation_id', $corporationId)->pluck('character_id')->toArray();
+        if (!$corporationId) {
+            \Log::warning('getCorporationCharacterIds: No corporation ID provided');
+            return [];
+        }
+        
+        // Method 1: Try affiliation relationship (preferred method)
+        try {
+            $ids = CharacterInfo::whereHas('affiliation', function($query) use ($corporationId) {
+                $query->where('corporation_id', $corporationId);
+            })->pluck('character_id')->toArray();
+            
+            if (!empty($ids)) {
+                \Log::debug('getCorporationCharacterIds: Found via affiliation relationship', [
+                    'corporation_id' => $corporationId,
+                    'count' => count($ids)
+                ]);
+                return $ids;
+            }
+        } catch (\Exception $e) {
+            \Log::warning('getCorporationCharacterIds: Failed to query via affiliation relationship', [
+                'corporation_id' => $corporationId,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Method 2: Direct query on character_affiliations table
+        try {
+            $ids = DB::table('character_affiliations')
+                ->where('corporation_id', $corporationId)
+                ->pluck('character_id')
+                ->toArray();
+            
+            if (!empty($ids)) {
+                \Log::debug('getCorporationCharacterIds: Found via direct table query', [
+                    'corporation_id' => $corporationId,
+                    'count' => count($ids)
+                ]);
+                return $ids;
+            }
+        } catch (\Exception $e) {
+            \Log::error('getCorporationCharacterIds: Failed to query affiliations table', [
+                'corporation_id' => $corporationId,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Method 3: Try direct corporation_id field on character_infos (legacy support)
+        try {
+            $ids = DB::table('character_infos')
+                ->where('corporation_id', $corporationId)
+                ->pluck('character_id')
+                ->toArray();
+            
+            if (!empty($ids)) {
+                \Log::debug('getCorporationCharacterIds: Found via character_infos table', [
+                    'corporation_id' => $corporationId,
+                    'count' => count($ids)
+                ]);
+                return $ids;
+            }
+        } catch (\Exception $e) {
+            \Log::error('getCorporationCharacterIds: Failed to query character_infos table', [
+                'corporation_id' => $corporationId,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        \Log::warning('getCorporationCharacterIds: No characters found for corporation', [
+            'corporation_id' => $corporationId
+        ]);
+        
+        return [];
     }
 
+    /**
+     * FIXED: Get main character ID for a character (for ranking purposes)
+     */
     private function getMainCharacterIdForCharacter($characterId)
     {
-        $character = CharacterInfo::find($characterId);
-        if (!$character) return $characterId;
-        
-        $userId = $character->user_id;
-        $mainCharId = DB::table('users')->where('id', $userId)->value('main_character_id');
-        
-        return $mainCharId ?? $characterId;
+        try {
+            $character = CharacterInfo::find($characterId);
+            if (!$character) {
+                \Log::debug('getMainCharacterIdForCharacter: Character not found', [
+                    'character_id' => $characterId
+                ]);
+                return $characterId;
+            }
+            
+            // Try to get user_id
+            $userId = $character->user_id;
+            if (!$userId) {
+                \Log::debug('getMainCharacterIdForCharacter: No user_id on character', [
+                    'character_id' => $characterId
+                ]);
+                return $characterId;
+            }
+            
+            // Try to get main_character_id from users table
+            $mainCharId = DB::table('users')
+                ->where('id', $userId)
+                ->value('main_character_id');
+            
+            // Return the main character ID if found, otherwise return the original character ID
+            return $mainCharId ?? $characterId;
+        } catch (\Exception $e) {
+            \Log::error('Error getting main character ID', [
+                'character_id' => $characterId,
+                'error' => $e->getMessage()
+            ]);
+            return $characterId;
+        }
     }
 
     private function getUserRank($mainCharacterId, $rankings)
@@ -695,18 +1031,64 @@ class DashboardController extends Controller
         return $miningData->sum('quantity') * 0.1; // Placeholder
     }
 
+    /**
+     * FIXED METHOD - Now uses batch loading for better performance
+     */
     private function calculateTotalValue($miningData)
     {
-        return $miningData->sum(function($entry) {
-            return $this->calculateEntryValue($entry);
+        if ($miningData->isEmpty()) {
+            return 0;
+        }
+
+        // Get all unique type IDs
+        $typeIds = $miningData->pluck('type_id')->unique()->toArray();
+        
+        // Fetch all prices at once for better performance
+        $prices = $this->marketDataService->getCachedPrices($typeIds);
+        
+        // Calculate total value
+        return $miningData->sum(function($entry) use ($prices) {
+            $price = $prices[$entry->type_id] ?? null;
+            
+            if ($price === null) {
+                \Log::warning('No price found for type_id in DashboardController', [
+                    'type_id' => $entry->type_id
+                ]);
+                return 0;
+            }
+            
+            return $entry->quantity * $price;
         });
     }
 
+    /**
+     * FIXED: Calculate entry value with proper error handling
+     * This replaces the commented-out method and is used by chart methods
+     */
     private function calculateEntryValue($entry)
     {
-        // Get price from cache or calculate
-        $price = $this->metricsService->getOrePrice($entry->type_id);
-        return $entry->quantity * $price;
+        try {
+            // Get price from MarketDataService
+            $price = $this->marketDataService->getCachedPrice($entry->type_id);
+            
+            // If no price found, return 0 to avoid calculation errors
+            if ($price === null) {
+                \Log::debug('No price found for type_id in calculateEntryValue', [
+                    'type_id' => $entry->type_id,
+                    'entry_id' => $entry->id ?? 'unknown'
+                ]);
+                return 0;
+            }
+            
+            return $entry->quantity * $price;
+        } catch (\Exception $e) {
+            \Log::error('Error calculating entry value', [
+                'type_id' => $entry->type_id ?? 'unknown',
+                'entry_id' => $entry->id ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+            return 0;
+        }
     }
 
     private function calculateTaxForPeriod($characterIds, $startDate, $endDate)
@@ -776,5 +1158,57 @@ class DashboardController extends Controller
             default:
                 return [];
         }
+    }
+
+    // ==================== DIAGNOSTIC METHOD ====================
+
+    /**
+     * NEW: Diagnostic method to check affiliation table structure
+     * Call this from a route or tinker to verify your setup
+     * 
+     * To use: Add a temporary route or run in tinker:
+     * app(MiningManager\Http\Controllers\DashboardController::class)->diagnoseAffiliation()
+     */
+    public function diagnoseAffiliation()
+    {
+        $diagnostics = [
+            'tables' => [],
+            'columns' => [],
+            'sample_data' => [],
+            'relationships' => []
+        ];
+        
+        // Check if tables exist
+        $tables = ['character_affiliations', 'character_infos', 'users'];
+        foreach ($tables as $table) {
+            try {
+                $exists = \Schema::hasTable($table);
+                $diagnostics['tables'][$table] = $exists;
+                
+                if ($exists) {
+                    $diagnostics['columns'][$table] = \Schema::getColumnListing($table);
+                    $diagnostics['sample_data'][$table] = DB::table($table)->first();
+                }
+            } catch (\Exception $e) {
+                $diagnostics['tables'][$table] = 'ERROR: ' . $e->getMessage();
+            }
+        }
+        
+        // Check CharacterInfo model
+        try {
+            $char = CharacterInfo::first();
+            if ($char) {
+                $diagnostics['relationships']['character_has_affiliation'] = method_exists($char, 'affiliation');
+                $diagnostics['relationships']['character_has_corporation'] = method_exists($char, 'corporation');
+                $diagnostics['relationships']['character_keys'] = [
+                    'primary_key' => $char->getKeyName(),
+                    'attributes' => array_keys($char->getAttributes())
+                ];
+            }
+        } catch (\Exception $e) {
+            $diagnostics['relationships']['character_error'] = $e->getMessage();
+        }
+        
+        return response()->json($diagnostics, 200, [], JSON_PRETTY_PRINT);
     }
 }

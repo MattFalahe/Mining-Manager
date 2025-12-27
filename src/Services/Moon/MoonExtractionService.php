@@ -5,7 +5,8 @@ namespace MiningManager\Services\Moon;
 use MiningManager\Models\MoonExtraction;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class MoonExtractionService
@@ -28,35 +29,119 @@ class MoonExtractionService
     }
 
     /**
-     * Fetch extraction data from ESI for a structure.
+     * Fetch extraction data from SeAT's database for a structure.
+     * This reads from corporation_industry_mining_extractions instead of calling ESI.
      *
      * @param int $structureId
      * @return array
      */
     public function fetchExtractionData(int $structureId): array
     {
-        // This would integrate with ESI to get actual extraction data
-        // For now, this is a placeholder that returns sample data structure
-
         try {
-            // In a real implementation:
-            // 1. Get corporation token
-            // 2. Call ESI endpoint: /v1/corporation/{corporation_id}/mining/extractions/
-            // 3. Filter by structure_id
-            // 4. Return extraction data
-
             Log::debug("Mining Manager: Fetching extraction data for structure {$structureId}");
 
-            // Placeholder - would call ESI here
-            // $response = Http::withToken($token)->get("https://esi.evetech.net/latest/corporation/{$corpId}/mining/extractions/");
+            // Check if SeAT's extraction table exists
+            if (!Schema::hasTable('corporation_industry_mining_extractions')) {
+                Log::warning("Mining Manager: SeAT extraction table not found");
+                return [];
+            }
 
-            return [
-                // Sample structure - actual ESI response would be parsed here
-            ];
+            // Fetch extraction data from SeAT's database
+            $extractions = DB::table('corporation_industry_mining_extractions')
+                ->where('structure_id', $structureId)
+                ->where('natural_decay_time', '>', Carbon::now()->subDays(7)) // Only get recent/future extractions
+                ->orderBy('extraction_start_time', 'desc')
+                ->get();
+
+            if ($extractions->isEmpty()) {
+                Log::debug("Mining Manager: No extractions found for structure {$structureId}");
+                return [];
+            }
+
+            $extractionData = [];
+
+            foreach ($extractions as $extraction) {
+                // Get moon name from moons table
+                $moon = DB::table('moons')
+                    ->where('moon_id', $extraction->moon_id)
+                    ->first();
+
+                $moonName = $moon ? $moon->name : "Moon {$extraction->moon_id}";
+
+                // Try to get ore composition from universe_moon_contents
+                $oreComposition = $this->getMoonComposition($extraction->moon_id);
+
+                $extractionData[] = [
+                    'structure_id' => $extraction->structure_id,
+                    'corporation_id' => $extraction->corporation_id,
+                    'moon_id' => $extraction->moon_id,
+                    'moon_name' => $moonName,
+                    'extraction_start_time' => $extraction->extraction_start_time,
+                    'chunk_arrival_time' => $extraction->chunk_arrival_time,
+                    'natural_decay_time' => $extraction->natural_decay_time,
+                    'ore_composition' => $oreComposition,
+                ];
+            }
+
+            Log::debug("Mining Manager: Found " . count($extractionData) . " extractions for structure {$structureId}");
+
+            return $extractionData;
 
         } catch (\Exception $e) {
             Log::error("Mining Manager: Error fetching extraction data for structure {$structureId}: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Get moon ore composition from universe_moon_contents table.
+     * Returns null if moon has not been scanned.
+     *
+     * @param int $moonId
+     * @return array|null
+     */
+    private function getMoonComposition(int $moonId): ?array
+    {
+        try {
+            // Check if universe_moon_contents table exists
+            if (!Schema::hasTable('universe_moon_contents')) {
+                Log::debug("Mining Manager: universe_moon_contents table not found");
+                return null;
+            }
+
+            // Get moon composition
+            $contents = DB::table('universe_moon_contents')
+                ->where('moon_id', $moonId)
+                ->get();
+
+            if ($contents->isEmpty()) {
+                Log::debug("Mining Manager: No composition data found for moon {$moonId} - moon not scanned");
+                return null;
+            }
+
+            // Build composition array with ore types and percentages
+            $composition = [];
+            foreach ($contents as $content) {
+                // Get ore type name
+                $oreType = DB::table('invTypes')
+                    ->where('typeID', $content->type_id)
+                    ->first();
+
+                if ($oreType) {
+                    $composition[$oreType->typeName] = [
+                        'type_id' => $content->type_id,
+                        'percentage' => $content->rate * 100, // Convert to percentage
+                        'quantity' => 0, // Will be calculated later when we know chunk size
+                        'value' => 0, // Will be calculated by value service
+                    ];
+                }
+            }
+
+            return empty($composition) ? null : $composition;
+
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error getting moon composition for moon {$moonId}: " . $e->getMessage());
+            return null;
         }
     }
 
@@ -71,7 +156,7 @@ class MoonExtractionService
         try {
             Log::debug("Mining Manager: Updating extraction {$extraction->id}");
 
-            // Fetch latest data from ESI
+            // Fetch latest data from SeAT's database
             $extractionData = $this->fetchExtractionData($extraction->structure_id);
 
             if (empty($extractionData)) {
@@ -79,7 +164,9 @@ class MoonExtractionService
             }
 
             // Find matching extraction in the fetched data
-            $matchingData = collect($extractionData)->firstWhere('extraction_start_time', $extraction->extraction_start_time);
+            $matchingData = collect($extractionData)->first(function ($data) use ($extraction) {
+                return $data['extraction_start_time'] == $extraction->extraction_start_time->format('Y-m-d H:i:s');
+            });
 
             if (!$matchingData) {
                 Log::warning("Mining Manager: No matching extraction data found for extraction {$extraction->id}");
@@ -88,6 +175,7 @@ class MoonExtractionService
 
             // Update extraction record
             $extraction->update([
+                'moon_id' => $matchingData['moon_id'],
                 'chunk_arrival_time' => $matchingData['chunk_arrival_time'],
                 'natural_decay_time' => $matchingData['natural_decay_time'],
                 'status' => $this->determineStatus($matchingData),
@@ -95,7 +183,7 @@ class MoonExtractionService
             ]);
 
             // Update ore composition if available
-            if (isset($matchingData['ore_composition'])) {
+            if (isset($matchingData['ore_composition']) && $matchingData['ore_composition'] !== null) {
                 $extraction->update([
                     'ore_composition' => $matchingData['ore_composition'],
                     'estimated_value' => $this->valueService->calculateExtractionValue($extraction),
@@ -250,11 +338,11 @@ class MoonExtractionService
     }
 
     /**
-     * Update statuses of all extractions based on current time.
+     * Update extraction statuses based on current time.
      *
-     * @return array
+     * @return void
      */
-    public function updateExtractionStatuses(): array
+    private function updateExtractionStatuses()
     {
         $now = Carbon::now();
 
@@ -263,109 +351,44 @@ class MoonExtractionService
             ->where('natural_decay_time', '<', $now)
             ->update(['status' => 'expired']);
 
+        if ($expired > 0) {
+            Log::info("Mining Manager: Marked {$expired} extractions as expired");
+        }
+
         // Mark as ready if chunk has arrived but not expired
         $ready = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
             ->where('natural_decay_time', '>', $now)
             ->update(['status' => 'ready']);
 
-        // Mark as fractured (mined)
-        // This would require tracking actual mining from the chunk
-        // For now, we assume chunks that are ready for more than X hours and have activity are fractured
-        $fractured = 0;
-
-        if ($expired > 0 || $ready > 0 || $fractured > 0) {
-            Log::info("Mining Manager: Updated extraction statuses - Ready: {$ready}, Expired: {$expired}, Fractured: {$fractured}");
+        if ($ready > 0) {
+            Log::info("Mining Manager: Marked {$ready} extractions as ready");
         }
-
-        return [
-            'ready' => $ready,
-            'expired' => $expired,
-            'fractured' => $fractured,
-        ];
     }
 
     /**
-     * Get upcoming extractions for notifications.
+     * Get moon extraction statistics.
      *
-     * @param int $hours
-     * @return \Illuminate\Support\Collection
-     */
-    public function getUpcomingExtractions(int $hours = 24)
-    {
-        return MoonExtraction::with(['structure', 'moon', 'corporation'])
-            ->where('status', 'extracting')
-            ->where('chunk_arrival_time', '>=', Carbon::now())
-            ->where('chunk_arrival_time', '<=', Carbon::now()->addHours($hours))
-            ->orderBy('chunk_arrival_time')
-            ->get();
-    }
-
-    /**
-     * Get ready extractions (chunks ready to mine).
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    public function getReadyExtractions()
-    {
-        return MoonExtraction::with(['structure', 'moon', 'corporation'])
-            ->where('status', 'ready')
-            ->orderBy('natural_decay_time')
-            ->get();
-    }
-
-    /**
-     * Get extraction calendar data.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
+     * @param int $days Number of days to look back
      * @return array
      */
-    public function getExtractionCalendar(Carbon $startDate, Carbon $endDate): array
-    {
-        $extractions = MoonExtraction::with(['structure', 'moon'])
-            ->whereBetween('chunk_arrival_time', [$startDate, $endDate])
-            ->orderBy('chunk_arrival_time')
-            ->get();
-
-        // Group by day
-        $calendar = [];
-        foreach ($extractions as $extraction) {
-            $day = $extraction->chunk_arrival_time->format('Y-m-d');
-            if (!isset($calendar[$day])) {
-                $calendar[$day] = [];
-            }
-            $calendar[$day][] = [
-                'id' => $extraction->id,
-                'structure_name' => $extraction->structure->name ?? 'Unknown',
-                'moon_name' => $extraction->moon->name ?? 'Unknown',
-                'chunk_arrival_time' => $extraction->chunk_arrival_time,
-                'natural_decay_time' => $extraction->natural_decay_time,
-                'status' => $extraction->status,
-                'estimated_value' => $extraction->estimated_value,
-            ];
-        }
-
-        return $calendar;
-    }
-
-    /**
-     * Get extraction statistics for a corporation.
-     *
-     * @param int $corporationId
-     * @param int $days
-     * @return array
-     */
-    public function getCorporationStatistics(int $corporationId, int $days = 30): array
+    public function getExtractionStats(int $days = 30): array
     {
         $startDate = Carbon::now()->subDays($days);
 
-        $extractions = MoonExtraction::where('corporation_id', $corporationId)
-            ->where('extraction_start_time', '>=', $startDate)
-            ->get();
+        $extractions = MoonExtraction::where('extraction_start_time', '>=', $startDate)->get();
 
-        $totalValue = $extractions->sum('estimated_value');
-        $completed = $extractions->whereIn('status', ['expired', 'fractured'])->count();
+        $totalValue = 0;
+        $completed = 0;
+
+        foreach ($extractions as $extraction) {
+            if ($extraction->status === 'fractured') {
+                $completed++;
+            }
+            if ($extraction->estimated_value) {
+                $totalValue += $extraction->estimated_value;
+            }
+        }
 
         return [
             'total_extractions' => $extractions->count(),
@@ -392,7 +415,6 @@ class MoonExtractionService
     public function getStructureHistory(int $structureId, int $limit = 20)
     {
         return MoonExtraction::where('structure_id', $structureId)
-            ->with(['moon'])
             ->orderBy('extraction_start_time', 'desc')
             ->limit($limit)
             ->get();
@@ -457,7 +479,7 @@ class MoonExtractionService
     {
         $expiryThreshold = Carbon::now()->addHours($hoursBeforeExpiry);
 
-        return MoonExtraction::with(['structure', 'moon'])
+        return MoonExtraction::with(['structure'])
             ->where('status', 'ready')
             ->where('natural_decay_time', '<=', $expiryThreshold)
             ->where('natural_decay_time', '>=', Carbon::now())
@@ -571,7 +593,7 @@ class MoonExtractionService
             $windowStart = $targetTime->copy()->subMinutes(15);
             $windowEnd = $targetTime->copy()->addMinutes(15);
 
-            $extractions = MoonExtraction::with(['structure', 'moon'])
+            $extractions = MoonExtraction::with(['structure'])
                 ->where('status', 'extracting')
                 ->where('notification_sent', false)
                 ->whereBetween('chunk_arrival_time', [$windowStart, $windowEnd])
@@ -601,5 +623,22 @@ class MoonExtractionService
             Log::error("Mining Manager: Error marking notification as sent: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Check if a moon has been scanned (has composition data).
+     *
+     * @param int $moonId
+     * @return bool
+     */
+    public function isMoonScanned(int $moonId): bool
+    {
+        if (!Schema::hasTable('universe_moon_contents')) {
+            return false;
+        }
+
+        return DB::table('universe_moon_contents')
+            ->where('moon_id', $moonId)
+            ->exists();
     }
 }
