@@ -1,0 +1,889 @@
+<?php
+
+namespace MiningManager\Services\Tax;
+
+use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningTax;
+use MiningManager\Models\MiningPriceCache;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+use Seat\Eveapi\Models\Character\CharacterInfo;
+
+class TaxCalculationService
+{
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settingsService
+     */
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
+
+    /**
+     * Calculate taxes for all miners in a month.
+     * Handles both individual and accumulated calculation methods.
+     *
+     * @param Carbon $month
+     * @param bool $recalculate
+     * @return array
+     */
+    public function calculateMonthlyTaxes(Carbon $month, bool $recalculate = false): array
+    {
+        $startDate = $month->copy()->startOfMonth();
+        $endDate = $month->copy()->endOfMonth();
+
+        Log::info("Mining Manager: Starting tax calculation for {$startDate->format('Y-m')}");
+
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $calculationMethod = $generalSettings['tax_calculation_method'];
+
+        if ($calculationMethod === 'accumulated') {
+            return $this->calculateAccumulatedTaxes($startDate, $endDate, $recalculate);
+        } else {
+            return $this->calculateIndividualTaxes($startDate, $endDate, $recalculate);
+        }
+    }
+
+    /**
+     * Calculate taxes individually for each character.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @param bool $recalculate
+     * @return array
+     */
+    private function calculateIndividualTaxes(Carbon $startDate, Carbon $endDate, bool $recalculate): array
+    {
+        // Get all characters who mined this month
+        $characters = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at')
+            ->distinct('character_id')
+            ->pluck('character_id');
+
+        $calculated = 0;
+        $totalTaxAmount = 0;
+        $errors = [];
+
+        foreach ($characters as $characterId) {
+            try {
+                // Check if tax already exists
+                $existingTax = MiningTax::where('character_id', $characterId)
+                    ->where('month', $startDate->format('Y-m-01'))
+                    ->first();
+
+                if ($existingTax && !$recalculate) {
+                    Log::debug("Mining Manager: Skipping character {$characterId} - tax already calculated");
+                    continue;
+                }
+
+                // Calculate tax for this character
+                $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
+
+                if ($taxAmount <= 0) {
+                    Log::debug("Mining Manager: Character {$characterId} has no tax liability");
+                    continue;
+                }
+
+                if ($existingTax) {
+                    // Update existing
+                    $existingTax->update([
+                        'amount_owed' => $taxAmount,
+                        'calculated_at' => Carbon::now(),
+                    ]);
+                    Log::info("Mining Manager: Recalculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
+                } else {
+                    // Create new
+                    MiningTax::create([
+                        'character_id' => $characterId,
+                        'month' => $startDate->format('Y-m-01'),
+                        'amount_owed' => $taxAmount,
+                        'amount_paid' => 0,
+                        'status' => 'unpaid',
+                        'calculated_at' => Carbon::now(),
+                    ]);
+                    Log::info("Mining Manager: Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
+                }
+
+                $calculated++;
+                $totalTaxAmount += $taxAmount;
+
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Error calculating tax for character {$characterId}: " . $e->getMessage());
+                $errors[] = [
+                    'character_id' => $characterId,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        Log::info("Mining Manager: Individual tax calculation complete. Calculated: {$calculated}, Total: " . number_format($totalTaxAmount, 2) . " ISK");
+
+        return [
+            'method' => 'individually',
+            'count' => $calculated,
+            'total' => $totalTaxAmount,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Calculate taxes accumulated to main characters.
+     * All alts' taxes are summed and assigned to the main character.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @param bool $recalculate
+     * @return array
+     */
+    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, bool $recalculate): array
+    {
+        // Get all characters who mined this month
+        $characters = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at')
+            ->distinct('character_id')
+            ->pluck('character_id');
+
+        // Group characters by main character (user)
+        $groupedByMain = $this->groupCharactersByMain($characters);
+
+        $calculated = 0;
+        $totalTaxAmount = 0;
+        $errors = [];
+
+        foreach ($groupedByMain as $mainCharacterId => $characterIds) {
+            try {
+                // Check if tax already exists for main character
+                $existingTax = MiningTax::where('character_id', $mainCharacterId)
+                    ->where('month', $startDate->format('Y-m-01'))
+                    ->first();
+
+                if ($existingTax && !$recalculate) {
+                    Log::debug("Mining Manager: Skipping main character {$mainCharacterId} - tax already calculated");
+                    continue;
+                }
+
+                // Calculate combined tax for all characters in this group
+                $combinedTaxAmount = 0;
+                $taxBreakdown = [];
+
+                foreach ($characterIds as $characterId) {
+                    $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate);
+                    $combinedTaxAmount += $characterTax;
+                    
+                    if ($characterTax > 0) {
+                        $taxBreakdown[] = [
+                            'character_id' => $characterId,
+                            'tax_amount' => $characterTax,
+                        ];
+                    }
+                }
+
+                if ($combinedTaxAmount <= 0) {
+                    Log::debug("Mining Manager: Main character {$mainCharacterId} group has no tax liability");
+                    continue;
+                }
+
+                // Create notes explaining the breakdown
+                $notes = "Accumulated tax from " . count($taxBreakdown) . " character(s):\n";
+                foreach ($taxBreakdown as $item) {
+                    $charInfo = CharacterInfo::find($item['character_id']);
+                    $charName = $charInfo ? $charInfo->name : "Character {$item['character_id']}";
+                    $notes .= "- {$charName}: " . number_format($item['tax_amount'], 2) . " ISK\n";
+                }
+
+                if ($existingTax) {
+                    // Update existing
+                    $existingTax->update([
+                        'amount_owed' => $combinedTaxAmount,
+                        'calculated_at' => Carbon::now(),
+                        'notes' => $notes,
+                    ]);
+                    Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+                } else {
+                    // Create new
+                    MiningTax::create([
+                        'character_id' => $mainCharacterId,
+                        'month' => $startDate->format('Y-m-01'),
+                        'amount_owed' => $combinedTaxAmount,
+                        'amount_paid' => 0,
+                        'status' => 'unpaid',
+                        'calculated_at' => Carbon::now(),
+                        'notes' => $notes,
+                    ]);
+                    Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+                }
+
+                $calculated++;
+                $totalTaxAmount += $combinedTaxAmount;
+
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Error calculating accumulated tax for main character {$mainCharacterId}: " . $e->getMessage());
+                $errors[] = [
+                    'character_id' => $mainCharacterId,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        Log::info("Mining Manager: Accumulated tax calculation complete. Calculated: {$calculated} main characters, Total: " . number_format($totalTaxAmount, 2) . " ISK");
+
+        return [
+            'method' => 'accumulated',
+            'count' => $calculated,
+            'total' => $totalTaxAmount,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Group characters by their main character (same user).
+     * 
+     * @param \Illuminate\Support\Collection $characterIds
+     * @return array [mainCharacterId => [characterIds]]
+     */
+    private function groupCharactersByMain($characterIds): array
+    {
+        $grouped = [];
+
+        foreach ($characterIds as $characterId) {
+            // Get the user_id for this character
+            $character = CharacterInfo::find($characterId);
+            
+            if (!$character) {
+                // Character not found, treat as standalone
+                $grouped[$characterId] = [$characterId];
+                continue;
+            }
+
+            // Get user_id (this links all alts to the same player)
+            $userId = DB::table('character_infos')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if (!$userId) {
+                // No user association, treat as standalone
+                $grouped[$characterId] = [$characterId];
+                continue;
+            }
+
+            // Find the main character for this user
+            $mainCharacterId = $this->getMainCharacterForUser($userId);
+            
+            if (!$mainCharacterId) {
+                // No main character defined, use this character as main
+                $mainCharacterId = $characterId;
+            }
+
+            // Add this character to the main character's group
+            if (!isset($grouped[$mainCharacterId])) {
+                $grouped[$mainCharacterId] = [];
+            }
+            
+            $grouped[$mainCharacterId][] = $characterId;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Get the main character ID for a user.
+     * 
+     * @param int $userId
+     * @return int|null
+     */
+    private function getMainCharacterForUser(int $userId): ?int
+    {
+        // Try to get the main character from user settings
+        // SeAT stores main character in users table as 'main_character_id'
+        $mainCharacterId = DB::table('users')
+            ->where('id', $userId)
+            ->value('main_character_id');
+
+        if ($mainCharacterId) {
+            return $mainCharacterId;
+        }
+
+        // Fallback: Get the oldest/first character for this user
+        $firstCharacter = DB::table('character_infos')
+            ->where('user_id', $userId)
+            ->orderBy('character_id', 'asc')
+            ->value('character_id');
+
+        return $firstCharacter;
+    }
+
+    /**
+     * Calculate tax for a single character.
+     *
+     * @param int $characterId
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return float
+     */
+    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate): float
+    {
+        $miningData = MiningLedger::where('character_id', $characterId)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at')
+            ->get();
+
+        if ($miningData->isEmpty()) {
+            return 0;
+        }
+
+        // Calculate total value and weighted tax
+        $totalValue = 0;
+        $totalTax = 0;
+
+        foreach ($miningData as $entry) {
+            // Skip if this ore type should not be taxed
+            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
+                continue;
+            }
+            
+            $value = $this->calculateOreValue($entry);
+            $taxRate = $this->getTaxRateForOre($entry->type_id) / 100;
+            
+            $totalValue += $value;
+            $totalTax += $value * $taxRate;
+        }
+
+        // Check exemption threshold
+        $exemptions = $this->settingsService->getExemptions();
+        if ($totalValue < $exemptions['threshold']) {
+            Log::debug("Mining Manager: Character {$characterId} exempt from tax (below threshold: {$totalValue} < {$exemptions['threshold']})");
+            return 0;
+        }
+
+        // Apply minimum tax (only for individual characters, not when accumulating)
+        $contractSettings = $this->settingsService->getContractSettings();
+        $minimumAmount = $contractSettings['minimum_tax_value'];
+        
+        if ($totalTax > 0 && $totalTax < $minimumAmount) {
+            Log::debug("Mining Manager: Adjusting tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
+            $totalTax = $minimumAmount;
+        }
+
+        return round($totalTax, 2);
+    }
+
+    /**
+     * Calculate value of a single ore entry.
+     *
+     * @param object $entry Mining ledger entry
+     * @return float
+     */
+    private function calculateOreValue($entry): float
+    {
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        
+        if ($generalSettings['ore_valuation_method'] === 'mineral_price') {
+            // Calculate based on refined minerals
+            return $this->calculateRefinedMineralValue($entry->type_id, $entry->quantity);
+        } else {
+            // Calculate based on ore price
+            $price = $this->getOrePrice(
+                $entry->type_id,
+                $generalSettings['default_region_id'],
+                $pricingSettings['price_type']
+            );
+            
+            if ($price === null) {
+                Log::warning("Mining Manager: No price data for type_id {$entry->type_id}");
+                return 0;
+            }
+            
+            $value = $entry->quantity * $price;
+            
+            // Apply price modifier
+            $priceModifier = $generalSettings['price_modifier'] / 100;
+            $value = $value * (1 + $priceModifier);
+            
+            return $value;
+        }
+    }
+
+    /**
+     * Calculate refined mineral value for ore.
+     *
+     * @param int $typeId
+     * @param int $quantity
+     * @return float
+     */
+    private function calculateRefinedMineralValue(int $typeId, int $quantity): float
+    {
+        // Get ore refining composition from config
+        $refiningData = config("mining-manager.ore_refining.{$typeId}");
+        
+        if (!$refiningData) {
+            Log::warning("Mining Manager: No refining data for type_id {$typeId}, using raw ore price");
+            
+            // Fallback to raw ore price
+            $generalSettings = $this->settingsService->getGeneralSettings();
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            
+            $price = $this->getOrePrice(
+                $typeId,
+                $generalSettings['default_region_id'],
+                $pricingSettings['price_type']
+            );
+            
+            return $price ? ($quantity * $price) : 0;
+        }
+        
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        
+        $refiningEfficiency = $generalSettings['ore_refining_rate'] / 100;
+        $regionId = $generalSettings['default_region_id'];
+        $priceType = $pricingSettings['price_type'];
+        
+        $totalValue = 0;
+        
+        // Calculate value of each mineral
+        foreach ($refiningData as $mineralTypeId => $mineralYield) {
+            // Apply refining efficiency
+            $actualYield = $mineralYield * $refiningEfficiency;
+            
+            // Get mineral price
+            $mineralPrice = $this->getOrePrice($mineralTypeId, $regionId, $priceType);
+            
+            if ($mineralPrice === null) {
+                Log::warning("Mining Manager: No price for mineral type_id {$mineralTypeId}");
+                continue;
+            }
+            
+            // Calculate this mineral's contribution
+            $mineralValue = $actualYield * $mineralPrice * $quantity;
+            $totalValue += $mineralValue;
+        }
+        
+        // Apply price modifier if set
+        $priceModifier = $generalSettings['price_modifier'] / 100;
+        $totalValue = $totalValue * (1 + $priceModifier);
+        
+        return $totalValue;
+    }
+
+    /**
+     * Get ore price from cache.
+     *
+     * @param int $typeId
+     * @param int $regionId
+     * @param string $priceType
+     * @return float|null
+     */
+    private function getOrePrice(int $typeId, int $regionId, string $priceType): ?float
+    {
+        $priceCache = MiningPriceCache::where('type_id', $typeId)
+            ->where('region_id', $regionId)
+            ->latest('cached_at')
+            ->first();
+
+        if (!$priceCache) {
+            return null;
+        }
+
+        return match ($priceType) {
+            'buy' => $priceCache->buy_price,
+            'average' => $priceCache->average_price,
+            default => $priceCache->sell_price,
+        };
+    }
+
+    /**
+     * Get tax rate for specific ore type.
+     *
+     * @param int $typeId
+     * @return float
+     */
+    private function getTaxRateForOre(int $typeId): float
+    {
+        $taxRates = $this->settingsService->getTaxRates();
+        
+        // Check if it's moon ore first
+        $moonRarity = $this->getMoonOreRarity($typeId);
+        if ($moonRarity) {
+            return $taxRates['moon_ore'][$moonRarity];
+        }
+        
+        // Check other categories
+        $category = $this->getOreCategory($typeId);
+        return $taxRates[$category] ?? 10.0;
+    }
+
+    /**
+     * Determine if ore should be taxed based on settings.
+     *
+     * @param int $typeId
+     * @param object|null $miningEntry Optional mining ledger entry for corp moon checking
+     * @return bool
+     */
+    private function shouldTaxOre(int $typeId, $miningEntry = null): bool
+    {
+        $taxSelector = $this->settingsService->getTaxSelector();
+        
+        // Check if it's moon ore
+        if ($this->isMoonOre($typeId)) {
+            // If only_corp_moon_ore is enabled, check if it's from corp moon
+            if ($taxSelector['only_corp_moon_ore'] && $miningEntry) {
+                // Need to verify this is from OUR corporation's moon
+                $isCorpMoon = $this->checkIfCorpMoon(
+                    $miningEntry->character_id,
+                    $typeId,
+                    $miningEntry->solar_system_id,
+                    $miningEntry->date->format('Y-m-d')
+                );
+                
+                if (!$isCorpMoon) {
+                    Log::debug("Mining Manager: Skipping moon ore type {$typeId} - not from corp moon");
+                    return false;
+                }
+                
+                Log::debug("Mining Manager: Taxing moon ore type {$typeId} - confirmed corp moon");
+                return true;
+            }
+            
+            // Otherwise, use the all_moon_ore setting
+            return $taxSelector['all_moon_ore'];
+        }
+        
+        // Check other categories
+        $category = $this->getOreCategory($typeId);
+        
+        return match($category) {
+            'ice' => $taxSelector['ice'],
+            'gas' => $taxSelector['gas'],
+            'abyssal_ore' => $taxSelector['abyssal_ore'],
+            'ore' => $taxSelector['ore'],
+            default => false,
+        };
+    }
+
+    /**
+     * Get moon ore rarity level.
+     *
+     * @param int $typeId
+     * @return string|null
+     */
+    private function getMoonOreRarity(int $typeId): ?string
+    {
+        $rarities = config('mining-manager.moon_ore_rarity', []);
+        
+        foreach ($rarities as $rarity => $typeIds) {
+            if (in_array($typeId, $typeIds)) {
+                return $rarity;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get ore category.
+     *
+     * @param int $typeId
+     * @return string
+     */
+    private function getOreCategory(int $typeId): string
+    {
+        $categories = config('mining-manager.ore_categories', []);
+        
+        foreach ($categories as $category => $typeIds) {
+            if (in_array($typeId, $typeIds)) {
+                return $category;
+            }
+        }
+        
+        return 'ore'; // Default to regular ore
+    }
+
+    /**
+     * Check if type is moon ore.
+     *
+     * @param int $typeId
+     * @return bool
+     */
+    private function isMoonOre(int $typeId): bool
+    {
+        return $this->getMoonOreRarity($typeId) !== null;
+    }
+
+    /**
+     * Check if moon ore was mined from YOUR corporation's moon.
+     * 
+     * This method queries the corporation_industry_mining_observer_data table
+     * which ONLY contains mining data from YOUR corporation's observers/refineries.
+     * If the mining event exists in this table, it means it was mined from your corp's moon.
+     *
+     * @param int $characterId
+     * @param int $typeId
+     * @param int $solarSystemId
+     * @param string $date Date in 'Y-m-d' format
+     * @return bool True if mined from corp moon, false otherwise
+     */
+    private function checkIfCorpMoon(int $characterId, int $typeId, int $solarSystemId, string $date): bool
+    {
+        // Format date to match the database timestamp format
+        $mDate = $date . " 00:00:00";
+        
+        try {
+            // Query the corporation mining observer data
+            // This table is populated by SeAT from ESI API and ONLY contains
+            // mining data from YOUR corporation's moon mining structures
+            $result = DB::table('corporation_industry_mining_observer_data as d')
+                ->select('d.*')
+                ->join('universe_structures as u', 'd.observer_id', '=', 'u.structure_id')
+                ->where('d.last_updated', '=', $mDate)
+                ->where('d.character_id', '=', $characterId)
+                ->where('d.type_id', '=', $typeId)
+                ->where('u.solar_system_id', '=', $solarSystemId)
+                ->first();
+            
+            // If found, this mining event is from YOUR corp's moon
+            if (!is_null($result)) {
+                Log::debug("Mining Manager: Moon ore type {$typeId} confirmed as CORP MOON for character {$characterId}");
+                return true;
+            } else {
+                Log::debug("Mining Manager: Moon ore type {$typeId} is from OTHER corp's moon for character {$characterId}");
+                return false;
+            }
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error checking corp moon: " . $e->getMessage());
+            // On error, default to false (don't tax)
+            return false;
+        }
+    }
+    
+    /**
+     * Update overdue tax statuses.
+     *
+     * @return int Number of taxes marked as overdue
+     */
+    public function updateOverdueTaxes(): int
+    {
+        $exemptions = $this->settingsService->getExemptions();
+        $gracePeriod = $exemptions['grace_period_days'];
+        $overdueDate = Carbon::now()->subDays($gracePeriod);
+
+        $updated = MiningTax::where('status', 'unpaid')
+            ->where('month', '<', $overdueDate->startOfMonth())
+            ->update(['status' => 'overdue']);
+
+        if ($updated > 0) {
+            Log::info("Mining Manager: Marked {$updated} taxes as overdue");
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Recalculate tax for a specific character and month.
+     *
+     * @param int $characterId
+     * @param Carbon $month
+     * @return float
+     */
+    public function recalculateTax(int $characterId, Carbon $month): float
+    {
+        $startDate = $month->copy()->startOfMonth();
+        $endDate = $month->copy()->endOfMonth();
+    
+        $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
+    
+        $tax = MiningTax::where('character_id', $characterId)
+            ->where('month', $startDate->format('Y-m-01'))
+            ->first();
+    
+        if ($tax) {
+            $tax->update([
+                'amount_owed' => $taxAmount,
+                'calculated_at' => Carbon::now(),
+            ]);
+        }
+    
+        return $taxAmount;
+    }
+
+    /**
+     * Get tax breakdown for a character.
+     *
+     * @param int $characterId
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    public function getTaxBreakdown(int $characterId, Carbon $startDate, Carbon $endDate): array
+    {
+        $miningData = MiningLedger::where('character_id', $characterId)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at')
+            ->get();
+
+        $breakdown = [];
+        $totalValue = 0;
+        $totalTax = 0;
+
+        foreach ($miningData as $entry) {
+            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
+                continue;
+            }
+
+            $value = $this->calculateOreValue($entry);
+            $taxRate = $this->getTaxRateForOre($entry->type_id) / 100;
+            $tax = $value * $taxRate;
+
+            $totalValue += $value;
+            $totalTax += $tax;
+
+            // Get ore name from type_id (you might need to join with universe_types table)
+            $oreName = $this->getOreName($entry->type_id);
+            $oreCategory = $this->getOreCategory($entry->type_id);
+            $moonRarity = $this->getMoonOreRarity($entry->type_id);
+
+            $key = $oreName;
+
+            if (!isset($breakdown[$key])) {
+                $breakdown[$key] = [
+                    'type_id' => $entry->type_id,
+                    'name' => $oreName,
+                    'category' => $oreCategory,
+                    'rarity' => $moonRarity,
+                    'quantity' => 0,
+                    'value' => 0,
+                    'tax_rate' => $this->getTaxRateForOre($entry->type_id),
+                    'tax' => 0,
+                ];
+            }
+
+            $breakdown[$key]['quantity'] += $entry->quantity;
+            $breakdown[$key]['value'] += $value;
+            $breakdown[$key]['tax'] += $tax;
+        }
+
+        return [
+            'breakdown' => array_values($breakdown),
+            'total_value' => $totalValue,
+            'total_tax' => $totalTax,
+            'calculation_method' => $this->settingsService->getGeneralSettings()['tax_calculation_method'],
+        ];
+    }
+
+    /**
+     * Get ore name from type_id.
+     * 
+     * @param int $typeId
+     * @return string
+     */
+    private function getOreName(int $typeId): string
+    {
+        // Try to get from universe_types table (SeAT has this)
+        try {
+            $type = DB::table('universe_types')
+                ->where('type_id', $typeId)
+                ->first();
+            
+            return $type ? $type->name : "Unknown Ore ({$typeId})";
+        } catch (\Exception $e) {
+            return "Type {$typeId}";
+        }
+    }
+
+    /**
+     * Get tax statistics for a period.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    public function getTaxStatistics(Carbon $startDate, Carbon $endDate): array
+    {
+        $taxes = MiningTax::whereBetween('month', [$startDate->format('Y-m-01'), $endDate->format('Y-m-01')])
+            ->get();
+
+        $statistics = [
+            'total_owed' => $taxes->sum('amount_owed'),
+            'total_paid' => $taxes->sum('amount_paid'),
+            'outstanding' => $taxes->sum(function($tax) {
+                return $tax->amount_owed - $tax->amount_paid;
+            }),
+            'count_unpaid' => $taxes->where('status', 'unpaid')->count(),
+            'count_partial' => $taxes->where('status', 'partial')->count(),
+            'count_paid' => $taxes->where('status', 'paid')->count(),
+            'count_overdue' => $taxes->where('status', 'overdue')->count(),
+            'count_waived' => $taxes->where('status', 'waived')->count(),
+        ];
+
+        return $statistics;
+    }
+
+    /**
+     * Apply manual tax adjustment.
+     *
+     * @param int $taxId
+     * @param float $adjustmentAmount
+     * @param string $reason
+     * @return bool
+     */
+    public function applyTaxAdjustment(int $taxId, float $adjustmentAmount, string $reason): bool
+    {
+        try {
+            $tax = MiningTax::findOrFail($taxId);
+
+            $newAmount = max(0, $tax->amount_owed + $adjustmentAmount);
+
+            $tax->update([
+                'amount_owed' => $newAmount,
+                'notes' => ($tax->notes ? $tax->notes . "\n" : '') . 
+                          Carbon::now()->toDateTimeString() . " - Adjustment: " . 
+                          number_format($adjustmentAmount, 2) . " ISK. Reason: {$reason}",
+            ]);
+
+            Log::info("Mining Manager: Applied tax adjustment for tax {$taxId}: " . number_format($adjustmentAmount, 2) . " ISK");
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error applying tax adjustment: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Waive tax for a character.
+     *
+     * @param int $taxId
+     * @param string $reason
+     * @return bool
+     */
+    public function waiveTax(int $taxId, string $reason): bool
+    {
+        try {
+            $tax = MiningTax::findOrFail($taxId);
+
+            $tax->update([
+                'status' => 'waived',
+                'notes' => ($tax->notes ? $tax->notes . "\n" : '') . 
+                          Carbon::now()->toDateTimeString() . " - Tax waived. Reason: {$reason}",
+            ]);
+
+            Log::info("Mining Manager: Waived tax {$taxId} for character {$tax->character_id}");
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error waiving tax: " . $e->getMessage());
+            return false;
+        }
+    }
+}
