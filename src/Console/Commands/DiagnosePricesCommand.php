@@ -22,7 +22,7 @@ class DiagnosePricesCommand extends Command
                             {--test-provider : Test current price provider}
                             {--show-missing : Show which specific items are missing prices}
                             {--show-sources : Show where prices are coming from (cache vs fallback)}
-                            {--show-coverage : Show complete coverage statistics for all 201 items}';
+                            {--show-coverage : Show complete coverage statistics for all 197 items}';
 
     /**
      * The console command description.
@@ -655,39 +655,108 @@ class DiagnosePricesCommand extends Command
     protected function showCompleteCoverage()
     {
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        $this->info('📊 COMPLETE COVERAGE STATISTICS (All 201 Items)');
+        $this->info('📊 COMPLETE COVERAGE STATISTICS (All 197 Items)');
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         $categories = [
             // RAW MATERIALS (Ore Value Taxation)
             'Regular Ores' => [
-                'type_ids' => [1230, 1228, 1224, 18, 1227, 20, 1226, 1231, 21, 1229, 1232, 1225, 1223, 22, 11396],
+                'type_ids' => [
+                    // Veldspar family
+                    1230, 17470, 17471,
+                    // Scordite family
+                    1228, 17463, 17464,
+                    // Pyroxeres family
+                    1224, 17459, 17460,
+                    // Plagioclase family
+                    18, 17455, 17456,
+                    // Omber family
+                    1227, 17867, 17868,
+                    // Kernite family
+                    20, 17452, 17453,
+                    // Jaspet family
+                    1226, 17448, 17449,
+                    // Hemorphite family
+                    1231, 17444, 17445,
+                    // Hedbergite family
+                    21, 17440, 17441,
+                    // Gneiss family
+                    1229, 17865, 17866,
+                    // Dark Ochre family
+                    1232, 17436, 17437,
+                    // Crokite family
+                    1225, 17432, 17433,
+                    // Bistot family
+                    1223, 17428, 17429,
+                    // Arkonor family
+                    22, 17425, 17426,
+                    // Mercoxit family
+                    11396, 17869, 17870,
+                ],
                 'total' => 45,
                 'purpose' => 'Ore value taxation',
             ],
             'Compressed Ores' => [
-                'type_ids' => [28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441, 28442, 28443, 28444, 28445, 28446],
+                'type_ids' => [
+                    // Base compressed ores (15 types)
+                    28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441, 28442, 28443, 28444, 28445, 28446,
+                    // Compressed ore variants (30 types)
+                    28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426, 28419, 28420, 28417, 28418, 28413,
+                    28414, 28409, 28410, 28411, 28412, 28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
+                ],
                 'total' => 45,
                 'purpose' => 'Hauler ore value',
             ],
             'Moon Ores' => [
-                'type_ids' => [45506, 45489, 45493, 45497, 45494, 45495, 46682, 46683],
+                'type_ids' => [
+                    // R4 Ores (Ubiquitous)
+                    45506, 45489, 45493, 45497,
+                    // R8 Ores (Common)
+                    45494, 45495, 46682, 46683,
+                    // R16 Ores (Uncommon)
+                    45492, 46679, 46687, 46688,
+                    // R32 Ores (Rare)
+                    46677, 45490, 46680, 46681,
+                    // R64 Ores (Exceptional)
+                    45491, 46676, 46678, 46689,
+                ],
                 'total' => 20,
                 'purpose' => 'Moon ore value',
             ],
             'Compressed Moon Ores' => [
-                'type_ids' => [46675, 46676, 46677, 46678, 46679, 46680, 46681, 46682],
+                'type_ids' => [
+                    // Compressed R4 Ores
+                    46675, 46676, 46677, 46678,
+                    // Compressed R8 Ores
+                    46679, 46680, 46681, 46682,
+                    // Compressed R16 Ores
+                    46683, 46684, 46685, 46686,
+                    // Compressed R32 Ores
+                    46687, 46688, 46689, 46690,
+                    // Compressed R64 Ores
+                    46691, 46692, 46693, 46694,
+                ],
                 'total' => 20,
                 'purpose' => 'Hauler moon ore',
             ],
             'Ice (Raw)' => [
-                'type_ids' => [16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269],
+                'type_ids' => [
+                    // Standard Ice (8 types)
+                    16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269,
+                    // Compressed Ice (8 types)
+                    17975, 17976, 17977, 17978, 17979, 17980, 17981, 17982,
+                ],
                 'total' => 16,
                 'purpose' => 'Ice value taxation',
             ],
             'Gas' => [
-                'type_ids' => [25268, 25269, 25270, 25271, 25272, 25273, 25274, 25275],
-                'total' => 16,
+                'type_ids' => [
+                    // Fullerites (C-X) - 8 types
+                    30370, 30371, 30372, 30373, 30374, 30375, 30377, 30378,
+                    // Booster Gases - 4 types
+                    25276, 25278, 25274, 25268,
+                ],
+                'total' => 12,
                 'purpose' => 'Gas value taxation',
             ],
             
@@ -698,7 +767,18 @@ class DiagnosePricesCommand extends Command
                 'purpose' => 'Refined ore value',
             ],
             'Moon Materials' => [
-                'type_ids' => [16633, 16635, 16636, 16638, 16634, 16637, 16639, 16655],
+                'type_ids' => [
+                    // R4 Materials
+                    16633, 16635, 16636, 16638,
+                    // R8 Materials
+                    16634, 16637, 16639, 16655,
+                    // R16 Materials
+                    16640, 16641, 16644, 16647,
+                    // R32 Materials
+                    16642, 16643, 16646, 16648,
+                    // R64 Materials
+                    16649, 16650, 16651, 16652,
+                ],
                 'total' => 24,
                 'purpose' => 'Refined moon value',
             ],
@@ -895,7 +975,7 @@ class DiagnosePricesCommand extends Command
         $this->line('  <fg=cyan>Tip:</> Run with --test-provider to test price fetching');
         $this->line('  <fg=cyan>Tip:</> Run with --show-missing to see missing type IDs');
         $this->line('  <fg=cyan>Tip:</> Run with --show-sources to see cache vs fallback usage');
-        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 201 items coverage');
+        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 197 items coverage');
     }
 
     /**
