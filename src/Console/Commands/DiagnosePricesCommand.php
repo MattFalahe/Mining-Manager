@@ -661,7 +661,7 @@ class DiagnosePricesCommand extends Command
     protected function showCompleteCoverage()
     {
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        $this->info('📊 COMPLETE COVERAGE REPORT (ALL 357 ITEMS)');
+        $this->info('📊 COMPLETE COVERAGE REPORT');
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->newLine();
 
@@ -688,11 +688,8 @@ class DiagnosePricesCommand extends Command
                 'total' => 60,
                 'purpose' => 'Compressed moon ore taxation',
             ],
-            '💎 Jackpot Moon Ores (+100%)' => [
-                'type_ids' => MoonOreHelper::getAllJackpotTypeIds(),
-                'total' => 40,
-                'purpose' => '⭐ Jackpot extraction detection',
-            ],
+            // NOTE: Jackpot ores are already included in moon ore counts above
+            // They are tracked for detection purposes but not counted separately
             'Ice (Raw + Compressed)' => [
                 'type_ids' => TypeIdRegistry::getAllIce(),
                 'total' => 16,
@@ -712,7 +709,7 @@ class DiagnosePricesCommand extends Command
             ],
             'Moon Materials' => [
                 'type_ids' => TypeIdRegistry::getAllMoonMaterials(),
-                'total' => 24,
+                'total' => 20,  // Fixed: was 24, but TypeIdRegistry has 20 (4 per rarity × 5 rarities)
                 'purpose' => 'Refined moon value',
             ],
             'Ice Products' => [
@@ -814,10 +811,13 @@ class DiagnosePricesCommand extends Command
             }
         }
         
-        // Check jackpot detection readiness
-        foreach ($results as $result) {
-            if ($result[0] == '💎 Jackpot Moon Ores (+100%)' && str_replace('%', '', $result[2]) < 80) {
-                $jackpotDetectionReady = false;
+        // Check jackpot detection readiness - jackpots are part of moon ores
+        // Just check if moon ores have good coverage
+        foreach (['Moon Ores (All Variants)', 'Compressed Moon Ores (All Variants)'] as $cat) {
+            foreach ($results as $result) {
+                if ($result[0] == $cat && str_replace('%', '', $result[2]) < 80) {
+                    $jackpotDetectionReady = false;
+                }
             }
         }
         
@@ -831,14 +831,15 @@ class DiagnosePricesCommand extends Command
         $this->line("  - Compressed Ores: 45 items");
         $this->line("  - Moon Ores: 60 items (base + improved + jackpot)");
         $this->line("  - Compressed Moon: 60 items (base + improved + jackpot)");
-        $this->line("  - Jackpot Variants: 40 items (tracked separately)");
         $this->line("  - Ice: 16 items");
         $this->line("  - Gas: 12 items");
         $this->line("  - Minerals: 8 items");
-        $this->line("  - Moon Materials: 24 items");
+        $this->line("  - Moon Materials: 20 items");
         $this->line("  - Ice Products: 7 items");
         $this->line("  ───────────────────────");
-        $this->line("  <fg=green>TOTAL: 357 ITEMS TRACKED!</>");
+        $this->line("  <fg=green>TOTAL: 273 UNIQUE ITEMS!</>");
+        $this->newLine();
+        $this->line("  <fg=cyan>Note:</> Jackpot ores (40 items) are included in moon ore counts above");
     }
 
     /**
