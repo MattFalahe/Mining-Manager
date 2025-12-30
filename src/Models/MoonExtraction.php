@@ -4,7 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
-use MiningManager\Services\Moon\JackpotDetectionService;
+use MiningManager\Services\Moon\MoonOreHelper;
 use Carbon\Carbon;
 
 class MoonExtraction extends Model
@@ -229,8 +229,7 @@ class MoonExtraction extends Model
             return false;
         }
 
-        $jackpotService = app(JackpotDetectionService::class);
-        $isJackpot = $jackpotService->detectJackpotInComposition($this->ore_composition);
+        $isJackpot = MoonOreHelper::detectJackpotInComposition($this->ore_composition);
 
         if ($isJackpot && !$this->is_jackpot) {
             $this->is_jackpot = true;
@@ -255,8 +254,7 @@ class MoonExtraction extends Model
             ];
         }
 
-        $jackpotService = app(JackpotDetectionService::class);
-        return $jackpotService->getJackpotStatistics($this->ore_composition);
+        return MoonOreHelper::getJackpotStatistics($this->ore_composition);
     }
 
     /**
@@ -268,8 +266,7 @@ class MoonExtraction extends Model
             return [];
         }
 
-        $jackpotService = app(JackpotDetectionService::class);
-        return $jackpotService->getJackpotOresFromComposition($this->ore_composition);
+        return MoonOreHelper::getJackpotOresFromComposition($this->ore_composition);
     }
 
     /**
@@ -302,12 +299,7 @@ class MoonExtraction extends Model
             return 1.0;
         }
 
-        $stats = $this->getJackpotStatistics();
-        $jackpotPercentage = $stats['jackpot_quantity_percentage'] / 100;
-
-        // Jackpot ores are worth 2x, regular ores are worth 1x
-        // Calculate weighted average
-        return 1.0 + $jackpotPercentage;
+        return MoonOreHelper::calculateJackpotMultiplier($this->ore_composition);
     }
 
     /**
