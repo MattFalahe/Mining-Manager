@@ -11,6 +11,7 @@ use MiningManager\Console\Commands\GenerateReportsCommand;
 use MiningManager\Console\Commands\VerifyWalletPaymentsCommand;
 use MiningManager\Console\Commands\SendTaxRemindersCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
+use MiningManager\Console\Commands\DetectJackpotsCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
 use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
@@ -63,6 +64,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 VerifyWalletPaymentsCommand::class,
                 SendTaxRemindersCommand::class,
                 UpdateMoonExtractionsCommand::class,
+                DetectJackpotsCommand::class,
                 CachePriceDataCommand::class,
                 DiagnosePricesCommand::class,
                 DiagnoseAffiliationCommand::class,
