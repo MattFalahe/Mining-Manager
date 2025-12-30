@@ -9,6 +9,7 @@ use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\Setting;
 use MiningManager\Services\Moon\MoonOreHelper;
 use Illuminate\Support\Facades\DB;
+use MiningManager\Services\TypeIdRegistry;
 use Carbon\Carbon;
 
 class DiagnosePricesCommand extends Command
@@ -307,14 +308,14 @@ class DiagnosePricesCommand extends Command
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         $criticalTypes = [
-            'Minerals' => [34, 35, 36, 37, 38, 39, 40, 11399],
-            'R4 Materials' => [16633, 16635, 16636, 16638],
-            'R8 Materials' => [16634, 16637, 16639, 16655],
-            'R16 Materials' => [16640, 16641, 16644, 16647],
-            'R32 Materials' => [16642, 16643, 16646, 16648],
-            'R64 Materials' => [16649, 16650, 16651, 16652],
-            'Ice Products' => [16272, 16274, 17889, 16273, 17888, 17887, 16275], // CORRECTED!
-            'Compressed Ore (Sample)' => [28432, 28433, 28434, 28435], // NEW!
+            'Minerals' => TypeIdRegistry::MINERALS,
+            'R4 Materials' => TypeIdRegistry::MOON_MATERIALS_R4,
+            'R8 Materials' => TypeIdRegistry::MOON_MATERIALS_R8,
+            'R16 Materials' => TypeIdRegistry::MOON_MATERIALS_R16,
+            'R32 Materials' => TypeIdRegistry::MOON_MATERIALS_R32,
+            'R64 Materials' => TypeIdRegistry::MOON_MATERIALS_R64,
+            'Ice Products' => TypeIdRegistry::ICE_PRODUCTS,
+            'Compressed Ore (Sample)' => array_slice(TypeIdRegistry::COMPRESSED_REGULAR_ORES, 0, 4),
         ];
 
         $categoryResults = [];
@@ -668,121 +669,22 @@ class DiagnosePricesCommand extends Command
         $categories = [
             // RAW ORES (Ore Value Taxation)
             'Regular Ores' => [
-                'type_ids' => [
-                    // Veldspar family
-                    1230, 17470, 17471,
-                    // Scordite family
-                    1228, 17463, 17464,
-                    // Pyroxeres family
-                    1224, 17459, 17460,
-                    // Plagioclase family
-                    18, 17455, 17456,
-                    // Omber family
-                    1227, 17867, 17868,
-                    // Kernite family
-                    20, 17452, 17453,
-                    // Jaspet family
-                    1226, 17448, 17449,
-                    // Hemorphite family
-                    1231, 17444, 17445,
-                    // Hedbergite family
-                    21, 17440, 17441,
-                    // Gneiss family
-                    1229, 17865, 17866,
-                    // Dark Ochre family
-                    1232, 17436, 17437,
-                    // Crokite family
-                    1225, 17432, 17433,
-                    // Bistot family
-                    1223, 17428, 17429,
-                    // Arkonor family
-                    22, 17425, 17426,
-                    // Mercoxit family
-                    11396, 17869, 17870,
-                ],
+                'type_ids' => TypeIdRegistry::REGULAR_ORES,
                 'total' => 45,
                 'purpose' => 'Ore value taxation',
             ],
             'Compressed Ores' => [
-                'type_ids' => [
-                    // Base compressed ores (15 types)
-                    28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441,
-                    28442, 28443, 28444, 28445, 28446,
-                    // Compressed ore variants (30 types)
-                    28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426,
-                    28419, 28420, 28417, 28418, 28413, 28414, 28409, 28410, 28411, 28412,
-                    28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
-                ],
+                'type_ids' => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
                 'total' => 45,
                 'purpose' => 'Hauler ore taxation',
             ],
             'Moon Ores (All Variants)' => [
-                'type_ids' => [
-                    // R4 (Ubiquitous) - 12 items (base + improved + jackpot)
-                    45492, 46284, 46285,  // Bitumens family
-                    45493, 46286, 46287,  // Coesite family
-                    45491, 46282, 46283,  // Sylvite family
-                    45490, 46280, 46281,  // Zeolites family
-                    
-                    // R8 (Common) - 12 items
-                    45494, 46288, 46289,  // Cobaltite family
-                    45495, 46290, 46291,  // Euxenite family
-                    45497, 46294, 46295,  // Scheelite family
-                    45496, 46292, 46293,  // Titanite family
-                    
-                    // R16 (Uncommon) - 12 items
-                    45501, 46302, 46303,  // Chromite family
-                    45498, 46296, 46297,  // Otavite family
-                    45499, 46298, 46299,  // Sperrylite family
-                    45500, 46300, 46301,  // Vanadinite family
-                    
-                    // R32 (Rare) - 12 items
-                    45502, 46304, 46305,  // Carnotite family
-                    45506, 46310, 46311,  // Cinnabar family
-                    45504, 46308, 46309,  // Pollucite family
-                    45503, 46306, 46307,  // Zircon family
-                    
-                    // R64 (Exceptional) - 12 items
-                    45510, 46312, 46313,  // Xenotime family
-                    45511, 46314, 46315,  // Monazite family
-                    45512, 46316, 46317,  // Loparite family
-                    45513, 46318, 46319,  // Ytterbite family
-                ],
+                'type_ids' => TypeIdRegistry::MOON_ORES,
                 'total' => 60,
                 'purpose' => 'Moon ore taxation (all variants)',
             ],
             'Compressed Moon Ores (All Variants)' => [
-                'type_ids' => [
-                    // R4 (Ubiquitous) Compressed - 12 items
-                    62454, 62455, 62456,  // Compressed Bitumens family
-                    62457, 62458, 62459,  // Compressed Coesite family
-                    62460, 62461, 62466,  // Compressed Sylvite family
-                    62463, 62464, 62467,  // Compressed Zeolites family
-                    
-                    // R8 (Common) Compressed - 12 items
-                    62474, 62475, 62476,  // Compressed Cobaltite family
-                    62471, 62472, 62473,  // Compressed Euxenite family
-                    62468, 62469, 62470,  // Compressed Scheelite family
-                    62477, 62478, 62479,  // Compressed Titanite family
-                    
-                    // R16 (Uncommon) Compressed - 12 items
-                    62480, 62481, 62482,  // Compressed Chromite family
-                    62483, 62484, 62485,  // Compressed Otavite family
-                    62486, 62487, 62488,  // Compressed Sperrylite family
-                    62489, 62490, 62491,  // Compressed Vanadinite family
-                    
-                    // R32 (Rare) Compressed - 12 items
-                    62492, 62493, 62494,  // Compressed Carnotite family
-                    62495, 62496, 62497,  // Compressed Cinnabar family
-                    62498, 62499, 62500,  // Compressed Pollucite family
-                    62501, 62502, 62503,  // Compressed Zircon family
-                    
-                    // R64 (Exceptional) Compressed - 12 items
-                    62510, 62511, 62512,  // Compressed Xenotime family
-                    62507, 62508, 62509,  // Compressed Monazite family
-                    62504, 62505, 62506,  // Compressed Loparite family
-                    62513, 62514, 62515,  // Compressed Ytterbite family
-                ],
+                'type_ids' => TypeIdRegistry::COMPRESSED_MOON_ORES,
                 'total' => 60,
                 'purpose' => 'Compressed moon ore taxation',
             ],
@@ -792,50 +694,29 @@ class DiagnosePricesCommand extends Command
                 'purpose' => '⭐ Jackpot extraction detection',
             ],
             'Ice (Raw + Compressed)' => [
-                'type_ids' => [
-                    // Standard Ice (8 types)
-                    16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269,
-                    // Compressed Ice (8 types)
-                    17975, 17976, 17977, 17978, 17979, 17980, 17981, 17982,
-                ],
+                'type_ids' => TypeIdRegistry::getAllIce(),
                 'total' => 16,
                 'purpose' => 'Ice value taxation',
             ],
             'Gas' => [
-                'type_ids' => [
-                    // Fullerites (C-X) - 8 types
-                    30370, 30371, 30372, 30373, 30374, 30375, 30377, 30378,
-                    // Booster Gases - 4 types
-                    25276, 25278, 25274, 25268,
-                ],
+                'type_ids' => TypeIdRegistry::getAllGas(),
                 'total' => 12,
                 'purpose' => 'Gas value taxation',
             ],
             
             // REFINED MATERIALS (Refined Value Taxation)
             'Minerals' => [
-                'type_ids' => [34, 35, 36, 37, 38, 39, 40, 11399],
+                'type_ids' => TypeIdRegistry::MINERALS,
                 'total' => 8,
                 'purpose' => 'Refined ore value',
             ],
             'Moon Materials' => [
-                'type_ids' => [
-                    // R4 Materials
-                    16633, 16635, 16636, 16638,
-                    // R8 Materials
-                    16634, 16637, 16639, 16655,
-                    // R16 Materials
-                    16640, 16641, 16644, 16647,
-                    // R32 Materials
-                    16642, 16643, 16646, 16648,
-                    // R64 Materials
-                    16649, 16650, 16651, 16652,
-                ],
+                'type_ids' => TypeIdRegistry::getAllMoonMaterials(),
                 'total' => 24,
                 'purpose' => 'Refined moon value',
             ],
             'Ice Products' => [
-                'type_ids' => [16272, 16274, 17889, 16273, 17888, 17887, 16275],
+                'type_ids' => TypeIdRegistry::ICE_PRODUCTS,
                 'total' => 7,
                 'purpose' => '✨ Refined ice value',
             ],
