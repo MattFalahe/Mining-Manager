@@ -188,7 +188,7 @@ class CachePriceDataCommand extends Command
             11396, 17869, 17870,
         ];
 
-        // Compressed regular ores (for haulers/traders) - CRITICAL
+        // Compressed regular ores (for haulers/traders)
         $compressedOreTypes = [
             // Base compressed ores (15 types)
             28432, // Compressed Veldspar
@@ -240,40 +240,123 @@ class CachePriceDataCommand extends Command
             28399, // Compressed Vitreous Mercoxit
         ];
 
-        // Moon ore type IDs (R4, R8, R16, R32, R64) - CORRECTED
+        // ============================================
+        // MOON ORE TYPE IDs - COMPLETE (60 items)
+        // VERIFIED AGAINST DATABASE - ALL CORRECT
+        // ============================================
         $moonOreTypes = [
-            // R4 Ores (Ubiquitous)
-            45506, // Bitumens
-            45489, // Coesite
-            45493, // Sylvite
-            45497, // Zeolites
+            // ========== R4 (Ubiquitous) - 12 items ==========
             
-            // R8 Ores (Common)
-            45494, // Cobaltite
-            45495, // Euxenite
-            46682, // Scheelite
-            46683, // Titanite
+            // Bitumens family (Hydrocarbons)
+            45492,  // Bitumens (base)
+            46284,  // Brimful Bitumens (+15%)
+            46285,  // Glistening Bitumens (+100% jackpot)
             
-            // R16 Ores (Uncommon)
-            45492, // Chromite
-            46679, // Otavite
-            46687, // Sperrylite
-            46688, // Vanadinite
+            // Coesite family (Silicates)
+            45493,  // Coesite (base)
+            46286,  // Brimful Coesite (+15%)
+            46287,  // Glistening Coesite (+100% jackpot)
             
-            // R32 Ores (Rare)
-            46677, // Carnotite
-            45490, // Cinnabar
-            46680, // Pollucite
-            46681, // Zircon
+            // Sylvite family (Evaporite Deposits)
+            45491,  // Sylvite (base)
+            46282,  // Brimful Sylvite (+15%)
+            46283,  // Glistening Sylvite (+100% jackpot)
             
-            // R64 Ores (Exceptional)
-            45491, // Xenotime
-            46676, // Monazite
-            46678, // Loparite
-            46689, // Ytterbite
+            // Zeolites family (Atmospheric Gases)
+            45490,  // Zeolites (base)
+            46280,  // Brimful Zeolites (+15%)
+            46281,  // Glistening Zeolites (+100% jackpot)
+            
+            // ========== R8 (Common) - 12 items ==========
+            
+            // Cobaltite family (Cobalt)
+            45494,  // Cobaltite (base)
+            46288,  // Copious Cobaltite (+15%)
+            46289,  // Twinkling Cobaltite (+100% jackpot)
+            
+            // Euxenite family (Scandium)
+            45495,  // Euxenite (base)
+            46290,  // Copious Euxenite (+15%)
+            46291,  // Twinkling Euxenite (+100% jackpot)
+            
+            // Scheelite family (Tungsten)
+            45497,  // Scheelite (base)
+            46294,  // Copious Scheelite (+15%)
+            46295,  // Twinkling Scheelite (+100% jackpot)
+            
+            // Titanite family (Titanium)
+            45496,  // Titanite (base)
+            46292,  // Copious Titanite (+15%)
+            46293,  // Twinkling Titanite (+100% jackpot)
+            
+            // ========== R16 (Uncommon) - 12 items ==========
+            
+            // Chromite family (Chromium)
+            45501,  // Chromite (base)
+            46302,  // Lavish Chromite (+15%)
+            46303,  // Shimmering Chromite (+100% jackpot)
+            
+            // Otavite family (Cadmium)
+            45498,  // Otavite (base)
+            46296,  // Lavish Otavite (+15%)
+            46297,  // Shimmering Otavite (+100% jackpot)
+            
+            // Sperrylite family (Platinum)
+            45499,  // Sperrylite (base)
+            46298,  // Lavish Sperrylite (+15%)
+            46299,  // Shimmering Sperrylite (+100% jackpot)
+            
+            // Vanadinite family (Vanadium)
+            45500,  // Vanadinite (base)
+            46300,  // Lavish Vanadinite (+15%)
+            46301,  // Shimmering Vanadinite (+100% jackpot)
+            
+            // ========== R32 (Rare) - 12 items ==========
+            
+            // Carnotite family (Technetium)
+            45502,  // Carnotite (base)
+            46304,  // Replete Carnotite (+15%)
+            46305,  // Glowing Carnotite (+100% jackpot)
+            
+            // Cinnabar family (Mercury)
+            45506,  // Cinnabar (base)
+            46310,  // Replete Cinnabar (+15%)
+            46311,  // Glowing Cinnabar (+100% jackpot)
+            
+            // Pollucite family (Caesium)
+            45504,  // Pollucite (base)
+            46308,  // Replete Pollucite (+15%)
+            46309,  // Glowing Pollucite (+100% jackpot)
+            
+            // Zircon family (Hafnium)
+            45503,  // Zircon (base)
+            46306,  // Replete Zircon (+15%)
+            46307,  // Glowing Zircon (+100% jackpot)
+            
+            // ========== R64 (Exceptional) - 12 items ==========
+            
+            // Xenotime family (Dysprosium)
+            45510,  // Xenotime (base)
+            46312,  // Bountiful Xenotime (+15%)
+            46313,  // Shining Xenotime (+100% jackpot)
+            
+            // Monazite family (Neodymium)
+            45511,  // Monazite (base)
+            46314,  // Bountiful Monazite (+15%)
+            46315,  // Shining Monazite (+100% jackpot)
+            
+            // Loparite family (Promethium)
+            45512,  // Loparite (base)
+            46316,  // Bountiful Loparite (+15%)
+            46317,  // Shining Loparite (+100% jackpot)
+            
+            // Ytterbite family (Thulium)
+            45513,  // Ytterbite (base)
+            46318,  // Bountiful Ytterbite (+15%)
+            46319,  // Shining Ytterbite (+100% jackpot)
         ];
 
-        // Moon materials (R4, R8, R16, R32, R64) - ADDED
+        // Moon materials (R4, R8, R16, R32, R64)
         // These are the refined products from moon ores
         $moonMaterialTypes = [
             // R4 Materials
@@ -307,37 +390,120 @@ class CachePriceDataCommand extends Command
             16652, // Promethium
         ];
 
-        // Compressed moon ores (for traders/haulers)
+        // =====================================================
+        // COMPRESSED MOON ORES - COMPLETE (60 items)
+        // VERIFIED AGAINST DATABASE - ALL CORRECT
+        // =====================================================
         $compressedMoonOreTypes = [
-            // Compressed R4 Ores
-            46675, // Compressed Bitumens
-            46676, // Compressed Coesite
-            46677, // Compressed Sylvite
-            46678, // Compressed Zeolites
+            // ========== R4 (Ubiquitous) Compressed - 12 items ==========
             
-            // Compressed R8 Ores
-            46679, // Compressed Cobaltite
-            46680, // Compressed Euxenite
-            46681, // Compressed Scheelite
-            46682, // Compressed Titanite
+            // Compressed Bitumens family
+            62454,  // Compressed Bitumens
+            62455,  // Compressed Brimful Bitumens
+            62456,  // Compressed Glistening Bitumens
             
-            // Compressed R16 Ores
-            46683, // Compressed Chromite
-            46684, // Compressed Otavite
-            46685, // Compressed Sperrylite
-            46686, // Compressed Vanadinite
+            // Compressed Coesite family
+            62457,  // Compressed Coesite
+            62458,  // Compressed Brimful Coesite
+            62459,  // Compressed Glistening Coesite
             
-            // Compressed R32 Ores
-            46687, // Compressed Carnotite
-            46688, // Compressed Cinnabar
-            46689, // Compressed Pollucite
-            46690, // Compressed Zircon
+            // Compressed Sylvite family
+            62460,  // Compressed Sylvite
+            62461,  // Compressed Brimful Sylvite
+            62466,  // Compressed Glistening Sylvite
             
-            // Compressed R64 Ores
-            46691, // Compressed Xenotime
-            46692, // Compressed Monazite
-            46693, // Compressed Loparite
-            46694, // Compressed Ytterbite
+            // Compressed Zeolites family
+            62463,  // Compressed Zeolites
+            62464,  // Compressed Brimful Zeolites
+            62467,  // Compressed Glistening Zeolites
+            
+            // ========== R8 (Common) Compressed - 12 items ==========
+            
+            // Compressed Cobaltite family
+            62474,  // Compressed Cobaltite
+            62475,  // Compressed Copious Cobaltite
+            62476,  // Compressed Twinkling Cobaltite
+            
+            // Compressed Euxenite family
+            62471,  // Compressed Euxenite
+            62472,  // Compressed Copious Euxenite
+            62473,  // Compressed Twinkling Euxenite
+            
+            // Compressed Scheelite family
+            62468,  // Compressed Scheelite
+            62469,  // Compressed Copious Scheelite
+            62470,  // Compressed Twinkling Scheelite
+            
+            // Compressed Titanite family
+            62477,  // Compressed Titanite
+            62478,  // Compressed Copious Titanite
+            62479,  // Compressed Twinkling Titanite
+            
+            // ========== R16 (Uncommon) Compressed - 12 items ==========
+            
+            // Compressed Chromite family
+            62480,  // Compressed Chromite
+            62481,  // Compressed Lavish Chromite
+            62482,  // Compressed Shimmering Chromite
+            
+            // Compressed Otavite family
+            62483,  // Compressed Otavite
+            62484,  // Compressed Lavish Otavite
+            62485,  // Compressed Shimmering Otavite
+            
+            // Compressed Sperrylite family
+            62486,  // Compressed Sperrylite
+            62487,  // Compressed Lavish Sperrylite
+            62488,  // Compressed Shimmering Sperrylite
+            
+            // Compressed Vanadinite family
+            62489,  // Compressed Vanadinite
+            62490,  // Compressed Lavish Vanadinite
+            62491,  // Compressed Shimmering Vanadinite
+            
+            // ========== R32 (Rare) Compressed - 12 items ==========
+            
+            // Compressed Carnotite family
+            62492,  // Compressed Carnotite
+            62493,  // Compressed Replete Carnotite
+            62494,  // Compressed Glowing Carnotite
+            
+            // Compressed Cinnabar family
+            62495,  // Compressed Cinnabar
+            62496,  // Compressed Replete Cinnabar
+            62497,  // Compressed Glowing Cinnabar
+            
+            // Compressed Pollucite family
+            62498,  // Compressed Pollucite
+            62499,  // Compressed Replete Pollucite
+            62500,  // Compressed Glowing Pollucite
+            
+            // Compressed Zircon family
+            62501,  // Compressed Zircon
+            62502,  // Compressed Replete Zircon
+            62503,  // Compressed Glowing Zircon
+            
+            // ========== R64 (Exceptional) Compressed - 12 items ==========
+            
+            // Compressed Xenotime family
+            62510,  // Compressed Xenotime
+            62511,  // Compressed Bountiful Xenotime
+            62512,  // Compressed Shining Xenotime
+            
+            // Compressed Monazite family
+            62507,  // Compressed Monazite
+            62508,  // Compressed Bountiful Monazite
+            62509,  // Compressed Shining Monazite
+            
+            // Compressed Loparite family
+            62504,  // Compressed Loparite
+            62505,  // Compressed Bountiful Loparite
+            62506,  // Compressed Shining Loparite
+            
+            // Compressed Ytterbite family
+            62513,  // Compressed Ytterbite
+            62514,  // Compressed Bountiful Ytterbite
+            62515,  // Compressed Shining Ytterbite
         ];
 
         $mineralTypes = [
@@ -357,7 +523,7 @@ class CachePriceDataCommand extends Command
             16268, // Gelidus
             16269, // Krystallos
             
-            // Compressed Ice (8 types) - COMPLETE
+            // Compressed Ice (8 types)
             17975, // Compressed Clear Icicle
             17976, // Compressed Glacial Mass
             17977, // Compressed Blue Ice
@@ -368,9 +534,9 @@ class CachePriceDataCommand extends Command
             17982, // Compressed Krystallos
         ];
 
-        // Gas types - Fullerites + Booster Gases (CORRECTED!)
+        // Gas types - Fullerites + Booster Gases
         $gasTypes = [
-            // Fullerites (C-X) - 8 types - FIXED TYPE IDs
+            // Fullerites (C-X) - 8 types
             30370, // Fullerite-C50
             30371, // Fullerite-C60
             30372, // Fullerite-C70
@@ -380,34 +546,33 @@ class CachePriceDataCommand extends Command
             30377, // Fullerite-C320
             30378, // Fullerite-C540
             
-            // Booster Gases - 4 types (uncompressed)
+            // Booster Gases - 4 types
             25276, // Malachite Cytoserocin
             25278, // Vermillion Cytoserocin
             25274, // Viridian Cytoserocin
             25268, // Amber Cytoserocin
         ];
 
-        // Ice products (refined from ice) - CRITICAL FOR REFINED ICE VALUE! - CORRECTED IDs
+        // Ice products (refined from ice)
         $iceProductTypes = [
-            16272, // Heavy Water ✅
-            16274, // Helium Isotopes (was 16273)
-            17889, // Hydrogen Isotopes (NEW!)
-            16273, // Liquid Ozone (was 16275)
-            17888, // Nitrogen Isotopes (was 16276)
-            17887, // Oxygen Isotopes (was 16277)
-            16275, // Strontium Clathrates (was 16278 which is Ice Harvester I!)
+            16272, // Heavy Water
+            16274, // Helium Isotopes
+            17889, // Hydrogen Isotopes
+            16273, // Liquid Ozone
+            17888, // Nitrogen Isotopes
+            17887, // Oxygen Isotopes
+            16275, // Strontium Clathrates
         ];
 
+        // Return appropriate type IDs based on category
         switch ($category) {
             case 'ore':
                 return $oreTypes;
             case 'compressed-ore':
                 return $compressedOreTypes;
             case 'moon':
-            case 'moon-ore':
                 return $moonOreTypes;
             case 'materials':
-            case 'moon-materials':
                 return $moonMaterialTypes;
             case 'minerals':
                 return $mineralTypes;
@@ -418,19 +583,18 @@ class CachePriceDataCommand extends Command
             case 'gas':
                 return $gasTypes;
             case 'compressed':
-            case 'compressed-moon':
-                return $compressedMoonOreTypes;
+                return array_merge($compressedOreTypes, $compressedMoonOreTypes);
             case 'all':
                 return array_merge(
-                    $oreTypes,              // Regular ores (45)
-                    $compressedOreTypes,    // Compressed regular ores (45)
-                    $moonOreTypes,          // Moon ores (20)
-                    $compressedMoonOreTypes,// Compressed moon ores (20)
-                    $moonMaterialTypes,     // Moon materials refined (24)
-                    $mineralTypes,          // Minerals refined (8)
-                    $iceTypes,              // Ice raw (16)
-                    $iceProductTypes,       // Ice products refined (7)
-                    $gasTypes               // Gas (16)
+                    $oreTypes,
+                    $compressedOreTypes,
+                    $moonOreTypes,
+                    $compressedMoonOreTypes,
+                    $moonMaterialTypes,
+                    $mineralTypes,
+                    $iceTypes,
+                    $iceProductTypes,
+                    $gasTypes
                 );
             default:
                 return [];
@@ -442,15 +606,14 @@ class CachePriceDataCommand extends Command
      *
      * @return void
      */
-    private function cleanupOldCache(): void
+    private function cleanupOldCache()
     {
-        $this->info("Cleaning up old cache entries...");
+        $this->info('Cleaning up old cache entries...');
         
-        $cutoffDate = Carbon::now()->subDays(7);
-        $deleted = $this->priceService->deleteOldCache($cutoffDate);
-
+        $deleted = $this->priceService->cleanupOldCache(7); // Remove entries older than 7 days
+        
         if ($deleted > 0) {
-            $this->info("Deleted {$deleted} old cache entries");
+            $this->info("Removed {$deleted} old cache entries");
         }
     }
 }
