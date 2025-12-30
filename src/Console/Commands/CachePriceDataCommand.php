@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Models\MiningPriceCache;
 use Carbon\Carbon;
 
 class CachePriceDataCommand extends Command
@@ -161,6 +162,7 @@ class CachePriceDataCommand extends Command
 
     /**
      * Clean up old cache entries
+     * Removes entries older than 7 days
      *
      * @return void
      */
@@ -168,10 +170,18 @@ class CachePriceDataCommand extends Command
     {
         $this->info('Cleaning up old cache entries...');
         
-        $deleted = $this->priceService->cleanupOldCache(7); // Remove entries older than 7 days
-        
-        if ($deleted > 0) {
-            $this->info("Removed {$deleted} old cache entries");
+        try {
+            $cutoffDate = Carbon::now()->subDays(7);
+            
+            $deleted = MiningPriceCache::where('updated_at', '<', $cutoffDate)->delete();
+            
+            if ($deleted > 0) {
+                $this->info("Removed {$deleted} old cache entries (older than 7 days)");
+            } else {
+                $this->info("No old cache entries found");
+            }
+        } catch (\Exception $e) {
+            $this->warn("Could not clean up cache: {$e->getMessage()}");
         }
     }
 }
