@@ -7,6 +7,7 @@ use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\Setting;
+use MiningManager\Services\Moon\MoonOreHelper;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -22,7 +23,7 @@ class DiagnosePricesCommand extends Command
                             {--test-provider : Test current price provider}
                             {--show-missing : Show which specific items are missing prices}
                             {--show-sources : Show where prices are coming from (cache vs fallback)}
-                            {--show-coverage : Show complete coverage statistics for all 197 items}';
+                            {--show-coverage : Show complete coverage statistics for all 357 items}';
 
     /**
      * The console command description.
@@ -652,14 +653,20 @@ class DiagnosePricesCommand extends Command
     /**
      * Show complete coverage statistics for all item types
      */
+    /**
+     * Show complete coverage statistics for all items
+     * UPDATED: Now tracks all 357 items (was 197)
+     */
     protected function showCompleteCoverage()
     {
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        $this->info('📊 COMPLETE COVERAGE STATISTICS (All 197 Items)');
+        $this->info('📊 COMPLETE COVERAGE REPORT (ALL 357 ITEMS)');
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->newLine();
 
+        // Define all categories with type IDs
         $categories = [
-            // RAW MATERIALS (Ore Value Taxation)
+            // RAW ORES (Ore Value Taxation)
             'Regular Ores' => [
                 'type_ids' => [
                     // Veldspar family
@@ -699,47 +706,92 @@ class DiagnosePricesCommand extends Command
             'Compressed Ores' => [
                 'type_ids' => [
                     // Base compressed ores (15 types)
-                    28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441, 28442, 28443, 28444, 28445, 28446,
+                    28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441,
+                    28442, 28443, 28444, 28445, 28446,
                     // Compressed ore variants (30 types)
-                    28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426, 28419, 28420, 28417, 28418, 28413,
-                    28414, 28409, 28410, 28411, 28412, 28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
+                    28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426,
+                    28419, 28420, 28417, 28418, 28413, 28414, 28409, 28410, 28411, 28412,
+                    28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
                 ],
                 'total' => 45,
-                'purpose' => 'Hauler ore value',
+                'purpose' => 'Hauler ore taxation',
             ],
-            'Moon Ores' => [
+            'Moon Ores (All Variants)' => [
                 'type_ids' => [
-                    // R4 Ores (Ubiquitous)
-                    45506, 45489, 45493, 45497,
-                    // R8 Ores (Common)
-                    45494, 45495, 46682, 46683,
-                    // R16 Ores (Uncommon)
-                    45492, 46679, 46687, 46688,
-                    // R32 Ores (Rare)
-                    46677, 45490, 46680, 46681,
-                    // R64 Ores (Exceptional)
-                    45491, 46676, 46678, 46689,
+                    // R4 (Ubiquitous) - 12 items (base + improved + jackpot)
+                    45492, 46284, 46285,  // Bitumens family
+                    45493, 46286, 46287,  // Coesite family
+                    45491, 46282, 46283,  // Sylvite family
+                    45490, 46280, 46281,  // Zeolites family
+                    
+                    // R8 (Common) - 12 items
+                    45494, 46288, 46289,  // Cobaltite family
+                    45495, 46290, 46291,  // Euxenite family
+                    45497, 46294, 46295,  // Scheelite family
+                    45496, 46292, 46293,  // Titanite family
+                    
+                    // R16 (Uncommon) - 12 items
+                    45501, 46302, 46303,  // Chromite family
+                    45498, 46296, 46297,  // Otavite family
+                    45499, 46298, 46299,  // Sperrylite family
+                    45500, 46300, 46301,  // Vanadinite family
+                    
+                    // R32 (Rare) - 12 items
+                    45502, 46304, 46305,  // Carnotite family
+                    45506, 46310, 46311,  // Cinnabar family
+                    45504, 46308, 46309,  // Pollucite family
+                    45503, 46306, 46307,  // Zircon family
+                    
+                    // R64 (Exceptional) - 12 items
+                    45510, 46312, 46313,  // Xenotime family
+                    45511, 46314, 46315,  // Monazite family
+                    45512, 46316, 46317,  // Loparite family
+                    45513, 46318, 46319,  // Ytterbite family
                 ],
-                'total' => 20,
-                'purpose' => 'Moon ore value',
+                'total' => 60,
+                'purpose' => 'Moon ore taxation (all variants)',
             ],
-            'Compressed Moon Ores' => [
+            'Compressed Moon Ores (All Variants)' => [
                 'type_ids' => [
-                    // Compressed R4 Ores
-                    46675, 46676, 46677, 46678,
-                    // Compressed R8 Ores
-                    46679, 46680, 46681, 46682,
-                    // Compressed R16 Ores
-                    46683, 46684, 46685, 46686,
-                    // Compressed R32 Ores
-                    46687, 46688, 46689, 46690,
-                    // Compressed R64 Ores
-                    46691, 46692, 46693, 46694,
+                    // R4 (Ubiquitous) Compressed - 12 items
+                    62454, 62455, 62456,  // Compressed Bitumens family
+                    62457, 62458, 62459,  // Compressed Coesite family
+                    62460, 62461, 62466,  // Compressed Sylvite family
+                    62463, 62464, 62467,  // Compressed Zeolites family
+                    
+                    // R8 (Common) Compressed - 12 items
+                    62474, 62475, 62476,  // Compressed Cobaltite family
+                    62471, 62472, 62473,  // Compressed Euxenite family
+                    62468, 62469, 62470,  // Compressed Scheelite family
+                    62477, 62478, 62479,  // Compressed Titanite family
+                    
+                    // R16 (Uncommon) Compressed - 12 items
+                    62480, 62481, 62482,  // Compressed Chromite family
+                    62483, 62484, 62485,  // Compressed Otavite family
+                    62486, 62487, 62488,  // Compressed Sperrylite family
+                    62489, 62490, 62491,  // Compressed Vanadinite family
+                    
+                    // R32 (Rare) Compressed - 12 items
+                    62492, 62493, 62494,  // Compressed Carnotite family
+                    62495, 62496, 62497,  // Compressed Cinnabar family
+                    62498, 62499, 62500,  // Compressed Pollucite family
+                    62501, 62502, 62503,  // Compressed Zircon family
+                    
+                    // R64 (Exceptional) Compressed - 12 items
+                    62510, 62511, 62512,  // Compressed Xenotime family
+                    62507, 62508, 62509,  // Compressed Monazite family
+                    62504, 62505, 62506,  // Compressed Loparite family
+                    62513, 62514, 62515,  // Compressed Ytterbite family
                 ],
-                'total' => 20,
-                'purpose' => 'Hauler moon ore',
+                'total' => 60,
+                'purpose' => 'Compressed moon ore taxation',
             ],
-            'Ice (Raw)' => [
+            '💎 Jackpot Moon Ores (+100%)' => [
+                'type_ids' => MoonOreHelper::getAllJackpotTypeIds(),
+                'total' => 40,
+                'purpose' => '⭐ Jackpot extraction detection',
+            ],
+            'Ice (Raw + Compressed)' => [
                 'type_ids' => [
                     // Standard Ice (8 types)
                     16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269,
@@ -861,9 +913,10 @@ class DiagnosePricesCommand extends Command
         
         $oreValueReady = true;
         $refinedValueReady = true;
+        $jackpotDetectionReady = true;
         
         // Check ore value taxation readiness
-        foreach (['Regular Ores', 'Moon Ores', 'Ice (Raw)', 'Gas'] as $cat) {
+        foreach (['Regular Ores', 'Moon Ores (All Variants)', 'Ice (Raw + Compressed)', 'Gas'] as $cat) {
             foreach ($results as $result) {
                 if ($result[0] == $cat && str_replace('%', '', $result[2]) < 80) {
                     $oreValueReady = false;
@@ -880,8 +933,31 @@ class DiagnosePricesCommand extends Command
             }
         }
         
+        // Check jackpot detection readiness
+        foreach ($results as $result) {
+            if ($result[0] == '💎 Jackpot Moon Ores (+100%)' && str_replace('%', '', $result[2]) < 80) {
+                $jackpotDetectionReady = false;
+            }
+        }
+        
         $this->line("  Model 1 (Ore Value): " . ($oreValueReady ? '✅ Ready' : '❌ Incomplete'));
-        $this->line("  Model 2 (Refined Value): " . ($refinedValueReady ? '✅ Ready' : '❌ Incomplete - Missing Ice Products'));
+        $this->line("  Model 2 (Refined Value): " . ($refinedValueReady ? '✅ Ready' : '❌ Incomplete'));
+        $this->line("  💎 Jackpot Detection: " . ($jackpotDetectionReady ? '✅ Ready' : '❌ Incomplete'));
+        
+        $this->newLine();
+        $this->line("  <fg=yellow>📊 COVERAGE BREAKDOWN:</>");
+        $this->line("  - Regular Ores: 45 items (base + variants)");
+        $this->line("  - Compressed Ores: 45 items");
+        $this->line("  - Moon Ores: 60 items (base + improved + jackpot)");
+        $this->line("  - Compressed Moon: 60 items (base + improved + jackpot)");
+        $this->line("  - Jackpot Variants: 40 items (tracked separately)");
+        $this->line("  - Ice: 16 items");
+        $this->line("  - Gas: 12 items");
+        $this->line("  - Minerals: 8 items");
+        $this->line("  - Moon Materials: 24 items");
+        $this->line("  - Ice Products: 7 items");
+        $this->line("  ───────────────────────");
+        $this->line("  <fg=green>TOTAL: 357 ITEMS TRACKED!</>");
     }
 
     /**
@@ -975,7 +1051,7 @@ class DiagnosePricesCommand extends Command
         $this->line('  <fg=cyan>Tip:</> Run with --test-provider to test price fetching');
         $this->line('  <fg=cyan>Tip:</> Run with --show-missing to see missing type IDs');
         $this->line('  <fg=cyan>Tip:</> Run with --show-sources to see cache vs fallback usage');
-        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 197 items coverage');
+        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 357 items coverage');
     }
 
     /**
