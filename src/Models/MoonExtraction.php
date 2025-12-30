@@ -4,6 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
+use MiningManager\Services\Moon\JackpotDetectionService;
 use Carbon\Carbon;
 
 class MoonExtraction extends Model
@@ -31,6 +32,8 @@ class MoonExtraction extends Model
         'estimated_value',
         'ore_composition',
         'notification_sent',
+        'is_jackpot',
+        'jackpot_detected_at',
     ];
 
     /**
@@ -45,6 +48,8 @@ class MoonExtraction extends Model
         'estimated_value' => 'integer',
         'ore_composition' => 'array',
         'notification_sent' => 'boolean',
+        'is_jackpot' => 'boolean',
+        'jackpot_detected_at' => 'datetime',
     ];
 
     /**
@@ -57,7 +62,6 @@ class MoonExtraction extends Model
 
     /**
      * Get the moon name from SDE data.
-     * Note: Using moons table which has all moon data in SeAT v5
      */
     public function getMoonNameAttribute()
     {
@@ -65,7 +69,6 @@ class MoonExtraction extends Model
             return 'Unknown Moon';
         }
 
-        // Get moon name from moons table
         $moon = \DB::table('moons')
             ->where('moon_id', $this->moon_id)
             ->first();
@@ -75,7 +78,6 @@ class MoonExtraction extends Model
 
     /**
      * Get the structure name.
-     * Checks multiple possible sources for structure names in SeAT v5
      */
     public function getStructureNameAttribute()
     {
@@ -83,7 +85,6 @@ class MoonExtraction extends Model
             return 'Unknown Structure';
         }
 
-        // First, try to get from universe_structures table (this is the primary source)
         $universeStructure = \DB::table('universe_structures')
             ->where('structure_id', $this->structure_id)
             ->first();
@@ -92,18 +93,14 @@ class MoonExtraction extends Model
             return $universeStructure->name;
         }
 
-        // Fallback: try corporation_structures (though this table doesn't have name column)
         $corpStructure = \DB::table('corporation_structures')
             ->where('structure_id', $this->structure_id)
             ->first();
 
         if ($corpStructure) {
-            // Structure exists but no name, try to get from universe_structures again
-            // This shouldn't normally happen, but provides a fallback
             return "Structure {$this->structure_id}";
         }
 
-        // Fallback: return structure ID
         return "Unknown Structure";
     }
 
@@ -117,8 +114,6 @@ class MoonExtraction extends Model
 
     /**
      * Check if decay warning should be shown (within 3 hours of decay).
-     *
-     * @return bool
      */
     public function shouldShowDecayWarning()
     {
@@ -129,14 +124,11 @@ class MoonExtraction extends Model
         $now = Carbon::now();
         $threeHoursBeforeDecay = $this->natural_decay_time->copy()->subHours(3);
 
-        // Show warning if we're within 3 hours of decay and haven't decayed yet
         return $now >= $threeHoursBeforeDecay && $now < $this->natural_decay_time;
     }
 
     /**
      * Get time until decay in human readable format.
-     *
-     * @return string|null
      */
     public function getTimeUntilDecay()
     {
@@ -149,10 +141,7 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Scope a query to only include active extractions.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope: only include active extractions.
      */
     public function scopeExtracting($query)
     {
@@ -160,10 +149,7 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Scope a query to only include ready extractions.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope: only include ready extractions.
      */
     public function scopeReady($query)
     {
@@ -171,11 +157,7 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Scope a query for upcoming extractions.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param int $hours
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope: upcoming extractions.
      */
     public function scopeUpcoming($query, $hours = 48)
     {
@@ -185,9 +167,15 @@ class MoonExtraction extends Model
     }
 
     /**
+     * Scope: only include jackpot extractions.
+     */
+    public function scopeJackpot($query)
+    {
+        return $query->where('is_jackpot', true);
+    }
+
+    /**
      * Check if extraction is ready to mine.
-     *
-     * @return bool
      */
     public function isReady()
     {
@@ -198,8 +186,6 @@ class MoonExtraction extends Model
 
     /**
      * Check if extraction has expired.
-     *
-     * @return bool
      */
     public function isExpired()
     {
@@ -208,8 +194,6 @@ class MoonExtraction extends Model
 
     /**
      * Get hours until chunk arrival.
-     *
-     * @return float|null
      */
     public function getHoursUntilArrival()
     {
@@ -222,8 +206,6 @@ class MoonExtraction extends Model
 
     /**
      * Get hours until decay.
-     *
-     * @return float|null
      */
     public function getHoursUntilDecay()
     {
@@ -232,5 +214,108 @@ class MoonExtraction extends Model
         }
 
         return now()->diffInHours($this->natural_decay_time, false);
+    }
+
+    // ============================================
+    // JACKPOT DETECTION METHODS
+    // ============================================
+
+    /**
+     * Detect and mark if this extraction is a jackpot
+     */
+    public function detectJackpot(): bool
+    {
+        if (empty($this->ore_composition)) {
+            return false;
+        }
+
+        $jackpotService = app(JackpotDetectionService::class);
+        $isJackpot = $jackpotService->detectJackpotInComposition($this->ore_composition);
+
+        if ($isJackpot && !$this->is_jackpot) {
+            $this->is_jackpot = true;
+            $this->jackpot_detected_at = now();
+            $this->save();
+        }
+
+        return $isJackpot;
+    }
+
+    /**
+     * Get jackpot statistics for this extraction
+     */
+    public function getJackpotStatistics(): array
+    {
+        if (empty($this->ore_composition)) {
+            return [
+                'is_jackpot' => false,
+                'total_ore_types' => 0,
+                'jackpot_ore_types' => 0,
+                'jackpot_percentage' => 0,
+            ];
+        }
+
+        $jackpotService = app(JackpotDetectionService::class);
+        return $jackpotService->getJackpotStatistics($this->ore_composition);
+    }
+
+    /**
+     * Get all jackpot ores in this extraction
+     */
+    public function getJackpotOres(): array
+    {
+        if (empty($this->ore_composition)) {
+            return [];
+        }
+
+        $jackpotService = app(JackpotDetectionService::class);
+        return $jackpotService->getJackpotOresFromComposition($this->ore_composition);
+    }
+
+    /**
+     * Get jackpot display badge HTML
+     */
+    public function getJackpotBadgeAttribute(): ?string
+    {
+        if (!$this->is_jackpot) {
+            return null;
+        }
+
+        $stats = $this->getJackpotStatistics();
+        $percentage = round($stats['jackpot_percentage']);
+
+        return sprintf(
+            '<span class="badge badge-warning" title="Jackpot Extraction! %d%% of ores are +100%% variants" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-weight: bold;">
+                <i class="fas fa-star"></i> JACKPOT (%d%%)
+            </span>',
+            $percentage,
+            $percentage
+        );
+    }
+
+    /**
+     * Get jackpot value multiplier for this extraction
+     */
+    public function getJackpotValueMultiplier(): float
+    {
+        if (!$this->is_jackpot || empty($this->ore_composition)) {
+            return 1.0;
+        }
+
+        $stats = $this->getJackpotStatistics();
+        $jackpotPercentage = $stats['jackpot_quantity_percentage'] / 100;
+
+        // Jackpot ores are worth 2x, regular ores are worth 1x
+        // Calculate weighted average
+        return 1.0 + $jackpotPercentage;
+    }
+
+    /**
+     * Calculate estimated value with jackpot bonus
+     */
+    public function calculateValueWithJackpotBonus(float $baseValue): float
+    {
+        $multiplier = $this->getJackpotValueMultiplier();
+        return $baseValue * $multiplier;
     }
 }
