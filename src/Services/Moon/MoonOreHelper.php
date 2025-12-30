@@ -293,4 +293,141 @@ class MoonOreHelper
     {
         return array_merge(self::JACKPOT_ORE_IDS, self::COMPRESSED_JACKPOT_ORE_IDS);
     }
+
+    // ============================================
+    // METHODS FOR MoonExtraction MODEL COMPATIBILITY
+    // ============================================
+
+    /**
+     * Detect if an ore composition contains any jackpot ores
+     * 
+     * @param array $oreComposition Array of ['type_id' => quantity] or similar structure
+     * @return bool
+     */
+    public static function detectJackpotInComposition(array $oreComposition): bool
+    {
+        if (empty($oreComposition)) {
+            return false;
+        }
+
+        // Check if any of the type IDs in the composition are jackpot ores
+        foreach ($oreComposition as $ore) {
+            // Handle both array and object structures
+            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : ($ore->type_id ?? null);
+            
+            if ($typeId && self::isJackpotOre($typeId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get detailed jackpot statistics for an ore composition
+     * 
+     * @param array $oreComposition Array of ore data
+     * @return array Statistics including counts and percentages
+     */
+    public static function getJackpotStatistics(array $oreComposition): array
+    {
+        if (empty($oreComposition)) {
+            return [
+                'is_jackpot' => false,
+                'total_ore_types' => 0,
+                'jackpot_ore_types' => 0,
+                'jackpot_percentage' => 0,
+                'total_quantity' => 0,
+                'jackpot_quantity' => 0,
+                'jackpot_quantity_percentage' => 0,
+            ];
+        }
+
+        $totalOreTypes = 0;
+        $jackpotOreTypes = 0;
+        $totalQuantity = 0;
+        $jackpotQuantity = 0;
+
+        foreach ($oreComposition as $ore) {
+            // Handle both array and object structures
+            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : ($ore->type_id ?? null);
+            $quantity = is_array($ore) ? ($ore['quantity'] ?? 0) : ($ore->quantity ?? 0);
+
+            if ($typeId) {
+                $totalOreTypes++;
+                $totalQuantity += $quantity;
+
+                if (self::isJackpotOre($typeId)) {
+                    $jackpotOreTypes++;
+                    $jackpotQuantity += $quantity;
+                }
+            }
+        }
+
+        $jackpotPercentage = $totalOreTypes > 0 
+            ? ($jackpotOreTypes / $totalOreTypes) * 100 
+            : 0;
+
+        $jackpotQuantityPercentage = $totalQuantity > 0 
+            ? ($jackpotQuantity / $totalQuantity) * 100 
+            : 0;
+
+        return [
+            'is_jackpot' => $jackpotOreTypes > 0,
+            'total_ore_types' => $totalOreTypes,
+            'jackpot_ore_types' => $jackpotOreTypes,
+            'jackpot_percentage' => round($jackpotPercentage, 2),
+            'total_quantity' => $totalQuantity,
+            'jackpot_quantity' => $jackpotQuantity,
+            'jackpot_quantity_percentage' => round($jackpotQuantityPercentage, 2),
+        ];
+    }
+
+    /**
+     * Get all jackpot ores from a composition
+     * 
+     * @param array $oreComposition Array of ore data
+     * @return array Filtered array containing only jackpot ores
+     */
+    public static function getJackpotOresFromComposition(array $oreComposition): array
+    {
+        if (empty($oreComposition)) {
+            return [];
+        }
+
+        $jackpotOres = [];
+
+        foreach ($oreComposition as $ore) {
+            // Handle both array and object structures
+            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : ($ore->type_id ?? null);
+
+            if ($typeId && self::isJackpotOre($typeId)) {
+                $jackpotOres[] = $ore;
+            }
+        }
+
+        return $jackpotOres;
+    }
+
+    /**
+     * Calculate the value multiplier from jackpot ores in composition
+     * 
+     * @param array $oreComposition Array of ore data
+     * @return float Multiplier (1.0 = no jackpot, >1.0 = jackpot bonus)
+     */
+    public static function calculateJackpotMultiplier(array $oreComposition): float
+    {
+        $stats = self::getJackpotStatistics($oreComposition);
+        
+        if (!$stats['is_jackpot'] || $stats['total_quantity'] == 0) {
+            return 1.0;
+        }
+
+        // Jackpot ores yield 2x (100% more), regular ores yield 1x
+        // Calculate weighted average based on quantity
+        $jackpotPercentage = $stats['jackpot_quantity_percentage'] / 100;
+        
+        // Multiplier = (regular_pct * 1.0) + (jackpot_pct * 2.0)
+        return (1 - $jackpotPercentage) + ($jackpotPercentage * 2);
+    }
 }
