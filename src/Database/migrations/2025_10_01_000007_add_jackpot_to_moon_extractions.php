@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class AddJackpotToMoonExtractions extends Migration
 {
     /**
      * Run the migrations.
@@ -13,9 +13,15 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::table('mining_manager_moon_extractions', function (Blueprint $table) {
-            $table->boolean('is_jackpot')->default(false)->after('chunk_arrival_time');
-            $table->index('is_jackpot'); // Add index for filtering jackpot extractions
+        Schema::table('moon_extractions', function (Blueprint $table) {
+            // Add jackpot detection columns if they don't exist
+            if (!Schema::hasColumn('moon_extractions', 'is_jackpot')) {
+                $table->boolean('is_jackpot')->default(false)->after('ore_composition');
+            }
+            
+            if (!Schema::hasColumn('moon_extractions', 'jackpot_detected_at')) {
+                $table->timestamp('jackpot_detected_at')->nullable()->after('is_jackpot');
+            }
         });
     }
 
@@ -26,9 +32,8 @@ return new class extends Migration
      */
     public function down()
     {
-        Schema::table('mining_manager_moon_extractions', function (Blueprint $table) {
-            $table->dropIndex(['is_jackpot']);
-            $table->dropColumn('is_jackpot');
+        Schema::table('moon_extractions', function (Blueprint $table) {
+            $table->dropColumn(['is_jackpot', 'jackpot_detected_at']);
         });
     }
-};
+}
