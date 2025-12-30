@@ -2,127 +2,18 @@
 
 namespace MiningManager\Services\Moon;
 
+use MiningManager\Services\TypeIdRegistry;
+
 /**
  * Helper service for moon ore detection and classification
  * 
- * TYPE IDs VERIFIED AGAINST DATABASE - ALL CORRECT
+ * Now uses TypeIdRegistry for centralized type ID management
  */
 class MoonOreHelper
 {
     /**
-     * All jackpot ore type IDs (+100% variants)
-     * These indicate a jackpot extraction occurred
-     *
-     * @var array
-     */
-    const JACKPOT_ORE_IDS = [
-        // R4 (Ubiquitous) Jackpot Ores
-        46285,  // Glistening Bitumens
-        46287,  // Glistening Coesite
-        46283,  // Glistening Sylvite
-        46281,  // Glistening Zeolites
-        
-        // R8 (Common) Jackpot Ores
-        46289,  // Twinkling Cobaltite
-        46291,  // Twinkling Euxenite
-        46295,  // Twinkling Scheelite
-        46293,  // Twinkling Titanite
-        
-        // R16 (Uncommon) Jackpot Ores
-        46303,  // Shimmering Chromite
-        46297,  // Shimmering Otavite
-        46299,  // Shimmering Sperrylite
-        46301,  // Shimmering Vanadinite
-        
-        // R32 (Rare) Jackpot Ores
-        46305,  // Glowing Carnotite
-        46311,  // Glowing Cinnabar
-        46309,  // Glowing Pollucite
-        46307,  // Glowing Zircon
-        
-        // R64 (Exceptional) Jackpot Ores
-        46313,  // Shining Xenotime
-        46315,  // Shining Monazite
-        46317,  // Shining Loparite
-        46319,  // Shining Ytterbite
-    ];
-
-    /**
-     * Compressed jackpot ore type IDs
-     *
-     * @var array
-     */
-    const COMPRESSED_JACKPOT_ORE_IDS = [
-        // R4 Compressed Jackpot
-        62456,  // Compressed Glistening Bitumens
-        62459,  // Compressed Glistening Coesite
-        62466,  // Compressed Glistening Sylvite
-        62467,  // Compressed Glistening Zeolites
-        
-        // R8 Compressed Jackpot
-        62476,  // Compressed Twinkling Cobaltite
-        62473,  // Compressed Twinkling Euxenite
-        62470,  // Compressed Twinkling Scheelite
-        62479,  // Compressed Twinkling Titanite
-        
-        // R16 Compressed Jackpot
-        62482,  // Compressed Shimmering Chromite
-        62485,  // Compressed Shimmering Otavite
-        62488,  // Compressed Shimmering Sperrylite
-        62491,  // Compressed Shimmering Vanadinite
-        
-        // R32 Compressed Jackpot
-        62494,  // Compressed Glowing Carnotite
-        62497,  // Compressed Glowing Cinnabar
-        62500,  // Compressed Glowing Pollucite
-        62503,  // Compressed Glowing Zircon
-        
-        // R64 Compressed Jackpot
-        62512,  // Compressed Shining Xenotime
-        62509,  // Compressed Shining Monazite
-        62506,  // Compressed Shining Loparite
-        62515,  // Compressed Shining Ytterbite
-    ];
-
-    /**
-     * All moon ore type IDs (base, +15%, +100%)
-     *
-     * @var array
-     */
-    const ALL_MOON_ORE_IDS = [
-        // R4 (Ubiquitous) - 12 items
-        45492, 46284, 46285,  // Bitumens family
-        45493, 46286, 46287,  // Coesite family
-        45491, 46282, 46283,  // Sylvite family
-        45490, 46280, 46281,  // Zeolites family
-        
-        // R8 (Common) - 12 items
-        45494, 46288, 46289,  // Cobaltite family
-        45495, 46290, 46291,  // Euxenite family
-        45497, 46294, 46295,  // Scheelite family
-        45496, 46292, 46293,  // Titanite family
-        
-        // R16 (Uncommon) - 12 items
-        45501, 46302, 46303,  // Chromite family
-        45498, 46296, 46297,  // Otavite family
-        45499, 46298, 46299,  // Sperrylite family
-        45500, 46300, 46301,  // Vanadinite family
-        
-        // R32 (Rare) - 12 items
-        45502, 46304, 46305,  // Carnotite family
-        45506, 46310, 46311,  // Cinnabar family
-        45504, 46308, 46309,  // Pollucite family
-        45503, 46306, 46307,  // Zircon family
-        
-        // R64 (Exceptional) - 12 items
-        45510, 46312, 46313,  // Xenotime family
-        45511, 46314, 46315,  // Monazite family
-        45512, 46316, 46317,  // Loparite family
-        45513, 46318, 46319,  // Ytterbite family
-    ];
-
-    /**
      * Moon ore rarity classifications
+     * Maps type IDs to their rarity level
      *
      * @var array
      */
@@ -136,14 +27,14 @@ class MoonOreHelper
 
     /**
      * Check if a type ID is a jackpot ore
+     * Uses TypeIdRegistry as single source of truth
      *
      * @param int $typeId
      * @return bool
      */
     public static function isJackpotOre(int $typeId): bool
     {
-        return in_array($typeId, self::JACKPOT_ORE_IDS) || 
-               in_array($typeId, self::COMPRESSED_JACKPOT_ORE_IDS);
+        return in_array($typeId, TypeIdRegistry::getAllJackpotOres());
     }
 
     /**
@@ -154,7 +45,8 @@ class MoonOreHelper
      */
     public static function isMoonOre(int $typeId): bool
     {
-        return in_array($typeId, self::ALL_MOON_ORE_IDS);
+        return in_array($typeId, TypeIdRegistry::getAllMoonOres()) ||
+               in_array($typeId, TypeIdRegistry::getAllCompressedMoonOres());
     }
 
     /**
@@ -182,9 +74,9 @@ class MoonOreHelper
      */
     public static function getQuality(int $typeId): string
     {
-        if (in_array($typeId, self::JACKPOT_ORE_IDS) || 
-            in_array($typeId, self::COMPRESSED_JACKPOT_ORE_IDS)) {
-            return 'excellent'; // +100% jackpot
+        // Check if it's a jackpot ore (+100%)
+        if (self::isJackpotOre($typeId)) {
+            return 'excellent';
         }
         
         // Check if it's an improved variant (+15%)
@@ -205,7 +97,7 @@ class MoonOreHelper
         ];
         
         if (in_array($typeId, $improvedOres) || in_array($typeId, $compressedImprovedOres)) {
-            return 'improved'; // +15%
+            return 'improved';
         }
         
         return 'base';
@@ -278,7 +170,7 @@ class MoonOreHelper
     {
         // Check mining ledger entries for this extraction
         $hasJackpot = $extraction->miningLedger()
-            ->whereIn('type_id', array_merge(self::JACKPOT_ORE_IDS, self::COMPRESSED_JACKPOT_ORE_IDS))
+            ->whereIn('type_id', TypeIdRegistry::getAllJackpotOres())
             ->exists();
             
         return $hasJackpot;
@@ -286,12 +178,13 @@ class MoonOreHelper
 
     /**
      * Get all type IDs for jackpot detection
+     * Delegates to TypeIdRegistry
      *
      * @return array
      */
     public static function getAllJackpotTypeIds(): array
     {
-        return array_merge(self::JACKPOT_ORE_IDS, self::COMPRESSED_JACKPOT_ORE_IDS);
+        return TypeIdRegistry::getAllJackpotOres();
     }
 
     // ============================================
