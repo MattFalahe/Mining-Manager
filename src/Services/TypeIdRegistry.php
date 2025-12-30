@@ -463,4 +463,127 @@ class TypeIdRegistry
     {
         return count(self::getTypeIdsByCategory('all'));
     }
+
+    // ============================================
+    // MOON ORE VARIANT HELPERS
+    // ============================================
+
+    /**
+     * Get all improved ore type IDs (+15% variants)
+     * For both uncompressed and compressed
+     */
+    public static function getImprovedOreTypeIds(): array
+    {
+        return [
+            // Uncompressed improved ores (+15%)
+            46284, 46286, 46282, 46280,  // R4 improved
+            46288, 46290, 46294, 46292,  // R8 improved
+            46302, 46296, 46298, 46300,  // R16 improved
+            46304, 46310, 46308, 46306,  // R32 improved
+            46312, 46314, 46316, 46318,  // R64 improved
+        ];
+    }
+
+    /**
+     * Get all compressed improved ore type IDs (+15% variants)
+     */
+    public static function getCompressedImprovedOreTypeIds(): array
+    {
+        return [
+            62455, 62458, 62461, 62464,  // R4 compressed improved
+            62475, 62472, 62469, 62478,  // R8 compressed improved
+            62481, 62484, 62487, 62490,  // R16 compressed improved
+            62493, 62496, 62499, 62502,  // R32 compressed improved
+            62511, 62508, 62505, 62514,  // R64 compressed improved
+        ];
+    }
+
+    /**
+     * Get base ore type IDs (no modifiers)
+     * For both uncompressed and compressed
+     */
+    public static function getBaseOreTypeIds(): array
+    {
+        return [
+            // R4 base
+            45492, 45493, 45491, 45490,
+            // R8 base
+            45494, 45495, 45497, 45496,
+            // R16 base
+            45501, 45498, 45499, 45500,
+            // R32 base
+            45502, 45506, 45504, 45503,
+            // R64 base
+            45510, 45511, 45512, 45513,
+        ];
+    }
+
+    /**
+     * Get moon ore rarity mapping
+     * Returns array mapping rarity level to type IDs
+     */
+    public static function getMoonOreRarityMap(): array
+    {
+        return [
+            'R4' => [45492, 46284, 46285, 45493, 46286, 46287, 45491, 46282, 46283, 45490, 46280, 46281],
+            'R8' => [45494, 46288, 46289, 45495, 46290, 46291, 45497, 46294, 46295, 45496, 46292, 46293],
+            'R16' => [45501, 46302, 46303, 45498, 46296, 46297, 45499, 46298, 46299, 45500, 46300, 46301],
+            'R32' => [45502, 46304, 46305, 45506, 46310, 46311, 45504, 46308, 46309, 45503, 46306, 46307],
+            'R64' => [45510, 46312, 46313, 45511, 46314, 46315, 45512, 46316, 46317, 45513, 46318, 46319],
+        ];
+    }
+
+    /**
+     * Get type IDs for a specific rarity level
+     */
+    public static function getMoonOresByRarity(string $rarity): array
+    {
+        $rarityMap = self::getMoonOreRarityMap();
+        return $rarityMap[$rarity] ?? [];
+    }
+
+    /**
+     * Check if a type ID is a regular ore
+     */
+    public static function isRegularOre(int $typeId): bool
+    {
+        return in_array($typeId, self::REGULAR_ORES) ||
+               in_array($typeId, self::COMPRESSED_REGULAR_ORES);
+    }
+
+    /**
+     * Check if a type ID is a moon ore (any variant)
+     */
+    public static function isMoonOre(int $typeId): bool
+    {
+        return in_array($typeId, self::MOON_ORES) ||
+               in_array($typeId, self::COMPRESSED_MOON_ORES);
+    }
+
+    /**
+     * Check if a type ID is compressed
+     */
+    public static function isCompressedOre(int $typeId): bool
+    {
+        return in_array($typeId, self::COMPRESSED_REGULAR_ORES) ||
+               in_array($typeId, self::COMPRESSED_MOON_ORES);
+    }
+
+    /**
+     * Check if a type ID is ice
+     */
+    public static function isIce(int $typeId): bool
+    {
+        return in_array($typeId, self::ICE) ||
+               in_array($typeId, self::COMPRESSED_ICE);
+    }
+
+    /**
+     * Check if a type ID is gas
+     */
+    public static function isGas(int $typeId): bool
+    {
+        return in_array($typeId, self::GAS_FULLERITES) ||
+               in_array($typeId, self::GAS_BOOSTERS);
+    }
 }
