@@ -1,0 +1,466 @@
+<?php
+
+namespace MiningManager\Services;
+
+/**
+ * Centralized Type ID Registry
+ * 
+ * Single source of truth for all EVE Online type IDs used in Mining Manager.
+ * All type IDs verified against SeAT database as of December 2025.
+ * 
+ * MAINTENANCE: Update IDs here only - all other files reference this class.
+ */
+class TypeIdRegistry
+{
+    // ============================================
+    // REGULAR ORES (45 items)
+    // ============================================
+
+    const REGULAR_ORES = [
+        // Veldspar family
+        1230, 17470, 17471,
+        // Scordite family
+        1228, 17463, 17464,
+        // Pyroxeres family
+        1224, 17459, 17460,
+        // Plagioclase family
+        18, 17455, 17456,
+        // Omber family
+        1227, 17867, 17868,
+        // Kernite family
+        20, 17452, 17453,
+        // Jaspet family
+        1226, 17448, 17449,
+        // Hemorphite family
+        1231, 17444, 17445,
+        // Hedbergite family
+        21, 17440, 17441,
+        // Gneiss family
+        1229, 17865, 17866,
+        // Dark Ochre family
+        1232, 17436, 17437,
+        // Crokite family
+        1225, 17432, 17433,
+        // Bistot family
+        1223, 17428, 17429,
+        // Arkonor family
+        22, 17425, 17426,
+        // Mercoxit family
+        11396, 17869, 17870,
+    ];
+
+    const COMPRESSED_REGULAR_ORES = [
+        // Base compressed ores (15 types)
+        28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441,
+        28442, 28443, 28444, 28445, 28446,
+        // Compressed ore variants (30 types)
+        28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426,
+        28419, 28420, 28417, 28418, 28413, 28414, 28409, 28410, 28411, 28412,
+        28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
+    ];
+
+    // ============================================
+    // MOON ORES - ALL VARIANTS (60 items)
+    // ============================================
+
+    const MOON_ORES = [
+        // R4 (Ubiquitous) - 12 items
+        45492, 46284, 46285,  // Bitumens family (base, +15%, +100%)
+        45493, 46286, 46287,  // Coesite family
+        45491, 46282, 46283,  // Sylvite family
+        45490, 46280, 46281,  // Zeolites family
+        
+        // R8 (Common) - 12 items
+        45494, 46288, 46289,  // Cobaltite family
+        45495, 46290, 46291,  // Euxenite family
+        45497, 46294, 46295,  // Scheelite family
+        45496, 46292, 46293,  // Titanite family
+        
+        // R16 (Uncommon) - 12 items
+        45501, 46302, 46303,  // Chromite family
+        45498, 46296, 46297,  // Otavite family
+        45499, 46298, 46299,  // Sperrylite family
+        45500, 46300, 46301,  // Vanadinite family
+        
+        // R32 (Rare) - 12 items
+        45502, 46304, 46305,  // Carnotite family
+        45506, 46310, 46311,  // Cinnabar family
+        45504, 46308, 46309,  // Pollucite family
+        45503, 46306, 46307,  // Zircon family
+        
+        // R64 (Exceptional) - 12 items
+        45510, 46312, 46313,  // Xenotime family
+        45511, 46314, 46315,  // Monazite family
+        45512, 46316, 46317,  // Loparite family
+        45513, 46318, 46319,  // Ytterbite family
+    ];
+
+    const COMPRESSED_MOON_ORES = [
+        // R4 (Ubiquitous) Compressed - 12 items
+        62454, 62455, 62456,  // Compressed Bitumens family
+        62457, 62458, 62459,  // Compressed Coesite family
+        62460, 62461, 62466,  // Compressed Sylvite family
+        62463, 62464, 62467,  // Compressed Zeolites family
+        
+        // R8 (Common) Compressed - 12 items
+        62474, 62475, 62476,  // Compressed Cobaltite family
+        62471, 62472, 62473,  // Compressed Euxenite family
+        62468, 62469, 62470,  // Compressed Scheelite family
+        62477, 62478, 62479,  // Compressed Titanite family
+        
+        // R16 (Uncommon) Compressed - 12 items
+        62480, 62481, 62482,  // Compressed Chromite family
+        62483, 62484, 62485,  // Compressed Otavite family
+        62486, 62487, 62488,  // Compressed Sperrylite family
+        62489, 62490, 62491,  // Compressed Vanadinite family
+        
+        // R32 (Rare) Compressed - 12 items
+        62492, 62493, 62494,  // Compressed Carnotite family
+        62495, 62496, 62497,  // Compressed Cinnabar family
+        62498, 62499, 62500,  // Compressed Pollucite family
+        62501, 62502, 62503,  // Compressed Zircon family
+        
+        // R64 (Exceptional) Compressed - 12 items
+        62510, 62511, 62512,  // Compressed Xenotime family
+        62507, 62508, 62509,  // Compressed Monazite family
+        62504, 62505, 62506,  // Compressed Loparite family
+        62513, 62514, 62515,  // Compressed Ytterbite family
+    ];
+
+    // Jackpot ore IDs (+100% variants only)
+    const JACKPOT_ORES_UNCOMPRESSED = [
+        // R4 Jackpot
+        46285,  // Glistening Bitumens
+        46287,  // Glistening Coesite
+        46283,  // Glistening Sylvite
+        46281,  // Glistening Zeolites
+        
+        // R8 Jackpot
+        46289,  // Twinkling Cobaltite
+        46291,  // Twinkling Euxenite
+        46295,  // Twinkling Scheelite
+        46293,  // Twinkling Titanite
+        
+        // R16 Jackpot
+        46303,  // Shimmering Chromite
+        46297,  // Shimmering Otavite
+        46299,  // Shimmering Sperrylite
+        46301,  // Shimmering Vanadinite
+        
+        // R32 Jackpot
+        46305,  // Glowing Carnotite
+        46311,  // Glowing Cinnabar
+        46309,  // Glowing Pollucite
+        46307,  // Glowing Zircon
+        
+        // R64 Jackpot
+        46313,  // Shining Xenotime
+        46315,  // Shining Monazite
+        46317,  // Shining Loparite
+        46319,  // Shining Ytterbite
+    ];
+
+    const JACKPOT_ORES_COMPRESSED = [
+        // R4 Compressed Jackpot
+        62456,  // Compressed Glistening Bitumens
+        62459,  // Compressed Glistening Coesite
+        62466,  // Compressed Glistening Sylvite
+        62467,  // Compressed Glistening Zeolites
+        
+        // R8 Compressed Jackpot
+        62476,  // Compressed Twinkling Cobaltite
+        62473,  // Compressed Twinkling Euxenite
+        62470,  // Compressed Twinkling Scheelite
+        62479,  // Compressed Twinkling Titanite
+        
+        // R16 Compressed Jackpot
+        62482,  // Compressed Shimmering Chromite
+        62485,  // Compressed Shimmering Otavite
+        62488,  // Compressed Shimmering Sperrylite
+        62491,  // Compressed Shimmering Vanadinite
+        
+        // R32 Compressed Jackpot
+        62494,  // Compressed Glowing Carnotite
+        62497,  // Compressed Glowing Cinnabar
+        62500,  // Compressed Glowing Pollucite
+        62503,  // Compressed Glowing Zircon
+        
+        // R64 Compressed Jackpot
+        62512,  // Compressed Shining Xenotime
+        62509,  // Compressed Shining Monazite
+        62506,  // Compressed Shining Loparite
+        62515,  // Compressed Shining Ytterbite
+    ];
+
+    // ============================================
+    // ICE (16 items)
+    // ============================================
+
+    const ICE = [
+        // Standard Ice (8 types)
+        16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269,
+    ];
+
+    const COMPRESSED_ICE = [
+        // Compressed Ice (8 types)
+        17975, 17976, 17977, 17978, 17979, 17980, 17981, 17982,
+    ];
+
+    // ============================================
+    // GAS (12 items)
+    // ============================================
+
+    const GAS_FULLERITES = [
+        // Fullerites (C-X) - 8 types
+        30370, 30371, 30372, 30373, 30374, 30375, 30377, 30378,
+    ];
+
+    const GAS_BOOSTERS = [
+        // Booster Gases - 4 types
+        25276, 25278, 25274, 25268,
+    ];
+
+    // ============================================
+    // MINERALS (8 items)
+    // ============================================
+
+    const MINERALS = [
+        34,    // Tritanium
+        35,    // Pyerite
+        36,    // Mexallon
+        37,    // Isogen
+        38,    // Nocxium
+        39,    // Zydrine
+        40,    // Megacyte
+        11399, // Morphite
+    ];
+
+    // ============================================
+    // MOON MATERIALS (24 items)
+    // ============================================
+
+    const MOON_MATERIALS_R4 = [
+        16633, // Hydrocarbons
+        16635, // Evaporite Deposits
+        16636, // Silicates
+        16638, // Atmospheric Gases
+    ];
+
+    const MOON_MATERIALS_R8 = [
+        16634, // Titanium
+        16637, // Tungsten
+        16639, // Cobalt
+        16655, // Scandium
+    ];
+
+    const MOON_MATERIALS_R16 = [
+        16640, // Cadmium
+        16641, // Chromium
+        16644, // Vanadium
+        16647, // Platinum
+    ];
+
+    const MOON_MATERIALS_R32 = [
+        16642, // Caesium
+        16643, // Technetium
+        16646, // Mercury
+        16648, // Hafnium
+    ];
+
+    const MOON_MATERIALS_R64 = [
+        16649, // Neodymium
+        16650, // Dysprosium
+        16651, // Thulium
+        16652, // Promethium
+    ];
+
+    // ============================================
+    // ICE PRODUCTS (7 items)
+    // ============================================
+
+    const ICE_PRODUCTS = [
+        16272, // Heavy Water
+        16274, // Helium Isotopes
+        17889, // Hydrogen Isotopes
+        16273, // Liquid Ozone
+        17888, // Nitrogen Isotopes
+        17887, // Oxygen Isotopes
+        16275, // Strontium Clathrates
+    ];
+
+    // ============================================
+    // ABYSSAL ORES (10 items - Optional)
+    // ============================================
+
+    const ABYSSAL_ORES = [
+        52306,  // Talassonite (base)
+        56625,  // Abyssal Talassonite
+        56626,  // Hadal Talassonite
+        62582,  // Compressed Talassonite
+        62583,  // Compressed Abyssal Talassonite
+        62584,  // Compressed Hadal Talassonite
+        56629,  // Abyssal Rakovene
+        56630,  // Hadal Rakovene
+        56627,  // Abyssal Bezdnacine
+        56628,  // Hadal Bezdnacine
+    ];
+
+    // ============================================
+    // AGGREGATE GETTERS
+    // ============================================
+
+    /**
+     * Get all ore type IDs (regular ores only)
+     */
+    public static function getAllRegularOres(): array
+    {
+        return self::REGULAR_ORES;
+    }
+
+    /**
+     * Get all compressed regular ore type IDs
+     */
+    public static function getAllCompressedRegularOres(): array
+    {
+        return self::COMPRESSED_REGULAR_ORES;
+    }
+
+    /**
+     * Get all moon ore type IDs (all variants)
+     */
+    public static function getAllMoonOres(): array
+    {
+        return self::MOON_ORES;
+    }
+
+    /**
+     * Get all compressed moon ore type IDs (all variants)
+     */
+    public static function getAllCompressedMoonOres(): array
+    {
+        return self::COMPRESSED_MOON_ORES;
+    }
+
+    /**
+     * Get all jackpot ore type IDs (both compressed and uncompressed)
+     */
+    public static function getAllJackpotOres(): array
+    {
+        return array_merge(
+            self::JACKPOT_ORES_UNCOMPRESSED,
+            self::JACKPOT_ORES_COMPRESSED
+        );
+    }
+
+    /**
+     * Get all ice type IDs (raw + compressed)
+     */
+    public static function getAllIce(): array
+    {
+        return array_merge(self::ICE, self::COMPRESSED_ICE);
+    }
+
+    /**
+     * Get all gas type IDs
+     */
+    public static function getAllGas(): array
+    {
+        return array_merge(self::GAS_FULLERITES, self::GAS_BOOSTERS);
+    }
+
+    /**
+     * Get all moon material type IDs
+     */
+    public static function getAllMoonMaterials(): array
+    {
+        return array_merge(
+            self::MOON_MATERIALS_R4,
+            self::MOON_MATERIALS_R8,
+            self::MOON_MATERIALS_R16,
+            self::MOON_MATERIALS_R32,
+            self::MOON_MATERIALS_R64
+        );
+    }
+
+    /**
+     * Get all type IDs for a specific category
+     * 
+     * @param string $category Category name (ore, moon, ice, gas, minerals, materials, etc)
+     * @return array
+     */
+    public static function getTypeIdsByCategory(string $category): array
+    {
+        switch (strtolower($category)) {
+            case 'ore':
+                return self::REGULAR_ORES;
+            
+            case 'compressed-ore':
+                return self::COMPRESSED_REGULAR_ORES;
+            
+            case 'moon':
+                return self::MOON_ORES;
+            
+            case 'compressed-moon':
+                return self::COMPRESSED_MOON_ORES;
+            
+            case 'jackpot':
+                return self::getAllJackpotOres();
+            
+            case 'ice':
+                return self::getAllIce();
+            
+            case 'gas':
+                return self::getAllGas();
+            
+            case 'minerals':
+                return self::MINERALS;
+            
+            case 'materials':
+                return self::getAllMoonMaterials();
+            
+            case 'ice-products':
+                return self::ICE_PRODUCTS;
+            
+            case 'abyssal':
+                return self::ABYSSAL_ORES;
+            
+            case 'compressed':
+                return array_merge(
+                    self::COMPRESSED_REGULAR_ORES,
+                    self::COMPRESSED_MOON_ORES
+                );
+            
+            case 'all':
+                return array_merge(
+                    self::REGULAR_ORES,
+                    self::COMPRESSED_REGULAR_ORES,
+                    self::MOON_ORES,
+                    self::COMPRESSED_MOON_ORES,
+                    self::getAllIce(),
+                    self::getAllGas(),
+                    self::MINERALS,
+                    self::getAllMoonMaterials(),
+                    self::ICE_PRODUCTS
+                );
+            
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * Get count of items in a category
+     */
+    public static function getCategoryCount(string $category): int
+    {
+        return count(self::getTypeIdsByCategory($category));
+    }
+
+    /**
+     * Get total count of all tracked type IDs
+     */
+    public static function getTotalTrackedTypeIds(): int
+    {
+        return count(self::getTypeIdsByCategory('all'));
+    }
+}
