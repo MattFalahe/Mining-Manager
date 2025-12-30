@@ -12,20 +12,6 @@ use MiningManager\Services\TypeIdRegistry;
 class MoonOreHelper
 {
     /**
-     * Moon ore rarity classifications
-     * Maps type IDs to their rarity level
-     *
-     * @var array
-     */
-    const RARITY_MAP = [
-        'R4' => [45492, 46284, 46285, 45493, 46286, 46287, 45491, 46282, 46283, 45490, 46280, 46281],
-        'R8' => [45494, 46288, 46289, 45495, 46290, 46291, 45497, 46294, 46295, 45496, 46292, 46293],
-        'R16' => [45501, 46302, 46303, 45498, 46296, 46297, 45499, 46298, 46299, 45500, 46300, 46301],
-        'R32' => [45502, 46304, 46305, 45506, 46310, 46311, 45504, 46308, 46309, 45503, 46306, 46307],
-        'R64' => [45510, 46312, 46313, 45511, 46314, 46315, 45512, 46316, 46317, 45513, 46318, 46319],
-    ];
-
-    /**
      * Check if a type ID is a jackpot ore
      * Uses TypeIdRegistry as single source of truth
      *
@@ -57,7 +43,9 @@ class MoonOreHelper
      */
     public static function getRarity(int $typeId): ?string
     {
-        foreach (self::RARITY_MAP as $rarity => $typeIds) {
+        $rarityMap = TypeIdRegistry::getMoonOreRarityMap();
+        
+        foreach ($rarityMap as $rarity => $typeIds) {
             if (in_array($typeId, $typeIds)) {
                 return $rarity;
             }
@@ -80,23 +68,8 @@ class MoonOreHelper
         }
         
         // Check if it's an improved variant (+15%)
-        $improvedOres = [
-            46284, 46286, 46282, 46280,  // R4 improved
-            46288, 46290, 46294, 46292,  // R8 improved
-            46302, 46296, 46298, 46300,  // R16 improved
-            46304, 46310, 46308, 46306,  // R32 improved
-            46312, 46314, 46316, 46318,  // R64 improved
-        ];
-        
-        $compressedImprovedOres = [
-            62455, 62458, 62461, 62464,  // R4 compressed improved
-            62475, 62472, 62469, 62478,  // R8 compressed improved
-            62481, 62484, 62487, 62490,  // R16 compressed improved
-            62493, 62496, 62499, 62502,  // R32 compressed improved
-            62511, 62508, 62505, 62514,  // R64 compressed improved
-        ];
-        
-        if (in_array($typeId, $improvedOres) || in_array($typeId, $compressedImprovedOres)) {
+        if (in_array($typeId, TypeIdRegistry::getImprovedOreTypeIds()) || 
+            in_array($typeId, TypeIdRegistry::getCompressedImprovedOreTypeIds())) {
             return 'improved';
         }
         
