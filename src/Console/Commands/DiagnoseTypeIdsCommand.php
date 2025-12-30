@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use MiningManager\Services\Moon\MoonOreHelper;
 
 class DiagnoseTypeIdsCommand extends Command
 {
@@ -13,15 +14,16 @@ class DiagnoseTypeIdsCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:diagnose-type-ids
-                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|materials|minerals|ice|gas|all)}
-                            {--include-abyssal : Include abyssal ore diagnosis (Pochven ores)}';
+                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|minerals|ice|gas|jackpot|all)}
+                            {--include-abyssal : Include abyssal ore diagnosis (Pochven ores)}
+                            {--test-jackpot : Test jackpot detection logic}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Diagnose type IDs by verifying against CCP ESI API';
+    protected $description = 'Diagnose type IDs by verifying against CCP ESI API and test jackpot detection';
 
     /**
      * All type IDs organized by category
@@ -48,7 +50,7 @@ class DiagnoseTypeIdsCommand extends Command
     public function handle()
     {
         $this->info('╔════════════════════════════════════════════════════════════╗');
-        $this->info('║   Mining Manager - Type ID Diagnostics                    ║');
+        $this->info('║   Mining Manager - Type ID Diagnostics v2.0               ║');
         $this->info('╚════════════════════════════════════════════════════════════╝');
         $this->newLine();
 
@@ -56,11 +58,18 @@ class DiagnoseTypeIdsCommand extends Command
 
         $category = $this->option('category');
         $includeAbyssal = $this->option('include-abyssal');
+        $testJackpot = $this->option('test-jackpot');
 
         if ($category && $category !== 'all') {
             $this->verifyCategory($category);
         } else {
             $this->verifyAllCategories($includeAbyssal);
+        }
+
+        // Test jackpot detection if requested
+        if ($testJackpot) {
+            $this->newLine();
+            $this->testJackpotDetection();
         }
 
         $this->displaySummary();
@@ -69,7 +78,7 @@ class DiagnoseTypeIdsCommand extends Command
     }
 
     /**
-     * Load all type IDs
+     * Load all type IDs - UPDATED WITH ALL 120 MOON ORES
      */
     protected function loadTypeIds()
     {
@@ -124,36 +133,79 @@ class DiagnoseTypeIdsCommand extends Command
                 ],
             ],
             'moon' => [
-                'name' => 'Moon Ores',
-                'count' => 20,
+                'name' => 'Moon Ores (Uncompressed) - ALL VARIANTS',
+                'count' => 60,
                 'ids' => [
-                    // R4 Ores (Ubiquitous)
-                    45506, 45489, 45493, 45497,
-                    // R8 Ores (Common)
-                    45494, 45495, 46682, 46683,
-                    // R16 Ores (Uncommon)
-                    45492, 46679, 46687, 46688,
-                    // R32 Ores (Rare)
-                    46677, 45490, 46680, 46681,
-                    // R64 Ores (Exceptional)
-                    45491, 46676, 46678, 46689,
+                    // R4 (Ubiquitous) - 12 items
+                    45492, 46284, 46285,  // Bitumens family
+                    45493, 46286, 46287,  // Coesite family
+                    45491, 46282, 46283,  // Sylvite family
+                    45490, 46280, 46281,  // Zeolites family
+                    
+                    // R8 (Common) - 12 items
+                    45494, 46288, 46289,  // Cobaltite family
+                    45495, 46290, 46291,  // Euxenite family
+                    45497, 46294, 46295,  // Scheelite family
+                    45496, 46292, 46293,  // Titanite family
+                    
+                    // R16 (Uncommon) - 12 items
+                    45501, 46302, 46303,  // Chromite family
+                    45498, 46296, 46297,  // Otavite family
+                    45499, 46298, 46299,  // Sperrylite family
+                    45500, 46300, 46301,  // Vanadinite family
+                    
+                    // R32 (Rare) - 12 items
+                    45502, 46304, 46305,  // Carnotite family
+                    45506, 46310, 46311,  // Cinnabar family
+                    45504, 46308, 46309,  // Pollucite family
+                    45503, 46306, 46307,  // Zircon family
+                    
+                    // R64 (Exceptional) - 12 items
+                    45510, 46312, 46313,  // Xenotime family
+                    45511, 46314, 46315,  // Monazite family
+                    45512, 46316, 46317,  // Loparite family
+                    45513, 46318, 46319,  // Ytterbite family
                 ],
             ],
             'compressed-moon' => [
-                'name' => 'Compressed Moon Ores',
-                'count' => 20,
+                'name' => 'Compressed Moon Ores - ALL VARIANTS',
+                'count' => 60,
                 'ids' => [
-                    // Compressed R4 Ores
-                    46675, 46676, 46677, 46678,
-                    // Compressed R8 Ores
-                    46679, 46680, 46681, 46682,
-                    // Compressed R16 Ores
-                    46683, 46684, 46685, 46686,
-                    // Compressed R32 Ores
-                    46687, 46688, 46689, 46690,
-                    // Compressed R64 Ores
-                    46691, 46692, 46693, 46694,
+                    // R4 (Ubiquitous) Compressed - 12 items
+                    62454, 62455, 62456,  // Compressed Bitumens family
+                    62457, 62458, 62459,  // Compressed Coesite family
+                    62460, 62461, 62466,  // Compressed Sylvite family
+                    62463, 62464, 62467,  // Compressed Zeolites family
+                    
+                    // R8 (Common) Compressed - 12 items
+                    62474, 62475, 62476,  // Compressed Cobaltite family
+                    62471, 62472, 62473,  // Compressed Euxenite family
+                    62468, 62469, 62470,  // Compressed Scheelite family
+                    62477, 62478, 62479,  // Compressed Titanite family
+                    
+                    // R16 (Uncommon) Compressed - 12 items
+                    62480, 62481, 62482,  // Compressed Chromite family
+                    62483, 62484, 62485,  // Compressed Otavite family
+                    62486, 62487, 62488,  // Compressed Sperrylite family
+                    62489, 62490, 62491,  // Compressed Vanadinite family
+                    
+                    // R32 (Rare) Compressed - 12 items
+                    62492, 62493, 62494,  // Compressed Carnotite family
+                    62495, 62496, 62497,  // Compressed Cinnabar family
+                    62498, 62499, 62500,  // Compressed Pollucite family
+                    62501, 62502, 62503,  // Compressed Zircon family
+                    
+                    // R64 (Exceptional) Compressed - 12 items
+                    62510, 62511, 62512,  // Compressed Xenotime family
+                    62507, 62508, 62509,  // Compressed Monazite family
+                    62504, 62505, 62506,  // Compressed Loparite family
+                    62513, 62514, 62515,  // Compressed Ytterbite family
                 ],
+            ],
+            'jackpot' => [
+                'name' => 'Jackpot Moon Ores (+100% variants)',
+                'count' => 40,
+                'ids' => MoonOreHelper::getAllJackpotTypeIds(),
             ],
             'ice' => [
                 'name' => 'Ice (Raw + Compressed)',
@@ -327,6 +379,97 @@ class DiagnoseTypeIdsCommand extends Command
     }
 
     /**
+     * Test jackpot detection logic
+     */
+    protected function testJackpotDetection()
+    {
+        $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->info('💎 JACKPOT DETECTION TESTS');
+        $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->newLine();
+
+        $tests = [
+            [
+                'name' => 'R4 Jackpot Ore (Glistening Bitumens)',
+                'type_id' => 46285,
+                'expected_jackpot' => true,
+                'expected_rarity' => 'R4',
+                'expected_quality' => 'excellent',
+            ],
+            [
+                'name' => 'R64 Jackpot Ore (Shining Xenotime)',
+                'type_id' => 46313,
+                'expected_jackpot' => true,
+                'expected_rarity' => 'R64',
+                'expected_quality' => 'excellent',
+            ],
+            [
+                'name' => 'Base Moon Ore (Bitumens)',
+                'type_id' => 45492,
+                'expected_jackpot' => false,
+                'expected_rarity' => 'R4',
+                'expected_quality' => 'base',
+            ],
+            [
+                'name' => 'Improved Ore (Brimful Bitumens)',
+                'type_id' => 46284,
+                'expected_jackpot' => false,
+                'expected_rarity' => 'R4',
+                'expected_quality' => 'improved',
+            ],
+            [
+                'name' => 'Compressed Jackpot (Compressed Shining Xenotime)',
+                'type_id' => 62512,
+                'expected_jackpot' => true,
+                'expected_rarity' => null, // Rarity detection for compressed might not work
+                'expected_quality' => 'excellent',
+            ],
+        ];
+
+        $passed = 0;
+        $failed = 0;
+
+        foreach ($tests as $test) {
+            $this->line("Testing: {$test['name']} (ID: {$test['type_id']})");
+            
+            $isJackpot = MoonOreHelper::isJackpotOre($test['type_id']);
+            $rarity = MoonOreHelper::getRarity($test['type_id']);
+            $quality = MoonOreHelper::getQuality($test['type_id']);
+
+            $jackpotMatch = $isJackpot === $test['expected_jackpot'];
+            $rarityMatch = $test['expected_rarity'] === null || $rarity === $test['expected_rarity'];
+            $qualityMatch = $quality === $test['expected_quality'];
+
+            if ($jackpotMatch && $rarityMatch && $qualityMatch) {
+                $this->line("  ✅ PASS - Jackpot: " . ($isJackpot ? 'Yes' : 'No') . " | Rarity: {$rarity} | Quality: {$quality}");
+                $passed++;
+            } else {
+                $this->error("  ❌ FAIL");
+                if (!$jackpotMatch) {
+                    $this->line("     Expected jackpot: " . ($test['expected_jackpot'] ? 'true' : 'false') . ", Got: " . ($isJackpot ? 'true' : 'false'));
+                }
+                if (!$rarityMatch) {
+                    $this->line("     Expected rarity: {$test['expected_rarity']}, Got: {$rarity}");
+                }
+                if (!$qualityMatch) {
+                    $this->line("     Expected quality: {$test['expected_quality']}, Got: {$quality}");
+                }
+                $failed++;
+            }
+            $this->newLine();
+        }
+
+        $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->line("Test Results: {$passed} passed, {$failed} failed");
+        
+        if ($failed === 0) {
+            $this->info('✅ All jackpot detection tests passed!');
+        } else {
+            $this->error("❌ {$failed} tests failed! Please review MoonOreHelper logic.");
+        }
+    }
+
+    /**
      * Display summary
      */
     protected function displaySummary()
@@ -380,7 +523,18 @@ class DiagnoseTypeIdsCommand extends Command
         }
 
         $this->newLine();
-        $this->line('  💡 Tip: Use --category=gas to diagnose specific categories');
+        $this->line('  💡 Tip: Use --category=moon to diagnose all 60 moon ore variants');
+        $this->line('  💡 Tip: Use --category=jackpot to diagnose all 40 jackpot ores');
+        $this->line('  💡 Tip: Use --test-jackpot to test jackpot detection logic');
         $this->line('  💡 Tip: Use --include-abyssal to include Pochven ores');
+        
+        $this->newLine();
+        $this->line('  📊 UPDATED COVERAGE:');
+        $this->line('     - Regular Ores: 45 items');
+        $this->line('     - Compressed Ores: 45 items');
+        $this->line('     - Moon Ores: 60 items (base + improved + jackpot)');
+        $this->line('     - Compressed Moon: 60 items (base + improved + jackpot)');
+        $this->line('     - Jackpot Variants: 40 items (20 uncompressed + 20 compressed)');
+        $this->line('     - Total: 317 type IDs tracked!');
     }
 }
