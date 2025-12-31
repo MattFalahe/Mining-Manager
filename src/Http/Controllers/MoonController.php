@@ -59,12 +59,26 @@ class MoonController extends Controller
 
         $extractions = $query->orderBy('chunk_arrival_time', 'desc')->paginate(20);
 
+        // Calculate values for each extraction (respects current refined value setting)
+        foreach ($extractions as $extraction) {
+            if ($extraction->ore_composition) {
+                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            }
+        }
+
         // Get upcoming extractions (next 7 days)
         $upcoming = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '>=', Carbon::now())
             ->where('chunk_arrival_time', '<=', Carbon::now()->addDays(7))
             ->orderBy('chunk_arrival_time')
             ->get();
+
+        // Calculate values for upcoming extractions too
+        foreach ($upcoming as $extraction) {
+            if ($extraction->ore_composition) {
+                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            }
+        }
 
         return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status'));
     }
@@ -124,6 +138,13 @@ class MoonController extends Controller
         ])->with(['structure', 'corporation'])
             ->orderBy('chunk_arrival_time')
             ->get();
+
+        // Calculate values for each extraction
+        foreach ($extractions as $extraction) {
+            if ($extraction->ore_composition) {
+                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            }
+        }
 
         // Group by day
         $calendar = [];
@@ -264,6 +285,13 @@ class MoonController extends Controller
             ->with(['structure'])
             ->orderBy('extraction_start_time', 'desc')
             ->paginate(20);
+
+        // Calculate values for each extraction
+        foreach ($extractions as $extraction) {
+            if ($extraction->ore_composition) {
+                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            }
+        }
 
         $structure = $extractions->first()->structure ?? null;
 
