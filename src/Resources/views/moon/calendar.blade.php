@@ -278,7 +278,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     status: extraction.status,
                     moon: extraction.moon_name || 'Unknown',
                     structure: extraction.structure_name || 'Unknown',
-                    estimatedValue: extraction.estimated_value || 0,
+                    estimatedValue: extraction.calculated_value || extraction.estimated_value || 0,
                     oreComposition: extraction.ore_composition
                 }
             });
