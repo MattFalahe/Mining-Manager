@@ -174,7 +174,7 @@
                                     </td>
                                     <td>
                                         @if($extraction->ore_composition)
-                                            <span class="text-success">~{{ number_format($extraction->estimated_value ?? 0, 0) }} ISK</span>
+                                            <span class="text-success">~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK</span>
                                         @else
                                             <span class="text-muted">N/A</span>
                                         @endif
@@ -313,7 +313,7 @@
                                 <div class="col-md-4 text-right">
                                     @if($extraction->ore_composition)
                                         <h4 class="mb-2 text-success">
-                                            ~{{ number_format($extraction->estimated_value ?? 0, 0) }} ISK
+                                            ~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                         </h4>
                                         <p class="mb-2 text-muted small">{{ trans('mining-manager::moons.estimated_value') }}</p>
                                     @else
