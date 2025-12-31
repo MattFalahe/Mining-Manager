@@ -197,7 +197,7 @@
                                     <p class="mb-0 mt-2">
                                         <strong>{{ trans('mining-manager::moons.estimated_value') }}:</strong>
                                         <span class="badge badge-warning">
-                                            {{ number_format($extraction->estimated_value ?? 0, 0) }} ISK
+                                            {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                         </span>
                                     </p>
                                 </div>
@@ -308,7 +308,7 @@
                                 <div class="col-lg-3 col-md-12 text-right">
                                     @if($extraction->ore_composition)
                                         <h3 class="mb-1 text-success">
-                                            {{ number_format($extraction->estimated_value ?? 0, 0) }}
+                                            {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }}
                                         </h3>
                                         <p class="mb-2 text-muted small">ISK {{ trans('mining-manager::moons.estimated') }}</p>
                                     @else
@@ -406,7 +406,7 @@
                                         @endif
                                     </td>
                                     <td class="text-right text-success">
-                                        {{ number_format($extraction->estimated_value ?? 0, 0) }} ISK
+                                        {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                     </td>
                                 </tr>
                                 @endforeach
