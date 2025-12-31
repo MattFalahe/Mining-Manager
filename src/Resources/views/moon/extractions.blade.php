@@ -153,10 +153,10 @@
                     <span class="info-box-number">
                         @php
                             $extractionsWithValue = $extractions->filter(function($e) { 
-                                return isset($e->estimated_value) && $e->estimated_value > 0; 
+                                return isset($e->calculated_value ?? $e->estimated_value) && $e->calculated_value ?? $e->estimated_value > 0; 
                             });
                             $avgValue = $extractionsWithValue->count() > 0 
-                                ? $extractionsWithValue->avg('estimated_value') 
+                                ? $extractionsWithValue->avg('calculated_value') 
                                 : 0;
                         @endphp
                         {{ number_format($avgValue, 0) }}
@@ -232,7 +232,7 @@
                                     <td class="text-right">
                                         @if($extraction->ore_composition)
                                             <span class="text-success font-weight-bold">
-                                                {{ number_format($extraction->estimated_value ?? 0, 0) }} ISK
+                                                {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                             </span>
                                         @else
                                             <span class="text-muted">N/A</span>
@@ -312,7 +312,7 @@ const ctx = document.getElementById('valueChart');
 const extractions = @json($extractions->sortBy('extraction_start_time')->values()->map(function($e) {
     return [
         'date' => $e->extraction_start_time->format('M d, Y'),
-        'value' => $e->estimated_value ?? 0
+        'value' => $e->calculated_value ?? $e->estimated_value ?? 0
     ];
 }));
 
