@@ -9,6 +9,10 @@ namespace MiningManager\Services;
  * All type IDs verified against SeAT database as of December 2025.
  * 
  * MAINTENANCE: Update IDs here only - all other files reference this class.
+ * 
+ * UPDATED: Added new ore families from YC124-YC126 expansions
+ * - Deep Space Survey Ores (YC124): Mordunium, Ytirium, Eifyrium, Ducinium
+ * - Ore Prospecting Array Ores (YC126 - Equinox): Griemeer, Nocxite, Kylixium, Hezorime, Ueganite
  */
 class TypeIdRegistry
 {
@@ -306,11 +310,190 @@ class TypeIdRegistry
     ];
 
     // ============================================
+    // NEW ORES - DEEP SPACE SURVEY (YC124)
+    // ============================================
+
+    /**
+     * Mordunium Family - Pyerite-focused
+     * Discovered by DEMY Deep Space Survey (YC124)
+     * Found in nullsec/W-space with A0 stars and border systems
+     */
+    const MORDUNIUM_ORES = [
+        74521,  // Mordunium (base)
+        74522,  // Plum Mordunium (+5%)
+        74523,  // Prize Mordunium (+10%)
+        74524,  // Plunder Mordunium (+15%)
+    ];
+
+    const COMPRESSED_MORDUNIUM_ORES = [
+        74537,  // Compressed Mordunium
+        74538,  // Compressed Plum Mordunium
+        74539,  // Compressed Prize Mordunium
+        74540,  // Compressed Plunder Mordunium
+    ];
+
+    /**
+     * Ytirium Family - Isogen-focused
+     * Discovered by DEMY Deep Space Survey (YC124)
+     * Found in nullsec/W-space with A0 stars and border systems
+     */
+    const YTIRIUM_ORES = [
+        74525,  // Ytirium (base)
+        74526,  // Bootleg Ytirium (+5%)
+        74527,  // Firewater Ytirium (+10%)
+        74528,  // Moonshine Ytirium (+15%)
+    ];
+
+    const COMPRESSED_YTIRIUM_ORES = [
+        74541,  // Compressed Ytirium
+        74542,  // Compressed Bootleg Ytirium
+        74543,  // Compressed Firewater Ytirium
+        74544,  // Compressed Moonshine Ytirium
+    ];
+
+    /**
+     * Eifyrium Family - Zydrine-focused
+     * Discovered by DEMY Deep Space Survey (YC124)
+     * Found in nullsec/W-space with A0 stars and border systems
+     */
+    const EIFYRIUM_ORES = [
+        74529,  // Eifyrium (base)
+        74530,  // Doped Eifyrium (+5%)
+        74531,  // Boosted Eifyrium (+10%)
+        74532,  // Augmented Eifyrium (+15%)
+    ];
+
+    const COMPRESSED_EIFYRIUM_ORES = [
+        74545,  // Compressed Eifyrium
+        74546,  // Compressed Doped Eifyrium
+        74547,  // Compressed Boosted Eifyrium
+        74548,  // Compressed Augmented Eifyrium
+    ];
+
+    /**
+     * Ducinium Family - Megacyte-focused
+     * Discovered by DEMY Deep Space Survey (YC124)
+     * Found in nullsec/W-space with A0 stars and border systems
+     */
+    const DUCINIUM_ORES = [
+        74533,  // Ducinium (base)
+        74534,  // Noble Ducinium (+5%)
+        74535,  // Royal Ducinium (+10%)
+        74536,  // Imperial Ducinium (+15%)
+    ];
+
+    const COMPRESSED_DUCINIUM_ORES = [
+        74549,  // Compressed Ducinium
+        74550,  // Compressed Noble Ducinium
+        74551,  // Compressed Royal Ducinium
+        74552,  // Compressed Imperial Ducinium
+    ];
+
+    // ============================================
+    // NEW ORES - ORE PROSPECTING ARRAYS (YC126 - EQUINOX)
+    // ============================================
+
+    /**
+     * Griemeer Family - Isogen-focused
+     * From Ore Prospecting Arrays (Equinox Expansion YC126)
+     * Found in nullsec sovereignty systems
+     */
+    const GRIEMEER_ORES = [
+        81975,  // Griemeer (base)
+        81976,  // Clear Griemeer (+5%)
+        81977,  // Inky Griemeer (+10%)
+        81978,  // Opaque Griemeer (+15%)
+    ];
+
+    const COMPRESSED_GRIEMEER_ORES = [
+        82316,  // Compressed Griemeer
+        82317,  // Compressed Clear Griemeer
+        82318,  // Compressed Inky Griemeer
+        82319,  // Compressed Opaque Griemeer
+    ];
+
+    /**
+     * Nocxite Family - Nocxium-focused
+     * From Ore Prospecting Arrays (Equinox Expansion YC126)
+     * Found in nullsec sovereignty systems
+     */
+    const NOCXITE_ORES = [
+        82016,  // Nocxite (base)
+        82017,  // Fragrant Nocxite (+5%)
+        82018,  // Intoxicating Nocxite (+10%)
+        82019,  // Ambrosial Nocxite (+15%)
+    ];
+
+    const COMPRESSED_NOCXITE_ORES = [
+        82167,  // Compressed Nocxite
+        82168,  // Compressed Fragrant Nocxite
+        82169,  // Compressed Intoxicating Nocxite
+        82170,  // Compressed Ambrosial Nocxite
+    ];
+
+    /**
+     * Kylixium Family - Mexallon-focused
+     * From Ore Prospecting Arrays (Equinox Expansion YC126)
+     * Found in nullsec sovereignty systems
+     */
+    const KYLIXIUM_ORES = [
+        82006,  // Kylixium (base)
+        82007,  // Pure Kylixium (+5%)
+        82008,  // Vivid Kylixium (+10%)
+        82009,  // Radiant Kylixium (+15%)
+    ];
+
+    const COMPRESSED_KYLIXIUM_ORES = [
+        82157,  // Compressed Kylixium
+        82158,  // Compressed Pure Kylixium
+        82159,  // Compressed Vivid Kylixium
+        82160,  // Compressed Radiant Kylixium
+    ];
+
+    /**
+     * Hezorime Family - Zydrine-focused
+     * From Ore Prospecting Arrays (Equinox Expansion YC126)
+     * Found in nullsec sovereignty systems
+     */
+    const HEZORIME_ORES = [
+        82163,  // Hezorime (base)
+        82164,  // Jagged Hezorime (+5%)
+        82165,  // Barbed Hezorime (+10%)
+        82166,  // Serrated Hezorime (+15%)
+    ];
+
+    const COMPRESSED_HEZORIME_ORES = [
+        82313,  // Compressed Hezorime
+        82314,  // Compressed Jagged Hezorime
+        82315,  // Compressed Barbed Hezorime
+        82323,  // Compressed Serrated Hezorime
+    ];
+
+    /**
+     * Ueganite Family - Megacyte-focused
+     * From Ore Prospecting Arrays (Equinox Expansion YC126)
+     * Found in nullsec sovereignty systems
+     */
+    const UEGANITE_ORES = [
+        82011,  // Ueganite (base)
+        82012,  // Glassy Ueganite (+5%)
+        82013,  // Lustrous Ueganite (+10%)
+        82014,  // Prismatic Ueganite (+15%)
+    ];
+
+    const COMPRESSED_UEGANITE_ORES = [
+        82161,  // Compressed Ueganite
+        82162,  // Compressed Glassy Ueganite
+        82171,  // Compressed Lustrous Ueganite
+        82172,  // Compressed Prismatic Ueganite
+    ];
+
+    // ============================================
     // AGGREGATE GETTERS
     // ============================================
 
     /**
-     * Get all ore type IDs (regular ores only)
+     * Get all ore type IDs (regular ores only - legacy method)
      */
     public static function getAllRegularOres(): array
     {
@@ -383,7 +566,56 @@ class TypeIdRegistry
     }
 
     /**
-     * Get all type IDs for a specific category
+     * Get all Deep Space Survey ores (YC124)
+     * Includes: Mordunium, Ytirium, Eifyrium, Ducinium
+     */
+    public static function getAllDeepSpaceSurveyOres(): array
+    {
+        return array_merge(
+            self::MORDUNIUM_ORES,
+            self::COMPRESSED_MORDUNIUM_ORES,
+            self::YTIRIUM_ORES,
+            self::COMPRESSED_YTIRIUM_ORES,
+            self::EIFYRIUM_ORES,
+            self::COMPRESSED_EIFYRIUM_ORES,
+            self::DUCINIUM_ORES,
+            self::COMPRESSED_DUCINIUM_ORES
+        );
+    }
+
+    /**
+     * Get all Ore Prospecting Array ores (YC126 - Equinox)
+     * Includes: Griemeer, Nocxite, Kylixium, Hezorime, Ueganite
+     */
+    public static function getAllOreProspectingArrayOres(): array
+    {
+        return array_merge(
+            self::GRIEMEER_ORES,
+            self::COMPRESSED_GRIEMEER_ORES,
+            self::NOCXITE_ORES,
+            self::COMPRESSED_NOCXITE_ORES,
+            self::KYLIXIUM_ORES,
+            self::COMPRESSED_KYLIXIUM_ORES,
+            self::HEZORIME_ORES,
+            self::COMPRESSED_HEZORIME_ORES,
+            self::UEGANITE_ORES,
+            self::COMPRESSED_UEGANITE_ORES
+        );
+    }
+
+    /**
+     * Get all new ores (both Deep Space Survey and Ore Prospecting Arrays)
+     */
+    public static function getAllNewOres(): array
+    {
+        return array_merge(
+            self::getAllDeepSpaceSurveyOres(),
+            self::getAllOreProspectingArrayOres()
+        );
+    }
+
+    /**
+     * Get type IDs for a specific category
      * 
      * @param string $category Category name (ore, moon, ice, gas, minerals, materials, etc)
      * @return array
@@ -424,10 +656,56 @@ class TypeIdRegistry
             case 'abyssal':
                 return self::ABYSSAL_ORES;
             
+            // New ore categories
+            case 'deep-space-survey':
+                return self::getAllDeepSpaceSurveyOres();
+            
+            case 'ore-prospecting-array':
+                return self::getAllOreProspectingArrayOres();
+            
+            case 'new-ores':
+                return self::getAllNewOres();
+            
+            case 'griemeer':
+                return array_merge(self::GRIEMEER_ORES, self::COMPRESSED_GRIEMEER_ORES);
+            
+            case 'nocxite':
+                return array_merge(self::NOCXITE_ORES, self::COMPRESSED_NOCXITE_ORES);
+            
+            case 'kylixium':
+                return array_merge(self::KYLIXIUM_ORES, self::COMPRESSED_KYLIXIUM_ORES);
+            
+            case 'hezorime':
+                return array_merge(self::HEZORIME_ORES, self::COMPRESSED_HEZORIME_ORES);
+            
+            case 'ueganite':
+                return array_merge(self::UEGANITE_ORES, self::COMPRESSED_UEGANITE_ORES);
+            
+            case 'mordunium':
+                return array_merge(self::MORDUNIUM_ORES, self::COMPRESSED_MORDUNIUM_ORES);
+            
+            case 'ytirium':
+                return array_merge(self::YTIRIUM_ORES, self::COMPRESSED_YTIRIUM_ORES);
+            
+            case 'eifyrium':
+                return array_merge(self::EIFYRIUM_ORES, self::COMPRESSED_EIFYRIUM_ORES);
+            
+            case 'ducinium':
+                return array_merge(self::DUCINIUM_ORES, self::COMPRESSED_DUCINIUM_ORES);
+            
             case 'compressed':
                 return array_merge(
                     self::COMPRESSED_REGULAR_ORES,
-                    self::COMPRESSED_MOON_ORES
+                    self::COMPRESSED_MOON_ORES,
+                    self::COMPRESSED_MORDUNIUM_ORES,
+                    self::COMPRESSED_YTIRIUM_ORES,
+                    self::COMPRESSED_EIFYRIUM_ORES,
+                    self::COMPRESSED_DUCINIUM_ORES,
+                    self::COMPRESSED_GRIEMEER_ORES,
+                    self::COMPRESSED_NOCXITE_ORES,
+                    self::COMPRESSED_KYLIXIUM_ORES,
+                    self::COMPRESSED_HEZORIME_ORES,
+                    self::COMPRESSED_UEGANITE_ORES
                 );
             
             case 'all':
@@ -440,7 +718,9 @@ class TypeIdRegistry
                     self::getAllGas(),
                     self::MINERALS,
                     self::getAllMoonMaterials(),
-                    self::ICE_PRODUCTS
+                    self::ICE_PRODUCTS,
+                    self::ABYSSAL_ORES,
+                    self::getAllNewOres()
                 );
             
             default:
@@ -543,12 +823,13 @@ class TypeIdRegistry
     }
 
     /**
-     * Check if a type ID is a regular ore
+     * Check if a type ID is a regular ore (including new ores)
      */
     public static function isRegularOre(int $typeId): bool
     {
         return in_array($typeId, self::REGULAR_ORES) ||
-               in_array($typeId, self::COMPRESSED_REGULAR_ORES);
+               in_array($typeId, self::COMPRESSED_REGULAR_ORES) ||
+               in_array($typeId, self::getAllNewOres());
     }
 
     /**
@@ -566,7 +847,16 @@ class TypeIdRegistry
     public static function isCompressedOre(int $typeId): bool
     {
         return in_array($typeId, self::COMPRESSED_REGULAR_ORES) ||
-               in_array($typeId, self::COMPRESSED_MOON_ORES);
+               in_array($typeId, self::COMPRESSED_MOON_ORES) ||
+               in_array($typeId, self::COMPRESSED_MORDUNIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_YTIRIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_EIFYRIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_DUCINIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_GRIEMEER_ORES) ||
+               in_array($typeId, self::COMPRESSED_NOCXITE_ORES) ||
+               in_array($typeId, self::COMPRESSED_KYLIXIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_HEZORIME_ORES) ||
+               in_array($typeId, self::COMPRESSED_UEGANITE_ORES);
     }
 
     /**
@@ -585,5 +875,113 @@ class TypeIdRegistry
     {
         return in_array($typeId, self::GAS_FULLERITES) ||
                in_array($typeId, self::GAS_BOOSTERS);
+    }
+
+    // ============================================
+    // NEW ORE FAMILY HELPERS
+    // ============================================
+
+    /**
+     * Check if a type ID is Griemeer ore
+     */
+    public static function isGriemeer(int $typeId): bool
+    {
+        return in_array($typeId, self::GRIEMEER_ORES) ||
+               in_array($typeId, self::COMPRESSED_GRIEMEER_ORES);
+    }
+
+    /**
+     * Check if a type ID is Nocxite ore
+     */
+    public static function isNocxite(int $typeId): bool
+    {
+        return in_array($typeId, self::NOCXITE_ORES) ||
+               in_array($typeId, self::COMPRESSED_NOCXITE_ORES);
+    }
+
+    /**
+     * Check if a type ID is Kylixium ore
+     */
+    public static function isKylixium(int $typeId): bool
+    {
+        return in_array($typeId, self::KYLIXIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_KYLIXIUM_ORES);
+    }
+
+    /**
+     * Check if a type ID is Hezorime ore
+     */
+    public static function isHezorime(int $typeId): bool
+    {
+        return in_array($typeId, self::HEZORIME_ORES) ||
+               in_array($typeId, self::COMPRESSED_HEZORIME_ORES);
+    }
+
+    /**
+     * Check if a type ID is Ueganite ore
+     */
+    public static function isUeganite(int $typeId): bool
+    {
+        return in_array($typeId, self::UEGANITE_ORES) ||
+               in_array($typeId, self::COMPRESSED_UEGANITE_ORES);
+    }
+
+    /**
+     * Check if a type ID is Mordunium ore
+     */
+    public static function isMordunium(int $typeId): bool
+    {
+        return in_array($typeId, self::MORDUNIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_MORDUNIUM_ORES);
+    }
+
+    /**
+     * Check if a type ID is Ytirium ore
+     */
+    public static function isYtirium(int $typeId): bool
+    {
+        return in_array($typeId, self::YTIRIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_YTIRIUM_ORES);
+    }
+
+    /**
+     * Check if a type ID is Eifyrium ore
+     */
+    public static function isEifyrium(int $typeId): bool
+    {
+        return in_array($typeId, self::EIFYRIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_EIFYRIUM_ORES);
+    }
+
+    /**
+     * Check if a type ID is Ducinium ore
+     */
+    public static function isDucinium(int $typeId): bool
+    {
+        return in_array($typeId, self::DUCINIUM_ORES) ||
+               in_array($typeId, self::COMPRESSED_DUCINIUM_ORES);
+    }
+
+    /**
+     * Check if a type ID is from Deep Space Survey ores
+     */
+    public static function isDeepSpaceSurveyOre(int $typeId): bool
+    {
+        return self::isMordunium($typeId) ||
+               self::isYtirium($typeId) ||
+               self::isEifyrium($typeId) ||
+               self::isDucinium($typeId);
+    }
+
+    /**
+     * Check if a type ID is from Ore Prospecting Array ores
+     */
+    public static function isOreProspectingArrayOre(int $typeId): bool
+    {
+        return self::isGriemeer($typeId) ||
+               self::isNocxite($typeId) ||
+               self::isKylixium($typeId) ||
+               self::isHezorime($typeId) ||
+               self::isUeganite($typeId);
     }
 }
