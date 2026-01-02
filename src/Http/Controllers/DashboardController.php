@@ -8,6 +8,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
@@ -1100,33 +1101,37 @@ class DashboardController extends Controller
 
     private function isMoonOre($typeId)
     {
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
-        return in_array($typeId, $moonOreTypeIds);
+        return TypeIdRegistry::isMoonOre($typeId);
     }
 
     private function getMoonOreTypeIds()
     {
-        $rarities = config('mining-manager.moon_ore_rarity', []);
-        $typeIds = [];
-        foreach ($rarities as $rarity => $ids) {
-            $typeIds = array_merge($typeIds, $ids);
-        }
-        return $typeIds;
+        return TypeIdRegistry::getAllMoonOres();
     }
 
     private function getOreGroup($typeId)
     {
-        if ($this->isMoonOre($typeId)) return 'Moon';
+        // Check moon ore first (highest priority for categorization)
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            return 'Moon';
+        }
         
-        $iceTypeIds = config('mining-manager.ore_categories.ice', []);
-        if (in_array($typeId, $iceTypeIds)) return 'Ice';
+        // Check ice
+        if (TypeIdRegistry::isIce($typeId)) {
+            return 'Ice';
+        }
         
-        $gasTypeIds = config('mining-manager.ore_categories.gas', []);
-        if (in_array($typeId, $gasTypeIds)) return 'Gas';
+        // Check gas
+        if (TypeIdRegistry::isGas($typeId)) {
+            return 'Gas';
+        }
         
-        $abyssalTypeIds = config('mining-manager.ore_categories.abyssal_ore', []);
-        if (in_array($typeId, $abyssalTypeIds)) return 'Abyssal';
+        // Check abyssal ore
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return 'Abyssal';
+        }
         
+        // Everything else is regular ore (including new ores)
         return 'Ore';
     }
 
