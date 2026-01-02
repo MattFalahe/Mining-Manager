@@ -73,16 +73,29 @@ class SettingsManagerService
 
     /**
      * Get general settings
-     * FIXED: Now retrieves correct field names matching the actual form
+     * UPDATED: Now includes corporation_id and all settings are database-first with config fallback
      *
      * @return array
      */
     public function getGeneralSettings(): array
     {
         return [
-            // Corporation Settings
+            // Corporation Settings (from database, config as fallback)
+            'corporation_id' => $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id')),
             'corporation_name' => $this->getSetting('general.corporation_name', ''),
             'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
+            
+            // Ore Refining Settings
+            'ore_refining_rate' => $this->getSetting('general.ore_refining_rate', config('mining-manager.general.ore_refining_rate', 90.0)),
+            'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),
+            
+            // Price Provider Settings
+            'price_provider' => $this->getSetting('general.price_provider', config('mining-manager.general.price_provider', 'eve_market')),
+            'default_region_id' => $this->getSetting('general.default_region_id', config('mining-manager.general.default_region_id', 10000002)),
+            'price_modifier' => $this->getSetting('general.price_modifier', config('mining-manager.general.price_modifier', 0.0)),
+            
+            // Tax Calculation Method
+            'tax_calculation_method' => $this->getSetting('general.tax_calculation_method', config('mining-manager.general.tax_calculation_method', 'accumulated')),
             
             // Time Settings
             'timezone' => $this->getSetting('general.timezone', 'UTC'),
@@ -101,6 +114,18 @@ class SettingsManagerService
             'notify_moon_extractions' => $this->getSetting('general.notify_moon_extractions', true),
             'notify_events' => $this->getSetting('general.notify_events', true),
         ];
+    }
+
+    /**
+     * Get corporation ID (convenience method)
+     * Used throughout the plugin for tax calculations and data filtering
+     *
+     * @return int|null
+     */
+    public function getCorporationId(): ?int
+    {
+        $corpId = $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id'));
+        return $corpId ? (int) $corpId : null;
     }
 
     /**
