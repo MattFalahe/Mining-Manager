@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Seat\Eveapi\Models\Corporation\CorporationInfo;
 
 class SettingsController extends Controller
 {
@@ -49,12 +51,45 @@ class SettingsController extends Controller
             'features' => $this->settingsService->getFeatureFlags(),
         ];
 
-        return view('mining-manager::settings.index', compact('settings'));
+        // Get available corporations from SeAT
+        $corporations = $this->getAvailableCorporations();
+
+        return view('mining-manager::settings.index', compact('settings', 'corporations'));
+    }
+
+    /**
+     * Get list of available corporations from SeAT
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    private function getAvailableCorporations()
+    {
+        try {
+            // Get corporations that the user has access to
+            // via character affiliations
+            return CorporationInfo::whereIn('corporation_id', function($query) {
+                $query->select('corporation_id')
+                    ->from('character_infos')
+                    ->whereIn('character_id', function($subQuery) {
+                        $subQuery->select('character_id')
+                            ->from('user_settings')
+                            ->where('user_id', auth()->user()->id);
+                    });
+            })
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+        } catch (\Exception $e) {
+            Log::error('Error loading corporations for settings', [
+                'error' => $e->getMessage()
+            ]);
+            return collect();
+        }
     }
 
     /**
      * Update general settings
-     * FIXED: Validation now matches actual form fields
+     * UPDATED: Now handles corporation_id from dropdown selection
      *
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
@@ -63,6 +98,7 @@ class SettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Corporation Settings
+            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
             'corporation_name' => 'nullable|string|max:255',
             'corporation_ticker' => 'nullable|string|max:5',
             
@@ -92,7 +128,18 @@ class SettingsController extends Controller
         }
 
         try {
-            $this->settingsService->updateGeneralSettings($validator->validated());
+            $data = $validator->validated();
+            
+            // If corporation_id is provided, fetch the name and ticker from SeAT
+            if (isset($data['corporation_id']) && $data['corporation_id']) {
+                $corporation = CorporationInfo::find($data['corporation_id']);
+                if ($corporation) {
+                    $data['corporation_name'] = $corporation->name;
+                    $data['corporation_ticker'] = $corporation->ticker;
+                }
+            }
+            
+            $this->settingsService->updateGeneralSettings($data);
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'General settings updated successfully');
@@ -495,5 +542,42 @@ class SettingsController extends Controller
     public function help()
     {
         return view('mining-manager::help.index');
+    }
+
+    /**
+     * Search for corporations (Ajax endpoint for Select2)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function searchCorporations(Request $request)
+    {
+        $search = $request->input('search', '');
+        
+        try {
+            $corporations = CorporationInfo::whereIn('corporation_id', function($query) {
+                $query->select('corporation_id')
+                    ->from('character_infos')
+                    ->whereIn('character_id', function($subQuery) {
+                        $subQuery->select('character_id')
+                            ->from('user_settings')
+                            ->where('user_id', auth()->user()->id);
+                    });
+            })
+            ->where(function($query) use ($search) {
+                $query->where('name', 'LIKE', "%{$search}%")
+                      ->orWhere('ticker', 'LIKE', "%{$search}%");
+            })
+            ->select('corporation_id', 'name', 'ticker')
+            ->limit(20)
+            ->orderBy('name')
+            ->get();
+
+            return response()->json($corporations);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to search corporations: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
