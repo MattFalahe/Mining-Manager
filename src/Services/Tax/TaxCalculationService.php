@@ -6,6 +6,8 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -417,6 +419,7 @@ class TaxCalculationService
 
     /**
      * Calculate refined mineral value for ore.
+     * Now uses ReprocessingRegistry instead of config
      *
      * @param int $typeId
      * @param int $quantity
@@ -424,10 +427,10 @@ class TaxCalculationService
      */
     private function calculateRefinedMineralValue(int $typeId, int $quantity): float
     {
-        // Get ore refining composition from config
-        $refiningData = config("mining-manager.ore_refining.{$typeId}");
+        // Try to get mineral composition from database
+        $minerals = ReprocessingRegistry::getMinerals($typeId);
         
-        if (!$refiningData) {
+        if ($minerals === null || empty($minerals)) {
             Log::warning("Mining Manager: No refining data for type_id {$typeId}, using raw ore price");
             
             // Fallback to raw ore price
@@ -450,31 +453,29 @@ class TaxCalculationService
         $regionId = $generalSettings['default_region_id'];
         $priceType = $pricingSettings['price_type'];
         
-        $totalValue = 0;
+        // Get all unique mineral type IDs
+        $mineralTypeIds = array_keys($minerals);
         
-        // Calculate value of each mineral
-        foreach ($refiningData as $mineralTypeId => $mineralYield) {
-            // Apply refining efficiency
-            $actualYield = $mineralYield * $refiningEfficiency;
-            
-            // Get mineral price
-            $mineralPrice = $this->getOrePrice($mineralTypeId, $regionId, $priceType);
-            
-            if ($mineralPrice === null) {
-                Log::warning("Mining Manager: No price for mineral type_id {$mineralTypeId}");
-                continue;
-            }
-            
-            // Calculate this mineral's contribution
-            $mineralValue = $actualYield * $mineralPrice * $quantity;
-            $totalValue += $mineralValue;
+        // Fetch prices for all minerals at once
+        $mineralPrices = [];
+        foreach ($mineralTypeIds as $mineralTypeId) {
+            $price = $this->getOrePrice($mineralTypeId, $regionId, $priceType);
+            $mineralPrices[$mineralTypeId] = $price ?? 0;
         }
         
-        // Apply price modifier if set
-        $priceModifier = $generalSettings['price_modifier'] / 100;
-        $totalValue = $totalValue * (1 + $priceModifier);
+        // Use ReprocessingRegistry to calculate refined value
+        $refinedValue = ReprocessingRegistry::calculateRefinedValue(
+            $typeId,
+            $quantity,
+            $refiningEfficiency,
+            $mineralPrices
+        );
         
-        return $totalValue;
+        // Apply price modifier
+        $priceModifier = $generalSettings['price_modifier'] / 100;
+        $refinedValue = $refinedValue * (1 + $priceModifier);
+        
+        return $refinedValue;
     }
 
     /**
@@ -574,17 +575,19 @@ class TaxCalculationService
 
     /**
      * Get moon ore rarity level.
+     * Now uses TypeIdRegistry instead of config
      *
      * @param int $typeId
      * @return string|null
      */
     private function getMoonOreRarity(int $typeId): ?string
     {
-        $rarities = config('mining-manager.moon_ore_rarity', []);
+        // Use TypeIdRegistry for moon ore rarity mapping
+        $rarityMap = TypeIdRegistry::getMoonOreRarityMap();
         
-        foreach ($rarities as $rarity => $typeIds) {
+        foreach ($rarityMap as $rarity => $typeIds) {
             if (in_array($typeId, $typeIds)) {
-                return $rarity;
+                return strtolower($rarity); // Return as lowercase (r64, r32, etc.)
             }
         }
         
@@ -593,32 +596,58 @@ class TaxCalculationService
 
     /**
      * Get ore category.
+     * Now uses TypeIdRegistry instead of config
      *
      * @param int $typeId
      * @return string
      */
     private function getOreCategory(int $typeId): string
     {
-        $categories = config('mining-manager.ore_categories', []);
-        
-        foreach ($categories as $category => $typeIds) {
-            if (in_array($typeId, $typeIds)) {
-                return $category;
-            }
+        // Check each category using TypeIdRegistry
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            return 'moon';
         }
         
-        return 'ore'; // Default to regular ore
+        if (TypeIdRegistry::isIce($typeId)) {
+            return 'ice';
+        }
+        
+        if (TypeIdRegistry::isGas($typeId)) {
+            return 'gas';
+        }
+        
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return 'abyssal_ore';
+        }
+        
+        // Check if it's one of the new ore types
+        if (TypeIdRegistry::isOreProspectingArrayOre($typeId)) {
+            return 'ore';
+        }
+        
+        if (TypeIdRegistry::isDeepSpaceSurveyOre($typeId)) {
+            return 'ore';
+        }
+        
+        // Check if it's a regular ore
+        if (TypeIdRegistry::isRegularOre($typeId)) {
+            return 'ore';
+        }
+        
+        // Default fallback
+        return 'ore';
     }
 
     /**
      * Check if type is moon ore.
+     * Now uses TypeIdRegistry instead of config
      *
      * @param int $typeId
      * @return bool
      */
     private function isMoonOre(int $typeId): bool
     {
-        return $this->getMoonOreRarity($typeId) !== null;
+        return TypeIdRegistry::isMoonOre($typeId);
     }
 
     /**
