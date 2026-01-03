@@ -22,44 +22,47 @@
             </h5>
         </div>
         <div class="card-body">
+            {{-- Corporation Selection Dropdown --}}
             <div class="form-group">
-                <label for="corporation_name">
-                    <i class="fas fa-tag"></i>
-                    {{ trans('mining-manager::settings.corporation_name') }}
+                <label for="corporation_id">
+                    <i class="fas fa-building"></i>
+                    Corporation <span class="text-danger">*</span>
                 </label>
-                <input type="text" 
-                       class="form-control @error('corporation_name') is-invalid @enderror" 
-                       id="corporation_name" 
-                       name="corporation_name" 
-                       value="{{ old('corporation_name', $settings->corporation_name ?? '') }}"
-                       placeholder="{{ trans('mining-manager::settings.corporation_name_placeholder') }}">
-                @error('corporation_name')
+                <select class="form-control @error('corporation_id') is-invalid @enderror" 
+                        id="corporation_id" 
+                        name="corporation_id"
+                        required>
+                    <option value="">-- Select Corporation --</option>
+                    @if(isset($corporations))
+                        @foreach($corporations as $corp)
+                            <option value="{{ $corp->corporation_id }}" 
+                                {{ (old('corporation_id', $settings['general']['corporation_id'] ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
+                                [{{ $corp->ticker }}] {{ $corp->name }}
+                            </option>
+                        @endforeach
+                    @endif
+                </select>
+                @error('corporation_id')
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
                 <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.corporation_name_help') }}
+                    Select the corporation you want to manage with this plugin. All tax calculations and mining data will be filtered to this corporation.
                 </small>
             </div>
 
-            <div class="form-group">
-                <label for="corporation_ticker">
-                    <i class="fas fa-code"></i>
-                    {{ trans('mining-manager::settings.corporation_ticker') }}
-                </label>
-                <input type="text" 
-                       class="form-control @error('corporation_ticker') is-invalid @enderror" 
-                       id="corporation_ticker" 
-                       name="corporation_ticker" 
-                       value="{{ old('corporation_ticker', $settings->corporation_ticker ?? '') }}"
-                       placeholder="{{ trans('mining-manager::settings.corporation_ticker_placeholder') }}"
-                       maxlength="5">
-                @error('corporation_ticker')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.corporation_ticker_help') }}
-                </small>
+            {{-- Display Currently Selected Corporation (Read-only Info) --}}
+            @if(!empty($settings['general']['corporation_name']))
+            <div class="alert alert-info">
+                <strong><i class="fas fa-info-circle"></i> Current Corporation:</strong><br>
+                <span class="h5">[{{ $settings['general']['corporation_ticker'] ?? '' }}] {{ $settings['general']['corporation_name'] }}</span>
+                <br>
+                <small class="text-muted">Corporation ID: {{ $settings['general']['corporation_id'] }}</small>
             </div>
+            @endif
+
+            {{-- Hidden fields for corporation name and ticker (auto-filled by controller) --}}
+            <input type="hidden" name="corporation_name" value="{{ old('corporation_name', $settings['general']['corporation_name'] ?? '') }}">
+            <input type="hidden" name="corporation_ticker" value="{{ old('corporation_ticker', $settings['general']['corporation_ticker'] ?? '') }}">
         </div>
     </div>
 
