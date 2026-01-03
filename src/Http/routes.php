@@ -616,6 +616,13 @@ Route::group([
             'middleware' => 'can:mining-manager.settings.view',
         ]);
 
+        // Corporation search for dropdown (Ajax)
+        Route::get('/search-corporations', [
+            'as' => 'mining-manager.settings.search-corporations',
+            'uses' => 'SettingsController@searchCorporations',
+            'middleware' => 'can:mining-manager.settings.view',
+        ]);
+
         Route::post('/general', [
             'as' => 'mining-manager.settings.update-general',
             'uses' => 'SettingsController@updateGeneral',
