@@ -382,38 +382,25 @@ class TaxCalculationService
 
     /**
      * Calculate value of a single ore entry.
+     * Now uses OreValuationService for consistency across the application.
      *
      * @param object $entry Mining ledger entry
      * @return float
      */
     private function calculateOreValue($entry): float
     {
-        $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        
-        if ($generalSettings['ore_valuation_method'] === 'mineral_price') {
-            // Calculate based on refined minerals
-            return $this->calculateRefinedMineralValue($entry->type_id, $entry->quantity);
-        } else {
-            // Calculate based on ore price
-            $price = $this->getOrePrice(
-                $entry->type_id,
-                $generalSettings['default_region_id'],
-                $pricingSettings['price_type']
-            );
-            
-            if ($price === null) {
-                Log::warning("Mining Manager: No price data for type_id {$entry->type_id}");
-                return 0;
-            }
-            
-            $value = $entry->quantity * $price;
-            
-            // Apply price modifier
-            $priceModifier = $generalSettings['price_modifier'] / 100;
-            $value = $value * (1 + $priceModifier);
-            
-            return $value;
+        try {
+            // Use OreValuationService for consistent valuation logic
+            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+
+            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+
+            return $values['total_value'];
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error calculating ore value for type_id {$entry->type_id}", [
+                'error' => $e->getMessage(),
+            ]);
+            return 0;
         }
     }
 

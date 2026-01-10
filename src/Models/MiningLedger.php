@@ -410,32 +410,34 @@ class MiningLedger extends Model
     }
 
     /**
-     * Calculate and update the ore value.
-     * FIXED: Added error handling
-     * 
+     * Calculate and update the ore value using OreValuationService.
+     * Properly calculates both ore_value and mineral_value based on configured valuation method.
+     *
      * @return void
      */
     public function calculateValue()
     {
         try {
-            $priceCache = MiningPriceCache::where('type_id', $this->type_id)
-                ->where('region_id', config('mining-manager.pricing.default_region_id', 10000002))
-                ->latest('cached_at')
-                ->first();
+            // Use OreValuationService to calculate values
+            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
 
-            if ($priceCache) {
-                $priceType = config('mining-manager.pricing.price_type', 'sell');
-                $price = match ($priceType) {
-                    'sell' => $priceCache->sell_price,
-                    'buy' => $priceCache->buy_price,
-                    'average' => $priceCache->average_price,
-                    default => $priceCache->sell_price,
-                };
+            $values = $valuationService->calculateOreValue($this->type_id, $this->quantity);
 
-                $this->unit_price = $price ?? 0;
-                $this->ore_value = $this->quantity * $this->unit_price;
-                $this->total_value = $this->ore_value;
-            }
+            // Update all value fields
+            $this->unit_price = $values['unit_price'];
+            $this->ore_value = $values['ore_value'];
+            $this->mineral_value = $values['mineral_value'];
+            $this->total_value = $values['total_value'];
+
+            Log::debug('MiningLedger: Calculated values', [
+                'ledger_id' => $this->id,
+                'type_id' => $this->type_id,
+                'quantity' => $this->quantity,
+                'ore_value' => $this->ore_value,
+                'mineral_value' => $this->mineral_value,
+                'total_value' => $this->total_value,
+                'valuation_method' => $values['valuation_method'],
+            ]);
         } catch (\Exception $e) {
             Log::error('MiningLedger: Failed to calculate value', [
                 'ledger_id' => $this->id,

@@ -1103,7 +1103,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * FIXED METHOD - Now uses batch loading for better performance
+     * FIXED METHOD - Now uses OreValuationService to respect ore_valuation_method setting
      */
     private function calculateTotalValue($miningData)
     {
@@ -1111,47 +1111,30 @@ class DashboardController extends Controller
             return 0;
         }
 
-        // Get all unique type IDs
-        $typeIds = $miningData->pluck('type_id')->unique()->toArray();
-        
-        // Fetch all prices at once for better performance
-        $prices = $this->marketDataService->getCachedPrices($typeIds);
-        
-        // Calculate total value
-        return $miningData->sum(function($entry) use ($prices) {
-            $price = $prices[$entry->type_id] ?? null;
-            
-            if ($price === null) {
-                \Log::warning('No price found for type_id in DashboardController', [
-                    'type_id' => $entry->type_id
-                ]);
-                return 0;
-            }
-            
-            return $entry->quantity * $price;
+        // Use OreValuationService for proper valuation
+        $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+
+        // Calculate total value using the configured valuation method
+        return $miningData->sum(function($entry) use ($valuationService) {
+            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+            return $values['total_value'];
         });
     }
 
     /**
-     * FIXED: Calculate entry value with proper error handling
-     * This replaces the commented-out method and is used by chart methods
+     * FIXED: Calculate entry value using OreValuationService
+     * Respects ore_valuation_method setting (ore_price vs mineral_price)
+     * This is used by chart methods and performance calculations
      */
     private function calculateEntryValue($entry)
     {
         try {
-            // Get price from MarketDataService
-            $price = $this->marketDataService->getCachedPrice($entry->type_id);
-            
-            // If no price found, return 0 to avoid calculation errors
-            if ($price === null) {
-                \Log::debug('No price found for type_id in calculateEntryValue', [
-                    'type_id' => $entry->type_id,
-                    'entry_id' => $entry->id ?? 'unknown'
-                ]);
-                return 0;
-            }
-            
-            return $entry->quantity * $price;
+            // Use OreValuationService for proper valuation
+            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+
+            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+
+            return $values['total_value'];
         } catch (\Exception $e) {
             \Log::error('Error calculating entry value', [
                 'type_id' => $entry->type_id ?? 'unknown',

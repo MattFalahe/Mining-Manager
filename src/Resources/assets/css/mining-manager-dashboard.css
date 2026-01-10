@@ -1713,9 +1713,69 @@
 .mining-dashboard .info-box:nth-child(4) { animation-delay: 0.4s; }
 
 /* ============================================
+   Tab Navigation (Combined Director Dashboard)
+   ============================================ */
+.mining-dashboard .nav-tabs {
+    border-bottom: 2px solid #454d55;
+}
+
+.mining-dashboard .nav-tabs .nav-link {
+    color: #c2c7d0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border: none;
+    background: transparent;
+    margin-right: 8px;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .nav-tabs .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.mining-dashboard .nav-tabs .nav-link.active {
+    background-color: #343a40;
+    border: 2px solid #454d55;
+    border-bottom: 2px solid #343a40;
+    color: #fff;
+    font-weight: 600;
+}
+
+.mining-dashboard .tab-content {
+    padding-top: 20px;
+}
+
+.mining-dashboard .personal-badge {
+    background: linear-gradient(to right, #667eea 0%, #764ba2 100%);
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.mining-dashboard .corporation-badge {
+    background: linear-gradient(to right, #f093fb 0%, #f5576c 100%);
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.mining-dashboard .card-dark {
+    background-color: #343a40;
+    border-color: #454d55;
+}
+
+.mining-dashboard .card-header {
+    background-color: #2d3338;
+    border-bottom-color: #454d55;
+}
+
+/* ============================================
    End of Dashboard Styles
    ============================================ */
--e 
+-e
 
 /* ============================================
    SETTINGS-SPECIFIC STYLES  

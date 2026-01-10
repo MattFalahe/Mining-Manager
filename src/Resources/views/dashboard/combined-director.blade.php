@@ -5,25 +5,6 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .nav-tabs .nav-link {
-        color: #c2c7d0;
-    }
-    .nav-tabs .nav-link.active {
-        background-color: #343a40;
-        border-color: #454d55 #454d55 #343a40;
-        color: #fff;
-    }
-    .tab-content {
-        padding-top: 20px;
-    }
-    .personal-badge {
-        background: linear-gradient(to right, #667eea 0%, #764ba2 100%);
-    }
-    .corporation-badge {
-        background: linear-gradient(to right, #f093fb 0%, #f5576c 100%);
-    }
-</style>
 @endpush
 
 @section('full')
@@ -133,6 +114,75 @@
                                 </div>
                             </div>
 
+                            {{-- LAST 12 MONTHS PERSONAL STATISTICS --}}
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-chart-area"></i>
+                                                {{ trans('mining-manager::dashboard.last_12_months_stats') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                {{-- Total Quantity --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-primary">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($personalLast12MonthsStats['total_quantity'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.total_quantity') }}</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-gem"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Total Value --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-success">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($personalLast12MonthsStats['total_value'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.total_value') }} ISK</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-coins"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Total Volume --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-info">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($personalLast12MonthsStats['total_volume'], 2) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.total_volume') }} m³</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-cube"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Avg Per Month --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-warning">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($personalLast12MonthsStats['avg_per_month'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.avg_per_month') }} ISK</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-chart-bar"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {{-- PERSONAL RANKINGS --}}
                             <div class="row">
                                 <div class="col-md-6">
@@ -184,7 +234,8 @@
 
                             {{-- PERSONAL CHARTS --}}
                             <div class="row">
-                                <div class="col-12">
+                                {{-- Mining Performance Chart --}}
+                                <div class="col-lg-6">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
@@ -193,7 +244,39 @@
                                             </h3>
                                         </div>
                                         <div class="card-body">
-                                            <canvas id="personalMiningChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
+                                            <canvas id="personalMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Mining Volume by Group --}}
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-chart-pie"></i>
+                                                {{ trans('mining-manager::dashboard.mining_volume_by_group') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="personalVolumeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Personal Income Chart --}}
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-chart-bar"></i>
+                                                {{ trans('mining-manager::dashboard.mining_income_last_12_months') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="personalIncomeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                         </div>
                                     </div>
                                 </div>
@@ -273,6 +356,75 @@
                                                             <span class="info-box-text">{{ trans('mining-manager::dashboard.active_miners') }}</span>
                                                             <span class="info-box-number">{{ $corpCurrentMonthStats['active_miners'] }}</span>
                                                             <small>{{ trans('mining-manager::dashboard.characters') }}</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- LAST 12 MONTHS CORPORATION STATISTICS --}}
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-chart-area"></i>
+                                                {{ trans('mining-manager::dashboard.last_12_months_stats') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                {{-- All Ore Total Value --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-primary">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($corpLast12MonthsStats['all_ore_total_value'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.all_ore_total_value') }}</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-gem"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Moon Ore Total Value --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-secondary">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($corpLast12MonthsStats['moon_ore_total_value'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.moon_ore_total_value') }}</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-moon"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Total Tax Collected --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-success">
+                                                        <div class="inner">
+                                                            <h3>{{ number_format($corpLast12MonthsStats['tax_collected'], 0) }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.total_tax_collected') }}</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-coins"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {{-- Active Miners --}}
+                                                <div class="col-lg-3 col-md-6">
+                                                    <div class="small-box bg-warning">
+                                                        <div class="inner">
+                                                            <h3>{{ $corpLast12MonthsStats['active_miners'] }}</h3>
+                                                            <p>{{ trans('mining-manager::dashboard.total_active_miners') }}</p>
+                                                        </div>
+                                                        <div class="icon">
+                                                            <i class="fas fa-users"></i>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -368,7 +520,7 @@
                                             </h3>
                                         </div>
                                         <div class="card-body">
-                                            <canvas id="corpMiningChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
+                                            <canvas id="corpMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                         </div>
                                     </div>
                                 </div>
@@ -382,7 +534,38 @@
                                             </h3>
                                         </div>
                                         <div class="card-body">
-                                            <canvas id="moonMiningChart" style="min-height: 250px; height: 250px; max-height: 250px; max-width: 100%;"></canvas>
+                                            <canvas id="moonMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Tax Collection Charts --}}
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-file-invoice-dollar"></i>
+                                                {{ trans('mining-manager::dashboard.mining_tax_last_12_months') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="miningTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-calendar-alt"></i>
+                                                {{ trans('mining-manager::dashboard.event_tax_last_12_months') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="eventTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                         </div>
                                     </div>
                                 </div>
@@ -487,6 +670,164 @@ $(document).ready(function() {
                 borderColor: 'rgb(255, 206, 86)',
                 backgroundColor: 'rgba(255, 206, 86, 0.2)',
                 tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#c2c7d0' }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                x: {
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+
+    // Personal Volume by Group Chart
+    var personalVolumeCtx = document.getElementById('personalVolumeChart').getContext('2d');
+    new Chart(personalVolumeCtx, {
+        type: 'pie',
+        data: {
+            labels: {!! json_encode($personalMiningVolumeByGroupChart['labels']) !!},
+            datasets: [{
+                data: {!! json_encode($personalMiningVolumeByGroupChart['data']) !!},
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.8)',
+                    'rgba(54, 162, 235, 0.8)',
+                    'rgba(255, 206, 86, 0.8)',
+                    'rgba(75, 192, 192, 0.8)',
+                    'rgba(153, 102, 255, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#c2c7d0' },
+                    position: 'right'
+                }
+            }
+        }
+    });
+
+    // Personal Income Chart
+    var personalIncomeCtx = document.getElementById('personalIncomeChart').getContext('2d');
+    new Chart(personalIncomeCtx, {
+        type: 'bar',
+        data: {
+            labels: {!! json_encode($personalMiningIncomeChart['labels']) !!},
+            datasets: [{
+                label: 'Refined Value',
+                data: {!! json_encode($personalMiningIncomeChart['refined_value']) !!},
+                backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                borderColor: 'rgb(75, 192, 192)',
+                borderWidth: 1
+            }, {
+                label: 'Tax Paid',
+                data: {!! json_encode($personalMiningIncomeChart['tax_paid']) !!},
+                backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                borderColor: 'rgb(255, 99, 132)',
+                borderWidth: 1
+            }, {
+                label: 'Event Bonus',
+                data: {!! json_encode($personalMiningIncomeChart['event_bonus']) !!},
+                backgroundColor: 'rgba(255, 206, 86, 0.8)',
+                borderColor: 'rgb(255, 206, 86)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#c2c7d0' }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    stacked: false,
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                x: {
+                    stacked: false,
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+
+    // Mining Tax Chart
+    var miningTaxCtx = document.getElementById('miningTaxChart').getContext('2d');
+    new Chart(miningTaxCtx, {
+        type: 'bar',
+        data: {
+            labels: {!! json_encode($miningTaxChart['labels']) !!},
+            datasets: [{
+                label: 'Tax Collected',
+                data: {!! json_encode($miningTaxChart['collected']) !!},
+                backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                borderColor: 'rgb(75, 192, 192)',
+                borderWidth: 1
+            }, {
+                label: 'Tax Owed',
+                data: {!! json_encode($miningTaxChart['owed']) !!},
+                backgroundColor: 'rgba(255, 206, 86, 0.8)',
+                borderColor: 'rgb(255, 206, 86)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#c2c7d0' }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                x: {
+                    ticks: { color: '#c2c7d0' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+
+    // Event Tax Chart
+    var eventTaxCtx = document.getElementById('eventTaxChart').getContext('2d');
+    new Chart(eventTaxCtx, {
+        type: 'line',
+        data: {
+            labels: {!! json_encode($eventTaxChart['labels']) !!},
+            datasets: [{
+                label: 'Event Tax (ISK)',
+                data: {!! json_encode($eventTaxChart['data']) !!},
+                borderColor: 'rgb(153, 102, 255)',
+                backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                tension: 0.1,
+                fill: true
             }]
         },
         options: {
