@@ -34,14 +34,20 @@ class DashboardController extends Controller
     
     /**
      * Display the appropriate dashboard based on user permissions
+     *
+     * Directors see BOTH their personal stats AND corporation overview
+     * Regular members see only their personal stats
      */
     public function index()
     {
-        // Check if user has director permissions
-        if ($this->hasDirectorPermissions()) {
-            return $this->directorDashboard();
+        $user = auth()->user();
+        $isDirector = $this->hasDirectorPermissions();
+
+        if ($isDirector) {
+            // Directors get both personal and corporation data
+            return $this->combinedDirectorDashboard();
         }
-        
+
         return $this->memberDashboard();
     }
 
@@ -139,6 +145,83 @@ class DashboardController extends Controller
             'topMinersLastMonthAllOre',
             'topMinersLastMonthMoonOre',
             'miningPerformanceChart',
+            'moonMiningPerformanceChart',
+            'miningTaxChart',
+            'eventTaxChart'
+        ));
+    }
+
+    /**
+     * Combined Director Dashboard - Shows BOTH personal stats AND corporation overview
+     * This ensures directors can track their own mining while managing the corporation
+     */
+    public function combinedDirectorDashboard()
+    {
+        $user = auth()->user();
+        $characterIds = $this->getUserCharacterIds($user);
+        $corporationId = $this->getUserCorporationId();
+
+        // Current month stats
+        $currentMonthStart = Carbon::now()->startOfMonth();
+        $currentMonthEnd = Carbon::now();
+
+        // Last 12 months period
+        $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
+
+        // === PERSONAL STATISTICS (Director's own mining) ===
+        $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+        $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
+
+        // Personal rankings
+        $mainCharacterId = $this->getMainCharacterId($user);
+        $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
+        $topMinersMoonOre = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+        $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
+        $userRankMoonOre = $this->getUserRank($mainCharacterId, $topMinersMoonOre);
+
+        // Personal charts
+        $personalMiningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
+        $personalMiningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
+        $personalMiningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
+
+        // === CORPORATION STATISTICS ===
+        $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
+        $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
+
+        // Corporation top miners
+        $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
+        $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
+
+        $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore', 5);
+        $topMinersOverallMoonOre = $this->getTopMinersOverall($corporationId, 'moon_ore', 5);
+        $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
+        $topMinersLastMonthMoonOre = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
+
+        // Corporation charts
+        $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
+        $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
+        $miningTaxChart = $this->getMiningTaxLast12Months($corporationId);
+        $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
+
+        return view('mining-manager::dashboard.combined-director', compact(
+            // Personal stats
+            'personalCurrentMonthStats',
+            'personalLast12MonthsStats',
+            'userRankAllOre',
+            'userRankMoonOre',
+            'personalMiningPerformanceChart',
+            'personalMiningVolumeByGroupChart',
+            'personalMiningIncomeChart',
+            // Corporation stats
+            'corpCurrentMonthStats',
+            'corpLast12MonthsStats',
+            'topMinersAllOre',
+            'topMinersMoonOre',
+            'topMinersOverallAllOre',
+            'topMinersOverallMoonOre',
+            'topMinersLastMonthAllOre',
+            'topMinersLastMonthMoonOre',
+            'corpMiningPerformanceChart',
             'moonMiningPerformanceChart',
             'miningTaxChart',
             'eventTaxChart'
@@ -444,16 +527,23 @@ class DashboardController extends Controller
 
     /**
      * Get mining performance chart data for last 12 months
+     * FIXED: Current month (i=0) is included in the loop, no need to add it twice
      */
     private function getMiningPerformanceLast12Months($characterIds)
     {
         $months = [];
         $data = [];
 
+        // Loop from 11 months ago to current month (i=0 is current month)
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
-            
+
+            // For current month, use today as end date instead of end of month
+            if ($i === 0) {
+                $monthEnd = Carbon::now();
+            }
+
             $totalValue = MiningLedger::whereIn('character_id', $characterIds)
                 ->whereBetween('date', [$month, $monthEnd])
                 ->whereNotNull('processed_at')
@@ -465,19 +555,6 @@ class DashboardController extends Controller
             $months[] = $month->format('Y-m');
             $data[] = $totalValue;
         }
-
-        // Add current month (partial)
-        $currentMonth = Carbon::now()->startOfMonth();
-        $currentValue = MiningLedger::whereIn('character_id', $characterIds)
-            ->where('date', '>=', $currentMonth)
-            ->whereNotNull('processed_at')
-            ->get()
-            ->sum(function($entry) {
-                return $this->calculateEntryValue($entry);
-            });
-
-        $months[] = $currentMonth->format('Y-m');
-        $data[] = $currentValue;
 
         return [
             'labels' => $months,
@@ -594,6 +671,7 @@ class DashboardController extends Controller
 
     /**
      * Get corporation moon mining performance chart
+     * FIXED: Current month (i=0) is included in the loop, no need to add it twice
      */
     private function getCorpMoonMiningPerformanceLast12Months($corporationId)
     {
@@ -603,10 +681,16 @@ class DashboardController extends Controller
         $months = [];
         $data = [];
 
+        // Loop from 11 months ago to current month (i=0 is current month)
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
-            
+
+            // For current month, use today as end date instead of end of month
+            if ($i === 0) {
+                $monthEnd = Carbon::now();
+            }
+
             $totalValue = MiningLedger::whereIn('character_id', $characterIds)
                 ->whereIn('type_id', $moonOreTypeIds)
                 ->whereBetween('date', [$month, $monthEnd])
@@ -619,20 +703,6 @@ class DashboardController extends Controller
             $months[] = $month->format('Y-m');
             $data[] = $totalValue;
         }
-
-        // Add current month
-        $currentMonth = Carbon::now()->startOfMonth();
-        $currentValue = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereIn('type_id', $moonOreTypeIds)
-            ->where('date', '>=', $currentMonth)
-            ->whereNotNull('processed_at')
-            ->get()
-            ->sum(function($entry) {
-                return $this->calculateEntryValue($entry);
-            });
-
-        $months[] = $currentMonth->format('Y-m');
-        $data[] = $currentValue;
 
         return [
             'labels' => $months,
