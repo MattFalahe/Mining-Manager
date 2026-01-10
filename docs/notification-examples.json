@@ -1,0 +1,636 @@
+{
+  "=== TAX NOTIFICATIONS ===": "==============================",
+
+  "tax_reminder": {
+    "embeds": [
+      {
+        "title": "⏰ Tax Payment Reminder",
+        "description": "A mining tax payment is coming due. Please ensure timely payment.",
+        "color": 15964178,
+        "timestamp": "2026-04-05T01:39:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Alexandru AB",
+            "inline": true
+          },
+          {
+            "name": "💰 Amount",
+            "value": "14,785,388.60 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Due Date",
+            "value": "2026-04-07",
+            "inline": true
+          },
+          {
+            "name": "⏳ Days Remaining",
+            "value": "2",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "tax_invoice": {
+    "embeds": [
+      {
+        "title": "📧 New Tax Invoice",
+        "description": "A new mining tax invoice has been generated.",
+        "color": 3447003,
+        "timestamp": "2026-04-01T00:00:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "John Miner",
+            "inline": true
+          },
+          {
+            "name": "💰 Amount",
+            "value": "52,340,112 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Due Date",
+            "value": "2026-04-07",
+            "inline": true
+          },
+          {
+            "name": "⏳ Days Remaining",
+            "value": "7",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "tax_overdue": {
+    "embeds": [
+      {
+        "title": "❌ Overdue Tax Payment",
+        "description": "A mining tax payment is past due. Please make payment immediately.",
+        "color": 15158332,
+        "timestamp": "2026-04-12T08:00:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Lazy Miner III",
+            "inline": true
+          },
+          {
+            "name": "💰 Amount",
+            "value": "87,654,321 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Due Date",
+            "value": "2026-04-07",
+            "inline": true
+          },
+          {
+            "name": "⚠️ Days Overdue",
+            "value": "5",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "=== MOON NOTIFICATIONS ===": "==============================",
+
+  "moon_arrival": {
+    "embeds": [
+      {
+        "title": "Moon Chunk Ready",
+        "description": "A moon chunk is ready for mining!",
+        "color": 3447003,
+        "timestamp": "2026-04-05T14:30:00.000Z",
+        "fields": [
+          {
+            "name": "Moon",
+            "value": "Auga VII - Moon 1",
+            "inline": true
+          },
+          {
+            "name": "Structure",
+            "value": "Mercurialis Inc. - Auga Athanor",
+            "inline": true
+          },
+          {
+            "name": "Chunk Arrived",
+            "value": "2026-04-05 14:30:00",
+            "inline": true
+          },
+          {
+            "name": "Decays At",
+            "value": "2026-04-07 14:30:00",
+            "inline": true
+          },
+          {
+            "name": "Estimated Value",
+            "value": "1,245,678,900 ISK",
+            "inline": true
+          },
+          {
+            "name": "Ore Composition",
+            "value": "Monazite (R64) - 38%\nCarnotite (R32) - 22%\nChromite (R16) - 25%\nCoesite (R4) - 15%",
+            "inline": false
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "jackpot_detected": {
+    "embeds": [
+      {
+        "title": "JACKPOT MOON DETECTED!",
+        "description": "A jackpot moon extraction has been confirmed! Miners found +100% variant ores in the belt.",
+        "color": 16766720,
+        "timestamp": "2026-04-05T16:00:00.000Z",
+        "fields": [
+          {
+            "name": "Moon",
+            "value": "Auga VII - Moon 1",
+            "inline": true
+          },
+          {
+            "name": "System",
+            "value": "Auga",
+            "inline": true
+          },
+          {
+            "name": "Structure",
+            "value": "Mercurialis Inc. - Auga Athanor",
+            "inline": true
+          },
+          {
+            "name": "Detected By",
+            "value": "Scout Character",
+            "inline": true
+          },
+          {
+            "name": "Jackpot Ores Found",
+            "value": "- Dazzling Monazite (x12,450)\n- Gleaming Carnotite (x8,200)\n- Shining Chromite (x15,300)",
+            "inline": false
+          },
+          {
+            "name": "Jackpot %",
+            "value": "65% of ores are +100% variants",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "=== THEFT NOTIFICATIONS ===": "==============================",
+
+  "theft_detected": {
+    "embeds": [
+      {
+        "title": "Theft Incident Detected",
+        "color": 16753920,
+        "timestamp": "2026-04-05T09:15:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Suspicious Miner",
+            "inline": true
+          },
+          {
+            "name": "⚠️ Severity",
+            "value": "🟡 Medium",
+            "inline": true
+          },
+          {
+            "name": "💰 Ore Value",
+            "value": "156,789,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "📋 Tax Owed",
+            "value": "40,765,140 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Detected",
+            "value": "2026-04-05 09:15:00",
+            "inline": true
+          },
+          {
+            "name": "🔍 Status",
+            "value": "🔍 Investigating",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "critical_theft": {
+    "embeds": [
+      {
+        "title": "CRITICAL THEFT DETECTED",
+        "color": 16711680,
+        "timestamp": "2026-04-05T09:15:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Known Thief Alt",
+            "inline": true
+          },
+          {
+            "name": "⚠️ Severity",
+            "value": "🔴 Critical",
+            "inline": true
+          },
+          {
+            "name": "💰 Ore Value",
+            "value": "2,456,789,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "📋 Tax Owed",
+            "value": "638,764,140 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Detected",
+            "value": "2026-04-05 09:15:00",
+            "inline": true
+          },
+          {
+            "name": "🔍 Status",
+            "value": "🔍 Investigating",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "active_theft": {
+    "embeds": [
+      {
+        "title": "ACTIVE THEFT IN PROGRESS",
+        "color": 16739072,
+        "timestamp": "2026-04-05T10:30:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Known Thief Alt",
+            "inline": true
+          },
+          {
+            "name": "⚠️ Severity",
+            "value": "🟠 High",
+            "inline": true
+          },
+          {
+            "name": "💰 Ore Value",
+            "value": "892,345,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "📋 Tax Owed",
+            "value": "232,009,700 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Detected",
+            "value": "2026-04-05 09:15:00",
+            "inline": true
+          },
+          {
+            "name": "🔍 Status",
+            "value": "🔓 Open",
+            "inline": true
+          },
+          {
+            "name": "🔥 Active Theft Alert",
+            "value": "Character continues mining!\nNew value: 345,678,000 ISK\nActivity count: 4",
+            "inline": false
+          },
+          {
+            "name": "🕐 Last Activity",
+            "value": "2026-04-05 10:28:00",
+            "inline": false
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "incident_resolved": {
+    "embeds": [
+      {
+        "title": "Theft Incident Resolved",
+        "color": 65280,
+        "timestamp": "2026-04-05T15:00:00.000Z",
+        "fields": [
+          {
+            "name": "👤 Character",
+            "value": "Suspicious Miner",
+            "inline": true
+          },
+          {
+            "name": "⚠️ Severity",
+            "value": "🟡 Medium",
+            "inline": true
+          },
+          {
+            "name": "💰 Ore Value",
+            "value": "156,789,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "📋 Tax Owed",
+            "value": "40,765,140 ISK",
+            "inline": true
+          },
+          {
+            "name": "📅 Detected",
+            "value": "2026-04-05 09:15:00",
+            "inline": true
+          },
+          {
+            "name": "🔍 Status",
+            "value": "✅ Resolved",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "=== EVENT NOTIFICATIONS ===": "==============================",
+
+  "event_created": {
+    "embeds": [
+      {
+        "title": "📅 New Mining Event",
+        "description": "A new mining event has been scheduled!",
+        "color": 3447003,
+        "timestamp": "2026-04-05T12:00:00.000Z",
+        "fields": [
+          {
+            "name": "📋 Event",
+            "value": "Weekend Moon Mining Op",
+            "inline": false
+          },
+          {
+            "name": "🏷️ Type",
+            "value": "Moon Mining",
+            "inline": true
+          },
+          {
+            "name": "💰 Tax Modifier",
+            "value": "-50% Tax Reduction",
+            "inline": true
+          },
+          {
+            "name": "📍 Location",
+            "value": "Auga",
+            "inline": true
+          },
+          {
+            "name": "🕐 Start",
+            "value": "2026-04-06 18:00",
+            "inline": true
+          },
+          {
+            "name": "🕐 End",
+            "value": "2026-04-06 22:00",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "event_started": {
+    "embeds": [
+      {
+        "title": "🚀 Mining Event Started",
+        "description": "A mining event is now active! Join in and mine!",
+        "color": 3066993,
+        "timestamp": "2026-04-06T18:00:00.000Z",
+        "fields": [
+          {
+            "name": "📋 Event",
+            "value": "Weekend Moon Mining Op",
+            "inline": false
+          },
+          {
+            "name": "🏷️ Type",
+            "value": "Moon Mining",
+            "inline": true
+          },
+          {
+            "name": "💰 Tax Modifier",
+            "value": "-50% Tax Reduction",
+            "inline": true
+          },
+          {
+            "name": "📍 Location",
+            "value": "Auga",
+            "inline": true
+          },
+          {
+            "name": "🕐 Start",
+            "value": "2026-04-06 18:00",
+            "inline": true
+          },
+          {
+            "name": "🕐 End",
+            "value": "2026-04-06 22:00",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "event_completed": {
+    "embeds": [
+      {
+        "title": "🏁 Mining Event Completed",
+        "description": "The mining event has concluded. Thank you to all participants!",
+        "color": 10181046,
+        "timestamp": "2026-04-06T22:00:00.000Z",
+        "fields": [
+          {
+            "name": "📋 Event",
+            "value": "Weekend Moon Mining Op",
+            "inline": false
+          },
+          {
+            "name": "🏷️ Type",
+            "value": "Moon Mining",
+            "inline": true
+          },
+          {
+            "name": "💰 Tax Modifier",
+            "value": "-50% Tax Reduction",
+            "inline": true
+          },
+          {
+            "name": "📍 Location",
+            "value": "Auga",
+            "inline": true
+          },
+          {
+            "name": "⛏️ Total Mined",
+            "value": "3,456,789,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "👥 Participants",
+            "value": "12",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager"
+        }
+      }
+    ]
+  },
+
+  "=== REPORT NOTIFICATIONS ===": "==============================",
+
+  "report_generated": {
+    "embeds": [
+      {
+        "title": "📊 Mining Report Generated",
+        "description": "A new mining report has been generated and is ready for review.",
+        "color": 3447003,
+        "timestamp": "2026-04-01T00:05:00.000Z",
+        "fields": [
+          {
+            "name": "📋 Report Type",
+            "value": "Monthly",
+            "inline": true
+          },
+          {
+            "name": "📅 Period",
+            "value": "2026-03-01 to 2026-03-31",
+            "inline": true
+          },
+          {
+            "name": "👥 Total Miners",
+            "value": "47",
+            "inline": true
+          },
+          {
+            "name": "💰 Total Value Mined",
+            "value": "12,345,678,900 ISK",
+            "inline": true
+          },
+          {
+            "name": "📊 Total Tax",
+            "value": "2,469,135,780 ISK",
+            "inline": true
+          },
+          {
+            "name": "✅ Total Paid",
+            "value": "2,100,000,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "❌ Outstanding",
+            "value": "369,135,780 ISK",
+            "inline": true
+          },
+          {
+            "name": "📈 Collection Rate",
+            "value": "85.0%",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager | Generated 2026-04-01 00:05:00"
+        }
+      }
+    ]
+  },
+
+  "report_generated_current_month": {
+    "embeds": [
+      {
+        "title": "📊 Mining Report Generated",
+        "description": "A new mining report has been generated. Tax values are estimated (month in progress).",
+        "color": 3447003,
+        "timestamp": "2026-04-05T12:00:00.000Z",
+        "fields": [
+          {
+            "name": "📋 Report Type",
+            "value": "Monthly",
+            "inline": true
+          },
+          {
+            "name": "📅 Period",
+            "value": "2026-04-01 to 2026-04-30",
+            "inline": true
+          },
+          {
+            "name": "👥 Total Miners",
+            "value": "38",
+            "inline": true
+          },
+          {
+            "name": "💰 Total Value Mined",
+            "value": "4,567,890,000 ISK",
+            "inline": true
+          },
+          {
+            "name": "📊 Estimated Tax",
+            "value": "913,578,000 ISK",
+            "inline": true
+          }
+        ],
+        "footer": {
+          "text": "Mercurialis Inc. Mining Manager | Generated 2026-04-05 12:00:00"
+        }
+      }
+    ]
+  }
+}

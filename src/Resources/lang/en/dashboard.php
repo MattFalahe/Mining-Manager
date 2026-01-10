@@ -1,0 +1,112 @@
+<?php
+
+return [
+    // Dashboard titles
+    'member_dashboard' => 'Mining Dashboard',
+    'director_dashboard' => 'Director Dashboard',
+    
+    // Common
+    'live' => 'Live',
+    'current_month_stats' => 'Current Month Statistics',
+    'last_12_months_stats' => 'Last 12 Months Statistics',
+    'last_12_months' => 'Last 12 Months',
+    'this_month' => 'This Month',
+    'units' => 'units',
+    'rank' => 'Rank',
+    'character' => 'Character',
+    'corporation' => 'Corporation',
+    'value' => 'Value',
+    'your_rank' => 'Your Rank',
+    'all_ore' => 'All Ore',
+    'corp_moon_ore' => 'Corporation Moon Ore',
+    'chart_updated' => 'Chart updated successfully',
+    
+    // Member Dashboard
+    'total_mined_quantity' => 'Total Mined Quantity',
+    'total_mined_volume' => 'Total Mined Volume',
+    'total_mined_value' => 'Total Mined Value',
+    'total_mined_isk' => 'Total Mined ISK',
+    'tax_isk' => 'Tax ISK',
+    'total_quantity' => 'Total Quantity',
+    'total_value' => 'Total Value',
+    'total_volume' => 'Total Volume',
+    'avg_per_month' => 'Avg Per Month',
+    'top_miners_all_ore' => 'Top Miners - All Ore',
+    'top_miners_moon_ore' => 'Top Miners - Corporation Moon Ore',
+    'mining_performance_last_12_months' => 'Mining Performance Last 12 Months',
+    'mining_volume_per_group' => 'Mining Volume Per Group',
+    'mining_income_last_12_months' => 'Mining Income Last 12 Months',
+    'volume_of' => 'Volume of',
+    
+    // Director Dashboard
+    'my_mining' => 'My Mining',
+    'corporation_overview' => 'Corporation Overview',
+    'corporation_stats' => 'Corporation Statistics',
+    'tax_owed' => 'Tax Owed',
+    'mining_days' => 'Mining Days',
+    'days' => 'days',
+    'my_rank_all_ore' => 'My Rank - All Ore',
+    'my_rank_moon_ore' => 'My Rank - Corporation Moon Ore',
+    'out_of' => 'out of',
+    'miners' => 'miners',
+    'no_ranking_data' => 'No ranking data available',
+    'my_mining_performance' => 'My Mining Performance',
+    'mining_volume_by_group' => 'Mining Volume by Group',
+    'mining_by_group' => 'Mining by Group',
+    'mining_by_type' => 'Top Ores Mined',
+    'all_ore_value' => 'All Ore Value',
+    'moon_ore_value' => 'Moon Ore Value',
+    'tax_amount' => 'Tax Amount',
+    'tax_collected' => 'Tax Collected',
+    'active_miners' => 'Active Miners',
+    'characters' => 'characters',
+    'all_ore_total_value' => 'All Ore Total Value',
+    'moon_ore_total_value' => 'Moon Ore Total Value',
+    'total_tax_collected' => 'Total Tax Collected',
+    'total_active_miners' => 'Total Active Miners',
+    'top_5_miners_overall' => 'Top 5 Miners (Overall)',
+    'top_5_miners_last_month' => 'Top 5 Miners (Last Month)',
+    'corp_mining_performance' => 'Corporation Mining Performance',
+    'moon_mining_performance' => 'Moon Mining Performance',
+    'corp_moon_mining_performance' => 'Corporation Moon Mining Performance',
+    'mining_tax_last_12_months' => 'Mining Tax Last 12 Months',
+    'event_tax_last_12_months' => 'Event Tax Last 12 Months',
+    'all_ore_types' => 'All Ore Types',
+    'corp_moons_only' => 'Corporation Moons Only',
+    'event_tax_isk' => 'Event Tax (ISK)',
+    
+    // Chart labels
+    'refined_value' => 'Refined Value',
+    'tax_paid' => 'Tax Paid',
+    'event_bonus' => 'Event Bonus',
+    
+    // Ore groups
+    'ice' => 'Ice',
+    'moon' => 'Moon',
+    'ore' => 'Ore',
+    'gas' => 'Gas',
+    'abyssal' => 'Abyssal',
+    'triglavian' => 'Triglavian',
+    
+    // Tooltips and help
+    'click_to_refresh' => 'Click to refresh chart',
+    'auto_refresh' => 'Auto-refreshes every 5 minutes',
+    'no_data_available' => 'No data available for this period',
+    'loading' => 'Loading...',
+    
+    // Errors
+    'error_loading_data' => 'Error loading dashboard data',
+    'error_refreshing_chart' => 'Error refreshing chart',
+
+    // Chart Info Notes
+    'note_mining_performance' => 'Your monthly mining quantity over the last 12 months.',
+    'note_mining_by_group' => 'ISK value breakdown by ore group (Moon Ore, Regular, Ice, etc.).',
+    'note_mining_by_type' => 'Top 10 individual ore types you mined, ranked by ISK value.',
+    'note_mining_income' => 'Monthly ISK value of your mining activity over the last 12 months.',
+    'note_corp_mining_performance' => 'Total corporation mining quantity per month over 12 months.',
+    'note_corp_moon_mining' => 'Corporation moon ore mining value per month over 12 months.',
+    'note_corp_mining_by_group' => 'Corporation-wide ISK breakdown by ore group.',
+    'note_corp_top_ores' => 'Top ore types mined across the corporation, ranked by ISK value.',
+    'note_corp_tax' => 'Monthly mining tax collected from corporation members.',
+    'note_corp_event_tax' => 'Monthly event-based tax collected during special mining events.',
+];

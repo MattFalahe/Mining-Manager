@@ -1,0 +1,3841 @@
+/* ============================================
+   Mining Manager - Complete Dashboard CSS (MERGED)
+   Version: 3.0 - SCOPED
+
+   This file combines:
+   1. mining-manager.css - Base utilities & components
+   2. mining-manager-dashboard.css - Dashboard-specific styles
+   3. settings.css - Settings page styles
+
+   Used by: ALL pages except tax pages
+   (dashboard, settings, moon, events, ledger,
+    help, analytics, reports)
+
+   IMPORTANT: All views MUST wrap content in one of these classes:
+   - .mining-dashboard (for dashboard pages)
+   - .mining-manager-wrapper (for other pages)
+
+   This prevents SeAT CSS from overriding our styles.
+   ============================================ */
+
+/* ============================================
+   Mining Manager - General Styles
+   Version: 2.0
+   ============================================ */
+
+/* ============================================
+   CSS Variables & Color Palette
+   ============================================ */
+:root {
+    /* Primary Colors */
+    --mm-primary-start: #667eea;
+    --mm-primary-end: #764ba2;
+    --mm-dark-bg: #1a1d24;
+    --mm-dark-card: #23262d;
+    --mm-border: #2c3138;
+    
+    /* Text Colors */
+    --mm-text-light: #d1d1d1;
+    --mm-text-muted: #9ca3af;
+    --mm-text-white: #ffffff;
+    
+    /* Ore Type Colors */
+    --mm-color-ice: #00d2ff;
+    --mm-color-moon: #ff0084;
+    --mm-color-ore: #a1c63c;
+    --mm-color-gas: #ff9f40;
+    --mm-color-mercoxit: #ff6384;
+    
+    /* Status Colors */
+    --mm-success: #28a745;
+    --mm-warning: #ffc107;
+    --mm-danger: #dc3545;
+    --mm-info: #17a2b8;
+    
+    /* Spacing */
+    --mm-spacing-xs: 5px;
+    --mm-spacing-sm: 10px;
+    --mm-spacing-md: 15px;
+    --mm-spacing-lg: 20px;
+    --mm-spacing-xl: 30px;
+    
+    /* Border Radius */
+    --mm-radius-sm: 3px;
+    --mm-radius-md: 5px;
+    --mm-radius-lg: 10px;
+    --mm-radius-xl: 15px;
+    
+    /* Transitions */
+    --mm-transition-fast: 0.15s;
+    --mm-transition-normal: 0.3s;
+    --mm-transition-slow: 0.5s;
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+.mining-dashboard .mining-manager,
+.mining-manager-wrapper .mining-manager {
+    font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .mining-manager a,
+.mining-manager-wrapper .mining-manager a {
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .mining-manager a:hover,
+.mining-manager-wrapper .mining-manager a:hover {
+    text-decoration: none;
+}
+
+/* ============================================
+   Cards & Containers
+   ============================================ */
+.mining-dashboard .card-dark,
+.mining-manager-wrapper .card-dark {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    transition: all var(--mm-transition-normal) ease;
+}
+
+.mining-dashboard .card-dark:hover,
+.mining-manager-wrapper .card-dark:hover {
+    border-color: rgba(102, 126, 234, 0.3);
+}
+
+.mining-dashboard .card-dark .card-header,
+.mining-manager-wrapper .card-dark .card-header {
+    background-color: var(--mm-dark-card);
+    border-bottom: 1px solid var(--mm-border);
+    color: var(--mm-text-white);
+    padding: var(--mm-spacing-md) var(--mm-spacing-lg);
+}
+
+.mining-dashboard .card-dark .card-header h3,
+.mining-dashboard .card-dark .card-header h4,
+.mining-dashboard .card-dark .card-header h5,
+.mining-manager-wrapper .card-dark .card-header h3,
+.mining-manager-wrapper .card-dark .card-header h4,
+.mining-manager-wrapper .card-dark .card-header h5 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.mining-dashboard .card-dark .card-header .card-title,
+.mining-manager-wrapper .card-dark .card-header .card-title {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .card-dark .card-body,
+.mining-manager-wrapper .card-dark .card-body {
+    color: var(--mm-text-light);
+    padding: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .card-dark .card-footer,
+.mining-manager-wrapper .card-dark .card-footer {
+    background-color: var(--mm-dark-card);
+    border-top: 1px solid var(--mm-border);
+    padding: var(--mm-spacing-md) var(--mm-spacing-lg);
+}
+
+/* Card with gradient header */
+.mining-dashboard .card-gradient-header .card-header,
+.mining-manager-wrapper .card-gradient-header .card-header {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    border: none;
+}
+
+/* Card hover effect */
+.mining-dashboard .card-hover,
+.mining-manager-wrapper .card-hover {
+    transition: transform var(--mm-transition-normal) ease, box-shadow var(--mm-transition-normal) ease;
+}
+
+.mining-dashboard .card-hover:hover,
+.mining-manager-wrapper .card-hover:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+.mining-dashboard .btn-mm-primary,
+.mining-manager-wrapper .btn-mm-primary {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    border: none;
+    color: var(--mm-text-white);
+    transition: all var(--mm-transition-normal) ease;
+}
+
+.mining-dashboard .btn-mm-primary:hover,
+.mining-manager-wrapper .btn-mm-primary:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #6a3d8f 100%);
+    color: var(--mm-text-white);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.mining-dashboard .btn-mm-primary:active,
+.mining-manager-wrapper .btn-mm-primary:active {
+    transform: translateY(0);
+}
+
+.mining-dashboard .btn-mm-secondary,
+.mining-manager-wrapper .btn-mm-secondary {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .btn-mm-secondary:hover,
+.mining-manager-wrapper .btn-mm-secondary:hover {
+    background-color: #2c3138;
+    border-color: rgba(102, 126, 234, 0.5);
+    color: var(--mm-text-white);
+}
+
+/* Button with icon */
+.mining-dashboard .btn-icon,
+.mining-manager-wrapper .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+}
+
+/* Button loading state */
+.mining-dashboard .btn-loading,
+.mining-manager-wrapper .btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.mining-dashboard .btn-loading::after,
+.mining-manager-wrapper .mining-dashboard .btn-loading::after,
+.mining-manager-wrapper .btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    border-top-color: currentColor;
+    animation: spin 0.6s linear infinite;
+}
+
+/* ============================================
+   Badges & Labels
+   ============================================ */
+.mining-dashboard .badge-mm,
+.mining-manager-wrapper .badge-mm {
+    padding: 4px 8px;
+    border-radius: var(--mm-radius-sm);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mining-dashboard .badge-ore,
+.mining-manager-wrapper .badge-ore {
+    background-color: var(--mm-color-ore);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-ice,
+.mining-manager-wrapper .badge-ice {
+    background-color: var(--mm-color-ice);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-moon,
+.mining-manager-wrapper .badge-moon {
+    background-color: var(--mm-color-moon);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-gas,
+.mining-manager-wrapper .badge-gas {
+    background-color: var(--mm-color-gas);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-mercoxit,
+.mining-manager-wrapper .badge-mercoxit {
+    background-color: var(--mm-color-mercoxit);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-paid,
+.mining-manager-wrapper .badge-paid {
+    background-color: var(--mm-success);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-pending,
+.mining-manager-wrapper .badge-pending {
+    background-color: var(--mm-warning);
+    color: var(--mm-dark-bg);
+}
+
+.mining-dashboard .badge-overdue,
+.mining-manager-wrapper .badge-overdue {
+    background-color: var(--mm-danger);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .badge-live,
+.mining-manager-wrapper .badge-live {
+    background-color: var(--mm-success);
+    color: var(--mm-text-white);
+    animation: pulse-badge 2s infinite;
+}
+
+@keyframes pulse-badge {
+    0% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+    }
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+.mining-dashboard .table-mm,
+.mining-manager-wrapper .table-mm {
+    background-color: transparent;
+    color: var(--mm-text-light);
+    margin-bottom: 0;
+}
+
+.mining-dashboard .table-mm thead th,
+.mining-manager-wrapper .table-mm thead th {
+    border-bottom: 2px solid var(--mm-border);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+    color: var(--mm-text-white);
+    padding: var(--mm-spacing-md);
+    white-space: nowrap;
+}
+
+.mining-dashboard .table-mm tbody td,
+.mining-manager-wrapper .table-mm tbody td {
+    border-bottom: 1px solid var(--mm-border);
+    padding: var(--mm-spacing-md);
+    vertical-align: middle;
+}
+
+.mining-dashboard .table-mm tbody tr,
+.mining-manager-wrapper .table-mm tbody tr {
+    transition: background-color var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .table-mm tbody tr:hover,
+.mining-manager-wrapper .table-mm tbody tr:hover {
+    background-color: rgba(102, 126, 234, 0.1);
+}
+
+.mining-dashboard .table-mm tbody tr.table-highlight,
+.mining-manager-wrapper .table-mm tbody tr.table-highlight {
+    background-color: rgba(102, 126, 234, 0.2);
+}
+
+.mining-dashboard .table-mm tbody tr.table-highlight:hover,
+.mining-manager-wrapper .table-mm tbody tr.table-highlight:hover {
+    background-color: rgba(102, 126, 234, 0.3);
+}
+
+/* Striped table */
+.mining-dashboard .table-mm.table-striped tbody tr:nth-of-type(odd),
+.mining-manager-wrapper .table-mm.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Compact table */
+.mining-dashboard .table-mm.table-compact thead th,
+.mining-manager-wrapper .table-mm.table-compact thead th,
+.mining-dashboard .table-mm.table-compact tbody td,
+.mining-manager-wrapper .table-mm.table-compact tbody td {
+    padding: var(--mm-spacing-xs) var(--mm-spacing-sm);
+    font-size: 0.875rem;
+}
+
+/* Responsive table wrapper */
+.mining-dashboard .table-responsive-mm,
+.mining-manager-wrapper .table-responsive-mm {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar {
+    height: 8px;
+}
+
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-track,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-track {
+    background: var(--mm-dark-bg);
+}
+
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-thumb,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-thumb {
+    background: var(--mm-border);
+    border-radius: 4px;
+}
+
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-thumb:hover,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-thumb:hover {
+    background: #3a3f48;
+}
+
+/* ============================================
+   Forms
+   ============================================ */
+.mining-dashboard .form-control-mm,
+.mining-manager-wrapper .form-control-mm {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    border-radius: var(--mm-radius-md);
+    padding: 8px 12px;
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .form-control-mm:focus,
+.mining-manager-wrapper .form-control-mm:focus {
+    background-color: var(--mm-dark-bg);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.mining-dashboard .form-control-mm::placeholder,
+.mining-manager-wrapper .form-control-mm::placeholder {
+    color: var(--mm-text-muted);
+}
+
+.mining-dashboard .form-control-mm:disabled,
+.mining-manager-wrapper .form-control-mm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Custom select */
+.mining-dashboard .custom-select-mm,
+.mining-manager-wrapper .custom-select-mm {
+    background-color: var(--mm-dark-card);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='4' height='5' viewBox='0 0 4 5'%3e%3cpath fill='%23667eea' d='M2 0L0 2h4zm0 5L0 3h4z'/%3e%3c/svg%3e");
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .custom-select-mm:focus,
+.mining-manager-wrapper .custom-select-mm:focus {
+    border-color: var(--mm-primary-start);
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* Form labels */
+.mining-dashboard .form-label-mm,
+.mining-manager-wrapper .form-label-mm {
+    color: var(--mm-text-white);
+    font-weight: 600;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+/* Input groups */
+.mining-dashboard .input-group-mm .input-group-text,
+.mining-manager-wrapper .input-group-mm .input-group-text {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Alert Boxes
+   ============================================ */
+.mining-dashboard .alert-mm,
+.mining-manager-wrapper .alert-mm {
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+    border-left: 4px solid;
+}
+
+.mining-dashboard .alert-mm-info,
+.mining-manager-wrapper .alert-mm-info {
+    background-color: rgba(23, 162, 184, 0.15);
+    border-left-color: var(--mm-info);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .alert-mm-success,
+.mining-manager-wrapper .alert-mm-success {
+    background-color: rgba(40, 167, 69, 0.15);
+    border-left-color: var(--mm-success);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .alert-mm-warning,
+.mining-manager-wrapper .alert-mm-warning {
+    background-color: rgba(255, 193, 7, 0.15);
+    border-left-color: var(--mm-warning);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .alert-mm-danger,
+.mining-manager-wrapper .alert-mm-danger {
+    background-color: rgba(220, 53, 69, 0.15);
+    border-left-color: var(--mm-danger);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .alert-mm i,
+.mining-manager-wrapper .alert-mm i {
+    margin-right: var(--mm-spacing-sm);
+}
+
+/* ============================================
+   Progress Bars
+   ============================================ */
+.mining-dashboard .progress-mm,
+.mining-manager-wrapper .progress-mm {
+    background-color: var(--mm-dark-card);
+    border-radius: var(--mm-radius-lg);
+    height: 20px;
+    overflow: hidden;
+}
+
+.mining-dashboard .progress-mm-bar,
+.mining-manager-wrapper .progress-mm-bar {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    height: 100%;
+    transition: width var(--mm-transition-slow) ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--mm-text-white);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.mining-dashboard .progress-mm-bar.progress-success,
+.mining-manager-wrapper .progress-mm-bar.progress-success {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.mining-dashboard .progress-mm-bar.progress-warning,
+.mining-manager-wrapper .progress-mm-bar.progress-warning {
+    background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+}
+
+.mining-dashboard .progress-mm-bar.progress-danger,
+.mining-manager-wrapper .progress-mm-bar.progress-danger {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+/* Animated progress bar */
+.mining-dashboard .progress-mm-bar.animated,
+.mining-manager-wrapper .progress-mm-bar.animated {
+    background-size: 20px 20px;
+    animation: progress-bar-stripes 1s linear infinite;
+}
+
+@keyframes progress-bar-stripes {
+    0% {
+        background-position: 20px 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
+
+/* Uniform progress bars — bar + percentage label to the right */
+.mm-progress-wrap {
+    display: flex;
+    align-items: center;
+}
+.mm-progress-wrap .progress {
+    flex: 1;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+.mm-progress-wrap .progress .progress-bar {
+    border-radius: 3px;
+}
+.mm-progress-wrap .mm-pct-label {
+    min-width: 45px;
+    text-align: right;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #ccc;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+
+/* ============================================
+   Stat Cards
+   ============================================ */
+.mining-dashboard .stat-card,
+.mining-manager-wrapper .stat-card {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+    transition: all var(--mm-transition-normal) ease;
+}
+
+.mining-dashboard .stat-card:hover,
+.mining-manager-wrapper .stat-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.mining-dashboard .stat-card-icon,
+.mining-manager-wrapper .stat-card-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--mm-radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    margin-bottom: var(--mm-spacing-md);
+}
+
+.mining-dashboard .stat-card-icon.gradient,
+.mining-manager-wrapper .stat-card-icon.gradient {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .stat-card-label,
+.mining-manager-wrapper .stat-card-label {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .stat-card-value,
+.mining-manager-wrapper .stat-card-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .stat-card-change,
+.mining-manager-wrapper .stat-card-change {
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .stat-card-change.positive,
+.mining-manager-wrapper .stat-card-change.positive {
+    color: var(--mm-success);
+}
+
+.mining-dashboard .stat-card-change.negative,
+.mining-manager-wrapper .stat-card-change.negative {
+    color: var(--mm-danger);
+}
+
+/* ============================================
+   Pagination
+   ============================================ */
+.mining-dashboard .pagination-mm .page-link,
+.mining-manager-wrapper .pagination-mm .page-link {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    padding: 8px 12px;
+}
+
+.mining-dashboard .pagination-mm .page-link:hover,
+.mining-manager-wrapper .pagination-mm .page-link:hover {
+    background-color: rgba(102, 126, 234, 0.2);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .pagination-mm .page-item.active .page-link,
+.mining-manager-wrapper .pagination-mm .page-item.active .page-link {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .pagination-mm .page-item.disabled .page-link,
+.mining-manager-wrapper .pagination-mm .page-item.disabled .page-link {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ============================================
+   Tooltips (Bootstrap Override)
+   ============================================ */
+.mining-dashboard .tooltip-mm .tooltip-inner,
+.mining-manager-wrapper .tooltip-mm .tooltip-inner {
+    background-color: var(--mm-dark-card);
+    color: var(--mm-text-white);
+    border: 1px solid var(--mm-border);
+    padding: 8px 12px;
+    border-radius: var(--mm-radius-md);
+}
+
+/* ============================================
+   Loading States
+   ============================================ */
+.mining-dashboard .loading-overlay,
+.mining-manager-wrapper .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(26, 29, 36, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    border-radius: var(--mm-radius-lg);
+}
+
+.mining-dashboard .spinner-mm,
+.mining-manager-wrapper .spinner-mm {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(102, 126, 234, 0.2);
+    border-top-color: var(--mm-primary-start);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================
+   Empty States
+   ============================================ */
+.mining-dashboard .empty-state,
+.mining-manager-wrapper .empty-state {
+    text-align: center;
+    padding: var(--mm-spacing-xl) var(--mm-spacing-lg);
+    color: var(--mm-text-muted);
+}
+
+.mining-dashboard .empty-state-icon,
+.mining-manager-wrapper .empty-state-icon {
+    font-size: 4rem;
+    color: rgba(102, 126, 234, 0.3);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .empty-state-title,
+.mining-manager-wrapper .empty-state-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--mm-text-light);
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .empty-state-description,
+.mining-manager-wrapper .empty-state-description {
+    font-size: 1rem;
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+/* ============================================
+   Timeline
+   ============================================ */
+.mining-dashboard .timeline-mm,
+.mining-manager-wrapper .timeline-mm {
+    position: relative;
+    padding-left: 30px;
+}
+
+.mining-dashboard .timeline-mm::before,
+.mining-manager-wrapper .timeline-mm::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+}
+
+.mining-dashboard .timeline-item,
+.mining-manager-wrapper .timeline-item {
+    position: relative;
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .timeline-item::before,
+.mining-manager-wrapper .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -26px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    border: 2px solid var(--mm-dark-bg);
+}
+
+.mining-dashboard .timeline-date,
+.mining-manager-wrapper .timeline-date {
+    color: var(--mm-text-muted);
+    font-size: 0.875rem;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .timeline-content,
+.mining-manager-wrapper .timeline-content {
+    background-color: var(--mm-dark-card);
+    padding: var(--mm-spacing-md);
+    border-radius: var(--mm-radius-md);
+    border: 1px solid var(--mm-border);
+}
+
+/* ============================================
+   Utilities
+   ============================================ */
+.mining-dashboard .text-gradient,
+.mining-manager-wrapper .text-gradient {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.mining-dashboard .bg-gradient-primary,
+.mining-manager-wrapper .bg-gradient-primary {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%) !important;
+}
+
+.mining-dashboard .shadow-mm,
+.mining-manager-wrapper .shadow-mm {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.mining-dashboard .shadow-mm-lg,
+.mining-manager-wrapper .shadow-mm-lg {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+}
+
+.mining-dashboard .border-gradient,
+.mining-manager-wrapper .border-gradient {
+    border: 2px solid;
+    border-image: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%) 1;
+}
+
+/* Character portrait */
+.mining-dashboard .character-portrait,
+.mining-manager-wrapper .character-portrait {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--mm-border);
+    object-fit: cover;
+}
+
+.mining-dashboard .character-portrait.large,
+.mining-manager-wrapper .character-portrait.large {
+    width: 64px;
+    height: 64px;
+}
+
+/* ISK value formatting */
+.mining-dashboard .isk-value,
+.mining-manager-wrapper .isk-value {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 600;
+}
+
+.mining-dashboard .isk-value::after,
+.mining-manager-wrapper .isk-value::after {
+    content: ' ISK';
+    font-weight: normal;
+    color: var(--mm-text-muted);
+    font-size: 0.875em;
+}
+
+/* ============================================
+   Responsive Utilities
+   ============================================ */
+@media (max-width: 768px) {
+    .card-dark .card-body {
+        padding: var(--mm-spacing-md);
+    }
+    
+    .stat-card {
+        padding: var(--mm-spacing-md);
+    }
+    
+    .stat-card-value {
+        font-size: 1.5rem;
+    }
+    
+    .table-mm thead th,
+    .mining-dashboard .table-mm tbody td,
+.mining-manager-wrapper .table-mm tbody td {
+        padding: var(--mm-spacing-sm);
+        font-size: 0.875rem;
+    }
+    
+    .btn-mm-primary,
+    .btn-mm-secondary {
+        width: 100%;
+        margin-bottom: var(--mm-spacing-sm);
+    }
+}
+
+@media (max-width: 576px) {
+    :root {
+        --mm-spacing-lg: 15px;
+        --mm-spacing-xl: 20px;
+    }
+    
+    .stat-card-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.5rem;
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .btn, .card-tools, .pagination-mm {
+        display: none !important;
+    }
+    
+    .card-dark {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .table-mm {
+        font-size: 0.875rem;
+    }
+}
+
+/* ============================================
+   Accessibility
+   ============================================ */
+.mining-dashboard .sr-only-mm,
+.mining-manager-wrapper .sr-only-mm {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.mining-dashboard .focus-visible-mm:focus,
+.mining-manager-wrapper .focus-visible-mm:focus {
+    outline: 2px solid var(--mm-primary-start);
+    outline-offset: 2px;
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mining-dashboard .fade-in,
+.mining-manager-wrapper .fade-in {
+    animation: fadeIn var(--mm-transition-normal) ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.mining-dashboard .slide-in,
+.mining-manager-wrapper .slide-in {
+    animation: slideIn var(--mm-transition-normal) ease;
+}
+
+
+/* ============================================
+   DASHBOARD-SPECIFIC STYLES
+   ============================================ */
+
+   Dashboard Dark Theme Cards
+   ============================================ */
+.mining-dashboard .card-dark {
+    background-color: #1a1d24;
+    border: 1px solid #2c3138;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .card-dark:hover {
+    border-color: rgba(102, 126, 234, 0.3);
+}
+
+.mining-dashboard .card-dark .card-header {
+    background-color: #23262d;
+    border-bottom: 1px solid #2c3138;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.mining-dashboard .card-dark .card-body {
+    color: #d1d1d1;
+}
+
+/* ============================================
+   Info Boxes
+   ============================================ */
+.mining-dashboard .info-box,
+.mining-manager-wrapper .info-box {
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.125), 0 1px 3px rgba(0, 0, 0, 0.2);
+    border-radius: 0.25rem;
+    display: flex;
+    margin-bottom: 1rem;
+    min-height: 80px;
+    padding: 0.5rem;
+    position: relative;
+    width: 100%;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .info-box:hover,
+.mining-manager-wrapper .info-box:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.mining-dashboard .info-box .info-box-icon,
+.mining-manager-wrapper .info-box .info-box-icon {
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    width: 70px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.mining-dashboard .info-box .info-box-content,
+.mining-manager-wrapper .info-box .info-box-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.8;
+    flex: 1;
+    padding: 0 10px;
+}
+
+.mining-dashboard .info-box .info-box-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.9;
+    color: #ffffff !important;
+}
+
+.mining-dashboard .info-box .info-box-number {
+    display: block;
+    font-weight: 700;
+    font-size: 1.5rem;
+    font-family: 'Courier New', Courier, monospace;
+    color: #ffffff !important;
+}
+
+.mining-dashboard .info-box small {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* ============================================
+   Info Box Gradient Variants
+   ============================================ */
+/* SCOPED: All info-box styles are scoped to .mining-dashboard to prevent SeAT overrides */
+
+.mining-dashboard .info-box.bg-gradient-primary {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(102, 126, 234, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-secondary {
+    background: linear-gradient(135deg, rgba(134, 143, 150, 0.3) 0%, rgba(89, 97, 100, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(134, 143, 150, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-success {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(58, 123, 213, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 210, 255, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-info {
+    background: linear-gradient(135deg, rgba(144, 223, 254, 0.3) 0%, rgba(56, 163, 204, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(144, 223, 254, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-warning {
+    background: linear-gradient(135deg, rgba(240, 147, 251, 0.3) 0%, rgba(245, 87, 108, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(240, 147, 251, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-danger {
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(51, 0, 27, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 0, 132, 0.2) !important;
+}
+
+/* Ore-specific gradient variants */
+.mining-dashboard .info-box.bg-gradient-ore {
+    background: linear-gradient(135deg, rgba(161, 198, 60, 0.3) 0%, rgba(122, 154, 46, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(161, 198, 60, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-ice {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(0, 168, 204, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 210, 255, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-moon {
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(204, 0, 105, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 0, 132, 0.2) !important;
+}
+
+.mining-dashboard .info-box.bg-gradient-gas {
+    background: linear-gradient(135deg, rgba(255, 159, 64, 0.3) 0%, rgba(255, 128, 0, 0.3) 100%) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 159, 64, 0.2) !important;
+}
+
+/* ============================================
+   Small Boxes
+   ============================================ */
+/* SCOPED: All small-box styles are scoped to .mining-dashboard to prevent SeAT overrides */
+
+.mining-dashboard .small-box {
+    border-radius: 0.25rem;
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.125), 0 1px 3px rgba(0, 0, 0, 0.2);
+    display: block;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .small-box:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.mining-dashboard .small-box > .inner {
+    padding: 10px;
+}
+
+.mining-dashboard .small-box > .small-box-footer {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: rgba(255, 255, 255, 0.8) !important;
+    display: block;
+    padding: 3px 0;
+    position: relative;
+    text-align: center;
+    text-decoration: none;
+    z-index: 10;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .small-box > .small-box-footer:hover {
+    background-color: rgba(0, 0, 0, 0.15);
+    color: #ffffff !important;
+    text-decoration: none;
+}
+
+.mining-dashboard .small-box h3 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin: 0 0 10px;
+    padding: 0;
+    white-space: nowrap;
+    font-family: 'Courier New', Courier, monospace;
+    color: #ffffff !important;
+}
+
+.mining-dashboard .small-box p {
+    font-size: 1rem;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.mining-dashboard .small-box p > small {
+    color: rgba(255, 255, 255, 0.8) !important;
+    display: block;
+    font-size: 0.9rem;
+    margin-top: 5px;
+    opacity: 0.9;
+}
+
+.mining-dashboard .small-box .icon {
+    color: rgba(0, 0, 0, 0.15);
+    z-index: 0;
+}
+
+.mining-dashboard .small-box .icon > i {
+    font-size: 70px;
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    transition: all 0.3s linear;
+}
+
+.mining-dashboard .small-box:hover .icon > i {
+    font-size: 95px;
+    opacity: 0.8;
+}
+
+/* ============================================
+   Dashboard Tables
+   ============================================ */
+.mining-dashboard .table-dark,
+.mining-manager-wrapper .table-dark {
+    background-color: #1a1d24;
+    color: #d1d1d1;
+    margin-bottom: 0;
+}
+
+.mining-dashboard .table-dark thead th,
+.mining-manager-wrapper .table-dark thead th {
+    border-bottom: 2px solid #2c3138;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+    padding: 12px 15px;
+    vertical-align: middle;
+}
+
+.mining-dashboard .table-dark tbody td,
+.mining-manager-wrapper .table-dark tbody td {
+    border-bottom: 1px solid #2c3138;
+    padding: 12px 15px;
+    vertical-align: middle;
+}
+
+.mining-dashboard .table-dark tbody tr,
+.mining-manager-wrapper .table-dark tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.mining-dashboard .table-dark tbody tr:hover,
+.mining-manager-wrapper .table-dark tbody tr:hover {
+    background-color: #23262d;
+}
+
+.mining-dashboard .table-dark.table-striped tbody tr:nth-of-type(odd),
+.mining-manager-wrapper .table-dark.table-striped tbody tr:nth-of-type(odd) {
+    background-color: #1e2127;
+}
+
+/* Highlighted row (current user) */
+.mining-dashboard .table-primary,
+.mining-manager-wrapper .table-primary {
+    background-color: rgba(0, 123, 255, 0.2) !important;
+}
+
+.mining-dashboard .table-primary:hover,
+.mining-manager-wrapper .table-primary:hover {
+    background-color: rgba(0, 123, 255, 0.3) !important;
+}
+
+/* Table with compact spacing */
+.mining-dashboard .table-dark.table-compact thead th,
+.mining-manager-wrapper .table-dark.table-compact thead th,
+.mining-dashboard .table-dark.table-compact tbody td,
+.mining-manager-wrapper .table-dark.table-compact tbody td {
+    padding: 8px 12px;
+}
+
+/* ============================================
+   Badges
+   ============================================ */
+.mining-dashboard .badge-bronze,
+.mining-manager-wrapper .badge-bronze {
+    background-color: #cd7f32;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+
+.mining-dashboard .badge-silver,
+.mining-manager-wrapper .badge-silver {
+    background-color: #c0c0c0;
+    color: #333333;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+
+.mining-dashboard .badge-gold,
+.mining-manager-wrapper .badge-gold {
+    background-color: #ffd700;
+    color: #333333;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+
+/* Live badge with pulse animation */
+.mining-dashboard .badge-live,
+.mining-manager-wrapper .badge-live {
+    background-color: #28a745;
+    color: #ffffff;
+    animation: pulse-live 2s infinite;
+}
+
+@keyframes pulse-live {
+    0% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+    }
+}
+
+/* ============================================
+   Chart Containers
+   ============================================ */
+.mining-dashboard .chart-container,
+.mining-manager-wrapper .chart-container {
+    position: relative;
+    width: 100%;
+    min-height: 300px;
+}
+
+.mining-dashboard .chart-container canvas,
+.mining-manager-wrapper .chart-container canvas {
+    max-height: 100%;
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Loading state for charts */
+.mining-dashboard .chart-container.loading,
+.mining-manager-wrapper .chart-container.loading {
+    opacity: 0.5;
+    pointer-events: none;
+    min-height: 300px;
+}
+
+.mining-dashboard .chart-container.loading::after,
+.mining-manager-wrapper .chart-container.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    border: 4px solid rgba(102, 126, 234, 0.2);
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    animation: spin-chart 1s linear infinite;
+}
+
+@keyframes spin-chart {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Chart legend styling */
+.mining-dashboard .chart-legend,
+.mining-manager-wrapper .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #2c3138;
+}
+
+.mining-dashboard .chart-legend-item,
+.mining-manager-wrapper .chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+}
+
+.mining-dashboard .chart-legend-color,
+.mining-manager-wrapper .chart-legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+}
+
+/* ============================================
+   Card Tools
+   ============================================ */
+.mining-dashboard .card-tools,
+.mining-manager-wrapper .card-tools {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.mining-dashboard .card-tools .btn-tool,
+.mining-manager-wrapper .card-tools .btn-tool {
+    color: #adb5bd;
+    background: transparent;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    transition: color 0.15s ease;
+    cursor: pointer;
+}
+
+.mining-dashboard .card-tools .btn-tool:hover,
+.mining-manager-wrapper .card-tools .btn-tool:hover {
+    color: #ffffff;
+}
+
+.mining-dashboard .card-tools .btn-tool:focus,
+.mining-manager-wrapper .card-tools .btn-tool:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* ============================================
+   Image Styling
+   ============================================ */
+.mining-dashboard .img-circle,
+.mining-manager-wrapper .img-circle {
+    border-radius: 50%;
+    border: 2px solid #2c3138;
+    transition: border-color 0.3s ease;
+}
+
+.mining-dashboard .img-circle:hover,
+.mining-manager-wrapper .img-circle:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+}
+
+/* Character portrait */
+.mining-dashboard .character-portrait,
+.mining-manager-wrapper .character-portrait {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid #2c3138;
+    object-fit: cover;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .character-portrait:hover,
+.mining-manager-wrapper .character-portrait:hover {
+    border-color: #667eea;
+    transform: scale(1.1);
+}
+
+.mining-dashboard .character-portrait.large,
+.mining-manager-wrapper .character-portrait.large {
+    width: 64px;
+    height: 64px;
+}
+
+/* ============================================
+   Dashboard Spacing
+   ============================================ */
+.mining-dashboard .row {
+    margin-bottom: 0;
+}
+
+.mining-dashboard .card {
+    margin-bottom: 20px;
+}
+
+.mining-dashboard .col,
+.mining-dashboard [class*="col-"] {
+    margin-bottom: 0;
+}
+
+/* ============================================
+   Color Palette Variables
+   ============================================ */
+:root {
+    /* Ore Type Colors */
+    --color-ore: rgba(161, 198, 60, 1);
+    --color-ice: rgba(0, 210, 255, 1);
+    --color-moon: rgba(255, 0, 132, 1);
+    --color-gas: rgba(255, 159, 64, 1);
+    --color-mercoxit: rgba(255, 99, 132, 1);
+    --color-abyssal: rgba(255, 205, 86, 1);
+    --color-triglavian: rgba(220, 53, 69, 1);
+    
+    /* Dashboard Specific Colors */
+    --dashboard-bg: #1a1d24;
+    --dashboard-card: #23262d;
+    --dashboard-border: #2c3138;
+    --dashboard-text: #d1d1d1;
+}
+
+/* ============================================
+   Scrollbar Styling
+   ============================================ */
+.mining-dashboard ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.mining-dashboard ::-webkit-scrollbar-track {
+    background: #1a1d24;
+    border-radius: 4px;
+}
+
+.mining-dashboard ::-webkit-scrollbar-thumb {
+    background: #2c3138;
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+.mining-dashboard ::-webkit-scrollbar-thumb:hover {
+    background: #3a3f48;
+}
+
+/* Firefox scrollbar */
+.mining-dashboard .mining-dashboard,
+.mining-manager-wrapper .mining-dashboard {
+    scrollbar-width: thin;
+    scrollbar-color: #2c3138 #1a1d24;
+}
+
+/* ============================================
+   Tooltips
+   ============================================ */
+[data-toggle="tooltip"] {
+    cursor: help;
+    border-bottom: 1px dotted #667eea;
+}
+
+.mining-dashboard .tooltip-inner,
+.mining-manager-wrapper .tooltip-inner {
+    background-color: #23262d;
+    color: #ffffff;
+    border: 1px solid #2c3138;
+    padding: 8px 12px;
+    border-radius: 5px;
+    font-size: 0.875rem;
+}
+
+.mining-dashboard .tooltip.bs-tooltip-top .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-top .arrow::before {
+    border-top-color: #23262d;
+}
+
+.mining-dashboard .tooltip.bs-tooltip-bottom .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-bottom .arrow::before {
+    border-bottom-color: #23262d;
+}
+
+.mining-dashboard .tooltip.bs-tooltip-left .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-left .arrow::before {
+    border-left-color: #23262d;
+}
+
+.mining-dashboard .tooltip.bs-tooltip-right .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-right .arrow::before {
+    border-right-color: #23262d;
+}
+
+/* ============================================
+   Activity Feed
+   ============================================ */
+.mining-dashboard .activity-feed,
+.mining-manager-wrapper .activity-feed {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.mining-dashboard .activity-feed-item,
+.mining-manager-wrapper .activity-feed-item {
+    padding: 12px 0;
+    border-bottom: 1px solid #2c3138;
+    display: flex;
+    gap: 12px;
+    transition: background-color 0.15s ease;
+}
+
+.mining-dashboard .activity-feed-item:last-child,
+.mining-manager-wrapper .activity-feed-item:last-child {
+    border-bottom: none;
+}
+
+.mining-dashboard .activity-feed-item:hover,
+.mining-manager-wrapper .activity-feed-item:hover {
+    background-color: rgba(102, 126, 234, 0.05);
+}
+
+.mining-dashboard .activity-feed-icon,
+.mining-manager-wrapper .activity-feed-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.mining-dashboard .activity-feed-content,
+.mining-manager-wrapper .activity-feed-content {
+    flex: 1;
+}
+
+.mining-dashboard .activity-feed-title,
+.mining-manager-wrapper .activity-feed-title {
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+.mining-dashboard .activity-feed-time,
+.mining-manager-wrapper .activity-feed-time {
+    font-size: 0.875rem;
+    color: #9ca3af;
+}
+
+/* ============================================
+   Statistics Grid
+   ============================================ */
+.mining-dashboard .dashboard-stats-grid,
+.mining-manager-wrapper .dashboard-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+/* ============================================
+   Quick Actions
+   ============================================ */
+.mining-dashboard .quick-actions,
+.mining-manager-wrapper .quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.mining-dashboard .quick-action-btn,
+.mining-manager-wrapper .quick-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .quick-action-btn:hover,
+.mining-manager-wrapper .quick-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    color: #ffffff;
+    text-decoration: none;
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+@media (max-width: 992px) {
+    .dashboard-stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    
+    .small-box h3 {
+        font-size: 1.8rem;
+    }
+}
+
+@media (max-width: 767px) {
+    /* Info boxes stack on mobile */
+    .info-box {
+        display: block;
+        text-align: center;
+    }
+    
+    .mining-dashboard .info-box .info-box-icon,
+.mining-manager-wrapper .info-box .info-box-icon {
+        width: 100%;
+        height: 80px;
+        margin-bottom: 10px;
+    }
+    
+    .mining-dashboard .info-box .info-box-content,
+.mining-manager-wrapper .info-box .info-box-content {
+        text-align: center;
+        padding: 0;
+    }
+    
+    /* Small boxes adjust on mobile */
+    .small-box .icon > i {
+        font-size: 50px;
+    }
+    
+    .small-box:hover .icon > i {
+        font-size: 60px;
+    }
+    
+    .small-box h3 {
+        font-size: 1.5rem;
+    }
+    
+    /* Dashboard grid becomes single column */
+    .dashboard-stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Tables get horizontal scroll */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Charts adjust height */
+    .chart-container {
+        min-height: 250px;
+    }
+}
+
+@media (max-width: 576px) {
+    .info-box .info-box-number {
+        font-size: 1.25rem;
+    }
+    
+    .info-box .info-box-text {
+        font-size: 0.75rem;
+    }
+    
+    .small-box h3 {
+        font-size: 1.25rem;
+    }
+    
+    .small-box p {
+        font-size: 0.875rem;
+    }
+    
+    .quick-actions {
+        flex-direction: column;
+    }
+    
+    .quick-action-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .mining-dashboard .card-tools,
+    .mining-dashboard .btn,
+    .mining-dashboard .quick-actions,
+    .mining-dashboard .small-box-footer {
+        display: none !important;
+    }
+    
+    .mining-dashboard .card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #000;
+        box-shadow: none;
+    }
+    
+    .info-box,
+    .small-box {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #000;
+    }
+    
+    .table-dark {
+        color: #000;
+        background: #fff;
+    }
+    
+    .table-dark thead th,
+    .mining-dashboard .table-dark tbody td,
+.mining-manager-wrapper .table-dark tbody td {
+        border: 1px solid #000;
+    }
+    
+    .chart-container {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
+
+/* ============================================
+   Dark Mode Enhancements
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+    .mining-dashboard {
+        /* Already optimized for dark mode */
+    }
+}
+
+/* ============================================
+   Accessibility
+   ============================================ */
+.mining-dashboard .sr-only-dashboard,
+.mining-manager-wrapper .sr-only-dashboard {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus states for keyboard navigation */
+.mining-dashboard .info-box:focus-within,
+.mining-dashboard .small-box:focus-within,
+.mining-manager-wrapper .info-box:focus-within,
+.mining-manager-wrapper .small-box:focus-within {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* ============================================
+   Performance Optimizations
+   ============================================ */
+.mining-dashboard * {
+    /* Enable GPU acceleration for smoother animations */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+    .mining-dashboard *,
+    .info-box,
+    .small-box,
+    .mining-dashboard .chart-container.loading::after,
+.mining-manager-wrapper .chart-container.loading::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ============================================
+   Custom Animations
+   ============================================ */
+@keyframes fadeInDashboard {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mining-dashboard .fade-in-dashboard,
+.mining-manager-wrapper .fade-in-dashboard {
+    animation: fadeInDashboard 0.5s ease;
+}
+
+/* Stagger animation for dashboard widgets */
+.mining-dashboard .info-box:nth-child(1) { animation-delay: 0.1s; }
+.mining-dashboard .info-box:nth-child(2) { animation-delay: 0.2s; }
+.mining-dashboard .info-box:nth-child(3) { animation-delay: 0.3s; }
+.mining-dashboard .info-box:nth-child(4) { animation-delay: 0.4s; }
+
+/* ============================================
+   Tab Navigation (Combined Director Dashboard)
+   ============================================ */
+.mining-dashboard .nav-tabs {
+    border-bottom: 2px solid #454d55;
+}
+
+.mining-dashboard .nav-tabs .nav-link {
+    color: #c2c7d0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    margin-right: 8px;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.3s ease;
+}
+
+.mining-dashboard .nav-tabs .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.mining-dashboard .nav-tabs .nav-link.active {
+    background-color: #343a40;
+    border: 2px solid #454d55;
+    border-bottom: 2px solid #343a40;
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.mining-dashboard .nav-tabs .nav-link.active i {
+    color: #ffffff !important;
+}
+
+.mining-dashboard .nav-tabs .nav-link.active .badge {
+    color: #ffffff !important;
+}
+
+.mining-dashboard .tab-content {
+    padding-top: 20px;
+}
+
+/* ============================================
+   Tab Navigation (nav-tabs-custom for all pages)
+   ============================================ */
+.mining-manager-wrapper .nav-tabs-custom {
+    margin-bottom: 0 !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs {
+    border-bottom: 2px solid #454d55 !important;
+    background-color: transparent !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li {
+    margin-right: 8px !important;
+    margin-bottom: -2px !important;
+    border: none !important;
+    background: none !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li > a {
+    color: #c2c7d0 !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+    padding: 12px 24px !important;
+    border: none !important;
+    background: transparent !important;
+    border-radius: 8px 8px 0 0 !important;
+    transition: all 0.3s ease !important;
+    display: inline-block !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li > a:hover {
+    color: #fff !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    text-decoration: none !important;
+    border: none !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li.active > a,
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li.active > a:hover,
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li.active > a:focus {
+    background-color: #343a40 !important;
+    border: 2px solid #454d55 !important;
+    border-bottom: 2px solid #343a40 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li.active > a > i {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li.active > a > .badge {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .tab-content {
+    padding-top: 20px !important;
+    background-color: transparent !important;
+}
+
+/* ============================================
+   Diagnostic Page Specific Styles
+   ============================================ */
+.mining-manager-wrapper.diagnostic-page .warning-box {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%);
+    border-left: 4px solid #ffc107;
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: var(--mm-text-light);
+}
+
+.mining-manager-wrapper.diagnostic-page .warning-box strong {
+    color: #ffc107;
+    font-size: 1.1rem;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box {
+    background: linear-gradient(135deg, var(--mm-dark-card) 0%, var(--mm-dark-bg) 100%);
+    border: 1px solid var(--mm-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: var(--mm-primary-start);
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-label {
+    color: var(--mm-text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark {
+    background-color: var(--mm-dark-card) !important;
+    border: 1px solid var(--mm-border) !important;
+    border-radius: 10px !important;
+    margin-bottom: 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark .card-header {
+    background-color: #2d3338 !important;
+    border-bottom: 1px solid var(--mm-border) !important;
+    padding: 15px 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark .card-body {
+    padding: 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark h4 {
+    color: var(--mm-text-white);
+    margin-bottom: 15px;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark p {
+    color: var(--mm-text-muted);
+    margin-bottom: 20px;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark h5 {
+    color: var(--mm-text-white);
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+.mining-manager-wrapper.diagnostic-page .tab-pane {
+    padding: 20px 0;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-group {
+    margin-bottom: 20px;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-group label {
+    color: var(--mm-text-white);
+    font-weight: 500;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-control {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-control:focus {
+    background-color: var(--mm-dark-card);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.success {
+    border-left: 4px solid #28a745;
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(40, 167, 69, 0.05) 100%);
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.error {
+    border-left: 4px solid #dc3545;
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(220, 53, 69, 0.05) 100%);
+}
+
+.mining-manager-wrapper.diagnostic-page code {
+    background-color: var(--mm-dark-bg);
+    color: #f8f8f2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.mining-manager-wrapper.diagnostic-page pre {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: 6px;
+    padding: 15px;
+    color: var(--mm-text-light);
+    overflow-x: auto;
+}
+
+.mining-dashboard .personal-badge {
+    background: linear-gradient(to right, #667eea 0%, #764ba2 100%);
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.mining-dashboard .corporation-badge {
+    background: linear-gradient(to right, #f093fb 0%, #f5576c 100%);
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.mining-dashboard .card-dark {
+    background-color: #343a40;
+    border-color: #454d55;
+}
+
+.mining-dashboard .card-header {
+    background-color: #2d3338;
+    border-bottom-color: #454d55;
+}
+
+/* ============================================
+   End of Dashboard Styles
+   ============================================ */
+-e
+
+/* ============================================
+   SETTINGS-SPECIFIC STYLES  
+   ============================================ */
+
+    gap: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .settings-sidebar,
+.mining-manager-wrapper .settings-sidebar {
+    flex: 0 0 280px;
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+}
+
+.mining-dashboard .settings-content,
+.mining-manager-wrapper .settings-content {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ============================================
+   Settings Navigation
+   ============================================ */
+.mining-dashboard .settings-nav,
+.mining-manager-wrapper .settings-nav {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.mining-dashboard .settings-nav .nav-item,
+.mining-manager-wrapper .settings-nav .nav-item {
+    margin-bottom: 2px;
+}
+
+.mining-dashboard .settings-nav .nav-link,
+.mining-manager-wrapper .settings-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+    padding: 12px 15px;
+    color: var(--mm-text-light);
+    border-radius: var(--mm-radius-md);
+    transition: all var(--mm-transition-fast) ease;
+    text-decoration: none;
+    font-size: 0.95rem;
+}
+
+.mining-dashboard .settings-nav .nav-link i,
+.mining-manager-wrapper .settings-nav .nav-link i {
+    width: 24px;
+    text-align: center;
+    font-size: 1.1rem;
+}
+
+.mining-dashboard .settings-nav .nav-link:hover,
+.mining-manager-wrapper .settings-nav .nav-link:hover {
+    background-color: rgba(102, 126, 234, 0.2);
+    color: var(--mm-text-white);
+    text-decoration: none;
+}
+
+.mining-dashboard .settings-nav .nav-link.active,
+.mining-manager-wrapper .settings-nav .nav-link.active {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+}
+
+/* ============================================
+   Settings Sections
+   ============================================ */
+.mining-dashboard .settings-section,
+.mining-manager-wrapper .settings-section {
+    display: none;
+    animation: fadeInSettings 0.3s ease;
+}
+
+.mining-dashboard .settings-section.active,
+.mining-manager-wrapper .settings-section.active {
+    display: block;
+}
+
+@keyframes fadeInSettings {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mining-dashboard .settings-section-header,
+.mining-manager-wrapper .settings-section-header {
+    margin-bottom: var(--mm-spacing-xl);
+    padding-bottom: var(--mm-spacing-lg);
+    border-bottom: 2px solid var(--mm-border);
+}
+
+.mining-dashboard .settings-section-title,
+.mining-manager-wrapper .settings-section-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--mm-text-white);
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .settings-section-description,
+.mining-manager-wrapper .settings-section-description {
+    color: var(--mm-text-muted);
+    font-size: 0.95rem;
+}
+
+/* ============================================
+   Settings Cards
+   ============================================ */
+.mining-dashboard .settings-card,
+.mining-manager-wrapper .settings-card {
+    background: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-xl);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .settings-card-header,
+.mining-manager-wrapper .settings-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+    margin-bottom: var(--mm-spacing-lg);
+    padding-bottom: var(--mm-spacing-md);
+    border-bottom: 1px solid var(--mm-border);
+}
+
+.mining-dashboard .settings-card-icon,
+.mining-manager-wrapper .settings-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--mm-radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--mm-primary-start);
+}
+
+.mining-dashboard .settings-card-title,
+.mining-manager-wrapper .settings-card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin: 0;
+}
+
+.mining-dashboard .settings-card-body,
+.mining-manager-wrapper .settings-card-body {
+    color: var(--mm-text-light);
+}
+
+/* ============================================
+   Settings Forms
+   ============================================ */
+.mining-dashboard .settings-form .form-group,
+.mining-manager-wrapper .settings-form .form-group {
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .settings-form label,
+.mining-manager-wrapper .settings-form label {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .settings-form label i,
+.mining-manager-wrapper .settings-form label i {
+    color: var(--mm-primary-start);
+}
+
+.mining-dashboard .settings-form .form-control,
+.mining-manager-wrapper .settings-form .form-control,
+.mining-dashboard .settings-form .custom-select,
+.mining-manager-wrapper .settings-form .custom-select {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    padding: 10px 15px;
+    border-radius: var(--mm-radius-md);
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .settings-form .form-control:focus,
+.mining-manager-wrapper .settings-form .form-control:focus,
+.mining-dashboard .settings-form .custom-select:focus,
+.mining-manager-wrapper .settings-form .custom-select:focus {
+    background-color: var(--mm-dark-card);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.mining-dashboard .settings-form .form-text,
+.mining-manager-wrapper .settings-form .form-text {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    margin-top: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .settings-form .input-group-text,
+.mining-manager-wrapper .settings-form .input-group-text {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Custom Switches
+   ============================================ */
+.mining-dashboard .custom-switch-mm,
+.mining-manager-wrapper .custom-switch-mm {
+    padding-left: 60px;
+    min-height: 24px;
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-label,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::before {
+    left: -60px;
+    width: 48px;
+    height: 24px;
+    border-radius: 12px;
+    background-color: var(--mm-border);
+    border: none;
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::after {
+    left: -58px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--mm-text-white);
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::before {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
+    transform: translateX(24px);
+}
+
+.mining-dashboard .custom-switch-mm .custom-control-input:focus ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:focus ~ .custom-control-label::before {
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* ============================================
+   Custom Radio Buttons
+   ============================================ */
+.mining-dashboard .custom-radio-mm .custom-control-label,
+.mining-manager-wrapper .custom-radio-mm .custom-control-label {
+    font-weight: 600;
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .custom-radio-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-label::before {
+    background-color: var(--mm-dark-bg);
+    border: 2px solid var(--mm-border);
+}
+
+.mining-dashboard .custom-radio-mm .custom-control-input:checked ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-input:checked ~ .custom-control-label::before {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    border-color: var(--mm-primary-start);
+}
+
+.mining-dashboard .custom-radio-mm .custom-control-input:focus ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-input:focus ~ .custom-control-label::before {
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* ============================================
+   Info Banners
+   ============================================ */
+.mining-dashboard .info-banner,
+.mining-manager-wrapper .info-banner {
+    background: rgba(23, 162, 184, 0.15);
+    border: 1px solid rgba(23, 162, 184, 0.3);
+    border-left: 4px solid var(--mm-info);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .info-banner i,
+.mining-manager-wrapper .info-banner i {
+    color: var(--mm-info);
+    margin-right: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .warning-banner,
+.mining-manager-wrapper .warning-banner {
+    background: rgba(255, 193, 7, 0.15);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-left: 4px solid var(--mm-warning);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .warning-banner i,
+.mining-manager-wrapper .warning-banner i {
+    color: var(--mm-warning);
+    margin-right: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .success-banner,
+.mining-manager-wrapper .success-banner {
+    background: rgba(28, 200, 138, 0.15);
+    border: 1px solid rgba(28, 200, 138, 0.3);
+    border-left: 4px solid var(--mm-success);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .success-banner i,
+.mining-manager-wrapper .success-banner i {
+    color: var(--mm-success);
+    margin-right: var(--mm-spacing-sm);
+}
+
+/* ============================================
+   Action Buttons
+   ============================================ */
+.mining-dashboard .action-buttons,
+.mining-manager-wrapper .action-buttons {
+    position: sticky;
+    bottom: 0;
+    background: var(--mm-dark-card);
+    padding: var(--mm-spacing-lg);
+    border-top: 2px solid rgba(102, 126, 234, 0.3);
+    margin: 0 calc(-1 * var(--mm-spacing-xl)) calc(-1 * var(--mm-spacing-xl));
+    border-radius: 0 0 var(--mm-radius-lg) var(--mm-radius-lg);
+    z-index: 100;
+}
+
+.mining-dashboard .action-buttons .row,
+.mining-manager-wrapper .action-buttons .row {
+    gap: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .action-buttons .btn,
+.mining-manager-wrapper .action-buttons .btn {
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+/* ============================================
+   Settings Grid
+   ============================================ */
+.mining-dashboard .settings-grid,
+.mining-manager-wrapper .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .settings-grid-item,
+.mining-manager-wrapper .settings-grid-item {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-lg);
+    transition: all var(--mm-transition-normal) ease;
+}
+
+.mining-dashboard .settings-grid-item:hover,
+.mining-manager-wrapper .settings-grid-item:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Tax Rate Inputs
+   ============================================ */
+.mining-dashboard .tax-rate-grid,
+.mining-manager-wrapper .tax-rate-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .tax-rate-input,
+.mining-manager-wrapper .tax-rate-input {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+}
+
+.mining-dashboard .tax-rate-label,
+.mining-manager-wrapper .tax-rate-label {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .tax-rate-icon,
+.mining-manager-wrapper .tax-rate-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--mm-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.mining-dashboard .tax-rate-input input[type="number"],
+.mining-manager-wrapper .tax-rate-input input[type="number"] {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* ============================================
+   Feature Toggles
+   ============================================ */
+.mining-dashboard .feature-toggles,
+.mining-manager-wrapper .feature-toggles {
+    display: grid;
+    gap: var(--mm-spacing-md);
+}
+
+.mining-dashboard .feature-toggle-item,
+.mining-manager-wrapper .feature-toggle-item {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mm-spacing-md);
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .feature-toggle-item:hover,
+.mining-manager-wrapper .feature-toggle-item:hover {
+    background: rgba(102, 126, 234, 0.05);
+    border-color: rgba(102, 126, 234, 0.3);
+}
+
+.mining-dashboard .feature-toggle-icon,
+.mining-manager-wrapper .feature-toggle-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--mm-radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--mm-primary-start);
+    flex-shrink: 0;
+}
+
+.mining-dashboard .feature-toggle-content,
+.mining-manager-wrapper .feature-toggle-content {
+    flex: 1;
+}
+
+.mining-dashboard .feature-toggle-header,
+.mining-manager-wrapper .feature-toggle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .feature-toggle-title,
+.mining-manager-wrapper .feature-toggle-title {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin: 0;
+}
+
+.mining-dashboard .feature-toggle-description,
+.mining-manager-wrapper .feature-toggle-description {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Advanced Settings
+   ============================================ */
+.mining-dashboard .advanced-settings-grid,
+.mining-manager-wrapper .advanced-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .advanced-setting-card,
+.mining-manager-wrapper .advanced-setting-card {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+    text-align: center;
+}
+
+.mining-dashboard .advanced-setting-icon,
+.mining-manager-wrapper .advanced-setting-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--mm-radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    margin: 0 auto var(--mm-spacing-md);
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--mm-primary-start);
+}
+
+.mining-dashboard .advanced-setting-title,
+.mining-manager-wrapper .advanced-setting-title {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .advanced-setting-description,
+.mining-manager-wrapper .advanced-setting-description {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    margin-bottom: var(--mm-spacing-md);
+}
+
+/* ============================================
+   File Upload Custom
+   ============================================ */
+.mining-dashboard .custom-file-mm .custom-file-input:lang(en) ~ .custom-file-label::after,
+.mining-manager-wrapper .custom-file-mm .custom-file-input:lang(en) ~ .custom-file-label::after {
+    content: "Browse";
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+}
+
+.mining-dashboard .custom-file-mm .custom-file-label,
+.mining-manager-wrapper .custom-file-mm .custom-file-label {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+}
+
+.mining-dashboard .custom-file-mm .custom-file-input:focus ~ .custom-file-label,
+.mining-manager-wrapper .custom-file-mm .custom-file-input:focus ~ .custom-file-label {
+    border-color: var(--mm-primary-start);
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* ============================================
+   Pricing Configuration
+   ============================================ */
+.mining-dashboard .price-provider-selector,
+.mining-manager-wrapper .price-provider-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .price-provider-option,
+.mining-manager-wrapper .price-provider-option {
+    background: var(--mm-dark-bg);
+    border: 2px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.mining-dashboard .price-provider-option:hover,
+.mining-manager-wrapper .price-provider-option:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+}
+
+.mining-dashboard .price-provider-option.selected,
+.mining-manager-wrapper .price-provider-option.selected {
+    border-color: var(--mm-primary-start);
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.mining-dashboard .price-provider-icon,
+.mining-manager-wrapper .price-provider-icon {
+    font-size: 2rem;
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .price-provider-name,
+.mining-manager-wrapper .price-provider-name {
+    font-weight: 600;
+    color: var(--mm-text-white);
+}
+
+/* ============================================
+   Report Option Cards & Format Selection
+   ============================================ */
+.mining-manager-wrapper .report-option-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+}
+
+.mining-manager-wrapper .report-option-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mining-manager-wrapper .report-option-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .report-option-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .report-option-card .card-body {
+    position: relative;
+}
+
+.mining-manager-wrapper .report-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--mm-text-muted);
+    transition: color 0.3s ease;
+}
+
+.mining-manager-wrapper .report-option-card.selected .report-icon {
+    color: var(--mm-primary-start, #667eea);
+}
+
+.mining-manager-wrapper .format-option {
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .format-option:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .format-option.selected {
+    border-color: #28a745;
+    background: rgba(40, 167, 69, 0.15);
+    box-shadow: 0 0 15px rgba(40, 167, 69, 0.3);
+}
+
+.mining-manager-wrapper .format-option.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .format-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+}
+
+/* Export page type cards */
+.mining-manager-wrapper .export-option-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .export-option-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .export-option-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .export-option-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+/* Format buttons (export page) */
+.mining-manager-wrapper .format-button {
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .format-button:hover {
+    border-color: rgba(40, 167, 69, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .format-button.selected {
+    border-color: #28a745;
+    background: rgba(40, 167, 69, 0.15);
+    box-shadow: 0 0 15px rgba(40, 167, 69, 0.3);
+}
+
+.mining-manager-wrapper .format-button.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .export-type-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+}
+
+.mining-manager-wrapper .export-type-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .export-type-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .export-type-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+/* Create schedule card */
+.mining-manager-wrapper .create-schedule-card {
+    cursor: pointer;
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    color: var(--mm-text-muted);
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.mining-manager-wrapper .create-schedule-card:hover {
+    border-color: #28a745;
+    color: #28a745;
+    background: rgba(40, 167, 69, 0.05);
+}
+
+/* Schedule card active/inactive states */
+.mining-manager-wrapper .schedule-card {
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper .schedule-active {
+    border-left: 3px solid #28a745;
+}
+
+.mining-manager-wrapper .schedule-inactive {
+    border-left: 3px solid #6c757d;
+    opacity: 0.7;
+}
+
+/* Step indicator */
+.mining-manager-wrapper .step-indicator {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+}
+
+.mining-manager-wrapper .step-indicator::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mining-manager-wrapper .step {
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    color: var(--mm-text-muted);
+    transition: color 0.3s ease;
+}
+
+.mining-manager-wrapper .step.active,
+.mining-manager-wrapper .step.completed {
+    color: var(--mm-text-white, #fff);
+}
+
+.mining-manager-wrapper .step-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper .step.active .step-circle {
+    background: var(--mm-primary-start, #667eea);
+    box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+}
+
+.mining-manager-wrapper .step.completed .step-circle {
+    background: #28a745;
+}
+
+/* Frequency badges */
+.mining-manager-wrapper .frequency-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.mining-manager-wrapper .freq-daily { background: rgba(23, 162, 184, 0.2); color: #17a2b8; }
+.mining-manager-wrapper .freq-weekly { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+.mining-manager-wrapper .freq-monthly { background: rgba(111, 66, 193, 0.2); color: #6f42c1; }
+
+/* Status toggle switch */
+.mining-manager-wrapper .status-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+}
+
+.mining-manager-wrapper .status-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.mining-manager-wrapper .status-toggle .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #6c757d;
+    transition: 0.3s;
+    border-radius: 20px;
+}
+
+.mining-manager-wrapper .status-toggle .slider::before {
+    position: absolute;
+    content: '';
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.mining-manager-wrapper .status-toggle input:checked + .slider {
+    background-color: #28a745;
+}
+
+.mining-manager-wrapper .status-toggle input:checked + .slider::before {
+    transform: translateX(20px);
+}
+
+/* ============================================
+   Help Cards
+   ============================================ */
+.mining-dashboard .help-card-grid,
+.mining-manager-wrapper .help-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .help-card-mm,
+.mining-manager-wrapper .help-card-mm {
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+}
+
+.mining-dashboard .help-card-icon,
+.mining-manager-wrapper .help-card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--mm-radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: var(--mm-spacing-md);
+}
+
+.mining-dashboard .help-card-icon.icon-primary,
+.mining-manager-wrapper .help-card-icon.icon-primary {
+    background: rgba(102, 126, 234, 0.2);
+    color: var(--mm-primary-start);
+}
+
+.mining-dashboard .help-card-icon.icon-success,
+.mining-manager-wrapper .help-card-icon.icon-success {
+    background: rgba(40, 167, 69, 0.2);
+    color: var(--mm-success);
+}
+
+.mining-dashboard .help-card-icon.icon-warning,
+.mining-manager-wrapper .help-card-icon.icon-warning {
+    background: rgba(255, 193, 7, 0.2);
+    color: var(--mm-warning);
+}
+
+.mining-dashboard .help-card-icon.icon-info,
+.mining-manager-wrapper .help-card-icon.icon-info {
+    background: rgba(23, 162, 184, 0.2);
+    color: var(--mm-info);
+}
+
+.mining-dashboard .help-card-title,
+.mining-manager-wrapper .help-card-title {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .help-card-description,
+.mining-manager-wrapper .help-card-description {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    margin-bottom: 0;
+}
+
+.mining-dashboard .help-card-list,
+.mining-manager-wrapper .help-card-list {
+    list-style: none;
+    padding: 0;
+    margin-top: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .help-card-list li,
+.mining-manager-wrapper .help-card-list li {
+    padding: var(--mm-spacing-xs) 0;
+    color: var(--mm-text-light);
+    font-size: 0.875rem;
+}
+
+.mining-dashboard .help-card-list li::before,
+.mining-manager-wrapper .help-card-list li::before {
+    content: '→';
+    margin-right: var(--mm-spacing-xs);
+    color: var(--mm-primary-start);
+}
+
+/* ============================================
+   Responsive Styles
+   ============================================ */
+@media (max-width: 992px) {
+    .settings-wrapper {
+        flex-direction: column;
+    }
+    
+    .settings-sidebar {
+        position: relative;
+        max-height: none;
+        flex: 1;
+        margin-bottom: var(--mm-spacing-lg);
+    }
+    
+    .settings-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--mm-spacing-xs);
+    }
+    
+    .mining-dashboard .settings-nav .nav-item,
+.mining-manager-wrapper .settings-nav .nav-item {
+        margin-bottom: 0;
+    }
+    
+    .mining-dashboard .settings-nav .nav-link,
+.mining-manager-wrapper .settings-nav .nav-link {
+        padding: var(--mm-spacing-sm) var(--mm-spacing-md);
+    }
+}
+
+@media (max-width: 768px) {
+    .settings-card {
+        padding: var(--mm-spacing-lg);
+    }
+    
+    .settings-grid,
+    .tax-rate-grid,
+    .advanced-settings-grid,
+    .help-card-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .action-buttons {
+        position: relative;
+        margin: var(--mm-spacing-lg) 0 0;
+    }
+    
+    .mining-dashboard .action-buttons .btn,
+.mining-manager-wrapper .action-buttons .btn {
+        width: 100%;
+        margin-bottom: var(--mm-spacing-sm);
+    }
+    
+    .price-provider-selector {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 576px) {
+    .settings-card {
+        padding: var(--mm-spacing-md);
+    }
+    
+    .settings-section-title {
+        font-size: 1.5rem;
+    }
+    
+    .custom-switch-mm {
+        padding-left: 55px;
+    }
+    
+    .mining-dashboard .custom-switch-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::before {
+        left: -55px;
+        width: 44px;
+    }
+    
+    .mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
+        transform: translateX(20px);
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .settings-sidebar,
+    .action-buttons,
+    .btn {
+        display: none !important;
+    }
+    
+    .settings-wrapper {
+        display: block;
+    }
+    
+    .settings-section {
+        display: block !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .settings-card {
+        border: 1px solid #000;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
+
+/* ============================================
+   Tab Content & Dashboard Background Enhancement
+   ULTRA-SPECIFIC SELECTORS TO OVERRIDE BOOTSTRAP
+   ============================================ */
+
+/* Make tab-content background much darker */
+div.mining-dashboard div.tab-content,
+div.mining-manager-wrapper div.tab-content {
+    background-color: #0f1115 !important;
+    padding: 20px !important;
+    border-radius: 5px !important;
+}
+
+/* Make card backgrounds even darker - ULTRA SPECIFIC */
+div.mining-dashboard div.card.card-dark,
+div.mining-dashboard div.card.card-dark.card-tabs,
+div.mining-manager-wrapper div.card.card-dark,
+div.mining-manager-wrapper div.card.card-dark.card-tabs {
+    background-color: #161922 !important;
+    border: 1px solid #2c3138 !important;
+}
+
+/* Card headers - ULTRA SPECIFIC */
+div.mining-dashboard div.card.card-dark div.card-header,
+div.mining-dashboard div.card.card-dark.card-tabs div.card-header,
+div.mining-manager-wrapper div.card.card-dark div.card-header,
+div.mining-manager-wrapper div.card.card-dark.card-tabs div.card-header {
+    background-color: #1a1d24 !important;
+    border-bottom: 1px solid #2c3138 !important;
+    color: #ffffff !important;
+}
+
+/* Card body - ULTRA SPECIFIC TO BEAT BOOTSTRAP */
+div.mining-dashboard div.card-body,
+div.mining-dashboard div.card.card-dark div.card-body,
+div.mining-dashboard div.card.card-dark.card-tabs div.card-body,
+div.mining-manager-wrapper div.card-body,
+div.mining-manager-wrapper div.card.card-dark div.card-body,
+div.mining-manager-wrapper div.card.card-dark.card-tabs div.card-body {
+    background-color: #161922 !important;
+    color: #e8e8e8 !important;
+}
+
+/* Make charts more visible with better background */
+div.mining-dashboard div.card-body canvas,
+div.mining-manager-wrapper div.card-body canvas {
+    background-color: rgba(26, 29, 36, 0.5) !important;
+    border-radius: 5px !important;
+    padding: 10px !important;
+}
+
+/* Improve table visibility in darker background */
+div.mining-dashboard table.table,
+div.mining-manager-wrapper table.table {
+    color: #e8e8e8 !important;
+    background-color: transparent !important;
+}
+
+div.mining-dashboard table.table thead th,
+div.mining-manager-wrapper table.table thead th {
+    color: #ffffff !important;
+    background-color: #1a1d24 !important;
+    border-color: #2c3138 !important;
+}
+
+div.mining-dashboard table.table tbody tr,
+div.mining-manager-wrapper table.table tbody tr {
+    background-color: transparent !important;
+}
+
+div.mining-dashboard table.table-striped tbody tr:nth-of-type(odd),
+div.mining-manager-wrapper table.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+div.mining-dashboard table.table td,
+div.mining-manager-wrapper table.table td {
+    border-color: #2c3138 !important;
+    color: #e8e8e8 !important;
+}
+
+/* Make text in cards more visible */
+div.mining-dashboard .text-muted,
+div.mining-manager-wrapper .text-muted {
+    color: #9ca3af !important;
+}
+
+/* Tab panes darker background */
+div.mining-dashboard div.tab-pane,
+div.mining-manager-wrapper div.tab-pane {
+    background-color: transparent !important;
+}
+
+/* Stats cards specifically */
+div.mining-dashboard div.col-md-3 div.card-body,
+div.mining-dashboard div.col-lg-3 div.card-body,
+div.mining-dashboard div.col-xl-3 div.card-body {
+    background-color: #161922 !important;
+}
+
+/* Override any remaining white backgrounds */
+div.mining-dashboard div[class*="col-"] div.card-body,
+div.mining-manager-wrapper div[class*="col-"] div.card-body {
+    background-color: #161922 !important;
+}
+
+/* ============================================
+   Moon Extraction Calendar Styles
+   ============================================ */
+
+/* Calendar Container */
+.mining-manager-wrapper.moon-calendar-page #calendar {
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+/* FullCalendar Dark Theme Overrides */
+.mining-manager-wrapper.moon-calendar-page .fc {
+    --fc-border-color: rgba(255, 255, 255, 0.1);
+    --fc-button-bg-color: #f39c12;
+    --fc-button-border-color: #e08e0b;
+    --fc-button-hover-bg-color: #e08e0b;
+    --fc-button-hover-border-color: #c87f0a;
+    --fc-button-active-bg-color: #c87f0a;
+    --fc-button-active-border-color: #c87f0a;
+    --fc-event-bg-color: #3498db;
+    --fc-event-border-color: #2980b9;
+    --fc-today-bg-color: rgba(243, 156, 18, 0.15);
+    --fc-neutral-bg-color: #2d3748;
+    --fc-page-bg-color: transparent;
+    --fc-list-event-hover-bg-color: rgba(243, 156, 18, 0.2);
+}
+
+/* Week view time slots */
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-slot {
+    height: 3em !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-event {
+    font-size: 0.8em;
+    padding: 2px 4px;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-event .fc-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-col-events {
+    margin: 0 1px !important;
+}
+
+/* Week view - darker background for past time slots */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-slot {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+/* Week view columns background */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-col {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* Override for the entire time grid body in week view */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-body {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+/* Fix today column highlighting in week view */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-day-today {
+    background: rgba(243, 156, 18, 0.15) !important;
+}
+
+/* Past days should be slightly darker */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-day-past {
+    background: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Remove scrollbars from calendar */
+.mining-manager-wrapper.moon-calendar-page .fc-scroller {
+    overflow: visible !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-scroller-liquid-absolute {
+    position: relative !important;
+    overflow: visible !important;
+}
+
+/* Calendar header styling */
+.mining-manager-wrapper.moon-calendar-page .fc .fc-col-header-cell {
+    background: rgba(243, 156, 18, 0.15);
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-col-header-cell-cushion,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-daygrid-day-number,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-list-day-text,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-list-day-side-text {
+    color: #e2e8f0;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
+    color: #6b7280;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-event {
+    cursor: pointer;
+    font-size: 0.85em;
+    border-radius: 3px;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-toolbar-title {
+    color: #e2e8f0;
+}
+
+/* Status-based event colors */
+/* Default fallback for any event - use extracting color (orange) */
+.mining-manager-wrapper.moon-calendar-page .fc-event {
+    background-color: #f39c12 !important;
+    border-color: #e08e0b !important;
+}
+
+/* Extracting: Orange - moon chunk is being pulled */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-extracting {
+    background-color: #f39c12 !important;
+    border-color: #e08e0b !important;
+}
+
+/* Ready: Green - chunk arrived, ready to mine */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-ready {
+    background-color: #27ae60 !important;
+    border-color: #219a52 !important;
+}
+
+/* Unstable: Red - past 48h, will auto-fracture soon */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-unstable {
+    background-color: #dc3545 !important;
+    border-color: #c82333 !important;
+}
+
+/* Expired: Dark gray - extractions past decay time */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-expired {
+    background-color: #4a5568 !important;
+    border-color: #2d3748 !important;
+    opacity: 0.85;
+}
+
+/* Fractured: Dark blue-gray - successfully fractured extractions */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-fractured {
+    background-color: #2d3748 !important;
+    border-color: #1a202c !important;
+    opacity: 0.85;
+}
+
+/* Status legend */
+.mining-manager-wrapper .mm-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.mining-manager-wrapper .mm-status-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #d1d5db;
+}
+
+.mining-manager-wrapper .mm-status-legend-color {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-extracting {
+    background-color: #f39c12;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-ready {
+    background-color: #27ae60;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-unstable {
+    background-color: #dc3545;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-expired {
+    background-color: #4a5568;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-fractured {
+    background-color: #2d3748;
+}
+
+/* Event detail modal */
+.mining-manager-wrapper .mm-event-detail-row {
+    display: flex;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mining-manager-wrapper .mm-event-detail-row:last-child {
+    border-bottom: none;
+}
+
+.mining-manager-wrapper .mm-event-detail-label {
+    font-weight: 600;
+    color: #9ca3af;
+    width: 140px;
+    flex-shrink: 0;
+}
+
+.mining-manager-wrapper .mm-event-detail-value {
+    color: #e2e8f0;
+}
+
+/* Sidebar extraction items */
+.mining-manager-wrapper .mm-sidebar-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid;
+    transition: background 0.2s;
+}
+
+.mining-manager-wrapper .mm-sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-extracting {
+    border-left-color: #f39c12;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-ready {
+    border-left-color: #27ae60;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-unstable {
+    border-left-color: #dc3545;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-expired {
+    border-left-color: #4a5568;
+    opacity: 0.85;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-fractured {
+    border-left-color: #2d3748;
+    opacity: 0.85;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-structure-name {
+    font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-extraction-time {
+    color: #9ca3af;
+    font-size: 0.85em;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-extraction-value {
+    color: #27ae60;
+    font-weight: 600;
+    font-size: 0.9em;
+    margin-top: 4px;
+}
+
+/* Countdown timers in sidebar */
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown {
+    font-size: 0.85em;
+    margin-top: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-warning {
+    background: rgba(243, 156, 18, 0.15);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-danger {
+    background: rgba(220, 53, 69, 0.15);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown .countdown-text {
+    color: #d1d5db;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-danger .countdown-text strong {
+    animation: pulse-danger 1.5s infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Status Badges - Unstable red */
+.mining-manager-wrapper .mm-badge-unstable {
+    background-color: #dc3545 !important;
+    color: #fff !important;
+}
+
+/* Timer boxes for countdown displays */
+.mining-manager-wrapper .mm-timer-box {
+    padding: 20px;
+    text-align: center;
+    color: #fff;
+    border-radius: var(--mm-radius-md);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-arrival {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-fracture {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-unstable {
+    background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box h2 {
+    margin: 10px 0;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* Alert styles for warnings */
+.mining-manager-wrapper .mm-alert-unstable {
+    background: linear-gradient(45deg, #ff9800, #ffc107);
+    border: none;
+    color: #000;
+}
+
+.mining-manager-wrapper .mm-alert-auto-fracture {
+    background-color: #dc3545;
+    border: none;
+    color: #fff;
+}
+

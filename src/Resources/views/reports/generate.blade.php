@@ -1,0 +1,491 @@
+@extends('web::layouts.grids.12')
+
+@section('title', trans('mining-manager::reports.generate_report'))
+@section('page_header', trans('mining-manager::menu.reports'))
+
+@push('head')
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.2">
+<style>
+    .report-option-card { cursor: pointer; border: 2px solid transparent !important; transition: all 0.3s ease; position: relative; }
+    .report-option-card:hover { border-color: rgba(102, 126, 234, 0.5) !important; transform: translateY(-2px); }
+    .report-option-card.selected { border-color: #667eea !important; background: rgba(102, 126, 234, 0.15) !important; box-shadow: 0 0 15px rgba(102, 126, 234, 0.3); }
+    .report-option-card.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+
+    .format-option { cursor: pointer; border: 2px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.5rem; text-align: center; transition: all 0.3s ease; position: relative; }
+    .format-option:hover { border-color: rgba(40, 167, 69, 0.5); transform: translateY(-2px); }
+    .format-option.selected { border-color: #28a745 !important; background: rgba(40, 167, 69, 0.15) !important; box-shadow: 0 0 15px rgba(40, 167, 69, 0.3); }
+    .format-option.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+
+    .report-icon { font-size: 2.5rem; margin-bottom: 0.75rem; color: rgba(255,255,255,0.5); transition: color 0.3s; }
+    .report-option-card.selected .report-icon { color: #667eea; }
+    .format-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+    .step-indicator { display: flex; justify-content: space-between; position: relative; }
+    .step-indicator::before { content: ''; position: absolute; top: 20px; left: 10%; right: 10%; height: 2px; background: rgba(255,255,255,0.1); }
+    .step { text-align: center; position: relative; z-index: 1; color: rgba(255,255,255,0.4); transition: color 0.3s; }
+    .step.active, .step.completed { color: #fff; }
+    .step-circle { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; transition: all 0.3s; }
+    .step.active .step-circle { background: #667eea; box-shadow: 0 0 10px rgba(102,126,234,0.5); }
+    .step.completed .step-circle { background: #28a745; }
+</style>
+@endpush
+
+@section('full')
+<div class="mining-manager-wrapper mining-dashboard reports-generate-page">
+
+{{-- TAB NAVIGATION --}}
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports') && !Request::is('*/reports/*') ? 'active' : '' }}" href="{{ route('mining-manager.reports.index') }}">
+                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
+                </a>
+            </li>
+            @can('mining-manager.admin')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/generate') ? 'active' : '' }}" href="{{ route('mining-manager.reports.generate') }}">
+                    <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/scheduled') ? 'active' : '' }}" href="{{ route('mining-manager.reports.scheduled') }}">
+                    <i class="fas fa-clock"></i> {{ trans('mining-manager::menu.scheduled_reports') }}
+                </a>
+            </li>
+            @endcan
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/export') ? 'active' : '' }}" href="{{ route('mining-manager.reports.export') }}">
+                    <i class="fas fa-download"></i> {{ trans('mining-manager::menu.export_data') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+
+
+<div class="reports-generate">
+    
+    {{-- STEP INDICATOR --}}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="step-indicator">
+                <div class="step active" id="step1">
+                    <div class="step-circle">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <div>{{ trans('mining-manager::reports.select_type') }}</div>
+                </div>
+                <div class="step" id="step2">
+                    <div class="step-circle">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <div>{{ trans('mining-manager::reports.select_format') }}</div>
+                </div>
+                <div class="step" id="step3">
+                    <div class="step-circle">
+                        <i class="fas fa-cog"></i>
+                    </div>
+                    <div>{{ trans('mining-manager::reports.configure') }}</div>
+                </div>
+                <div class="step" id="step4">
+                    <div class="step-circle">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div>{{ trans('mining-manager::reports.generate') }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ route('mining-manager.reports.store') }}" id="reportForm">
+        @csrf
+
+        {{-- STEP 1: SELECT REPORT TYPE --}}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-calendar-alt"></i>
+                            {{ trans('mining-manager::reports.step_1_select_type') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-badge">
+                            <i class="fas fa-info-circle"></i>
+                            {{ trans('mining-manager::reports.type_selection_help') }}
+                        </div>
+                        
+                        <div class="row">
+                            @foreach($reportTypes as $typeKey => $typeName)
+                            <div class="col-md-3 mb-3">
+                                <div class="card report-option-card" data-report-type="{{ $typeKey }}">
+                                    <div class="card-body text-center">
+                                        <div class="report-icon icon-{{ $typeKey }}">
+                                            <i class="fas fa-calendar-{{ $typeKey === 'daily' ? 'day' : ($typeKey === 'weekly' ? 'week' : ($typeKey === 'monthly' ? 'alt' : 'check')) }}"></i>
+                                        </div>
+                                        <h4>{{ $typeName }}</h4>
+                                        <p class="text-muted">
+                                            {{ trans('mining-manager::reports.type_' . $typeKey . '_description') }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            @endforeach
+                        </div>
+                        
+                        <input type="hidden" name="report_type" id="report_type" required>
+                        @error('report_type')
+                        <div class="alert alert-danger mt-2">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- STEP 2: SELECT FORMAT --}}
+        <div class="row mb-4" id="formatSection" style="display: none;">
+            <div class="col-12">
+                <div class="card card-success">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-file-alt"></i>
+                            {{ trans('mining-manager::reports.step_2_select_format') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-badge">
+                            <i class="fas fa-info-circle"></i>
+                            {{ trans('mining-manager::reports.format_selection_help') }}
+                        </div>
+                        
+                        <div class="row">
+                            @foreach($formats as $formatKey => $formatName)
+                            <div class="col-md-4">
+                                <div class="format-option" data-format="{{ $formatKey }}">
+                                    <div class="format-icon">
+                                        <i class="fas fa-file-{{ $formatKey === 'json' ? 'code' : ($formatKey === 'csv' ? 'csv' : 'pdf') }} text-{{ $formatKey === 'json' ? 'primary' : ($formatKey === 'csv' ? 'success' : 'danger') }}"></i>
+                                    </div>
+                                    <h5>{{ $formatName }}</h5>
+                                    <small class="text-muted">
+                                        {{ trans('mining-manager::reports.format_' . $formatKey . '_description') }}
+                                    </small>
+                                </div>
+                            </div>
+                            @endforeach
+                        </div>
+                        
+                        <input type="hidden" name="format" id="format" required>
+                        @error('format')
+                        <div class="alert alert-danger mt-2">{{ $message }}</div>
+                        @enderror
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- STEP 3: CONFIGURE (CUSTOM DATE RANGE) --}}
+        <div class="row mb-4 date-range-card" id="customDateSection">
+            <div class="col-12">
+                <div class="card card-warning">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-cog"></i>
+                            {{ trans('mining-manager::reports.step_3_configure') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-badge">
+                            <i class="fas fa-info-circle"></i>
+                            {{ trans('mining-manager::reports.custom_date_help') }}
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="start_date">
+                                        <i class="fas fa-calendar-check"></i>
+                                        {{ trans('mining-manager::reports.start_date') }}
+                                    </label>
+                                    <input type="date" class="form-control" name="start_date" id="start_date" 
+                                           value="{{ old('start_date', now()->subDays(30)->format('Y-m-d')) }}">
+                                    @error('start_date')
+                                    <span class="text-danger">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="end_date">
+                                        <i class="fas fa-calendar-times"></i>
+                                        {{ trans('mining-manager::reports.end_date') }}
+                                    </label>
+                                    <input type="date" class="form-control" name="end_date" id="end_date" 
+                                           value="{{ old('end_date', now()->format('Y-m-d')) }}">
+                                    @error('end_date')
+                                    <span class="text-danger">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-12">
+                                <h5>{{ trans('mining-manager::reports.quick_ranges') }}</h5>
+                                <div class="btn-group mb-3">
+                                    <button type="button" class="btn btn-outline-secondary quick-range" data-days="7">
+                                        {{ trans('mining-manager::reports.last_7_days') }}
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary quick-range" data-days="30">
+                                        {{ trans('mining-manager::reports.last_30_days') }}
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary quick-range" data-days="90">
+                                        {{ trans('mining-manager::reports.last_90_days') }}
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary quick-range" data-days="365">
+                                        {{ trans('mining-manager::reports.last_year') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- STEP 4: PREVIEW & GENERATE --}}
+        <div class="row mb-4" id="previewSection" style="display: none;">
+            <div class="col-12">
+                <div class="card card-info">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-eye"></i>
+                            {{ trans('mining-manager::reports.step_4_preview') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="generation-preview">
+                            <h4><i class="fas fa-file-alt"></i> {{ trans('mining-manager::reports.report_summary') }}</h4>
+                            <div class="row mt-3">
+                                <div class="col-md-3">
+                                    <strong>{{ trans('mining-manager::reports.type') }}:</strong>
+                                    <div id="preview-type" class="h5">-</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>{{ trans('mining-manager::reports.format') }}:</strong>
+                                    <div id="preview-format" class="h5">-</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>{{ trans('mining-manager::reports.period') }}:</strong>
+                                    <div id="preview-period" class="h5">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="preview-section">
+                            <h5><i class="fas fa-chart-bar"></i> {{ trans('mining-manager::reports.report_will_include') }}</h5>
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_mining_activity') }}</li>
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_value_calculations') }}</li>
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_miner_breakdown') }}</li>
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_ore_distribution') }}</li>
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_system_analysis') }}</li>
+                                <li><i class="fas fa-check text-success"></i> {{ trans('mining-manager::reports.include_tax_data') }}</li>
+                            </ul>
+                        </div>
+                        
+                        {{-- Discord Send Option --}}
+                        @if(isset($webhooks) && $webhooks->count() > 0)
+                        <div class="card card-outline card-primary mt-3">
+                            <div class="card-body">
+                                <div class="form-check mb-2">
+                                    <input type="checkbox" class="form-check-input" id="send_discord" name="send_to_discord">
+                                    <label class="form-check-label" for="send_discord">
+                                        <i class="fab fa-discord text-primary"></i> Send report to Discord after generation
+                                    </label>
+                                </div>
+                                <div id="webhook_select" style="display:none;">
+                                    <select class="form-control" name="webhook_id">
+                                        @foreach($webhooks as $webhook)
+                                        <option value="{{ $webhook->id }}">{{ $webhook->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        @endif
+
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle"></i>
+                            {{ trans('mining-manager::reports.generation_time_notice') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- ACTION BUTTONS --}}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <button type="submit" class="btn btn-success btn-lg" id="generateBtn" disabled>
+                            <i class="fas fa-cogs"></i>
+                            {{ trans('mining-manager::reports.generate_report') }}
+                        </button>
+                        <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-secondary btn-lg">
+                            <i class="fas fa-arrow-left"></i>
+                            {{ trans('mining-manager::reports.back_to_list') }}
+                        </a>
+                        <button type="button" class="btn btn-info btn-lg" id="resetBtn">
+                            <i class="fas fa-redo"></i>
+                            {{ trans('mining-manager::reports.reset_form') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+
+</div>
+
+@push('javascript')
+<script>
+$(document).ready(function() {
+    let selectedType = null;
+    let selectedFormat = null;
+    
+    // Step 1: Select Report Type
+    $('.report-option-card').on('click', function() {
+        $('.report-option-card').removeClass('selected');
+        $(this).addClass('selected');
+        
+        selectedType = $(this).data('report-type');
+        $('#report_type').val(selectedType);
+        
+        // Update step indicator
+        $('#step1').addClass('completed');
+        $('#step2').addClass('active');
+        
+        // Show format section
+        $('#formatSection').slideDown();
+        
+        // Show/hide custom date section
+        if (selectedType === 'custom') {
+            $('#customDateSection').addClass('show').slideDown();
+            $('#step3').addClass('active');
+        } else {
+            $('#customDateSection').removeClass('show').slideUp();
+            $('#step3').removeClass('active');
+        }
+        
+        updatePreview();
+    });
+    
+    // Step 2: Select Format
+    $('.format-option').on('click', function() {
+        $('.format-option').removeClass('selected');
+        $(this).addClass('selected');
+        
+        selectedFormat = $(this).data('format');
+        $('#format').val(selectedFormat);
+        
+        // Update step indicator
+        $('#step2').addClass('completed');
+        if (selectedType !== 'custom') {
+            $('#step3').addClass('completed');
+        }
+        $('#step4').addClass('active');
+        
+        // Show preview section
+        $('#previewSection').slideDown();
+        
+        // Enable generate button
+        if ((selectedType !== 'custom') || ($('#start_date').val() && $('#end_date').val())) {
+            $('#generateBtn').prop('disabled', false);
+        }
+        
+        updatePreview();
+    });
+    
+    // Quick date range buttons
+    $('.quick-range').on('click', function() {
+        const days = $(this).data('days');
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+        
+        $('#end_date').val(endDate.toISOString().split('T')[0]);
+        $('#start_date').val(startDate.toISOString().split('T')[0]);
+        
+        updatePreview();
+    });
+    
+    // Date changes
+    $('#start_date, #end_date').on('change', function() {
+        if ($('#start_date').val() && $('#end_date').val() && selectedFormat) {
+            $('#generateBtn').prop('disabled', false);
+            $('#step3').addClass('completed');
+        }
+        updatePreview();
+    });
+    
+    // Reset form
+    $('#resetBtn').on('click', function() {
+        location.reload();
+    });
+    
+    // Update preview
+    function updatePreview() {
+        if (selectedType) {
+            const typeText = $('.report-option-card.selected h4').text();
+            $('#preview-type').text(typeText);
+        }
+        
+        if (selectedFormat) {
+            $('#preview-format').text(selectedFormat.toUpperCase());
+        }
+        
+        if (selectedType === 'custom' && $('#start_date').val() && $('#end_date').val()) {
+            const start = new Date($('#start_date').val());
+            const end = new Date($('#end_date').val());
+            const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+            $('#preview-period').text(start.toLocaleDateString() + ' - ' + end.toLocaleDateString() + ' (' + days + ' days)');
+        } else if (selectedType && selectedType !== 'custom') {
+            let period = '';
+            switch(selectedType) {
+                case 'daily':
+                    period = 'Yesterday';
+                    break;
+                case 'weekly':
+                    period = 'Last Week';
+                    break;
+                case 'monthly':
+                    period = 'Last Month';
+                    break;
+            }
+            $('#preview-period').text(period);
+        }
+    }
+    
+    // Toggle Discord webhook select
+    $('#send_discord').on('change', function() {
+        $('#webhook_select').toggle($(this).is(':checked'));
+    });
+
+    // Form submission
+    $('#reportForm').on('submit', function() {
+        $('#generateBtn').prop('disabled', true)
+            .html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::reports.generating") }}');
+    });
+});
+</script>
+@endpush
+
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
+
+</div>{{-- /.mining-manager-wrapper --}}
+@endsection

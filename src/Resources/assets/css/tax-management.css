@@ -1,0 +1,776 @@
+/* ============================================
+   Mining Manager - Tax Management Styles
+   Version: 2.0
+   ============================================ */
+
+/* ============================================
+   Tax Calculator
+   ============================================ */
+.tax-calculator {
+    background: var(--mm-dark-bg);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+}
+
+.tax-calculator-header {
+    border-bottom: 2px solid var(--mm-border);
+    padding-bottom: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.tax-calculator-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--mm-text-white);
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+}
+
+.tax-calculator-subtitle {
+    color: var(--mm-text-muted);
+    font-size: 0.875rem;
+    margin-top: var(--mm-spacing-xs);
+}
+
+/* ============================================
+   Tax Period Selector
+   ============================================ */
+.tax-period-selector {
+    display: flex;
+    gap: var(--mm-spacing-sm);
+    flex-wrap: wrap;
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.period-btn {
+    flex: 1;
+    min-width: 120px;
+    padding: var(--mm-spacing-md);
+    background: var(--mm-dark-card);
+    border: 2px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    color: var(--mm-text-light);
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.period-btn:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.period-btn.active {
+    border-color: var(--mm-primary-start);
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+}
+
+.period-btn-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+.period-btn-date {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: var(--mm-spacing-xs);
+}
+
+/* ============================================
+   Tax Summary Cards
+   ============================================ */
+.tax-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--mm-spacing-lg);
+    margin-bottom: var(--mm-spacing-xl);
+}
+
+.tax-summary-card {
+    background: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+    position: relative;
+    overflow: hidden;
+    transition: all var(--mm-transition-normal) ease;
+}
+
+.tax-summary-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+}
+
+.tax-summary-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    border-color: rgba(102, 126, 234, 0.5);
+}
+
+.tax-summary-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: var(--mm-radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: var(--mm-spacing-md);
+}
+
+.tax-summary-icon.icon-ore {
+    background: linear-gradient(135deg, rgba(161, 198, 60, 0.2) 0%, rgba(161, 198, 60, 0.05) 100%);
+    color: var(--mm-color-ore);
+}
+
+.tax-summary-icon.icon-ice {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.2) 0%, rgba(0, 210, 255, 0.05) 100%);
+    color: var(--mm-color-ice);
+}
+
+.tax-summary-icon.icon-moon {
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.2) 0%, rgba(255, 0, 132, 0.05) 100%);
+    color: var(--mm-color-moon);
+}
+
+.tax-summary-icon.icon-gas {
+    background: linear-gradient(135deg, rgba(255, 159, 64, 0.2) 0%, rgba(255, 159, 64, 0.05) 100%);
+    color: var(--mm-color-gas);
+}
+
+.tax-summary-label {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.tax-summary-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.tax-summary-subtitle {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Tax Breakdown Table
+   ============================================ */
+.tax-breakdown {
+    background: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    overflow: hidden;
+}
+
+.tax-breakdown-header {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    padding: var(--mm-spacing-md) var(--mm-spacing-lg);
+    color: var(--mm-text-white);
+    font-weight: 600;
+}
+
+.tax-breakdown-table {
+    width: 100%;
+}
+
+.tax-breakdown-row {
+    border-bottom: 1px solid var(--mm-border);
+    transition: background-color var(--mm-transition-fast) ease;
+}
+
+.tax-breakdown-row:hover {
+    background-color: rgba(102, 126, 234, 0.05);
+}
+
+.tax-breakdown-row:last-child {
+    border-bottom: none;
+}
+
+.tax-breakdown-cell {
+    padding: var(--mm-spacing-md);
+}
+
+.tax-breakdown-cell.cell-ore-type {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-sm);
+}
+
+.ore-type-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--mm-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.ore-type-name {
+    font-weight: 600;
+    color: var(--mm-text-white);
+}
+
+.ore-type-rate {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+}
+
+.tax-breakdown-total {
+    background: rgba(102, 126, 234, 0.1);
+    border-top: 2px solid var(--mm-border);
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+/* ============================================
+   Tax Code Display
+   ============================================ */
+.tax-code-display {
+    background: var(--mm-dark-card);
+    border: 2px dashed var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-xl);
+    text-align: center;
+    margin: var(--mm-spacing-xl) 0;
+}
+
+.tax-code-label {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: var(--mm-spacing-sm);
+}
+
+.tax-code-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    font-family: 'Courier New', Courier, monospace;
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: var(--mm-spacing-md) 0;
+    letter-spacing: 3px;
+}
+
+.tax-code-actions {
+    display: flex;
+    gap: var(--mm-spacing-sm);
+    justify-content: center;
+    margin-top: var(--mm-spacing-lg);
+}
+
+.btn-copy-code {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+    padding: var(--mm-spacing-sm) var(--mm-spacing-lg);
+    background: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    border-radius: var(--mm-radius-md);
+    cursor: pointer;
+    transition: all var(--mm-transition-fast) ease;
+}
+
+.btn-copy-code:hover {
+    background: rgba(102, 126, 234, 0.2);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+}
+
+.btn-copy-code.copied {
+    background: var(--mm-success);
+    border-color: var(--mm-success);
+    color: var(--mm-text-white);
+}
+
+/* ============================================
+   Payment Instructions
+   ============================================ */
+.payment-instructions {
+    background: var(--mm-dark-card);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+    margin-top: var(--mm-spacing-xl);
+}
+
+.payment-method-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--mm-spacing-md);
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.payment-method-card {
+    background: var(--mm-dark-bg);
+    border: 2px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+    cursor: pointer;
+    transition: all var(--mm-transition-normal) ease;
+    position: relative;
+}
+
+.payment-method-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-3px);
+}
+
+.payment-method-card.selected {
+    border-color: var(--mm-primary-start);
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.payment-method-card.selected::before {
+    content: '\f00c';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--mm-success);
+    color: var(--mm-text-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+}
+
+.payment-method-icon {
+    font-size: 2rem;
+    margin-bottom: var(--mm-spacing-md);
+    color: var(--mm-primary-start);
+}
+
+.payment-method-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.payment-method-description {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+}
+
+.payment-steps {
+    list-style: none;
+    padding: 0;
+    counter-reset: step-counter;
+}
+
+.payment-step {
+    counter-increment: step-counter;
+    position: relative;
+    padding-left: 50px;
+    margin-bottom: var(--mm-spacing-lg);
+}
+
+.payment-step::before {
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+.payment-step-title {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.payment-step-description {
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Tax Status Indicators
+   ============================================ */
+.tax-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+    padding: 4px 12px;
+    border-radius: var(--mm-radius-lg);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.tax-status-paid {
+    background: rgba(40, 167, 69, 0.2);
+    color: var(--mm-success);
+    border: 1px solid var(--mm-success);
+}
+
+.tax-status-pending {
+    background: rgba(255, 193, 7, 0.2);
+    color: var(--mm-warning);
+    border: 1px solid var(--mm-warning);
+}
+
+.tax-status-overdue {
+    background: rgba(220, 53, 69, 0.2);
+    color: var(--mm-danger);
+    border: 1px solid var(--mm-danger);
+    animation: pulse-danger 2s infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+.tax-status-partial {
+    background: rgba(23, 162, 184, 0.2);
+    color: var(--mm-info);
+    border: 1px solid var(--mm-info);
+}
+
+/* ============================================
+   Tax History Timeline
+   ============================================ */
+.tax-history-timeline {
+    position: relative;
+    padding: var(--mm-spacing-lg) 0;
+}
+
+.tax-history-item {
+    position: relative;
+    padding-left: 60px;
+    margin-bottom: var(--mm-spacing-xl);
+}
+
+.tax-history-icon {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    border: 3px solid var(--mm-dark-bg);
+}
+
+.tax-history-icon.icon-paid {
+    background: var(--mm-success);
+    color: var(--mm-text-white);
+}
+
+.tax-history-icon.icon-pending {
+    background: var(--mm-warning);
+    color: var(--mm-dark-bg);
+}
+
+.tax-history-icon.icon-calculated {
+    background: var(--mm-info);
+    color: var(--mm-text-white);
+}
+
+.tax-history-content {
+    background: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md);
+}
+
+.tax-history-date {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.tax-history-title {
+    font-weight: 600;
+    color: var(--mm-text-white);
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.tax-history-details {
+    font-size: 0.875rem;
+    color: var(--mm-text-muted);
+}
+
+/* ============================================
+   Ore Breakdown Chart
+   ============================================ */
+.ore-breakdown-chart {
+    background: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-lg);
+    padding: var(--mm-spacing-lg);
+}
+
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mm-spacing-md);
+    margin-top: var(--mm-spacing-lg);
+    padding-top: var(--mm-spacing-lg);
+    border-top: 1px solid var(--mm-border);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-spacing-xs);
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--mm-radius-sm);
+}
+
+.legend-label {
+    font-size: 0.875rem;
+    color: var(--mm-text-light);
+}
+
+.legend-value {
+    font-weight: 600;
+    margin-left: var(--mm-spacing-xs);
+}
+
+/* ============================================
+   Tax Invoice
+   ============================================ */
+.tax-invoice {
+    background: var(--mm-text-white);
+    color: #000;
+    border-radius: var(--mm-radius-lg);
+    overflow: hidden;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+}
+
+.tax-invoice-header {
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    color: var(--mm-text-white);
+    padding: var(--mm-spacing-xl);
+    text-align: center;
+}
+
+.tax-invoice-logo {
+    font-size: 3rem;
+    margin-bottom: var(--mm-spacing-md);
+}
+
+.tax-invoice-title {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.tax-invoice-subtitle {
+    opacity: 0.9;
+}
+
+.tax-invoice-body {
+    padding: var(--mm-spacing-xl);
+}
+
+.invoice-section {
+    margin-bottom: var(--mm-spacing-xl);
+}
+
+.invoice-section-title {
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: var(--mm-spacing-md);
+    color: var(--mm-primary-start);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.invoice-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.invoice-table th,
+.invoice-table td {
+    padding: var(--mm-spacing-sm);
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.invoice-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+}
+
+.invoice-total-row {
+    background-color: #f8f9fa;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.tax-invoice-footer {
+    background-color: #f8f9fa;
+    padding: var(--mm-spacing-lg);
+    text-align: center;
+    font-size: 0.875rem;
+    color: #666;
+}
+
+/* ============================================
+   Character Breakdown Sections (My Taxes)
+   ============================================ */
+.breakdown-character-section + .breakdown-character-section {
+    margin-top: 1rem;
+    border-top: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+.breakdown-character-section .bg-secondary {
+    border-radius: 0;
+}
+
+.breakdown-character-section:first-child .bg-secondary {
+    border-radius: var(--mm-radius-md) var(--mm-radius-md) 0 0;
+}
+
+/* ============================================
+   Account Grouping (Calculate Taxes)
+   ============================================ */
+.account-group-card {
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.account-group-header {
+    background: rgba(102, 126, 234, 0.15);
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color var(--mm-transition-fast) ease;
+}
+
+.account-group-header:hover {
+    background: rgba(102, 126, 234, 0.25);
+}
+
+.account-group-header .chevron-icon {
+    transition: transform var(--mm-transition-fast) ease;
+}
+
+.account-group-header[aria-expanded="true"] .chevron-icon {
+    transform: rotate(180deg);
+}
+
+/* ============================================
+   Responsive Styles
+   ============================================ */
+@media (max-width: 768px) {
+    .tax-summary-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .tax-period-selector {
+        flex-direction: column;
+    }
+    
+    .period-btn {
+        min-width: 100%;
+    }
+    
+    .tax-code-value {
+        font-size: 1.75rem;
+    }
+    
+    .payment-method-selector {
+        grid-template-columns: 1fr;
+    }
+    
+    .tax-code-actions {
+        flex-direction: column;
+    }
+    
+    .btn-copy-code {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .chart-legend {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 576px) {
+    .tax-calculator {
+        padding: var(--mm-spacing-md);
+    }
+    
+    .tax-summary-card {
+        padding: var(--mm-spacing-md);
+    }
+    
+    .tax-code-display {
+        padding: var(--mm-spacing-lg);
+    }
+    
+    .payment-instructions {
+        padding: var(--mm-spacing-md);
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .tax-calculator-header,
+    .payment-instructions,
+    .tax-code-actions,
+    .btn {
+        display: none !important;
+    }
+    
+    .tax-invoice {
+        box-shadow: none;
+        border: 1px solid #000;
+    }
+    
+    .tax-summary-card,
+    .tax-breakdown {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
