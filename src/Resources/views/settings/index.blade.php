@@ -95,7 +95,7 @@
 @endpush
 
 @section('full')
-<div class="settings-page">
+<div class="mining-manager-wrapper settings-page">
     
     {{-- Success/Error Messages --}}
     @if(session('success'))

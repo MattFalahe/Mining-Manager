@@ -44,7 +44,7 @@
     <div class="tab-content">
 
 
-<div class="mining-events">
+<div class="mining-manager-wrapper mining-events">
     
     {{-- SUMMARY STATISTICS --}}
     <div class="row">

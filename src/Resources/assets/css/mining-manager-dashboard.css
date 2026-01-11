@@ -1,15 +1,21 @@
 /* ============================================
    Mining Manager - Complete Dashboard CSS (MERGED)
-   Version: 2.0
-   
+   Version: 3.0 - SCOPED
+
    This file combines:
    1. mining-manager.css - Base utilities & components
-   2. mining-manager-dashboard.css - Dashboard-specific styles  
+   2. mining-manager-dashboard.css - Dashboard-specific styles
    3. settings.css - Settings page styles
-   
+
    Used by: ALL pages except tax pages
-   (dashboard, settings, moon, events, ledger, 
+   (dashboard, settings, moon, events, ledger,
     help, analytics, reports)
+
+   IMPORTANT: All views MUST wrap content in one of these classes:
+   - .mining-dashboard (for dashboard pages)
+   - .mining-manager-wrapper (for other pages)
+
+   This prevents SeAT CSS from overriding our styles.
    ============================================ */
 
 /* ============================================
@@ -68,75 +74,90 @@
 /* ============================================
    Base Styles
    ============================================ */
-.mining-manager {
+.mining-dashboard .mining-manager,
+.mining-manager-wrapper .mining-manager {
     font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     color: var(--mm-text-light);
 }
 
-.mining-manager a {
+.mining-dashboard .mining-manager a,
+.mining-manager-wrapper .mining-manager a {
     transition: all var(--mm-transition-fast) ease;
 }
 
-.mining-manager a:hover {
+.mining-dashboard .mining-manager a:hover,
+.mining-manager-wrapper .mining-manager a:hover {
     text-decoration: none;
 }
 
 /* ============================================
    Cards & Containers
    ============================================ */
-.card-dark {
+.mining-dashboard .card-dark,
+.mining-manager-wrapper .card-dark {
     background-color: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     transition: all var(--mm-transition-normal) ease;
 }
 
-.card-dark:hover {
+.mining-dashboard .card-dark:hover,
+.mining-manager-wrapper .card-dark:hover {
     border-color: rgba(102, 126, 234, 0.3);
 }
 
-.card-dark .card-header {
+.mining-dashboard .card-dark .card-header,
+.mining-manager-wrapper .card-dark .card-header {
     background-color: var(--mm-dark-card);
     border-bottom: 1px solid var(--mm-border);
     color: var(--mm-text-white);
     padding: var(--mm-spacing-md) var(--mm-spacing-lg);
 }
 
-.card-dark .card-header h3,
-.card-dark .card-header h4,
-.card-dark .card-header h5 {
+.mining-dashboard .card-dark .card-header h3,
+.mining-dashboard .card-dark .card-header h4,
+.mining-dashboard .card-dark .card-header h5,
+.mining-manager-wrapper .card-dark .card-header h3,
+.mining-manager-wrapper .card-dark .card-header h4,
+.mining-manager-wrapper .card-dark .card-header h5 {
     margin: 0;
     font-weight: 600;
 }
 
-.card-dark .card-header .card-title {
+.mining-dashboard .card-dark .card-header .card-title,
+.mining-manager-wrapper .card-dark .card-header .card-title {
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-sm);
 }
 
-.card-dark .card-body {
+.mining-dashboard .card-dark .card-body,
+.mining-manager-wrapper .card-dark .card-body {
     color: var(--mm-text-light);
     padding: var(--mm-spacing-lg);
 }
 
-.card-dark .card-footer {
+.mining-dashboard .card-dark .card-footer,
+.mining-manager-wrapper .card-dark .card-footer {
     background-color: var(--mm-dark-card);
     border-top: 1px solid var(--mm-border);
     padding: var(--mm-spacing-md) var(--mm-spacing-lg);
 }
 
 /* Card with gradient header */
-.card-gradient-header .card-header {
+.mining-dashboard .card-gradient-header .card-header,
+.mining-manager-wrapper .card-gradient-header .card-header {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     border: none;
 }
 
 /* Card hover effect */
-.card-hover {
+.mining-dashboard .card-hover,
+.mining-manager-wrapper .card-hover {
     transition: transform var(--mm-transition-normal) ease, box-shadow var(--mm-transition-normal) ease;
 }
 
-.card-hover:hover {
+.mining-dashboard .card-hover:hover,
+.mining-manager-wrapper .card-hover:hover {
     transform: translateY(-5px);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
 }
@@ -144,51 +165,60 @@
 /* ============================================
    Buttons
    ============================================ */
-.btn-mm-primary {
+.mining-dashboard .btn-mm-primary,
+.mining-manager-wrapper .btn-mm-primary {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     border: none;
     color: var(--mm-text-white);
     transition: all var(--mm-transition-normal) ease;
 }
 
-.btn-mm-primary:hover {
+.mining-dashboard .btn-mm-primary:hover,
+.mining-manager-wrapper .btn-mm-primary:hover {
     background: linear-gradient(135deg, #5568d3 0%, #6a3d8f 100%);
     color: var(--mm-text-white);
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
 }
 
-.btn-mm-primary:active {
+.mining-dashboard .btn-mm-primary:active,
+.mining-manager-wrapper .btn-mm-primary:active {
     transform: translateY(0);
 }
 
-.btn-mm-secondary {
+.mining-dashboard .btn-mm-secondary,
+.mining-manager-wrapper .btn-mm-secondary {
     background-color: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
 }
 
-.btn-mm-secondary:hover {
+.mining-dashboard .btn-mm-secondary:hover,
+.mining-manager-wrapper .btn-mm-secondary:hover {
     background-color: #2c3138;
     border-color: rgba(102, 126, 234, 0.5);
     color: var(--mm-text-white);
 }
 
 /* Button with icon */
-.btn-icon {
+.mining-dashboard .btn-icon,
+.mining-manager-wrapper .btn-icon {
     display: inline-flex;
     align-items: center;
     gap: var(--mm-spacing-xs);
 }
 
 /* Button loading state */
-.btn-loading {
+.mining-dashboard .btn-loading,
+.mining-manager-wrapper .btn-loading {
     position: relative;
     pointer-events: none;
     opacity: 0.6;
 }
 
-.btn-loading::after {
+.mining-dashboard .btn-loading::after,
+.mining-manager-wrapper .mining-dashboard .btn-loading::after,
+.mining-manager-wrapper .btn-loading::after {
     content: '';
     position: absolute;
     width: 16px;
@@ -206,7 +236,8 @@
 /* ============================================
    Badges & Labels
    ============================================ */
-.badge-mm {
+.mining-dashboard .badge-mm,
+.mining-manager-wrapper .badge-mm {
     padding: 4px 8px;
     border-radius: var(--mm-radius-sm);
     font-weight: 600;
@@ -215,47 +246,56 @@
     letter-spacing: 0.5px;
 }
 
-.badge-ore {
+.mining-dashboard .badge-ore,
+.mining-manager-wrapper .badge-ore {
     background-color: var(--mm-color-ore);
     color: var(--mm-text-white);
 }
 
-.badge-ice {
+.mining-dashboard .badge-ice,
+.mining-manager-wrapper .badge-ice {
     background-color: var(--mm-color-ice);
     color: var(--mm-text-white);
 }
 
-.badge-moon {
+.mining-dashboard .badge-moon,
+.mining-manager-wrapper .badge-moon {
     background-color: var(--mm-color-moon);
     color: var(--mm-text-white);
 }
 
-.badge-gas {
+.mining-dashboard .badge-gas,
+.mining-manager-wrapper .badge-gas {
     background-color: var(--mm-color-gas);
     color: var(--mm-text-white);
 }
 
-.badge-mercoxit {
+.mining-dashboard .badge-mercoxit,
+.mining-manager-wrapper .badge-mercoxit {
     background-color: var(--mm-color-mercoxit);
     color: var(--mm-text-white);
 }
 
-.badge-paid {
+.mining-dashboard .badge-paid,
+.mining-manager-wrapper .badge-paid {
     background-color: var(--mm-success);
     color: var(--mm-text-white);
 }
 
-.badge-pending {
+.mining-dashboard .badge-pending,
+.mining-manager-wrapper .badge-pending {
     background-color: var(--mm-warning);
     color: var(--mm-dark-bg);
 }
 
-.badge-overdue {
+.mining-dashboard .badge-overdue,
+.mining-manager-wrapper .badge-overdue {
     background-color: var(--mm-danger);
     color: var(--mm-text-white);
 }
 
-.badge-live {
+.mining-dashboard .badge-live,
+.mining-manager-wrapper .badge-live {
     background-color: var(--mm-success);
     color: var(--mm-text-white);
     animation: pulse-badge 2s infinite;
@@ -276,13 +316,15 @@
 /* ============================================
    Tables
    ============================================ */
-.table-mm {
+.mining-dashboard .table-mm,
+.mining-manager-wrapper .table-mm {
     background-color: transparent;
     color: var(--mm-text-light);
     margin-bottom: 0;
 }
 
-.table-mm thead th {
+.mining-dashboard .table-mm thead th,
+.mining-manager-wrapper .table-mm thead th {
     border-bottom: 2px solid var(--mm-border);
     font-weight: 600;
     text-transform: uppercase;
@@ -293,67 +335,81 @@
     white-space: nowrap;
 }
 
-.table-mm tbody td {
+.mining-dashboard .table-mm tbody td,
+.mining-manager-wrapper .table-mm tbody td {
     border-bottom: 1px solid var(--mm-border);
     padding: var(--mm-spacing-md);
     vertical-align: middle;
 }
 
-.table-mm tbody tr {
+.mining-dashboard .table-mm tbody tr,
+.mining-manager-wrapper .table-mm tbody tr {
     transition: background-color var(--mm-transition-fast) ease;
 }
 
-.table-mm tbody tr:hover {
+.mining-dashboard .table-mm tbody tr:hover,
+.mining-manager-wrapper .table-mm tbody tr:hover {
     background-color: rgba(102, 126, 234, 0.1);
 }
 
-.table-mm tbody tr.table-highlight {
+.mining-dashboard .table-mm tbody tr.table-highlight,
+.mining-manager-wrapper .table-mm tbody tr.table-highlight {
     background-color: rgba(102, 126, 234, 0.2);
 }
 
-.table-mm tbody tr.table-highlight:hover {
+.mining-dashboard .table-mm tbody tr.table-highlight:hover,
+.mining-manager-wrapper .table-mm tbody tr.table-highlight:hover {
     background-color: rgba(102, 126, 234, 0.3);
 }
 
 /* Striped table */
-.table-mm.table-striped tbody tr:nth-of-type(odd) {
+.mining-dashboard .table-mm.table-striped tbody tr:nth-of-type(odd),
+.mining-manager-wrapper .table-mm.table-striped tbody tr:nth-of-type(odd) {
     background-color: rgba(0, 0, 0, 0.05);
 }
 
 /* Compact table */
-.table-mm.table-compact thead th,
-.table-mm.table-compact tbody td {
+.mining-dashboard .table-mm.table-compact thead th,
+.mining-manager-wrapper .table-mm.table-compact thead th,
+.mining-dashboard .table-mm.table-compact tbody td,
+.mining-manager-wrapper .table-mm.table-compact tbody td {
     padding: var(--mm-spacing-xs) var(--mm-spacing-sm);
     font-size: 0.875rem;
 }
 
 /* Responsive table wrapper */
-.table-responsive-mm {
+.mining-dashboard .table-responsive-mm,
+.mining-manager-wrapper .table-responsive-mm {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
 }
 
-.table-responsive-mm::-webkit-scrollbar {
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar {
     height: 8px;
 }
 
-.table-responsive-mm::-webkit-scrollbar-track {
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-track,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-track {
     background: var(--mm-dark-bg);
 }
 
-.table-responsive-mm::-webkit-scrollbar-thumb {
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-thumb,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-thumb {
     background: var(--mm-border);
     border-radius: 4px;
 }
 
-.table-responsive-mm::-webkit-scrollbar-thumb:hover {
+.mining-dashboard .table-responsive-mm::-webkit-scrollbar-thumb:hover,
+.mining-manager-wrapper .table-responsive-mm::-webkit-scrollbar-thumb:hover {
     background: #3a3f48;
 }
 
 /* ============================================
    Forms
    ============================================ */
-.form-control-mm {
+.mining-dashboard .form-control-mm,
+.mining-manager-wrapper .form-control-mm {
     background-color: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
@@ -362,44 +418,51 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.form-control-mm:focus {
+.mining-dashboard .form-control-mm:focus,
+.mining-manager-wrapper .form-control-mm:focus {
     background-color: var(--mm-dark-bg);
     border-color: var(--mm-primary-start);
     color: var(--mm-text-white);
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
 
-.form-control-mm::placeholder {
+.mining-dashboard .form-control-mm::placeholder,
+.mining-manager-wrapper .form-control-mm::placeholder {
     color: var(--mm-text-muted);
 }
 
-.form-control-mm:disabled {
+.mining-dashboard .form-control-mm:disabled,
+.mining-manager-wrapper .form-control-mm:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
 /* Custom select */
-.custom-select-mm {
+.mining-dashboard .custom-select-mm,
+.mining-manager-wrapper .custom-select-mm {
     background-color: var(--mm-dark-card);
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='4' height='5' viewBox='0 0 4 5'%3e%3cpath fill='%23667eea' d='M2 0L0 2h4zm0 5L0 3h4z'/%3e%3c/svg%3e");
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
 }
 
-.custom-select-mm:focus {
+.mining-dashboard .custom-select-mm:focus,
+.mining-manager-wrapper .custom-select-mm:focus {
     border-color: var(--mm-primary-start);
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
 
 /* Form labels */
-.form-label-mm {
+.mining-dashboard .form-label-mm,
+.mining-manager-wrapper .form-label-mm {
     color: var(--mm-text-white);
     font-weight: 600;
     margin-bottom: var(--mm-spacing-xs);
 }
 
 /* Input groups */
-.input-group-mm .input-group-text {
+.mining-dashboard .input-group-mm .input-group-text,
+.mining-manager-wrapper .input-group-mm .input-group-text {
     background-color: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-muted);
@@ -408,52 +471,60 @@
 /* ============================================
    Alert Boxes
    ============================================ */
-.alert-mm {
+.mining-dashboard .alert-mm,
+.mining-manager-wrapper .alert-mm {
     border-radius: var(--mm-radius-md);
     padding: var(--mm-spacing-md);
     margin-bottom: var(--mm-spacing-lg);
     border-left: 4px solid;
 }
 
-.alert-mm-info {
+.mining-dashboard .alert-mm-info,
+.mining-manager-wrapper .alert-mm-info {
     background-color: rgba(23, 162, 184, 0.15);
     border-left-color: var(--mm-info);
     color: var(--mm-text-light);
 }
 
-.alert-mm-success {
+.mining-dashboard .alert-mm-success,
+.mining-manager-wrapper .alert-mm-success {
     background-color: rgba(40, 167, 69, 0.15);
     border-left-color: var(--mm-success);
     color: var(--mm-text-light);
 }
 
-.alert-mm-warning {
+.mining-dashboard .alert-mm-warning,
+.mining-manager-wrapper .alert-mm-warning {
     background-color: rgba(255, 193, 7, 0.15);
     border-left-color: var(--mm-warning);
     color: var(--mm-text-light);
 }
 
-.alert-mm-danger {
+.mining-dashboard .alert-mm-danger,
+.mining-manager-wrapper .alert-mm-danger {
     background-color: rgba(220, 53, 69, 0.15);
     border-left-color: var(--mm-danger);
     color: var(--mm-text-light);
 }
 
-.alert-mm i {
+.mining-dashboard .alert-mm i,
+.mining-manager-wrapper .alert-mm i {
     margin-right: var(--mm-spacing-sm);
 }
 
 /* ============================================
    Progress Bars
    ============================================ */
-.progress-mm {
+.mining-dashboard .progress-mm,
+.mining-manager-wrapper .progress-mm {
     background-color: var(--mm-dark-card);
     border-radius: var(--mm-radius-lg);
     height: 20px;
     overflow: hidden;
 }
 
-.progress-mm-bar {
+.mining-dashboard .progress-mm-bar,
+.mining-manager-wrapper .progress-mm-bar {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     height: 100%;
     transition: width var(--mm-transition-slow) ease;
@@ -465,20 +536,24 @@
     font-weight: 600;
 }
 
-.progress-mm-bar.progress-success {
+.mining-dashboard .progress-mm-bar.progress-success,
+.mining-manager-wrapper .progress-mm-bar.progress-success {
     background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
 }
 
-.progress-mm-bar.progress-warning {
+.mining-dashboard .progress-mm-bar.progress-warning,
+.mining-manager-wrapper .progress-mm-bar.progress-warning {
     background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
 }
 
-.progress-mm-bar.progress-danger {
+.mining-dashboard .progress-mm-bar.progress-danger,
+.mining-manager-wrapper .progress-mm-bar.progress-danger {
     background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
 }
 
 /* Animated progress bar */
-.progress-mm-bar.animated {
+.mining-dashboard .progress-mm-bar.animated,
+.mining-manager-wrapper .progress-mm-bar.animated {
     background-size: 20px 20px;
     animation: progress-bar-stripes 1s linear infinite;
 }
@@ -495,7 +570,8 @@
 /* ============================================
    Stat Cards
    ============================================ */
-.stat-card {
+.mining-dashboard .stat-card,
+.mining-manager-wrapper .stat-card {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-lg);
@@ -503,13 +579,15 @@
     transition: all var(--mm-transition-normal) ease;
 }
 
-.stat-card:hover {
+.mining-dashboard .stat-card:hover,
+.mining-manager-wrapper .stat-card:hover {
     border-color: rgba(102, 126, 234, 0.5);
     transform: translateY(-3px);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
-.stat-card-icon {
+.mining-dashboard .stat-card-icon,
+.mining-manager-wrapper .stat-card-icon {
     width: 60px;
     height: 60px;
     border-radius: var(--mm-radius-lg);
@@ -520,12 +598,14 @@
     margin-bottom: var(--mm-spacing-md);
 }
 
-.stat-card-icon.gradient {
+.mining-dashboard .stat-card-icon.gradient,
+.mining-manager-wrapper .stat-card-icon.gradient {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     color: var(--mm-text-white);
 }
 
-.stat-card-label {
+.mining-dashboard .stat-card-label,
+.mining-manager-wrapper .stat-card-label {
     font-size: 0.875rem;
     color: var(--mm-text-muted);
     text-transform: uppercase;
@@ -533,51 +613,59 @@
     margin-bottom: var(--mm-spacing-xs);
 }
 
-.stat-card-value {
+.mining-dashboard .stat-card-value,
+.mining-manager-wrapper .stat-card-value {
     font-size: 2rem;
     font-weight: 700;
     color: var(--mm-text-white);
     margin-bottom: var(--mm-spacing-xs);
 }
 
-.stat-card-change {
+.mining-dashboard .stat-card-change,
+.mining-manager-wrapper .stat-card-change {
     font-size: 0.875rem;
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-xs);
 }
 
-.stat-card-change.positive {
+.mining-dashboard .stat-card-change.positive,
+.mining-manager-wrapper .stat-card-change.positive {
     color: var(--mm-success);
 }
 
-.stat-card-change.negative {
+.mining-dashboard .stat-card-change.negative,
+.mining-manager-wrapper .stat-card-change.negative {
     color: var(--mm-danger);
 }
 
 /* ============================================
    Pagination
    ============================================ */
-.pagination-mm .page-link {
+.mining-dashboard .pagination-mm .page-link,
+.mining-manager-wrapper .pagination-mm .page-link {
     background-color: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
     padding: 8px 12px;
 }
 
-.pagination-mm .page-link:hover {
+.mining-dashboard .pagination-mm .page-link:hover,
+.mining-manager-wrapper .pagination-mm .page-link:hover {
     background-color: rgba(102, 126, 234, 0.2);
     border-color: var(--mm-primary-start);
     color: var(--mm-text-white);
 }
 
-.pagination-mm .page-item.active .page-link {
+.mining-dashboard .pagination-mm .page-item.active .page-link,
+.mining-manager-wrapper .pagination-mm .page-item.active .page-link {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     border-color: var(--mm-primary-start);
     color: var(--mm-text-white);
 }
 
-.pagination-mm .page-item.disabled .page-link {
+.mining-dashboard .pagination-mm .page-item.disabled .page-link,
+.mining-manager-wrapper .pagination-mm .page-item.disabled .page-link {
     opacity: 0.5;
     cursor: not-allowed;
 }
@@ -585,7 +673,8 @@
 /* ============================================
    Tooltips (Bootstrap Override)
    ============================================ */
-.tooltip-mm .tooltip-inner {
+.mining-dashboard .tooltip-mm .tooltip-inner,
+.mining-manager-wrapper .tooltip-mm .tooltip-inner {
     background-color: var(--mm-dark-card);
     color: var(--mm-text-white);
     border: 1px solid var(--mm-border);
@@ -596,7 +685,8 @@
 /* ============================================
    Loading States
    ============================================ */
-.loading-overlay {
+.mining-dashboard .loading-overlay,
+.mining-manager-wrapper .loading-overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -610,7 +700,8 @@
     border-radius: var(--mm-radius-lg);
 }
 
-.spinner-mm {
+.mining-dashboard .spinner-mm,
+.mining-manager-wrapper .spinner-mm {
     width: 40px;
     height: 40px;
     border: 4px solid rgba(102, 126, 234, 0.2);
@@ -631,26 +722,30 @@
 /* ============================================
    Empty States
    ============================================ */
-.empty-state {
+.mining-dashboard .empty-state,
+.mining-manager-wrapper .empty-state {
     text-align: center;
     padding: var(--mm-spacing-xl) var(--mm-spacing-lg);
     color: var(--mm-text-muted);
 }
 
-.empty-state-icon {
+.mining-dashboard .empty-state-icon,
+.mining-manager-wrapper .empty-state-icon {
     font-size: 4rem;
     color: rgba(102, 126, 234, 0.3);
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.empty-state-title {
+.mining-dashboard .empty-state-title,
+.mining-manager-wrapper .empty-state-title {
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--mm-text-light);
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.empty-state-description {
+.mining-dashboard .empty-state-description,
+.mining-manager-wrapper .empty-state-description {
     font-size: 1rem;
     margin-bottom: var(--mm-spacing-lg);
 }
@@ -658,12 +753,14 @@
 /* ============================================
    Timeline
    ============================================ */
-.timeline-mm {
+.mining-dashboard .timeline-mm,
+.mining-manager-wrapper .timeline-mm {
     position: relative;
     padding-left: 30px;
 }
 
-.timeline-mm::before {
+.mining-dashboard .timeline-mm::before,
+.mining-manager-wrapper .timeline-mm::before {
     content: '';
     position: absolute;
     left: 10px;
@@ -673,12 +770,14 @@
     background: linear-gradient(180deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
 }
 
-.timeline-item {
+.mining-dashboard .timeline-item,
+.mining-manager-wrapper .timeline-item {
     position: relative;
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.timeline-item::before {
+.mining-dashboard .timeline-item::before,
+.mining-manager-wrapper .timeline-item::before {
     content: '';
     position: absolute;
     left: -26px;
@@ -690,13 +789,15 @@
     border: 2px solid var(--mm-dark-bg);
 }
 
-.timeline-date {
+.mining-dashboard .timeline-date,
+.mining-manager-wrapper .timeline-date {
     color: var(--mm-text-muted);
     font-size: 0.875rem;
     margin-bottom: var(--mm-spacing-xs);
 }
 
-.timeline-content {
+.mining-dashboard .timeline-content,
+.mining-manager-wrapper .timeline-content {
     background-color: var(--mm-dark-card);
     padding: var(--mm-spacing-md);
     border-radius: var(--mm-radius-md);
@@ -706,32 +807,38 @@
 /* ============================================
    Utilities
    ============================================ */
-.text-gradient {
+.mining-dashboard .text-gradient,
+.mining-manager-wrapper .text-gradient {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
-.bg-gradient-primary {
+.mining-dashboard .bg-gradient-primary,
+.mining-manager-wrapper .bg-gradient-primary {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%) !important;
 }
 
-.shadow-mm {
+.mining-dashboard .shadow-mm,
+.mining-manager-wrapper .shadow-mm {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-.shadow-mm-lg {
+.mining-dashboard .shadow-mm-lg,
+.mining-manager-wrapper .shadow-mm-lg {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
 }
 
-.border-gradient {
+.mining-dashboard .border-gradient,
+.mining-manager-wrapper .border-gradient {
     border: 2px solid;
     border-image: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%) 1;
 }
 
 /* Character portrait */
-.character-portrait {
+.mining-dashboard .character-portrait,
+.mining-manager-wrapper .character-portrait {
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -739,18 +846,21 @@
     object-fit: cover;
 }
 
-.character-portrait.large {
+.mining-dashboard .character-portrait.large,
+.mining-manager-wrapper .character-portrait.large {
     width: 64px;
     height: 64px;
 }
 
 /* ISK value formatting */
-.isk-value {
+.mining-dashboard .isk-value,
+.mining-manager-wrapper .isk-value {
     font-family: 'Courier New', Courier, monospace;
     font-weight: 600;
 }
 
-.isk-value::after {
+.mining-dashboard .isk-value::after,
+.mining-manager-wrapper .isk-value::after {
     content: ' ISK';
     font-weight: normal;
     color: var(--mm-text-muted);
@@ -774,7 +884,8 @@
     }
     
     .table-mm thead th,
-    .table-mm tbody td {
+    .mining-dashboard .table-mm tbody td,
+.mining-manager-wrapper .table-mm tbody td {
         padding: var(--mm-spacing-sm);
         font-size: 0.875rem;
     }
@@ -820,7 +931,8 @@
 /* ============================================
    Accessibility
    ============================================ */
-.sr-only-mm {
+.mining-dashboard .sr-only-mm,
+.mining-manager-wrapper .sr-only-mm {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -832,7 +944,8 @@
     border: 0;
 }
 
-.focus-visible-mm:focus {
+.mining-dashboard .focus-visible-mm:focus,
+.mining-manager-wrapper .focus-visible-mm:focus {
     outline: 2px solid var(--mm-primary-start);
     outline-offset: 2px;
 }
@@ -851,7 +964,8 @@
     }
 }
 
-.fade-in {
+.mining-dashboard .fade-in,
+.mining-manager-wrapper .fade-in {
     animation: fadeIn var(--mm-transition-normal) ease;
 }
 
@@ -866,10 +980,11 @@
     }
 }
 
-.slide-in {
+.mining-dashboard .slide-in,
+.mining-manager-wrapper .slide-in {
     animation: slideIn var(--mm-transition-normal) ease;
 }
--e 
+
 
 /* ============================================
    DASHBOARD-SPECIFIC STYLES
@@ -901,7 +1016,8 @@
 /* ============================================
    Info Boxes
    ============================================ */
-.info-box {
+.mining-dashboard .info-box,
+.mining-manager-wrapper .info-box {
     box-shadow: 0 0 1px rgba(0, 0, 0, 0.125), 0 1px 3px rgba(0, 0, 0, 0.2);
     border-radius: 0.25rem;
     display: flex;
@@ -913,12 +1029,14 @@
     transition: all 0.3s ease;
 }
 
-.info-box:hover {
+.mining-dashboard .info-box:hover,
+.mining-manager-wrapper .info-box:hover {
     transform: translateY(-3px);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
-.info-box .info-box-icon {
+.mining-dashboard .info-box .info-box-icon,
+.mining-manager-wrapper .info-box .info-box-icon {
     border-radius: 0.25rem;
     display: flex;
     align-items: center;
@@ -929,7 +1047,8 @@
     flex-shrink: 0;
 }
 
-.info-box .info-box-content {
+.mining-dashboard .info-box .info-box-content,
+.mining-manager-wrapper .info-box .info-box-content {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -938,7 +1057,7 @@
     padding: 0 10px;
 }
 
-.info-box .info-box-text {
+.mining-dashboard .info-box .info-box-text {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -947,93 +1066,103 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     opacity: 0.9;
+    color: #ffffff !important;
 }
 
-.info-box .info-box-number {
+.mining-dashboard .info-box .info-box-number {
     display: block;
     font-weight: 700;
     font-size: 1.5rem;
     font-family: 'Courier New', Courier, monospace;
+    color: #ffffff !important;
+}
+
+.mining-dashboard .info-box small {
+    color: rgba(255, 255, 255, 0.8) !important;
 }
 
 /* ============================================
    Info Box Gradient Variants
    ============================================ */
-.info-box.bg-gradient-primary {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
-    color: #ffffff;
+/* SCOPED: All info-box styles are scoped to .mining-dashboard to prevent SeAT overrides */
+
+.mining-dashboard .info-box.bg-gradient-primary {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.2) !important;
 }
 
-.info-box.bg-gradient-secondary {
-    background: linear-gradient(135deg, rgba(134, 143, 150, 0.3) 0%, rgba(89, 97, 100, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-secondary {
+    background: linear-gradient(135deg, rgba(134, 143, 150, 0.3) 0%, rgba(89, 97, 100, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(134, 143, 150, 0.2);
+    border: 1px solid rgba(134, 143, 150, 0.2) !important;
 }
 
-.info-box.bg-gradient-success {
-    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(58, 123, 213, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-success {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(58, 123, 213, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(0, 210, 255, 0.2);
+    border: 1px solid rgba(0, 210, 255, 0.2) !important;
 }
 
-.info-box.bg-gradient-info {
-    background: linear-gradient(135deg, rgba(144, 223, 254, 0.3) 0%, rgba(56, 163, 204, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-info {
+    background: linear-gradient(135deg, rgba(144, 223, 254, 0.3) 0%, rgba(56, 163, 204, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(144, 223, 254, 0.2);
+    border: 1px solid rgba(144, 223, 254, 0.2) !important;
 }
 
-.info-box.bg-gradient-warning {
-    background: linear-gradient(135deg, rgba(240, 147, 251, 0.3) 0%, rgba(245, 87, 108, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-warning {
+    background: linear-gradient(135deg, rgba(240, 147, 251, 0.3) 0%, rgba(245, 87, 108, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(240, 147, 251, 0.2);
+    border: 1px solid rgba(240, 147, 251, 0.2) !important;
 }
 
-.info-box.bg-gradient-danger {
-    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(51, 0, 27, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-danger {
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(51, 0, 27, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 0, 132, 0.2);
+    border: 1px solid rgba(255, 0, 132, 0.2) !important;
 }
 
 /* Ore-specific gradient variants */
-.info-box.bg-gradient-ore {
-    background: linear-gradient(135deg, rgba(161, 198, 60, 0.3) 0%, rgba(122, 154, 46, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-ore {
+    background: linear-gradient(135deg, rgba(161, 198, 60, 0.3) 0%, rgba(122, 154, 46, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(161, 198, 60, 0.2);
+    border: 1px solid rgba(161, 198, 60, 0.2) !important;
 }
 
-.info-box.bg-gradient-ice {
-    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(0, 168, 204, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-ice {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(0, 168, 204, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(0, 210, 255, 0.2);
+    border: 1px solid rgba(0, 210, 255, 0.2) !important;
 }
 
-.info-box.bg-gradient-moon {
-    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(204, 0, 105, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-moon {
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(204, 0, 105, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 0, 132, 0.2);
+    border: 1px solid rgba(255, 0, 132, 0.2) !important;
 }
 
-.info-box.bg-gradient-gas {
-    background: linear-gradient(135deg, rgba(255, 159, 64, 0.3) 0%, rgba(255, 128, 0, 0.3) 100%);
-    color: #ffffff;
+.mining-dashboard .info-box.bg-gradient-gas {
+    background: linear-gradient(135deg, rgba(255, 159, 64, 0.3) 0%, rgba(255, 128, 0, 0.3) 100%) !important;
+    color: #ffffff !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 159, 64, 0.2);
+    border: 1px solid rgba(255, 159, 64, 0.2) !important;
 }
 
 /* ============================================
    Small Boxes
    ============================================ */
-.small-box {
+/* SCOPED: All small-box styles are scoped to .mining-dashboard to prevent SeAT overrides */
+
+.mining-dashboard .small-box {
     border-radius: 0.25rem;
     box-shadow: 0 0 1px rgba(0, 0, 0, 0.125), 0 1px 3px rgba(0, 0, 0, 0.2);
     display: block;
@@ -1043,18 +1172,18 @@
     transition: all 0.3s ease;
 }
 
-.small-box:hover {
+.mining-dashboard .small-box:hover {
     transform: translateY(-5px);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
 }
 
-.small-box > .inner {
+.mining-dashboard .small-box > .inner {
     padding: 10px;
 }
 
-.small-box > .small-box-footer {
+.mining-dashboard .small-box > .small-box-footer {
     background-color: rgba(0, 0, 0, 0.1);
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.8) !important;
     display: block;
     padding: 3px 0;
     position: relative;
@@ -1064,40 +1193,42 @@
     transition: all 0.3s ease;
 }
 
-.small-box > .small-box-footer:hover {
+.mining-dashboard .small-box > .small-box-footer:hover {
     background-color: rgba(0, 0, 0, 0.15);
-    color: #ffffff;
+    color: #ffffff !important;
     text-decoration: none;
 }
 
-.small-box h3 {
+.mining-dashboard .small-box h3 {
     font-size: 2.2rem;
     font-weight: 700;
     margin: 0 0 10px;
     padding: 0;
     white-space: nowrap;
     font-family: 'Courier New', Courier, monospace;
+    color: #ffffff !important;
 }
 
-.small-box p {
+.mining-dashboard .small-box p {
     font-size: 1rem;
     margin: 0;
+    color: rgba(255, 255, 255, 0.9) !important;
 }
 
-.small-box p > small {
-    color: #f8f9fa;
+.mining-dashboard .small-box p > small {
+    color: rgba(255, 255, 255, 0.8) !important;
     display: block;
     font-size: 0.9rem;
     margin-top: 5px;
     opacity: 0.9;
 }
 
-.small-box .icon {
+.mining-dashboard .small-box .icon {
     color: rgba(0, 0, 0, 0.15);
     z-index: 0;
 }
 
-.small-box .icon > i {
+.mining-dashboard .small-box .icon > i {
     font-size: 70px;
     position: absolute;
     right: 15px;
@@ -1105,7 +1236,7 @@
     transition: all 0.3s linear;
 }
 
-.small-box:hover .icon > i {
+.mining-dashboard .small-box:hover .icon > i {
     font-size: 95px;
     opacity: 0.8;
 }
@@ -1113,13 +1244,15 @@
 /* ============================================
    Dashboard Tables
    ============================================ */
-.table-dark {
+.mining-dashboard .table-dark,
+.mining-manager-wrapper .table-dark {
     background-color: #1a1d24;
     color: #d1d1d1;
     margin-bottom: 0;
 }
 
-.table-dark thead th {
+.mining-dashboard .table-dark thead th,
+.mining-manager-wrapper .table-dark thead th {
     border-bottom: 2px solid #2c3138;
     font-weight: 600;
     text-transform: uppercase;
@@ -1130,43 +1263,52 @@
     vertical-align: middle;
 }
 
-.table-dark tbody td {
+.mining-dashboard .table-dark tbody td,
+.mining-manager-wrapper .table-dark tbody td {
     border-bottom: 1px solid #2c3138;
     padding: 12px 15px;
     vertical-align: middle;
 }
 
-.table-dark tbody tr {
+.mining-dashboard .table-dark tbody tr,
+.mining-manager-wrapper .table-dark tbody tr {
     transition: background-color 0.15s ease;
 }
 
-.table-dark tbody tr:hover {
+.mining-dashboard .table-dark tbody tr:hover,
+.mining-manager-wrapper .table-dark tbody tr:hover {
     background-color: #23262d;
 }
 
-.table-dark.table-striped tbody tr:nth-of-type(odd) {
+.mining-dashboard .table-dark.table-striped tbody tr:nth-of-type(odd),
+.mining-manager-wrapper .table-dark.table-striped tbody tr:nth-of-type(odd) {
     background-color: #1e2127;
 }
 
 /* Highlighted row (current user) */
-.table-primary {
+.mining-dashboard .table-primary,
+.mining-manager-wrapper .table-primary {
     background-color: rgba(0, 123, 255, 0.2) !important;
 }
 
-.table-primary:hover {
+.mining-dashboard .table-primary:hover,
+.mining-manager-wrapper .table-primary:hover {
     background-color: rgba(0, 123, 255, 0.3) !important;
 }
 
 /* Table with compact spacing */
-.table-dark.table-compact thead th,
-.table-dark.table-compact tbody td {
+.mining-dashboard .table-dark.table-compact thead th,
+.mining-manager-wrapper .table-dark.table-compact thead th,
+.mining-dashboard .table-dark.table-compact tbody td,
+.mining-manager-wrapper .table-dark.table-compact tbody td {
     padding: 8px 12px;
 }
 
 /* ============================================
    Badges
    ============================================ */
-.badge-bronze {
+.mining-dashboard .badge-bronze,
+.mining-manager-wrapper .badge-bronze {
     background-color: #cd7f32;
     color: #ffffff;
     font-weight: 600;
@@ -1174,7 +1316,8 @@
     border-radius: 3px;
 }
 
-.badge-silver {
+.mining-dashboard .badge-silver,
+.mining-manager-wrapper .badge-silver {
     background-color: #c0c0c0;
     color: #333333;
     font-weight: 600;
@@ -1182,7 +1325,8 @@
     border-radius: 3px;
 }
 
-.badge-gold {
+.mining-dashboard .badge-gold,
+.mining-manager-wrapper .badge-gold {
     background-color: #ffd700;
     color: #333333;
     font-weight: 600;
@@ -1191,7 +1335,8 @@
 }
 
 /* Live badge with pulse animation */
-.badge-live {
+.mining-dashboard .badge-live,
+.mining-manager-wrapper .badge-live {
     background-color: #28a745;
     color: #ffffff;
     animation: pulse-live 2s infinite;
@@ -1212,26 +1357,30 @@
 /* ============================================
    Chart Containers
    ============================================ */
-.chart-container {
+.mining-dashboard .chart-container,
+.mining-manager-wrapper .chart-container {
     position: relative;
     width: 100%;
     min-height: 300px;
 }
 
-.chart-container canvas {
+.mining-dashboard .chart-container canvas,
+.mining-manager-wrapper .chart-container canvas {
     max-height: 100%;
     width: 100% !important;
     height: auto !important;
 }
 
 /* Loading state for charts */
-.chart-container.loading {
+.mining-dashboard .chart-container.loading,
+.mining-manager-wrapper .chart-container.loading {
     opacity: 0.5;
     pointer-events: none;
     min-height: 300px;
 }
 
-.chart-container.loading::after {
+.mining-dashboard .chart-container.loading::after,
+.mining-manager-wrapper .chart-container.loading::after {
     content: '';
     position: absolute;
     top: 50%;
@@ -1255,7 +1404,8 @@
 }
 
 /* Chart legend styling */
-.chart-legend {
+.mining-dashboard .chart-legend,
+.mining-manager-wrapper .chart-legend {
     display: flex;
     flex-wrap: wrap;
     gap: 15px;
@@ -1264,14 +1414,16 @@
     border-top: 1px solid #2c3138;
 }
 
-.chart-legend-item {
+.mining-dashboard .chart-legend-item,
+.mining-manager-wrapper .chart-legend-item {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 0.875rem;
 }
 
-.chart-legend-color {
+.mining-dashboard .chart-legend-color,
+.mining-manager-wrapper .chart-legend-color {
     width: 16px;
     height: 16px;
     border-radius: 3px;
@@ -1280,13 +1432,15 @@
 /* ============================================
    Card Tools
    ============================================ */
-.card-tools {
+.mining-dashboard .card-tools,
+.mining-manager-wrapper .card-tools {
     display: flex;
     gap: 5px;
     align-items: center;
 }
 
-.card-tools .btn-tool {
+.mining-dashboard .card-tools .btn-tool,
+.mining-manager-wrapper .card-tools .btn-tool {
     color: #adb5bd;
     background: transparent;
     border: none;
@@ -1295,11 +1449,13 @@
     cursor: pointer;
 }
 
-.card-tools .btn-tool:hover {
+.mining-dashboard .card-tools .btn-tool:hover,
+.mining-manager-wrapper .card-tools .btn-tool:hover {
     color: #ffffff;
 }
 
-.card-tools .btn-tool:focus {
+.mining-dashboard .card-tools .btn-tool:focus,
+.mining-manager-wrapper .card-tools .btn-tool:focus {
     outline: none;
     box-shadow: none;
 }
@@ -1307,18 +1463,21 @@
 /* ============================================
    Image Styling
    ============================================ */
-.img-circle {
+.mining-dashboard .img-circle,
+.mining-manager-wrapper .img-circle {
     border-radius: 50%;
     border: 2px solid #2c3138;
     transition: border-color 0.3s ease;
 }
 
-.img-circle:hover {
+.mining-dashboard .img-circle:hover,
+.mining-manager-wrapper .img-circle:hover {
     border-color: rgba(102, 126, 234, 0.5);
 }
 
 /* Character portrait */
-.character-portrait {
+.mining-dashboard .character-portrait,
+.mining-manager-wrapper .character-portrait {
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -1327,12 +1486,14 @@
     transition: all 0.3s ease;
 }
 
-.character-portrait:hover {
+.mining-dashboard .character-portrait:hover,
+.mining-manager-wrapper .character-portrait:hover {
     border-color: #667eea;
     transform: scale(1.1);
 }
 
-.character-portrait.large {
+.mining-dashboard .character-portrait.large,
+.mining-manager-wrapper .character-portrait.large {
     width: 64px;
     height: 64px;
 }
@@ -1396,7 +1557,8 @@
 }
 
 /* Firefox scrollbar */
-.mining-dashboard {
+.mining-dashboard .mining-dashboard,
+.mining-manager-wrapper .mining-dashboard {
     scrollbar-width: thin;
     scrollbar-color: #2c3138 #1a1d24;
 }
@@ -1409,7 +1571,8 @@
     border-bottom: 1px dotted #667eea;
 }
 
-.tooltip-inner {
+.mining-dashboard .tooltip-inner,
+.mining-manager-wrapper .tooltip-inner {
     background-color: #23262d;
     color: #ffffff;
     border: 1px solid #2c3138;
@@ -1418,32 +1581,38 @@
     font-size: 0.875rem;
 }
 
-.tooltip.bs-tooltip-top .arrow::before {
+.mining-dashboard .tooltip.bs-tooltip-top .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-top .arrow::before {
     border-top-color: #23262d;
 }
 
-.tooltip.bs-tooltip-bottom .arrow::before {
+.mining-dashboard .tooltip.bs-tooltip-bottom .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-bottom .arrow::before {
     border-bottom-color: #23262d;
 }
 
-.tooltip.bs-tooltip-left .arrow::before {
+.mining-dashboard .tooltip.bs-tooltip-left .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-left .arrow::before {
     border-left-color: #23262d;
 }
 
-.tooltip.bs-tooltip-right .arrow::before {
+.mining-dashboard .tooltip.bs-tooltip-right .arrow::before,
+.mining-manager-wrapper .tooltip.bs-tooltip-right .arrow::before {
     border-right-color: #23262d;
 }
 
 /* ============================================
    Activity Feed
    ============================================ */
-.activity-feed {
+.mining-dashboard .activity-feed,
+.mining-manager-wrapper .activity-feed {
     list-style: none;
     padding: 0;
     margin: 0;
 }
 
-.activity-feed-item {
+.mining-dashboard .activity-feed-item,
+.mining-manager-wrapper .activity-feed-item {
     padding: 12px 0;
     border-bottom: 1px solid #2c3138;
     display: flex;
@@ -1451,15 +1620,18 @@
     transition: background-color 0.15s ease;
 }
 
-.activity-feed-item:last-child {
+.mining-dashboard .activity-feed-item:last-child,
+.mining-manager-wrapper .activity-feed-item:last-child {
     border-bottom: none;
 }
 
-.activity-feed-item:hover {
+.mining-dashboard .activity-feed-item:hover,
+.mining-manager-wrapper .activity-feed-item:hover {
     background-color: rgba(102, 126, 234, 0.05);
 }
 
-.activity-feed-icon {
+.mining-dashboard .activity-feed-icon,
+.mining-manager-wrapper .activity-feed-icon {
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -1471,17 +1643,20 @@
     color: #667eea;
 }
 
-.activity-feed-content {
+.mining-dashboard .activity-feed-content,
+.mining-manager-wrapper .activity-feed-content {
     flex: 1;
 }
 
-.activity-feed-title {
+.mining-dashboard .activity-feed-title,
+.mining-manager-wrapper .activity-feed-title {
     font-weight: 600;
     color: #ffffff;
     margin-bottom: 4px;
 }
 
-.activity-feed-time {
+.mining-dashboard .activity-feed-time,
+.mining-manager-wrapper .activity-feed-time {
     font-size: 0.875rem;
     color: #9ca3af;
 }
@@ -1489,7 +1664,8 @@
 /* ============================================
    Statistics Grid
    ============================================ */
-.dashboard-stats-grid {
+.mining-dashboard .dashboard-stats-grid,
+.mining-manager-wrapper .dashboard-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 20px;
@@ -1499,13 +1675,15 @@
 /* ============================================
    Quick Actions
    ============================================ */
-.quick-actions {
+.mining-dashboard .quick-actions,
+.mining-manager-wrapper .quick-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
 }
 
-.quick-action-btn {
+.mining-dashboard .quick-action-btn,
+.mining-manager-wrapper .quick-action-btn {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1519,7 +1697,8 @@
     transition: all 0.3s ease;
 }
 
-.quick-action-btn:hover {
+.mining-dashboard .quick-action-btn:hover,
+.mining-manager-wrapper .quick-action-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
     color: #ffffff;
@@ -1546,13 +1725,15 @@
         text-align: center;
     }
     
-    .info-box .info-box-icon {
+    .mining-dashboard .info-box .info-box-icon,
+.mining-manager-wrapper .info-box .info-box-icon {
         width: 100%;
         height: 80px;
         margin-bottom: 10px;
     }
     
-    .info-box .info-box-content {
+    .mining-dashboard .info-box .info-box-content,
+.mining-manager-wrapper .info-box .info-box-content {
         text-align: center;
         padding: 0;
     }
@@ -1646,7 +1827,8 @@
     }
     
     .table-dark thead th,
-    .table-dark tbody td {
+    .mining-dashboard .table-dark tbody td,
+.mining-manager-wrapper .table-dark tbody td {
         border: 1px solid #000;
     }
     
@@ -1668,7 +1850,8 @@
 /* ============================================
    Accessibility
    ============================================ */
-.sr-only-dashboard {
+.mining-dashboard .sr-only-dashboard,
+.mining-manager-wrapper .sr-only-dashboard {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1681,8 +1864,10 @@
 }
 
 /* Focus states for keyboard navigation */
-.info-box:focus-within,
-.small-box:focus-within {
+.mining-dashboard .info-box:focus-within,
+.mining-dashboard .small-box:focus-within,
+.mining-manager-wrapper .info-box:focus-within,
+.mining-manager-wrapper .small-box:focus-within {
     outline: 2px solid #667eea;
     outline-offset: 2px;
 }
@@ -1701,7 +1886,8 @@
     .mining-dashboard *,
     .info-box,
     .small-box,
-    .chart-container.loading::after {
+    .mining-dashboard .chart-container.loading::after,
+.mining-manager-wrapper .chart-container.loading::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
@@ -1722,7 +1908,8 @@
     }
 }
 
-.fade-in-dashboard {
+.mining-dashboard .fade-in-dashboard,
+.mining-manager-wrapper .fade-in-dashboard {
     animation: fadeInDashboard 0.5s ease;
 }
 
@@ -1760,12 +1947,16 @@
     background-color: #343a40;
     border: 2px solid #454d55;
     border-bottom: 2px solid #343a40;
-    color: #e8e8e8;
+    color: #ffffff !important;
     font-weight: 600;
 }
 
 .mining-dashboard .nav-tabs .nav-link.active i {
-    color: #e8e8e8;
+    color: #ffffff !important;
+}
+
+.mining-dashboard .nav-tabs .nav-link.active .badge {
+    color: #ffffff !important;
 }
 
 .mining-dashboard .tab-content {
@@ -1808,7 +1999,8 @@
     gap: var(--mm-spacing-lg);
 }
 
-.settings-sidebar {
+.mining-dashboard .settings-sidebar,
+.mining-manager-wrapper .settings-sidebar {
     flex: 0 0 280px;
     position: sticky;
     top: 20px;
@@ -1816,7 +2008,8 @@
     overflow-y: auto;
 }
 
-.settings-content {
+.mining-dashboard .settings-content,
+.mining-manager-wrapper .settings-content {
     flex: 1;
     min-width: 0;
 }
@@ -1824,17 +2017,20 @@
 /* ============================================
    Settings Navigation
    ============================================ */
-.settings-nav {
+.mining-dashboard .settings-nav,
+.mining-manager-wrapper .settings-nav {
     list-style: none;
     padding: 0;
     margin: 0;
 }
 
-.settings-nav .nav-item {
+.mining-dashboard .settings-nav .nav-item,
+.mining-manager-wrapper .settings-nav .nav-item {
     margin-bottom: 2px;
 }
 
-.settings-nav .nav-link {
+.mining-dashboard .settings-nav .nav-link,
+.mining-manager-wrapper .settings-nav .nav-link {
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-sm);
@@ -1846,19 +2042,22 @@
     font-size: 0.95rem;
 }
 
-.settings-nav .nav-link i {
+.mining-dashboard .settings-nav .nav-link i,
+.mining-manager-wrapper .settings-nav .nav-link i {
     width: 24px;
     text-align: center;
     font-size: 1.1rem;
 }
 
-.settings-nav .nav-link:hover {
+.mining-dashboard .settings-nav .nav-link:hover,
+.mining-manager-wrapper .settings-nav .nav-link:hover {
     background-color: rgba(102, 126, 234, 0.2);
     color: var(--mm-text-white);
     text-decoration: none;
 }
 
-.settings-nav .nav-link.active {
+.mining-dashboard .settings-nav .nav-link.active,
+.mining-manager-wrapper .settings-nav .nav-link.active {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     color: var(--mm-text-white);
 }
@@ -1866,12 +2065,14 @@
 /* ============================================
    Settings Sections
    ============================================ */
-.settings-section {
+.mining-dashboard .settings-section,
+.mining-manager-wrapper .settings-section {
     display: none;
     animation: fadeInSettings 0.3s ease;
 }
 
-.settings-section.active {
+.mining-dashboard .settings-section.active,
+.mining-manager-wrapper .settings-section.active {
     display: block;
 }
 
@@ -1886,13 +2087,15 @@
     }
 }
 
-.settings-section-header {
+.mining-dashboard .settings-section-header,
+.mining-manager-wrapper .settings-section-header {
     margin-bottom: var(--mm-spacing-xl);
     padding-bottom: var(--mm-spacing-lg);
     border-bottom: 2px solid var(--mm-border);
 }
 
-.settings-section-title {
+.mining-dashboard .settings-section-title,
+.mining-manager-wrapper .settings-section-title {
     font-size: 1.75rem;
     font-weight: 700;
     color: var(--mm-text-white);
@@ -1902,7 +2105,8 @@
     margin-bottom: var(--mm-spacing-xs);
 }
 
-.settings-section-description {
+.mining-dashboard .settings-section-description,
+.mining-manager-wrapper .settings-section-description {
     color: var(--mm-text-muted);
     font-size: 0.95rem;
 }
@@ -1910,7 +2114,8 @@
 /* ============================================
    Settings Cards
    ============================================ */
-.settings-card {
+.mining-dashboard .settings-card,
+.mining-manager-wrapper .settings-card {
     background: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-lg);
@@ -1918,7 +2123,8 @@
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.settings-card-header {
+.mining-dashboard .settings-card-header,
+.mining-manager-wrapper .settings-card-header {
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-sm);
@@ -1927,7 +2133,8 @@
     border-bottom: 1px solid var(--mm-border);
 }
 
-.settings-card-icon {
+.mining-dashboard .settings-card-icon,
+.mining-manager-wrapper .settings-card-icon {
     width: 40px;
     height: 40px;
     border-radius: var(--mm-radius-md);
@@ -1939,25 +2146,29 @@
     color: var(--mm-primary-start);
 }
 
-.settings-card-title {
+.mining-dashboard .settings-card-title,
+.mining-manager-wrapper .settings-card-title {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--mm-text-white);
     margin: 0;
 }
 
-.settings-card-body {
+.mining-dashboard .settings-card-body,
+.mining-manager-wrapper .settings-card-body {
     color: var(--mm-text-light);
 }
 
 /* ============================================
    Settings Forms
    ============================================ */
-.settings-form .form-group {
+.mining-dashboard .settings-form .form-group,
+.mining-manager-wrapper .settings-form .form-group {
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.settings-form label {
+.mining-dashboard .settings-form label,
+.mining-manager-wrapper .settings-form label {
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-xs);
@@ -1966,12 +2177,15 @@
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.settings-form label i {
+.mining-dashboard .settings-form label i,
+.mining-manager-wrapper .settings-form label i {
     color: var(--mm-primary-start);
 }
 
-.settings-form .form-control,
-.settings-form .custom-select {
+.mining-dashboard .settings-form .form-control,
+.mining-manager-wrapper .settings-form .form-control,
+.mining-dashboard .settings-form .custom-select,
+.mining-manager-wrapper .settings-form .custom-select {
     background-color: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
@@ -1980,21 +2194,25 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.settings-form .form-control:focus,
-.settings-form .custom-select:focus {
+.mining-dashboard .settings-form .form-control:focus,
+.mining-manager-wrapper .settings-form .form-control:focus,
+.mining-dashboard .settings-form .custom-select:focus,
+.mining-manager-wrapper .settings-form .custom-select:focus {
     background-color: var(--mm-dark-card);
     border-color: var(--mm-primary-start);
     color: var(--mm-text-white);
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
 
-.settings-form .form-text {
+.mining-dashboard .settings-form .form-text,
+.mining-manager-wrapper .settings-form .form-text {
     font-size: 0.875rem;
     color: var(--mm-text-muted);
     margin-top: var(--mm-spacing-xs);
 }
 
-.settings-form .input-group-text {
+.mining-dashboard .settings-form .input-group-text,
+.mining-manager-wrapper .settings-form .input-group-text {
     background-color: var(--mm-dark-card);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-muted);
@@ -2003,12 +2221,14 @@
 /* ============================================
    Custom Switches
    ============================================ */
-.custom-switch-mm {
+.mining-dashboard .custom-switch-mm,
+.mining-manager-wrapper .custom-switch-mm {
     padding-left: 60px;
     min-height: 24px;
 }
 
-.custom-switch-mm .custom-control-label {
+.mining-dashboard .custom-switch-mm .custom-control-label,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label {
     font-weight: 600;
     color: var(--mm-text-white);
     display: flex;
@@ -2016,7 +2236,8 @@
     gap: var(--mm-spacing-xs);
 }
 
-.custom-switch-mm .custom-control-label::before {
+.mining-dashboard .custom-switch-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::before {
     left: -60px;
     width: 48px;
     height: 24px;
@@ -2026,7 +2247,8 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.custom-switch-mm .custom-control-label::after {
+.mining-dashboard .custom-switch-mm .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::after {
     left: -58px;
     width: 20px;
     height: 20px;
@@ -2035,44 +2257,52 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.custom-switch-mm .custom-control-input:checked ~ .custom-control-label::before {
+.mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::before {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
 }
 
-.custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
+.mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
     transform: translateX(24px);
 }
 
-.custom-switch-mm .custom-control-input:focus ~ .custom-control-label::before {
+.mining-dashboard .custom-switch-mm .custom-control-input:focus ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:focus ~ .custom-control-label::before {
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
 
 /* ============================================
    Custom Radio Buttons
    ============================================ */
-.custom-radio-mm .custom-control-label {
+.mining-dashboard .custom-radio-mm .custom-control-label,
+.mining-manager-wrapper .custom-radio-mm .custom-control-label {
     font-weight: 600;
     color: var(--mm-text-white);
 }
 
-.custom-radio-mm .custom-control-label::before {
+.mining-dashboard .custom-radio-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-label::before {
     background-color: var(--mm-dark-bg);
     border: 2px solid var(--mm-border);
 }
 
-.custom-radio-mm .custom-control-input:checked ~ .custom-control-label::before {
+.mining-dashboard .custom-radio-mm .custom-control-input:checked ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-input:checked ~ .custom-control-label::before {
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     border-color: var(--mm-primary-start);
 }
 
-.custom-radio-mm .custom-control-input:focus ~ .custom-control-label::before {
+.mining-dashboard .custom-radio-mm .custom-control-input:focus ~ .custom-control-label::before,
+.mining-manager-wrapper .custom-radio-mm .custom-control-input:focus ~ .custom-control-label::before {
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
 
 /* ============================================
    Info Banners
    ============================================ */
-.info-banner {
+.mining-dashboard .info-banner,
+.mining-manager-wrapper .info-banner {
     background: rgba(23, 162, 184, 0.15);
     border: 1px solid rgba(23, 162, 184, 0.3);
     border-left: 4px solid var(--mm-info);
@@ -2081,12 +2311,14 @@
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.info-banner i {
+.mining-dashboard .info-banner i,
+.mining-manager-wrapper .info-banner i {
     color: var(--mm-info);
     margin-right: var(--mm-spacing-sm);
 }
 
-.warning-banner {
+.mining-dashboard .warning-banner,
+.mining-manager-wrapper .warning-banner {
     background: rgba(255, 193, 7, 0.15);
     border: 1px solid rgba(255, 193, 7, 0.3);
     border-left: 4px solid var(--mm-warning);
@@ -2095,12 +2327,14 @@
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.warning-banner i {
+.mining-dashboard .warning-banner i,
+.mining-manager-wrapper .warning-banner i {
     color: var(--mm-warning);
     margin-right: var(--mm-spacing-sm);
 }
 
-.success-banner {
+.mining-dashboard .success-banner,
+.mining-manager-wrapper .success-banner {
     background: rgba(28, 200, 138, 0.15);
     border: 1px solid rgba(28, 200, 138, 0.3);
     border-left: 4px solid var(--mm-success);
@@ -2109,7 +2343,8 @@
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.success-banner i {
+.mining-dashboard .success-banner i,
+.mining-manager-wrapper .success-banner i {
     color: var(--mm-success);
     margin-right: var(--mm-spacing-sm);
 }
@@ -2117,7 +2352,8 @@
 /* ============================================
    Action Buttons
    ============================================ */
-.action-buttons {
+.mining-dashboard .action-buttons,
+.mining-manager-wrapper .action-buttons {
     position: sticky;
     bottom: 0;
     background: var(--mm-dark-card);
@@ -2128,11 +2364,13 @@
     z-index: 100;
 }
 
-.action-buttons .row {
+.mining-dashboard .action-buttons .row,
+.mining-manager-wrapper .action-buttons .row {
     gap: var(--mm-spacing-sm);
 }
 
-.action-buttons .btn {
+.mining-dashboard .action-buttons .btn,
+.mining-manager-wrapper .action-buttons .btn {
     padding: 12px 24px;
     font-weight: 600;
     font-size: 1rem;
@@ -2141,13 +2379,15 @@
 /* ============================================
    Settings Grid
    ============================================ */
-.settings-grid {
+.mining-dashboard .settings-grid,
+.mining-manager-wrapper .settings-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--mm-spacing-lg);
 }
 
-.settings-grid-item {
+.mining-dashboard .settings-grid-item,
+.mining-manager-wrapper .settings-grid-item {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-md);
@@ -2155,7 +2395,8 @@
     transition: all var(--mm-transition-normal) ease;
 }
 
-.settings-grid-item:hover {
+.mining-dashboard .settings-grid-item:hover,
+.mining-manager-wrapper .settings-grid-item:hover {
     border-color: rgba(102, 126, 234, 0.5);
     transform: translateY(-3px);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
@@ -2164,20 +2405,23 @@
 /* ============================================
    Tax Rate Inputs
    ============================================ */
-.tax-rate-grid {
+.mining-dashboard .tax-rate-grid,
+.mining-manager-wrapper .tax-rate-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: var(--mm-spacing-lg);
 }
 
-.tax-rate-input {
+.mining-dashboard .tax-rate-input,
+.mining-manager-wrapper .tax-rate-input {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-md);
     padding: var(--mm-spacing-md);
 }
 
-.tax-rate-label {
+.mining-dashboard .tax-rate-label,
+.mining-manager-wrapper .tax-rate-label {
     display: flex;
     align-items: center;
     gap: var(--mm-spacing-xs);
@@ -2186,7 +2430,8 @@
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.tax-rate-icon {
+.mining-dashboard .tax-rate-icon,
+.mining-manager-wrapper .tax-rate-icon {
     width: 32px;
     height: 32px;
     border-radius: var(--mm-radius-sm);
@@ -2196,7 +2441,8 @@
     font-size: 1rem;
 }
 
-.tax-rate-input input[type="number"] {
+.mining-dashboard .tax-rate-input input[type="number"],
+.mining-manager-wrapper .tax-rate-input input[type="number"] {
     font-size: 1.5rem;
     font-weight: 700;
     text-align: center;
@@ -2205,12 +2451,14 @@
 /* ============================================
    Feature Toggles
    ============================================ */
-.feature-toggles {
+.mining-dashboard .feature-toggles,
+.mining-manager-wrapper .feature-toggles {
     display: grid;
     gap: var(--mm-spacing-md);
 }
 
-.feature-toggle-item {
+.mining-dashboard .feature-toggle-item,
+.mining-manager-wrapper .feature-toggle-item {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-md);
@@ -2221,12 +2469,14 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.feature-toggle-item:hover {
+.mining-dashboard .feature-toggle-item:hover,
+.mining-manager-wrapper .feature-toggle-item:hover {
     background: rgba(102, 126, 234, 0.05);
     border-color: rgba(102, 126, 234, 0.3);
 }
 
-.feature-toggle-icon {
+.mining-dashboard .feature-toggle-icon,
+.mining-manager-wrapper .feature-toggle-icon {
     width: 48px;
     height: 48px;
     border-radius: var(--mm-radius-md);
@@ -2239,24 +2489,28 @@
     flex-shrink: 0;
 }
 
-.feature-toggle-content {
+.mining-dashboard .feature-toggle-content,
+.mining-manager-wrapper .feature-toggle-content {
     flex: 1;
 }
 
-.feature-toggle-header {
+.mining-dashboard .feature-toggle-header,
+.mining-manager-wrapper .feature-toggle-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: var(--mm-spacing-xs);
 }
 
-.feature-toggle-title {
+.mining-dashboard .feature-toggle-title,
+.mining-manager-wrapper .feature-toggle-title {
     font-weight: 600;
     color: var(--mm-text-white);
     margin: 0;
 }
 
-.feature-toggle-description {
+.mining-dashboard .feature-toggle-description,
+.mining-manager-wrapper .feature-toggle-description {
     font-size: 0.875rem;
     color: var(--mm-text-muted);
 }
@@ -2264,13 +2518,15 @@
 /* ============================================
    Advanced Settings
    ============================================ */
-.advanced-settings-grid {
+.mining-dashboard .advanced-settings-grid,
+.mining-manager-wrapper .advanced-settings-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: var(--mm-spacing-lg);
 }
 
-.advanced-setting-card {
+.mining-dashboard .advanced-setting-card,
+.mining-manager-wrapper .advanced-setting-card {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-lg);
@@ -2278,7 +2534,8 @@
     text-align: center;
 }
 
-.advanced-setting-icon {
+.mining-dashboard .advanced-setting-icon,
+.mining-manager-wrapper .advanced-setting-icon {
     width: 60px;
     height: 60px;
     border-radius: var(--mm-radius-lg);
@@ -2291,13 +2548,15 @@
     color: var(--mm-primary-start);
 }
 
-.advanced-setting-title {
+.mining-dashboard .advanced-setting-title,
+.mining-manager-wrapper .advanced-setting-title {
     font-weight: 600;
     color: var(--mm-text-white);
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.advanced-setting-description {
+.mining-dashboard .advanced-setting-description,
+.mining-manager-wrapper .advanced-setting-description {
     font-size: 0.875rem;
     color: var(--mm-text-muted);
     margin-bottom: var(--mm-spacing-md);
@@ -2306,19 +2565,22 @@
 /* ============================================
    File Upload Custom
    ============================================ */
-.custom-file-mm .custom-file-input:lang(en) ~ .custom-file-label::after {
+.mining-dashboard .custom-file-mm .custom-file-input:lang(en) ~ .custom-file-label::after,
+.mining-manager-wrapper .custom-file-mm .custom-file-input:lang(en) ~ .custom-file-label::after {
     content: "Browse";
     background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
     color: var(--mm-text-white);
 }
 
-.custom-file-mm .custom-file-label {
+.mining-dashboard .custom-file-mm .custom-file-label,
+.mining-manager-wrapper .custom-file-mm .custom-file-label {
     background-color: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     color: var(--mm-text-light);
 }
 
-.custom-file-mm .custom-file-input:focus ~ .custom-file-label {
+.mining-dashboard .custom-file-mm .custom-file-input:focus ~ .custom-file-label,
+.mining-manager-wrapper .custom-file-mm .custom-file-input:focus ~ .custom-file-label {
     border-color: var(--mm-primary-start);
     box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
 }
@@ -2326,14 +2588,16 @@
 /* ============================================
    Pricing Configuration
    ============================================ */
-.price-provider-selector {
+.mining-dashboard .price-provider-selector,
+.mining-manager-wrapper .price-provider-selector {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: var(--mm-spacing-md);
     margin-bottom: var(--mm-spacing-lg);
 }
 
-.price-provider-option {
+.mining-dashboard .price-provider-option,
+.mining-manager-wrapper .price-provider-option {
     background: var(--mm-dark-bg);
     border: 2px solid var(--mm-border);
     border-radius: var(--mm-radius-md);
@@ -2343,21 +2607,25 @@
     transition: all var(--mm-transition-fast) ease;
 }
 
-.price-provider-option:hover {
+.mining-dashboard .price-provider-option:hover,
+.mining-manager-wrapper .price-provider-option:hover {
     border-color: rgba(102, 126, 234, 0.5);
 }
 
-.price-provider-option.selected {
+.mining-dashboard .price-provider-option.selected,
+.mining-manager-wrapper .price-provider-option.selected {
     border-color: var(--mm-primary-start);
     background: rgba(102, 126, 234, 0.1);
 }
 
-.price-provider-icon {
+.mining-dashboard .price-provider-icon,
+.mining-manager-wrapper .price-provider-icon {
     font-size: 2rem;
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.price-provider-name {
+.mining-dashboard .price-provider-name,
+.mining-manager-wrapper .price-provider-name {
     font-weight: 600;
     color: var(--mm-text-white);
 }
@@ -2365,20 +2633,23 @@
 /* ============================================
    Help Cards
    ============================================ */
-.help-card-grid {
+.mining-dashboard .help-card-grid,
+.mining-manager-wrapper .help-card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: var(--mm-spacing-lg);
 }
 
-.help-card-mm {
+.mining-dashboard .help-card-mm,
+.mining-manager-wrapper .help-card-mm {
     background: var(--mm-dark-bg);
     border: 1px solid var(--mm-border);
     border-radius: var(--mm-radius-lg);
     padding: var(--mm-spacing-lg);
 }
 
-.help-card-icon {
+.mining-dashboard .help-card-icon,
+.mining-manager-wrapper .help-card-icon {
     width: 48px;
     height: 48px;
     border-radius: var(--mm-radius-md);
@@ -2389,51 +2660,60 @@
     margin-bottom: var(--mm-spacing-md);
 }
 
-.help-card-icon.icon-primary {
+.mining-dashboard .help-card-icon.icon-primary,
+.mining-manager-wrapper .help-card-icon.icon-primary {
     background: rgba(102, 126, 234, 0.2);
     color: var(--mm-primary-start);
 }
 
-.help-card-icon.icon-success {
+.mining-dashboard .help-card-icon.icon-success,
+.mining-manager-wrapper .help-card-icon.icon-success {
     background: rgba(40, 167, 69, 0.2);
     color: var(--mm-success);
 }
 
-.help-card-icon.icon-warning {
+.mining-dashboard .help-card-icon.icon-warning,
+.mining-manager-wrapper .help-card-icon.icon-warning {
     background: rgba(255, 193, 7, 0.2);
     color: var(--mm-warning);
 }
 
-.help-card-icon.icon-info {
+.mining-dashboard .help-card-icon.icon-info,
+.mining-manager-wrapper .help-card-icon.icon-info {
     background: rgba(23, 162, 184, 0.2);
     color: var(--mm-info);
 }
 
-.help-card-title {
+.mining-dashboard .help-card-title,
+.mining-manager-wrapper .help-card-title {
     font-weight: 600;
     color: var(--mm-text-white);
     margin-bottom: var(--mm-spacing-sm);
 }
 
-.help-card-description {
+.mining-dashboard .help-card-description,
+.mining-manager-wrapper .help-card-description {
     font-size: 0.875rem;
     color: var(--mm-text-muted);
     margin-bottom: 0;
 }
 
-.help-card-list {
+.mining-dashboard .help-card-list,
+.mining-manager-wrapper .help-card-list {
     list-style: none;
     padding: 0;
     margin-top: var(--mm-spacing-sm);
 }
 
-.help-card-list li {
+.mining-dashboard .help-card-list li,
+.mining-manager-wrapper .help-card-list li {
     padding: var(--mm-spacing-xs) 0;
     color: var(--mm-text-light);
     font-size: 0.875rem;
 }
 
-.help-card-list li::before {
+.mining-dashboard .help-card-list li::before,
+.mining-manager-wrapper .help-card-list li::before {
     content: '→';
     margin-right: var(--mm-spacing-xs);
     color: var(--mm-primary-start);
@@ -2460,11 +2740,13 @@
         gap: var(--mm-spacing-xs);
     }
     
-    .settings-nav .nav-item {
+    .mining-dashboard .settings-nav .nav-item,
+.mining-manager-wrapper .settings-nav .nav-item {
         margin-bottom: 0;
     }
     
-    .settings-nav .nav-link {
+    .mining-dashboard .settings-nav .nav-link,
+.mining-manager-wrapper .settings-nav .nav-link {
         padding: var(--mm-spacing-sm) var(--mm-spacing-md);
     }
 }
@@ -2486,7 +2768,8 @@
         margin: var(--mm-spacing-lg) 0 0;
     }
     
-    .action-buttons .btn {
+    .mining-dashboard .action-buttons .btn,
+.mining-manager-wrapper .action-buttons .btn {
         width: 100%;
         margin-bottom: var(--mm-spacing-sm);
     }
@@ -2509,12 +2792,14 @@
         padding-left: 55px;
     }
     
-    .custom-switch-mm .custom-control-label::before {
+    .mining-dashboard .custom-switch-mm .custom-control-label::before,
+.mining-manager-wrapper .custom-switch-mm .custom-control-label::before {
         left: -55px;
         width: 44px;
     }
     
-    .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
+    .mining-dashboard .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after,
+.mining-manager-wrapper .custom-switch-mm .custom-control-input:checked ~ .custom-control-label::after {
         transform: translateX(20px);
     }
 }
@@ -2545,3 +2830,4 @@
         page-break-inside: avoid;
     }
 }
+

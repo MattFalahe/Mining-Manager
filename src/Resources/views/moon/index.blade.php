@@ -70,7 +70,7 @@
     <div class="tab-content">
 
 
-<div class="moon-extractions">
+<div class="mining-manager-wrapper moon-extractions">
     
     {{-- QUICK STATS --}}
     <div class="row">

@@ -32,7 +32,7 @@
     </ul>
     <div class="tab-content">
 
-<div class="my-mining">
+<div class="mining-manager-wrapper my-mining">
     
     {{-- SUMMARY STATISTICS --}}
     <div class="row">

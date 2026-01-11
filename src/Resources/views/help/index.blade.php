@@ -305,7 +305,7 @@
 @endpush
 
 @section('full')
-<div class="help-page">
+<div class="mining-manager-wrapper help-page">
     
     <div class="help-wrapper">
         {{-- Sidebar Navigation --}}

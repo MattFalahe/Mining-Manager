@@ -115,7 +115,7 @@
     <div class="tab-content">
 
 
-<div class="reports-index">
+<div class="mining-manager-wrapper reports-index">
     
     {{-- QUICK STATS --}}
     <div class="row mb-3">

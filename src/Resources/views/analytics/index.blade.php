@@ -80,7 +80,7 @@
     <div class="tab-content">
 
 
-<div class="analytics-overview">
+<div class="mining-manager-wrapper analytics-overview">
     
     {{-- DATE RANGE FILTER --}}
     <div class="row mb-3">
