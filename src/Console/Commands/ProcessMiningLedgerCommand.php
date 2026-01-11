@@ -3,9 +3,11 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -207,6 +209,13 @@ class ProcessMiningLedgerCommand extends Command
                 $this->warn("⚠️  Completed with {$errors} errors. Check logs for details.");
                 return Command::FAILURE;
             }
+
+            // Clear dashboard cache after processing new ledger data
+            $this->info("\n🔄 Clearing dashboard cache to reflect new data...");
+            Cache::tags(['dashboard'])->flush();
+            // Alternative: Clear all mining-manager related caches
+            DashboardController::clearDashboardCache();
+            $this->info("✅ Dashboard cache cleared successfully!");
 
             return Command::SUCCESS;
 

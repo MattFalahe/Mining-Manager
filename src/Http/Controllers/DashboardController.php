@@ -4,6 +4,7 @@ namespace MiningManager\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
 use MiningManager\Services\Pricing\MarketDataService;
@@ -53,6 +54,8 @@ class DashboardController extends Controller
 
     /**
      * Member Dashboard - Shows personal mining stats
+     *
+     * Performance: Cached for 15 minutes to improve load times
      */
     public function memberDashboard()
     {
@@ -66,38 +69,46 @@ class DashboardController extends Controller
         // Last 12 months period
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        // === CURRENT MONTH STATISTICS ===
-        $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+        // Cache key based on user ID and current month
+        $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
-        // === LAST 12 MONTHS STATISTICS ===
-        $last12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
+        // Cache dashboard data for 15 minutes (900 seconds)
+        $dashboardData = Cache::remember($cacheKey, 900, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+            // === CURRENT MONTH STATISTICS ===
+            $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
 
-        // === TOP MINER RANKINGS ===
-        // Get user's main character for ranking
-        $mainCharacterId = $this->getMainCharacterId($user);
-        
-        $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
-        $topMinersMoonOre = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
-        
-        $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
-        $userRankMoonOre = $this->getUserRank($mainCharacterId, $topMinersMoonOre);
+            // === LAST 12 MONTHS STATISTICS ===
+            $last12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
 
-        // === CHARTS DATA ===
-        $miningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
-        $miningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
-        $miningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
+            // === TOP MINER RANKINGS ===
+            // Get user's main character for ranking
+            $mainCharacterId = $this->getMainCharacterId($user);
 
-        return view('mining-manager::dashboard.member', compact(
-            'currentMonthStats',
-            'last12MonthsStats',
-            'topMinersAllOre',
-            'topMinersMoonOre',
-            'userRankAllOre',
-            'userRankMoonOre',
-            'miningPerformanceChart',
-            'miningVolumeByGroupChart',
-            'miningIncomeChart'
-        ));
+            $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMoonOre = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+
+            $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
+            $userRankMoonOre = $this->getUserRank($mainCharacterId, $topMinersMoonOre);
+
+            // === CHARTS DATA ===
+            $miningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
+            $miningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
+            $miningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
+
+            return [
+                'currentMonthStats' => $currentMonthStats,
+                'last12MonthsStats' => $last12MonthsStats,
+                'topMinersAllOre' => $topMinersAllOre,
+                'topMinersMoonOre' => $topMinersMoonOre,
+                'userRankAllOre' => $userRankAllOre,
+                'userRankMoonOre' => $userRankMoonOre,
+                'miningPerformanceChart' => $miningPerformanceChart,
+                'miningVolumeByGroupChart' => $miningVolumeByGroupChart,
+                'miningIncomeChart' => $miningIncomeChart,
+            ];
+        });
+
+        return view('mining-manager::dashboard.member', $dashboardData);
     }
 
     /**
@@ -154,6 +165,8 @@ class DashboardController extends Controller
     /**
      * Combined Director Dashboard - Shows BOTH personal stats AND corporation overview
      * This ensures directors can track their own mining while managing the corporation
+     *
+     * Performance: Cached for 15 minutes to improve load times
      */
     public function combinedDirectorDashboard()
     {
@@ -168,64 +181,72 @@ class DashboardController extends Controller
         // Last 12 months period
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        // === PERSONAL STATISTICS (Director's own mining) ===
-        $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
-        $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
+        // Cache key based on user ID, corporation ID and current month
+        $cacheKey = 'dashboard.director.' . $user->id . '.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
 
-        // Personal rankings
-        $mainCharacterId = $this->getMainCharacterId($user);
-        $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
-        $topMinersMoonOre = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
-        $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
-        $userRankMoonOre = $this->getUserRank($mainCharacterId, $topMinersMoonOre);
+        // Cache dashboard data for 15 minutes (900 seconds)
+        $dashboardData = Cache::remember($cacheKey, 900, function () use ($characterIds, $corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+            // === PERSONAL STATISTICS (Director's own mining) ===
+            $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+            $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
 
-        // Personal charts
-        $personalMiningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
-        $personalMiningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
-        $personalMiningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
+            // Personal rankings
+            $mainCharacterId = $this->getMainCharacterId($user);
+            $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMoonOre = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+            $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
+            $userRankMoonOre = $this->getUserRank($mainCharacterId, $topMinersMoonOre);
 
-        // === CORPORATION STATISTICS ===
-        $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
-        $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
+            // Personal charts
+            $personalMiningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
+            $personalMiningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
+            $personalMiningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
 
-        // Corporation top miners
-        $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
-        $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
+            // === CORPORATION STATISTICS ===
+            $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
+            $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
-        $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore', 5);
-        $topMinersOverallMoonOre = $this->getTopMinersOverall($corporationId, 'moon_ore', 5);
-        $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
-        $topMinersLastMonthMoonOre = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
+            // Corporation top miners
+            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
+            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
-        // Corporation charts
-        $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
-        $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
-        $miningTaxChart = $this->getMiningTaxLast12Months($corporationId);
-        $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
+            $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore', 5);
+            $topMinersOverallMoonOre = $this->getTopMinersOverall($corporationId, 'moon_ore', 5);
+            $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
+            $topMinersLastMonthMoonOre = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
 
-        return view('mining-manager::dashboard.combined-director', compact(
-            // Personal stats
-            'personalCurrentMonthStats',
-            'personalLast12MonthsStats',
-            'userRankAllOre',
-            'userRankMoonOre',
-            'personalMiningPerformanceChart',
-            'personalMiningVolumeByGroupChart',
-            'personalMiningIncomeChart',
-            // Corporation stats
-            'corpCurrentMonthStats',
-            'corpLast12MonthsStats',
-            'topMinersAllOre',
-            'topMinersMoonOre',
-            'topMinersOverallAllOre',
-            'topMinersOverallMoonOre',
-            'topMinersLastMonthAllOre',
-            'topMinersLastMonthMoonOre',
-            'corpMiningPerformanceChart',
-            'moonMiningPerformanceChart',
-            'miningTaxChart',
-            'eventTaxChart'
-        ));
+            // Corporation charts
+            $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
+            $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
+            $miningTaxChart = $this->getMiningTaxLast12Months($corporationId);
+            $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
+
+            return [
+                // Personal stats
+                'personalCurrentMonthStats' => $personalCurrentMonthStats,
+                'personalLast12MonthsStats' => $personalLast12MonthsStats,
+                'userRankAllOre' => $userRankAllOre,
+                'userRankMoonOre' => $userRankMoonOre,
+                'personalMiningPerformanceChart' => $personalMiningPerformanceChart,
+                'personalMiningVolumeByGroupChart' => $personalMiningVolumeByGroupChart,
+                'personalMiningIncomeChart' => $personalMiningIncomeChart,
+                // Corporation stats
+                'corpCurrentMonthStats' => $corpCurrentMonthStats,
+                'corpLast12MonthsStats' => $corpLast12MonthsStats,
+                'topMinersAllOre' => $topMinersAllOre,
+                'topMinersMoonOre' => $topMinersMoonOre,
+                'topMinersOverallAllOre' => $topMinersOverallAllOre,
+                'topMinersOverallMoonOre' => $topMinersOverallMoonOre,
+                'topMinersLastMonthAllOre' => $topMinersLastMonthAllOre,
+                'topMinersLastMonthMoonOre' => $topMinersLastMonthMoonOre,
+                'corpMiningPerformanceChart' => $corpMiningPerformanceChart,
+                'moonMiningPerformanceChart' => $moonMiningPerformanceChart,
+                'miningTaxChart' => $miningTaxChart,
+                'eventTaxChart' => $eventTaxChart,
+            ];
+        });
+
+        return view('mining-manager::dashboard.combined-director', $dashboardData);
     }
 
     /**
@@ -1275,5 +1296,30 @@ class DashboardController extends Controller
         }
         
         return response()->json($diagnostics, 200, [], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Clear dashboard cache for a specific user
+     * Called after processing new ledger data
+     *
+     * @param int $userId
+     * @param int|null $corporationId
+     * @return void
+     */
+    public static function clearDashboardCache($userId = null, $corporationId = null)
+    {
+        if ($userId) {
+            // Clear member dashboard cache for specific user
+            $currentMonth = Carbon::now()->startOfMonth()->format('Y-m');
+            Cache::forget('dashboard.member.' . $userId . '.' . $currentMonth);
+
+            // Clear director dashboard cache if corporation ID provided
+            if ($corporationId) {
+                Cache::forget('dashboard.director.' . $userId . '.' . $corporationId . '.' . $currentMonth);
+            }
+        } else {
+            // Clear all dashboard caches (nuclear option - use sparingly)
+            Cache::flush();
+        }
     }
 }
