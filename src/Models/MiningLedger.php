@@ -51,6 +51,10 @@ class MiningLedger extends Model
         'corporation_id',
         'is_taxable',
         'notes',
+        'is_moon_ore',
+        'is_ice',
+        'is_gas',
+        'is_abyssal',
     ];
 
     /**
@@ -69,6 +73,10 @@ class MiningLedger extends Model
         'tax_rate' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'is_taxable' => 'boolean',
+        'is_moon_ore' => 'boolean',
+        'is_ice' => 'boolean',
+        'is_gas' => 'boolean',
+        'is_abyssal' => 'boolean',
     ];
 
     /**

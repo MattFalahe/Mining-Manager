@@ -10,9 +10,11 @@ use Illuminate\Support\Facades\Schema;
  * This migration adds critical indexes to improve query performance:
  * - processed_at: Used in every dashboard query (whereNotNull)
  * - Compound indexes for common filter combinations
- * - Ore type filters (is_moon_ore, is_ice, is_gas)
+ * - Indexes for existing columns only
  *
  * Expected Performance Impact: 10-50x faster queries
+ *
+ * Migration: 2026_01_01_000008
  */
 class AddPerformanceIndexesToMiningLedger extends Migration
 {
@@ -37,16 +39,15 @@ class AddPerformanceIndexesToMiningLedger extends Migration
             // Corporation dashboard queries: filter by date range + processed
             $table->index(['date', 'processed_at'], 'idx_mining_ledger_date_proc');
 
-            // Ore type filtering (used in ledger filters and analytics)
-            $table->index('is_moon_ore', 'idx_mining_ledger_is_moon_ore');
-            $table->index('is_ice', 'idx_mining_ledger_is_ice');
-            $table->index('is_gas', 'idx_mining_ledger_is_gas');
+            // Total value sorting (used in ledger sorting) - only if column exists
+            if (Schema::hasColumn('mining_ledger', 'total_value')) {
+                $table->index('total_value', 'idx_mining_ledger_total_value');
+            }
 
-            // Total value sorting (used in ledger sorting)
-            $table->index('total_value', 'idx_mining_ledger_total_value');
-
-            // Quantity sorting (used in ledger sorting and top miners)
-            $table->index('quantity', 'idx_mining_ledger_quantity');
+            // Ore type filtering - only if ore_type column exists
+            if (Schema::hasColumn('mining_ledger', 'ore_type')) {
+                $table->index('ore_type', 'idx_mining_ledger_ore_type');
+            }
         });
     }
 
@@ -61,11 +62,14 @@ class AddPerformanceIndexesToMiningLedger extends Migration
             $table->dropIndex('idx_mining_ledger_processed_at');
             $table->dropIndex('idx_mining_ledger_char_date_proc');
             $table->dropIndex('idx_mining_ledger_date_proc');
-            $table->dropIndex('idx_mining_ledger_is_moon_ore');
-            $table->dropIndex('idx_mining_ledger_is_ice');
-            $table->dropIndex('idx_mining_ledger_is_gas');
-            $table->dropIndex('idx_mining_ledger_total_value');
-            $table->dropIndex('idx_mining_ledger_quantity');
+
+            // Drop only if they were created
+            if (Schema::hasColumn('mining_ledger', 'total_value')) {
+                $table->dropIndex('idx_mining_ledger_total_value');
+            }
+            if (Schema::hasColumn('mining_ledger', 'ore_type')) {
+                $table->dropIndex('idx_mining_ledger_ore_type');
+            }
         });
     }
 }
