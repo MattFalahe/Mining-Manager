@@ -379,7 +379,7 @@
                                             <div class="row">
                                                 {{-- All Ore Total Value --}}
                                                 <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-primary">
+                                                    <div class="small-box bg-info">
                                                         <div class="inner">
                                                             <h3>{{ number_format($corpLast12MonthsStats['all_ore_total_value'], 0) }}</h3>
                                                             <p>{{ trans('mining-manager::dashboard.all_ore_total_value') }}</p>
@@ -392,7 +392,7 @@
 
                                                 {{-- Moon Ore Total Value --}}
                                                 <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-secondary">
+                                                    <div class="small-box bg-primary">
                                                         <div class="inner">
                                                             <h3>{{ number_format($corpLast12MonthsStats['moon_ore_total_value'], 0) }}</h3>
                                                             <p>{{ trans('mining-manager::dashboard.moon_ore_total_value') }}</p>
@@ -589,7 +589,7 @@ $(document).ready(function() {
     // Personal Mining Chart
     var personalCtx = document.getElementById('personalMiningChart').getContext('2d');
     new Chart(personalCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: {!! json_encode($personalMiningPerformanceChart['labels']) !!},
             datasets: [{
@@ -625,7 +625,7 @@ $(document).ready(function() {
     // Corporation Mining Chart
     var corpCtx = document.getElementById('corpMiningChart').getContext('2d');
     new Chart(corpCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: {!! json_encode($corpMiningPerformanceChart['labels']) !!},
             datasets: [{
@@ -661,7 +661,7 @@ $(document).ready(function() {
     // Moon Mining Chart
     var moonCtx = document.getElementById('moonMiningChart').getContext('2d');
     new Chart(moonCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: {!! json_encode($moonMiningPerformanceChart['labels']) !!},
             datasets: [{
@@ -818,7 +818,7 @@ $(document).ready(function() {
     // Event Tax Chart
     var eventTaxCtx = document.getElementById('eventTaxChart').getContext('2d');
     new Chart(eventTaxCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: {!! json_encode($eventTaxChart['labels']) !!},
             datasets: [{
