@@ -583,7 +583,7 @@
 @endsection
 
 @push('javascript')
-<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script src="{{ asset('vendor/mining-manager/js/vendor/chart.min.js') }}"></script>
 <script>
 $(document).ready(function() {
     // Personal Mining Chart
