@@ -351,10 +351,50 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get last 12 months statistics for member
+     * Get last 12 months statistics for member (uses stored data)
      */
     private function getMemberLast12MonthsStats($characterIds, $startDate)
     {
+        $user = auth()->user();
+
+        // Try to get stored statistics for closed months
+        $storedStats = MonthlyStatistic::where('user_id', $user->id)
+            ->where('is_closed', true)
+            ->where('month_start', '>=', $startDate)
+            ->get();
+
+        // If we have stored stats for most months, use them
+        if ($storedStats->count() >= 10) {
+            $totalQuantity = $storedStats->sum('total_quantity');
+            $totalValue = $storedStats->sum('total_value');
+
+            // For current month (not in stored stats), calculate live and add
+            $currentMonthStart = Carbon::now()->startOfMonth();
+            $currentMonthEnd = Carbon::now();
+
+            $currentMonthData = MiningLedger::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$currentMonthStart, $currentMonthEnd])
+                ->whereNotNull('processed_at')
+                ->get();
+
+            $currentMonthQuantity = $currentMonthData->sum('quantity');
+            $currentMonthValue = $this->calculateTotalValue($currentMonthData);
+
+            $totalQuantity += $currentMonthQuantity;
+            $totalValue += $currentMonthValue;
+            $totalVolume = $totalQuantity * 1000; // Approximate
+
+            $avgPerMonth = $totalValue / 12;
+
+            return [
+                'total_quantity' => $totalQuantity,
+                'total_volume' => $totalVolume,
+                'total_value' => $totalValue,
+                'avg_per_month' => $avgPerMonth,
+            ];
+        }
+
+        // Fallback: No stored stats, calculate from raw data (slower)
         $miningData = MiningLedger::whereIn('character_id', $characterIds)
             ->where('date', '>=', $startDate)
             ->whereNotNull('processed_at')
@@ -363,7 +403,7 @@ class DashboardController extends Controller
         $totalQuantity = $miningData->sum('quantity');
         $totalVolume = $this->calculateTotalVolume($miningData);
         $totalValue = $this->calculateTotalValue($miningData);
-        
+
         // Calculate average per month
         $avgPerMonth = $totalValue / 12;
 
@@ -610,28 +650,42 @@ class DashboardController extends Controller
      */
     private function getMiningPerformanceLast12Months($characterIds)
     {
+        $user = auth()->user();
         $months = [];
         $data = [];
+
+        // Get stored statistics for closed months
+        $storedStats = MonthlyStatistic::where('user_id', $user->id)
+            ->where('is_closed', true)
+            ->where('month_start', '>=', Carbon::now()->subMonths(12))
+            ->get()
+            ->keyBy(function($stat) {
+                return $stat->year . '-' . str_pad($stat->month, 2, '0', STR_PAD_LEFT);
+            });
 
         // Loop from 11 months ago to current month (i=0 is current month)
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
+            $monthKey = $month->format('Y-m');
 
             // For current month, use today as end date instead of end of month
             if ($i === 0) {
                 $monthEnd = Carbon::now();
             }
 
-            $totalValue = MiningLedger::whereIn('character_id', $characterIds)
-                ->whereBetween('date', [$month, $monthEnd])
-                ->whereNotNull('processed_at')
-                ->get()
-                ->sum(function($entry) {
-                    return $this->calculateEntryValue($entry);
-                });
+            // Use stored stats for closed months
+            if (isset($storedStats[$monthKey]) && $i > 0) {
+                $totalValue = $storedStats[$monthKey]->total_value;
+            } else {
+                // Calculate live for current month or if no stored stats
+                $totalValue = MiningLedger::whereIn('character_id', $characterIds)
+                    ->whereBetween('date', [$month, $monthEnd])
+                    ->whereNotNull('processed_at')
+                    ->sum('total_value');
+            }
 
-            $months[] = $month->format('Y-m');
+            $months[] = $monthKey;
             $data[] = $totalValue;
         }
 
@@ -683,38 +737,52 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get mining income chart data with refined value, tax, and events
+     * Get mining income chart data with refined value, tax, and events (uses stored data)
      */
     private function getMiningIncomeLast12Months($characterIds)
     {
+        $user = auth()->user();
         $months = [];
         $refinedValue = [];
         $taxPaid = [];
         $eventBonus = [];
 
+        // Get stored statistics for closed months
+        $storedStats = MonthlyStatistic::where('user_id', $user->id)
+            ->where('is_closed', true)
+            ->where('month_start', '>=', Carbon::now()->subMonths(12))
+            ->get()
+            ->keyBy(function($stat) {
+                return $stat->year . '-' . str_pad($stat->month, 2, '0', STR_PAD_LEFT);
+            });
+
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
-            
-            // Refined value
-            $value = MiningLedger::whereIn('character_id', $characterIds)
-                ->whereBetween('date', [$month, $monthEnd])
-                ->whereNotNull('processed_at')
-                ->get()
-                ->sum(function($entry) {
-                    return $this->calculateEntryValue($entry);
-                });
+            $monthKey = $month->format('Y-m');
 
-            // Tax paid
-            $tax = MiningTax::whereIn('character_id', $characterIds)
-                ->where('month', $month->format('Y-m-01'))
-                ->where('status', 'paid')
-                ->sum('amount_paid');
+            // Use stored stats for closed months
+            if (isset($storedStats[$monthKey]) && $i > 0) {
+                $value = $storedStats[$monthKey]->total_value;
+                $tax = $storedStats[$monthKey]->tax_paid;
+            } else {
+                // Calculate live for current month or if no stored stats
+                $value = MiningLedger::whereIn('character_id', $characterIds)
+                    ->whereBetween('date', [$month, $monthEnd])
+                    ->whereNotNull('processed_at')
+                    ->sum('total_value');
+
+                // Tax paid
+                $tax = MiningTax::whereIn('character_id', $characterIds)
+                    ->where('month', $month->format('Y-m-01'))
+                    ->where('status', 'paid')
+                    ->sum('amount_paid');
+            }
 
             // Event bonus (placeholder - implement based on your event system)
             $events = 0;
 
-            $months[] = $month->format('Y-m');
+            $months[] = $monthKey;
             $refinedValue[] = $value;
             $taxPaid[] = $tax;
             $eventBonus[] = $events;

@@ -5,6 +5,45 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<style>
+/* ULTRA-AGGRESSIVE CSS OVERRIDES - INLINE TO BEAT EVERYTHING */
+.mining-dashboard .tab-content {
+    background-color: #0f1115 !important;
+}
+
+.mining-dashboard .card-body,
+.mining-dashboard .card-dark .card-body,
+.mining-dashboard .card.card-dark .card-body,
+.mining-dashboard div.card-body {
+    background-color: #161922 !important;
+    color: #e8e8e8 !important;
+}
+
+.mining-dashboard .card.card-dark,
+.mining-dashboard .card-dark {
+    background-color: #161922 !important;
+    border-color: #2c3138 !important;
+}
+
+.mining-dashboard .card-dark .card-header,
+.mining-dashboard .card.card-dark .card-header {
+    background-color: #1a1d24 !important;
+    border-bottom: 1px solid #2c3138 !important;
+}
+
+.mining-dashboard .table {
+    color: #e8e8e8 !important;
+}
+
+.mining-dashboard .table thead th {
+    background-color: #1a1d24 !important;
+    color: #ffffff !important;
+}
+
+.mining-dashboard canvas {
+    background-color: rgba(26, 29, 36, 0.5) !important;
+}
+</style>
 @endpush
 
 @section('full')
