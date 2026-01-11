@@ -5,6 +5,7 @@ namespace MiningManager;
 use Seat\Services\AbstractSeatPlugin;
 use MiningManager\Console\Commands\ProcessMiningLedgerCommand;
 use MiningManager\Console\Commands\CalculateMonthlyTaxesCommand;
+use MiningManager\Console\Commands\CalculateMonthlyStatisticsCommand;
 use MiningManager\Console\Commands\GenerateTaxInvoicesCommand;
 use MiningManager\Console\Commands\UpdateMiningEventsCommand;
 use MiningManager\Console\Commands\GenerateReportsCommand;
@@ -58,6 +59,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             $this->commands([
                 ProcessMiningLedgerCommand::class,
                 CalculateMonthlyTaxesCommand::class,
+                CalculateMonthlyStatisticsCommand::class,
                 GenerateTaxInvoicesCommand::class,
                 UpdateMiningEventsCommand::class,
                 GenerateReportsCommand::class,

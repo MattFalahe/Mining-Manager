@@ -2833,75 +2833,107 @@
 
 /* ============================================
    Tab Content & Dashboard Background Enhancement
+   ULTRA-SPECIFIC SELECTORS TO OVERRIDE BOOTSTRAP
    ============================================ */
 
 /* Make tab-content background much darker */
-.mining-dashboard .tab-content,
-.mining-manager-wrapper .tab-content {
+div.mining-dashboard div.tab-content,
+div.mining-manager-wrapper div.tab-content {
     background-color: #0f1115 !important;
-    padding: 20px;
-    border-radius: 5px;
+    padding: 20px !important;
+    border-radius: 5px !important;
 }
 
-/* Make card backgrounds even darker for better contrast */
-.mining-dashboard .card-dark,
-.mining-manager-wrapper .card-dark {
+/* Make card backgrounds even darker - ULTRA SPECIFIC */
+div.mining-dashboard div.card.card-dark,
+div.mining-dashboard div.card.card-dark.card-tabs,
+div.mining-manager-wrapper div.card.card-dark,
+div.mining-manager-wrapper div.card.card-dark.card-tabs {
     background-color: #161922 !important;
     border: 1px solid #2c3138 !important;
 }
 
-.mining-dashboard .card-dark .card-header,
-.mining-manager-wrapper .card-dark .card-header {
+/* Card headers - ULTRA SPECIFIC */
+div.mining-dashboard div.card.card-dark div.card-header,
+div.mining-dashboard div.card.card-dark.card-tabs div.card-header,
+div.mining-manager-wrapper div.card.card-dark div.card-header,
+div.mining-manager-wrapper div.card.card-dark.card-tabs div.card-header {
     background-color: #1a1d24 !important;
     border-bottom: 1px solid #2c3138 !important;
+    color: #ffffff !important;
 }
 
-.mining-dashboard .card-dark .card-body,
-.mining-manager-wrapper .card-dark .card-body {
+/* Card body - ULTRA SPECIFIC TO BEAT BOOTSTRAP */
+div.mining-dashboard div.card-body,
+div.mining-dashboard div.card.card-dark div.card-body,
+div.mining-dashboard div.card.card-dark.card-tabs div.card-body,
+div.mining-manager-wrapper div.card-body,
+div.mining-manager-wrapper div.card.card-dark div.card-body,
+div.mining-manager-wrapper div.card.card-dark.card-tabs div.card-body {
     background-color: #161922 !important;
     color: #e8e8e8 !important;
 }
 
 /* Make charts more visible with better background */
-.mining-dashboard .card-dark .card-body canvas,
-.mining-manager-wrapper .card-dark .card-body canvas {
+div.mining-dashboard div.card-body canvas,
+div.mining-manager-wrapper div.card-body canvas {
     background-color: rgba(26, 29, 36, 0.5) !important;
-    border-radius: 5px;
-    padding: 10px;
+    border-radius: 5px !important;
+    padding: 10px !important;
 }
 
 /* Improve table visibility in darker background */
-.mining-dashboard .table,
-.mining-manager-wrapper .table {
+div.mining-dashboard table.table,
+div.mining-manager-wrapper table.table {
     color: #e8e8e8 !important;
+    background-color: transparent !important;
 }
 
-.mining-dashboard .table thead th,
-.mining-manager-wrapper .table thead th {
+div.mining-dashboard table.table thead th,
+div.mining-manager-wrapper table.table thead th {
     color: #ffffff !important;
     background-color: #1a1d24 !important;
     border-color: #2c3138 !important;
 }
 
-.mining-dashboard .table-striped tbody tr:nth-of-type(odd),
-.mining-manager-wrapper .table-striped tbody tr:nth-of-type(odd) {
+div.mining-dashboard table.table tbody tr,
+div.mining-manager-wrapper table.table tbody tr {
+    background-color: transparent !important;
+}
+
+div.mining-dashboard table.table-striped tbody tr:nth-of-type(odd),
+div.mining-manager-wrapper table.table-striped tbody tr:nth-of-type(odd) {
     background-color: rgba(255, 255, 255, 0.02) !important;
 }
 
-.mining-dashboard .table td,
-.mining-manager-wrapper .table td {
+div.mining-dashboard table.table td,
+div.mining-manager-wrapper table.table td {
     border-color: #2c3138 !important;
+    color: #e8e8e8 !important;
 }
 
 /* Make text in cards more visible */
-.mining-dashboard .text-muted,
-.mining-manager-wrapper .text-muted {
+div.mining-dashboard .text-muted,
+div.mining-manager-wrapper .text-muted {
     color: #9ca3af !important;
 }
 
 /* Tab panes darker background */
-.mining-dashboard .tab-pane,
-.mining-manager-wrapper .tab-pane {
+div.mining-dashboard div.tab-pane,
+div.mining-manager-wrapper div.tab-pane {
     background-color: transparent !important;
+}
+
+/* Stats cards specifically */
+div.mining-dashboard div.col-md-3 div.card-body,
+div.mining-dashboard div.col-lg-3 div.card-body,
+div.mining-dashboard div.col-xl-3 div.card-body {
+    background-color: #161922 !important;
+}
+
+/* Override any remaining white backgrounds */
+div.mining-dashboard div[class*="col-"] div.card-body,
+div.mining-manager-wrapper div[class*="col-"] div.card-body {
+    background-color: #161922 !important;
 }
 

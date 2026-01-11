@@ -14,6 +14,7 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Models\MonthlyStatistic;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Carbon\Carbon;
 
@@ -274,6 +275,53 @@ class DashboardController extends Controller
     }
 
     // ==================== HELPER METHODS ====================
+
+    /**
+     * Get or calculate monthly statistics (uses stored data for closed months)
+     *
+     * @param int $userId
+     * @param array $characterIds
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array|null Returns stored stats if available, null if needs calculation
+     */
+    private function getStoredMonthlyStats($userId, $characterIds, $startDate, $endDate)
+    {
+        // Only use stored stats for complete closed months
+        $isCurrentMonth = $startDate->isSameMonth(Carbon::now());
+        if ($isCurrentMonth) {
+            return null; // Current month data changes, calculate live
+        }
+
+        // Check if we have stored statistics for this closed month
+        $storedStats = MonthlyStatistic::where('user_id', $userId)
+            ->where('year', $startDate->year)
+            ->where('month', $startDate->month)
+            ->where('is_closed', true)
+            ->first();
+
+        if ($storedStats) {
+            // Return stats in the format expected by the dashboard
+            return [
+                'total_quantity' => $storedStats->total_quantity,
+                'total_value' => $storedStats->total_value,
+                'total_isk' => $storedStats->total_value,
+                'ore_value' => $storedStats->ore_value,
+                'mineral_value' => $storedStats->mineral_value,
+                'tax_isk' => $storedStats->tax_owed,
+                'mining_days' => $storedStats->mining_days,
+                'moon_ore_value' => $storedStats->moon_ore_value,
+                'ice_value' => $storedStats->ice_value,
+                'gas_value' => $storedStats->gas_value,
+                'regular_ore_value' => $storedStats->regular_ore_value,
+                'daily_chart_data' => $storedStats->daily_chart_data,
+                'ore_type_chart_data' => $storedStats->ore_type_chart_data,
+                'top_systems' => $storedStats->top_systems,
+            ];
+        }
+
+        return null; // No stored stats, need to calculate
+    }
 
     /**
      * Get current month statistics for member
