@@ -960,54 +960,74 @@
    Info Box Gradient Variants
    ============================================ */
 .info-box.bg-gradient-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
 .info-box.bg-gradient-secondary {
-    background: linear-gradient(135deg, #868f96 0%, #596164 100%);
+    background: linear-gradient(135deg, rgba(134, 143, 150, 0.3) 0%, rgba(89, 97, 100, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(134, 143, 150, 0.2);
 }
 
 .info-box.bg-gradient-success {
-    background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(58, 123, 213, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 210, 255, 0.2);
 }
 
 .info-box.bg-gradient-info {
-    background: linear-gradient(135deg, #90dffe 0%, #38a3cc 100%);
+    background: linear-gradient(135deg, rgba(144, 223, 254, 0.3) 0%, rgba(56, 163, 204, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(144, 223, 254, 0.2);
 }
 
 .info-box.bg-gradient-warning {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    background: linear-gradient(135deg, rgba(240, 147, 251, 0.3) 0%, rgba(245, 87, 108, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(240, 147, 251, 0.2);
 }
 
 .info-box.bg-gradient-danger {
-    background: linear-gradient(135deg, #ff0084 0%, #33001b 100%);
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(51, 0, 27, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 0, 132, 0.2);
 }
 
 /* Ore-specific gradient variants */
 .info-box.bg-gradient-ore {
-    background: linear-gradient(135deg, #a1c63c 0%, #7a9a2e 100%);
+    background: linear-gradient(135deg, rgba(161, 198, 60, 0.3) 0%, rgba(122, 154, 46, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(161, 198, 60, 0.2);
 }
 
 .info-box.bg-gradient-ice {
-    background: linear-gradient(135deg, #00d2ff 0%, #00a8cc 100%);
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.3) 0%, rgba(0, 168, 204, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 210, 255, 0.2);
 }
 
 .info-box.bg-gradient-moon {
-    background: linear-gradient(135deg, #ff0084 0%, #cc0069 100%);
+    background: linear-gradient(135deg, rgba(255, 0, 132, 0.3) 0%, rgba(204, 0, 105, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 0, 132, 0.2);
 }
 
 .info-box.bg-gradient-gas {
-    background: linear-gradient(135deg, #ff9f40 0%, #ff8000 100%);
+    background: linear-gradient(135deg, rgba(255, 159, 64, 0.3) 0%, rgba(255, 128, 0, 0.3) 100%);
     color: #ffffff;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 159, 64, 0.2);
 }
 
 /* ============================================
@@ -1740,8 +1760,12 @@
     background-color: #343a40;
     border: 2px solid #454d55;
     border-bottom: 2px solid #343a40;
-    color: #fff;
+    color: #e8e8e8;
     font-weight: 600;
+}
+
+.mining-dashboard .nav-tabs .nav-link.active i {
+    color: #e8e8e8;
 }
 
 .mining-dashboard .tab-content {
