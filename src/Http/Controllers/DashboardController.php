@@ -363,11 +363,21 @@ class DashboardController extends Controller
             return $this->isMoonOre($entry->type_id);
         });
 
+        $endDate = Carbon::now();
+        $taxCollected = MiningTax::whereIn('character_id', $characterIds)
+            ->whereBetween('month', [$startDate->format('Y-m-01'), $endDate->format('Y-m-01')])
+            ->where('status', 'paid')
+            ->sum('amount_paid');
+
         return [
             'all_ore_value' => $this->calculateTotalValue($miningData),
+            'all_ore_total_value' => $this->calculateTotalValue($miningData),
             'all_ore_quantity' => $miningData->sum('quantity'),
             'moon_ore_value' => $this->calculateTotalValue($moonOreData),
+            'moon_ore_total_value' => $this->calculateTotalValue($moonOreData),
             'moon_ore_quantity' => $moonOreData->sum('quantity'),
+            'tax_collected' => $taxCollected,
+            'active_miners' => $miningData->pluck('character_id')->unique()->count(),
         ];
     }
 

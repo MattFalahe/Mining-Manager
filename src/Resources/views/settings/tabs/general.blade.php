@@ -35,8 +35,8 @@
                     <option value="">-- Select Corporation --</option>
                     @if(isset($corporations))
                         @foreach($corporations as $corp)
-                            <option value="{{ $corp->corporation_id }}" 
-                                {{ (old('corporation_id', $settings['general']['corporation_id'] ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
+                            <option value="{{ $corp->corporation_id }}"
+                                {{ (old('corporation_id', $settings->corporation_id ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
                                 [{{ $corp->ticker }}] {{ $corp->name }}
                             </option>
                         @endforeach
@@ -51,18 +51,18 @@
             </div>
 
             {{-- Display Currently Selected Corporation (Read-only Info) --}}
-            @if(!empty($settings['general']['corporation_name']))
+            @if(!empty($settings->corporation_name))
             <div class="alert alert-info">
                 <strong><i class="fas fa-info-circle"></i> Current Corporation:</strong><br>
-                <span class="h5">[{{ $settings['general']['corporation_ticker'] ?? '' }}] {{ $settings['general']['corporation_name'] }}</span>
+                <span class="h5">[{{ $settings->corporation_ticker ?? '' }}] {{ $settings->corporation_name }}</span>
                 <br>
-                <small class="text-muted">Corporation ID: {{ $settings['general']['corporation_id'] }}</small>
+                <small class="text-muted">Corporation ID: {{ $settings->corporation_id }}</small>
             </div>
             @endif
 
             {{-- Hidden fields for corporation name and ticker (auto-filled by controller) --}}
-            <input type="hidden" name="corporation_name" value="{{ old('corporation_name', $settings['general']['corporation_name'] ?? '') }}">
-            <input type="hidden" name="corporation_ticker" value="{{ old('corporation_ticker', $settings['general']['corporation_ticker'] ?? '') }}">
+            <input type="hidden" name="corporation_name" value="{{ old('corporation_name', $settings->corporation_name ?? '') }}">
+            <input type="hidden" name="corporation_ticker" value="{{ old('corporation_ticker', $settings->corporation_ticker ?? '') }}">
         </div>
     </div>
 
