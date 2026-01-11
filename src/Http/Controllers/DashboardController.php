@@ -717,22 +717,30 @@ class DashboardController extends Controller
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
         $months = [];
-        $data = [];
+        $collected = [];
+        $owed = [];
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
-            
-            $tax = MiningTax::whereIn('character_id', $characterIds)
+
+            $collectedAmount = MiningTax::whereIn('character_id', $characterIds)
+                ->where('month', $month->format('Y-m-01'))
+                ->where('status', 'paid')
+                ->sum('amount_paid');
+
+            $owedAmount = MiningTax::whereIn('character_id', $characterIds)
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
 
             $months[] = $month->format('Y-m');
-            $data[] = $tax;
+            $collected[] = $collectedAmount;
+            $owed[] = $owedAmount;
         }
 
         return [
             'labels' => $months,
-            'data' => $data,
+            'collected' => $collected,
+            'owed' => $owed,
         ];
     }
 
