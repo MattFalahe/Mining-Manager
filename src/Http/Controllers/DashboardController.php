@@ -653,20 +653,9 @@ class DashboardController extends Controller
 
         return [
             'labels' => $months,
-            'datasets' => [
-                [
-                    'label' => 'Refined Value',
-                    'data' => $refinedValue,
-                ],
-                [
-                    'label' => 'Tax Paid',
-                    'data' => $taxPaid,
-                ],
-                [
-                    'label' => 'Event Bonus',
-                    'data' => $eventBonus,
-                ]
-            ],
+            'refined_value' => $refinedValue,
+            'tax_paid' => $taxPaid,
+            'event_bonus' => $eventBonus,
         ];
     }
 
