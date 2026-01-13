@@ -419,12 +419,12 @@ class DiagnosticController extends Controller
 
             // Temporarily set provider
             $originalProvider = Setting::getValue('price_provider');
-            Setting::set('price_provider', $provider);
+            Setting::setValue('price_provider', $provider);
 
             $prices = $priceService->getPrices($testTypeIds);
 
             // Restore original provider
-            Setting::set('price_provider', $originalProvider);
+            Setting::setValue('price_provider', $originalProvider);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
@@ -575,12 +575,12 @@ class DiagnosticController extends Controller
 
             // Temporarily set provider
             $originalProvider = Setting::getValue('price_provider');
-            Setting::set('price_provider', $provider);
+            Setting::setValue('price_provider', $provider);
 
             $prices = $priceService->getPrices($typeIds);
 
             // Restore original provider
-            Setting::set('price_provider', $originalProvider);
+            Setting::setValue('price_provider', $originalProvider);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
