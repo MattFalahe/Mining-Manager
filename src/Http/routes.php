@@ -691,6 +691,39 @@ Route::group([
         'middleware' => 'can:mining-manager.view',
     ]);
 
+    // Diagnostic Routes (Test Data Generation)
+    Route::group(['prefix' => 'diagnostic'], function () {
+        Route::get('/', [
+            'as' => 'mining-manager.diagnostic.index',
+            'uses' => 'DiagnosticController@index',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/generate-corporations', [
+            'as' => 'mining-manager.diagnostic.generate-corporations',
+            'uses' => 'DiagnosticController@generateTestCorporations',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/generate-characters', [
+            'as' => 'mining-manager.diagnostic.generate-characters',
+            'uses' => 'DiagnosticController@generateTestCharacters',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/generate-mining-data', [
+            'as' => 'mining-manager.diagnostic.generate-mining-data',
+            'uses' => 'DiagnosticController@generateTestMiningData',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/cleanup', [
+            'as' => 'mining-manager.diagnostic.cleanup',
+            'uses' => 'DiagnosticController@cleanupTestData',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+    });
+
     // API Routes
     Route::group(['prefix' => 'api', 'middleware' => 'can:mining-manager.api.access'], function () {
         Route::get('/ledger', [
