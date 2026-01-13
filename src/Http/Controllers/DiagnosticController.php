@@ -526,9 +526,10 @@ class DiagnosticController extends Controller
      */
     public function testBatchPricing(Request $request)
     {
+        $provider = $request->input('provider', 'seat');
+        $oreCategory = $request->input('category', 'all'); // all, moon, ice, gas, ore
+
         try {
-            $provider = $request->input('provider', 'seat');
-            $oreCategory = $request->input('category', 'all'); // all, moon, ice, gas, ore
             $priceService = new PriceProviderService();
 
             // Check if Janice API key is configured when testing Janice
@@ -553,20 +554,27 @@ class DiagnosticController extends Controller
                     $typeIds = array_keys(TypeIdRegistry::getMoonOreRarityMap());
                     break;
                 case 'ice':
-                    $typeIds = TypeIdRegistry::getIceTypeIds();
+                    $typeIds = TypeIdRegistry::getAllIce();
                     break;
                 case 'gas':
-                    $typeIds = TypeIdRegistry::getGasTypeIds();
+                    $typeIds = TypeIdRegistry::getAllGas();
                     break;
                 case 'ore':
-                    $typeIds = TypeIdRegistry::getOreTypeIds();
+                    $typeIds = TypeIdRegistry::getAllRegularOres();
+                    break;
+                case 'essential':
+                    // Essential ores + minerals for quick test
+                    $typeIds = [
+                        34, 35, 36, 37, 38, 39, 40,  // Minerals
+                        1230, 1228, 1224,  // Veldspar, Scordite, Pyroxeres
+                    ];
                     break;
                 case 'all':
                 default:
                     $typeIds = array_merge(
-                        array_slice(TypeIdRegistry::getOreTypeIds(), 0, 10),
+                        array_slice(TypeIdRegistry::getAllRegularOres(), 0, 10),
                         array_slice(array_keys(TypeIdRegistry::getMoonOreRarityMap()), 0, 10),
-                        array_slice(TypeIdRegistry::getIceTypeIds(), 0, 5)
+                        array_slice(TypeIdRegistry::getAllIce(), 0, 5)
                     );
                     break;
             }
