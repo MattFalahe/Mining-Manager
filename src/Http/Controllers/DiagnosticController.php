@@ -261,9 +261,6 @@ class DiagnosticController extends Controller
                             'solar_system_id' => $solarSystem,
                             'processed_at' => $date,
                             'is_moon_ore' => $ore['is_moon_ore'] ?? false,
-                            'is_ore' => $ore['is_ore'] ?? false,
-                            'is_ice' => $ore['is_ice'] ?? false,
-                            'is_gas' => $ore['is_gas'] ?? false,
                             'created_at' => $date,
                             'updated_at' => $date,
                         ]);
