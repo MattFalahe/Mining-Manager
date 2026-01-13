@@ -186,7 +186,7 @@ class SettingsController extends Controller
 
     /**
      * Update tax rates
-     * FIXED: Validation now matches actual form fields
+     * COMPLETELY REWRITTEN: Now handles moon ore rarity rates and all new field names
      *
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
@@ -194,22 +194,42 @@ class SettingsController extends Controller
     public function updateTaxRates(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            // Default Tax Rates
-            'default_ore_tax' => 'required|numeric|min:0|max:100',
-            'default_ice_tax' => 'required|numeric|min:0|max:100',
-            'default_gas_tax' => 'required|numeric|min:0|max:100',
-            'default_moon_tax' => 'required|numeric|min:0|max:100',
-            'default_mercoxit_tax' => 'required|numeric|min:0|max:100',
-            
+            // Moon Ore Rarity Tax Rates
+            'moon_ore_r64' => 'required|numeric|min:0|max:100',
+            'moon_ore_r32' => 'required|numeric|min:0|max:100',
+            'moon_ore_r16' => 'required|numeric|min:0|max:100',
+            'moon_ore_r8' => 'required|numeric|min:0|max:100',
+            'moon_ore_r4' => 'required|numeric|min:0|max:100',
+
+            // Regular Ore Type Tax Rates
+            'ore_tax' => 'required|numeric|min:0|max:100',
+            'ice_tax' => 'required|numeric|min:0|max:100',
+            'gas_tax' => 'required|numeric|min:0|max:100',
+            'abyssal_ore_tax' => 'required|numeric|min:0|max:100',
+
+            // Tax Exemption Settings
+            'exemption_enabled' => 'nullable|boolean',
+            'exemption_threshold' => 'required|numeric|min:0',
+            'grace_period_days' => 'required|integer|min:0|max:365',
+
+            // Tax Selector - Moon Ore (radio button group)
+            'moon_ore_taxing' => 'required|in:all,corp,none',
+
+            // Tax Selector - Other Ore Types (checkboxes)
+            'tax_regular_ore' => 'nullable|boolean',
+            'tax_ice' => 'nullable|boolean',
+            'tax_gas' => 'nullable|boolean',
+            'tax_abyssal_ore' => 'nullable|boolean',
+
             // Tax Payment Method
             'tax_payment_method' => 'required|in:contract,wallet',
             'tax_wallet_division' => 'required|integer|min:1000|max:1006',
-            
+
             // Tax Code Settings
             'tax_code_prefix' => 'required|string|max:10',
             'tax_code_length' => 'required|integer|min:4|max:20',
             'auto_generate_tax_codes' => 'nullable|boolean',
-            
+
             // Tax Period Settings
             'tax_calculation_period' => 'required|in:monthly,weekly,biweekly',
             'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
@@ -225,7 +245,29 @@ class SettingsController extends Controller
         }
 
         try {
-            $this->settingsService->updateTaxRates($validator->validated());
+            $data = $validator->validated();
+
+            // Convert moon_ore_taxing radio button to boolean flags
+            $moonOreSelector = $data['moon_ore_taxing'];
+            $data['all_moon_ore'] = ($moonOreSelector === 'all');
+            $data['only_corp_moon_ore'] = ($moonOreSelector === 'corp');
+            $data['no_moon_ore'] = ($moonOreSelector === 'none');
+
+            // Convert ore type checkboxes to booleans (unchecked = not sent)
+            $data['tax_regular_ore'] = $request->has('tax_regular_ore');
+            $data['tax_ice'] = $request->has('tax_ice');
+            $data['tax_gas'] = $request->has('tax_gas');
+            $data['tax_abyssal_ore'] = $request->has('tax_abyssal_ore');
+
+            // Convert exemption_enabled checkbox
+            $data['exemption_enabled'] = $request->has('exemption_enabled');
+
+            // Convert other checkboxes
+            $data['auto_generate_tax_codes'] = $request->has('auto_generate_tax_codes');
+            $data['send_tax_reminders'] = $request->has('send_tax_reminders');
+
+            // Update all settings via service
+            $this->settingsService->updateTaxRates($data);
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'Tax rates updated successfully');

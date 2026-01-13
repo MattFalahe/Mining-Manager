@@ -1,6 +1,6 @@
 <form method="POST" action="{{ route('mining-manager.settings.update-tax-rates') }}">
     @csrf
-    
+
     <h4>
         <i class="fas fa-percent"></i>
         {{ trans('mining-manager::settings.tax_rate_settings') }}
@@ -13,155 +13,420 @@
         {{ trans('mining-manager::settings.tax_rate_info') }}
     </div>
 
-    {{-- Default Tax Rates --}}
+    {{-- Moon Ore Tax Rates by Rarity --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-moon"></i>
+                Moon Ore Tax Rates by Rarity
+            </h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">
+                <i class="fas fa-info-circle"></i>
+                Set different tax rates for moon ores based on their rarity classification.
+                Higher rarity ores are typically more valuable and can be taxed at higher rates.
+            </p>
+
+            <div class="row">
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="moon_ore_r64">
+                            <i class="fas fa-star" style="color: #FFD700;"></i>
+                            R64 (Exceptional)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('moon_ore_r64') is-invalid @enderror"
+                                   id="moon_ore_r64"
+                                   name="moon_ore_r64"
+                                   value="{{ old('moon_ore_r64', $settings->moon_ore_r64 ?? 15) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Xenotime, Monazite, etc.</small>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="moon_ore_r32">
+                            <i class="fas fa-star" style="color: #C0C0C0;"></i>
+                            R32 (Rare)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('moon_ore_r32') is-invalid @enderror"
+                                   id="moon_ore_r32"
+                                   name="moon_ore_r32"
+                                   value="{{ old('moon_ore_r32', $settings->moon_ore_r32 ?? 12) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Carnotite, Cinnabar, etc.</small>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="moon_ore_r16">
+                            <i class="fas fa-star" style="color: #CD7F32;"></i>
+                            R16 (Uncommon)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('moon_ore_r16') is-invalid @enderror"
+                                   id="moon_ore_r16"
+                                   name="moon_ore_r16"
+                                   value="{{ old('moon_ore_r16', $settings->moon_ore_r16 ?? 10) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Chromite, Otavite, etc.</small>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="moon_ore_r8">
+                            <i class="fas fa-circle" style="color: #90EE90;"></i>
+                            R8 (Common)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('moon_ore_r8') is-invalid @enderror"
+                                   id="moon_ore_r8"
+                                   name="moon_ore_r8"
+                                   value="{{ old('moon_ore_r8', $settings->moon_ore_r8 ?? 8) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Cobaltite, Euxenite, etc.</small>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="moon_ore_r4">
+                            <i class="fas fa-circle" style="color: #A9A9A9;"></i>
+                            R4 (Ubiquitous)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('moon_ore_r4') is-invalid @enderror"
+                                   id="moon_ore_r4"
+                                   name="moon_ore_r4"
+                                   value="{{ old('moon_ore_r4', $settings->moon_ore_r4 ?? 5) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Bitumens, Coesite, etc.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Regular Ore Type Tax Rates --}}
     <div class="card bg-dark mb-3">
         <div class="card-header">
             <h5 class="card-title mb-0">
                 <i class="fas fa-percentage"></i>
-                {{ trans('mining-manager::settings.default_tax_rates') }}
+                Ore Type Tax Rates
             </h5>
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="form-group">
-                        <label for="default_ore_tax">
+                        <label for="ore_tax">
                             <i class="fas fa-gem"></i>
-                            {{ trans('mining-manager::settings.ore_tax_rate') }}
+                            Regular Ore
                         </label>
                         <div class="input-group">
-                            <input type="number" 
-                                   class="form-control @error('default_ore_tax') is-invalid @enderror" 
-                                   id="default_ore_tax" 
-                                   name="default_ore_tax" 
-                                   value="{{ old('default_ore_tax', $settings->default_ore_tax ?? 5) }}"
-                                   min="0" 
-                                   max="100" 
+                            <input type="number"
+                                   class="form-control @error('ore_tax') is-invalid @enderror"
+                                   id="ore_tax"
+                                   name="ore_tax"
+                                   value="{{ old('ore_tax', $settings->ore_tax ?? 10) }}"
+                                   min="0"
+                                   max="100"
                                    step="0.1">
                             <div class="input-group-append">
                                 <span class="input-group-text">%</span>
                             </div>
-                            @error('default_ore_tax')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
                         </div>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.ore_tax_rate_help') }}
-                        </small>
+                        <small class="form-text text-muted">Veldspar, Scordite, Bistot, Arkonor, etc.</small>
                     </div>
                 </div>
 
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="form-group">
-                        <label for="default_ice_tax">
+                        <label for="ice_tax">
                             <i class="fas fa-snowflake"></i>
-                            {{ trans('mining-manager::settings.ice_tax_rate') }}
+                            Ice
                         </label>
                         <div class="input-group">
-                            <input type="number" 
-                                   class="form-control @error('default_ice_tax') is-invalid @enderror" 
-                                   id="default_ice_tax" 
-                                   name="default_ice_tax" 
-                                   value="{{ old('default_ice_tax', $settings->default_ice_tax ?? 5) }}"
-                                   min="0" 
-                                   max="100" 
+                            <input type="number"
+                                   class="form-control @error('ice_tax') is-invalid @enderror"
+                                   id="ice_tax"
+                                   name="ice_tax"
+                                   value="{{ old('ice_tax', $settings->ice_tax ?? 10) }}"
+                                   min="0"
+                                   max="100"
                                    step="0.1">
                             <div class="input-group-append">
                                 <span class="input-group-text">%</span>
                             </div>
-                            @error('default_ice_tax')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
                         </div>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.ice_tax_rate_help') }}
-                        </small>
+                        <small class="form-text text-muted">Clear Icicle, Blue Ice, etc.</small>
                     </div>
                 </div>
 
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="form-group">
-                        <label for="default_gas_tax">
+                        <label for="gas_tax">
                             <i class="fas fa-cloud"></i>
-                            {{ trans('mining-manager::settings.gas_tax_rate') }}
+                            Gas
                         </label>
                         <div class="input-group">
-                            <input type="number" 
-                                   class="form-control @error('default_gas_tax') is-invalid @enderror" 
-                                   id="default_gas_tax" 
-                                   name="default_gas_tax" 
-                                   value="{{ old('default_gas_tax', $settings->default_gas_tax ?? 5) }}"
-                                   min="0" 
-                                   max="100" 
+                            <input type="number"
+                                   class="form-control @error('gas_tax') is-invalid @enderror"
+                                   id="gas_tax"
+                                   name="gas_tax"
+                                   value="{{ old('gas_tax', $settings->gas_tax ?? 10) }}"
+                                   min="0"
+                                   max="100"
                                    step="0.1">
                             <div class="input-group-append">
                                 <span class="input-group-text">%</span>
                             </div>
-                            @error('default_gas_tax')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
                         </div>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.gas_tax_rate_help') }}
-                        </small>
+                        <small class="form-text text-muted">Fullerites, Booster Gases (always raw value)</small>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="abyssal_ore_tax">
+                            <i class="fas fa-skull"></i>
+                            Abyssal Ore
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('abyssal_ore_tax') is-invalid @enderror"
+                                   id="abyssal_ore_tax"
+                                   name="abyssal_ore_tax"
+                                   value="{{ old('abyssal_ore_tax', $settings->abyssal_ore_tax ?? 15) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Rare ores from Abyssal Deadspace</small>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <div class="row mt-2">
-                <div class="col-md-4">
-                    <div class="form-group">
-                        <label for="default_moon_tax">
-                            <i class="fas fa-moon"></i>
-                            {{ trans('mining-manager::settings.moon_tax_rate') }}
+    {{-- Tax Exemption Settings --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-user-shield"></i>
+                Tax Exemption Settings
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Small Miner Protection:</strong>
+                Enable this to exempt miners whose total tax amount falls below a specified threshold.
+                This encourages new players to try mining without being charged for very small amounts.
+            </div>
+
+            <div class="custom-control custom-switch mb-3">
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="exemption_enabled"
+                       name="exemption_enabled"
+                       value="1"
+                       {{ old('exemption_enabled', $settings->exemption_enabled ?? false) ? 'checked' : '' }}>
+                <label class="custom-control-label" for="exemption_enabled">
+                    <strong><i class="fas fa-toggle-on"></i> Enable Tax Exemption Threshold</strong>
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label for="exemption_threshold">
+                    <i class="fas fa-coins"></i>
+                    Exemption Threshold Amount
+                </label>
+                <div class="input-group">
+                    <input type="number"
+                           class="form-control @error('exemption_threshold') is-invalid @enderror"
+                           id="exemption_threshold"
+                           name="exemption_threshold"
+                           value="{{ old('exemption_threshold', $settings->exemption_threshold ?? 1000000) }}"
+                           min="0"
+                           step="100000">
+                    <div class="input-group-append">
+                        <span class="input-group-text">ISK</span>
+                    </div>
+                </div>
+                <small class="form-text text-muted">
+                    Miners whose <strong>total tax amount</strong> is below this threshold will not be charged.
+                    Default: 1,000,000 ISK (1M ISK)
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="grace_period_days">
+                    <i class="fas fa-calendar-times"></i>
+                    Grace Period Before Overdue
+                </label>
+                <div class="input-group">
+                    <input type="number"
+                           class="form-control @error('grace_period_days') is-invalid @enderror"
+                           id="grace_period_days"
+                           name="grace_period_days"
+                           value="{{ old('grace_period_days', $settings->grace_period_days ?? 7) }}"
+                           min="1"
+                           max="30">
+                    <div class="input-group-append">
+                        <span class="input-group-text">Days</span>
+                    </div>
+                </div>
+                <small class="form-text text-muted">
+                    Number of days after tax deadline before marking tax as overdue. Default: 7 days
+                </small>
+            </div>
+        </div>
+    </div>
+
+    {{-- Tax Selector (What to Tax) --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-filter"></i>
+                Tax Selector - What to Tax
+            </h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">
+                <i class="fas fa-info-circle"></i>
+                Select which ore types should be subject to taxation. Disabled ore types will not be taxed.
+            </p>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <h6><i class="fas fa-moon"></i> Moon Ore Options</h6>
+                    <div class="custom-control custom-radio mb-2">
+                        <input type="radio"
+                               id="moon_tax_all"
+                               name="moon_ore_taxing"
+                               value="all"
+                               class="custom-control-input"
+                               {{ old('moon_ore_taxing', ($settings->all_moon_ore ?? true) ? 'all' : ($settings->only_corp_moon_ore ?? false) ? 'corp' : 'none') == 'all' ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="moon_tax_all">
+                            <strong>Tax All Moon Ore</strong><br>
+                            <small class="text-muted">Tax moon ore from personal mining ledger AND corporation mining observers</small>
                         </label>
-                        <div class="input-group">
-                            <input type="number" 
-                                   class="form-control @error('default_moon_tax') is-invalid @enderror" 
-                                   id="default_moon_tax" 
-                                   name="default_moon_tax" 
-                                   value="{{ old('default_moon_tax', $settings->default_moon_tax ?? 10) }}"
-                                   min="0" 
-                                   max="100" 
-                                   step="0.1">
-                            <div class="input-group-append">
-                                <span class="input-group-text">%</span>
-                            </div>
-                            @error('default_moon_tax')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.moon_tax_rate_help') }}
-                        </small>
+                    </div>
+                    <div class="custom-control custom-radio mb-2">
+                        <input type="radio"
+                               id="moon_tax_corp"
+                               name="moon_ore_taxing"
+                               value="corp"
+                               class="custom-control-input"
+                               {{ old('moon_ore_taxing', ($settings->only_corp_moon_ore ?? false) ? 'corp' : 'all') == 'corp' ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="moon_tax_corp">
+                            <strong>Tax Only Corporation Moon Ore</strong><br>
+                            <small class="text-muted">Only tax moon ore mined at YOUR corporation's moon mining structures</small>
+                        </label>
+                    </div>
+                    <div class="custom-control custom-radio mb-3">
+                        <input type="radio"
+                               id="moon_tax_none"
+                               name="moon_ore_taxing"
+                               value="none"
+                               class="custom-control-input"
+                               {{ old('moon_ore_taxing', (!($settings->all_moon_ore ?? true) && !($settings->only_corp_moon_ore ?? false)) ? 'none' : '') == 'none' ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="moon_tax_none">
+                            <strong>Don't Tax Moon Ore</strong><br>
+                            <small class="text-muted">Moon ore mining is not taxed</small>
+                        </label>
                     </div>
                 </div>
 
-                <div class="col-md-4">
-                    <div class="form-group">
-                        <label for="default_mercoxit_tax">
-                            <i class="fas fa-radiation"></i>
-                            {{ trans('mining-manager::settings.mercoxit_tax_rate') }}
+                <div class="col-md-6">
+                    <h6><i class="fas fa-check-square"></i> Other Ore Types</h6>
+                    <div class="custom-control custom-switch mb-2">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               id="tax_regular_ore"
+                               name="tax_regular_ore"
+                               value="1"
+                               {{ old('tax_regular_ore', $settings->tax_regular_ore ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="tax_regular_ore">
+                            <i class="fas fa-gem"></i> Tax Regular Ore
                         </label>
-                        <div class="input-group">
-                            <input type="number" 
-                                   class="form-control @error('default_mercoxit_tax') is-invalid @enderror" 
-                                   id="default_mercoxit_tax" 
-                                   name="default_mercoxit_tax" 
-                                   value="{{ old('default_mercoxit_tax', $settings->default_mercoxit_tax ?? 5) }}"
-                                   min="0" 
-                                   max="100" 
-                                   step="0.1">
-                            <div class="input-group-append">
-                                <span class="input-group-text">%</span>
-                            </div>
-                            @error('default_mercoxit_tax')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.mercoxit_tax_rate_help') }}
-                        </small>
+                    </div>
+                    <div class="custom-control custom-switch mb-2">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               id="tax_ice"
+                               name="tax_ice"
+                               value="1"
+                               {{ old('tax_ice', $settings->tax_ice ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="tax_ice">
+                            <i class="fas fa-snowflake"></i> Tax Ice
+                        </label>
+                    </div>
+                    <div class="custom-control custom-switch mb-2">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               id="tax_gas"
+                               name="tax_gas"
+                               value="1"
+                               {{ old('tax_gas', $settings->tax_gas ?? false) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="tax_gas">
+                            <i class="fas fa-cloud"></i> Tax Gas (always valued at raw gas price)
+                        </label>
+                    </div>
+                    <div class="custom-control custom-switch mb-2">
+                        <input type="checkbox"
+                               class="custom-control-input"
+                               id="tax_abyssal_ore"
+                               name="tax_abyssal_ore"
+                               value="1"
+                               {{ old('tax_abyssal_ore', $settings->tax_abyssal_ore ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="tax_abyssal_ore">
+                            <i class="fas fa-skull"></i> Tax Abyssal Ore
+                        </label>
                     </div>
                 </div>
             </div>
@@ -185,10 +450,10 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="custom-control custom-radio">
-                            <input type="radio" 
-                                   id="payment_contract" 
-                                   name="tax_payment_method" 
-                                   value="contract" 
+                            <input type="radio"
+                                   id="payment_contract"
+                                   name="tax_payment_method"
+                                   value="contract"
                                    class="custom-control-input"
                                    {{ old('tax_payment_method', $settings->tax_payment_method ?? 'contract') == 'contract' ? 'checked' : '' }}>
                             <label class="custom-control-label" for="payment_contract">
@@ -202,10 +467,10 @@
                     </div>
                     <div class="col-md-6">
                         <div class="custom-control custom-radio">
-                            <input type="radio" 
-                                   id="payment_wallet" 
-                                   name="tax_payment_method" 
-                                   value="wallet" 
+                            <input type="radio"
+                                   id="payment_wallet"
+                                   name="tax_payment_method"
+                                   value="wallet"
                                    class="custom-control-input"
                                    {{ old('tax_payment_method', $settings->tax_payment_method ?? '') == 'wallet' ? 'checked' : '' }}>
                             <label class="custom-control-label" for="payment_wallet">
@@ -225,8 +490,8 @@
                     <i class="fas fa-wallet"></i>
                     {{ trans('mining-manager::settings.tax_wallet_division') }}
                 </label>
-                <select class="form-control @error('tax_wallet_division') is-invalid @enderror" 
-                        id="tax_wallet_division" 
+                <select class="form-control @error('tax_wallet_division') is-invalid @enderror"
+                        id="tax_wallet_division"
                         name="tax_wallet_division">
                     <option value="1000" {{ ($settings->tax_wallet_division ?? '1000') == '1000' ? 'selected' : '' }}>
                         {{ trans('mining-manager::settings.master_wallet') }} (1000)
@@ -277,10 +542,10 @@
                     <i class="fas fa-tag"></i>
                     {{ trans('mining-manager::settings.tax_code_prefix') }}
                 </label>
-                <input type="text" 
-                       class="form-control @error('tax_code_prefix') is-invalid @enderror" 
-                       id="tax_code_prefix" 
-                       name="tax_code_prefix" 
+                <input type="text"
+                       class="form-control @error('tax_code_prefix') is-invalid @enderror"
+                       id="tax_code_prefix"
+                       name="tax_code_prefix"
                        value="{{ old('tax_code_prefix', $settings->tax_code_prefix ?? 'TAX-') }}"
                        maxlength="10">
                 @error('tax_code_prefix')
@@ -296,8 +561,8 @@
                     <i class="fas fa-ruler"></i>
                     {{ trans('mining-manager::settings.tax_code_length') }}
                 </label>
-                <select class="form-control @error('tax_code_length') is-invalid @enderror" 
-                        id="tax_code_length" 
+                <select class="form-control @error('tax_code_length') is-invalid @enderror"
+                        id="tax_code_length"
                         name="tax_code_length">
                     <option value="6" {{ ($settings->tax_code_length ?? 8) == 6 ? 'selected' : '' }}>6</option>
                     <option value="8" {{ ($settings->tax_code_length ?? 8) == 8 ? 'selected' : '' }}>8</option>
@@ -313,10 +578,10 @@
             </div>
 
             <div class="custom-control custom-switch">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="auto_generate_tax_codes" 
-                       name="auto_generate_tax_codes" 
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="auto_generate_tax_codes"
+                       name="auto_generate_tax_codes"
                        value="1"
                        {{ old('auto_generate_tax_codes', $settings->auto_generate_tax_codes ?? true) ? 'checked' : '' }}>
                 <label class="custom-control-label" for="auto_generate_tax_codes">
@@ -344,8 +609,8 @@
                     <i class="fas fa-calendar-check"></i>
                     {{ trans('mining-manager::settings.tax_calculation_period') }}
                 </label>
-                <select class="form-control @error('tax_calculation_period') is-invalid @enderror" 
-                        id="tax_calculation_period" 
+                <select class="form-control @error('tax_calculation_period') is-invalid @enderror"
+                        id="tax_calculation_period"
                         name="tax_calculation_period">
                     <option value="monthly" {{ ($settings->tax_calculation_period ?? 'monthly') == 'monthly' ? 'selected' : '' }}>
                         {{ trans('mining-manager::settings.monthly') }}
@@ -371,12 +636,12 @@
                     {{ trans('mining-manager::settings.tax_payment_deadline') }}
                 </label>
                 <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('tax_payment_deadline_days') is-invalid @enderror" 
-                           id="tax_payment_deadline_days" 
-                           name="tax_payment_deadline_days" 
+                    <input type="number"
+                           class="form-control @error('tax_payment_deadline_days') is-invalid @enderror"
+                           id="tax_payment_deadline_days"
+                           name="tax_payment_deadline_days"
                            value="{{ old('tax_payment_deadline_days', $settings->tax_payment_deadline_days ?? 7) }}"
-                           min="1" 
+                           min="1"
                            max="30">
                     <div class="input-group-append">
                         <span class="input-group-text">{{ trans('mining-manager::settings.days') }}</span>
@@ -391,10 +656,10 @@
             </div>
 
             <div class="custom-control custom-switch">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="send_tax_reminders" 
-                       name="send_tax_reminders" 
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="send_tax_reminders"
+                       name="send_tax_reminders"
                        value="1"
                        {{ old('send_tax_reminders', $settings->send_tax_reminders ?? true) ? 'checked' : '' }}>
                 <label class="custom-control-label" for="send_tax_reminders">
@@ -412,12 +677,12 @@
                     {{ trans('mining-manager::settings.tax_reminder_days') }}
                 </label>
                 <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('tax_reminder_days') is-invalid @enderror" 
-                           id="tax_reminder_days" 
-                           name="tax_reminder_days" 
+                    <input type="number"
+                           class="form-control @error('tax_reminder_days') is-invalid @enderror"
+                           id="tax_reminder_days"
+                           name="tax_reminder_days"
                            value="{{ old('tax_reminder_days', $settings->tax_reminder_days ?? 3) }}"
-                           min="1" 
+                           min="1"
                            max="30">
                     <div class="input-group-append">
                         <span class="input-group-text">{{ trans('mining-manager::settings.days') }}</span>
@@ -443,7 +708,7 @@
                 </button>
             </div>
             <div class="col-md-6">
-                <a href="{{ route('mining-manager.settings.index') }}" 
+                <a href="{{ route('mining-manager.settings.index') }}"
                    class="btn btn-secondary btn-block">
                     <i class="fas fa-undo"></i>
                     {{ trans('mining-manager::settings.reset_form') }}

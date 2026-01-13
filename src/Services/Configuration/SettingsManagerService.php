@@ -272,6 +272,8 @@ class SettingsManagerService
 
     /**
      * Update tax rates
+     * COMPLETELY REWRITTEN: Now handles all form fields including moon ore rarities,
+     * exemptions, tax selectors, and all other settings
      *
      * @param array $rates
      * @return void
@@ -279,22 +281,108 @@ class SettingsManagerService
     public function updateTaxRates(array $rates)
     {
         DB::beginTransaction();
-        
+
         try {
-            // Update moon ore rates
-            if (isset($rates['moon_ore'])) {
-                foreach ($rates['moon_ore'] as $rarity => $rate) {
-                    $this->updateSetting("tax_rates.moon_ore.{$rarity}", $rate, 'float');
-                }
+            // Update moon ore rarity rates (from individual form fields)
+            if (isset($rates['moon_ore_r64'])) {
+                $this->updateSetting('tax_rates.moon_ore.r64', $rates['moon_ore_r64'], 'float');
+            }
+            if (isset($rates['moon_ore_r32'])) {
+                $this->updateSetting('tax_rates.moon_ore.r32', $rates['moon_ore_r32'], 'float');
+            }
+            if (isset($rates['moon_ore_r16'])) {
+                $this->updateSetting('tax_rates.moon_ore.r16', $rates['moon_ore_r16'], 'float');
+            }
+            if (isset($rates['moon_ore_r8'])) {
+                $this->updateSetting('tax_rates.moon_ore.r8', $rates['moon_ore_r8'], 'float');
+            }
+            if (isset($rates['moon_ore_r4'])) {
+                $this->updateSetting('tax_rates.moon_ore.r4', $rates['moon_ore_r4'], 'float');
             }
 
-            // Update other rates
-            foreach (['ice', 'ore', 'gas', 'abyssal_ore'] as $type) {
-                if (isset($rates[$type])) {
-                    $this->updateSetting("tax_rates.{$type}", $rates[$type], 'float');
-                }
+            // Update regular ore type rates
+            if (isset($rates['ore_tax'])) {
+                $this->updateSetting('tax_rates.ore', $rates['ore_tax'], 'float');
             }
-            
+            if (isset($rates['ice_tax'])) {
+                $this->updateSetting('tax_rates.ice', $rates['ice_tax'], 'float');
+            }
+            if (isset($rates['gas_tax'])) {
+                $this->updateSetting('tax_rates.gas', $rates['gas_tax'], 'float');
+            }
+            if (isset($rates['abyssal_ore_tax'])) {
+                $this->updateSetting('tax_rates.abyssal_ore', $rates['abyssal_ore_tax'], 'float');
+            }
+
+            // Update exemption settings
+            if (isset($rates['exemption_enabled'])) {
+                $this->updateSetting('exemptions.enabled', $rates['exemption_enabled'], 'boolean');
+            }
+            if (isset($rates['exemption_threshold'])) {
+                $this->updateSetting('exemptions.threshold', $rates['exemption_threshold'], 'float');
+            }
+            if (isset($rates['grace_period_days'])) {
+                $this->updateSetting('exemptions.grace_period_days', $rates['grace_period_days'], 'integer');
+            }
+
+            // Update tax selector - moon ore flags
+            if (isset($rates['all_moon_ore'])) {
+                $this->updateSetting('tax_selector.all_moon_ore', $rates['all_moon_ore'], 'boolean');
+            }
+            if (isset($rates['only_corp_moon_ore'])) {
+                $this->updateSetting('tax_selector.only_corp_moon_ore', $rates['only_corp_moon_ore'], 'boolean');
+            }
+            if (isset($rates['no_moon_ore'])) {
+                $this->updateSetting('tax_selector.no_moon_ore', $rates['no_moon_ore'], 'boolean');
+            }
+
+            // Update tax selector - ore type flags
+            if (isset($rates['tax_regular_ore'])) {
+                $this->updateSetting('tax_selector.ore', $rates['tax_regular_ore'], 'boolean');
+            }
+            if (isset($rates['tax_ice'])) {
+                $this->updateSetting('tax_selector.ice', $rates['tax_ice'], 'boolean');
+            }
+            if (isset($rates['tax_gas'])) {
+                $this->updateSetting('tax_selector.gas', $rates['tax_gas'], 'boolean');
+            }
+            if (isset($rates['tax_abyssal_ore'])) {
+                $this->updateSetting('tax_selector.abyssal_ore', $rates['tax_abyssal_ore'], 'boolean');
+            }
+
+            // Update tax payment method
+            if (isset($rates['tax_payment_method'])) {
+                $this->updateSetting('tax_rates.tax_payment_method', $rates['tax_payment_method'], 'string');
+            }
+            if (isset($rates['tax_wallet_division'])) {
+                $this->updateSetting('tax_rates.tax_wallet_division', $rates['tax_wallet_division'], 'integer');
+            }
+
+            // Update tax code settings
+            if (isset($rates['tax_code_prefix'])) {
+                $this->updateSetting('tax_rates.tax_code_prefix', $rates['tax_code_prefix'], 'string');
+            }
+            if (isset($rates['tax_code_length'])) {
+                $this->updateSetting('tax_rates.tax_code_length', $rates['tax_code_length'], 'integer');
+            }
+            if (isset($rates['auto_generate_tax_codes'])) {
+                $this->updateSetting('tax_rates.auto_generate_tax_codes', $rates['auto_generate_tax_codes'], 'boolean');
+            }
+
+            // Update tax period settings
+            if (isset($rates['tax_calculation_period'])) {
+                $this->updateSetting('tax_rates.tax_calculation_period', $rates['tax_calculation_period'], 'string');
+            }
+            if (isset($rates['tax_payment_deadline_days'])) {
+                $this->updateSetting('tax_rates.tax_payment_deadline_days', $rates['tax_payment_deadline_days'], 'integer');
+            }
+            if (isset($rates['send_tax_reminders'])) {
+                $this->updateSetting('tax_rates.send_tax_reminders', $rates['send_tax_reminders'], 'boolean');
+            }
+            if (isset($rates['tax_reminder_days'])) {
+                $this->updateSetting('tax_rates.tax_reminder_days', $rates['tax_reminder_days'], 'integer');
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -304,14 +392,19 @@ class SettingsManagerService
 
     /**
      * Get tax selector settings
+     * UPDATED: Added no_moon_ore flag for completeness
      *
      * @return array
      */
     public function getTaxSelector(): array
     {
         return [
+            // Moon ore selector (mutually exclusive)
             'all_moon_ore' => $this->getSetting('tax_selector.all_moon_ore', true),
             'only_corp_moon_ore' => $this->getSetting('tax_selector.only_corp_moon_ore', false),
+            'no_moon_ore' => $this->getSetting('tax_selector.no_moon_ore', false),
+
+            // Other ore types (independent checkboxes)
             'ore' => $this->getSetting('tax_selector.ore', true),
             'ice' => $this->getSetting('tax_selector.ice', true),
             'gas' => $this->getSetting('tax_selector.gas', false),

@@ -145,7 +145,24 @@
 
                     {{-- Tax Rates Tab --}}
                     <div id="tax-rates" class="settings-section">
-                        @include('mining-manager::settings.tabs.tax_rates', ['settings' => (object)$settings['tax_rates']])
+                        @php
+                            // Flatten moon ore nested array for easier form access
+                            $taxRatesFlattened = $settings['tax_rates'];
+                            if (isset($taxRatesFlattened['moon_ore']) && is_array($taxRatesFlattened['moon_ore'])) {
+                                foreach ($taxRatesFlattened['moon_ore'] as $rarity => $rate) {
+                                    $taxRatesFlattened['moon_ore_' . $rarity] = $rate;
+                                }
+                                unset($taxRatesFlattened['moon_ore']);
+                            }
+
+                            // Merge all tax-related settings
+                            $taxSettings = array_merge(
+                                $taxRatesFlattened,
+                                $settings['tax_selector'],
+                                $settings['exemptions']
+                            );
+                        @endphp
+                        @include('mining-manager::settings.tabs.tax_rates', ['settings' => (object)$taxSettings])
                     </div>
 
                     {{-- Pricing Tab --}}
