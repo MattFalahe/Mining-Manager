@@ -128,17 +128,33 @@ class DiagnosticController extends Controller
                     $charId = $charIdCounter++;
                     $charName = "Test Miner {$corp->ticker}-{$i}";
 
+                    // Check if character_affiliations table exists for corporation linkage
                     DB::table('character_infos')->updateOrInsert(
                         ['character_id' => $charId],
                         [
                             'name' => $charName,
-                            'corporation_id' => $corp->corporation_id,
                             'security_status' => rand(-10, 10) / 10,
                             'birthday' => Carbon::now()->subYears(rand(1, 10)),
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]
                     );
+
+                    // Insert into character_affiliations if it exists
+                    try {
+                        DB::table('character_affiliations')->updateOrInsert(
+                            ['character_id' => $charId],
+                            [
+                                'character_id' => $charId,
+                                'corporation_id' => $corp->corporation_id,
+                                'faction_id' => null,
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]
+                        );
+                    } catch (\Exception $e) {
+                        // Table might not exist, continue
+                    }
 
                     $characters[] = [
                         'id' => $charId,
@@ -300,6 +316,16 @@ class DiagnosticController extends Controller
                 ->whereIn('corporation_id', $testCorporationIds)
                 ->delete();
 
+            // Delete character affiliations for test characters
+            $affiliationsDeleted = 0;
+            try {
+                $affiliationsDeleted = DB::table('character_affiliations')
+                    ->whereIn('character_id', $testCharacterIds)
+                    ->delete();
+            } catch (\Exception $e) {
+                // Table might not exist
+            }
+
             // Delete test characters
             $charactersDeleted = DB::table('character_infos')
                 ->where('name', 'like', 'Test Miner%')
@@ -312,7 +338,11 @@ class DiagnosticController extends Controller
 
             DB::commit();
 
-            $message = "Cleaned up test data: {$corpsDeleted} corporations, {$charactersDeleted} characters, {$ledgerDeleted} ledger entries, {$taxesDeleted} tax records, {$settingsDeleted} settings";
+            $message = "Cleaned up test data: {$corpsDeleted} corporations, {$charactersDeleted} characters";
+            if ($affiliationsDeleted > 0) {
+                $message .= ", {$affiliationsDeleted} affiliations";
+            }
+            $message .= ", {$ledgerDeleted} ledger entries, {$taxesDeleted} tax records, {$settingsDeleted} settings";
 
             return redirect()->route('mining-manager.diagnostic.index')
                 ->with('success', $message);
