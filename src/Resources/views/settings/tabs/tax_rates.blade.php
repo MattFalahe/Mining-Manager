@@ -344,13 +344,25 @@
             <div class="row">
                 <div class="col-md-6">
                     <h6><i class="fas fa-moon"></i> Moon Ore Options</h6>
+                    @php
+                        // Determine default moon ore taxing mode
+                        $defaultMoonTaxing = 'all'; // default
+                        if (isset($settings->only_corp_moon_ore) && $settings->only_corp_moon_ore) {
+                            $defaultMoonTaxing = 'corp';
+                        } elseif (isset($settings->no_moon_ore) && $settings->no_moon_ore) {
+                            $defaultMoonTaxing = 'none';
+                        } elseif (isset($settings->all_moon_ore) && !$settings->all_moon_ore) {
+                            $defaultMoonTaxing = 'none';
+                        }
+                        $selectedMoonTaxing = old('moon_ore_taxing', $defaultMoonTaxing);
+                    @endphp
                     <div class="custom-control custom-radio mb-2">
                         <input type="radio"
                                id="moon_tax_all"
                                name="moon_ore_taxing"
                                value="all"
                                class="custom-control-input"
-                               {{ old('moon_ore_taxing', ($settings->all_moon_ore ?? true) ? 'all' : ($settings->only_corp_moon_ore ?? false) ? 'corp' : 'none') == 'all' ? 'checked' : '' }}>
+                               {{ $selectedMoonTaxing == 'all' ? 'checked' : '' }}>
                         <label class="custom-control-label" for="moon_tax_all">
                             <strong>Tax All Moon Ore</strong><br>
                             <small class="text-muted">Tax moon ore from personal mining ledger AND corporation mining observers</small>
@@ -362,7 +374,7 @@
                                name="moon_ore_taxing"
                                value="corp"
                                class="custom-control-input"
-                               {{ old('moon_ore_taxing', ($settings->only_corp_moon_ore ?? false) ? 'corp' : 'all') == 'corp' ? 'checked' : '' }}>
+                               {{ $selectedMoonTaxing == 'corp' ? 'checked' : '' }}>
                         <label class="custom-control-label" for="moon_tax_corp">
                             <strong>Tax Only Corporation Moon Ore</strong><br>
                             <small class="text-muted">Only tax moon ore mined at YOUR corporation's moon mining structures</small>
@@ -374,7 +386,7 @@
                                name="moon_ore_taxing"
                                value="none"
                                class="custom-control-input"
-                               {{ old('moon_ore_taxing', (!($settings->all_moon_ore ?? true) && !($settings->only_corp_moon_ore ?? false)) ? 'none' : '') == 'none' ? 'checked' : '' }}>
+                               {{ $selectedMoonTaxing == 'none' ? 'checked' : '' }}>
                         <label class="custom-control-label" for="moon_tax_none">
                             <strong>Don't Tax Moon Ore</strong><br>
                             <small class="text-muted">Moon ore mining is not taxed</small>
