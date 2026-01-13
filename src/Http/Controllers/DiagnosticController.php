@@ -7,6 +7,8 @@ use Seat\Web\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Services\TypeIdRegistry;
 
 class DiagnosticController extends Controller
 {
@@ -350,6 +352,260 @@ class DiagnosticController extends Controller
             DB::rollBack();
             Log::error('Error cleaning up test data', ['error' => $e->getMessage()]);
             return redirect()->back()->with('error', 'Error cleaning up test data: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Test price providers
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testPriceProvider(Request $request)
+    {
+        try {
+            $provider = $request->input('provider', 'seat');
+            $priceService = new PriceProviderService();
+
+            // Check if Janice API key is configured when testing Janice
+            if ($provider === 'janice') {
+                $apiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+                    ?: config('mining-manager.general.price_provider_api_key');
+
+                if (empty($apiKey)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Janice API key not configured. Please set it in Settings or add MINING_MANAGER_JANICE_API_KEY to your .env file.',
+                        'provider' => $provider,
+                        'missing_config' => true
+                    ], 400);
+                }
+            }
+
+            // Test with common ore types
+            $testTypeIds = [
+                34,     // Tritanium
+                35,     // Pyerite
+                36,     // Mexallon
+                37,     // Isogen
+                1230,   // Veldspar
+                45506,  // Bistot (R64 moon ore)
+            ];
+
+            $startTime = microtime(true);
+
+            // Temporarily set provider
+            $originalProvider = \MiningManager\Models\Setting::getValue('price_provider');
+            \MiningManager\Models\Setting::set('price_provider', $provider);
+
+            $prices = $priceService->getPrices($testTypeIds);
+
+            // Restore original provider
+            \MiningManager\Models\Setting::set('price_provider', $originalProvider);
+
+            $endTime = microtime(true);
+            $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
+
+            // Get type names
+            $typeNames = DB::table('invTypes')
+                ->whereIn('typeID', $testTypeIds)
+                ->pluck('typeName', 'typeID');
+
+            $results = [];
+            $successCount = 0;
+            foreach ($testTypeIds as $typeId) {
+                $price = $prices[$typeId] ?? 0;
+                if ($price > 0) {
+                    $successCount++;
+                }
+                $results[] = [
+                    'type_id' => $typeId,
+                    'type_name' => $typeNames[$typeId] ?? 'Unknown',
+                    'price' => number_format($price, 2),
+                    'status' => $price > 0 ? 'success' : 'failed'
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'provider' => $provider,
+                'duration_ms' => $duration,
+                'total_items' => count($testTypeIds),
+                'successful_items' => $successCount,
+                'results' => $results
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Price provider test failed', [
+                'provider' => $provider ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'provider' => $provider ?? 'unknown'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get price provider configuration
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getPriceProviderConfig()
+    {
+        try {
+            $priceService = new PriceProviderService();
+            $providers = $priceService->getAvailableProviders();
+
+            $currentProvider = \MiningManager\Models\Setting::getValue('price_provider', 'seat');
+
+            // Check if Janice API key is configured
+            $janiceApiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+                ?: config('mining-manager.general.price_provider_api_key');
+            $janiceConfigured = !empty($janiceApiKey);
+
+            $config = [
+                'current_provider' => $currentProvider,
+                'providers' => $providers,
+                'janice_configured' => $janiceConfigured,
+                'settings' => [
+                    'janice_api_key' => $janiceConfigured ? '***configured***' : 'NOT CONFIGURED',
+                    'janice_market' => \MiningManager\Models\Setting::getValue('janice_market', 'jita'),
+                    'janice_price_method' => \MiningManager\Models\Setting::getValue('janice_price_method', 'buy'),
+                    'janice_batch_size' => \MiningManager\Models\Setting::getValue('janice_batch_size', 50),
+                    'janice_rate_limit_delay' => \MiningManager\Models\Setting::getValue('janice_rate_limit_delay', 50000) . ' microseconds',
+                    'janice_max_retries' => \MiningManager\Models\Setting::getValue('janice_max_retries', 3),
+                    'price_region_id' => \MiningManager\Models\Setting::getValue('price_region_id', 10000002),
+                    'price_method' => \MiningManager\Models\Setting::getValue('price_method', 'sell'),
+                ]
+            ];
+
+            return response()->json($config);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get price provider config', ['error' => $e->getMessage()]);
+            return response()->json([
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Batch test multiple ore types
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testBatchPricing(Request $request)
+    {
+        try {
+            $provider = $request->input('provider', 'seat');
+            $oreCategory = $request->input('category', 'all'); // all, moon, ice, gas, ore
+            $priceService = new PriceProviderService();
+
+            // Check if Janice API key is configured when testing Janice
+            if ($provider === 'janice') {
+                $apiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+                    ?: config('mining-manager.general.price_provider_api_key');
+
+                if (empty($apiKey)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Janice API key not configured. Please set it in Settings or add MINING_MANAGER_JANICE_API_KEY to your .env file.',
+                        'provider' => $provider,
+                        'missing_config' => true
+                    ], 400);
+                }
+            }
+
+            // Get type IDs based on category
+            $typeIds = [];
+            switch ($oreCategory) {
+                case 'moon':
+                    $typeIds = array_keys(TypeIdRegistry::getMoonOreRarityMap());
+                    break;
+                case 'ice':
+                    $typeIds = TypeIdRegistry::getIceTypeIds();
+                    break;
+                case 'gas':
+                    $typeIds = TypeIdRegistry::getGasTypeIds();
+                    break;
+                case 'ore':
+                    $typeIds = TypeIdRegistry::getOreTypeIds();
+                    break;
+                case 'all':
+                default:
+                    $typeIds = array_merge(
+                        array_slice(TypeIdRegistry::getOreTypeIds(), 0, 10),
+                        array_slice(array_keys(TypeIdRegistry::getMoonOreRarityMap()), 0, 10),
+                        array_slice(TypeIdRegistry::getIceTypeIds(), 0, 5)
+                    );
+                    break;
+            }
+
+            $startTime = microtime(true);
+
+            // Temporarily set provider
+            $originalProvider = \MiningManager\Models\Setting::getValue('price_provider');
+            \MiningManager\Models\Setting::set('price_provider', $provider);
+
+            $prices = $priceService->getPrices($typeIds);
+
+            // Restore original provider
+            \MiningManager\Models\Setting::set('price_provider', $originalProvider);
+
+            $endTime = microtime(true);
+            $duration = round(($endTime - $startTime) * 1000, 2);
+
+            // Get type names
+            $typeNames = DB::table('invTypes')
+                ->whereIn('typeID', $typeIds)
+                ->pluck('typeName', 'typeID');
+
+            $successCount = 0;
+            $totalValue = 0;
+            $results = [];
+
+            foreach ($typeIds as $typeId) {
+                $price = $prices[$typeId] ?? 0;
+                if ($price > 0) {
+                    $successCount++;
+                    $totalValue += $price;
+                }
+                $results[] = [
+                    'type_id' => $typeId,
+                    'type_name' => $typeNames[$typeId] ?? 'Unknown',
+                    'price' => $price,
+                    'price_formatted' => number_format($price, 2),
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'provider' => $provider,
+                'category' => $oreCategory,
+                'duration_ms' => $duration,
+                'total_items' => count($typeIds),
+                'successful_items' => $successCount,
+                'avg_time_per_item' => count($typeIds) > 0 ? round($duration / count($typeIds), 2) : 0,
+                'total_value' => $totalValue,
+                'results' => $results
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Batch price test failed', [
+                'provider' => $provider ?? 'unknown',
+                'category' => $oreCategory ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 }

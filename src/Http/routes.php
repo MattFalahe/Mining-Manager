@@ -729,6 +729,24 @@ Route::group([
             'uses' => 'DiagnosticController@cleanupTestData',
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
+
+        Route::post('/test-price-provider', [
+            'as' => 'mining-manager.diagnostic.test-price-provider',
+            'uses' => 'DiagnosticController@testPriceProvider',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::get('/price-provider-config', [
+            'as' => 'mining-manager.diagnostic.price-provider-config',
+            'uses' => 'DiagnosticController@getPriceProviderConfig',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/test-batch-pricing', [
+            'as' => 'mining-manager.diagnostic.test-batch-pricing',
+            'uses' => 'DiagnosticController@testBatchPricing',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
     });
 
     // API Routes

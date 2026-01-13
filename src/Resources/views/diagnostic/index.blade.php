@@ -56,6 +56,14 @@
         margin-bottom: 20px;
     }
 
+    .success-box {
+        background: rgba(40, 167, 69, 0.1);
+        border: 1px solid rgba(40, 167, 69, 0.3);
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
     .btn-generate {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border: none;
@@ -83,181 +91,611 @@
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
     }
+
+    /* Tab styling */
+    .nav-tabs {
+        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+        margin-bottom: 20px;
+    }
+
+    .nav-tabs .nav-link {
+        color: #a0aec0;
+        border: none;
+        border-bottom: 2px solid transparent;
+        transition: all 0.3s;
+    }
+
+    .nav-tabs .nav-link:hover {
+        color: #667eea;
+        border-bottom-color: rgba(102, 126, 234, 0.5);
+    }
+
+    .nav-tabs .nav-link.active {
+        color: #667eea;
+        background: transparent;
+        border-bottom-color: #667eea;
+    }
+
+    .provider-test-result {
+        background: rgba(102, 126, 234, 0.05);
+        border: 1px solid rgba(102, 126, 234, 0.2);
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+
+    .provider-test-result.success {
+        background: rgba(40, 167, 69, 0.05);
+        border-color: rgba(40, 167, 69, 0.3);
+    }
+
+    .provider-test-result.error {
+        background: rgba(220, 53, 69, 0.05);
+        border-color: rgba(220, 53, 69, 0.3);
+    }
+
+    .price-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        margin: 5px 0;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 4px;
+    }
+
+    .price-item.success {
+        background: rgba(40, 167, 69, 0.1);
+    }
+
+    .price-item.failed {
+        background: rgba(220, 53, 69, 0.1);
+    }
+
+    .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+        border-width: 0.2em;
+    }
 </style>
 @endpush
 
-@section('full')
-<div class="mining-manager-wrapper diagnostic-page">
+@section('content')
+<div class="container-fluid">
 
-    {{-- Success/Error Messages --}}
     @if(session('success'))
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="fas fa-check-circle"></i>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
         {{ session('success') }}
-        <button type="button" class="close" data-dismiss="alert">&times;</button>
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
     </div>
     @endif
 
     @if(session('error'))
-    <div class="alert alert-danger alert-dismissible fade show">
-        <i class="fas fa-exclamation-circle"></i>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
         {{ session('error') }}
-        <button type="button" class="close" data-dismiss="alert">&times;</button>
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
     </div>
     @endif
 
-    {{-- Warning Banner --}}
-    <div class="warning-box">
-        <h5><i class="fas fa-exclamation-triangle"></i> Test Environment Only</h5>
-        <p class="mb-0">
-            These diagnostic tools generate fake data for testing purposes.
-            <strong>Use only in development/testing environments!</strong>
-            All test data is prefixed with "Test" for easy identification.
-        </p>
-    </div>
+    <!-- Tabs -->
+    <ul class="nav nav-tabs" id="diagnosticTabs" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="test-data-tab" data-toggle="tab" href="#test-data" role="tab">
+                <i class="fas fa-database"></i> Test Data Generation
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="price-provider-tab" data-toggle="tab" href="#price-provider" role="tab">
+                <i class="fas fa-dollar-sign"></i> Price Provider Testing
+            </a>
+        </li>
+    </ul>
 
-    {{-- Current Test Data Stats --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-chart-bar"></i> Current Test Data</h4>
-        <div class="row">
-            <div class="col-md-3">
-                <div class="stat-box">
-                    <div class="stat-number">{{ $testDataCounts['corporations'] }}</div>
-                    <div class="stat-label">Test Corporations</div>
+    <div class="tab-content" id="diagnosticTabsContent">
+
+        <!-- Test Data Generation Tab -->
+        <div class="tab-pane fade show active" id="test-data" role="tabpanel">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="warning-box">
+                        <strong><i class="fas fa-exclamation-triangle"></i> Testing Environment Only</strong>
+                        <p class="mb-0">These tools generate fake corporations, characters, and mining data for testing multi-corporation tax settings. Use only in development/testing environments.</p>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="stat-box">
-                    <div class="stat-number">{{ $testDataCounts['characters'] }}</div>
-                    <div class="stat-label">Test Characters</div>
+
+            <!-- Current Test Data Stats -->
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-number">{{ $testDataCounts['corporations'] }}</div>
+                        <div class="stat-label">Test Corporations</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-number">{{ $testDataCounts['characters'] }}</div>
+                        <div class="stat-label">Test Characters</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-number">{{ $testDataCounts['mining_ledger'] }}</div>
+                        <div class="stat-label">Mining Ledger Entries</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-number">{{ $testDataCounts['mining_taxes'] }}</div>
+                        <div class="stat-label">Tax Records</div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="stat-box">
-                    <div class="stat-number">{{ number_format($testDataCounts['mining_ledger']) }}</div>
-                    <div class="stat-label">Mining Ledger Entries</div>
+
+            <!-- Step 1: Generate Test Corporations -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-building"></i> Step 1: Generate Test Corporations</h4>
+                        <p>Create test corporations with IDs starting from 98000001. Each corporation will have a CEO and unique ticker.</p>
+
+                        <form action="{{ route('mining-manager.diagnostic.generate-corporations') }}" method="POST">
+                            @csrf
+                            <div class="form-group">
+                                <label>Number of Corporations</label>
+                                <input type="number" name="count" class="form-control" value="3" min="1" max="10">
+                                <small class="form-text text-muted">Creates corporations with IDs 98000001, 98000002, etc.</small>
+                            </div>
+                            <button type="submit" class="btn btn-generate">
+                                <i class="fas fa-plus-circle"></i> Generate Corporations
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="stat-box">
-                    <div class="stat-number">{{ $testDataCounts['mining_taxes'] }}</div>
-                    <div class="stat-label">Tax Records</div>
+
+            <!-- Step 2: Generate Test Characters -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-users"></i> Step 2: Generate Test Characters</h4>
+                        <p>Create test characters (miners) for each corporation. Characters will be linked to corporations via character_affiliations.</p>
+
+                        <form action="{{ route('mining-manager.diagnostic.generate-characters') }}" method="POST">
+                            @csrf
+                            <div class="form-group">
+                                <label>Characters per Corporation</label>
+                                <input type="number" name="count_per_corp" class="form-control" value="5" min="1" max="20">
+                                <small class="form-text text-muted">Creates miners with IDs starting from 91000001</small>
+                            </div>
+                            <button type="submit" class="btn btn-generate">
+                                <i class="fas fa-user-plus"></i> Generate Characters
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Generate Mining Data -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-gem"></i> Step 3: Generate Mining Data</h4>
+                        <p>Create mining ledger entries for test characters. Generates random ore types (including moon ore) in various systems.</p>
+
+                        <form action="{{ route('mining-manager.diagnostic.generate-mining-data') }}" method="POST">
+                            @csrf
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Number of Days</label>
+                                        <input type="number" name="days" class="form-control" value="30" min="1" max="90">
+                                        <small class="form-text text-muted">Generate data for the last N days</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Entries per Day per Character</label>
+                                        <input type="number" name="entries_per_day" class="form-control" value="10" min="1" max="50">
+                                        <small class="form-text text-muted">Mining entries per character per day</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-generate">
+                                <i class="fas fa-database"></i> Generate Mining Data
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cleanup Section -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-trash-alt"></i> Cleanup Test Data</h4>
+                        <div class="danger-box">
+                            <strong><i class="fas fa-exclamation-triangle"></i> Warning</strong>
+                            <p class="mb-0">This will permanently delete all test corporations, characters, mining data, tax records, and settings created by this tool.</p>
+                        </div>
+
+                        <form action="{{ route('mining-manager.diagnostic.cleanup') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
+                            @csrf
+                            <button type="submit" class="btn btn-danger-custom">
+                                <i class="fas fa-trash"></i> Delete All Test Data
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-info-circle"></i> Testing Multi-Corporation Settings</h4>
+                        <ol>
+                            <li>Generate test corporations using Step 1</li>
+                            <li>Generate test characters for those corporations using Step 2</li>
+                            <li>Generate mining data using Step 3</li>
+                            <li>Go to <strong>Settings → Configured Corporations</strong> to configure different tax rates for each test corporation</li>
+                            <li>Run tax calculations and verify that each corporation uses its own tax settings</li>
+                            <li>When done testing, use the Cleanup button to remove all test data</li>
+                        </ol>
+                        <p class="mb-0"><strong>CLI Alternative:</strong> You can also use the artisan command:</p>
+                        <code>php artisan mining-manager:generate-test-data --corporations=3 --characters=5 --days=30 --entries=10</code>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    {{-- Step 1: Generate Corporations --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-building"></i> Step 1: Generate Test Corporations</h4>
-        <p class="text-muted">
-            Create test corporations with IDs starting from 98000001. These will be used to test multi-corporation settings.
-        </p>
-        <form method="POST" action="{{ route('mining-manager.diagnostic.generate-corporations') }}" class="form-inline">
-            @csrf
-            <div class="form-group mr-3">
-                <label for="corp_count" class="mr-2">Number of Corporations:</label>
-                <input type="number" class="form-control" id="corp_count" name="count" value="3" min="1" max="10">
+        <!-- Price Provider Testing Tab -->
+        <div class="tab-pane fade" id="price-provider" role="tabpanel">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-dollar-sign"></i> Price Provider Testing</h4>
+                        <p>Test different price providers to ensure they are configured correctly and returning prices.</p>
+
+                        <!-- Provider Selection -->
+                        <div class="form-group">
+                            <label>Select Price Provider to Test</label>
+                            <select id="providerSelect" class="form-control" onchange="checkProviderRequirements()">
+                                <option value="seat">SeAT Database (Default)</option>
+                                <option value="janice">Janice API (Requires API Key)</option>
+                                <option value="fuzzwork">Fuzzwork Market</option>
+                                <option value="custom">Custom Prices</option>
+                            </select>
+                        </div>
+
+                        <!-- Warning for providers that need configuration -->
+                        <div id="providerWarning" class="warning-box" style="display: none;">
+                            <strong><i class="fas fa-exclamation-triangle"></i> Configuration Required</strong>
+                            <p id="providerWarningText" class="mb-0"></p>
+                        </div>
+
+                        <button type="button" class="btn btn-generate" onclick="testProvider()">
+                            <i class="fas fa-vial"></i> <span id="testBtnText">Test Provider</span>
+                            <span id="testSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                        </button>
+
+                        <button type="button" class="btn btn-secondary ml-2" onclick="loadProviderConfig()">
+                            <i class="fas fa-cog"></i> View Configuration
+                        </button>
+
+                        <!-- Test Results Container -->
+                        <div id="testResults"></div>
+
+                        <!-- Configuration Display -->
+                        <div id="configDisplay" style="display: none; margin-top: 20px;">
+                            <h5>Current Configuration</h5>
+                            <div class="provider-test-result" id="configContent"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <button type="submit" class="btn btn-generate">
-                <i class="fas fa-plus-circle"></i> Generate Corporations
-            </button>
-        </form>
-    </div>
 
-    {{-- Step 2: Generate Characters --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-users"></i> Step 2: Generate Test Characters (Miners)</h4>
-        <p class="text-muted">
-            Create test miner characters for each corporation. Character IDs start from 90000000.
-        </p>
-        <form method="POST" action="{{ route('mining-manager.diagnostic.generate-characters') }}" class="form-inline">
-            @csrf
-            <div class="form-group mr-3">
-                <label for="chars_per_corp" class="mr-2">Characters per Corporation:</label>
-                <input type="number" class="form-control" id="chars_per_corp" name="characters_per_corp" value="5" min="1" max="20">
+            <!-- Batch Testing -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-list"></i> Batch Price Testing</h4>
+                        <p>Test price fetching for multiple ore types at once to check performance and accuracy.</p>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>Provider</label>
+                                    <select id="batchProvider" class="form-control">
+                                        <option value="seat">SeAT Database</option>
+                                        <option value="janice">Janice API</option>
+                                        <option value="fuzzwork">Fuzzwork Market</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>Ore Category</label>
+                                    <select id="batchCategory" class="form-control">
+                                        <option value="all">Mixed (Sample)</option>
+                                        <option value="ore">Regular Ore</option>
+                                        <option value="moon">Moon Ore</option>
+                                        <option value="ice">Ice</option>
+                                        <option value="gas">Gas</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn btn-generate" onclick="testBatchPricing()">
+                            <i class="fas fa-list-check"></i> <span id="batchBtnText">Run Batch Test</span>
+                            <span id="batchSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                        </button>
+
+                        <div id="batchResults"></div>
+                    </div>
+                </div>
             </div>
-            <button type="submit" class="btn btn-generate">
-                <i class="fas fa-user-plus"></i> Generate Characters
-            </button>
-        </form>
-    </div>
+        </div>
 
-    {{-- Step 3: Generate Mining Data --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-gem"></i> Step 3: Generate Mining Ledger Data</h4>
-        <p class="text-muted">
-            Generate fake mining data for all test characters. Includes various ore types (moon ores R64-R4, regular ores, ice, gas).
-        </p>
-        <form method="POST" action="{{ route('mining-manager.diagnostic.generate-mining-data') }}" class="form-inline">
-            @csrf
-            <div class="form-group mr-3">
-                <label for="days" class="mr-2">Days of Data:</label>
-                <input type="number" class="form-control" id="days" name="days" value="30" min="1" max="365">
-            </div>
-            <div class="form-group mr-3">
-                <label for="entries_per_day" class="mr-2">Entries per Day per Character:</label>
-                <input type="number" class="form-control" id="entries_per_day" name="entries_per_day" value="10" min="1" max="50">
-            </div>
-            <button type="submit" class="btn btn-generate">
-                <i class="fas fa-database"></i> Generate Mining Data
-            </button>
-        </form>
     </div>
-
-    {{-- Information Box --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-info-circle"></i> Test Data Details</h4>
-        <ul>
-            <li><strong>Test Corporations:</strong> Named "Test Corp 1", "Test Corp 2", etc. with tickers TST01, TST02, etc.</li>
-            <li><strong>Test Characters:</strong> Named "Test Miner TST01-1", "Test Miner TST01-2", etc.</li>
-            <li><strong>Ore Types Included:</strong>
-                <ul>
-                    <li>Moon Ores: R64 (Xenotime, Monazite), R32 (Chromite, Platinum), R16 (Cobaltite, Titanite), R8 (Zeolites, Scheelite), R4 (Bitumens, Sylvite)</li>
-                    <li>Regular Ores: Veldspar, Scordite, Pyroxeres</li>
-                    <li>Ice: Clear Icicle, Blue Ice</li>
-                    <li>Gas: Mykoserocin, Cytoserocin</li>
-                </ul>
-            </li>
-            <li><strong>Mining Quantities:</strong> Random amounts between 1,000 and 50,000 units per entry</li>
-            <li><strong>Solar Systems:</strong> Various null-sec systems for realistic testing</li>
-        </ul>
-    </div>
-
-    {{-- Usage Instructions --}}
-    <div class="diagnostic-card">
-        <h4><i class="fas fa-clipboard-list"></i> How to Test Multi-Corporation Tax Settings</h4>
-        <ol>
-            <li>Generate 3-5 test corporations using Step 1</li>
-            <li>Generate 5-10 characters per corporation using Step 2</li>
-            <li>Generate 30 days of mining data using Step 3</li>
-            <li>Go to <a href="{{ route('mining-manager.settings.index') }}">Settings</a> and select a test corporation</li>
-            <li>Configure different tax rates for each corporation (e.g., Corp 1: 15% R64, Corp 2: 20% R64, Corp 3: 10% R64)</li>
-            <li>Run tax calculations to see how different corporations have different tax amounts</li>
-            <li>Test the "Switch Corporation" functionality to verify settings are isolated</li>
-            <li>View all configured corporations at <a href="{{ route('mining-manager.settings.configured-corporations') }}">Configured Corporations</a> page</li>
-        </ol>
-    </div>
-
-    {{-- Cleanup Section --}}
-    <div class="danger-box">
-        <h5><i class="fas fa-trash-alt"></i> Cleanup Test Data</h5>
-        <p>
-            Remove all test data from the database. This will delete:
-        </p>
-        <ul>
-            <li>All test corporations (Test Corp%)</li>
-            <li>All test characters (Test Miner%)</li>
-            <li>All mining ledger entries for test characters</li>
-            <li>All tax records for test characters</li>
-        </ul>
-        <form method="POST" action="{{ route('mining-manager.diagnostic.cleanup') }}" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
-            @csrf
-            <button type="submit" class="btn btn-danger-custom">
-                <i class="fas fa-exclamation-triangle"></i> Delete All Test Data
-            </button>
-        </form>
-    </div>
-
 </div>
+
+<script>
+function checkProviderRequirements() {
+    const provider = document.getElementById('providerSelect').value;
+    const warningBox = document.getElementById('providerWarning');
+    const warningText = document.getElementById('providerWarningText');
+
+    if (provider === 'janice') {
+        warningText.innerHTML = 'Janice API requires an API key. Make sure you have configured <code>janice_api_key</code> in Settings or set <code>MINING_MANAGER_JANICE_API_KEY</code> in your .env file. You can get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a>.';
+        warningBox.style.display = 'block';
+    } else if (provider === 'custom') {
+        warningText.innerHTML = 'Custom prices must be configured in Settings. Each ore type needs a manual price entry.';
+        warningBox.style.display = 'block';
+    } else {
+        warningBox.style.display = 'none';
+    }
+}
+
+function testProvider() {
+    const provider = document.getElementById('providerSelect').value;
+    const resultsDiv = document.getElementById('testResults');
+    const btnText = document.getElementById('testBtnText');
+    const spinner = document.getElementById('testSpinner');
+
+    btnText.textContent = 'Testing...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    fetch('{{ route("mining-manager.diagnostic.test-price-provider") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({ provider: provider })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Test Provider';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let html = `
+                <div class="provider-test-result success">
+                    <h5><i class="fas fa-check-circle text-success"></i> Test Successful</h5>
+                    <p><strong>Provider:</strong> ${data.provider}</p>
+                    <p><strong>Duration:</strong> ${data.duration_ms}ms</p>
+                    <p><strong>Items Tested:</strong> ${data.successful_items} / ${data.total_items}</p>
+                    <hr>
+                    <h6>Price Results:</h6>
+            `;
+
+            data.results.forEach(item => {
+                const statusClass = item.status === 'success' ? 'success' : 'failed';
+                const statusIcon = item.status === 'success' ? 'fa-check-circle text-success' : 'fa-times-circle text-danger';
+                html += `
+                    <div class="price-item ${statusClass}">
+                        <span><i class="fas ${statusIcon}"></i> ${item.type_name} (${item.type_id})</span>
+                        <span><strong>${item.price} ISK</strong></span>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            let errorHtml = `
+                <div class="provider-test-result error">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Test Failed</h5>
+                    <p><strong>Provider:</strong> ${data.provider}</p>
+                    <p><strong>Error:</strong> ${data.error}</p>
+            `;
+
+            // Add helpful hint for missing config
+            if (data.missing_config) {
+                errorHtml += `
+                    <hr>
+                    <p><strong>How to fix:</strong></p>
+                    <ul>
+                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a></li>
+                        <li>Go to <strong>Settings</strong> and add your Janice API key</li>
+                        <li>Or add <code>MINING_MANAGER_JANICE_API_KEY=your_key_here</code> to your .env file</li>
+                    </ul>
+                `;
+            }
+
+            errorHtml += '</div>';
+            resultsDiv.innerHTML = errorHtml;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Test Provider';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+function loadProviderConfig() {
+    const configDisplay = document.getElementById('configDisplay');
+    const configContent = document.getElementById('configContent');
+
+    fetch('{{ route("mining-manager.diagnostic.price-provider-config") }}')
+    .then(response => response.json())
+    .then(data => {
+        let html = `
+            <p><strong>Current Provider:</strong> ${data.current_provider}</p>
+        `;
+
+        // Add warning if Janice is not configured but selected
+        if (!data.janice_configured) {
+            html += `
+                <div class="danger-box" style="margin: 10px 0;">
+                    <strong><i class="fas fa-exclamation-triangle"></i> Janice API Key Not Configured</strong>
+                    <p class="mb-0">Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a> and configure it in Settings.</p>
+                </div>
+            `;
+        }
+
+        html += '<hr><h6>Settings:</h6><ul class="list-unstyled">';
+
+        for (const [key, value] of Object.entries(data.settings)) {
+            if (value !== null) {
+                let displayValue = value;
+                if (key === 'janice_api_key' && value === 'NOT CONFIGURED') {
+                    displayValue = '<span class="text-danger">' + value + '</span>';
+                }
+                html += `<li><strong>${key}:</strong> ${displayValue}</li>`;
+            }
+        }
+
+        html += '</ul>';
+        configContent.innerHTML = html;
+        configDisplay.style.display = 'block';
+    })
+    .catch(error => {
+        configContent.innerHTML = `<p class="text-danger">Error loading configuration: ${error.message}</p>`;
+        configDisplay.style.display = 'block';
+    });
+}
+
+function testBatchPricing() {
+    const provider = document.getElementById('batchProvider').value;
+    const category = document.getElementById('batchCategory').value;
+    const resultsDiv = document.getElementById('batchResults');
+    const btnText = document.getElementById('batchBtnText');
+    const spinner = document.getElementById('batchSpinner');
+
+    btnText.textContent = 'Testing...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    fetch('{{ route("mining-manager.diagnostic.test-batch-pricing") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({ provider: provider, category: category })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Run Batch Test';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let html = `
+                <div class="provider-test-result success" style="margin-top: 15px;">
+                    <h5><i class="fas fa-check-circle text-success"></i> Batch Test Completed</h5>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <p><strong>Provider:</strong> ${data.provider}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Category:</strong> ${data.category}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Duration:</strong> ${data.duration_ms}ms</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Avg per item:</strong> ${data.avg_time_per_item}ms</p>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Success Rate:</strong> ${data.successful_items} / ${data.total_items} (${Math.round(data.successful_items / data.total_items * 100)}%)</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Total Value:</strong> ${Number(data.total_value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ISK</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <h6>Detailed Results (first 20):</h6>
+                    <div style="max-height: 400px; overflow-y: auto;">
+            `;
+
+            data.results.slice(0, 20).forEach(item => {
+                const statusClass = item.price > 0 ? 'success' : 'failed';
+                const statusIcon = item.price > 0 ? 'fa-check-circle text-success' : 'fa-times-circle text-danger';
+                html += `
+                    <div class="price-item ${statusClass}">
+                        <span><i class="fas ${statusIcon}"></i> ${item.type_name} (${item.type_id})</span>
+                        <span><strong>${item.price_formatted} ISK</strong></span>
+                    </div>
+                `;
+            });
+
+            if (data.results.length > 20) {
+                html += `<p class="text-muted mt-2">... and ${data.results.length - 20} more items</p>`;
+            }
+
+            html += '</div></div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            let errorHtml = `
+                <div class="provider-test-result error" style="margin-top: 15px;">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Batch Test Failed</h5>
+                    <p><strong>Error:</strong> ${data.error}</p>
+            `;
+
+            // Add helpful hint for missing config
+            if (data.missing_config) {
+                errorHtml += `
+                    <hr>
+                    <p><strong>How to fix:</strong></p>
+                    <ul>
+                        <li>Get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a></li>
+                        <li>Go to <strong>Settings</strong> and add your Janice API key</li>
+                        <li>Or add <code>MINING_MANAGER_JANICE_API_KEY=your_key_here</code> to your .env file</li>
+                    </ul>
+                `;
+            }
+
+            errorHtml += '</div>';
+            resultsDiv.innerHTML = errorHtml;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Run Batch Test';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error" style="margin-top: 15px;">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+</script>
+@endpush
+
 @endsection

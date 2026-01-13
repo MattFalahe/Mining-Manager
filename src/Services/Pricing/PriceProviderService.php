@@ -150,58 +150,260 @@ class PriceProviderService
     protected function getPricesFromJanice(array $typeIds): array
     {
         // Check settings first, then fall back to ENV/config
-        $apiKey = Setting::getValue('janice_api_key') 
+        $apiKey = Setting::getValue('janice_api_key')
             ?: config('mining-manager.general.price_provider_api_key');
-        
+
         if (empty($apiKey)) {
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
         $prices = [];
         $market = Setting::getValue('janice_market', 'jita'); // jita or amarr
+        $batchSize = Setting::getValue('janice_batch_size', 50);
+        $rateLimitDelay = Setting::getValue('janice_rate_limit_delay', 50000); // microseconds
+        $maxRetries = Setting::getValue('janice_max_retries', 3);
 
-        // Janice API is more efficient when we call individually for pricing
-        // Use the pricer endpoint for single items
+        // For large batches, use appraisal endpoint (more efficient)
+        if (count($typeIds) > $batchSize) {
+            return $this->getPricesFromJaniceAppraisal($typeIds, $apiKey, $market);
+        }
+
+        // Use the pricer endpoint for smaller batches
         foreach ($typeIds as $typeId) {
+            $attempts = 0;
+            $success = false;
+
+            while ($attempts < $maxRetries && !$success) {
+                try {
+                    $url = sprintf('%s/%d?market=%s',
+                        self::JANICE_PRICER_URL,
+                        $typeId,
+                        $market === 'jita' ? '2' : '1' // 2=Jita, 1=Amarr
+                    );
+
+                    $response = Http::timeout(10)
+                        ->retry(2, 100)
+                        ->withHeaders([
+                            'X-ApiKey' => $apiKey,
+                            'accept' => 'application/json'
+                        ])->get($url);
+
+                    if (!$response->successful()) {
+                        Log::warning('Janice API error for type', [
+                            'type_id' => $typeId,
+                            'status' => $response->status(),
+                            'attempt' => $attempts + 1
+                        ]);
+                        $attempts++;
+
+                        if ($attempts < $maxRetries) {
+                            usleep(1000000); // 1 second delay before retry
+                            continue;
+                        }
+
+                        $prices[$typeId] = 0;
+                        break;
+                    }
+
+                    $data = $response->json();
+
+                    // Get price based on configured method
+                    $priceMethod = Setting::getValue('janice_price_method', 'buy');
+
+                    if (isset($data['immediatePrices'])) {
+                        $prices[$typeId] = match($priceMethod) {
+                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
+                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
+                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
+                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
+                        };
+                    } else {
+                        $prices[$typeId] = 0;
+                    }
+
+                    $success = true;
+
+                    // Configurable rate limiting
+                    if ($rateLimitDelay > 0) {
+                        usleep($rateLimitDelay);
+                    }
+
+                } catch (Exception $e) {
+                    $attempts++;
+                    Log::error('Failed to fetch Janice price', [
+                        'type_id' => $typeId,
+                        'error' => $e->getMessage(),
+                        'attempt' => $attempts
+                    ]);
+
+                    if ($attempts >= $maxRetries) {
+                        $prices[$typeId] = 0;
+                    } else {
+                        usleep(1000000); // 1 second delay before retry
+                    }
+                }
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Fetch prices from Janice Appraisal API (batch endpoint)
+     *
+     * @param array $typeIds
+     * @param string $apiKey
+     * @param string $market
+     * @return array
+     */
+    protected function getPricesFromJaniceAppraisal(array $typeIds, string $apiKey, string $market): array
+    {
+        $prices = [];
+        $maxRetries = Setting::getValue('janice_max_retries', 3);
+
+        // Build appraisal input (EFT format)
+        $items = [];
+        foreach ($typeIds as $typeId) {
+            // Get type name from invTypes table
+            $typeName = DB::table('invTypes')
+                ->where('typeID', $typeId)
+                ->value('typeName');
+
+            if ($typeName) {
+                $items[] = "{$typeName} x1";
+            }
+        }
+
+        if (empty($items)) {
+            Log::warning('No valid type names found for Janice appraisal');
+            return array_fill_keys($typeIds, 0);
+        }
+
+        $appraisalText = implode("\n", $items);
+        $attempts = 0;
+        $success = false;
+
+        while ($attempts < $maxRetries && !$success) {
             try {
-                $url = sprintf('%s/%d?market=%s', 
-                    self::JANICE_PRICER_URL, 
-                    $typeId, 
-                    $market === 'jita' ? '2' : '1' // 2=Jita, 1=Amarr
+                $url = sprintf('%s?market=%s',
+                    self::JANICE_APPRAISAL_URL,
+                    $market === 'jita' ? '2' : '1'
                 );
 
-                $response = Http::withHeaders([
-                    'X-ApiKey' => $apiKey,
-                    'accept' => 'application/json'
-                ])->get($url);
+                $response = Http::timeout(30)
+                    ->retry(2, 100)
+                    ->withHeaders([
+                        'X-ApiKey' => $apiKey,
+                        'accept' => 'application/json',
+                        'Content-Type' => 'text/plain'
+                    ])->send('POST', $url, [
+                        'body' => $appraisalText
+                    ]);
 
                 if (!$response->successful()) {
-                    Log::warning('Janice API error for type', [
-                        'type_id' => $typeId,
-                        'status' => $response->status()
+                    Log::warning('Janice Appraisal API error', [
+                        'status' => $response->status(),
+                        'attempt' => $attempts + 1
                     ]);
-                    $prices[$typeId] = 0;
-                    continue;
+                    $attempts++;
+
+                    if ($attempts < $maxRetries) {
+                        sleep(2);
+                        continue;
+                    }
+
+                    return array_fill_keys($typeIds, 0);
                 }
 
                 $data = $response->json();
-                
-                // Get price based on configured method
                 $priceMethod = Setting::getValue('janice_price_method', 'buy');
-                
+
+                // Parse the appraisal response
                 if (isset($data['immediatePrices'])) {
-                    $prices[$typeId] = match($priceMethod) {
-                        'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
-                        'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
-                        'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
-                        default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
+                    $totalPrice = match($priceMethod) {
+                        'sell' => (float) ($data['immediatePrices']['totalSellPrice'] ?? 0),
+                        'buy' => (float) ($data['immediatePrices']['totalBuyPrice'] ?? 0),
+                        'split' => (float) ($data['effectivePrices']['totalSplitPrice'] ?? 0),
+                        default => (float) ($data['immediatePrices']['totalBuyPrice'] ?? 0)
                     };
+
+                    Log::info('Janice appraisal completed', [
+                        'item_count' => count($typeIds),
+                        'total_price' => $totalPrice
+                    ]);
+                }
+
+                // For batch appraisal, fall back to individual pricing
+                // since we need per-item prices not just totals
+                Log::info('Falling back to individual pricing after appraisal');
+                return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
+
+            } catch (Exception $e) {
+                $attempts++;
+                Log::error('Failed to fetch Janice appraisal', [
+                    'error' => $e->getMessage(),
+                    'attempt' => $attempts
+                ]);
+
+                if ($attempts >= $maxRetries) {
+                    return array_fill_keys($typeIds, 0);
+                }
+
+                sleep(2);
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Fetch prices using individual pricer endpoint
+     *
+     * @param array $typeIds
+     * @param string $apiKey
+     * @param string $market
+     * @return array
+     */
+    protected function getPricesFromJanicePricer(array $typeIds, string $apiKey, string $market): array
+    {
+        $prices = [];
+        $rateLimitDelay = Setting::getValue('janice_rate_limit_delay', 50000);
+
+        foreach ($typeIds as $typeId) {
+            try {
+                $url = sprintf('%s/%d?market=%s',
+                    self::JANICE_PRICER_URL,
+                    $typeId,
+                    $market === 'jita' ? '2' : '1'
+                );
+
+                $response = Http::timeout(10)
+                    ->withHeaders([
+                        'X-ApiKey' => $apiKey,
+                        'accept' => 'application/json'
+                    ])->get($url);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $priceMethod = Setting::getValue('janice_price_method', 'buy');
+
+                    if (isset($data['immediatePrices'])) {
+                        $prices[$typeId] = match($priceMethod) {
+                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
+                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
+                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
+                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
+                        };
+                    } else {
+                        $prices[$typeId] = 0;
+                    }
                 } else {
                     $prices[$typeId] = 0;
                 }
 
-                // Small delay to avoid rate limiting
-                usleep(50000); // 50ms delay
+                if ($rateLimitDelay > 0) {
+                    usleep($rateLimitDelay);
+                }
 
             } catch (Exception $e) {
                 Log::error('Failed to fetch Janice price', [
