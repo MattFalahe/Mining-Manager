@@ -31,11 +31,28 @@ class SettingsController extends Controller
     /**
      * Display settings page
      *
+     * @param Request $request
      * @return \Illuminate\View\View
      */
-    public function index()
+    public function index(Request $request)
     {
-        // Get all current settings
+        // Get corporation ID from request (if switching corporations)
+        $corporationId = $request->input('corporation_id');
+
+        // If corporation_id provided, set it as active context
+        if ($corporationId) {
+            $this->settingsService->setActiveCorporation((int)$corporationId);
+        }
+
+        // Check if corporation has custom settings
+        $hasCustomSettings = false;
+        $isFirstTimeSetup = false;
+        if ($corporationId) {
+            $hasCustomSettings = $this->settingsService->corporationHasCustomSettings((int)$corporationId);
+            $isFirstTimeSetup = !$hasCustomSettings;
+        }
+
+        // Get all current settings (will use corporation context if set)
         $settings = [
             'general' => $this->settingsService->getGeneralSettings(),
             'contract' => $this->settingsService->getContractSettings(),
@@ -54,7 +71,13 @@ class SettingsController extends Controller
         // Get available corporations from SeAT
         $corporations = $this->getAvailableCorporations();
 
-        return view('mining-manager::settings.index', compact('settings', 'corporations'));
+        return view('mining-manager::settings.index', compact(
+            'settings',
+            'corporations',
+            'corporationId',
+            'hasCustomSettings',
+            'isFirstTimeSetup'
+        ));
     }
 
     /**
@@ -126,7 +149,13 @@ class SettingsController extends Controller
 
         try {
             $data = $validator->validated();
-            
+
+            // Set corporation context if provided
+            $corporationId = $request->input('selected_corporation_id');
+            if ($corporationId) {
+                $this->settingsService->setActiveCorporation((int)$corporationId);
+            }
+
             // If corporation_id is provided, fetch the name and ticker from SeAT
             if (isset($data['corporation_id']) && $data['corporation_id']) {
                 $corporation = CorporationInfo::find($data['corporation_id']);
@@ -135,10 +164,24 @@ class SettingsController extends Controller
                     $data['corporation_ticker'] = $corporation->ticker;
                 }
             }
-            
+
+            // Convert boolean checkboxes (unchecked = not sent)
+            $data['compact_mode'] = $request->has('compact_mode');
+            $data['show_character_portraits'] = $request->has('show_character_portraits');
+            $data['enable_notifications'] = $request->has('enable_notifications');
+            $data['notify_tax_due'] = $request->has('notify_tax_due');
+            $data['notify_moon_extractions'] = $request->has('notify_moon_extractions');
+            $data['notify_events'] = $request->has('notify_events');
+
             $this->settingsService->updateGeneralSettings($data);
 
-            return redirect()->route('mining-manager.settings.index')
+            // Redirect back with corporation_id to maintain context
+            $redirectUrl = route('mining-manager.settings.index');
+            if ($corporationId) {
+                $redirectUrl .= '?corporation_id=' . $corporationId;
+            }
+
+            return redirect($redirectUrl)
                 ->with('success', 'General settings updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -244,6 +287,12 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
+            // Set corporation context if provided
+            $corporationId = $request->input('selected_corporation_id');
+            if ($corporationId) {
+                $this->settingsService->setActiveCorporation((int)$corporationId);
+            }
+
             // Convert moon_ore_taxing radio button to boolean flags
             $moonOreSelector = $data['moon_ore_taxing'];
             $data['all_moon_ore'] = ($moonOreSelector === 'all');
@@ -266,7 +315,13 @@ class SettingsController extends Controller
             // Update all settings via service
             $this->settingsService->updateTaxRates($data);
 
-            return redirect()->route('mining-manager.settings.index')
+            // Redirect back with corporation_id to maintain context
+            $redirectUrl = route('mining-manager.settings.index');
+            if ($corporationId) {
+                $redirectUrl .= '?corporation_id=' . $corporationId;
+            }
+
+            return redirect($redirectUrl)
                 ->with('success', 'Tax rates updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()

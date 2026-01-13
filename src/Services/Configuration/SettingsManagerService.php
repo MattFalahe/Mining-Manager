@@ -20,7 +20,48 @@ class SettingsManagerService
     const CACHE_PREFIX = 'mining_manager_settings_';
 
     /**
+     * Active corporation ID for settings context
+     *
+     * @var int|null
+     */
+    protected $activeCorporationId = null;
+
+    /**
+     * Set the active corporation context
+     *
+     * @param int|null $corporationId
+     * @return self
+     */
+    public function setActiveCorporation(?int $corporationId): self
+    {
+        $this->activeCorporationId = $corporationId;
+        return $this;
+    }
+
+    /**
+     * Get the active corporation ID
+     *
+     * @return int|null
+     */
+    public function getActiveCorporation(): ?int
+    {
+        return $this->activeCorporationId;
+    }
+
+    /**
+     * Check if a corporation has custom settings
+     *
+     * @param int $corporationId
+     * @return bool
+     */
+    public function corporationHasCustomSettings(int $corporationId): bool
+    {
+        return Setting::where('corporation_id', $corporationId)->exists();
+    }
+
+    /**
      * Get a setting value with fallback to config
+     * Now supports corporation-specific settings
      *
      * @param string $key
      * @param mixed $default
@@ -28,13 +69,13 @@ class SettingsManagerService
      */
     public function getSetting(string $key, $default = null)
     {
-        $cacheKey = self::CACHE_PREFIX . $key;
+        $cacheKey = self::CACHE_PREFIX . ($this->activeCorporationId ?? 'global') . '_' . $key;
 
         return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default) {
-            $setting = Setting::where('key', $key)->first();
+            $setting = Setting::getValue($key, null, $this->activeCorporationId);
 
-            if ($setting) {
-                return $this->castValue($setting->value, $setting->type);
+            if ($setting !== null) {
+                return $setting;
             }
 
             // Fallback to config
@@ -45,6 +86,7 @@ class SettingsManagerService
 
     /**
      * Update or create a setting
+     * Now supports corporation-specific settings
      *
      * @param string $key
      * @param mixed $value
@@ -57,18 +99,16 @@ class SettingsManagerService
             $type = $this->detectType($value);
         }
 
-        Setting::updateOrCreate(
-            ['key' => $key],
-            [
-                'value' => is_array($value) ? json_encode($value) : $value,
-                'type' => $type,
-            ]
-        );
+        Setting::setValue($key, $value, $type, $this->activeCorporationId);
 
-        // Clear cache
-        Cache::forget(self::CACHE_PREFIX . $key);
-        
-        Log::info("Mining Manager: Setting updated - {$key}");
+        // Clear cache for both global and corporation-specific
+        Cache::forget(self::CACHE_PREFIX . 'global_' . $key);
+        if ($this->activeCorporationId) {
+            Cache::forget(self::CACHE_PREFIX . $this->activeCorporationId . '_' . $key);
+        }
+
+        $corpContext = $this->activeCorporationId ? " (Corp ID: {$this->activeCorporationId})" : " (Global)";
+        Log::info("Mining Manager: Setting updated - {$key}{$corpContext}");
     }
 
     /**

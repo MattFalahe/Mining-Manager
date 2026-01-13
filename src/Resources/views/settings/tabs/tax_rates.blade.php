@@ -1,6 +1,9 @@
 <form method="POST" action="{{ route('mining-manager.settings.update-tax-rates') }}">
     @csrf
 
+    {{-- Hidden field to maintain corporation context --}}
+    <input type="hidden" name="selected_corporation_id" value="{{ request('corporation_id') ?? '' }}">
+
     <h4>
         <i class="fas fa-percent"></i>
         {{ trans('mining-manager::settings.tax_rate_settings') }}

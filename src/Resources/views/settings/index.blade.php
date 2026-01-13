@@ -127,6 +127,35 @@
     </div>
     @endif
 
+    {{-- Corporation Settings Status Indicators --}}
+    @if(isset($corporationId) && $corporationId)
+        @if($isFirstTimeSetup)
+            <div class="info-banner">
+                <h5><i class="fas fa-info-circle"></i> First Time Setup</h5>
+                <p class="mb-0">
+                    You are setting up tax settings for this corporation for the first time.
+                    These settings will be saved specifically for this corporation and can be different from your other corporations.
+                </p>
+            </div>
+        @elseif($hasCustomSettings)
+            <div class="success-banner">
+                <h5><i class="fas fa-check-circle"></i> Custom Corporation Settings Active</h5>
+                <p class="mb-0">
+                    This corporation has custom tax settings configured.
+                    You are viewing and editing settings specific to this corporation.
+                </p>
+            </div>
+        @endif
+    @else
+        <div class="warning-banner">
+            <h5><i class="fas fa-exclamation-triangle"></i> Global Settings Mode</h5>
+            <p class="mb-0">
+                You are currently viewing global settings. Select a corporation from the dropdown in General Settings
+                to configure corporation-specific tax rates and settings.
+            </p>
+        </div>
+    @endif
+
     <div class="settings-wrapper">
         {{-- Sidebar --}}
         <div class="settings-sidebar">
@@ -137,12 +166,13 @@
         <div class="settings-content">
             <div class="card card-dark">
                 <div class="card-body">
-                    
+
                     {{-- General Settings Tab --}}
                     <div id="general-settings" class="settings-section active">
                         @include('mining-manager::settings.tabs.general', [
                             'settings' => (object)$settings['general'],
-                            'corporations' => $corporations
+                            'corporations' => $corporations,
+                            'selectedCorporationId' => $corporationId ?? null
                         ])
                     </div>
 
@@ -392,30 +422,48 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // Corporation switching functionality
+    $('#switchCorporationBtn').on('click', function() {
+        const corporationId = $('#corporation_id').val();
+
+        if (!corporationId) {
+            alert('Please select a corporation first.');
+            return;
+        }
+
+        // Redirect to settings page with corporation_id parameter
+        window.location.href = '{{ route("mining-manager.settings.index") }}?corporation_id=' + corporationId;
+    });
+
+    // Update hidden field when corporation changes
+    $('#corporation_id').on('change', function() {
+        $('#selected_corporation_id').val($(this).val());
+    });
+
     // Tab switching
     $('.nav-link[data-tab]').on('click', function(e) {
         e.preventDefault();
-        
+
         const tab = $(this).data('tab');
-        
+
         // Update active nav
         $('.nav-link').removeClass('active');
         $(this).addClass('active');
-        
+
         // Update active content
         $('.settings-section').removeClass('active');
         $(`#${tab}`).addClass('active');
-        
+
         // Update URL hash
         window.location.hash = tab;
     });
-    
+
     // Load tab from URL hash on page load
     if (window.location.hash) {
         const hash = window.location.hash.substring(1);
         $(`.nav-link[data-tab="${hash}"]`).click();
     }
-    
+
     // Custom file input label update
     $('.custom-file-input').on('change', function() {
         const fileName = $(this).val().split('\\').pop();

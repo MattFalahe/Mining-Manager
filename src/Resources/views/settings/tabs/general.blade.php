@@ -1,6 +1,9 @@
 <form method="POST" action="{{ route('mining-manager.settings.update-general') }}">
     @csrf
-    
+
+    {{-- Hidden field to track selected corporation context --}}
+    <input type="hidden" name="selected_corporation_id" id="selected_corporation_id" value="{{ $selectedCorporationId ?? '' }}">
+
     <h4>
         <i class="fas fa-sliders-h"></i>
         {{ trans('mining-manager::settings.general_settings') }}
@@ -28,25 +31,32 @@
                     <i class="fas fa-building"></i>
                     Corporation <span class="text-danger">*</span>
                 </label>
-                <select class="form-control @error('corporation_id') is-invalid @enderror" 
-                        id="corporation_id" 
-                        name="corporation_id"
-                        required>
-                    <option value="">-- Select Corporation --</option>
-                    @if(isset($corporations))
-                        @foreach($corporations as $corp)
-                            <option value="{{ $corp->corporation_id }}"
-                                {{ (old('corporation_id', $settings->corporation_id ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
-                                [{{ $corp->ticker }}] {{ $corp->name }}
-                            </option>
-                        @endforeach
-                    @endif
-                </select>
+                <div class="input-group">
+                    <select class="form-control @error('corporation_id') is-invalid @enderror"
+                            id="corporation_id"
+                            name="corporation_id"
+                            required>
+                        <option value="">-- Select Corporation --</option>
+                        @if(isset($corporations))
+                            @foreach($corporations as $corp)
+                                <option value="{{ $corp->corporation_id }}"
+                                    {{ (old('corporation_id', $selectedCorporationId ?? $settings->corporation_id ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
+                                    [{{ $corp->ticker }}] {{ $corp->name }}
+                                </option>
+                            @endforeach
+                        @endif
+                    </select>
+                    <div class="input-group-append">
+                        <button type="button" class="btn btn-info" id="switchCorporationBtn" title="Switch to this corporation's settings">
+                            <i class="fas fa-sync-alt"></i> Switch Corporation
+                        </button>
+                    </div>
+                </div>
                 @error('corporation_id')
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
                 <small class="form-text text-muted">
-                    Select the corporation you want to manage with this plugin. All tax calculations and mining data will be filtered to this corporation.
+                    Select the corporation you want to configure tax settings for. Click "Switch Corporation" to load that corporation's settings without saving.
                 </small>
             </div>
 
