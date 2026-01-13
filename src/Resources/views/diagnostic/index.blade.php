@@ -528,7 +528,11 @@
 <script>
 function testConnectivity() {
     console.log('Testing connectivity to diagnostic routes...');
-    fetch('{{ route("mining-manager.diagnostic.ping") }}', {
+    const url = '{{ route("mining-manager.diagnostic.ping") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Ping URL:', relativeUrl);
+    fetch(relativeUrl, {
         headers: {
             'Accept': 'application/json'
         }
@@ -573,7 +577,11 @@ function testProvider() {
     spinner.style.display = 'inline-block';
     resultsDiv.innerHTML = '';
 
-    fetch('{{ route("mining-manager.diagnostic.test-price-provider") }}', {
+    const url = '{{ route("mining-manager.diagnostic.test-price-provider") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Test provider URL:', relativeUrl);
+    fetch(relativeUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -662,7 +670,11 @@ function loadProviderConfig() {
     const configDisplay = document.getElementById('configDisplay');
     const configContent = document.getElementById('configContent');
 
-    fetch('{{ route("mining-manager.diagnostic.price-provider-config") }}', {
+    const url = '{{ route("mining-manager.diagnostic.price-provider-config") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Config URL:', relativeUrl);
+    fetch(relativeUrl, {
         headers: {
             'Accept': 'application/json'
         }
@@ -727,7 +739,11 @@ function testBatchPricing() {
     spinner.style.display = 'inline-block';
     resultsDiv.innerHTML = '';
 
-    fetch('{{ route("mining-manager.diagnostic.test-batch-pricing") }}', {
+    const url = '{{ route("mining-manager.diagnostic.test-batch-pricing") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Batch pricing URL:', relativeUrl);
+    fetch(relativeUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -833,7 +849,11 @@ function loadCacheHealth() {
     spinner.style.display = 'inline-block';
     resultsDiv.innerHTML = '';
 
-    fetch('{{ route("mining-manager.diagnostic.cache-health") }}')
+    const url = '{{ route("mining-manager.diagnostic.cache-health") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Cache health URL:', relativeUrl);
+    fetch(relativeUrl)
     .then(response => response.json())
     .then(data => {
         btnText.textContent = 'Check Health';
@@ -945,7 +965,11 @@ function warmCache() {
     spinner.style.display = 'inline-block';
     resultsDiv.innerHTML = '';
 
-    fetch('{{ route("mining-manager.diagnostic.warm-cache") }}', {
+    const url = '{{ route("mining-manager.diagnostic.warm-cache") }}';
+    // Convert to relative URL to respect current protocol
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    console.log('Warm cache URL:', relativeUrl);
+    fetch(relativeUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
