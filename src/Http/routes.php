@@ -700,6 +700,12 @@ Route::group([
 
     // Diagnostic Routes (Test Data Generation)
     Route::group(['prefix' => 'diagnostic'], function () {
+        Route::get('/ping', [
+            'as' => 'mining-manager.diagnostic.ping',
+            'uses' => 'DiagnosticController@ping',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
         Route::get('/', [
             'as' => 'mining-manager.diagnostic.index',
             'uses' => 'DiagnosticController@index',

@@ -391,6 +391,10 @@
                             <i class="fas fa-cog"></i> View Configuration
                         </button>
 
+                        <button type="button" class="btn btn-secondary ml-2" onclick="testConnectivity()">
+                            <i class="fas fa-network-wired"></i> Test Connection
+                        </button>
+
                         <!-- Test Results Container -->
                         <div id="testResults"></div>
 
@@ -522,6 +526,27 @@
 
 @push('javascript')
 <script>
+function testConnectivity() {
+    console.log('Testing connectivity to diagnostic routes...');
+    fetch('{{ route("mining-manager.diagnostic.ping") }}', {
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        console.log('Ping response:', response);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Ping data:', data);
+        alert('✓ Connection successful! Routes are working.\n\n' + JSON.stringify(data, null, 2));
+    })
+    .catch(error => {
+        console.error('Ping error:', error);
+        alert('✗ Connection failed!\n\nError: ' + error.message + '\n\nCheck browser console (F12) for details');
+    });
+}
+
 function checkProviderRequirements() {
     const provider = document.getElementById('providerSelect').value;
     const warningBox = document.getElementById('providerWarning');
@@ -552,11 +577,19 @@ function testProvider() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
         },
         body: JSON.stringify({ provider: provider })
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         btnText.textContent = 'Test Provider';
         spinner.style.display = 'none';
@@ -613,10 +646,13 @@ function testProvider() {
     .catch(error => {
         btnText.textContent = 'Test Provider';
         spinner.style.display = 'none';
+        console.error('Fetch error:', error);
         resultsDiv.innerHTML = `
             <div class="provider-test-result error">
                 <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
-                <p>${error.message}</p>
+                <p><strong>Error:</strong> ${error.message}</p>
+                <p><strong>URL:</strong> {{ route("mining-manager.diagnostic.test-price-provider") }}</p>
+                <p class="mb-0"><small>Check browser console (F12) and Laravel logs for more details</small></p>
             </div>
         `;
     });
@@ -626,8 +662,18 @@ function loadProviderConfig() {
     const configDisplay = document.getElementById('configDisplay');
     const configContent = document.getElementById('configContent');
 
-    fetch('{{ route("mining-manager.diagnostic.price-provider-config") }}')
-    .then(response => response.json())
+    fetch('{{ route("mining-manager.diagnostic.price-provider-config") }}', {
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        console.log('Config response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         let html = `
             <p><strong>Current Provider:</strong> ${data.current_provider}</p>
@@ -660,7 +706,12 @@ function loadProviderConfig() {
         configDisplay.style.display = 'block';
     })
     .catch(error => {
-        configContent.innerHTML = `<p class="text-danger">Error loading configuration: ${error.message}</p>`;
+        console.error('Config fetch error:', error);
+        configContent.innerHTML = `
+            <p class="text-danger"><strong>Error loading configuration:</strong> ${error.message}</p>
+            <p class="mb-0"><small>URL: {{ route("mining-manager.diagnostic.price-provider-config") }}</small></p>
+            <p class="mb-0"><small>Check browser console (F12) and Laravel logs for more details</small></p>
+        `;
         configDisplay.style.display = 'block';
     });
 }

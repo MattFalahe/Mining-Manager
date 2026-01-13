@@ -14,6 +14,21 @@ use MiningManager\Models\MiningPriceCache;
 class DiagnosticController extends Controller
 {
     /**
+     * Test endpoint to verify routes are working
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function ping()
+    {
+        Log::info('DiagnosticController: ping endpoint called');
+        return response()->json([
+            'success' => true,
+            'message' => 'Diagnostic routes are working!',
+            'timestamp' => now()->toDateTimeString()
+        ]);
+    }
+
+    /**
      * Display diagnostic page
      *
      * @return \Illuminate\View\View
@@ -364,6 +379,12 @@ class DiagnosticController extends Controller
      */
     public function testPriceProvider(Request $request)
     {
+        Log::info('DiagnosticController: testPriceProvider called', [
+            'provider' => $request->input('provider', 'seat'),
+            'request_method' => $request->method(),
+            'ip' => $request->ip()
+        ]);
+
         try {
             $provider = $request->input('provider', 'seat');
             $priceService = new PriceProviderService();
@@ -457,6 +478,8 @@ class DiagnosticController extends Controller
      */
     public function getPriceProviderConfig()
     {
+        Log::info('DiagnosticController: getPriceProviderConfig called');
+
         try {
             $priceService = new PriceProviderService();
             $providers = $priceService->getAvailableProviders();
