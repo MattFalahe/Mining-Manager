@@ -140,7 +140,10 @@
                     
                     {{-- General Settings Tab --}}
                     <div id="general-settings" class="settings-section active">
-                        @include('mining-manager::settings.tabs.general', ['settings' => (object)$settings['general']])
+                        @include('mining-manager::settings.tabs.general', [
+                            'settings' => (object)$settings['general'],
+                            'corporations' => $corporations
+                        ])
                     </div>
 
                     {{-- Tax Rates Tab --}}

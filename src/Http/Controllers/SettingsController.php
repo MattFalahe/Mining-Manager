@@ -101,19 +101,16 @@ class SettingsController extends Controller
             'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
             'corporation_name' => 'nullable|string|max:255',
             'corporation_ticker' => 'nullable|string|max:5',
-            
-            // Time Settings
-            'timezone' => 'required|string',
-            'date_format' => 'required|string',
-            'time_format' => 'required|string',
-            
+
+            // Note: timezone, date_format, time_format removed - always uses UTC for consistency
+
             // Display Settings
             'currency_decimals' => 'required|integer|min:0|max:8',
             'items_per_page' => 'required|integer|min:10|max:100',
             'compact_mode' => 'nullable|boolean',
             'show_character_portraits' => 'nullable|boolean',
-            
-            // Notification Settings  
+
+            // Notification Settings
             'enable_notifications' => 'nullable|boolean',
             'notify_tax_due' => 'nullable|boolean',
             'notify_moon_extractions' => 'nullable|boolean',

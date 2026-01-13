@@ -66,112 +66,33 @@
         </div>
     </div>
 
-    {{-- Time Settings --}}
+    {{-- Time & Date Information --}}
     <div class="card bg-dark mb-3">
         <div class="card-header">
             <h5 class="card-title mb-0">
                 <i class="fas fa-clock"></i>
-                {{ trans('mining-manager::settings.time_settings') }}
+                Time & Date Settings
             </h5>
         </div>
         <div class="card-body">
-            <div class="form-group">
-                <label for="timezone">
-                    <i class="fas fa-globe"></i>
-                    {{ trans('mining-manager::settings.timezone') }}
-                </label>
-                <select class="form-control @error('timezone') is-invalid @enderror" 
-                        id="timezone" 
-                        name="timezone">
-                    <option value="UTC" {{ ($settings->timezone ?? 'UTC') == 'UTC' ? 'selected' : '' }}>
-                        UTC (EVE Time)
-                    </option>
-                    <option value="America/New_York" {{ ($settings->timezone ?? '') == 'America/New_York' ? 'selected' : '' }}>
-                        Eastern Time (US)
-                    </option>
-                    <option value="America/Chicago" {{ ($settings->timezone ?? '') == 'America/Chicago' ? 'selected' : '' }}>
-                        Central Time (US)
-                    </option>
-                    <option value="America/Denver" {{ ($settings->timezone ?? '') == 'America/Denver' ? 'selected' : '' }}>
-                        Mountain Time (US)
-                    </option>
-                    <option value="America/Los_Angeles" {{ ($settings->timezone ?? '') == 'America/Los_Angeles' ? 'selected' : '' }}>
-                        Pacific Time (US)
-                    </option>
-                    <option value="Europe/London" {{ ($settings->timezone ?? '') == 'Europe/London' ? 'selected' : '' }}>
-                        London (GMT)
-                    </option>
-                    <option value="Europe/Paris" {{ ($settings->timezone ?? '') == 'Europe/Paris' ? 'selected' : '' }}>
-                        Central Europe (CET)
-                    </option>
-                    <option value="Europe/Moscow" {{ ($settings->timezone ?? '') == 'Europe/Moscow' ? 'selected' : '' }}>
-                        Moscow (MSK)
-                    </option>
-                    <option value="Asia/Tokyo" {{ ($settings->timezone ?? '') == 'Asia/Tokyo' ? 'selected' : '' }}>
-                        Tokyo (JST)
-                    </option>
-                    <option value="Australia/Sydney" {{ ($settings->timezone ?? '') == 'Australia/Sydney' ? 'selected' : '' }}>
-                        Sydney (AEST)
-                    </option>
-                </select>
-                @error('timezone')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.timezone_help') }}
-                </small>
-            </div>
-
-            <div class="form-group">
-                <label for="date_format">
-                    <i class="fas fa-calendar"></i>
-                    {{ trans('mining-manager::settings.date_format') }}
-                </label>
-                <select class="form-control @error('date_format') is-invalid @enderror" 
-                        id="date_format" 
-                        name="date_format">
-                    <option value="Y-m-d" {{ ($settings->date_format ?? 'Y-m-d') == 'Y-m-d' ? 'selected' : '' }}>
-                        YYYY-MM-DD ({{ now()->format('Y-m-d') }})
-                    </option>
-                    <option value="m/d/Y" {{ ($settings->date_format ?? '') == 'm/d/Y' ? 'selected' : '' }}>
-                        MM/DD/YYYY ({{ now()->format('m/d/Y') }})
-                    </option>
-                    <option value="d/m/Y" {{ ($settings->date_format ?? '') == 'd/m/Y' ? 'selected' : '' }}>
-                        DD/MM/YYYY ({{ now()->format('d/m/Y') }})
-                    </option>
-                    <option value="d.m.Y" {{ ($settings->date_format ?? '') == 'd.m.Y' ? 'selected' : '' }}>
-                        DD.MM.YYYY ({{ now()->format('d.m.Y') }})
-                    </option>
-                </select>
-                @error('date_format')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.date_format_help') }}
-                </small>
-            </div>
-
-            <div class="form-group">
-                <label for="time_format">
-                    <i class="fas fa-clock"></i>
-                    {{ trans('mining-manager::settings.time_format') }}
-                </label>
-                <select class="form-control @error('time_format') is-invalid @enderror" 
-                        id="time_format" 
-                        name="time_format">
-                    <option value="H:i:s" {{ ($settings->time_format ?? 'H:i:s') == 'H:i:s' ? 'selected' : '' }}>
-                        24 Hour ({{ now()->format('H:i:s') }})
-                    </option>
-                    <option value="g:i:s A" {{ ($settings->time_format ?? '') == 'g:i:s A' ? 'selected' : '' }}>
-                        12 Hour ({{ now()->format('g:i:s A') }})
-                    </option>
-                </select>
-                @error('time_format')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.time_format_help') }}
-                </small>
+            <div class="alert alert-info mb-0">
+                <h5>
+                    <i class="fas fa-info-circle"></i>
+                    UTC (EVE Time) is Always Used
+                </h5>
+                <p class="mb-2">
+                    All tax calculations use <strong>UTC (EVE Time)</strong> exclusively to ensure consistency with:
+                </p>
+                <ul class="mb-2">
+                    <li>Moon rental bills from your alliance</li>
+                    <li>Corporation mining ledger timestamps from the EVE API</li>
+                    <li>Tax month boundaries aligned with EVE's calendar</li>
+                    <li>All EVE Online game mechanics</li>
+                </ul>
+                <p class="mb-0">
+                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <small><strong>Note:</strong> Using any timezone other than UTC would cause misalignment with EVE's systems and create inconsistent tax calculations.</small>
+                </p>
             </div>
         </div>
     </div>

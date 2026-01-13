@@ -96,12 +96,16 @@ class SettingsManagerService
             
             // Tax Calculation Method
             'tax_calculation_method' => $this->getSetting('general.tax_calculation_method', config('mining-manager.general.tax_calculation_method', 'accumulated')),
-            
-            // Time Settings
-            'timezone' => $this->getSetting('general.timezone', 'UTC'),
-            'date_format' => $this->getSetting('general.date_format', 'Y-m-d'),
-            'time_format' => $this->getSetting('general.time_format', 'H:i:s'),
-            
+
+            // Time Settings - Always UTC for consistency with EVE Online
+            // These are hard-coded and not configurable to prevent issues with:
+            // - Moon rental bills alignment
+            // - Corporation mining ledger timestamps
+            // - Tax month boundaries
+            'timezone' => 'UTC',
+            'date_format' => 'Y-m-d',
+            'time_format' => 'H:i:s',
+
             // Display Settings
             'currency_decimals' => $this->getSetting('general.currency_decimals', 2),
             'items_per_page' => $this->getSetting('general.items_per_page', 25),
