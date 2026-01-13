@@ -136,7 +136,6 @@ class DiagnosticController extends Controller
                             'gender' => rand(0, 1) ? 'male' : 'female', // Random gender
                             'race_id' => [1, 2, 4, 8][rand(0, 3)], // Random EVE race (Caldari, Minmatar, Amarr, Gallente)
                             'bloodline_id' => rand(1, 15), // Random bloodline
-                            'ancestry_id' => rand(1, 40), // Random ancestry
                             'security_status' => rand(-10, 10) / 10,
                             'birthday' => Carbon::now()->subYears(rand(1, 10)),
                             'created_at' => now(),
