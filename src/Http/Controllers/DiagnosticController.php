@@ -60,6 +60,7 @@ class DiagnosticController extends Controller
             $corporations = [];
             for ($i = 1; $i <= $count; $i++) {
                 $corpId = 98000000 + $i;
+                $ceoId = 90000000 + $i; // CEO character ID
                 $ticker = 'TST' . str_pad($i, 2, '0', STR_PAD_LEFT);
 
                 DB::table('corporation_infos')->updateOrInsert(
@@ -67,6 +68,7 @@ class DiagnosticController extends Controller
                     [
                         'name' => "Test Corp {$i}",
                         'ticker' => $ticker,
+                        'ceo_id' => $ceoId,
                         'member_count' => rand(10, 100),
                         'tax_rate' => 0.1,
                         'created_at' => now(),

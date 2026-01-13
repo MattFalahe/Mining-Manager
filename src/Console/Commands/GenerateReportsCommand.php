@@ -65,30 +65,21 @@ class GenerateReportsCommand extends Command
         $this->info("Format: {$format}");
 
         try {
-            // Generate report data
-            $reportData = $this->reportService->generateReport($startDate, $endDate, $type);
-
-            // Save report to database
-            $report = MiningReport::create([
-                'report_type' => $type,
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-                'format' => $format,
-                'data' => json_encode($reportData),
-                'generated_at' => Carbon::now(),
-                'generated_by' => 'system',
-            ]);
+            // Generate report (this returns a MiningReport model)
+            $report = $this->reportService->generateReport($startDate, $endDate, $type, $format);
 
             $this->info("Report generated successfully!");
             $this->info("Report ID: {$report->id}");
 
+            // Decode report data for display
+            $reportData = json_decode($report->data, true);
+
             // Display summary
             $this->displayReportSummary($reportData);
 
-            // Export if requested
-            if ($format !== 'json') {
-                $exportPath = $this->exportReport($report, $format);
-                $this->info("Report exported to: {$exportPath}");
+            // Show file path if exported
+            if ($report->file_path) {
+                $this->info("Report exported to: {$report->file_path}");
             }
 
             return Command::SUCCESS;
@@ -151,46 +142,23 @@ class GenerateReportsCommand extends Command
     private function displayReportSummary(array $reportData): void
     {
         $this->info("\n=== Report Summary ===");
-        $this->line("Total Miners: " . ($reportData['total_miners'] ?? 0));
-        $this->line("Total Ore Mined: " . number_format($reportData['total_quantity'] ?? 0));
-        $this->line("Total Value: " . number_format($reportData['total_value'] ?? 0, 2) . " ISK");
-        $this->line("Total Tax Collected: " . number_format($reportData['total_tax'] ?? 0, 2) . " ISK");
 
-        if (!empty($reportData['top_miners'])) {
+        // Handle nested summary structure
+        $summary = $reportData['summary'] ?? $reportData;
+
+        $this->line("Total Miners: " . ($summary['total_miners'] ?? 0));
+        $this->line("Total Ore Mined: " . number_format($summary['total_quantity'] ?? 0));
+        $this->line("Total Value: " . number_format($summary['total_value'] ?? 0, 2) . " ISK");
+        $this->line("Total Tax Collected: " . number_format($summary['total_tax'] ?? 0, 2) . " ISK");
+
+        // Top miners from miners array
+        if (!empty($reportData['miners'])) {
             $this->info("\nTop 5 Miners:");
-            foreach (array_slice($reportData['top_miners'], 0, 5) as $miner) {
-                $this->line("  - {$miner['name']}: " . number_format($miner['quantity']) . " ore");
+            foreach (array_slice($reportData['miners'], 0, 5) as $miner) {
+                $name = $miner['name'] ?? $miner['character_name'] ?? 'Unknown';
+                $quantity = $miner['quantity'] ?? $miner['total_quantity'] ?? 0;
+                $this->line("  - {$name}: " . number_format($quantity) . " ore");
             }
         }
-    }
-
-    /**
-     * Export report to file
-     *
-     * @param MiningReport $report
-     * @param string $format
-     * @return string
-     */
-    private function exportReport(MiningReport $report, string $format): string
-    {
-        $filename = "mining_report_{$report->report_type}_{$report->start_date->format('Ymd')}_{$report->id}.{$format}";
-        $path = storage_path("app/reports/{$filename}");
-
-        // Create directory if it doesn't exist
-        if (!is_dir(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
-        }
-
-        // Export based on format
-        switch ($format) {
-            case 'csv':
-                $this->reportService->exportToCsv($report, $path);
-                break;
-            case 'pdf':
-                $this->reportService->exportToPdf($report, $path);
-                break;
-        }
-
-        return $path;
     }
 }
