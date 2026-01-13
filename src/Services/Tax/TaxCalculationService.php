@@ -344,34 +344,38 @@ class TaxCalculationService
             return 0;
         }
 
+        // Pre-fetch all corp moon data for this character and date range (batch optimization)
+        $corpMoonCache = $this->batchLoadCorpMoonData($characterId, $startDate, $endDate);
+
         // Calculate total value and weighted tax
         $totalValue = 0;
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
             // Skip if this ore type should not be taxed
-            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
+            if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
                 continue;
             }
-            
+
             $value = $this->calculateOreValue($entry);
             $taxRate = $this->getTaxRateForOre($entry->type_id) / 100;
-            
+
             $totalValue += $value;
             $totalTax += $value * $taxRate;
         }
 
-        // Check exemption threshold
+        // Check exemption threshold (only if enabled)
         $exemptions = $this->settingsService->getExemptions();
-        if ($totalValue < $exemptions['threshold']) {
-            Log::debug("Mining Manager: Character {$characterId} exempt from tax (below threshold: {$totalValue} < {$exemptions['threshold']})");
+        if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
+            Log::debug("Mining Manager: Character {$characterId} exempt from tax (tax below threshold: {$totalTax} < {$exemptions['threshold']})");
             return 0;
         }
 
         // Apply minimum tax (only for individual characters, not when accumulating)
+        // Note: Minimum tax only applies if exemption check passes
         $contractSettings = $this->settingsService->getContractSettings();
         $minimumAmount = $contractSettings['minimum_tax_value'];
-        
+
         if ($totalTax > 0 && $totalTax < $minimumAmount) {
             Log::debug("Mining Manager: Adjusting tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
             $totalTax = $minimumAmount;
@@ -404,66 +408,8 @@ class TaxCalculationService
         }
     }
 
-    /**
-     * Calculate refined mineral value for ore.
-     * Now uses ReprocessingRegistry instead of config
-     *
-     * @param int $typeId
-     * @param int $quantity
-     * @return float
-     */
-    private function calculateRefinedMineralValue(int $typeId, int $quantity): float
-    {
-        // Try to get mineral composition from database
-        $minerals = ReprocessingRegistry::getMinerals($typeId);
-        
-        if ($minerals === null || empty($minerals)) {
-            Log::warning("Mining Manager: No refining data for type_id {$typeId}, using raw ore price");
-            
-            // Fallback to raw ore price
-            $generalSettings = $this->settingsService->getGeneralSettings();
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            
-            $price = $this->getOrePrice(
-                $typeId,
-                $generalSettings['default_region_id'],
-                $pricingSettings['price_type']
-            );
-            
-            return $price ? ($quantity * $price) : 0;
-        }
-        
-        $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        
-        $refiningEfficiency = $generalSettings['ore_refining_rate'] / 100;
-        $regionId = $generalSettings['default_region_id'];
-        $priceType = $pricingSettings['price_type'];
-        
-        // Get all unique mineral type IDs
-        $mineralTypeIds = array_keys($minerals);
-        
-        // Fetch prices for all minerals at once
-        $mineralPrices = [];
-        foreach ($mineralTypeIds as $mineralTypeId) {
-            $price = $this->getOrePrice($mineralTypeId, $regionId, $priceType);
-            $mineralPrices[$mineralTypeId] = $price ?? 0;
-        }
-        
-        // Use ReprocessingRegistry to calculate refined value
-        $refinedValue = ReprocessingRegistry::calculateRefinedValue(
-            $typeId,
-            $quantity,
-            $refiningEfficiency,
-            $mineralPrices
-        );
-        
-        // Apply price modifier
-        $priceModifier = $generalSettings['price_modifier'] / 100;
-        $refinedValue = $refinedValue * (1 + $priceModifier);
-        
-        return $refinedValue;
-    }
+    // REMOVED: calculateRefinedMineralValue() method
+    // This method was never used. All ore valuation is handled by OreValuationService::calculateOreValue()
 
     /**
      * Get ore price from cache.
@@ -517,40 +463,52 @@ class TaxCalculationService
      *
      * @param int $typeId
      * @param object|null $miningEntry Optional mining ledger entry for corp moon checking
+     * @param array|null $corpMoonCache Pre-loaded corp moon data cache for batch optimization
      * @return bool
      */
-    private function shouldTaxOre(int $typeId, $miningEntry = null): bool
+    private function shouldTaxOre(int $typeId, $miningEntry = null, ?array $corpMoonCache = null): bool
     {
         $taxSelector = $this->settingsService->getTaxSelector();
-        
+
         // Check if it's moon ore
         if ($this->isMoonOre($typeId)) {
             // If only_corp_moon_ore is enabled, check if it's from corp moon
             if ($taxSelector['only_corp_moon_ore'] && $miningEntry) {
-                // Need to verify this is from OUR corporation's moon
-                $isCorpMoon = $this->checkIfCorpMoon(
-                    $miningEntry->character_id,
-                    $typeId,
-                    $miningEntry->solar_system_id,
-                    $miningEntry->date->format('Y-m-d')
-                );
-                
+                // Use cached corp moon data if available (batch optimization)
+                if ($corpMoonCache !== null) {
+                    $cacheKey = $this->getCorpMoonCacheKey(
+                        $miningEntry->character_id,
+                        $typeId,
+                        $miningEntry->solar_system_id,
+                        $miningEntry->date->format('Y-m-d')
+                    );
+                    $isCorpMoon = isset($corpMoonCache[$cacheKey]);
+                } else {
+                    // Fallback to individual query (slower)
+                    $isCorpMoon = $this->checkIfCorpMoon(
+                        $miningEntry->character_id,
+                        $typeId,
+                        $miningEntry->solar_system_id,
+                        $miningEntry->date->format('Y-m-d')
+                    );
+                }
+
                 if (!$isCorpMoon) {
                     Log::debug("Mining Manager: Skipping moon ore type {$typeId} - not from corp moon");
                     return false;
                 }
-                
+
                 Log::debug("Mining Manager: Taxing moon ore type {$typeId} - confirmed corp moon");
                 return true;
             }
-            
+
             // Otherwise, use the all_moon_ore setting
             return $taxSelector['all_moon_ore'];
         }
-        
+
         // Check other categories
         $category = $this->getOreCategory($typeId);
-        
+
         return match($category) {
             'ice' => $taxSelector['ice'],
             'gas' => $taxSelector['gas'],
@@ -638,8 +596,64 @@ class TaxCalculationService
     }
 
     /**
+     * Batch load all corp moon data for a character and date range (performance optimization)
+     *
+     * @param int $characterId
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array Keyed by cache key for fast lookups
+     */
+    private function batchLoadCorpMoonData(int $characterId, Carbon $startDate, Carbon $endDate): array
+    {
+        try {
+            $results = DB::table('corporation_industry_mining_observer_data as d')
+                ->select('d.character_id', 'd.type_id', 'u.solar_system_id', 'd.last_updated')
+                ->join('universe_structures as u', 'd.observer_id', '=', 'u.structure_id')
+                ->where('d.character_id', '=', $characterId)
+                ->whereBetween('d.last_updated', [
+                    $startDate->format('Y-m-d') . ' 00:00:00',
+                    $endDate->format('Y-m-d') . ' 23:59:59'
+                ])
+                ->get();
+
+            // Build cache keyed by composite key for fast lookups
+            $cache = [];
+            foreach ($results as $row) {
+                $date = substr($row->last_updated, 0, 10); // Extract 'Y-m-d' from timestamp
+                $cacheKey = $this->getCorpMoonCacheKey(
+                    $row->character_id,
+                    $row->type_id,
+                    $row->solar_system_id,
+                    $date
+                );
+                $cache[$cacheKey] = true;
+            }
+
+            Log::debug("Mining Manager: Batch loaded " . count($cache) . " corp moon entries for character {$characterId}");
+            return $cache;
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error batch loading corp moon data: " . $e->getMessage());
+            return [];  // Return empty cache on error
+        }
+    }
+
+    /**
+     * Generate cache key for corp moon lookup
+     *
+     * @param int $characterId
+     * @param int $typeId
+     * @param int $solarSystemId
+     * @param string $date Date in 'Y-m-d' format
+     * @return string
+     */
+    private function getCorpMoonCacheKey(int $characterId, int $typeId, int $solarSystemId, string $date): string
+    {
+        return "{$characterId}_{$typeId}_{$solarSystemId}_{$date}";
+    }
+
+    /**
      * Check if moon ore was mined from YOUR corporation's moon.
-     * 
+     *
      * This method queries the corporation_industry_mining_observer_data table
      * which ONLY contains mining data from YOUR corporation's observers/refineries.
      * If the mining event exists in this table, it means it was mined from your corp's moon.

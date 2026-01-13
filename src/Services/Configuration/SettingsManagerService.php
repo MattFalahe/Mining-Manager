@@ -235,22 +235,33 @@ class SettingsManagerService
     public function getTaxRates(): array
     {
         return [
-            // Default Tax Rates
-            'default_ore_tax' => $this->getSetting('tax_rates.default_ore_tax', 5.0),
-            'default_ice_tax' => $this->getSetting('tax_rates.default_ice_tax', 5.0),
-            'default_gas_tax' => $this->getSetting('tax_rates.default_gas_tax', 5.0),
-            'default_moon_tax' => $this->getSetting('tax_rates.default_moon_tax', 10.0),
-            'default_mercoxit_tax' => $this->getSetting('tax_rates.default_mercoxit_tax', 5.0),
-            
+            // Moon ore tax rates by rarity (percentage)
+            'moon_ore' => [
+                'r64' => $this->getSetting('tax_rates.moon_ore.r64', config('mining-manager.tax_rates.moon_ore.r64', 15.0)),
+                'r32' => $this->getSetting('tax_rates.moon_ore.r32', config('mining-manager.tax_rates.moon_ore.r32', 12.0)),
+                'r16' => $this->getSetting('tax_rates.moon_ore.r16', config('mining-manager.tax_rates.moon_ore.r16', 10.0)),
+                'r8' => $this->getSetting('tax_rates.moon_ore.r8', config('mining-manager.tax_rates.moon_ore.r8', 8.0)),
+                'r4' => $this->getSetting('tax_rates.moon_ore.r4', config('mining-manager.tax_rates.moon_ore.r4', 5.0)),
+            ],
+
+            // Regular ore type tax rates (percentage)
+            'ice' => $this->getSetting('tax_rates.ice', config('mining-manager.tax_rates.ice', 10.0)),
+            'ore' => $this->getSetting('tax_rates.ore', config('mining-manager.tax_rates.ore', 10.0)),
+            'gas' => $this->getSetting('tax_rates.gas', config('mining-manager.tax_rates.gas', 10.0)),
+            'abyssal_ore' => $this->getSetting('tax_rates.abyssal_ore', config('mining-manager.tax_rates.abyssal_ore', 15.0)),
+
+            // Mining event bonuses (percentage reduction)
+            'event_bonus' => $this->getSetting('tax_rates.event_bonus', config('mining-manager.tax_rates.event_bonus', 2.0)),
+
             // Tax Payment Method
             'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'contract'),
             'tax_wallet_division' => $this->getSetting('tax_rates.tax_wallet_division', 1000),
-            
+
             // Tax Code Settings
             'tax_code_prefix' => $this->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
             'tax_code_length' => $this->getSetting('tax_rates.tax_code_length', 8),
             'auto_generate_tax_codes' => $this->getSetting('tax_rates.auto_generate_tax_codes', true),
-            
+
             // Tax Period Settings
             'tax_calculation_period' => $this->getSetting('tax_rates.tax_calculation_period', 'monthly'),
             'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
@@ -338,7 +349,8 @@ class SettingsManagerService
     public function getExemptions(): array
     {
         return [
-            'threshold' => $this->getSetting('exemptions.threshold', 0),
+            'enabled' => $this->getSetting('exemptions.enabled', false),
+            'threshold' => $this->getSetting('exemptions.threshold', 1000000),  // 1M ISK default
             'grace_period_days' => $this->getSetting('exemptions.grace_period_days', 7),
         ];
     }
