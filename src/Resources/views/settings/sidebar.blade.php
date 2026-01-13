@@ -40,16 +40,23 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a href="#" 
-                   class="nav-link" 
+                <a href="#"
+                   class="nav-link"
                    data-tab="advanced">
                     <i class="fas fa-cogs"></i>
                     {{ trans('mining-manager::settings.advanced') }}
                 </a>
             </li>
             <li class="nav-item">
-                <a href="#" 
-                   class="nav-link" 
+                <a href="{{ route('mining-manager.settings.configured-corporations') }}"
+                   class="nav-link">
+                    <i class="fas fa-building"></i>
+                    Configured Corporations
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
                    data-tab="help">
                     <i class="fas fa-question-circle"></i>
                     {{ trans('mining-manager::settings.help') }}

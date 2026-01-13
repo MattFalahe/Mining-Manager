@@ -691,6 +691,13 @@ Route::group([
         'middleware' => 'can:mining-manager.view',
     ]);
 
+    // Configured Corporations Route
+    Route::get('/configured-corporations', [
+        'as' => 'mining-manager.settings.configured-corporations',
+        'uses' => 'SettingsController@configuredCorporations',
+        'middleware' => 'can:mining-manager.settings.view',
+    ]);
+
     // Diagnostic Routes (Test Data Generation)
     Route::group(['prefix' => 'diagnostic'], function () {
         Route::get('/', [

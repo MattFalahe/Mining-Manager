@@ -235,6 +235,7 @@
             <li>Configure different tax rates for each corporation (e.g., Corp 1: 15% R64, Corp 2: 20% R64, Corp 3: 10% R64)</li>
             <li>Run tax calculations to see how different corporations have different tax amounts</li>
             <li>Test the "Switch Corporation" functionality to verify settings are isolated</li>
+            <li>View all configured corporations at <a href="{{ route('mining-manager.settings.configured-corporations') }}">Configured Corporations</a> page</li>
         </ol>
     </div>
 

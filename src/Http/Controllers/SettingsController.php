@@ -81,6 +81,53 @@ class SettingsController extends Controller
     }
 
     /**
+     * Display configured corporations page
+     *
+     * @return \Illuminate\View\View
+     */
+    public function configuredCorporations()
+    {
+        // Get all corporation IDs that have custom settings
+        $configuredCorpIds = DB::table('mining_manager_settings')
+            ->whereNotNull('corporation_id')
+            ->distinct()
+            ->pluck('corporation_id');
+
+        // Get corporation details
+        $corporations = CorporationInfo::whereIn('corporation_id', $configuredCorpIds)
+            ->get()
+            ->map(function ($corp) {
+                // Get key settings for this corporation
+                $this->settingsService->setActiveCorporation($corp->corporation_id);
+
+                $taxRates = $this->settingsService->getTaxRates();
+                $taxSelector = $this->settingsService->getTaxSelector();
+
+                return [
+                    'corporation_id' => $corp->corporation_id,
+                    'name' => $corp->name,
+                    'ticker' => $corp->ticker,
+                    'member_count' => $corp->member_count,
+                    'settings_count' => DB::table('mining_manager_settings')
+                        ->where('corporation_id', $corp->corporation_id)
+                        ->count(),
+                    'moon_ore_r64_tax' => $taxRates['moon_ore']['r64'] ?? 0,
+                    'moon_ore_r32_tax' => $taxRates['moon_ore']['r32'] ?? 0,
+                    'ore_tax' => $taxRates['ore'] ?? 0,
+                    'ice_tax' => $taxRates['ice'] ?? 0,
+                    'gas_tax' => $taxRates['gas'] ?? 0,
+                    'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
+                    'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
+                    'tax_regular_ore' => $taxSelector['tax_regular_ore'] ?? false,
+                    'tax_ice' => $taxSelector['tax_ice'] ?? false,
+                    'tax_gas' => $taxSelector['tax_gas'] ?? false,
+                ];
+            });
+
+        return view('mining-manager::settings.configured_corporations', compact('corporations'));
+    }
+
+    /**
      * Get list of available corporations from SeAT
      *
      * @return \Illuminate\Support\Collection
