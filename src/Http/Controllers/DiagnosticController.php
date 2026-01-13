@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Models\MiningPriceCache;
 
 class DiagnosticController extends Controller
 {
@@ -602,6 +603,248 @@ class DiagnosticController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get price cache health statistics
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCacheHealth()
+    {
+        try {
+            $cacheStats = [];
+
+            // Get cache duration setting
+            $cacheDuration = \MiningManager\Models\Setting::getValue('price_cache_duration', 60); // minutes
+
+            // Get total cached items
+            $totalCached = MiningPriceCache::count();
+
+            // Get fresh items (within cache duration)
+            $freshCutoff = now()->subMinutes($cacheDuration);
+            $freshItems = MiningPriceCache::where('cached_at', '>=', $freshCutoff)->count();
+
+            // Get stale items
+            $staleItems = $totalCached - $freshItems;
+
+            // Get items with zero prices (potential issues)
+            $zeroPriceItems = MiningPriceCache::where(function($query) {
+                $query->where('sell_price', '<=', 0)
+                      ->where('buy_price', '<=', 0)
+                      ->where('average_price', '<=', 0);
+            })->count();
+
+            // Get oldest cache entry
+            $oldestCache = MiningPriceCache::oldest('cached_at')->first();
+            $oldestCacheAge = $oldestCache ? now()->diffInHours($oldestCache->cached_at) : 0;
+
+            // Get newest cache entry
+            $newestCache = MiningPriceCache::latest('cached_at')->first();
+            $newestCacheAge = $newestCache ? now()->diffInMinutes($newestCache->cached_at) : 0;
+
+            // Check essential ore types
+            $essentialOres = [
+                34 => 'Tritanium',
+                35 => 'Pyerite',
+                36 => 'Mexallon',
+                37 => 'Isogen',
+                1230 => 'Veldspar',
+                45506 => 'Bistot',
+            ];
+
+            $missingEssential = [];
+            foreach ($essentialOres as $typeId => $name) {
+                $cached = MiningPriceCache::where('type_id', $typeId)->first();
+                if (!$cached) {
+                    $missingEssential[] = ['type_id' => $typeId, 'name' => $name];
+                }
+            }
+
+            // Determine health status
+            $healthStatus = 'healthy';
+            $issues = [];
+
+            if ($totalCached === 0) {
+                $healthStatus = 'critical';
+                $issues[] = 'No prices cached. Run: php artisan mining-manager:cache-prices';
+            } elseif ($staleItems > ($totalCached * 0.5)) {
+                $healthStatus = 'warning';
+                $issues[] = 'More than 50% of cache is stale. Consider running cache refresh.';
+            } elseif (!empty($missingEssential)) {
+                $healthStatus = 'warning';
+                $issues[] = 'Essential ore types missing from cache.';
+            }
+
+            if ($zeroPriceItems > 0) {
+                $issues[] = "{$zeroPriceItems} items have zero prices.";
+            }
+
+            return response()->json([
+                'success' => true,
+                'health_status' => $healthStatus,
+                'statistics' => [
+                    'total_cached' => $totalCached,
+                    'fresh_items' => $freshItems,
+                    'stale_items' => $staleItems,
+                    'zero_price_items' => $zeroPriceItems,
+                    'cache_duration_minutes' => $cacheDuration,
+                    'oldest_cache_hours' => $oldestCacheAge,
+                    'newest_cache_minutes' => $newestCacheAge,
+                ],
+                'missing_essential' => $missingEssential,
+                'issues' => $issues,
+                'recommendations' => $this->getCacheRecommendations($totalCached, $staleItems, $missingEssential)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to get cache health', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get cache recommendations based on health
+     *
+     * @param int $totalCached
+     * @param int $staleItems
+     * @param array $missingEssential
+     * @return array
+     */
+    protected function getCacheRecommendations(int $totalCached, int $staleItems, array $missingEssential): array
+    {
+        $recommendations = [];
+
+        if ($totalCached === 0) {
+            $recommendations[] = [
+                'severity' => 'critical',
+                'message' => 'Price cache is empty. Tax calculations will fail or return zero values.',
+                'action' => 'Run: php artisan mining-manager:cache-prices --type=all'
+            ];
+        } elseif ($staleItems > ($totalCached * 0.7)) {
+            $recommendations[] = [
+                'severity' => 'warning',
+                'message' => 'Most of your price cache is stale.',
+                'action' => 'Run: php artisan mining-manager:cache-prices --force'
+            ];
+        }
+
+        if (!empty($missingEssential)) {
+            $recommendations[] = [
+                'severity' => 'warning',
+                'message' => 'Essential ore types are missing from cache.',
+                'action' => 'Run: php artisan mining-manager:cache-prices --type=ore'
+            ];
+        }
+
+        if (empty($recommendations)) {
+            $recommendations[] = [
+                'severity' => 'info',
+                'message' => 'Cache health looks good!',
+                'action' => 'Schedule regular cache refreshes with a cron job for best results.'
+            ];
+        }
+
+        return $recommendations;
+    }
+
+    /**
+     * Warm up price cache with common ore types
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function warmCache(Request $request)
+    {
+        try {
+            $category = $request->input('category', 'essential'); // essential, ore, moon, ice, gas, all
+
+            $typeIds = [];
+            switch ($category) {
+                case 'essential':
+                    $typeIds = [34, 35, 36, 37, 38, 39, 40, 1230, 1228, 1229, 45506]; // Common minerals + ores
+                    break;
+                case 'ore':
+                    $typeIds = TypeIdRegistry::getOreTypeIds();
+                    break;
+                case 'moon':
+                    $typeIds = array_keys(TypeIdRegistry::getMoonOreRarityMap());
+                    break;
+                case 'ice':
+                    $typeIds = TypeIdRegistry::getIceTypeIds();
+                    break;
+                case 'gas':
+                    $typeIds = TypeIdRegistry::getGasTypeIds();
+                    break;
+                case 'all':
+                    $typeIds = array_merge(
+                        TypeIdRegistry::getOreTypeIds(),
+                        array_keys(TypeIdRegistry::getMoonOreRarityMap()),
+                        TypeIdRegistry::getIceTypeIds(),
+                        TypeIdRegistry::getGasTypeIds(),
+                        [34, 35, 36, 37, 38, 39, 40] // Common minerals
+                    );
+                    break;
+            }
+
+            $priceService = new PriceProviderService();
+            $startTime = microtime(true);
+
+            // Get configured provider
+            $provider = \MiningManager\Models\Setting::getValue('price_provider', 'seat');
+
+            // Fetch prices
+            $prices = $priceService->getPrices($typeIds);
+
+            // Store in cache
+            $stored = 0;
+            $failed = 0;
+            $regionId = \MiningManager\Models\Setting::getValue('price_region_id', 10000002);
+
+            foreach ($prices as $typeId => $price) {
+                if ($price > 0) {
+                    try {
+                        MiningPriceCache::updateOrCreate(
+                            ['type_id' => $typeId, 'region_id' => $regionId],
+                            [
+                                'sell_price' => $price,
+                                'buy_price' => $price,
+                                'average_price' => $price,
+                                'cached_at' => now(),
+                            ]
+                        );
+                        $stored++;
+                    } catch (\Exception $e) {
+                        $failed++;
+                    }
+                } else {
+                    $failed++;
+                }
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            return response()->json([
+                'success' => true,
+                'category' => $category,
+                'provider' => $provider,
+                'duration_ms' => $duration,
+                'total_items' => count($typeIds),
+                'stored' => $stored,
+                'failed' => $failed,
+                'message' => "Cached {$stored} prices in {$duration}ms using {$provider} provider"
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to warm cache', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage()

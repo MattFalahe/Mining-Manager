@@ -6,6 +6,7 @@ use MiningManager\Services\ReprocessingRegistry;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Ore Valuation Service
@@ -17,24 +18,29 @@ use Illuminate\Support\Facades\Log;
  * - Gas cannot be refined (always uses raw ore price)
  * - Respects ore_valuation_method setting from config
  * - Applies refining efficiency from config
+ *
+ * Price Fallback Strategy:
+ * 1. Check MiningPriceCache (fastest, pre-populated via cache command)
+ * 2. If cache miss, use MarketDataService (respects configured price provider)
+ * 3. If provider fails, fallback to SeAT's market_prices table
  */
 class OreValuationService
 {
     /**
-     * Price provider service
+     * Market data service (uses configured price provider)
      *
-     * @var PriceProviderService
+     * @var MarketDataService
      */
-    protected $priceProvider;
+    protected $marketDataService;
 
     /**
      * Constructor
      *
-     * @param PriceProviderService $priceProvider
+     * @param MarketDataService $marketDataService
      */
-    public function __construct(PriceProviderService $priceProvider)
+    public function __construct(MarketDataService $marketDataService)
     {
-        $this->priceProvider = $priceProvider;
+        $this->marketDataService = $marketDataService;
     }
 
     /**
@@ -154,7 +160,12 @@ class OreValuationService
     }
 
     /**
-     * Get ore price from cache.
+     * Get ore price with fallback strategy.
+     *
+     * Priority:
+     * 1. MiningPriceCache (fastest, pre-populated)
+     * 2. MarketDataService (uses configured price provider)
+     * 3. SeAT market_prices table (last resort)
      *
      * @param int $typeId
      * @param int $regionId
@@ -163,21 +174,95 @@ class OreValuationService
      */
     protected function getOrePrice(int $typeId, int $regionId, string $priceType): ?float
     {
+        // Try cache first (fastest)
         $priceCache = MiningPriceCache::where('type_id', $typeId)
             ->where('region_id', $regionId)
             ->latest('cached_at')
             ->first();
 
-        if (!$priceCache) {
-            Log::debug("OreValuationService: No price cache for type_id {$typeId}");
-            return null;
+        if ($priceCache) {
+            $price = match ($priceType) {
+                'buy' => $priceCache->buy_price,
+                'average' => $priceCache->average_price,
+                default => $priceCache->sell_price,
+            };
+
+            if ($price > 0) {
+                return $price;
+            }
         }
 
-        return match ($priceType) {
-            'buy' => $priceCache->buy_price,
-            'average' => $priceCache->average_price,
-            default => $priceCache->sell_price,
-        };
+        // Cache miss or zero price - fetch from configured price provider
+        Log::info("OreValuationService: Cache miss for type_id {$typeId}, fetching from price provider");
+
+        try {
+            $price = $this->marketDataService->getCachedPrice($typeId);
+
+            if ($price && $price > 0) {
+                // Store in cache for next time
+                $this->storePriceInCache($typeId, $regionId, $price);
+                return $price;
+            }
+        } catch (\Exception $e) {
+            Log::warning("OreValuationService: MarketDataService failed for type_id {$typeId}: {$e->getMessage()}");
+        }
+
+        // Final fallback: query SeAT's market_prices table directly
+        Log::info("OreValuationService: Using SeAT market_prices fallback for type_id {$typeId}");
+
+        try {
+            $marketPrice = DB::table('market_prices')
+                ->where('type_id', $typeId)
+                ->first();
+
+            if ($marketPrice) {
+                $price = match ($priceType) {
+                    'buy' => null, // market_prices doesn't have buy price
+                    'average' => $marketPrice->average_price ?? 0,
+                    default => $marketPrice->adjusted_price ?? $marketPrice->average_price ?? 0,
+                };
+
+                if ($price > 0) {
+                    // Store in cache
+                    $this->storePriceInCache($typeId, $regionId, $price);
+                    return $price;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("OreValuationService: All price sources failed for type_id {$typeId}: {$e->getMessage()}");
+        }
+
+        return null;
+    }
+
+    /**
+     * Store price in cache for future use.
+     *
+     * @param int $typeId
+     * @param int $regionId
+     * @param float $price
+     * @return void
+     */
+    protected function storePriceInCache(int $typeId, int $regionId, float $price): void
+    {
+        try {
+            MiningPriceCache::updateOrCreate(
+                [
+                    'type_id' => $typeId,
+                    'region_id' => $regionId,
+                ],
+                [
+                    'sell_price' => $price,
+                    'buy_price' => $price,
+                    'average_price' => $price,
+                    'cached_at' => now(),
+                ]
+            );
+
+            Log::debug("OreValuationService: Stored price {$price} for type_id {$typeId} in cache");
+        } catch (\Exception $e) {
+            Log::warning("OreValuationService: Failed to store price in cache: {$e->getMessage()}");
+        }
     }
 
     /**

@@ -192,6 +192,11 @@
                 <i class="fas fa-dollar-sign"></i> Price Provider Testing
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" id="cache-health-tab" data-toggle="tab" href="#cache-health" role="tab" onclick="loadCacheHealth()">
+                <i class="fas fa-heartbeat"></i> Price Cache Health
+            </a>
+        </li>
     </ul>
 
     <div class="tab-content" id="diagnosticTabsContent">
@@ -441,9 +446,81 @@
             </div>
         </div>
 
+        <!-- Price Cache Health Tab -->
+        <div class="tab-pane fade" id="cache-health" role="tabpanel">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-heartbeat"></i> Price Cache Health Status</h4>
+                        <p>Monitor the health of your price cache. The cache stores prices locally for fast tax calculations.</p>
+
+                        <button type="button" class="btn btn-generate" onclick="loadCacheHealth()">
+                            <i class="fas fa-sync"></i> <span id="healthBtnText">Check Health</span>
+                            <span id="healthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                        </button>
+
+                        <div id="cacheHealthResults"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cache Warming -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-fire"></i> Warm Cache (Quick Fix)</h4>
+                        <p>Quickly populate the cache with prices from your configured provider. Use this if cache is empty or stale.</p>
+
+                        <div class="form-group">
+                            <label>Select Category to Cache</label>
+                            <select id="warmCategory" class="form-control">
+                                <option value="essential">Essential Only (Fast - Minerals + Common Ores)</option>
+                                <option value="ore">Regular Ore</option>
+                                <option value="moon">Moon Ore</option>
+                                <option value="ice">Ice Products</option>
+                                <option value="gas">Gas</option>
+                                <option value="all">All Types (Slow - May take several minutes)</option>
+                            </select>
+                        </div>
+
+                        <button type="button" class="btn btn-generate" onclick="warmCache()">
+                            <i class="fas fa-fire"></i> <span id="warmBtnText">Warm Cache</span>
+                            <span id="warmSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                        </button>
+
+                        <div id="warmResults"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Cache Command -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-terminal"></i> Manual Cache Management</h4>
+                        <p>For best results, use the artisan command which supports more options:</p>
+                        <code>php artisan mining-manager:cache-prices --type=all</code>
+                        <br><br>
+                        <p><strong>Options:</strong></p>
+                        <ul>
+                            <li><code>--type=ore</code> - Cache regular ore prices</li>
+                            <li><code>--type=moon</code> - Cache moon ore prices</li>
+                            <li><code>--type=ice</code> - Cache ice product prices</li>
+                            <li><code>--type=minerals</code> - Cache mineral prices</li>
+                            <li><code>--type=all</code> - Cache all types</li>
+                            <li><code>--force</code> - Force refresh even if cache is fresh</li>
+                        </ul>
+                        <p><strong>Recommendation:</strong> Set up a cron job to refresh prices every hour:</p>
+                        <code>0 * * * * php /path/to/artisan mining-manager:cache-prices --type=all</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
+@push('javascript')
 <script>
 function checkProviderRequirements() {
     const provider = document.getElementById('providerSelect').value;
@@ -686,6 +763,183 @@ function testBatchPricing() {
     })
     .catch(error => {
         btnText.textContent = 'Run Batch Test';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error" style="margin-top: 15px;">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+function loadCacheHealth() {
+    const resultsDiv = document.getElementById('cacheHealthResults');
+    const btnText = document.getElementById('healthBtnText');
+    const spinner = document.getElementById('healthSpinner');
+
+    btnText.textContent = 'Checking...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    fetch('{{ route("mining-manager.diagnostic.cache-health") }}')
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Check Health';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            const statusColors = {
+                'healthy': 'success',
+                'warning': 'warning',
+                'critical': 'danger'
+            };
+            const statusIcons = {
+                'healthy': 'fa-check-circle',
+                'warning': 'fa-exclamation-triangle',
+                'critical': 'fa-times-circle'
+            };
+
+            let html = `
+                <div class="provider-test-result ${statusColors[data.health_status]}" style="margin-top: 15px;">
+                    <h5><i class="fas ${statusIcons[data.health_status]} text-${statusColors[data.health_status]}"></i> Cache Status: ${data.health_status.toUpperCase()}</h5>
+
+                    <div class="row">
+                        <div class="col-md-3">
+                            <p><strong>Total Cached:</strong> ${data.statistics.total_cached}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Fresh Items:</strong> ${data.statistics.fresh_items}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Stale Items:</strong> ${data.statistics.stale_items}</p>
+                        </div>
+                        <div class="col-md-3">
+                            <p><strong>Zero Prices:</strong> ${data.statistics.zero_price_items}</p>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>Cache Duration:</strong> ${data.statistics.cache_duration_minutes} minutes</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Oldest Entry:</strong> ${data.statistics.oldest_cache_hours} hours ago</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Newest Entry:</strong> ${data.statistics.newest_cache_minutes} minutes ago</p>
+                        </div>
+                    </div>
+            `;
+
+            if (data.issues && data.issues.length > 0) {
+                html += '<hr><h6>Issues Found:</h6><ul>';
+                data.issues.forEach(issue => {
+                    html += `<li>${issue}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            if (data.missing_essential && data.missing_essential.length > 0) {
+                html += '<hr><h6>Missing Essential Ores:</h6><ul>';
+                data.missing_essential.forEach(item => {
+                    html += `<li>${item.name} (${item.type_id})</li>`;
+                });
+                html += '</ul>';
+            }
+
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += '<hr><h6>Recommendations:</h6>';
+                data.recommendations.forEach(rec => {
+                    const recColor = rec.severity === 'critical' ? 'danger' : rec.severity === 'warning' ? 'warning' : 'info';
+                    html += `
+                        <div class="alert alert-${recColor} mb-2" role="alert">
+                            <strong>${rec.message}</strong><br>
+                            <code>${rec.action}</code>
+                        </div>
+                    `;
+                });
+            }
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `
+                <div class="provider-test-result error" style="margin-top: 15px;">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Failed to Check Cache Health</h5>
+                    <p>${data.error}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Check Health';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error" style="margin-top: 15px;">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+function warmCache() {
+    const category = document.getElementById('warmCategory').value;
+    const resultsDiv = document.getElementById('warmResults');
+    const btnText = document.getElementById('warmBtnText');
+    const spinner = document.getElementById('warmSpinner');
+
+    btnText.textContent = 'Warming...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    fetch('{{ route("mining-manager.diagnostic.warm-cache") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({ category: category })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Warm Cache';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            const successRate = Math.round((data.stored / data.total_items) * 100);
+            html = `
+                <div class="provider-test-result success" style="margin-top: 15px;">
+                    <h5><i class="fas fa-check-circle text-success"></i> Cache Warmed Successfully</h5>
+                    <p><strong>Category:</strong> ${data.category}</p>
+                    <p><strong>Provider:</strong> ${data.provider}</p>
+                    <p><strong>Duration:</strong> ${data.duration_ms}ms</p>
+                    <p><strong>Items Processed:</strong> ${data.total_items}</p>
+                    <p><strong>Successfully Stored:</strong> ${data.stored} (${successRate}%)</p>
+                    <p><strong>Failed:</strong> ${data.failed}</p>
+                    <p class="mb-0">${data.message}</p>
+                </div>
+            `;
+            resultsDiv.innerHTML = html;
+
+            // Auto-refresh health status after warming
+            setTimeout(() => {
+                if (document.getElementById('cache-health').classList.contains('active')) {
+                    loadCacheHealth();
+                }
+            }, 1000);
+        } else {
+            resultsDiv.innerHTML = `
+                <div class="provider-test-result error" style="margin-top: 15px;">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Cache Warming Failed</h5>
+                    <p>${data.error}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Warm Cache';
         spinner.style.display = 'none';
         resultsDiv.innerHTML = `
             <div class="provider-test-result error" style="margin-top: 15px;">

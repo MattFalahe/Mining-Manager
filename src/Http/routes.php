@@ -747,6 +747,18 @@ Route::group([
             'uses' => 'DiagnosticController@testBatchPricing',
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
+
+        Route::get('/cache-health', [
+            'as' => 'mining-manager.diagnostic.cache-health',
+            'uses' => 'DiagnosticController@getCacheHealth',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/warm-cache', [
+            'as' => 'mining-manager.diagnostic.warm-cache',
+            'uses' => 'DiagnosticController@warmCache',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
     });
 
     // API Routes
