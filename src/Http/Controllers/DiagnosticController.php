@@ -133,6 +133,7 @@ class DiagnosticController extends Controller
                         ['character_id' => $charId],
                         [
                             'name' => $charName,
+                            'gender' => rand(0, 1) ? 'male' : 'female', // Random gender
                             'security_status' => rand(-10, 10) / 10,
                             'birthday' => Carbon::now()->subYears(rand(1, 10)),
                             'created_at' => now(),
