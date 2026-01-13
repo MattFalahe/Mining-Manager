@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
+use MiningManager\Models\Setting;
 
 class DiagnosticController extends Controller
 {
@@ -391,7 +392,7 @@ class DiagnosticController extends Controller
 
             // Check if Janice API key is configured when testing Janice
             if ($provider === 'janice') {
-                $apiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+                $apiKey = Setting::getValue('janice_api_key')
                     ?: config('mining-manager.general.price_provider_api_key');
 
                 if (empty($apiKey)) {
@@ -417,13 +418,13 @@ class DiagnosticController extends Controller
             $startTime = microtime(true);
 
             // Temporarily set provider
-            $originalProvider = \MiningManager\Models\Setting::getValue('price_provider');
-            \MiningManager\Models\Setting::set('price_provider', $provider);
+            $originalProvider = Setting::getValue('price_provider');
+            Setting::set('price_provider', $provider);
 
             $prices = $priceService->getPrices($testTypeIds);
 
             // Restore original provider
-            \MiningManager\Models\Setting::set('price_provider', $originalProvider);
+            Setting::set('price_provider', $originalProvider);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
@@ -484,10 +485,10 @@ class DiagnosticController extends Controller
             $priceService = new PriceProviderService();
             $providers = $priceService->getAvailableProviders();
 
-            $currentProvider = \MiningManager\Models\Setting::getValue('price_provider', 'seat');
+            $currentProvider = Setting::getValue('price_provider', 'seat');
 
             // Check if Janice API key is configured
-            $janiceApiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+            $janiceApiKey = Setting::getValue('janice_api_key')
                 ?: config('mining-manager.general.price_provider_api_key');
             $janiceConfigured = !empty($janiceApiKey);
 
@@ -497,13 +498,13 @@ class DiagnosticController extends Controller
                 'janice_configured' => $janiceConfigured,
                 'settings' => [
                     'janice_api_key' => $janiceConfigured ? '***configured***' : 'NOT CONFIGURED',
-                    'janice_market' => \MiningManager\Models\Setting::getValue('janice_market', 'jita'),
-                    'janice_price_method' => \MiningManager\Models\Setting::getValue('janice_price_method', 'buy'),
-                    'janice_batch_size' => \MiningManager\Models\Setting::getValue('janice_batch_size', 50),
-                    'janice_rate_limit_delay' => \MiningManager\Models\Setting::getValue('janice_rate_limit_delay', 50000) . ' microseconds',
-                    'janice_max_retries' => \MiningManager\Models\Setting::getValue('janice_max_retries', 3),
-                    'price_region_id' => \MiningManager\Models\Setting::getValue('price_region_id', 10000002),
-                    'price_method' => \MiningManager\Models\Setting::getValue('price_method', 'sell'),
+                    'janice_market' => Setting::getValue('janice_market', 'jita'),
+                    'janice_price_method' => Setting::getValue('janice_price_method', 'buy'),
+                    'janice_batch_size' => Setting::getValue('janice_batch_size', 50),
+                    'janice_rate_limit_delay' => Setting::getValue('janice_rate_limit_delay', 50000) . ' microseconds',
+                    'janice_max_retries' => Setting::getValue('janice_max_retries', 3),
+                    'price_region_id' => Setting::getValue('price_region_id', 10000002),
+                    'price_method' => Setting::getValue('price_method', 'sell'),
                 ]
             ];
 
@@ -532,7 +533,7 @@ class DiagnosticController extends Controller
 
             // Check if Janice API key is configured when testing Janice
             if ($provider === 'janice') {
-                $apiKey = \MiningManager\Models\Setting::getValue('janice_api_key')
+                $apiKey = Setting::getValue('janice_api_key')
                     ?: config('mining-manager.general.price_provider_api_key');
 
                 if (empty($apiKey)) {
@@ -573,13 +574,13 @@ class DiagnosticController extends Controller
             $startTime = microtime(true);
 
             // Temporarily set provider
-            $originalProvider = \MiningManager\Models\Setting::getValue('price_provider');
-            \MiningManager\Models\Setting::set('price_provider', $provider);
+            $originalProvider = Setting::getValue('price_provider');
+            Setting::set('price_provider', $provider);
 
             $prices = $priceService->getPrices($typeIds);
 
             // Restore original provider
-            \MiningManager\Models\Setting::set('price_provider', $originalProvider);
+            Setting::set('price_provider', $originalProvider);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
@@ -644,7 +645,7 @@ class DiagnosticController extends Controller
             $cacheStats = [];
 
             // Get cache duration setting
-            $cacheDuration = \MiningManager\Models\Setting::getValue('price_cache_duration', 60); // minutes
+            $cacheDuration = Setting::getValue('price_cache_duration', 60); // minutes
 
             // Get total cached items
             $totalCached = MiningPriceCache::count();
@@ -822,7 +823,7 @@ class DiagnosticController extends Controller
             $startTime = microtime(true);
 
             // Get configured provider
-            $provider = \MiningManager\Models\Setting::getValue('price_provider', 'seat');
+            $provider = Setting::getValue('price_provider', 'seat');
 
             // Fetch prices
             $prices = $priceService->getPrices($typeIds);
@@ -830,7 +831,7 @@ class DiagnosticController extends Controller
             // Store in cache
             $stored = 0;
             $failed = 0;
-            $regionId = \MiningManager\Models\Setting::getValue('price_region_id', 10000002);
+            $regionId = Setting::getValue('price_region_id', 10000002);
 
             foreach ($prices as $typeId => $price) {
                 if ($price > 0) {
