@@ -551,7 +551,7 @@ class DiagnosticController extends Controller
             $typeIds = [];
             switch ($oreCategory) {
                 case 'moon':
-                    $typeIds = array_keys(TypeIdRegistry::getMoonOreRarityMap());
+                    $typeIds = TypeIdRegistry::getAllMoonOres();
                     break;
                 case 'ice':
                     $typeIds = TypeIdRegistry::getAllIce();
@@ -573,7 +573,7 @@ class DiagnosticController extends Controller
                 default:
                     $typeIds = array_merge(
                         array_slice(TypeIdRegistry::getAllRegularOres(), 0, 10),
-                        array_slice(array_keys(TypeIdRegistry::getMoonOreRarityMap()), 0, 10),
+                        array_slice(TypeIdRegistry::getAllMoonOres(), 0, 10),
                         array_slice(TypeIdRegistry::getAllIce(), 0, 5)
                     );
                     break;
@@ -805,23 +805,23 @@ class DiagnosticController extends Controller
                     $typeIds = [34, 35, 36, 37, 38, 39, 40, 1230, 1228, 1229, 45506]; // Common minerals + ores
                     break;
                 case 'ore':
-                    $typeIds = TypeIdRegistry::getOreTypeIds();
+                    $typeIds = TypeIdRegistry::getAllRegularOres();
                     break;
                 case 'moon':
-                    $typeIds = array_keys(TypeIdRegistry::getMoonOreRarityMap());
+                    $typeIds = TypeIdRegistry::getAllMoonOres();
                     break;
                 case 'ice':
-                    $typeIds = TypeIdRegistry::getIceTypeIds();
+                    $typeIds = TypeIdRegistry::getAllIce();
                     break;
                 case 'gas':
-                    $typeIds = TypeIdRegistry::getGasTypeIds();
+                    $typeIds = TypeIdRegistry::getAllGas();
                     break;
                 case 'all':
                     $typeIds = array_merge(
-                        TypeIdRegistry::getOreTypeIds(),
-                        array_keys(TypeIdRegistry::getMoonOreRarityMap()),
-                        TypeIdRegistry::getIceTypeIds(),
-                        TypeIdRegistry::getGasTypeIds(),
+                        TypeIdRegistry::getAllRegularOres(),
+                        TypeIdRegistry::getAllMoonOres(),
+                        TypeIdRegistry::getAllIce(),
+                        TypeIdRegistry::getAllGas(),
                         [34, 35, 36, 37, 38, 39, 40] // Common minerals
                     );
                     break;
