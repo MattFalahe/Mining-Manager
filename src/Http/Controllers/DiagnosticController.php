@@ -944,16 +944,17 @@ class DiagnosticController extends Controller
             }
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
+            $totalCount = count($typeIds);
 
             return response()->json([
                 'success' => true,
                 'category' => $category,
                 'duration_ms' => $duration,
-                'total_items' => count($typeIds),
+                'total_items' => $totalCount,
                 'verified' => $verified,
                 'failed' => $failed,
                 'results' => $results,
-                'message' => "Validated {$verified}/{count($typeIds)} type IDs in {$duration}ms"
+                'message' => "Validated {$verified}/{$totalCount} type IDs in {$duration}ms"
             ]);
 
         } catch (\Exception $e) {

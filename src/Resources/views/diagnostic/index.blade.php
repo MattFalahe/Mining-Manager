@@ -1112,7 +1112,14 @@ function validateTypeIds() {
         },
         body: JSON.stringify({ category: category })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`HTTP ${response.status}: ${text}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         btnText.textContent = 'Validate Type IDs';
         spinner.style.display = 'none';
@@ -1149,10 +1156,11 @@ function validateTypeIds() {
             html += '</div></div>';
             resultsDiv.innerHTML = html;
         } else {
+            const errorMessage = typeof data.error === 'object' ? JSON.stringify(data.error) : data.error;
             resultsDiv.innerHTML = `
                 <div class="provider-test-result error">
                     <h5><i class="fas fa-times-circle text-danger"></i> Validation Failed</h5>
-                    <p><strong>Error:</strong> ${data.error}</p>
+                    <p><strong>Error:</strong> ${errorMessage}</p>
                 </div>
             `;
         }
