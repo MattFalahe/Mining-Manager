@@ -5,67 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .calculator-panel {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 10px;
-        padding: 30px;
-        color: white;
-    }
-    .ore-input-row {
-        background: rgba(255, 255, 255, 0.1);
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        border: 2px solid transparent;
-        transition: all 0.3s;
-    }
-    .ore-input-row:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.3);
-    }
-    .ore-select {
-        background: rgba(0, 0, 0, 0.2);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    .ore-select option {
-        background: #343a40;
-        color: white;
-    }
-    .result-panel {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        border-radius: 10px;
-        padding: 30px;
-        color: white;
-        text-align: center;
-    }
-    .result-value {
-        font-size: 3rem;
-        font-weight: bold;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-    }
-    .preset-button {
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-    .preset-button:hover {
-        transform: scale(1.05);
-    }
-    .ore-category {
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }
-    .ore-category.r64 { background: rgba(255, 215, 0, 0.1); border-left: 4px solid #FFD700; }
-    .ore-category.r32 { background: rgba(192, 192, 192, 0.1); border-left: 4px solid #C0C0C0; }
-    .ore-category.r16 { background: rgba(205, 127, 50, 0.1); border-left: 4px solid #CD7F32; }
-    .ore-category.r8 { background: rgba(70, 130, 180, 0.1); border-left: 4px solid #4682B4; }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-calculator-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -573,4 +516,5 @@ function copyToClipboard() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

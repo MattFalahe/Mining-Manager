@@ -101,7 +101,7 @@
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper analytics-compare-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -841,4 +841,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

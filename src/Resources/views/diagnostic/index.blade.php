@@ -5,161 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .diagnostic-card {
-        background: linear-gradient(135deg, #1a1d2e 0%, #2d3748 100%);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-    }
-
-    .diagnostic-card h4 {
-        color: #667eea;
-        margin-bottom: 15px;
-    }
-
-    .stat-box {
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-
-    .stat-box .stat-number {
-        font-size: 2em;
-        font-weight: bold;
-        color: #667eea;
-    }
-
-    .stat-box .stat-label {
-        color: #a0aec0;
-        font-size: 0.9em;
-        margin-top: 5px;
-    }
-
-    .warning-box {
-        background: rgba(255, 193, 7, 0.1);
-        border: 1px solid rgba(255, 193, 7, 0.3);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-
-    .danger-box {
-        background: rgba(220, 53, 69, 0.1);
-        border: 1px solid rgba(220, 53, 69, 0.3);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-
-    .success-box {
-        background: rgba(40, 167, 69, 0.1);
-        border: 1px solid rgba(40, 167, 69, 0.3);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-
-    .btn-generate {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border: none;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        transition: all 0.3s;
-    }
-
-    .btn-generate:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-danger-custom {
-        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-        border: none;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        transition: all 0.3s;
-    }
-
-    .btn-danger-custom:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
-    }
-
-    /* Tab styling */
-    .nav-tabs {
-        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
-        margin-bottom: 20px;
-    }
-
-    .nav-tabs .nav-link {
-        color: #a0aec0;
-        border: none;
-        border-bottom: 2px solid transparent;
-        transition: all 0.3s;
-    }
-
-    .nav-tabs .nav-link:hover {
-        color: #667eea;
-        border-bottom-color: rgba(102, 126, 234, 0.5);
-    }
-
-    .nav-tabs .nav-link.active {
-        color: #667eea;
-        background: transparent;
-        border-bottom-color: #667eea;
-    }
-
-    .provider-test-result {
-        background: rgba(102, 126, 234, 0.05);
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        border-radius: 8px;
-        padding: 15px;
-        margin-top: 15px;
-    }
-
-    .provider-test-result.success {
-        background: rgba(40, 167, 69, 0.05);
-        border-color: rgba(40, 167, 69, 0.3);
-    }
-
-    .provider-test-result.error {
-        background: rgba(220, 53, 69, 0.05);
-        border-color: rgba(220, 53, 69, 0.3);
-    }
-
-    .price-item {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 12px;
-        margin: 5px 0;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 4px;
-    }
-
-    .price-item.success {
-        background: rgba(40, 167, 69, 0.1);
-    }
-
-    .price-item.failed {
-        background: rgba(220, 53, 69, 0.1);
-    }
-
-    .spinner-border-sm {
-        width: 1rem;
-        height: 1rem;
-        border-width: 0.2em;
-    }
-</style>
 @endpush
 
 @section('content')
+<div class="mining-manager-wrapper diagnostic-page">
 <div class="container-fluid">
 
     @if(session('success'))
@@ -248,7 +97,7 @@
             <!-- Step 1: Generate Test Corporations -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-building"></i> Step 1: Generate Test Corporations</h4>
                         <p>Create test corporations with IDs starting from 98000001. Each corporation will have a CEO and unique ticker.</p>
 
@@ -259,7 +108,7 @@
                                 <input type="number" name="count" class="form-control" value="3" min="1" max="10">
                                 <small class="form-text text-muted">Creates corporations with IDs 98000001, 98000002, etc.</small>
                             </div>
-                            <button type="submit" class="btn btn-generate">
+                            <button type="submit" class="btn btn btn-mm-primary">
                                 <i class="fas fa-plus-circle"></i> Generate Corporations
                             </button>
                         </form>
@@ -270,7 +119,7 @@
             <!-- Step 2: Generate Test Characters -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-users"></i> Step 2: Generate Test Characters</h4>
                         <p>Create test characters (miners) for each corporation. Characters will be linked to corporations via character_affiliations.</p>
 
@@ -281,7 +130,7 @@
                                 <input type="number" name="count_per_corp" class="form-control" value="5" min="1" max="20">
                                 <small class="form-text text-muted">Creates miners with IDs starting from 91000001</small>
                             </div>
-                            <button type="submit" class="btn btn-generate">
+                            <button type="submit" class="btn btn btn-mm-primary">
                                 <i class="fas fa-user-plus"></i> Generate Characters
                             </button>
                         </form>
@@ -292,7 +141,7 @@
             <!-- Step 3: Generate Mining Data -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-gem"></i> Step 3: Generate Mining Data</h4>
                         <p>Create mining ledger entries for test characters. Generates random ore types (including moon ore) in various systems.</p>
 
@@ -314,7 +163,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-generate">
+                            <button type="submit" class="btn btn btn-mm-primary">
                                 <i class="fas fa-database"></i> Generate Mining Data
                             </button>
                         </form>
@@ -325,7 +174,7 @@
             <!-- Cleanup Section -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-trash-alt"></i> Cleanup Test Data</h4>
                         <div class="danger-box">
                             <strong><i class="fas fa-exclamation-triangle"></i> Warning</strong>
@@ -334,7 +183,7 @@
 
                         <form action="{{ route('mining-manager.diagnostic.cleanup') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
                             @csrf
-                            <button type="submit" class="btn btn-danger-custom">
+                            <button type="submit" class="btn btn btn-danger">
                                 <i class="fas fa-trash"></i> Delete All Test Data
                             </button>
                         </form>
@@ -345,7 +194,7 @@
             <!-- Instructions -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-info-circle"></i> Testing Multi-Corporation Settings</h4>
                         <ol>
                             <li>Generate test corporations using Step 1</li>
@@ -366,7 +215,7 @@
         <div class="tab-pane fade" id="price-provider" role="tabpanel">
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-dollar-sign"></i> Price Provider Testing</h4>
                         <p>Test different price providers to ensure they are configured correctly and returning prices.</p>
 
@@ -387,7 +236,7 @@
                             <p id="providerWarningText" class="mb-0"></p>
                         </div>
 
-                        <button type="button" class="btn btn-generate" onclick="testProvider()">
+                        <button type="button" class="btn btn btn-mm-primary" onclick="testProvider()">
                             <i class="fas fa-vial"></i> <span id="testBtnText">Test Provider</span>
                             <span id="testSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                         </button>
@@ -415,7 +264,7 @@
             <!-- Batch Testing -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-list"></i> Batch Price Testing</h4>
                         <p>Test price fetching for multiple ore types at once to check performance and accuracy.</p>
 
@@ -445,7 +294,7 @@
                             </div>
                         </div>
 
-                        <button type="button" class="btn btn-generate" onclick="testBatchPricing()">
+                        <button type="button" class="btn btn btn-mm-primary" onclick="testBatchPricing()">
                             <i class="fas fa-list-check"></i> <span id="batchBtnText">Run Batch Test</span>
                             <span id="batchSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                         </button>
@@ -460,11 +309,11 @@
         <div class="tab-pane fade" id="cache-health" role="tabpanel">
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-heartbeat"></i> Price Cache Health Status</h4>
                         <p>Monitor the health of your price cache. The cache stores prices locally for fast tax calculations.</p>
 
-                        <button type="button" class="btn btn-generate" onclick="loadCacheHealth()">
+                        <button type="button" class="btn btn btn-mm-primary" onclick="loadCacheHealth()">
                             <i class="fas fa-sync"></i> <span id="healthBtnText">Check Health</span>
                             <span id="healthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                         </button>
@@ -477,7 +326,7 @@
             <!-- Cache Warming -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-fire"></i> Warm Cache (Quick Fix)</h4>
                         <p>Quickly populate the cache with prices from your configured provider. Use this if cache is empty or stale.</p>
 
@@ -493,7 +342,7 @@
                             </select>
                         </div>
 
-                        <button type="button" class="btn btn-generate" onclick="warmCache()">
+                        <button type="button" class="btn btn btn-mm-primary" onclick="warmCache()">
                             <i class="fas fa-fire"></i> <span id="warmBtnText">Warm Cache</span>
                             <span id="warmSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                         </button>
@@ -506,7 +355,7 @@
             <!-- Manual Cache Command -->
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-terminal"></i> Manual Cache Management</h4>
                         <p>For best results, use the artisan command which supports more options:</p>
                         <code>php artisan mining-manager:cache-prices --type=all</code>
@@ -531,7 +380,7 @@
         <div class="tab-pane fade" id="system-validation" role="tabpanel">
             <div class="row">
                 <div class="col-md-12">
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-check-circle"></i> Type ID Registry Validation</h4>
                         <p class="text-muted">Validate that all type IDs in TypeIdRegistry exist in the local SeAT database (invTypes table).</p>
 
@@ -553,7 +402,7 @@
                             </select>
                         </div>
 
-                        <button class="btn btn-generate" onclick="validateTypeIds()">
+                        <button class="btn btn btn-mm-primary" onclick="validateTypeIds()">
                             <span id="validate-btn-text">Validate Type IDs</span>
                             <span id="validate-spinner" class="spinner-border spinner-border-sm" role="status" style="display:none;"></span>
                         </button>
@@ -561,7 +410,7 @@
                         <div id="validate-results" style="margin-top: 20px;"></div>
                     </div>
 
-                    <div class="diagnostic-card">
+                    <div class="card card-dark">
                         <h4><i class="fas fa-terminal"></i> Console Commands</h4>
                         <p class="text-muted">Run these commands via SSH for advanced diagnostics:</p>
 
@@ -591,6 +440,7 @@
 
     </div>
 </div>
+</div><!-- /.mining-manager-wrapper -->
 
 @push('javascript')
 <script>

@@ -5,141 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .report-option-card {
-        transition: all 0.3s;
-        cursor: pointer;
-        border: 2px solid transparent;
-        height: 100%;
-    }
-    
-    .report-option-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-    }
-    
-    .report-option-card.selected {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.1);
-    }
-    
-    .report-icon {
-        font-size: 4rem;
-        margin-bottom: 15px;
-    }
-    
-    .icon-daily { color: #4e73df; }
-    .icon-weekly { color: #1cc88a; }
-    .icon-monthly { color: #f6c23e; }
-    .icon-custom { color: #e74a3b; }
-    
-    .format-option {
-        padding: 15px;
-        border: 2px solid rgba(255,255,255,0.1);
-        border-radius: 10px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s;
-        margin-bottom: 10px;
-    }
-    
-    .format-option:hover {
-        border-color: rgba(255,255,255,0.3);
-        background: rgba(255,255,255,0.05);
-    }
-    
-    .format-option.selected {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.2);
-    }
-    
-    .format-icon {
-        font-size: 2.5rem;
-        margin-bottom: 10px;
-    }
-    
-    .date-range-card {
-        display: none;
-    }
-    
-    .date-range-card.show {
-        display: block;
-    }
-    
-    .preview-section {
-        background: rgba(0,0,0,0.2);
-        border-radius: 10px;
-        padding: 20px;
-        margin-top: 20px;
-    }
-    
-    .info-badge {
-        background: rgba(23, 162, 184, 0.2);
-        border: 1px solid rgba(23, 162, 184, 0.5);
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-    }
-    
-    .step-indicator {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 30px;
-        position: relative;
-    }
-    
-    .step-indicator::before {
-        content: '';
-        position: absolute;
-        top: 20px;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: rgba(255,255,255,0.2);
-        z-index: 0;
-    }
-    
-    .step {
-        flex: 1;
-        text-align: center;
-        position: relative;
-        z-index: 1;
-    }
-    
-    .step-circle {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: rgba(255,255,255,0.1);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 10px;
-        border: 2px solid rgba(255,255,255,0.3);
-    }
-    
-    .step.active .step-circle {
-        background: #667eea;
-        border-color: #667eea;
-    }
-    
-    .step.completed .step-circle {
-        background: #1cc88a;
-        border-color: #1cc88a;
-    }
-    
-    .generation-preview {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        margin-top: 20px;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper reports-generate-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -567,4 +436,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

@@ -5,97 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .export-option-card {
-        transition: all 0.3s;
-        cursor: pointer;
-        border: 2px solid transparent;
-        height: 100%;
-        min-height: 250px;
-    }
-    
-    .export-option-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-        border-color: rgba(102, 126, 234, 0.5);
-    }
-    
-    .export-option-card.selected {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.1);
-    }
-    
-    .export-icon {
-        font-size: 4rem;
-        margin-bottom: 20px;
-    }
-    
-    .icon-mining { color: #4e73df; }
-    .icon-taxes { color: #1cc88a; }
-    .icon-miners { color: #f6c23e; }
-    .icon-systems { color: #e74a3b; }
-    .icon-ores { color: #858796; }
-    .icon-events { color: #5a5c69; }
-    
-    .format-selector {
-        display: none;
-        margin-top: 20px;
-    }
-    
-    .format-selector.show {
-        display: block;
-    }
-    
-    .format-button {
-        padding: 20px;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: all 0.3s;
-        border: 2px solid rgba(255,255,255,0.1);
-    }
-    
-    .format-button:hover {
-        border-color: rgba(255,255,255,0.3);
-        transform: scale(1.05);
-    }
-    
-    .format-button.selected {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.2);
-    }
-    
-    .quick-export-stats {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        margin-bottom: 20px;
-    }
-    
-    .filter-section {
-        display: none;
-        background: rgba(0,0,0,0.2);
-        padding: 20px;
-        border-radius: 10px;
-        margin-top: 20px;
-    }
-    
-    .filter-section.show {
-        display: block;
-    }
-    
-    .export-preview {
-        background: rgba(28, 200, 138, 0.1);
-        border: 1px solid rgba(28, 200, 138, 0.3);
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 20px;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper reports-export-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -566,4 +479,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

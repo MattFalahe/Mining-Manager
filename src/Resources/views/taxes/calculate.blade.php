@@ -3,7 +3,12 @@
 @section('title', trans('mining-manager::taxes.calculate_title'))
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
+@push('head')
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+@endpush
+
 @section('full')
+<div class="mining-manager-wrapper taxes-calculate-page">
 
 
 {{-- TAB NAVIGATION --}}
@@ -498,4 +503,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

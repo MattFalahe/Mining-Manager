@@ -5,37 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .ore-bar {
-        height: 30px;
-        border-radius: 5px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: bold;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-    }
-    .timer-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        color: white;
-    }
-    .timer-box h2 {
-        font-size: 2.5rem;
-        margin: 0;
-        font-family: 'Courier New', monospace;
-    }
-    .composition-chart {
-        height: 300px;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-show-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -394,4 +367,5 @@ new Chart(ctx, {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

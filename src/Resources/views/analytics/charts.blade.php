@@ -21,7 +21,7 @@
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper analytics-charts-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -460,4 +460,5 @@ $('.quick-filter').on('click', function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

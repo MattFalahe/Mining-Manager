@@ -5,25 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .extraction-row {
-        transition: background-color 0.2s;
-    }
-    .extraction-row:hover {
-        background-color: rgba(255, 255, 255, 0.05);
-    }
-    .structure-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 30px;
-        border-radius: 10px;
-        color: white;
-        margin-bottom: 20px;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-extractions-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -383,4 +368,5 @@ new Chart(ctx, {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

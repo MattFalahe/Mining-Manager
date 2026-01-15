@@ -6,51 +6,10 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 <meta http-equiv="refresh" content="60">
-<style>
-    .active-extraction-card {
-        border-left: 4px solid #ffc107;
-        background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(0, 0, 0, 0) 100%);
-        transition: all 0.3s;
-    }
-    .active-extraction-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 16px rgba(255, 193, 7, 0.3);
-    }
-    .pulse {
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-    }
-    .countdown-timer {
-        font-family: 'Courier New', monospace;
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #ffc107;
-        text-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
-    }
-    .progress-ring {
-        width: 120px;
-        height: 120px;
-    }
-    .progress-ring-circle {
-        transition: stroke-dashoffset 0.35s;
-        transform: rotate(-90deg);
-        transform-origin: 50% 50%;
-    }
-    .live-badge {
-        animation: glow 2s ease-in-out infinite;
-    }
-    @keyframes glow {
-        0%, 100% { box-shadow: 0 0 5px #28a745; }
-        50% { box-shadow: 0 0 20px #28a745; }
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-active-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -444,4 +403,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

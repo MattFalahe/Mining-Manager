@@ -6,79 +6,10 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
-<style>
-    .fc {
-        background: #343a40;
-        color: #fff;
-    }
-    .fc-theme-standard td, .fc-theme-standard th {
-        border-color: #4a5057;
-    }
-    .fc-theme-standard .fc-scrollgrid {
-        border-color: #4a5057;
-    }
-    .fc .fc-button {
-        background-color: #007bff;
-        border-color: #007bff;
-        color: #fff;
-    }
-    .fc .fc-button:hover {
-        background-color: #0056b3;
-        border-color: #0056b3;
-    }
-    .fc .fc-button-active {
-        background-color: #0056b3;
-        border-color: #004085;
-    }
-    .fc-event {
-        cursor: pointer;
-        border-radius: 3px;
-    }
-    .fc-event.status-extracting {
-        background-color: #ffc107;
-        border-color: #ffc107;
-        color: #000;
-    }
-    .fc-event.status-ready {
-        background-color: #28a745;
-        border-color: #28a745;
-    }
-    .fc-event.status-completed {
-        background-color: #6c757d;
-        border-color: #6c757d;
-    }
-    .fc-daygrid-day-number {
-        color: #fff !important;
-    }
-    .fc-col-header-cell-cushion {
-        color: #fff !important;
-    }
-    .fc-toolbar-title {
-        color: #fff !important;
-    }
-    .extraction-item {
-        padding: 10px;
-        margin-bottom: 10px;
-        border-radius: 5px;
-        border-left: 4px solid;
-    }
-    .extraction-item.status-extracting {
-        border-left-color: #ffc107;
-        background: rgba(255, 193, 7, 0.1);
-    }
-    .extraction-item.status-ready {
-        border-left-color: #28a745;
-        background: rgba(40, 167, 69, 0.1);
-    }
-    .extraction-item.status-completed {
-        border-left-color: #6c757d;
-        background: rgba(108, 117, 125, 0.1);
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-calendar-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -344,4 +275,5 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

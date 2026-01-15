@@ -1963,6 +1963,60 @@
     padding-top: 20px;
 }
 
+/* ============================================
+   Tab Navigation (nav-tabs-custom for all other pages)
+   ============================================ */
+.mining-manager-wrapper .nav-tabs-custom {
+    margin-bottom: 0;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs {
+    border-bottom: 2px solid #454d55;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li {
+    margin-right: 8px;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li a {
+    color: #c2c7d0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border: none;
+    background: transparent;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.3s ease;
+    display: block;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li a:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+    text-decoration: none;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li.active a {
+    background-color: #343a40;
+    border: 2px solid #454d55;
+    border-bottom: 2px solid #343a40;
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li.active a i {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .nav-tabs li.active a .badge {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs-custom .tab-content {
+    padding-top: 20px;
+    background-color: transparent;
+}
+
 .mining-dashboard .personal-badge {
     background: linear-gradient(to right, #667eea 0%, #764ba2 100%);
     padding: 4px 12px;

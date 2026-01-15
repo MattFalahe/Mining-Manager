@@ -5,38 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .extraction-card {
-        transition: transform 0.2s;
-        border-left: 4px solid;
-    }
-    .extraction-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    }
-    .extraction-card.status-extracting {
-        border-left-color: #ffc107;
-    }
-    .extraction-card.status-ready {
-        border-left-color: #28a745;
-    }
-    .extraction-card.status-completed {
-        border-left-color: #6c757d;
-    }
-    .status-badge {
-        font-size: 0.85rem;
-        padding: 0.35rem 0.65rem;
-    }
-    .countdown {
-        font-family: 'Courier New', monospace;
-        font-size: 1.1rem;
-        font-weight: bold;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-index-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -370,4 +342,5 @@ setInterval(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

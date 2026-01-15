@@ -8,7 +8,7 @@
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper taxes-contracts-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -160,4 +160,5 @@ function generateContracts() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

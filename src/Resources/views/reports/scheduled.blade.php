@@ -5,132 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .schedule-card {
-        transition: all 0.3s;
-        border-left: 4px solid transparent;
-    }
-    
-    .schedule-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    }
-    
-    .schedule-active { border-left-color: #1cc88a !important; }
-    .schedule-inactive { border-left-color: #6c757d !important; }
-    .schedule-paused { border-left-color: #f6c23e !important; }
-    
-    .frequency-badge {
-        padding: 5px 12px;
-        border-radius: 15px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    
-    .freq-daily { background: rgba(78, 115, 223, 0.2); color: #4e73df; }
-    .freq-weekly { background: rgba(28, 200, 138, 0.2); color: #1cc88a; }
-    .freq-monthly { background: rgba(246, 194, 62, 0.2); color: #f6c23e; }
-    
-    .status-toggle {
-        position: relative;
-        display: inline-block;
-        width: 60px;
-        height: 34px;
-    }
-    
-    .status-toggle input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-    }
-    
-    .slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: #ccc;
-        transition: .4s;
-        border-radius: 34px;
-    }
-    
-    .slider:before {
-        position: absolute;
-        content: "";
-        height: 26px;
-        width: 26px;
-        left: 4px;
-        bottom: 4px;
-        background-color: white;
-        transition: .4s;
-        border-radius: 50%;
-    }
-    
-    input:checked + .slider {
-        background-color: #1cc88a;
-    }
-    
-    input:checked + .slider:before {
-        transform: translateX(26px);
-    }
-    
-    .next-run-countdown {
-        background: rgba(102, 126, 234, 0.1);
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 10px;
-    }
-    
-    .create-schedule-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 30px;
-        border-radius: 10px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-    }
-    
-    .create-schedule-card:hover {
-        transform: scale(1.05);
-    }
-    
-    .modal-dark .modal-content {
-        background: #2d3748;
-        color: #e2e8f0;
-    }
-    
-    .modal-dark .modal-header {
-        border-bottom-color: rgba(255,255,255,0.1);
-    }
-    
-    .modal-dark .modal-footer {
-        border-top-color: rgba(255,255,255,0.1);
-    }
-    
-    .modal-dark .form-control {
-        background: #1a202c;
-        border-color: rgba(255,255,255,0.1);
-        color: #e2e8f0;
-    }
-    
-    .modal-dark .form-control:focus {
-        background: #1a202c;
-        border-color: #667eea;
-        color: #e2e8f0;
-    }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper reports-scheduled-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -559,4 +437,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

@@ -5,44 +5,10 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
-<style>
-    .moon-card {
-        transition: transform 0.2s, box-shadow 0.2s;
-        cursor: pointer;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    .moon-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
-    }
-    .moon-value-badge {
-        font-size: 1.2rem;
-        padding: 10px 15px;
-    }
-    .ore-mini-bar {
-        height: 20px;
-        border-radius: 3px;
-        margin-bottom: 5px;
-    }
-    .rank-badge {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        font-weight: bold;
-    }
-    .rank-1 { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); }
-    .rank-2 { background: linear-gradient(135deg, #C0C0C0 0%, #808080 100%); }
-    .rank-3 { background: linear-gradient(135deg, #CD7F32 0%, #8B4513 100%); }
-</style>
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper moon-compositions-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -389,4 +355,5 @@
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection

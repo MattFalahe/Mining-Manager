@@ -42,7 +42,7 @@
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper events-my-events-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -419,4 +419,5 @@ document.head.appendChild(style);
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection
