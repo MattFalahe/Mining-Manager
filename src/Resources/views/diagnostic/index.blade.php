@@ -543,9 +543,12 @@
                                 <option value="minerals">Minerals Only (8 items)</option>
                                 <option value="ice-products">Ice Products Only (7 items)</option>
                                 <option value="moon">Moon Ores (60 items)</option>
-                                <option value="ore">Regular Ores (45 items)</option>
-                                <option value="ice">Ice (16 items)</option>
+                                <option value="ore">Regular Ores (48 items)</option>
+                                <option value="compressed-ore">Compressed Ores (63 items)</option>
+                                <option value="ice">Ice (20 items)</option>
                                 <option value="gas">Gas (12 items)</option>
+                                <option value="new-ores">New Ores YC124-YC126 (72 items)</option>
+                                <option value="abyssal">Abyssal Ores (10 items)</option>
                                 <option value="all">All Categories</option>
                             </select>
                         </div>

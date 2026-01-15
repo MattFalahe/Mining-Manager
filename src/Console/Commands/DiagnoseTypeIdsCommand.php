@@ -16,7 +16,7 @@ class DiagnoseTypeIdsCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:diagnose-type-ids
-                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|refined-materials|minerals|ice|gas|ice-products|jackpot|all)}
+                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|refined-materials|minerals|ice|gas|ice-products|new-ores|jackpot|all)}
                             {--include-abyssal : Include abyssal ore diagnosis (Pochven ores)}
                             {--test-jackpot : Test jackpot detection logic}
                             {--verify-db : Verify against local SeAT database instead of ESI API}';
@@ -163,6 +163,11 @@ class DiagnoseTypeIdsCommand extends Command
                 'count' => TypeIdRegistry::getCategoryCount('abyssal'),
                 'optional' => true,
                 'ids' => TypeIdRegistry::getTypeIdsByCategory('abyssal'),
+            ],
+            'new-ores' => [
+                'name' => 'New Ores (YC124-YC126: Deep Space Survey + Ore Prospecting Arrays)',
+                'count' => TypeIdRegistry::getCategoryCount('new-ores'),
+                'ids' => TypeIdRegistry::getTypeIdsByCategory('new-ores'),
             ],
         ];
     }

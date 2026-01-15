@@ -17,7 +17,7 @@ namespace MiningManager\Services;
 class TypeIdRegistry
 {
     // ============================================
-    // REGULAR ORES (45 items)
+    // REGULAR ORES (48 items - added Spodumain)
     // ============================================
 
     const REGULAR_ORES = [
@@ -51,16 +51,43 @@ class TypeIdRegistry
         22, 17425, 17426,
         // Mercoxit family
         11396, 17869, 17870,
+        // Spodumain family
+        19, 17466, 17467,
     ];
 
     const COMPRESSED_REGULAR_ORES = [
-        // Base compressed ores (15 types)
-        28432, 28433, 28434, 28435, 28436, 28437, 28438, 28439, 28440, 28441,
-        28442, 28443, 28444, 28445, 28446,
-        // Compressed ore variants (30 types)
-        28427, 28428, 28429, 28430, 28421, 28422, 28415, 28416, 28425, 28426,
-        28419, 28420, 28417, 28418, 28413, 28414, 28409, 28410, 28411, 28412,
-        28407, 28408, 28405, 28406, 28401, 28404, 28397, 28400, 28398, 28399,
+        // Compressed Veldspar family (4 variants)
+        62516, 62517, 62518, 62519,  // Veldspar, Concentrated, Dense, Stable
+        // Compressed Scordite family (4 variants)
+        62520, 62521, 62522, 62523,  // Scordite, Condensed, Massive, Glossy
+        // Compressed Pyroxeres family (4 variants)
+        62524, 62525, 62526, 62527,  // Pyroxeres, Solid, Viscous, Opulent
+        // Compressed Plagioclase family (4 variants)
+        62528, 62529, 62530, 62531,  // Plagioclase, Azure, Rich, Sparkling
+        // Compressed Omber family (4 variants)
+        62532, 62533, 62534, 62535,  // Omber, Silvery, Golden, Platinoid
+        // Compressed Kernite family (4 variants)
+        62536, 62537, 62538, 62539,  // Kernite, Luminous, Fiery, Resplendant
+        // Compressed Jaspet family (4 variants)
+        62540, 62541, 62542, 62543,  // Jaspet, Pure, Pristine, Immaculate
+        // Compressed Hemorphite family (4 variants)
+        62544, 62545, 62546, 62547,  // Hemorphite, Vivid, Radiant, Scintillating
+        // Compressed Hedbergite family (4 variants)
+        62548, 62549, 62550, 62551,  // Hedbergite, Vitric, Glazed, Lustrous
+        // Compressed Gneiss family (4 variants)
+        62552, 62553, 62554, 62555,  // Gneiss, Iridescent, Prismatic, Brilliant
+        // Compressed Dark Ochre family (4 variants)
+        62556, 62557, 62558, 62559,  // Dark Ochre, Onyx, Obsidian, Jet
+        // Compressed Crokite family (4 variants)
+        62560, 62561, 62562, 62563,  // Crokite, Sharp, Crystalline, Pellucid
+        // Compressed Bistot family (4 variants)
+        62564, 62565, 62566, 62567,  // Bistot, Triclinic, Monoclinic, Cubic
+        // Compressed Arkonor family (4 variants)
+        62568, 62569, 62570, 62571,  // Arkonor, Crimson, Prime, Flawless
+        // Compressed Spodumain family (4 variants)
+        62572, 62573, 62574, 62575,  // Spodumain, Bright, Gleaming, Dazzling
+        // Compressed Mercoxit family (3 variants)
+        62586, 62587, 62588,  // Mercoxit, Magma, Vitreous
     ];
 
     // ============================================
@@ -197,17 +224,35 @@ class TypeIdRegistry
     ];
 
     // ============================================
-    // ICE (16 items)
+    // ICE (20 items - 8 raw + 12 compressed variants)
     // ============================================
 
     const ICE = [
         // Standard Ice (8 types)
-        16262, 16263, 16264, 16265, 16266, 16267, 16268, 16269,
+        16262, // Clear Icicle
+        16263, // Glacial Mass
+        16264, // Blue Ice
+        16265, // White Glaze
+        16266, // Glare Crust
+        16267, // Dark Glitter
+        16268, // Gelidus
+        16269, // Krystallos
     ];
 
     const COMPRESSED_ICE = [
-        // Compressed Ice (8 types)
-        17975, 17976, 17977, 17978, 17979, 17980, 17981, 17982,
+        // Compressed Ice (8 types) - these are actually using the 284xx range
+        28433, // Compressed Blue Ice
+        28434, // Compressed Clear Icicle
+        28435, // Compressed Dark Glitter
+        28436, // Compressed Enriched Clear Icicle
+        28437, // Compressed Gelidus
+        28438, // Compressed Glacial Mass
+        28439, // Compressed Glare Crust
+        28440, // Compressed Krystallos
+        28441, // Compressed Pristine White Glaze
+        28442, // Compressed Smooth Glacial Mass
+        28443, // Compressed Thick Blue Ice
+        28444, // Compressed White Glaze
     ];
 
     // ============================================
@@ -326,10 +371,10 @@ class TypeIdRegistry
     ];
 
     const COMPRESSED_MORDUNIUM_ORES = [
-        74537,  // Compressed Mordunium
-        74538,  // Compressed Plum Mordunium
-        74539,  // Compressed Prize Mordunium
-        74540,  // Compressed Plunder Mordunium
+        75275,  // Compressed Mordunium
+        75276,  // Compressed Plum Mordunium
+        75277,  // Compressed Prize Mordunium
+        75278,  // Compressed Plunder Mordunium
     ];
 
     /**
@@ -345,10 +390,10 @@ class TypeIdRegistry
     ];
 
     const COMPRESSED_YTIRIUM_ORES = [
-        74541,  // Compressed Ytirium
-        74542,  // Compressed Bootleg Ytirium
-        74543,  // Compressed Firewater Ytirium
-        74544,  // Compressed Moonshine Ytirium
+        75279,  // Compressed Ytirium
+        75280,  // Compressed Bootleg Ytirium
+        75281,  // Compressed Firewater Ytirium
+        75282,  // Compressed Moonshine Ytirium
     ];
 
     /**
@@ -364,10 +409,10 @@ class TypeIdRegistry
     ];
 
     const COMPRESSED_EIFYRIUM_ORES = [
-        74545,  // Compressed Eifyrium
-        74546,  // Compressed Doped Eifyrium
-        74547,  // Compressed Boosted Eifyrium
-        74548,  // Compressed Augmented Eifyrium
+        75283,  // Compressed Eifyrium
+        75284,  // Compressed Doped Eifyrium
+        75285,  // Compressed Boosted Eifyrium
+        75286,  // Compressed Augmented Eifyrium
     ];
 
     /**
@@ -383,10 +428,10 @@ class TypeIdRegistry
     ];
 
     const COMPRESSED_DUCINIUM_ORES = [
-        74549,  // Compressed Ducinium
-        74550,  // Compressed Noble Ducinium
-        74551,  // Compressed Royal Ducinium
-        74552,  // Compressed Imperial Ducinium
+        75287,  // Compressed Ducinium
+        75288,  // Compressed Noble Ducinium
+        75289,  // Compressed Royal Ducinium
+        75290,  // Compressed Imperial Ducinium
     ];
 
     // ============================================
@@ -425,10 +470,10 @@ class TypeIdRegistry
     ];
 
     const COMPRESSED_NOCXITE_ORES = [
-        82167,  // Compressed Nocxite
-        82168,  // Compressed Fragrant Nocxite
-        82169,  // Compressed Intoxicating Nocxite
-        82170,  // Compressed Ambrosial Nocxite
+        82304,  // Compressed Nocxite
+        82305,  // Compressed Fragrant Nocxite
+        82306,  // Compressed Intoxicating Nocxite
+        82307,  // Compressed Ambrosial Nocxite
     ];
 
     /**
@@ -437,17 +482,17 @@ class TypeIdRegistry
      * Found in nullsec sovereignty systems
      */
     const KYLIXIUM_ORES = [
-        82006,  // Kylixium (base)
-        82007,  // Pure Kylixium (+5%)
-        82008,  // Vivid Kylixium (+10%)
-        82009,  // Radiant Kylixium (+15%)
+        81900,  // Kylixium (base)
+        81901,  // Kaolin Kylixium (+5%)
+        81902,  // Argil Kylixium (+10%)
+        81903,  // Adobe Kylixium (+15%)
     ];
 
     const COMPRESSED_KYLIXIUM_ORES = [
-        82157,  // Compressed Kylixium
-        82158,  // Compressed Pure Kylixium
-        82159,  // Compressed Vivid Kylixium
-        82160,  // Compressed Radiant Kylixium
+        82300,  // Compressed Kylixium
+        82301,  // Compressed Kaolin Kylixium
+        82302,  // Compressed Argil Kylixium
+        82303,  // Compressed Adobe Kylixium
     ];
 
     /**
@@ -457,16 +502,16 @@ class TypeIdRegistry
      */
     const HEZORIME_ORES = [
         82163,  // Hezorime (base)
-        82164,  // Jagged Hezorime (+5%)
-        82165,  // Barbed Hezorime (+10%)
-        82166,  // Serrated Hezorime (+15%)
+        82164,  // Dull Hezorime (+5%)
+        82165,  // Serrated Hezorime (+10%)
+        82166,  // Sharp Hezorime (+15%)
     ];
 
     const COMPRESSED_HEZORIME_ORES = [
-        82313,  // Compressed Hezorime
-        82314,  // Compressed Jagged Hezorime
-        82315,  // Compressed Barbed Hezorime
-        82323,  // Compressed Serrated Hezorime
+        82312,  // Compressed Hezorime
+        82313,  // Compressed Dull Hezorime
+        82314,  // Compressed Serrated Hezorime
+        82315,  // Compressed Sharp Hezorime
     ];
 
     /**
@@ -475,17 +520,17 @@ class TypeIdRegistry
      * Found in nullsec sovereignty systems
      */
     const UEGANITE_ORES = [
-        82011,  // Ueganite (base)
-        82012,  // Glassy Ueganite (+5%)
-        82013,  // Lustrous Ueganite (+10%)
-        82014,  // Prismatic Ueganite (+15%)
+        82205,  // Ueganite (base)
+        82206,  // Foggy Ueganite (+5%)
+        82207,  // Overcast Ueganite (+10%)
+        82208,  // Stormy Ueganite (+15%)
     ];
 
     const COMPRESSED_UEGANITE_ORES = [
-        82161,  // Compressed Ueganite
-        82162,  // Compressed Glassy Ueganite
-        82171,  // Compressed Lustrous Ueganite
-        82172,  // Compressed Prismatic Ueganite
+        82308,  // Compressed Ueganite
+        82309,  // Compressed Foggy Ueganite
+        82310,  // Compressed Overcast Ueganite
+        82311,  // Compressed Stormy Ueganite
     ];
 
     // ============================================
