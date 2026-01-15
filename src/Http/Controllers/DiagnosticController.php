@@ -553,6 +553,9 @@ class DiagnosticController extends Controller
                 case 'moon':
                     $typeIds = TypeIdRegistry::getAllMoonOres();
                     break;
+                case 'moon-materials':
+                    $typeIds = TypeIdRegistry::getAllMoonMaterials();
+                    break;
                 case 'ice':
                     $typeIds = TypeIdRegistry::getAllIce();
                     break;
@@ -877,6 +880,84 @@ class DiagnosticController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Failed to warm cache', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate TypeID Registry against database
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function validateTypeIds(Request $request)
+    {
+        $category = $request->input('category', 'materials'); // materials, moon, ore, ice, gas, all
+
+        try {
+            $startTime = microtime(true);
+
+            // Get type IDs for category
+            $typeIds = TypeIdRegistry::getTypeIdsByCategory($category);
+
+            if (empty($typeIds)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Unknown category: {$category}"
+                ], 400);
+            }
+
+            $results = [];
+            $verified = 0;
+            $failed = 0;
+
+            // Batch query for better performance
+            $types = DB::table('invTypes')
+                ->whereIn('typeID', $typeIds)
+                ->select('typeID', 'typeName', 'groupID')
+                ->get()
+                ->keyBy('typeID');
+
+            foreach ($typeIds as $typeId) {
+                if (isset($types[$typeId])) {
+                    $type = $types[$typeId];
+                    $results[] = [
+                        'type_id' => $typeId,
+                        'name' => $type->typeName,
+                        'group_id' => $type->groupID,
+                        'status' => 'success'
+                    ];
+                    $verified++;
+                } else {
+                    $results[] = [
+                        'type_id' => $typeId,
+                        'name' => 'NOT FOUND',
+                        'group_id' => null,
+                        'status' => 'failed',
+                        'error' => 'Type ID not found in invTypes table'
+                    ];
+                    $failed++;
+                }
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            return response()->json([
+                'success' => true,
+                'category' => $category,
+                'duration_ms' => $duration,
+                'total_items' => count($typeIds),
+                'verified' => $verified,
+                'failed' => $failed,
+                'results' => $results,
+                'message' => "Validated {$verified}/{count($typeIds)} type IDs in {$duration}ms"
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to validate type IDs', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage()

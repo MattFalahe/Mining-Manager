@@ -197,6 +197,11 @@
                 <i class="fas fa-heartbeat"></i> Price Cache Health
             </a>
         </li>
+        <li class="nav-item">
+            <a class="nav-link" id="system-validation-tab" data-toggle="tab" href="#system-validation" role="tab">
+                <i class="fas fa-check-circle"></i> System Validation
+            </a>
+        </li>
     </ul>
 
     <div class="tab-content" id="diagnosticTabsContent">
@@ -431,7 +436,8 @@
                                     <select id="batchCategory" class="form-control">
                                         <option value="all">Mixed (Sample)</option>
                                         <option value="ore">Regular Ore</option>
-                                        <option value="moon">Moon Ore</option>
+                                        <option value="moon">Moon Ore (Raw Rocks)</option>
+                                        <option value="moon-materials">Moon Materials (Refined)</option>
                                         <option value="ice">Ice</option>
                                         <option value="gas">Gas</option>
                                     </select>
@@ -516,6 +522,65 @@
                         </ul>
                         <p><strong>Recommendation:</strong> Set up a cron job to refresh prices every hour:</p>
                         <code>0 * * * * php /path/to/artisan mining-manager:cache-prices --type=all</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Validation Tab -->
+        <div class="tab-pane fade" id="system-validation" role="tabpanel">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-check-circle"></i> Type ID Registry Validation</h4>
+                        <p class="text-muted">Validate that all type IDs in TypeIdRegistry exist in the local SeAT database (invTypes table).</p>
+
+                        <div class="form-group">
+                            <label>Select Category</label>
+                            <select id="validateCategory" class="form-control">
+                                <option value="refined-materials">All Refined Materials (35 items) - Moon + Minerals + Ice Products</option>
+                                <option value="materials">Moon Materials Only (20 items)</option>
+                                <option value="minerals">Minerals Only (8 items)</option>
+                                <option value="ice-products">Ice Products Only (7 items)</option>
+                                <option value="moon">Moon Ores (60 items)</option>
+                                <option value="ore">Regular Ores (45 items)</option>
+                                <option value="ice">Ice (16 items)</option>
+                                <option value="gas">Gas (12 items)</option>
+                                <option value="all">All Categories</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-generate" onclick="validateTypeIds()">
+                            <span id="validate-btn-text">Validate Type IDs</span>
+                            <span id="validate-spinner" class="spinner-border spinner-border-sm" role="status" style="display:none;"></span>
+                        </button>
+
+                        <div id="validate-results" style="margin-top: 20px;"></div>
+                    </div>
+
+                    <div class="diagnostic-card">
+                        <h4><i class="fas fa-terminal"></i> Console Commands</h4>
+                        <p class="text-muted">Run these commands via SSH for advanced diagnostics:</p>
+
+                        <div class="alert alert-info">
+                            <strong><i class="fas fa-info-circle"></i> Quick Validation (Refined Materials)</strong>
+                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=refined-materials --verify-db</pre>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong><i class="fas fa-database"></i> Full Database Validation</strong>
+                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db</pre>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong><i class="fas fa-globe"></i> ESI API Validation (slower, requires internet)</strong>
+                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=moon</pre>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <strong><i class="fas fa-flask"></i> With Jackpot Detection Tests</strong>
+                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db --test-jackpot</pre>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1015,6 +1080,85 @@ function warmCache() {
     })
     .catch(error => {
         btnText.textContent = 'Warm Cache';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error" style="margin-top: 15px;">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+function validateTypeIds() {
+    const category = document.getElementById('validateCategory').value;
+    const resultsDiv = document.getElementById('validate-results');
+    const btnText = document.getElementById('validate-btn-text');
+    const spinner = document.getElementById('validate-spinner');
+
+    btnText.textContent = 'Validating...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    const url = '{{ route("mining-manager.diagnostic.validate-type-ids") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ category: category })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Validate Type IDs';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            const successRate = ((data.verified / data.total_items) * 100).toFixed(1);
+            const statusIcon = data.failed === 0 ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning';
+
+            let html = `
+                <div class="provider-test-result ${data.failed === 0 ? 'success' : 'warning'}">
+                    <h5><i class="fas ${statusIcon}"></i> Validation ${data.failed === 0 ? 'Successful' : 'Complete with Issues'}</h5>
+                    <p><strong>Category:</strong> ${data.category}</p>
+                    <p><strong>Duration:</strong> ${data.duration_ms}ms</p>
+                    <p><strong>Success Rate:</strong> ${successRate}% (${data.verified}/${data.total_items})</p>
+            `;
+
+            if (data.failed > 0) {
+                html += `<p class="text-warning"><strong>Failed:</strong> ${data.failed} type IDs not found in database!</p>`;
+            }
+
+            html += `<hr><h6>Validation Results:</h6><div style="max-height: 400px; overflow-y: auto;">`;
+
+            data.results.forEach(item => {
+                const statusClass = item.status === 'success' ? 'success' : 'failed';
+                const statusIcon = item.status === 'success' ? 'fa-check-circle text-success' : 'fa-times-circle text-danger';
+                html += `
+                    <div class="price-item ${statusClass}">
+                        <span><i class="fas ${statusIcon}"></i> ${item.name} (${item.type_id})</span>
+                        <span>${item.status === 'success' ? 'Valid' : 'MISSING'}</span>
+                    </div>
+                `;
+            });
+
+            html += '</div></div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `
+                <div class="provider-test-result error">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Validation Failed</h5>
+                    <p><strong>Error:</strong> ${data.error}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Validate Type IDs';
         spinner.style.display = 'none';
         resultsDiv.innerHTML = `
             <div class="provider-test-result error" style="margin-top: 15px;">

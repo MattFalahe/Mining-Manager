@@ -245,37 +245,37 @@ class TypeIdRegistry
 
     const MOON_MATERIALS_R4 = [
         16633, // Hydrocarbons
+        16634, // Atmospheric Gases
         16635, // Evaporite Deposits
         16636, // Silicates
-        16638, // Atmospheric Gases
     ];
 
     const MOON_MATERIALS_R8 = [
-        16634, // Titanium
         16637, // Tungsten
-        16639, // Cobalt
-        16655, // Scandium
+        16638, // Titanium
+        16639, // Scandium
+        16640, // Cobalt
     ];
 
     const MOON_MATERIALS_R16 = [
-        16640, // Cadmium
         16641, // Chromium
-        16644, // Vanadium
-        16647, // Platinum
+        16642, // Vanadium
+        16643, // Cadmium
+        16644, // Platinum
     ];
 
     const MOON_MATERIALS_R32 = [
-        16642, // Caesium
-        16643, // Technetium
         16646, // Mercury
+        16647, // Caesium
         16648, // Hafnium
+        16649, // Technetium
     ];
 
     const MOON_MATERIALS_R64 = [
-        16649, // Neodymium
         16650, // Dysprosium
-        16651, // Thulium
+        16651, // Neodymium
         16652, // Promethium
+        16653, // Thulium
     ];
 
     // ============================================
@@ -566,6 +566,19 @@ class TypeIdRegistry
     }
 
     /**
+     * Get all refined materials (moon materials + minerals + ice products)
+     * These are the materials that ores/ice refine into
+     */
+    public static function getAllRefinedMaterials(): array
+    {
+        return array_merge(
+            self::getAllMoonMaterials(),  // 20 moon materials
+            self::MINERALS,                // 8 minerals
+            self::ICE_PRODUCTS             // 7 ice products
+        );
+    }
+
+    /**
      * Get all Deep Space Survey ores (YC124)
      * Includes: Mordunium, Ytirium, Eifyrium, Ducinium
      */
@@ -646,10 +659,13 @@ class TypeIdRegistry
             
             case 'minerals':
                 return self::MINERALS;
-            
+
             case 'materials':
                 return self::getAllMoonMaterials();
-            
+
+            case 'refined-materials':
+                return self::getAllRefinedMaterials();
+
             case 'ice-products':
                 return self::ICE_PRODUCTS;
             

@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use MiningManager\Services\Moon\MoonOreHelper;
 use MiningManager\Services\TypeIdRegistry;
 
@@ -15,9 +16,10 @@ class DiagnoseTypeIdsCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:diagnose-type-ids
-                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|minerals|ice|gas|jackpot|all)}
+                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|refined-materials|minerals|ice|gas|ice-products|jackpot|all)}
                             {--include-abyssal : Include abyssal ore diagnosis (Pochven ores)}
-                            {--test-jackpot : Test jackpot detection logic}';
+                            {--test-jackpot : Test jackpot detection logic}
+                            {--verify-db : Verify against local SeAT database instead of ESI API}';
 
     /**
      * The console command description.
@@ -46,12 +48,19 @@ class DiagnoseTypeIdsCommand extends Command
     ];
 
     /**
+     * Verification mode (ESI API or local database)
+     *
+     * @var bool
+     */
+    protected $useDatabase = false;
+
+    /**
      * Execute the console command.
      */
     public function handle()
     {
         $this->info('╔════════════════════════════════════════════════════════════╗');
-        $this->info('║   Mining Manager - Type ID Diagnostics v2.0               ║');
+        $this->info('║   Mining Manager - Type ID Diagnostics v2.1               ║');
         $this->info('╚════════════════════════════════════════════════════════════╝');
         $this->newLine();
 
@@ -60,6 +69,15 @@ class DiagnoseTypeIdsCommand extends Command
         $category = $this->option('category');
         $includeAbyssal = $this->option('include-abyssal');
         $testJackpot = $this->option('test-jackpot');
+        $this->useDatabase = $this->option('verify-db');
+
+        // Show verification mode
+        if ($this->useDatabase) {
+            $this->info('🗄️  Verification Mode: Local SeAT Database (invTypes table)');
+        } else {
+            $this->info('🌐 Verification Mode: ESI API (requires internet)');
+        }
+        $this->newLine();
 
         if ($category && $category !== 'all') {
             $this->verifyCategory($category);
@@ -130,6 +148,11 @@ class DiagnoseTypeIdsCommand extends Command
                 'count' => TypeIdRegistry::getCategoryCount('materials'),
                 'ids' => TypeIdRegistry::getTypeIdsByCategory('materials'),
             ],
+            'refined-materials' => [
+                'name' => 'All Refined Materials (Moon Materials + Minerals + Ice Products)',
+                'count' => TypeIdRegistry::getCategoryCount('refined-materials'),
+                'ids' => TypeIdRegistry::getTypeIdsByCategory('refined-materials'),
+            ],
             'ice-products' => [
                 'name' => 'Ice Products',
                 'count' => TypeIdRegistry::getCategoryCount('ice-products'),
@@ -191,7 +214,9 @@ class DiagnoseTypeIdsCommand extends Command
             $this->stats['total']++;
             $bar->setMessage("Checking Type ID: {$typeId}");
 
-            $result = $this->verifyTypeId($typeId);
+            $result = $this->useDatabase
+                ? $this->verifyTypeIdInDatabase($typeId)
+                : $this->verifyTypeId($typeId);
 
             if ($result['success']) {
                 $this->stats['verified']++;
@@ -206,8 +231,10 @@ class DiagnoseTypeIdsCommand extends Command
 
             $bar->advance();
 
-            // Rate limiting to be nice to ESI
-            usleep(100000); // 100ms between requests
+            // Rate limiting only for ESI requests
+            if (!$this->useDatabase) {
+                usleep(100000); // 100ms between requests
+            }
         }
 
         $bar->setMessage('Complete!');
@@ -245,6 +272,38 @@ class DiagnoseTypeIdsCommand extends Command
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Verify a single type ID against local SeAT database
+     */
+    protected function verifyTypeIdInDatabase(int $typeId): array
+    {
+        try {
+            $type = DB::table('invTypes')
+                ->where('typeID', $typeId)
+                ->select('typeID', 'typeName', 'groupID')
+                ->first();
+
+            if ($type) {
+                return [
+                    'success' => true,
+                    'name' => $type->typeName ?? 'Unknown',
+                    'group_id' => $type->groupID ?? null,
+                ];
+            }
+
+            return [
+                'success' => false,
+                'error' => "Type ID {$typeId} not found in invTypes table",
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => "Database error: {$e->getMessage()}",
             ];
         }
     }
@@ -395,9 +454,12 @@ class DiagnoseTypeIdsCommand extends Command
 
         $this->newLine();
         $this->line('  💡 Tip: Use --category=moon to diagnose all 60 moon ore variants');
+        $this->line('  💡 Tip: Use --category=materials to diagnose all 20 moon materials');
+        $this->line('  💡 Tip: Use --category=refined-materials to diagnose all 35 refined materials');
         $this->line('  💡 Tip: Use --category=jackpot to diagnose all 40 jackpot ores');
         $this->line('  💡 Tip: Use --test-jackpot to test jackpot detection logic');
         $this->line('  💡 Tip: Use --include-abyssal to include Pochven ores');
+        $this->line('  💡 Tip: Use --verify-db for fast local database validation');
         
         $this->newLine();
         $this->line('  📊 UPDATED COVERAGE (from TypeIdRegistry):');

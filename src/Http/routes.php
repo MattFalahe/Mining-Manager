@@ -765,6 +765,12 @@ Route::group([
             'uses' => 'DiagnosticController@warmCache',
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
+
+        Route::post('/validate-type-ids', [
+            'as' => 'mining-manager.diagnostic.validate-type-ids',
+            'uses' => 'DiagnosticController@validateTypeIds',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
     });
 
     // API Routes

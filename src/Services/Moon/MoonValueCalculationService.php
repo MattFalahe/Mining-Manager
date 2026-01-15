@@ -40,12 +40,14 @@ class MoonValueCalculationService
     {
         $regionId = config('mining-manager.pricing.default_region_id', 10000002);
         $priceType = config('mining-manager.pricing.price_type', 'sell');
-        
-        // Check if refined value calculation is enabled
-        // First check database settings, then fall back to config
-        $useRefinedValue = $this->getSetting('pricing.use_refined_value', 
-            config('mining-manager.pricing.use_refined_value', false));
-        
+
+        // IMPORTANT: Moon extraction value is ALWAYS calculated based on refined materials
+        // This is because the moon composition already shows what ores are present:
+        // - If R4 ores (Bitumens, etc.) are in the composition → they refine to minerals
+        // - If R8+ ores without R4 → no regular minerals obtained
+        // The composition defines what you get, so we calculate refined value for each ore type
+        // Note: Individual miner taxation can still use raw ore prices (configured separately)
+
         // Get estimated chunk size from config (default: 150,000 m³)
         $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
 
@@ -74,7 +76,7 @@ class MoonValueCalculationService
             if ($percentage > 0) {
                 // Get ore volume (moon ores are typically 16 m³ per unit)
                 $oreVolume = $this->getOreVolume($typeId);
-                
+
                 if ($oreVolume > 0) {
                     // Quantity = (percentage / 100) × (chunk size / ore volume)
                     $quantity = ($percentage / 100) * ($chunkSize / $oreVolume);
@@ -88,20 +90,16 @@ class MoonValueCalculationService
                 continue;
             }
 
-            // Get price based on valuation method
-            if ($useRefinedValue) {
-                // Calculate value based on refined minerals
-                $value = $this->calculateRefinedValue($typeId, $quantity);
-            } else {
-                // Use raw ore price
-                $price = $this->getOrePrice($typeId, $regionId, $priceType);
+            // ALWAYS calculate value based on refined materials for moon extractions
+            // Each ore type in the composition will refine to its respective materials
+            $value = $this->calculateRefinedValue($typeId, $quantity);
 
-                if ($price === null) {
-                    Log::warning("Mining Manager: No price data for moon ore type_id {$typeId}");
-                    continue;
+            // Fallback to raw ore price if refined value calculation fails
+            if ($value <= 0) {
+                $price = $this->getOrePrice($typeId, $regionId, $priceType);
+                if ($price !== null) {
+                    $value = $quantity * $price;
                 }
-                
-                $value = $quantity * $price;
             }
 
             $totalValue += $value;
@@ -309,207 +307,208 @@ class MoonValueCalculationService
         // ============================================================================
         // R4 (UBIQUITOUS) MOON ORES
         // R4 ores give: Pyerite + Mexallon + R4 Moon Material
+        // Values from invTypeMaterials (100% perfect refining - efficiency applied separately)
         // ============================================================================
-        
-        // ---------- BITUMENS FAMILY (produces Hydrocarbons) ----------
-        
+
+        // ---------- BITUMENS FAMILY (produces Hydrocarbons 16633) ----------
+
         // Base Bitumens (45492)
-        $moonOreYields[45492] = [35 => 9600, 36 => 640, 16633 => 104];
+        $moonOreYields[45492] = [35 => 6000, 36 => 400, 16633 => 65];
         // Brimful Bitumens +15% (46284)
-        $moonOreYields[46284] = [35 => 11040, 36 => 736, 16633 => 120];
+        $moonOreYields[46284] = [35 => 6900, 36 => 460, 16633 => 75];
         // Glistening Bitumens +100% (46285)
-        $moonOreYields[46285] = [35 => 19200, 36 => 1280, 16633 => 208];
-        
-        // ---------- COESITE FAMILY (produces Silicates) ----------
-        
+        $moonOreYields[46285] = [35 => 12000, 36 => 800, 16633 => 130];
+
+        // ---------- COESITE FAMILY (produces Silicates 16636) ----------
+
         // Base Coesite (45493)
-        $moonOreYields[45493] = [35 => 3200, 36 => 640, 16636 => 104];
+        $moonOreYields[45493] = [35 => 2000, 36 => 400, 16636 => 65];
         // Brimful Coesite +15% (46286)
-        $moonOreYields[46286] = [35 => 3680, 36 => 736, 16636 => 120];
+        $moonOreYields[46286] = [35 => 2300, 36 => 460, 16636 => 75];
         // Glistening Coesite +100% (46287)
-        $moonOreYields[46287] = [35 => 6400, 36 => 1280, 16636 => 208];
-        
-        // ---------- SYLVITE FAMILY (produces Evaporite Deposits) ----------
-        
+        $moonOreYields[46287] = [35 => 4000, 36 => 800, 16636 => 130];
+
+        // ---------- SYLVITE FAMILY (produces Evaporite Deposits 16635) ----------
+
         // Base Sylvite (45491)
-        $moonOreYields[45491] = [35 => 6400, 36 => 640, 16635 => 104];
+        $moonOreYields[45491] = [35 => 4000, 36 => 400, 16635 => 65];
         // Brimful Sylvite +15% (46282)
-        $moonOreYields[46282] = [35 => 7360, 36 => 736, 16635 => 120];
+        $moonOreYields[46282] = [35 => 4600, 36 => 460, 16635 => 75];
         // Glistening Sylvite +100% (46283)
-        $moonOreYields[46283] = [35 => 12800, 36 => 1280, 16635 => 208];
-        
-        // ---------- ZEOLITES FAMILY (produces Atmospheric Gases) ----------
-        
+        $moonOreYields[46283] = [35 => 8000, 36 => 800, 16635 => 130];
+
+        // ---------- ZEOLITES FAMILY (produces Atmospheric Gases 16634) ----------
+
         // Base Zeolites (45490)
-        $moonOreYields[45490] = [35 => 12800, 36 => 640, 16638 => 104];
+        $moonOreYields[45490] = [35 => 8000, 36 => 400, 16634 => 65];
         // Brimful Zeolites +15% (46280)
-        $moonOreYields[46280] = [35 => 14720, 36 => 736, 16638 => 120];
+        $moonOreYields[46280] = [35 => 9200, 36 => 460, 16634 => 75];
         // Glistening Zeolites +100% (46281)
-        $moonOreYields[46281] = [35 => 25600, 36 => 1280, 16638 => 208];
+        $moonOreYields[46281] = [35 => 16000, 36 => 800, 16634 => 130];
         
         // ============================================================================
         // R8 (COMMON) MOON ORES
         // R8 ores give: ONLY R8 Moon Materials (NO regular minerals)
         // ============================================================================
-        
-        // ---------- COBALTITE FAMILY (produces Cobalt) ----------
-        
+
+        // ---------- COBALTITE FAMILY (produces Cobalt 16640) ----------
+
         // Base Cobaltite (45494)
-        $moonOreYields[45494] = [16634 => 64];
+        $moonOreYields[45494] = [16640 => 40];
         // Copious Cobaltite +15% (46288)
-        $moonOreYields[46288] = [16634 => 74];
+        $moonOreYields[46288] = [16640 => 46];
         // Twinkling Cobaltite +100% (46289)
-        $moonOreYields[46289] = [16634 => 128];
-        
-        // ---------- EUXENITE FAMILY (produces Scandium) ----------
-        
+        $moonOreYields[46289] = [16640 => 80];
+
+        // ---------- EUXENITE FAMILY (produces Scandium 16639) ----------
+
         // Base Euxenite (45495)
-        $moonOreYields[45495] = [16655 => 64];
+        $moonOreYields[45495] = [16639 => 40];
         // Copious Euxenite +15% (46290)
-        $moonOreYields[46290] = [16655 => 74];
+        $moonOreYields[46290] = [16639 => 46];
         // Twinkling Euxenite +100% (46291)
-        $moonOreYields[46291] = [16655 => 128];
-        
-        // ---------- SCHEELITE FAMILY (produces Tungsten) ----------
-        
+        $moonOreYields[46291] = [16639 => 80];
+
+        // ---------- SCHEELITE FAMILY (produces Tungsten 16637) ----------
+
         // Base Scheelite (45497)
-        $moonOreYields[45497] = [16637 => 64];
+        $moonOreYields[45497] = [16637 => 40];
         // Copious Scheelite +15% (46294)
-        $moonOreYields[46294] = [16637 => 74];
+        $moonOreYields[46294] = [16637 => 46];
         // Twinkling Scheelite +100% (46295)
-        $moonOreYields[46295] = [16637 => 128];
-        
-        // ---------- TITANITE FAMILY (produces Titanium) ----------
-        
+        $moonOreYields[46295] = [16637 => 80];
+
+        // ---------- TITANITE FAMILY (produces Titanium 16638) ----------
+
         // Base Titanite (45496)
-        $moonOreYields[45496] = [16639 => 64];
+        $moonOreYields[45496] = [16638 => 40];
         // Copious Titanite +15% (46292)
-        $moonOreYields[46292] = [16639 => 74];
+        $moonOreYields[46292] = [16638 => 46];
         // Twinkling Titanite +100% (46293)
-        $moonOreYields[46293] = [16639 => 128];
+        $moonOreYields[46293] = [16638 => 80];
         
         // ============================================================================
         // R16 (UNCOMMON) MOON ORES
-        // R16 ores give: R16 Moon Material + small amount of R4
+        // R16 ores give: R16 Moon Material + small amount of R4 (NO regular minerals)
         // ============================================================================
-        
-        // ---------- CHROMITE FAMILY (produces Chromium + Hydrocarbons) ----------
-        
+
+        // ---------- CHROMITE FAMILY (produces Chromium 16641 + Hydrocarbons 16633) ----------
+
         // Base Chromite (45501)
-        $moonOreYields[45501] = [16641 => 64, 16633 => 16];
+        $moonOreYields[45501] = [16641 => 40, 16633 => 10];
         // Lavish Chromite +15% (46302)
-        $moonOreYields[46302] = [16641 => 74, 16633 => 18];
+        $moonOreYields[46302] = [16641 => 46, 16633 => 12];
         // Shimmering Chromite +100% (46303)
-        $moonOreYields[46303] = [16641 => 128, 16633 => 32];
-        
-        // ---------- OTAVITE FAMILY (produces Cadmium + Atmospheric Gases) ----------
-        
+        $moonOreYields[46303] = [16641 => 80, 16633 => 20];
+
+        // ---------- OTAVITE FAMILY (produces Cadmium 16643 + Atmospheric Gases 16634) ----------
+
         // Base Otavite (45498)
-        $moonOreYields[45498] = [16640 => 64, 16638 => 16];
+        $moonOreYields[45498] = [16643 => 40, 16634 => 10];
         // Lavish Otavite +15% (46296)
-        $moonOreYields[46296] = [16640 => 74, 16638 => 18];
+        $moonOreYields[46296] = [16643 => 46, 16634 => 12];
         // Shimmering Otavite +100% (46297)
-        $moonOreYields[46297] = [16640 => 128, 16638 => 32];
-        
-        // ---------- SPERRYLITE FAMILY (produces Platinum + Evaporite Deposits) ----------
-        
+        $moonOreYields[46297] = [16643 => 80, 16634 => 20];
+
+        // ---------- SPERRYLITE FAMILY (produces Platinum 16644 + Evaporite Deposits 16635) ----------
+
         // Base Sperrylite (45499)
-        $moonOreYields[45499] = [16647 => 64, 16635 => 16];
+        $moonOreYields[45499] = [16644 => 40, 16635 => 10];
         // Lavish Sperrylite +15% (46298)
-        $moonOreYields[46298] = [16647 => 74, 16635 => 18];
+        $moonOreYields[46298] = [16644 => 46, 16635 => 12];
         // Shimmering Sperrylite +100% (46299)
-        $moonOreYields[46299] = [16647 => 128, 16635 => 32];
-        
-        // ---------- VANADINITE FAMILY (produces Vanadium + Silicates) ----------
-        
+        $moonOreYields[46299] = [16644 => 80, 16635 => 20];
+
+        // ---------- VANADINITE FAMILY (produces Vanadium 16642 + Silicates 16636) ----------
+
         // Base Vanadinite (45500)
-        $moonOreYields[45500] = [16644 => 64, 16636 => 16];
+        $moonOreYields[45500] = [16642 => 40, 16636 => 10];
         // Lavish Vanadinite +15% (46300)
-        $moonOreYields[46300] = [16644 => 74, 16636 => 18];
+        $moonOreYields[46300] = [16642 => 46, 16636 => 12];
         // Shimmering Vanadinite +100% (46301)
-        $moonOreYields[46301] = [16644 => 128, 16636 => 32];
+        $moonOreYields[46301] = [16642 => 80, 16636 => 20];
         
         // ============================================================================
         // R32 (RARE) MOON ORES
         // R32 ores give: R32 + R8 + R4 Moon Materials
         // ============================================================================
         
-        // ---------- CARNOTITE FAMILY (produces Technetium + Cobalt + Atmospheric Gases) ----------
-        
+        // ---------- CARNOTITE FAMILY (produces Technetium 16649 + Cobalt 16640 + Atmospheric Gases 16634) ----------
+
         // Base Carnotite (45502)
-        $moonOreYields[45502] = [16643 => 80, 16634 => 16, 16638 => 24];
+        $moonOreYields[45502] = [16649 => 50, 16634 => 15, 16640 => 10];
         // Replete Carnotite +15% (46304)
-        $moonOreYields[46304] = [16643 => 92, 16634 => 18, 16638 => 28];
+        $moonOreYields[46304] = [16649 => 58, 16634 => 17, 16640 => 12];
         // Glowing Carnotite +100% (46305)
-        $moonOreYields[46305] = [16643 => 160, 16634 => 32, 16638 => 48];
+        $moonOreYields[46305] = [16649 => 100, 16634 => 30, 16640 => 20];
         
-        // ---------- CINNABAR FAMILY (produces Mercury + Tungsten + Evaporite Deposits) ----------
-        
+        // ---------- CINNABAR FAMILY (produces Mercury 16646 + Tungsten 16637 + Evaporite Deposits 16635) ----------
+
         // Base Cinnabar (45506)
-        $moonOreYields[45506] = [16646 => 80, 16637 => 16, 16635 => 24];
+        $moonOreYields[45506] = [16646 => 50, 16637 => 10, 16635 => 15];
         // Replete Cinnabar +15% (46310)
-        $moonOreYields[46310] = [16646 => 92, 16637 => 18, 16635 => 28];
+        $moonOreYields[46310] = [16646 => 58, 16637 => 12, 16635 => 17];
         // Glowing Cinnabar +100% (46311)
-        $moonOreYields[46311] = [16646 => 160, 16637 => 32, 16635 => 48];
+        $moonOreYields[46311] = [16646 => 100, 16637 => 20, 16635 => 30];
         
-        // ---------- POLLUCITE FAMILY (produces Caesium + Scandium + Hydrocarbons) ----------
-        
+        // ---------- POLLUCITE FAMILY (produces Caesium 16647 + Scandium 16639 + Hydrocarbons 16633) ----------
+
         // Base Pollucite (45504)
-        $moonOreYields[45504] = [16642 => 80, 16655 => 16, 16633 => 24];
+        $moonOreYields[45504] = [16647 => 50, 16639 => 10, 16633 => 15];
         // Replete Pollucite +15% (46308)
-        $moonOreYields[46308] = [16642 => 92, 16655 => 18, 16633 => 28];
+        $moonOreYields[46308] = [16647 => 58, 16639 => 12, 16633 => 17];
         // Glowing Pollucite +100% (46309)
-        $moonOreYields[46309] = [16642 => 160, 16655 => 32, 16633 => 48];
+        $moonOreYields[46309] = [16647 => 100, 16639 => 20, 16633 => 30];
         
-        // ---------- ZIRCON FAMILY (produces Hafnium + Titanium + Silicates) ----------
-        
+        // ---------- ZIRCON FAMILY (produces Hafnium 16648 + Titanium 16638 + Silicates 16636) ----------
+
         // Base Zircon (45503)
-        $moonOreYields[45503] = [16648 => 80, 16639 => 16, 16636 => 24];
+        $moonOreYields[45503] = [16648 => 50, 16638 => 10, 16636 => 15];
         // Replete Zircon +15% (46306)
-        $moonOreYields[46306] = [16648 => 92, 16639 => 18, 16636 => 28];
+        $moonOreYields[46306] = [16648 => 58, 16638 => 12, 16636 => 17];
         // Glowing Zircon +100% (46307)
-        $moonOreYields[46307] = [16648 => 160, 16639 => 32, 16636 => 48];
+        $moonOreYields[46307] = [16648 => 100, 16638 => 20, 16636 => 30];
         
         // ============================================================================
         // R64 (EXCEPTIONAL) MOON ORES
         // R64 ores give: R64 + R16 + R8 + R4 Moon Materials
         // ============================================================================
         
-        // ---------- XENOTIME FAMILY (produces Dysprosium + Vanadium + Cobalt + Atmospheric Gases) ----------
-        
+        // ---------- XENOTIME FAMILY (produces Dysprosium 16650 + Vanadium 16642 + Cobalt 16640 + Atmospheric Gases 16634) ----------
+
         // Base Xenotime (45510)
-        $moonOreYields[45510] = [16650 => 35, 16644 => 16, 16634 => 32, 16638 => 32];
+        $moonOreYields[45510] = [16650 => 22, 16642 => 10, 16640 => 20, 16634 => 20];
         // Bountiful Xenotime +15% (46312)
-        $moonOreYields[46312] = [16650 => 40, 16644 => 18, 16634 => 37, 16638 => 37];
+        $moonOreYields[46312] = [16650 => 25, 16642 => 12, 16640 => 23, 16634 => 23];
         // Shining Xenotime +100% (46313)
-        $moonOreYields[46313] = [16650 => 70, 16644 => 32, 16634 => 64, 16638 => 64];
+        $moonOreYields[46313] = [16650 => 44, 16642 => 20, 16640 => 40, 16634 => 40];
         
-        // ---------- MONAZITE FAMILY (produces Neodymium + Chromium + Tungsten + Evaporite Deposits) ----------
-        
+        // ---------- MONAZITE FAMILY (produces Neodymium 16651 + Chromium 16641 + Tungsten 16637 + Evaporite Deposits 16635) ----------
+
         // Base Monazite (45511)
-        $moonOreYields[45511] = [16649 => 35, 16641 => 16, 16637 => 32, 16635 => 32];
+        $moonOreYields[45511] = [16651 => 22, 16641 => 10, 16637 => 20, 16635 => 20];
         // Bountiful Monazite +15% (46314)
-        $moonOreYields[46314] = [16649 => 40, 16641 => 18, 16637 => 37, 16635 => 37];
+        $moonOreYields[46314] = [16651 => 25, 16641 => 12, 16637 => 23, 16635 => 23];
         // Shining Monazite +100% (46315)
-        $moonOreYields[46315] = [16649 => 70, 16641 => 32, 16637 => 64, 16635 => 64];
+        $moonOreYields[46315] = [16651 => 44, 16641 => 20, 16637 => 40, 16635 => 40];
         
-        // ---------- LOPARITE FAMILY (produces Promethium + Platinum + Scandium + Hydrocarbons) ----------
-        
+        // ---------- LOPARITE FAMILY (produces Promethium 16652 + Platinum 16644 + Scandium 16639 + Hydrocarbons 16633) ----------
+
         // Base Loparite (45512)
-        $moonOreYields[45512] = [16652 => 35, 16647 => 16, 16655 => 32, 16633 => 32];
+        $moonOreYields[45512] = [16652 => 22, 16644 => 10, 16639 => 20, 16633 => 20];
         // Bountiful Loparite +15% (46316)
-        $moonOreYields[46316] = [16652 => 40, 16647 => 18, 16655 => 37, 16633 => 37];
+        $moonOreYields[46316] = [16652 => 25, 16644 => 12, 16639 => 23, 16633 => 23];
         // Shining Loparite +100% (46317)
-        $moonOreYields[46317] = [16652 => 70, 16647 => 32, 16655 => 64, 16633 => 64];
+        $moonOreYields[46317] = [16652 => 44, 16644 => 20, 16639 => 40, 16633 => 40];
         
-        // ---------- YTTERBITE FAMILY (produces Thulium + Cadmium + Titanium + Silicates) ----------
-        
+        // ---------- YTTERBITE FAMILY (produces Thulium 16653 + Cadmium 16643 + Titanium 16638 + Silicates 16636) ----------
+
         // Base Ytterbite (45513)
-        $moonOreYields[45513] = [16651 => 35, 16640 => 16, 16639 => 32, 16636 => 32];
+        $moonOreYields[45513] = [16653 => 22, 16643 => 10, 16638 => 20, 16636 => 20];
         // Bountiful Ytterbite +15% (46318)
-        $moonOreYields[46318] = [16651 => 40, 16640 => 18, 16639 => 37, 16636 => 37];
+        $moonOreYields[46318] = [16653 => 25, 16643 => 12, 16638 => 23, 16636 => 23];
         // Shining Ytterbite +100% (46319)
-        $moonOreYields[46319] = [16651 => 70, 16640 => 32, 16639 => 64, 16636 => 64];
+        $moonOreYields[46319] = [16653 => 44, 16643 => 20, 16638 => 40, 16636 => 40];
         
         // ============================================================================
         // TOTAL: 60 moon ore variants defined (uncompressed only)
