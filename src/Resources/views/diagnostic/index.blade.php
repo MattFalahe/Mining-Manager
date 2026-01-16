@@ -99,6 +99,24 @@
 .mining-manager-wrapper.diagnostic-page .price-item:last-child {
     border-bottom: none !important;
 }
+
+/* Alert boxes within test results */
+.mining-manager-wrapper.diagnostic-page .provider-test-result .alert {
+    color: #ffffff !important;
+    background: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result .alert strong {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result .alert code {
+    background: rgba(0, 0, 0, 0.5) !important;
+    color: #00d4ff !important;
+    padding: 2px 6px !important;
+    border-radius: 3px !important;
+}
 </style>
 @endpush
 
