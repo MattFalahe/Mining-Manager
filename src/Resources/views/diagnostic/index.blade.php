@@ -47,6 +47,58 @@
     margin-bottom: 20px !important;
     color: #c2c7d0 !important;
 }
+
+/* Provider Test Results Styling */
+.mining-manager-wrapper.diagnostic-page .provider-test-result {
+    background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%) !important;
+    border: 1px solid #454d55 !important;
+    border-radius: 10px !important;
+    padding: 20px !important;
+    margin-top: 20px !important;
+    color: #c2c7d0 !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.success {
+    border-left: 4px solid #28a745 !important;
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(40, 167, 69, 0.05) 100%) !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.warning {
+    border-left: 4px solid #ffc107 !important;
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%) !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.error,
+.mining-manager-wrapper.diagnostic-page .provider-test-result.danger {
+    border-left: 4px solid #dc3545 !important;
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(200, 35, 51, 0.05) 100%) !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result h5 {
+    font-size: 1.3rem !important;
+    margin-bottom: 15px !important;
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result p {
+    margin-bottom: 8px !important;
+    color: #c2c7d0 !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result strong {
+    color: #00d4ff !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .price-item {
+    display: flex !important;
+    justify-content: space-between !important;
+    padding: 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .price-item:last-child {
+    border-bottom: none !important;
+}
 </style>
 @endpush
 
