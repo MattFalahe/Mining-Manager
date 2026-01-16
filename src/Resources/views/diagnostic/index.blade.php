@@ -5,6 +5,49 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<style>
+/* Diagnostic Page Specific Styles - Inline to override caching issues */
+.mining-manager-wrapper.diagnostic-page .warning-box {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%) !important;
+    border-left: 4px solid #ffc107 !important;
+    padding: 15px 20px !important;
+    border-radius: 8px !important;
+    margin-bottom: 20px !important;
+    color: #c2c7d0 !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box {
+    background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%) !important;
+    border: 1px solid #454d55 !important;
+    border-radius: 10px !important;
+    padding: 20px !important;
+    text-align: center !important;
+    margin-bottom: 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box .stat-number {
+    font-size: 2.5rem !important;
+    font-weight: bold !important;
+    color: #00d4ff !important;
+    margin-bottom: 10px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box .stat-label {
+    font-size: 0.95rem !important;
+    color: #8b95a5 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .danger-box {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(200, 35, 51, 0.05) 100%) !important;
+    border-left: 4px solid #dc3545 !important;
+    padding: 15px 20px !important;
+    border-radius: 8px !important;
+    margin-bottom: 20px !important;
+    color: #c2c7d0 !important;
+}
+</style>
 @endpush
 
 @section('full')
@@ -516,6 +559,35 @@
 
 @push('javascript')
 <script>
+// Initialize tab switching
+$(document).ready(function() {
+    // Make tabs work with Bootstrap
+    $('.nav-tabs a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        console.log('Tab switched to:', $(e.target).attr('href'));
+    });
+
+    // Handle tab clicks
+    $('.nav-tabs a[data-toggle="tab"]').on('click', function(e) {
+        e.preventDefault();
+
+        // Remove active from all tabs and tab-panes
+        $('.nav-tabs li').removeClass('active');
+        $('.tab-pane').removeClass('active');
+
+        // Add active to clicked tab
+        $(this).parent('li').addClass('active');
+
+        // Add active to corresponding tab-pane
+        const target = $(this).attr('href');
+        $(target).addClass('active');
+
+        // Trigger tab-specific functions if needed
+        if ($(this).attr('onclick')) {
+            eval($(this).attr('onclick'));
+        }
+    });
+});
+
 function testConnectivity() {
     console.log('Testing connectivity to diagnostic routes...');
     const url = '{{ route("mining-manager.diagnostic.ping") }}';
