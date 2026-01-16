@@ -1964,6 +1964,50 @@
 }
 
 /* ============================================
+   Tab Navigation (Bootstrap 4 structure for diagnostic and similar pages)
+   ============================================ */
+.mining-manager-wrapper .nav-tabs {
+    border-bottom: 2px solid #454d55 !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link {
+    color: #c2c7d0 !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+    padding: 12px 24px !important;
+    border: none !important;
+    background: transparent !important;
+    margin-right: 8px !important;
+    border-radius: 8px 8px 0 0 !important;
+    transition: all 0.3s ease !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link:hover {
+    color: #fff !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active {
+    background-color: #343a40 !important;
+    border: 2px solid #454d55 !important;
+    border-bottom: 2px solid #343a40 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active i {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active .badge {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .tab-content {
+    padding-top: 20px !important;
+}
+
+/* ============================================
    Tab Navigation (nav-tabs-custom for all other pages)
    ============================================ */
 .mining-manager-wrapper .nav-tabs-custom {
@@ -1991,7 +2035,7 @@
     background: transparent !important;
     border-radius: 8px 8px 0 0 !important;
     transition: all 0.3s ease !important;
-    display: block !important;
+    display: inline-block !important;
 }
 
 .mining-manager-wrapper .nav-tabs-custom > .nav-tabs > li > a:hover {
@@ -2022,6 +2066,75 @@
 .mining-manager-wrapper .nav-tabs-custom .tab-content {
     padding-top: 20px !important;
     background-color: transparent !important;
+}
+
+/* ============================================
+   Diagnostic Page Specific Styles
+   ============================================ */
+.mining-manager-wrapper.diagnostic-page .warning-box {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%);
+    border-left: 4px solid #ffc107;
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: var(--mm-text-light);
+}
+
+.mining-manager-wrapper.diagnostic-page .warning-box strong {
+    color: #ffc107;
+    font-size: 1.1rem;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box {
+    background: linear-gradient(135deg, var(--mm-dark-card) 0%, var(--mm-dark-bg) 100%);
+    border: 1px solid var(--mm-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: var(--mm-primary-start);
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, var(--mm-primary-start) 0%, var(--mm-primary-end) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+}
+
+.mining-manager-wrapper.diagnostic-page .stat-label {
+    color: var(--mm-text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark {
+    background-color: var(--mm-dark-card);
+    border: 1px solid var(--mm-border);
+    border-radius: 10px;
+    padding: 25px;
+    margin-bottom: 20px;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark h4 {
+    color: var(--mm-text-white);
+    margin-bottom: 15px;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark p {
+    color: var(--mm-text-muted);
+    margin-bottom: 20px;
 }
 
 .mining-dashboard .personal-badge {
