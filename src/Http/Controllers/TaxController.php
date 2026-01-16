@@ -258,40 +258,20 @@ class TaxController extends Controller
 
     /**
      * Display wallet verification page
+     * TODO: Implement WalletTransaction model and wallet verification feature
      */
     public function wallet(Request $request)
     {
+        // Feature not yet implemented - return placeholder
+        $transactions = collect();
+        $summary = [
+            'pending_count' => 0,
+            'verified_count' => 0,
+            'verified_today' => 0,
+            'total_verified_isk' => 0,
+        ];
         $status = $request->input('status', 'pending');
         $month = $request->input('month');
-
-        // Get wallet transactions that might be tax payments
-        $query = \MiningManager\Models\WalletTransaction::with(['character', 'matchedTax.character']);
-
-        if ($status !== 'all') {
-            $query->where('verification_status', $status);
-        }
-
-        if ($month) {
-            $query->whereMonth('date', Carbon::parse($month)->month);
-        }
-
-        $transactions = $query->orderBy('date', 'desc')->paginate(50);
-
-        // Summary stats
-        $pendingCount = \MiningManager\Models\WalletTransaction::where('verification_status', 'pending')->count();
-        $verifiedCount = \MiningManager\Models\WalletTransaction::where('verification_status', 'verified')->count();
-        $verifiedToday = \MiningManager\Models\WalletTransaction::where('verification_status', 'verified')
-            ->whereDate('verified_at', Carbon::today())
-            ->count();
-        $totalVerifiedISK = \MiningManager\Models\WalletTransaction::where('verification_status', 'verified')
-            ->sum('amount');
-
-        $summary = [
-            'pending_count' => $pendingCount,
-            'verified_count' => $verifiedCount,
-            'verified_today' => $verifiedToday,
-            'total_verified_isk' => $totalVerifiedISK,
-        ];
 
         return view('mining-manager::taxes.wallet', compact(
             'transactions',

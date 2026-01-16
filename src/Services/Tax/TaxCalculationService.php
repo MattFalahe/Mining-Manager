@@ -778,7 +778,7 @@ class TaxCalculationService
             $totalValue += $value;
             $totalTax += $tax;
 
-            // Get ore name from type_id (you might need to join with universe_types table)
+            // Get ore name from type_id (you might need to join with invTypes table)
             $oreName = $this->getOreName($entry->type_id);
             $oreCategory = $this->getOreCategory($entry->type_id);
             $moonRarity = $this->getMoonOreRarity($entry->type_id);
@@ -819,13 +819,13 @@ class TaxCalculationService
      */
     private function getOreName(int $typeId): string
     {
-        // Try to get from universe_types table (SeAT has this)
+        // Try to get from invTypes table (SeAT has this)
         try {
-            $type = DB::table('universe_types')
-                ->where('type_id', $typeId)
+            $type = DB::table('invTypes')
+                ->where('typeID', $typeId)
                 ->first();
-            
-            return $type ? $type->name : "Unknown Ore ({$typeId})";
+
+            return $type ? $type->typeName : "Unknown Ore ({$typeId})";
         } catch (\Exception $e) {
             return "Type {$typeId}";
         }

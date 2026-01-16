@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     'type' => $event->type,
                     'location' => $event->location ?? '',
                     'description' => $event->description ?? '',
-                    'participants' => $event->participants ? $event->participants->count() : 0,
+                    'participants' => $event->participants_count ?? 0,
                     'tax_modifier' => $event->tax_modifier ?? 0,
                 ]
             ];
