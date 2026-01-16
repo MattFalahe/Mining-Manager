@@ -97,20 +97,26 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-building"></i> Step 1: Generate Test Corporations</h4>
-                        <p>Create test corporations with IDs starting from 98000001. Each corporation will have a CEO and unique ticker.</p>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-building"></i> Step 1: Generate Test Corporations
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Create test corporations with IDs starting from 98000001. Each corporation will have a CEO and unique ticker.</p>
 
-                        <form action="{{ route('mining-manager.diagnostic.generate-corporations') }}" method="POST">
-                            @csrf
-                            <div class="form-group">
-                                <label>Number of Corporations</label>
-                                <input type="number" name="count" class="form-control" value="3" min="1" max="10">
-                                <small class="form-text text-muted">Creates corporations with IDs 98000001, 98000002, etc.</small>
-                            </div>
-                            <button type="submit" class="btn btn btn-mm-primary">
-                                <i class="fas fa-plus-circle"></i> Generate Corporations
-                            </button>
-                        </form>
+                            <form action="{{ route('mining-manager.diagnostic.generate-corporations') }}" method="POST">
+                                @csrf
+                                <div class="form-group">
+                                    <label>Number of Corporations</label>
+                                    <input type="number" name="count" class="form-control" value="3" min="1" max="10">
+                                    <small class="form-text text-muted">Creates corporations with IDs 98000001, 98000002, etc.</small>
+                                </div>
+                                <button type="submit" class="btn btn btn-mm-primary">
+                                    <i class="fas fa-plus-circle"></i> Generate Corporations
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -119,20 +125,26 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-users"></i> Step 2: Generate Test Characters</h4>
-                        <p>Create test characters (miners) for each corporation. Characters will be linked to corporations via character_affiliations.</p>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-users"></i> Step 2: Generate Test Characters
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Create test characters (miners) for each corporation. Characters will be linked to corporations via character_affiliations.</p>
 
-                        <form action="{{ route('mining-manager.diagnostic.generate-characters') }}" method="POST">
-                            @csrf
-                            <div class="form-group">
-                                <label>Characters per Corporation</label>
-                                <input type="number" name="count_per_corp" class="form-control" value="5" min="1" max="20">
-                                <small class="form-text text-muted">Creates miners with IDs starting from 91000001</small>
-                            </div>
-                            <button type="submit" class="btn btn btn-mm-primary">
-                                <i class="fas fa-user-plus"></i> Generate Characters
-                            </button>
-                        </form>
+                            <form action="{{ route('mining-manager.diagnostic.generate-characters') }}" method="POST">
+                                @csrf
+                                <div class="form-group">
+                                    <label>Characters per Corporation</label>
+                                    <input type="number" name="count_per_corp" class="form-control" value="5" min="1" max="20">
+                                    <small class="form-text text-muted">Creates miners with IDs starting from 91000001</small>
+                                </div>
+                                <button type="submit" class="btn btn btn-mm-primary">
+                                    <i class="fas fa-user-plus"></i> Generate Characters
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -141,31 +153,37 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-gem"></i> Step 3: Generate Mining Data</h4>
-                        <p>Create mining ledger entries for test characters. Generates random ore types (including moon ore) in various systems.</p>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-gem"></i> Step 3: Generate Mining Data
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Create mining ledger entries for test characters. Generates random ore types (including moon ore) in various systems.</p>
 
-                        <form action="{{ route('mining-manager.diagnostic.generate-mining-data') }}" method="POST">
-                            @csrf
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Number of Days</label>
-                                        <input type="number" name="days" class="form-control" value="30" min="1" max="90">
-                                        <small class="form-text text-muted">Generate data for the last N days</small>
+                            <form action="{{ route('mining-manager.diagnostic.generate-mining-data') }}" method="POST">
+                                @csrf
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label>Number of Days</label>
+                                            <input type="number" name="days" class="form-control" value="30" min="1" max="90">
+                                            <small class="form-text text-muted">Generate data for the last N days</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label>Entries per Day per Character</label>
+                                            <input type="number" name="entries_per_day" class="form-control" value="10" min="1" max="50">
+                                            <small class="form-text text-muted">Mining entries per character per day</small>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>Entries per Day per Character</label>
-                                        <input type="number" name="entries_per_day" class="form-control" value="10" min="1" max="50">
-                                        <small class="form-text text-muted">Mining entries per character per day</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="submit" class="btn btn btn-mm-primary">
-                                <i class="fas fa-database"></i> Generate Mining Data
-                            </button>
-                        </form>
+                                <button type="submit" class="btn btn btn-mm-primary">
+                                    <i class="fas fa-database"></i> Generate Mining Data
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -174,18 +192,24 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-trash-alt"></i> Cleanup Test Data</h4>
-                        <div class="danger-box">
-                            <strong><i class="fas fa-exclamation-triangle"></i> Warning</strong>
-                            <p class="mb-0">This will permanently delete all test corporations, characters, mining data, tax records, and settings created by this tool.</p>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-trash-alt"></i> Cleanup Test Data
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <div class="danger-box">
+                                <strong><i class="fas fa-exclamation-triangle"></i> Warning</strong>
+                                <p class="mb-0">This will permanently delete all test corporations, characters, mining data, tax records, and settings created by this tool.</p>
+                            </div>
 
-                        <form action="{{ route('mining-manager.diagnostic.cleanup') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
-                            @csrf
-                            <button type="submit" class="btn btn btn-danger">
-                                <i class="fas fa-trash"></i> Delete All Test Data
-                            </button>
-                        </form>
+                            <form action="{{ route('mining-manager.diagnostic.cleanup') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete ALL test data? This cannot be undone!');">
+                                @csrf
+                                <button type="submit" class="btn btn btn-danger">
+                                    <i class="fas fa-trash"></i> Delete All Test Data
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -194,17 +218,23 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-info-circle"></i> Testing Multi-Corporation Settings</h4>
-                        <ol>
-                            <li>Generate test corporations using Step 1</li>
-                            <li>Generate test characters for those corporations using Step 2</li>
-                            <li>Generate mining data using Step 3</li>
-                            <li>Go to <strong>Settings → Configured Corporations</strong> to configure different tax rates for each test corporation</li>
-                            <li>Run tax calculations and verify that each corporation uses its own tax settings</li>
-                            <li>When done testing, use the Cleanup button to remove all test data</li>
-                        </ol>
-                        <p class="mb-0"><strong>CLI Alternative:</strong> You can also use the artisan command:</p>
-                        <code>php artisan mining-manager:generate-test-data --corporations=3 --characters=5 --days=30 --entries=10</code>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-info-circle"></i> Testing Multi-Corporation Settings
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <ol>
+                                <li>Generate test corporations using Step 1</li>
+                                <li>Generate test characters for those corporations using Step 2</li>
+                                <li>Generate mining data using Step 3</li>
+                                <li>Go to <strong>Settings → Configured Corporations</strong> to configure different tax rates for each test corporation</li>
+                                <li>Run tax calculations and verify that each corporation uses its own tax settings</li>
+                                <li>When done testing, use the Cleanup button to remove all test data</li>
+                            </ol>
+                            <p class="mb-0"><strong>CLI Alternative:</strong> You can also use the artisan command:</p>
+                            <code>php artisan mining-manager:generate-test-data --corporations=3 --characters=5 --days=30 --entries=10</code>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -215,46 +245,52 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-dollar-sign"></i> Price Provider Testing</h4>
-                        <p>Test different price providers to ensure they are configured correctly and returning prices.</p>
-
-                        <!-- Provider Selection -->
-                        <div class="form-group">
-                            <label>Select Price Provider to Test</label>
-                            <select id="providerSelect" class="form-control" onchange="checkProviderRequirements()">
-                                <option value="seat">SeAT Database (Default)</option>
-                                <option value="janice">Janice API (Requires API Key)</option>
-                                <option value="fuzzwork">Fuzzwork Market</option>
-                                <option value="custom">Custom Prices</option>
-                            </select>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-dollar-sign"></i> Price Provider Testing
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <p>Test different price providers to ensure they are configured correctly and returning prices.</p>
 
-                        <!-- Warning for providers that need configuration -->
-                        <div id="providerWarning" class="warning-box" style="display: none;">
-                            <strong><i class="fas fa-exclamation-triangle"></i> Configuration Required</strong>
-                            <p id="providerWarningText" class="mb-0"></p>
-                        </div>
+                            <!-- Provider Selection -->
+                            <div class="form-group">
+                                <label>Select Price Provider to Test</label>
+                                <select id="providerSelect" class="form-control" onchange="checkProviderRequirements()">
+                                    <option value="seat">SeAT Database (Default)</option>
+                                    <option value="janice">Janice API (Requires API Key)</option>
+                                    <option value="fuzzwork">Fuzzwork Market</option>
+                                    <option value="custom">Custom Prices</option>
+                                </select>
+                            </div>
 
-                        <button type="button" class="btn btn btn-mm-primary" onclick="testProvider()">
-                            <i class="fas fa-vial"></i> <span id="testBtnText">Test Provider</span>
-                            <span id="testSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
-                        </button>
+                            <!-- Warning for providers that need configuration -->
+                            <div id="providerWarning" class="warning-box" style="display: none;">
+                                <strong><i class="fas fa-exclamation-triangle"></i> Configuration Required</strong>
+                                <p id="providerWarningText" class="mb-0"></p>
+                            </div>
 
-                        <button type="button" class="btn btn-secondary ml-2" onclick="loadProviderConfig()">
-                            <i class="fas fa-cog"></i> View Configuration
-                        </button>
+                            <button type="button" class="btn btn btn-mm-primary" onclick="testProvider()">
+                                <i class="fas fa-vial"></i> <span id="testBtnText">Test Provider</span>
+                                <span id="testSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
 
-                        <button type="button" class="btn btn-secondary ml-2" onclick="testConnectivity()">
-                            <i class="fas fa-network-wired"></i> Test Connection
-                        </button>
+                            <button type="button" class="btn btn-secondary ml-2" onclick="loadProviderConfig()">
+                                <i class="fas fa-cog"></i> View Configuration
+                            </button>
 
-                        <!-- Test Results Container -->
-                        <div id="testResults"></div>
+                            <button type="button" class="btn btn-secondary ml-2" onclick="testConnectivity()">
+                                <i class="fas fa-network-wired"></i> Test Connection
+                            </button>
 
-                        <!-- Configuration Display -->
-                        <div id="configDisplay" style="display: none; margin-top: 20px;">
-                            <h5>Current Configuration</h5>
-                            <div class="provider-test-result" id="configContent"></div>
+                            <!-- Test Results Container -->
+                            <div id="testResults"></div>
+
+                            <!-- Configuration Display -->
+                            <div id="configDisplay" style="display: none; margin-top: 20px;">
+                                <h5>Current Configuration</h5>
+                                <div class="provider-test-result" id="configContent"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -264,41 +300,47 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-list"></i> Batch Price Testing</h4>
-                        <p>Test price fetching for multiple ore types at once to check performance and accuracy.</p>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label>Provider</label>
-                                    <select id="batchProvider" class="form-control">
-                                        <option value="seat">SeAT Database</option>
-                                        <option value="janice">Janice API</option>
-                                        <option value="fuzzwork">Fuzzwork Market</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label>Ore Category</label>
-                                    <select id="batchCategory" class="form-control">
-                                        <option value="all">Mixed (Sample)</option>
-                                        <option value="ore">Regular Ore</option>
-                                        <option value="moon">Moon Ore (Raw Rocks)</option>
-                                        <option value="moon-materials">Moon Materials (Refined)</option>
-                                        <option value="ice">Ice</option>
-                                        <option value="gas">Gas</option>
-                                    </select>
-                                </div>
-                            </div>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-list"></i> Batch Price Testing
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <p>Test price fetching for multiple ore types at once to check performance and accuracy.</p>
 
-                        <button type="button" class="btn btn btn-mm-primary" onclick="testBatchPricing()">
-                            <i class="fas fa-list-check"></i> <span id="batchBtnText">Run Batch Test</span>
-                            <span id="batchSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
-                        </button>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Provider</label>
+                                        <select id="batchProvider" class="form-control">
+                                            <option value="seat">SeAT Database</option>
+                                            <option value="janice">Janice API</option>
+                                            <option value="fuzzwork">Fuzzwork Market</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Ore Category</label>
+                                        <select id="batchCategory" class="form-control">
+                                            <option value="all">Mixed (Sample)</option>
+                                            <option value="ore">Regular Ore</option>
+                                            <option value="moon">Moon Ore (Raw Rocks)</option>
+                                            <option value="moon-materials">Moon Materials (Refined)</option>
+                                            <option value="ice">Ice</option>
+                                            <option value="gas">Gas</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
 
-                        <div id="batchResults"></div>
+                            <button type="button" class="btn btn btn-mm-primary" onclick="testBatchPricing()">
+                                <i class="fas fa-list-check"></i> <span id="batchBtnText">Run Batch Test</span>
+                                <span id="batchSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="batchResults"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -309,15 +351,21 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-heartbeat"></i> Price Cache Health Status</h4>
-                        <p>Monitor the health of your price cache. The cache stores prices locally for fast tax calculations.</p>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-heartbeat"></i> Price Cache Health Status
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Monitor the health of your price cache. The cache stores prices locally for fast tax calculations.</p>
 
-                        <button type="button" class="btn btn btn-mm-primary" onclick="loadCacheHealth()">
-                            <i class="fas fa-sync"></i> <span id="healthBtnText">Check Health</span>
-                            <span id="healthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
-                        </button>
+                            <button type="button" class="btn btn btn-mm-primary" onclick="loadCacheHealth()">
+                                <i class="fas fa-sync"></i> <span id="healthBtnText">Check Health</span>
+                                <span id="healthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
 
-                        <div id="cacheHealthResults"></div>
+                            <div id="cacheHealthResults"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -326,27 +374,33 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-fire"></i> Warm Cache (Quick Fix)</h4>
-                        <p>Quickly populate the cache with prices from your configured provider. Use this if cache is empty or stale.</p>
-
-                        <div class="form-group">
-                            <label>Select Category to Cache</label>
-                            <select id="warmCategory" class="form-control">
-                                <option value="essential">Essential Only (Fast - Minerals + Common Ores)</option>
-                                <option value="ore">Regular Ore</option>
-                                <option value="moon">Moon Ore</option>
-                                <option value="ice">Ice Products</option>
-                                <option value="gas">Gas</option>
-                                <option value="all">All Types (Slow - May take several minutes)</option>
-                            </select>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-fire"></i> Warm Cache (Quick Fix)
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <p>Quickly populate the cache with prices from your configured provider. Use this if cache is empty or stale.</p>
 
-                        <button type="button" class="btn btn btn-mm-primary" onclick="warmCache()">
-                            <i class="fas fa-fire"></i> <span id="warmBtnText">Warm Cache</span>
-                            <span id="warmSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
-                        </button>
+                            <div class="form-group">
+                                <label>Select Category to Cache</label>
+                                <select id="warmCategory" class="form-control">
+                                    <option value="essential">Essential Only (Fast - Minerals + Common Ores)</option>
+                                    <option value="ore">Regular Ore</option>
+                                    <option value="moon">Moon Ore</option>
+                                    <option value="ice">Ice Products</option>
+                                    <option value="gas">Gas</option>
+                                    <option value="all">All Types (Slow - May take several minutes)</option>
+                                </select>
+                            </div>
 
-                        <div id="warmResults"></div>
+                            <button type="button" class="btn btn btn-mm-primary" onclick="warmCache()">
+                                <i class="fas fa-fire"></i> <span id="warmBtnText">Warm Cache</span>
+                                <span id="warmSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="warmResults"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -355,21 +409,27 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-terminal"></i> Manual Cache Management</h4>
-                        <p>For best results, use the artisan command which supports more options:</p>
-                        <code>php artisan mining-manager:cache-prices --type=all</code>
-                        <br><br>
-                        <p><strong>Options:</strong></p>
-                        <ul>
-                            <li><code>--type=ore</code> - Cache regular ore prices</li>
-                            <li><code>--type=moon</code> - Cache moon ore prices</li>
-                            <li><code>--type=ice</code> - Cache ice product prices</li>
-                            <li><code>--type=minerals</code> - Cache mineral prices</li>
-                            <li><code>--type=all</code> - Cache all types</li>
-                            <li><code>--force</code> - Force refresh even if cache is fresh</li>
-                        </ul>
-                        <p><strong>Recommendation:</strong> Set up a cron job to refresh prices every hour:</p>
-                        <code>0 * * * * php /path/to/artisan mining-manager:cache-prices --type=all</code>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-terminal"></i> Manual Cache Management
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>For best results, use the artisan command which supports more options:</p>
+                            <code>php artisan mining-manager:cache-prices --type=all</code>
+                            <br><br>
+                            <p><strong>Options:</strong></p>
+                            <ul>
+                                <li><code>--type=ore</code> - Cache regular ore prices</li>
+                                <li><code>--type=moon</code> - Cache moon ore prices</li>
+                                <li><code>--type=ice</code> - Cache ice product prices</li>
+                                <li><code>--type=minerals</code> - Cache mineral prices</li>
+                                <li><code>--type=all</code> - Cache all types</li>
+                                <li><code>--force</code> - Force refresh even if cache is fresh</li>
+                            </ul>
+                            <p><strong>Recommendation:</strong> Set up a cron job to refresh prices every hour:</p>
+                            <code>0 * * * * php /path/to/artisan mining-manager:cache-prices --type=all</code>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -380,57 +440,69 @@
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
-                        <h4><i class="fas fa-check-circle"></i> Type ID Registry Validation</h4>
-                        <p class="text-muted">Validate that all type IDs in TypeIdRegistry exist in the local SeAT database (invTypes table).</p>
-
-                        <div class="form-group">
-                            <label>Select Category</label>
-                            <select id="validateCategory" class="form-control">
-                                <option value="refined-materials">All Refined Materials (35 items) - Moon + Minerals + Ice Products</option>
-                                <option value="materials">Moon Materials Only (20 items)</option>
-                                <option value="minerals">Minerals Only (8 items)</option>
-                                <option value="ice-products">Ice Products Only (7 items)</option>
-                                <option value="moon">Moon Ores (60 items)</option>
-                                <option value="ore">Regular Ores (48 items)</option>
-                                <option value="compressed-ore">Compressed Ores (63 items)</option>
-                                <option value="ice">Ice (20 items)</option>
-                                <option value="gas">Gas (12 items)</option>
-                                <option value="new-ores">New Ores YC124-YC126 (72 items)</option>
-                                <option value="abyssal">Abyssal Ores (10 items)</option>
-                                <option value="all">All Categories</option>
-                            </select>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-check-circle"></i> Type ID Registry Validation
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <p class="text-muted">Validate that all type IDs in TypeIdRegistry exist in the local SeAT database (invTypes table).</p>
 
-                        <button class="btn btn btn-mm-primary" onclick="validateTypeIds()">
-                            <span id="validate-btn-text">Validate Type IDs</span>
-                            <span id="validate-spinner" class="spinner-border spinner-border-sm" role="status" style="display:none;"></span>
-                        </button>
+                            <div class="form-group">
+                                <label>Select Category</label>
+                                <select id="validateCategory" class="form-control">
+                                    <option value="refined-materials">All Refined Materials (35 items) - Moon + Minerals + Ice Products</option>
+                                    <option value="materials">Moon Materials Only (20 items)</option>
+                                    <option value="minerals">Minerals Only (8 items)</option>
+                                    <option value="ice-products">Ice Products Only (7 items)</option>
+                                    <option value="moon">Moon Ores (60 items)</option>
+                                    <option value="ore">Regular Ores (48 items)</option>
+                                    <option value="compressed-ore">Compressed Ores (63 items)</option>
+                                    <option value="ice">Ice (20 items)</option>
+                                    <option value="gas">Gas (12 items)</option>
+                                    <option value="new-ores">New Ores YC124-YC126 (72 items)</option>
+                                    <option value="abyssal">Abyssal Ores (10 items)</option>
+                                    <option value="all">All Categories</option>
+                                </select>
+                            </div>
 
-                        <div id="validate-results" style="margin-top: 20px;"></div>
+                            <button class="btn btn btn-mm-primary" onclick="validateTypeIds()">
+                                <span id="validate-btn-text">Validate Type IDs</span>
+                                <span id="validate-spinner" class="spinner-border spinner-border-sm" role="status" style="display:none;"></span>
+                            </button>
+
+                            <div id="validate-results" style="margin-top: 20px;"></div>
+                        </div>
                     </div>
 
                     <div class="card card-dark">
-                        <h4><i class="fas fa-terminal"></i> Console Commands</h4>
-                        <p class="text-muted">Run these commands via SSH for advanced diagnostics:</p>
-
-                        <div class="alert alert-info">
-                            <strong><i class="fas fa-info-circle"></i> Quick Validation (Refined Materials)</strong>
-                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=refined-materials --verify-db</pre>
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-terminal"></i> Console Commands
+                            </h3>
                         </div>
+                        <div class="card-body">
+                            <p class="text-muted">Run these commands via SSH for advanced diagnostics:</p>
 
-                        <div class="alert alert-info">
-                            <strong><i class="fas fa-database"></i> Full Database Validation</strong>
-                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db</pre>
-                        </div>
+                            <div class="alert alert-info">
+                                <strong><i class="fas fa-info-circle"></i> Quick Validation (Refined Materials)</strong>
+                                <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=refined-materials --verify-db</pre>
+                            </div>
 
-                        <div class="alert alert-info">
-                            <strong><i class="fas fa-globe"></i> ESI API Validation (slower, requires internet)</strong>
-                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=moon</pre>
-                        </div>
+                            <div class="alert alert-info">
+                                <strong><i class="fas fa-database"></i> Full Database Validation</strong>
+                                <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db</pre>
+                            </div>
 
-                        <div class="alert alert-warning">
-                            <strong><i class="fas fa-flask"></i> With Jackpot Detection Tests</strong>
-                            <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db --test-jackpot</pre>
+                            <div class="alert alert-info">
+                                <strong><i class="fas fa-globe"></i> ESI API Validation (slower, requires internet)</strong>
+                                <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --category=moon</pre>
+                            </div>
+
+                            <div class="alert alert-warning">
+                                <strong><i class="fas fa-flask"></i> With Jackpot Detection Tests</strong>
+                                <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db --test-jackpot</pre>
+                            </div>
                         </div>
                     </div>
                 </div>
