@@ -55,7 +55,7 @@
     <div class="tab-content">
 
         <!-- Test Data Generation Tab -->
-        <div class="tab-pane fade show active" id="test-data" role="tabpanel">
+        <div class="tab-pane active" id="test-data">
             <div class="row">
                 <div class="col-md-12">
                     <div class="warning-box">
@@ -241,7 +241,7 @@
         </div>
 
         <!-- Price Provider Testing Tab -->
-        <div class="tab-pane fade" id="price-provider" role="tabpanel">
+        <div class="tab-pane" id="price-provider" >
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -347,7 +347,7 @@
         </div>
 
         <!-- Price Cache Health Tab -->
-        <div class="tab-pane fade" id="cache-health" role="tabpanel">
+        <div class="tab-pane" id="cache-health" >
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -436,7 +436,7 @@
         </div>
 
         <!-- System Validation Tab -->
-        <div class="tab-pane fade" id="system-validation" role="tabpanel">
+        <div class="tab-pane" id="system-validation" >
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">

@@ -2076,11 +2076,20 @@
 }
 
 .mining-manager-wrapper.diagnostic-page .card-dark {
-    background-color: var(--mm-dark-card);
-    border: 1px solid var(--mm-border);
-    border-radius: 10px;
-    padding: 25px;
-    margin-bottom: 20px;
+    background-color: var(--mm-dark-card) !important;
+    border: 1px solid var(--mm-border) !important;
+    border-radius: 10px !important;
+    margin-bottom: 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark .card-header {
+    background-color: #2d3338 !important;
+    border-bottom: 1px solid var(--mm-border) !important;
+    padding: 15px 20px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .card-dark .card-body {
+    padding: 20px !important;
 }
 
 .mining-manager-wrapper.diagnostic-page .card-dark h4 {
