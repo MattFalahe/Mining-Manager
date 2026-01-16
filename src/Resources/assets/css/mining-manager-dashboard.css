@@ -2093,6 +2093,79 @@
     margin-bottom: 20px;
 }
 
+.mining-manager-wrapper.diagnostic-page .card-dark h5 {
+    color: var(--mm-text-white);
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+.mining-manager-wrapper.diagnostic-page .tab-pane {
+    padding: 20px 0;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-group {
+    margin-bottom: 20px;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-group label {
+    color: var(--mm-text-white);
+    font-weight: 500;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-control {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    color: var(--mm-text-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.mining-manager-wrapper.diagnostic-page .form-control:focus {
+    background-color: var(--mm-dark-card);
+    border-color: var(--mm-primary-start);
+    color: var(--mm-text-white);
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.success {
+    border-left: 4px solid #28a745;
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(40, 167, 69, 0.05) 100%);
+}
+
+.mining-manager-wrapper.diagnostic-page .provider-test-result.error {
+    border-left: 4px solid #dc3545;
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(220, 53, 69, 0.05) 100%);
+}
+
+.mining-manager-wrapper.diagnostic-page code {
+    background-color: var(--mm-dark-bg);
+    color: #f8f8f2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.mining-manager-wrapper.diagnostic-page pre {
+    background-color: var(--mm-dark-bg);
+    border: 1px solid var(--mm-border);
+    border-radius: 6px;
+    padding: 15px;
+    color: var(--mm-text-light);
+    overflow-x: auto;
+}
+
 .mining-dashboard .personal-badge {
     background: linear-gradient(to right, #667eea 0%, #764ba2 100%);
     padding: 4px 12px;
