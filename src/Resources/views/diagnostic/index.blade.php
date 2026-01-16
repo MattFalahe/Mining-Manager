@@ -7,9 +7,8 @@
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 @endpush
 
-@section('content')
+@section('full')
 <div class="mining-manager-wrapper diagnostic-page">
-<div class="container-fluid">
 
     @if(session('success'))
     <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -29,31 +28,31 @@
     </div>
     @endif
 
-    <!-- Tabs -->
-    <ul class="nav nav-tabs" id="diagnosticTabs" role="tablist">
-        <li class="nav-item">
-            <a class="nav-link active" id="test-data-tab" data-toggle="tab" href="#test-data" role="tab">
+{{-- TAB NAVIGATION --}}
+<div class="nav-tabs-custom">
+    <ul class="nav nav-tabs">
+        <li class="active">
+            <a href="#test-data" data-toggle="tab">
                 <i class="fas fa-database"></i> Test Data Generation
             </a>
         </li>
-        <li class="nav-item">
-            <a class="nav-link" id="price-provider-tab" data-toggle="tab" href="#price-provider" role="tab">
+        <li>
+            <a href="#price-provider" data-toggle="tab">
                 <i class="fas fa-dollar-sign"></i> Price Provider Testing
             </a>
         </li>
-        <li class="nav-item">
-            <a class="nav-link" id="cache-health-tab" data-toggle="tab" href="#cache-health" role="tab" onclick="loadCacheHealth()">
+        <li>
+            <a href="#cache-health" data-toggle="tab" onclick="loadCacheHealth()">
                 <i class="fas fa-heartbeat"></i> Price Cache Health
             </a>
         </li>
-        <li class="nav-item">
-            <a class="nav-link" id="system-validation-tab" data-toggle="tab" href="#system-validation" role="tab">
+        <li>
+            <a href="#system-validation" data-toggle="tab">
                 <i class="fas fa-check-circle"></i> System Validation
             </a>
         </li>
     </ul>
-
-    <div class="tab-content" id="diagnosticTabsContent">
+    <div class="tab-content">
 
         <!-- Test Data Generation Tab -->
         <div class="tab-pane fade show active" id="test-data" role="tabpanel">
@@ -438,9 +437,10 @@
             </div>
         </div>
 
-    </div>
-</div>
-</div><!-- /.mining-manager-wrapper -->
+    </div>{{-- /.tab-content --}}
+</div>{{-- /.nav-tabs-custom --}}
+
+</div>{{-- /.mining-manager-wrapper --}}
 
 @push('javascript')
 <script>
