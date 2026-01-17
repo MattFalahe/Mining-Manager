@@ -238,12 +238,13 @@ class BackfillExtractionNotificationsCommand extends Command
             // Get the value calculation service
             $valueService = app(\MiningManager\Services\Moon\MoonValueCalculationService::class);
 
-            // Recalculate value
-            $oreComposition = is_string($extraction->ore_composition)
-                ? json_decode($extraction->ore_composition, true)
-                : $extraction->ore_composition;
-            $oreComposition = $oreComposition ?? [];
-            $newValue = $valueService->calculateMoonValue($oreComposition);
+            // Recalculate value using the extraction object
+            $newValue = $valueService->calculateExtractionValue($extraction);
+
+            if ($newValue === null) {
+                Log::warning("Could not calculate value for extraction {$extraction->id}");
+                return;
+            }
 
             // Update the extraction
             $extraction->estimated_value = $newValue;
