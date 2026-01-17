@@ -26,7 +26,12 @@ class MoonValueCalculationService
         $cacheDuration = config('mining-manager.pricing.cache_duration', 60);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
-            return $this->calculateValue($extraction->ore_composition);
+            // Ensure ore_composition is an array
+            $oreComposition = is_string($extraction->ore_composition)
+                ? json_decode($extraction->ore_composition, true)
+                : $extraction->ore_composition;
+
+            return $this->calculateValue($oreComposition ?? []);
         });
     }
 
@@ -616,6 +621,15 @@ class MoonValueCalculationService
             return [];
         }
 
+        // Ensure ore_composition is an array
+        $oreComposition = is_string($extraction->ore_composition)
+            ? json_decode($extraction->ore_composition, true)
+            : $extraction->ore_composition;
+
+        if (!is_array($oreComposition)) {
+            return [];
+        }
+
         $regionId = config('mining-manager.pricing.default_region_id', 10000002);
         $priceType = config('mining-manager.pricing.price_type', 'sell');
         $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
@@ -623,7 +637,7 @@ class MoonValueCalculationService
         $breakdown = [];
         $totalValue = 0;
 
-        foreach ($extraction->ore_composition as $oreName => $oreData) {
+        foreach ($oreComposition as $oreName => $oreData) {
             // Handle both old and new structure
             if (is_array($oreData) && isset($oreData['type_id'])) {
                 $typeId = $oreData['type_id'];
@@ -706,15 +720,24 @@ class MoonValueCalculationService
     public function calculateValuePerM3(MoonExtraction $extraction): ?float
     {
         $totalValue = $this->calculateExtractionValue($extraction);
-        
+
         if ($totalValue === null || !$extraction->ore_composition) {
+            return null;
+        }
+
+        // Ensure ore_composition is an array
+        $oreComposition = is_string($extraction->ore_composition)
+            ? json_decode($extraction->ore_composition, true)
+            : $extraction->ore_composition;
+
+        if (!is_array($oreComposition)) {
             return null;
         }
 
         $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
         $totalVolume = 0;
 
-        foreach ($extraction->ore_composition as $oreName => $oreData) {
+        foreach ($oreComposition as $oreName => $oreData) {
             // Handle both old and new structure
             if (is_array($oreData) && isset($oreData['type_id'])) {
                 $typeId = $oreData['type_id'];
@@ -780,10 +803,23 @@ class MoonValueCalculationService
             ];
         }
 
+        // Ensure ore_composition is an array
+        $oreComposition = is_string($extraction->ore_composition)
+            ? json_decode($extraction->ore_composition, true)
+            : $extraction->ore_composition;
+
+        if (!is_array($oreComposition)) {
+            return [
+                'total_volume' => 0,
+                'estimated_hours' => 0,
+                'estimated_hours_per_miner' => 0,
+            ];
+        }
+
         $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
         $totalVolume = 0;
 
-        foreach ($extraction->ore_composition as $oreName => $oreData) {
+        foreach ($oreComposition as $oreName => $oreData) {
             // Handle both old and new structure
             if (is_array($oreData) && isset($oreData['type_id'])) {
                 $typeId = $oreData['type_id'];
