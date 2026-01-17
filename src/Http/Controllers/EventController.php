@@ -317,15 +317,34 @@ class EventController extends Controller
         $events = MiningEvent::with('creator', 'participants')
             ->where('status', '!=', 'cancelled')
             ->get();
-        
+
         $upcomingEvents = MiningEvent::with('creator', 'participants')
             ->where('status', 'planned')
             ->where('start_time', '>', now())
             ->orderBy('start_time', 'asc')
             ->limit(10)
             ->get();
-        
-        return view('mining-manager::events.calendar', compact('events', 'upcomingEvents'));
+
+        // Format events for FullCalendar to avoid Blade compilation issues
+        $formattedEvents = $events->map(function($event) {
+            return [
+                'id' => $event->id,
+                'title' => $event->name,
+                'start' => $event->start_time->toIso8601String(),
+                'end' => $event->end_time->toIso8601String(),
+                'className' => 'status-' . $event->status,
+                'extendedProps' => [
+                    'status' => $event->status,
+                    'type' => $event->type,
+                    'location' => $event->location ?? '',
+                    'description' => $event->description ?? '',
+                    'participants' => $event->participants_count ?? 0,
+                    'tax_modifier' => $event->tax_modifier ?? 0
+                ]
+            ];
+        });
+
+        return view('mining-manager::events.calendar', compact('formattedEvents', 'upcomingEvents'));
     }
     
     /**

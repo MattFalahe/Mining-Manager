@@ -274,23 +274,7 @@ document.addEventListener('DOMContentLoaded', function() {
             right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
         },
         height: 'auto',
-        events: @json($events->map(function($event) {
-            return [
-                'id' => $event->id,
-                'title' => $event->name,
-                'start' => $event->start_time->toIso8601String(),
-                'end' => $event->end_time->toIso8601String(),
-                'className' => 'status-' . $event->status,
-                'extendedProps' => [
-                    'status' => $event->status,
-                    'type' => $event->type,
-                    'location' => $event->location ?? '',
-                    'description' => $event->description ?? '',
-                    'participants' => $event->participants_count ?? 0,
-                    'tax_modifier' => $event->tax_modifier ?? 0
-                ]
-            ];
-        })),
+        events: {!! json_encode($formattedEvents) !!},
         eventClick: function(info) {
             info.jsEvent.preventDefault();
             showEventDetails(info.event);
