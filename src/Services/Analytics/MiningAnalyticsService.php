@@ -297,7 +297,7 @@ class MiningAnalyticsService
         };
 
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.type_id')
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
                 $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
                     ->where('mining_price_cache.region_id', '=', $regionId);
@@ -360,7 +360,7 @@ class MiningAnalyticsService
 
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
             ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
-            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.type_id')
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->join('mapSolarSystems', 'mining_ledger.solar_system_id', '=', 'mapSolarSystems.solarSystemID')
             ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
                 $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
