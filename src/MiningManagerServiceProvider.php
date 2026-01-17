@@ -20,6 +20,9 @@ use MiningManager\Console\Commands\DiagnoseCharacterCommand;
 use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
 use MiningManager\Console\Commands\DiagnoseTypeIdsCommand;
 use MiningManager\Console\Commands\GenerateTestDataCommand;
+use MiningManager\Console\Commands\RecalculateExtractionValuesCommand;
+use MiningManager\Console\Commands\ArchiveOldExtractionsCommand;
+use MiningManager\Console\Commands\BackfillExtractionNotificationsCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
@@ -75,6 +78,9 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 DiagnoseMoonExtractionsCommand::class,
                 DiagnoseTypeIdsCommand::class,
                 GenerateTestDataCommand::class,
+                RecalculateExtractionValuesCommand::class,
+                ArchiveOldExtractionsCommand::class,
+                BackfillExtractionNotificationsCommand::class,
             ]);
         }
 

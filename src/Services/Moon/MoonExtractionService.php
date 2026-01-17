@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
+use Symfony\Component\Yaml\Yaml;
 
 class MoonExtractionService
 {
@@ -68,8 +69,12 @@ class MoonExtractionService
 
                 $moonName = $moon ? $moon->name : "Moon {$extraction->moon_id}";
 
-                // Try to get ore composition from universe_moon_contents
-                $oreComposition = $this->getMoonComposition($extraction->moon_id);
+                // Get ore composition with actual volumes from notification
+                $oreComposition = $this->getMoonComposition(
+                    $extraction->moon_id,
+                    $extraction->structure_id,
+                    $extraction->extraction_start_time
+                );
 
                 $extractionData[] = [
                     'structure_id' => $extraction->structure_id,
@@ -94,22 +99,89 @@ class MoonExtractionService
     }
 
     /**
-     * Get moon ore composition from universe_moon_contents table.
-     * Returns null if moon has not been scanned.
+     * Get actual ore volumes from MoonminingExtractionStarted notification.
+     * This provides the REAL chunk volumes, not estimated from percentages.
      *
-     * @param int $moonId
-     * @return array|null
+     * @param int $structureId
+     * @param string $extractionStartTime
+     * @return array|null Array of [type_id => volume_in_m3]
      */
-    private function getMoonComposition(int $moonId): ?array
+    private function getActualOreVolumesFromNotification(int $structureId, string $extractionStartTime): ?array
     {
         try {
+            // Query character_notifications for MoonminingExtractionStarted notifications
+            // We need to find the notification for this specific extraction
+            $notification = DB::table('character_notifications')
+                ->where('type', 'MoonminingExtractionStarted')
+                ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
+                ->where('timestamp', '>=', Carbon::parse($extractionStartTime)->subMinutes(5))
+                ->where('timestamp', '<=', Carbon::parse($extractionStartTime)->addMinutes(5))
+                ->orderBy('timestamp', 'desc')
+                ->first();
+
+            if (!$notification) {
+                Log::debug("Mining Manager: No notification found for structure {$structureId} at {$extractionStartTime}");
+                return null;
+            }
+
+            // Parse the YAML text to extract ore volumes
+            try {
+                $data = Yaml::parse($notification->text);
+
+                if (!isset($data['oreVolumeByType'])) {
+                    Log::warning("Mining Manager: Notification for structure {$structureId} missing oreVolumeByType");
+                    return null;
+                }
+
+                // Return the actual ore volumes [type_id => volume]
+                $volumes = [];
+                foreach ($data['oreVolumeByType'] as $typeId => $volume) {
+                    $volumes[(int)$typeId] = (float)$volume;
+                }
+
+                Log::info("Mining Manager: Found actual ore volumes from notification for structure {$structureId}", [
+                    'volumes' => $volumes,
+                    'total_volume' => array_sum($volumes),
+                ]);
+
+                return $volumes;
+
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to parse notification YAML for structure {$structureId}: " . $e->getMessage());
+                return null;
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error fetching notification data for structure {$structureId}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get moon ore composition from universe_moon_contents table.
+     * Now enhanced to merge actual volumes from notifications when available.
+     *
+     * @param int $moonId
+     * @param int|null $structureId Optional structure ID to fetch actual volumes
+     * @param string|null $extractionStartTime Optional extraction start time to find notification
+     * @return array|null
+     */
+    private function getMoonComposition(int $moonId, ?int $structureId = null, ?string $extractionStartTime = null): ?array
+    {
+        try {
+            // Try to get actual volumes from notification first (most accurate)
+            $actualVolumes = null;
+            if ($structureId && $extractionStartTime) {
+                $actualVolumes = $this->getActualOreVolumesFromNotification($structureId, $extractionStartTime);
+            }
+
             // Check if universe_moon_contents table exists
             if (!Schema::hasTable('universe_moon_contents')) {
                 Log::debug("Mining Manager: universe_moon_contents table not found");
                 return null;
             }
 
-            // Get moon composition
+            // Get moon composition percentages
             $contents = DB::table('universe_moon_contents')
                 ->where('moon_id', $moonId)
                 ->get();
@@ -128,13 +200,28 @@ class MoonExtractionService
                     ->first();
 
                 if ($oreType) {
+                    // Check if we have actual volume from notification
+                    $actualQuantity = $actualVolumes[$content->type_id] ?? 0;
+                    $actualVolume = $actualQuantity; // Volume in m³
+
+                    // Convert volume to quantity (units) by dividing by ore volume
+                    $unitVolume = $oreType->volume ?? 16; // Moon ores are typically 16 m³/unit
+                    $quantityInUnits = $actualVolume > 0 ? ($actualVolume / $unitVolume) : 0;
+
                     $composition[$oreType->typeName] = [
                         'type_id' => $content->type_id,
                         'percentage' => $content->rate * 100, // Convert to percentage
-                        'quantity' => 0, // Will be calculated later when we know chunk size
+                        'quantity' => $quantityInUnits, // Actual quantity in units (not m³)
+                        'volume_m3' => $actualVolume, // Store actual volume for reference
                         'value' => 0, // Will be calculated by value service
                     ];
                 }
+            }
+
+            if ($actualVolumes) {
+                Log::info("Mining Manager: Merged actual volumes from notification for moon {$moonId}", [
+                    'total_volume_m3' => array_sum(array_column($composition, 'volume_m3')),
+                ]);
             }
 
             return empty($composition) ? null : $composition;

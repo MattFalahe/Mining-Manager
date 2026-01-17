@@ -97,6 +97,26 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Recalculate extraction values - runs every 2 hours
+            // (Updates values 2-3h before chunk arrival with current market prices)
+            [
+                'command' => 'mining-manager:recalculate-extraction-values --hours=3',
+                'expression' => '0 */2 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Archive old extractions - runs daily at 5 AM
+            // (Archives completed extractions older than 7 days, keeps 12 months)
+            [
+                'command' => 'mining-manager:archive-extractions --days=7 --keep-months=12',
+                'expression' => '0 5 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
         ];
     }
 

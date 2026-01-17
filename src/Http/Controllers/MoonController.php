@@ -111,11 +111,24 @@ class MoonController extends Controller
             $timeUntilDecay = Carbon::now()->diffInHours($extraction->natural_decay_time);
         }
 
+        // Load extraction history for this structure
+        $history = \MiningManager\Models\MoonExtractionHistory::where('structure_id', $extraction->structure_id)
+            ->orderBy('archived_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        // Calculate duration in days for each historical extraction
+        foreach ($history as $record) {
+            $record->duration_days = Carbon::parse($record->extraction_start_time)
+                ->diffInDays(Carbon::parse($record->chunk_arrival_time));
+        }
+
         return view('mining-manager::moon.show', compact(
             'extraction',
             'estimatedValue',
             'timeUntilArrival',
-            'timeUntilDecay'
+            'timeUntilDecay',
+            'history'
         ));
     }
 

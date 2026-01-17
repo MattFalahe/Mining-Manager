@@ -58,32 +58,33 @@ class MoonValueCalculationService
             if (is_array($oreData) && isset($oreData['type_id'])) {
                 $typeId = $oreData['type_id'];
                 $percentage = $oreData['percentage'] ?? 0;
-                // Don't use stored quantity - calculate it from percentage
+
+                // PRIORITY 1: Use actual quantity from notification if available (most accurate)
+                if (isset($oreData['quantity']) && $oreData['quantity'] > 0) {
+                    $quantity = $oreData['quantity'];
+                    Log::debug("Mining Manager: Using actual quantity from notification for type_id {$typeId}: {$quantity} units");
+                }
+                // PRIORITY 2: Calculate from percentage (fallback for old data)
+                elseif ($percentage > 0) {
+                    $oreVolume = $this->getOreVolume($typeId);
+                    if ($oreVolume > 0) {
+                        $quantity = ($percentage / 100) * ($chunkSize / $oreVolume);
+                        Log::debug("Mining Manager: Calculated quantity from percentage for type_id {$typeId}: {$quantity} units (estimated)");
+                    } else {
+                        $quantity = 0;
+                    }
+                } else {
+                    $quantity = 0;
+                }
             } else {
                 // Old structure: $oreName is actually typeId, $oreData is quantity
                 $typeId = is_numeric($oreName) ? (int) $oreName : null;
-                $percentage = 0;
-                // For old structure, use the quantity directly if it exists
                 $quantity = is_numeric($oreData) ? $oreData : 0;
             }
 
             if (!$typeId) {
                 Log::warning("Mining Manager: Invalid type_id for ore {$oreName}");
                 continue;
-            }
-
-            // Calculate quantity from percentage if we have it
-            if ($percentage > 0) {
-                // Get ore volume (moon ores are typically 16 m³ per unit)
-                $oreVolume = $this->getOreVolume($typeId);
-
-                if ($oreVolume > 0) {
-                    // Quantity = (percentage / 100) × (chunk size / ore volume)
-                    $quantity = ($percentage / 100) * ($chunkSize / $oreVolume);
-                } else {
-                    // Fallback if volume not found
-                    $quantity = 0;
-                }
             }
 
             if ($quantity <= 0) {

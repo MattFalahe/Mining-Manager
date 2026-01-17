@@ -304,7 +304,128 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">{{ trans('mining-manager::moons.view_structure_history') }}</p>
+                    @if(isset($history) && $history->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-dark table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Extraction Date</th>
+                                        <th>Duration</th>
+                                        <th>Status</th>
+                                        <th class="text-right">Estimated Value</th>
+                                        <th class="text-right">Actual Mined</th>
+                                        <th class="text-center">Completion</th>
+                                        <th>Ore Composition</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($history as $record)
+                                    <tr>
+                                        <td>
+                                            <i class="fas fa-calendar-alt text-info"></i>
+                                            {{ \Carbon\Carbon::parse($record->extraction_start_time)->format('M d, Y') }}
+                                            <br>
+                                            <small class="text-muted">{{ \Carbon\Carbon::parse($record->extraction_start_time)->diffForHumans() }}</small>
+                                        </td>
+                                        <td>
+                                            <i class="fas fa-clock text-warning"></i>
+                                            {{ $record->duration_days }} days
+                                        </td>
+                                        <td>
+                                            <span class="badge badge-{{
+                                                $record->final_status === 'ready' ? 'success' :
+                                                ($record->final_status === 'expired' ? 'secondary' :
+                                                ($record->final_status === 'fractured' ? 'danger' : 'warning'))
+                                            }}">
+                                                {{ ucfirst($record->final_status) }}
+                                            </span>
+                                            @if($record->is_jackpot)
+                                            <span class="badge badge-warning ml-1">
+                                                <i class="fas fa-gem"></i> Jackpot
+                                            </span>
+                                            @endif
+                                        </td>
+                                        <td class="text-right">
+                                            @if($record->final_estimated_value)
+                                                <span class="text-success font-weight-bold">
+                                                    {{ number_format($record->final_estimated_value, 0) }} ISK
+                                                </span>
+                                            @else
+                                                <span class="text-muted">N/A</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-right">
+                                            @if($record->actual_mined_value)
+                                                <span class="text-info font-weight-bold">
+                                                    {{ number_format($record->actual_mined_value, 0) }} ISK
+                                                </span>
+                                            @else
+                                                <span class="text-muted">N/A</span>
+                                            @endif
+                                        </td>
+                                        <td class="text-center">
+                                            @if($record->completion_percentage > 0)
+                                                <div class="progress" style="height: 20px; min-width: 80px;">
+                                                    <div class="progress-bar bg-{{ $record->completion_percentage >= 80 ? 'success' : ($record->completion_percentage >= 50 ? 'warning' : 'danger') }}"
+                                                         style="width: {{ min($record->completion_percentage, 100) }}%">
+                                                        {{ number_format($record->completion_percentage, 1) }}%
+                                                    </div>
+                                                </div>
+                                                <small class="text-muted">{{ $record->total_miners }} miners</small>
+                                            @else
+                                                <span class="text-muted">N/A</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if($record->ore_composition)
+                                                @php
+                                                    $oreComp = is_string($record->ore_composition)
+                                                        ? json_decode($record->ore_composition, true)
+                                                        : $record->ore_composition;
+                                                @endphp
+                                                <button class="btn btn-xs btn-outline-info"
+                                                        data-toggle="collapse"
+                                                        data-target="#ore-details-{{ $record->id }}">
+                                                    <i class="fas fa-eye"></i> View Ores
+                                                </button>
+                                                <div id="ore-details-{{ $record->id }}" class="collapse mt-2">
+                                                    <table class="table table-sm table-bordered">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Ore</th>
+                                                                <th class="text-right">Quantity</th>
+                                                                <th class="text-right">Value (Refined)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach($oreComp as $oreName => $oreData)
+                                                            <tr>
+                                                                <td>{{ $oreName }}</td>
+                                                                <td class="text-right">{{ number_format($oreData['quantity'] ?? 0, 0) }}</td>
+                                                                <td class="text-right text-success">{{ number_format($oreData['value'] ?? 0, 0) }} ISK</td>
+                                                            </tr>
+                                                            @endforeach
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            @else
+                                                <span class="text-muted">No data</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <p class="text-muted">
+                            <i class="fas fa-info-circle"></i>
+                            No extraction history available yet. Historical data will appear here after extractions are archived (7 days after completion).
+                        </p>
+                        <p class="text-muted">
+                            Click "{{ trans('mining-manager::moons.view_all') }}" to see all extractions for this structure.
+                        </p>
+                    @endif
                 </div>
             </div>
         </div>
