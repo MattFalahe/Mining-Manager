@@ -202,13 +202,42 @@ class BackfillExtractionNotificationsCommand extends Command
                     $oreData['quantity'] = $quantityInUnits;
                     $oreData['volume_m3'] = $volumeM3;
 
-                    Log::debug("Updated {$oreName} (type {$typeId}): {$quantityInUnits} units ({$volumeM3} m³)");
+                    // Calculate value for this ore
+                    $oreData['value'] = $this->calculateOreValue($typeId, $quantityInUnits);
+
+                    Log::debug("Updated {$oreName} (type {$typeId}): {$quantityInUnits} units ({$volumeM3} m³), value: " . number_format($oreData['value'], 0) . " ISK");
                     break;
                 }
             }
         }
 
         return $composition;
+    }
+
+    /**
+     * Calculate value for a specific ore type and quantity
+     *
+     * @param int $typeId
+     * @param float $quantity
+     * @return float
+     */
+    private function calculateOreValue(int $typeId, float $quantity): float
+    {
+        try {
+            $valueService = app(\MiningManager\Services\Moon\MoonValueCalculationService::class);
+
+            // Use reflection to access the private calculateRefinedValue method
+            $reflection = new \ReflectionClass($valueService);
+            $method = $reflection->getMethod('calculateRefinedValue');
+            $method->setAccessible(true);
+
+            $value = $method->invoke($valueService, $typeId, $quantity);
+
+            return $value > 0 ? $value : 0;
+        } catch (\Exception $e) {
+            Log::warning("Could not calculate value for type {$typeId}: " . $e->getMessage());
+            return 0;
+        }
     }
 
     /**

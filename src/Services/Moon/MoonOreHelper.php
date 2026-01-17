@@ -277,14 +277,14 @@ class MoonOreHelper
 
     /**
      * Calculate the value multiplier from jackpot ores in composition
-     * 
+     *
      * @param array $oreComposition Array of ore data
      * @return float Multiplier (1.0 = no jackpot, >1.0 = jackpot bonus)
      */
     public static function calculateJackpotMultiplier(array $oreComposition): float
     {
         $stats = self::getJackpotStatistics($oreComposition);
-        
+
         if (!$stats['is_jackpot'] || $stats['total_quantity'] == 0) {
             return 1.0;
         }
@@ -292,8 +292,98 @@ class MoonOreHelper
         // Jackpot ores yield 2x (100% more), regular ores yield 1x
         // Calculate weighted average based on quantity
         $jackpotPercentage = $stats['jackpot_quantity_percentage'] / 100;
-        
+
         // Multiplier = (regular_pct * 1.0) + (jackpot_pct * 2.0)
         return (1 - $jackpotPercentage) + ($jackpotPercentage * 2);
+    }
+
+    /**
+     * Get refined minerals from ore type and quantity
+     * Returns detailed breakdown of what minerals you get from refining this ore
+     *
+     * @param int $typeId The ore type ID
+     * @param float $quantity The raw ore quantity in units
+     * @return array Array of minerals with name, quantity, price, and value
+     */
+    public static function getRefinedMinerals(int $typeId, float $quantity): array
+    {
+        if ($quantity <= 0) {
+            return [];
+        }
+
+        try {
+            $valueService = app(\MiningManager\Services\Moon\MoonValueCalculationService::class);
+
+            // Use reflection to access private methods
+            $reflection = new \ReflectionClass($valueService);
+
+            // Get mineral yields for this ore type
+            $getMineralYieldsMethod = $reflection->getMethod('getMineralYields');
+            $getMineralYieldsMethod->setAccessible(true);
+            $mineralYields = $getMineralYieldsMethod->invoke($valueService, $typeId);
+
+            if (empty($mineralYields)) {
+                return [];
+            }
+
+            // Get refining efficiency
+            $getSettingMethod = $reflection->getMethod('getSetting');
+            $getSettingMethod->setAccessible(true);
+            $refiningEfficiency = $getSettingMethod->invoke($valueService, 'pricing.refining_efficiency',
+                config('mining-manager.pricing.refining_efficiency', 87.5)) / 100;
+
+            // Get ore price method for fetching mineral prices
+            $getOrePriceMethod = $reflection->getMethod('getOrePrice');
+            $getOrePriceMethod->setAccessible(true);
+
+            $regionId = config('mining-manager.pricing.default_region_id', 10000002);
+            $priceType = config('mining-manager.pricing.price_type', 'sell');
+
+            $minerals = [];
+
+            // Calculate minerals for each yield
+            foreach ($mineralYields as $mineralTypeId => $yieldPerBatch) {
+                // Get mineral name from database
+                $mineralType = \DB::table('invTypes')
+                    ->where('typeID', $mineralTypeId)
+                    ->first();
+
+                if (!$mineralType) {
+                    continue;
+                }
+
+                // Get current market price
+                $mineralPrice = $getOrePriceMethod->invoke($valueService, $mineralTypeId, $regionId, $priceType);
+
+                if (!$mineralPrice || $mineralPrice <= 0) {
+                    $mineralPrice = 0;
+                }
+
+                // Calculate actual yield with efficiency
+                $actualYield = $quantity * $yieldPerBatch * $refiningEfficiency;
+
+                // Calculate value
+                $mineralValue = $actualYield * $mineralPrice;
+
+                $minerals[] = [
+                    'type_id' => $mineralTypeId,
+                    'name' => $mineralType->typeName,
+                    'quantity' => round($actualYield, 2),
+                    'price' => $mineralPrice,
+                    'value' => $mineralValue,
+                ];
+            }
+
+            // Sort by value descending (most valuable first)
+            usort($minerals, function($a, $b) {
+                return $b['value'] <=> $a['value'];
+            });
+
+            return $minerals;
+
+        } catch (\Exception $e) {
+            \Log::warning("Could not get refined minerals for type {$typeId}: " . $e->getMessage());
+            return [];
+        }
     }
 }

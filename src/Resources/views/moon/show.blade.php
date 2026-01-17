@@ -196,15 +196,17 @@
                             <thead>
                                 <tr>
                                     <th>{{ trans('mining-manager::moons.ore_type') }}</th>
-                                    <th style="width: 50%;">{{ trans('mining-manager::moons.percentage') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::moons.quantity') }}</th>
+                                    <th style="width: 35%;">{{ trans('mining-manager::moons.percentage') }}</th>
+                                    <th class="text-right">Quantity (Units)</th>
+                                    <th class="text-right">Volume (m³)</th>
                                     <th class="text-right">{{ trans('mining-manager::moons.value') }}</th>
+                                    <th class="text-center">Refines To</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @php
-                                    $composition = is_string($extraction->ore_composition) 
-                                        ? json_decode($extraction->ore_composition, true) 
+                                    $composition = is_string($extraction->ore_composition)
+                                        ? json_decode($extraction->ore_composition, true)
                                         : $extraction->ore_composition;
                                     $colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'];
                                     $colorIndex = 0;
@@ -217,17 +219,64 @@
                                     </td>
                                     <td>
                                         <div class="progress" style="height: 25px;">
-                                            <div class="ore-bar progress-bar" 
+                                            <div class="ore-bar progress-bar"
                                                  style="width: {{ $data['percentage'] }}%; background-color: {{ $colors[$colorIndex % count($colors)] }};">
                                                 {{ number_format($data['percentage'], 2) }}%
                                             </div>
                                         </div>
                                     </td>
                                     <td class="text-right">
-                                        {{ number_format($data['quantity'] ?? 0, 0) }}
+                                        <strong>{{ number_format($data['quantity'] ?? 0, 0) }}</strong> units
+                                    </td>
+                                    <td class="text-right text-info">
+                                        {{ number_format($data['volume_m3'] ?? 0, 0) }} m³
                                     </td>
                                     <td class="text-right text-success">
                                         {{ number_format($data['value'] ?? 0, 0) }} ISK
+                                    </td>
+                                    <td class="text-center">
+                                        <button class="btn btn-xs btn-outline-warning"
+                                                data-toggle="collapse"
+                                                data-target="#minerals-{{ $colorIndex }}">
+                                            <i class="fas fa-atom"></i> View Minerals
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="collapse" id="minerals-{{ $colorIndex }}">
+                                    <td colspan="6" class="bg-dark">
+                                        <div class="p-2">
+                                            <strong>Refined Minerals from {{ number_format($data['quantity'] ?? 0, 0) }} units of {{ $oreType }}:</strong>
+                                            <table class="table table-sm table-bordered mt-2">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Mineral</th>
+                                                        <th class="text-right">Quantity</th>
+                                                        <th class="text-right">Unit Price</th>
+                                                        <th class="text-right">Total Value</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @php
+                                                        // Get refined minerals for this ore
+                                                        $minerals = \MiningManager\Services\Moon\MoonOreHelper::getRefinedMinerals($data['type_id'], $data['quantity'] ?? 0);
+                                                    @endphp
+                                                    @if(!empty($minerals))
+                                                        @foreach($minerals as $mineral)
+                                                        <tr>
+                                                            <td><i class="fas fa-flask text-warning"></i> {{ $mineral['name'] }}</td>
+                                                            <td class="text-right">{{ number_format($mineral['quantity'], 0) }}</td>
+                                                            <td class="text-right">{{ number_format($mineral['price'], 2) }} ISK</td>
+                                                            <td class="text-right text-success">{{ number_format($mineral['value'], 0) }} ISK</td>
+                                                        </tr>
+                                                        @endforeach
+                                                    @else
+                                                        <tr>
+                                                            <td colspan="4" class="text-muted text-center">No mineral data available</td>
+                                                        </tr>
+                                                    @endif
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </td>
                                 </tr>
                                 @php $colorIndex++; @endphp
