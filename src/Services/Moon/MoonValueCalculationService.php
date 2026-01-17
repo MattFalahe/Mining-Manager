@@ -124,7 +124,10 @@ class MoonValueCalculationService
      */
     /**
      * Get price for an ore/mineral/material type.
-     * First checks mining_price_cache, then falls back to SeAT's market_prices table.
+     * Priority order:
+     * 1. Mining price cache (populated by cache-prices command using configured provider)
+     * 2. Direct provider fetch (if cache miss - uses provider from settings)
+     * 3. SeAT's market_prices table (final fallback)
      *
      * @param int $typeId
      * @param int $regionId
@@ -133,7 +136,8 @@ class MoonValueCalculationService
      */
     private function getOrePrice(int $typeId, int $regionId, string $priceType): ?float
     {
-        // First, try mining_price_cache
+        // PRIORITY 1: Check mining_price_cache (populated by cache-prices command)
+        // This cache respects the configured price provider from settings
         $priceCache = MiningPriceCache::where('type_id', $typeId)
             ->where('region_id', $regionId)
             ->latest('cached_at')
@@ -144,6 +148,7 @@ class MoonValueCalculationService
             $cacheDuration = config('mining-manager.pricing.cache_duration', 60);
             if (!$priceCache->cached_at->addMinutes($cacheDuration)->isPast()) {
                 // Cache is fresh, use it
+                Log::debug("Mining Manager: Using cached price for type_id {$typeId} from mining_price_cache");
                 return match ($priceType) {
                     'buy' => $priceCache->buy_price,
                     'average' => $priceCache->average_price,
@@ -152,23 +157,35 @@ class MoonValueCalculationService
             }
         }
 
-        // Fallback: Check SeAT's built-in market_prices table
-        // This table has prices for all items (ores, minerals, moon materials, etc.)
+        // PRIORITY 2: Cache miss - fetch directly from configured price provider
+        // This ensures we always use the provider configured in settings UI
+        try {
+            $marketDataService = app(\MiningManager\Services\Pricing\MarketDataService::class);
+            $price = $marketDataService->getCachedPrice($typeId, false);
+
+            if ($price !== null && $price > 0) {
+                Log::debug("Mining Manager: Fetched price from configured provider for type_id {$typeId}: {$price} ISK");
+                return $price;
+            }
+        } catch (\Exception $e) {
+            Log::warning("Mining Manager: Could not fetch from price provider for type_id {$typeId}: " . $e->getMessage());
+        }
+
+        // PRIORITY 3: Final fallback - SeAT's built-in market_prices table
+        // Only used if both cache and provider fail
         try {
             $marketPrice = \DB::table('market_prices')
                 ->where('type_id', $typeId)
                 ->first();
-            
+
             if ($marketPrice) {
-                Log::debug("Mining Manager: Using market_prices fallback for type_id {$typeId}");
-                
+                Log::info("Mining Manager: Using SeAT market_prices fallback for type_id {$typeId} (cache and provider unavailable)");
+
                 // market_prices table structure: type_id, average_price, adjusted_price
-                // For now, use average_price for all price types
-                // You could potentially use adjusted_price for 'sell' if you prefer
                 return match ($priceType) {
-                    'buy' => $marketPrice->average_price,      // Could also use adjusted_price
+                    'buy' => $marketPrice->average_price,
                     'average' => $marketPrice->average_price,
-                    default => $marketPrice->average_price,     // 'sell' - could use adjusted_price
+                    default => $marketPrice->average_price,
                 };
             }
         } catch (\Exception $e) {
