@@ -360,7 +360,8 @@ class MoonOreHelper
                 }
 
                 // Calculate actual yield with efficiency
-                $actualYield = $quantity * $yieldPerBatch * $refiningEfficiency;
+                // Yields are per 100-unit batch, so divide quantity by 100 first
+                $actualYield = ($quantity / 100) * $yieldPerBatch * $refiningEfficiency;
 
                 // Calculate value
                 $mineralValue = $actualYield * $mineralPrice;

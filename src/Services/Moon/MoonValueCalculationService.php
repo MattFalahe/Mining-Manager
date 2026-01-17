@@ -222,21 +222,22 @@ class MoonValueCalculationService
         foreach ($mineralYields as $mineralTypeId => $yieldPerBatch) {
             // Get current market price for this mineral
             $mineralPrice = $this->getOrePrice($mineralTypeId, $regionId, $priceType);
-            
+
             if (!$mineralPrice) {
                 Log::warning("Mining Manager: No price data for mineral type_id {$mineralTypeId}");
                 continue;
             }
-            
+
             // Calculate actual yield with efficiency
-            // Yield = (ore quantity × yield per batch × refining efficiency)
-            $actualYield = $quantity * $yieldPerBatch * $refiningEfficiency;
-            
+            // Yields are per 100-unit batch, so divide quantity by 100 first
+            // Yield = (ore quantity / 100) × yield per batch × refining efficiency
+            $actualYield = ($quantity / 100) * $yieldPerBatch * $refiningEfficiency;
+
             // Calculate value for this mineral
             $mineralValue = $actualYield * $mineralPrice;
-            
+
             $totalRefinedValue += $mineralValue;
-            
+
             Log::debug("Mining Manager: Ore {$typeId} → Mineral {$mineralTypeId}: {$actualYield} units @ {$mineralPrice} ISK = {$mineralValue} ISK");
         }
 
