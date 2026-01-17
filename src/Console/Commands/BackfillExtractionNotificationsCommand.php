@@ -106,7 +106,10 @@ class BackfillExtractionNotificationsCommand extends Command
                 }
 
                 // Get current ore composition
-                $oreComposition = json_decode($extraction->ore_composition, true) ?? [];
+                $oreComposition = is_string($extraction->ore_composition)
+                    ? json_decode($extraction->ore_composition, true)
+                    : $extraction->ore_composition;
+                $oreComposition = $oreComposition ?? [];
 
                 // Update with actual volumes
                 $updated_composition = $this->updateCompositionWithActualVolumes(
@@ -236,7 +239,10 @@ class BackfillExtractionNotificationsCommand extends Command
             $valueService = app(\MiningManager\Services\Moon\MoonValueCalculationService::class);
 
             // Recalculate value
-            $oreComposition = json_decode($extraction->ore_composition, true) ?? [];
+            $oreComposition = is_string($extraction->ore_composition)
+                ? json_decode($extraction->ore_composition, true)
+                : $extraction->ore_composition;
+            $oreComposition = $oreComposition ?? [];
             $newValue = $valueService->calculateMoonValue($oreComposition);
 
             // Update the extraction
