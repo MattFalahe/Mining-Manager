@@ -287,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     'location' => $event->location ?? '',
                     'description' => $event->description ?? '',
                     'participants' => $event->participants_count ?? 0,
-                    'tax_modifier' => $event->tax_modifier ?? 0,
+                    'tax_modifier' => $event->tax_modifier ?? 0
                 ]
             ];
         })),

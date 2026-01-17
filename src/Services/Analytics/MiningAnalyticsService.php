@@ -12,7 +12,7 @@ use Carbon\Carbon;
  * Mining Analytics Service for SeAT v5.x
  * 
  * This service provides analytics and statistics for mining operations.
- * Uses SeAT v5.x universe tables (mapSolarSystems, invTypes).
+ * Uses SeAT v5.x universe tables (solar_systems, invTypes).
  */
 class MiningAnalyticsService
 {
@@ -325,17 +325,17 @@ class MiningAnalyticsService
     public function getSystemStatistics(Carbon $startDate, Carbon $endDate)
     {
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('mapSolarSystems', 'mining_ledger.solar_system_id', '=', 'mapSolarSystems.solarSystemID')
+            ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id')
             ->select(
                 'mining_ledger.solar_system_id',
-                'mapSolarSystems.solarSystemName as system_name',
-                'mapSolarSystems.security as security_status',
+                'solar_systems.name as system_name',
+                'solar_systems.security as security_status',
                 DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                 DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
                 DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
                 DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
             )
-            ->groupBy('mining_ledger.solar_system_id', 'mapSolarSystems.solarSystemName', 'mapSolarSystems.security')
+            ->groupBy('mining_ledger.solar_system_id', 'solar_systems.name', 'solar_systems.security')
             ->orderByDesc('total_quantity')
             ->get();
     }
@@ -361,7 +361,7 @@ class MiningAnalyticsService
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
             ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->join('mapSolarSystems', 'mining_ledger.solar_system_id', '=', 'mapSolarSystems.solarSystemID')
+            ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id')
             ->leftJoin('mining_price_cache', function ($join) use ($regionId) {
                 $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
                     ->where('mining_price_cache.region_id', '=', $regionId);
@@ -371,7 +371,7 @@ class MiningAnalyticsService
                 'invTypes.typeName as ore_type',
                 'mining_ledger.quantity',
                 DB::raw("(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as value"),
-                'mapSolarSystems.solarSystemName as system',
+                'solar_systems.name as system',
                 'mining_ledger.date'
             )
             ->orderBy('mining_ledger.date', 'desc')

@@ -256,22 +256,13 @@ class MiningLedger extends Model
             }
         }
         
-        // Method 3: Try direct database query - try multiple table names
+        // Method 3: Try direct database query - use solar_systems table (SeAT v5)
         try {
-            // Try mapSolarSystems table first (common in SeAT v5)
-            $systemName = \DB::table('mapSolarSystems')
-                ->where('solarSystemID', $this->solar_system_id)
-                ->value('solarSystemName');
-            
-            if ($systemName) {
-                return $systemName;
-            }
-            
-            // Try alternative table name
-            $systemName = \DB::table('map_solar_systems')
+            // Use solar_systems table (SeAT v5 standard)
+            $systemName = \DB::table('solar_systems')
                 ->where('system_id', $this->solar_system_id)
                 ->value('name');
-            
+
             if ($systemName) {
                 return $systemName;
             }
