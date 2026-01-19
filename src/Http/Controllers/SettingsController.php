@@ -171,6 +171,7 @@ class SettingsController extends Controller
             'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
             'corporation_name' => 'nullable|string|max:255',
             'corporation_ticker' => 'nullable|string|max:5',
+            'moon_owner_corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
 
             // Note: timezone, date_format, time_format removed - always uses UTC for consistency
 

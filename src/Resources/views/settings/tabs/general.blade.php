@@ -76,6 +76,69 @@
         </div>
     </div>
 
+    {{-- Moon Owner Corporation --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-moon"></i>
+                Moon Owner Corporation
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Why set this?</strong> Many groups have a separate holding corporation for structures/moons.
+                This setting tells the plugin which corporation owns the moons and receives tax payments.
+            </div>
+
+            <div class="form-group">
+                <label for="moon_owner_corporation_id">
+                    <i class="fas fa-building"></i>
+                    Moon/Structure Owner Corporation <span class="text-danger">*</span>
+                </label>
+                <select class="form-control @error('moon_owner_corporation_id') is-invalid @enderror"
+                        id="moon_owner_corporation_id"
+                        name="moon_owner_corporation_id"
+                        required>
+                    <option value="">-- Select Corporation --</option>
+                    @if(isset($corporations))
+                        @foreach($corporations as $corp)
+                            <option value="{{ $corp->corporation_id }}"
+                                {{ (old('moon_owner_corporation_id', $settings->moon_owner_corporation_id ?? '') == $corp->corporation_id) ? 'selected' : '' }}>
+                                [{{ $corp->ticker }}] {{ $corp->name }}
+                            </option>
+                        @endforeach
+                    @endif
+                </select>
+                @error('moon_owner_corporation_id')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+                <small class="form-text text-muted">
+                    <i class="fas fa-arrow-right"></i> Select the corporation that owns your moons and structures.<br>
+                    <i class="fas fa-wallet"></i> <strong>Tax Verification:</strong> Player donations will be verified against this corporation's wallet journals.<br>
+                    <i class="fas fa-moon"></i> <strong>Moon Extractions:</strong> Only extractions from this corporation's moons will be tracked.<br>
+                    <i class="fas fa-chart-line"></i> <strong>Reports:</strong> Analytics will filter by this corporation.
+                </small>
+            </div>
+
+            @if(!empty($settings->moon_owner_corporation_id))
+            <div class="alert alert-success mb-0">
+                <strong><i class="fas fa-check-circle"></i> Currently Configured:</strong><br>
+                @php
+                    $moonOwnerCorp = $corporations->firstWhere('corporation_id', $settings->moon_owner_corporation_id);
+                @endphp
+                @if($moonOwnerCorp)
+                    <span class="h5">[{{ $moonOwnerCorp->ticker }}] {{ $moonOwnerCorp->name }}</span>
+                    <br>
+                    <small class="text-muted">Corporation ID: {{ $moonOwnerCorp->corporation_id }}</small>
+                @else
+                    <span class="text-warning">Corporation ID: {{ $settings->moon_owner_corporation_id }} (Not found in SeAT)</span>
+                @endif
+            </div>
+            @endif
+        </div>
+    </div>
+
     {{-- Time & Date Information --}}
     <div class="card bg-dark mb-3">
         <div class="card-header">

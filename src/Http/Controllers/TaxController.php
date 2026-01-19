@@ -262,22 +262,95 @@ class TaxController extends Controller
      */
     public function wallet(Request $request)
     {
-        // Feature not yet implemented - return placeholder
-        $transactions = collect();
-        $summary = [
-            'pending_count' => 0,
-            'verified_count' => 0,
-            'verified_today' => 0,
-            'total_verified_isk' => 0,
-        ];
         $status = $request->input('status', 'pending');
         $month = $request->input('month');
+        $days = $request->input('days', 30);
+
+        // Get corporation ID from settings (or use first corporation if not configured)
+        $corporationId = $this->settingsService->getSetting('moon_owner_corporation_id');
+
+        if (!$corporationId) {
+            // Try to get from first configured corporation
+            $corporations = $this->settingsService->getAllCorporations();
+            $corporationId = $corporations->first()->corporation_id ?? null;
+        }
+
+        if (!$corporationId) {
+            // No corporation configured, return empty view
+            return view('mining-manager::taxes.wallet', [
+                'transactions' => collect(),
+                'summary' => [
+                    'pending_count' => 0,
+                    'verified_count' => 0,
+                    'verified_today' => 0,
+                    'total_verified_isk' => 0,
+                    'unmatched_count' => 0,
+                ],
+                'status' => $status,
+                'month' => $month,
+                'corporationId' => null,
+            ]);
+        }
+
+        // Get corporation donations (player_donation type transactions)
+        $donations = $this->walletService->getCorporationDonations($corporationId, $days);
+
+        // Get unmatched donations (donations without tax codes)
+        $unmatchedDonations = $this->walletService->getUnmatchedDonations($corporationId, $days);
+
+        // Calculate summary statistics
+        $verifiedToday = DB::table('corporation_wallet_journals')
+            ->where('corporation_id', $corporationId)
+            ->where('ref_type', 'player_donation')
+            ->whereDate('date', Carbon::today())
+            ->count();
+
+        $totalVerifiedIsk = MiningTax::where('status', 'paid')
+            ->where('paid_at', '>=', Carbon::now()->subDays($days))
+            ->sum('amount_paid');
+
+        $pendingCount = MiningTax::whereIn('status', ['unpaid', 'overdue'])->count();
+        $verifiedCount = MiningTax::where('status', 'paid')
+            ->where('paid_at', '>=', Carbon::now()->subDays($days))
+            ->count();
+
+        $summary = [
+            'pending_count' => $pendingCount,
+            'verified_count' => $verifiedCount,
+            'verified_today' => $verifiedToday,
+            'total_verified_isk' => $totalVerifiedIsk,
+            'unmatched_count' => $unmatchedDonations->count(),
+        ];
+
+        // Filter transactions based on status
+        if ($status === 'pending') {
+            $transactions = $unmatchedDonations;
+        } else {
+            $transactions = $donations;
+        }
+
+        // Apply month filter if specified
+        if ($month) {
+            $monthDate = Carbon::parse($month);
+            $transactions = $transactions->filter(function($transaction) use ($monthDate) {
+                $transactionDate = Carbon::parse($transaction->date);
+                return $transactionDate->isSameMonth($monthDate);
+            });
+        }
+
+        // Paginate results
+        $perPage = 25;
+        $page = $request->input('page', 1);
+        $offset = ($page - 1) * $perPage;
+        $paginatedTransactions = $transactions->slice($offset, $perPage);
 
         return view('mining-manager::taxes.wallet', compact(
             'transactions',
             'summary',
             'status',
-            'month'
+            'month',
+            'corporationId',
+            'paginatedTransactions'
         ));
     }
 
@@ -308,23 +381,35 @@ class TaxController extends Controller
 
     /**
      * Auto-match wallet transactions to tax codes
+     * Uses corporation_wallet_journals to verify player donations
      */
     public function autoMatchPayments(Request $request)
     {
         try {
-            $month = $request->input('month');
-            
-            $results = $this->walletService->autoMatchPayments($month);
+            $days = $request->input('days', 30);
+
+            // Get corporation ID from settings
+            $corporationId = $this->settingsService->getSetting('moon_owner_corporation_id');
+
+            if (!$corporationId) {
+                $corporations = $this->settingsService->getAllCorporations();
+                $corporationId = $corporations->first()->corporation_id ?? null;
+            }
+
+            // Run auto-verification using corporation wallet journals
+            $results = $this->walletService->autoVerifyFromCorporationWallet($corporationId, $days);
 
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.auto_match_complete'),
+                'message' => trans('mining-manager::taxes.auto_match_complete', [
+                    'verified' => $results['verified']
+                ]),
                 'results' => $results,
             ]);
 
         } catch (\Exception $e) {
             Log::error('Auto-match error: ' . $e->getMessage());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => trans('mining-manager::taxes.auto_match_error'),

@@ -3,6 +3,7 @@
 namespace MiningManager\Services\Moon;
 
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -20,18 +21,54 @@ class MoonExtractionService
     protected $valueService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
      * Constructor
      *
      * @param MoonValueCalculationService $valueService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(MoonValueCalculationService $valueService)
+    public function __construct(MoonValueCalculationService $valueService, SettingsManagerService $settingsService)
     {
         $this->valueService = $valueService;
+        $this->settingsService = $settingsService;
+    }
+
+    /**
+     * Get the moon owner corporation ID from settings.
+     * Falls back to first available corporation if not configured.
+     *
+     * @return int|null
+     */
+    protected function getMoonOwnerCorporationId(): ?int
+    {
+        $moonOwnerCorpId = $this->settingsService->getSetting('moon_owner_corporation_id');
+
+        if (!$moonOwnerCorpId) {
+            // Fallback to first corporation if not configured
+            $firstCorp = DB::table('corporation_infos')
+                ->orderBy('corporation_id')
+                ->first();
+
+            $moonOwnerCorpId = $firstCorp->corporation_id ?? null;
+
+            if ($moonOwnerCorpId) {
+                Log::warning("Mining Manager: moon_owner_corporation_id not configured, falling back to corporation {$moonOwnerCorpId}");
+            }
+        }
+
+        return $moonOwnerCorpId;
     }
 
     /**
      * Fetch extraction data from SeAT's database for a structure.
      * This reads from corporation_industry_mining_extractions instead of calling ESI.
+     * Now filters by moon owner corporation ID from settings.
      *
      * @param int $structureId
      * @return array
@@ -47,9 +84,19 @@ class MoonExtractionService
                 return [];
             }
 
+            // Get moon owner corporation ID from settings
+            $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+            if (!$moonOwnerCorpId) {
+                Log::warning("Mining Manager: No moon owner corporation ID configured and no fallback available");
+                return [];
+            }
+
             // Fetch extraction data from SeAT's database
+            // IMPORTANT: Filter by corporation_id to only show extractions from moon owner corp
             $extractions = DB::table('corporation_industry_mining_extractions')
                 ->where('structure_id', $structureId)
+                ->where('corporation_id', $moonOwnerCorpId)
                 ->where('natural_decay_time', '>', Carbon::now()->subDays(7)) // Only get recent/future extractions
                 ->orderBy('extraction_start_time', 'desc')
                 ->get();
@@ -289,6 +336,7 @@ class MoonExtractionService
 
     /**
      * Refresh all extractions for all corporation refineries.
+     * Now filters by moon owner corporation ID from settings.
      *
      * @return array
      */
@@ -296,11 +344,25 @@ class MoonExtractionService
     {
         Log::info("Mining Manager: Refreshing all moon extractions");
 
-        // Get all refinery structures (Athanor and Tatara)
-        $refineries = CorporationStructure::whereIn('type_id', [35835, 35836])->get();
+        // Get moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+        if (!$moonOwnerCorpId) {
+            Log::warning("Mining Manager: No moon owner corporation ID configured");
+            return [
+                'updated' => 0,
+                'created' => 0,
+                'errors' => ['No moon owner corporation configured'],
+            ];
+        }
+
+        // Get all refinery structures (Athanor and Tatara) for moon owner corporation
+        $refineries = CorporationStructure::whereIn('type_id', [35835, 35836])
+            ->where('corporation_id', $moonOwnerCorpId)
+            ->get();
 
         if ($refineries->isEmpty()) {
-            Log::info("Mining Manager: No refineries found");
+            Log::info("Mining Manager: No refineries found for corporation {$moonOwnerCorpId}");
             return [
                 'updated' => 0,
                 'created' => 0,
@@ -308,7 +370,7 @@ class MoonExtractionService
             ];
         }
 
-        Log::info("Mining Manager: Found {$refineries->count()} refinery structures");
+        Log::info("Mining Manager: Found {$refineries->count()} refinery structures for corporation {$moonOwnerCorpId}");
 
         $updated = 0;
         $created = 0;
@@ -455,6 +517,7 @@ class MoonExtractionService
 
     /**
      * Get moon extraction statistics.
+     * Now filters by moon owner corporation ID from settings.
      *
      * @param int $days Number of days to look back
      * @return array
@@ -463,7 +526,17 @@ class MoonExtractionService
     {
         $startDate = Carbon::now()->subDays($days);
 
-        $extractions = MoonExtraction::where('extraction_start_time', '>=', $startDate)->get();
+        // Get moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+        $query = MoonExtraction::where('extraction_start_time', '>=', $startDate);
+
+        // Filter by corporation if configured
+        if ($moonOwnerCorpId) {
+            $query->where('corporation_id', $moonOwnerCorpId);
+        }
+
+        $extractions = $query->get();
 
         $totalValue = 0;
         $completed = 0;
@@ -558,6 +631,7 @@ class MoonExtractionService
 
     /**
      * Check for overdue extractions (ready chunks expiring soon).
+     * Now filters by moon owner corporation ID from settings.
      *
      * @param int $hoursBeforeExpiry
      * @return \Illuminate\Support\Collection
@@ -566,12 +640,20 @@ class MoonExtractionService
     {
         $expiryThreshold = Carbon::now()->addHours($hoursBeforeExpiry);
 
-        return MoonExtraction::with(['structure'])
+        // Get moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+        $query = MoonExtraction::with(['structure'])
             ->where('status', 'ready')
             ->where('natural_decay_time', '<=', $expiryThreshold)
-            ->where('natural_decay_time', '>=', Carbon::now())
-            ->orderBy('natural_decay_time')
-            ->get();
+            ->where('natural_decay_time', '>=', Carbon::now());
+
+        // Filter by corporation if configured
+        if ($moonOwnerCorpId) {
+            $query->where('corporation_id', $moonOwnerCorpId);
+        }
+
+        return $query->orderBy('natural_decay_time')->get();
     }
 
     /**
@@ -667,6 +749,7 @@ class MoonExtractionService
 
     /**
      * Get extraction alerts (for notifications).
+     * Now filters by moon owner corporation ID from settings.
      *
      * @return array
      */
@@ -675,16 +758,25 @@ class MoonExtractionService
         $notificationHours = config('mining-manager.moon.notification_hours_before', [24, 4, 1]);
         $alerts = [];
 
+        // Get moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
         foreach ($notificationHours as $hours) {
             $targetTime = Carbon::now()->addHours($hours);
             $windowStart = $targetTime->copy()->subMinutes(15);
             $windowEnd = $targetTime->copy()->addMinutes(15);
 
-            $extractions = MoonExtraction::with(['structure'])
+            $query = MoonExtraction::with(['structure'])
                 ->where('status', 'extracting')
                 ->where('notification_sent', false)
-                ->whereBetween('chunk_arrival_time', [$windowStart, $windowEnd])
-                ->get();
+                ->whereBetween('chunk_arrival_time', [$windowStart, $windowEnd]);
+
+            // Filter by corporation if configured
+            if ($moonOwnerCorpId) {
+                $query->where('corporation_id', $moonOwnerCorpId);
+            }
+
+            $extractions = $query->get();
 
             if ($extractions->isNotEmpty()) {
                 $alerts[$hours] = $extractions;

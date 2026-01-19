@@ -5,6 +5,7 @@ namespace MiningManager\Services\Tax;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxCode;
 use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -278,6 +279,211 @@ class WalletTransferService
             Log::error("Mining Manager: Error reversing payment: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Verify tax payment from corporation wallet journal
+     *
+     * Queries corporation_wallet_journals for player_donation type transactions
+     * that match tax codes in reason or description fields
+     *
+     * @param MiningTax $taxRecord The tax record to verify
+     * @param int|null $corporationId Optional corporation ID filter
+     * @return array|null Transaction data if found, null otherwise
+     */
+    public function verifyPaymentFromJournal(MiningTax $taxRecord, ?int $corporationId = null): ?array
+    {
+        try {
+            // Get the tax code for this tax record
+            $taxCode = TaxCode::where('mining_tax_id', $taxRecord->id)
+                ->where('status', '!=', 'cancelled')
+                ->first();
+
+            if (!$taxCode) {
+                return null;
+            }
+
+            // Build query for corporation wallet journals
+            $query = DB::table('corporation_wallet_journals')
+                ->where('ref_type', 'player_donation')
+                ->where('first_party_id', $taxRecord->character_id)
+                ->where(function($q) use ($taxCode) {
+                    $q->where('reason', 'LIKE', "%{$taxCode->code}%")
+                      ->orWhere('description', 'LIKE', "%{$taxCode->code}%");
+                });
+
+            // Filter by corporation if specified
+            if ($corporationId !== null) {
+                $query->where('corporation_id', $corporationId);
+            }
+
+            // Look for transactions around the expected amount
+            $tolerance = 100; // 100 ISK tolerance
+            $query->whereBetween('amount', [
+                $taxRecord->amount_owed - $tolerance,
+                $taxRecord->amount_owed + $tolerance
+            ]);
+
+            // Get the most recent matching transaction
+            $transaction = $query->orderBy('date', 'desc')->first();
+
+            if (!$transaction) {
+                return null;
+            }
+
+            return [
+                'id' => $transaction->id,
+                'corporation_id' => $transaction->corporation_id,
+                'date' => $transaction->date,
+                'amount' => $transaction->amount,
+                'first_party_id' => $transaction->first_party_id,
+                'second_party_id' => $transaction->second_party_id,
+                'reason' => $transaction->reason,
+                'description' => $transaction->description,
+                'ref_type' => $transaction->ref_type,
+                'tax_code' => $taxCode->code,
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("WalletTransferService: Failed to verify payment from journal for tax {$taxRecord->id}", [
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Get all player donation transactions for a corporation
+     *
+     * @param int $corporationId Corporation ID to filter by
+     * @param int $days Number of days to look back
+     * @return \Illuminate\Support\Collection
+     */
+    public function getCorporationDonations(int $corporationId, int $days = 30)
+    {
+        $cutoffDate = Carbon::now()->subDays($days);
+
+        return DB::table('corporation_wallet_journals')
+            ->where('corporation_id', $corporationId)
+            ->where('ref_type', 'player_donation')
+            ->where('date', '>=', $cutoffDate)
+            ->orderBy('date', 'desc')
+            ->get();
+    }
+
+    /**
+     * Auto-verify all unpaid taxes by checking corporation wallet journals
+     *
+     * @param int|null $corporationId Optional corporation ID filter
+     * @param int $days Number of days to look back in wallet history
+     * @return array Statistics about verification
+     */
+    public function autoVerifyFromCorporationWallet(?int $corporationId = null, int $days = 30): array
+    {
+        $verified = 0;
+        $failed = 0;
+        $errors = [];
+
+        // Get all unpaid taxes
+        $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue'])
+            ->get();
+
+        foreach ($unpaidTaxes as $tax) {
+            try {
+                $transaction = $this->verifyPaymentFromJournal($tax, $corporationId);
+
+                if ($transaction) {
+                    // Mark tax as paid
+                    $tax->update([
+                        'status' => 'paid',
+                        'amount_paid' => $transaction['amount'],
+                        'paid_at' => Carbon::parse($transaction['date']),
+                        'transaction_id' => $transaction['id'],
+                    ]);
+
+                    // Mark tax code as used
+                    TaxCode::where('mining_tax_id', $tax->id)
+                        ->update([
+                            'status' => 'used',
+                            'used_at' => Carbon::parse($transaction['date']),
+                            'transaction_id' => $transaction['id'],
+                        ]);
+
+                    $verified++;
+
+                    Log::info("WalletTransferService: Auto-verified tax payment", [
+                        'tax_id' => $tax->id,
+                        'character_id' => $tax->character_id,
+                        'amount' => $transaction['amount'],
+                        'transaction_id' => $transaction['id'],
+                    ]);
+                }
+
+            } catch (\Exception $e) {
+                $failed++;
+                $errors[] = [
+                    'tax_id' => $tax->id,
+                    'error' => $e->getMessage(),
+                ];
+
+                Log::error("WalletTransferService: Failed to auto-verify tax {$tax->id}", [
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return [
+            'verified' => $verified,
+            'failed' => $failed,
+            'total_checked' => $unpaidTaxes->count(),
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Get unmatched corporation donations (donations without matching tax codes)
+     *
+     * @param int $corporationId Corporation ID
+     * @param int $days Number of days to look back
+     * @return \Illuminate\Support\Collection
+     */
+    public function getUnmatchedDonations(int $corporationId, int $days = 30)
+    {
+        $cutoffDate = Carbon::now()->subDays($days);
+
+        // Get all donations
+        $donations = DB::table('corporation_wallet_journals')
+            ->where('corporation_id', $corporationId)
+            ->where('ref_type', 'player_donation')
+            ->where('date', '>=', $cutoffDate)
+            ->get();
+
+        // Filter out donations that have matching tax codes
+        $unmatched = [];
+
+        foreach ($donations as $donation) {
+            $foundMatch = false;
+
+            // Try to extract any tax code pattern from reason or description
+            $text = ($donation->reason ?? '') . ' ' . ($donation->description ?? '');
+
+            if (preg_match('/TAX-([A-Z0-9]{6})/i', $text, $matches)) {
+                $code = strtoupper($matches[1]);
+
+                // Check if this code exists in our database
+                $taxCode = TaxCode::where('code', $code)->first();
+
+                if ($taxCode) {
+                    $foundMatch = true;
+                }
+            }
+
+            if (!$foundMatch) {
+                $unmatched[] = $donation;
+            }
+        }
+
+        return collect($unmatched);
     }
 
     /**

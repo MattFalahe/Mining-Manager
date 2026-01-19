@@ -6,12 +6,39 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class DashboardMetricsService
 {
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settingsService
+     */
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
+
+    /**
+     * Get the moon owner corporation ID from settings.
+     *
+     * @return int|null
+     */
+    protected function getMoonOwnerCorporationId(): ?int
+    {
+        return $this->settingsService->getSetting('moon_owner_corporation_id');
+    }
     /**
      * Get dashboard summary metrics.
      *
@@ -131,18 +158,31 @@ class DashboardMetricsService
 
     /**
      * Get extraction metrics.
+     * Now filters by moon owner corporation ID from settings.
      *
      * @return array
      */
     private function getExtractionMetrics(): array
     {
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+        $extractingQuery = MoonExtraction::where('status', 'extracting');
+        $readyQuery = MoonExtraction::where('status', 'ready');
+        $upcomingQuery = MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '>=', now())
+            ->where('chunk_arrival_time', '<=', now()->addHours(24));
+
+        // Filter by corporation if configured
+        if ($moonOwnerCorpId) {
+            $extractingQuery->where('corporation_id', $moonOwnerCorpId);
+            $readyQuery->where('corporation_id', $moonOwnerCorpId);
+            $upcomingQuery->where('corporation_id', $moonOwnerCorpId);
+        }
+
         return [
-            'extracting' => MoonExtraction::where('status', 'extracting')->count(),
-            'ready' => MoonExtraction::where('status', 'ready')->count(),
-            'upcoming_24h' => MoonExtraction::where('status', 'extracting')
-                ->where('chunk_arrival_time', '>=', now())
-                ->where('chunk_arrival_time', '<=', now()->addHours(24))
-                ->count(),
+            'extracting' => $extractingQuery->count(),
+            'ready' => $readyQuery->count(),
+            'upcoming_24h' => $upcomingQuery->count(),
         ];
     }
 
@@ -222,6 +262,7 @@ class DashboardMetricsService
 
     /**
      * Get upcoming moon extractions.
+     * Now filters by moon owner corporation ID from settings.
      *
      * @param int $hours
      * @param int $limit
@@ -229,11 +270,19 @@ class DashboardMetricsService
      */
     public function getUpcomingExtractions(int $hours = 48, int $limit = 5)
     {
-        return MoonExtraction::with(['structure', 'moon'])
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+
+        $query = MoonExtraction::with(['structure', 'moon'])
             ->where('status', 'extracting')
             ->where('chunk_arrival_time', '>=', now())
-            ->where('chunk_arrival_time', '<=', now()->addHours($hours))
-            ->orderBy('chunk_arrival_time')
+            ->where('chunk_arrival_time', '<=', now()->addHours($hours));
+
+        // Filter by corporation if configured
+        if ($moonOwnerCorpId) {
+            $query->where('corporation_id', $moonOwnerCorpId);
+        }
+
+        return $query->orderBy('chunk_arrival_time')
             ->limit($limit)
             ->get();
     }
