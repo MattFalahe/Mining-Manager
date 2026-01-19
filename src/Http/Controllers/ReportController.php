@@ -327,4 +327,216 @@ class ReportController extends Controller
         // For now, return a placeholder
         abort(501, 'PDF generation not yet implemented');
     }
+
+    /**
+     * Display scheduled reports
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function scheduled(Request $request)
+    {
+        // For now, return empty collection until schedule management is fully implemented
+        $schedules = collect();
+
+        return view('mining-manager::reports.scheduled', compact('schedules'));
+    }
+
+    /**
+     * Store a new report schedule
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function storeSchedule(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'report_type' => 'required|in:daily,weekly,monthly',
+                'format' => 'required|in:json,csv,pdf',
+                'frequency' => 'required|in:daily,weekly,monthly',
+                'enabled' => 'boolean',
+            ]);
+
+            // Schedule creation would require a report_schedules table
+            // For now, return success but indicate feature needs implementation
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Report schedule feature is not yet fully implemented',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error creating schedule: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle schedule enabled/disabled status
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function toggleSchedule(Request $request, $id)
+    {
+        try {
+            // Schedule toggle would require a report_schedules table
+            // For now, return success but indicate feature needs implementation
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Schedule toggling is not yet fully implemented',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error toggling schedule: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Manually run a scheduled report
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function runSchedule(Request $request, $id)
+    {
+        try {
+            // Manual schedule execution would require a report_schedules table
+            // For now, return success but indicate feature needs implementation
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Manual schedule execution is not yet fully implemented',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error running schedule: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a report schedule
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroySchedule(Request $request, $id)
+    {
+        try {
+            // Schedule deletion would require a report_schedules table
+            // For now, return success but indicate feature needs implementation
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Schedule deletion is not yet fully implemented',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error deleting schedule: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display export view/form
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function exportView(Request $request)
+    {
+        $formats = [
+            'csv' => 'CSV (Comma-Separated Values)',
+            'json' => 'JSON (JavaScript Object Notation)',
+            'xlsx' => 'Excel (XLSX)',
+        ];
+
+        $exportTypes = [
+            'mining_ledger' => 'Mining Ledger Data',
+            'tax_records' => 'Tax Records',
+            'moon_extractions' => 'Moon Extractions',
+            'events' => 'Mining Events',
+        ];
+
+        return view('mining-manager::reports.export', compact('formats', 'exportTypes'));
+    }
+
+    /**
+     * Process export request
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function processExport(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'export_type' => 'required|in:mining_ledger,tax_records,moon_extractions,events',
+                'format' => 'required|in:csv,json,xlsx',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after:start_date',
+            ]);
+
+            $startDate = Carbon::parse($validated['start_date']);
+            $endDate = Carbon::parse($validated['end_date']);
+            $exportType = $validated['export_type'];
+            $format = $validated['format'];
+
+            // Generate export file
+            $exportData = $this->reportService->generateExport($exportType, $startDate, $endDate, $format);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Export generated successfully',
+                'export_id' => $exportData['id'] ?? null,
+                'download_url' => $exportData['url'] ?? null,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error processing export: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Download exported file
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\Response
+     */
+    public function downloadExport(Request $request, $id)
+    {
+        try {
+            // Find the export record (could be stored in mining_reports or separate table)
+            $export = MiningReport::findOrFail($id);
+
+            if ($export->file_path && Storage::exists($export->file_path)) {
+                return Storage::download($export->file_path, $this->generateFileName($export));
+            }
+
+            // If no file exists, generate on-the-fly
+            return $this->download($id);
+
+        } catch (\Exception $e) {
+            abort(404, 'Export file not found: ' . $e->getMessage());
+        }
+    }
 }

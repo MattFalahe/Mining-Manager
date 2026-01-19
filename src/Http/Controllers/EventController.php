@@ -335,11 +335,11 @@ class EventController extends Controller
                 'className' => 'status-' . $event->status,
                 'extendedProps' => [
                     'status' => $event->status,
-                    'type' => $event->type,
-                    'location' => $event->location ?? '',
+                    'solar_system_id' => $event->solar_system_id,
                     'description' => $event->description ?? '',
-                    'participants' => $event->participants_count ?? 0,
-                    'tax_modifier' => $event->tax_modifier ?? 0
+                    'participants' => $event->participant_count ?? 0,
+                    'bonus_percentage' => $event->bonus_percentage ?? 0,
+                    'total_mined' => $event->total_mined ?? 0
                 ]
             ];
         });
@@ -405,9 +405,9 @@ class EventController extends Controller
         $stats = [
             'total' => $allParticipations->count(),
             'active' => $activeEvents->count(),
-            'total_mined' => $allParticipations->sum('total_mined'),
-            'avg_per_event' => $allParticipations->count() > 0 
-                ? $allParticipations->avg('total_mined') 
+            'total_mined' => $allParticipations->sum('quantity_mined'),
+            'avg_per_event' => $allParticipations->count() > 0
+                ? $allParticipations->avg('quantity_mined')
                 : 0,
         ];
         

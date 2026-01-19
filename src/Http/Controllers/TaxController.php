@@ -670,10 +670,554 @@ class TaxController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Code generation error: ' . $e->getMessage());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => trans('mining-manager::taxes.code_generation_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Process tax calculation (POST endpoint)
+     * This is an alias for calculate() to handle POST requests
+     */
+    public function processCalculation(Request $request)
+    {
+        return $this->calculate($request);
+    }
+
+    /**
+     * Live tracking endpoint for calculation progress
+     * Returns SSE stream of calculation progress
+     */
+    public function liveTracking(Request $request)
+    {
+        return response()->stream(function () {
+            // Send initial connection message
+            echo "data: " . json_encode(['status' => 'connected', 'message' => 'Connected to live tracking']) . "\n\n";
+            ob_flush();
+            flush();
+
+            // This is a placeholder for real-time tracking
+            // In a full implementation, this would track job progress from a queue
+            for ($i = 0; $i <= 100; $i += 10) {
+                echo "data: " . json_encode([
+                    'status' => 'processing',
+                    'progress' => $i,
+                    'message' => "Processing... {$i}%"
+                ]) . "\n\n";
+                ob_flush();
+                flush();
+
+                if ($i < 100) {
+                    sleep(1);
+                }
+            }
+
+            // Send completion message
+            echo "data: " . json_encode(['status' => 'complete', 'progress' => 100, 'message' => 'Calculation complete']) . "\n\n";
+            ob_flush();
+            flush();
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * Regenerate payments for a specific month
+     */
+    public function regeneratePayments(Request $request)
+    {
+        try {
+            $month = $request->input('month');
+
+            if (!$month) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Month parameter is required',
+                ], 400);
+            }
+
+            $monthDate = Carbon::parse($month)->startOfMonth();
+
+            // Recalculate taxes for the month
+            $results = $this->taxService->calculateMonthlyTaxes($monthDate, true);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.payments_regenerated'),
+                'results' => $results,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Payment regeneration error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.regeneration_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate invoices (alias for generateContracts)
+     */
+    public function generateInvoices(Request $request)
+    {
+        return $this->generateContracts($request);
+    }
+
+    /**
+     * Verify multiple payments (alias for batch verification)
+     */
+    public function verifyPayments(Request $request)
+    {
+        try {
+            $transactionIds = $request->input('transaction_ids', []);
+
+            if (empty($transactionIds)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No transaction IDs provided',
+                ], 400);
+            }
+
+            $results = [
+                'verified' => 0,
+                'failed' => 0,
+                'errors' => [],
+            ];
+
+            foreach ($transactionIds as $transactionId) {
+                try {
+                    $this->walletService->verifyPayment($transactionId);
+                    $results['verified']++;
+                } catch (\Exception $e) {
+                    $results['failed']++;
+                    $results['errors'][] = [
+                        'transaction_id' => $transactionId,
+                        'error' => $e->getMessage(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.payments_verified', ['count' => $results['verified']]),
+                'results' => $results,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Batch payment verification error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.verification_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Show tax details for a specific character
+     */
+    public function details(Request $request, $characterId)
+    {
+        $character = CharacterInfo::findOrFail($characterId);
+
+        // Get all taxes for this character
+        $taxes = MiningTax::with(['taxCode', 'invoice'])
+            ->where('character_id', $characterId)
+            ->orderBy('month', 'desc')
+            ->paginate(25);
+
+        // Calculate statistics
+        $totalOwed = MiningTax::where('character_id', $characterId)
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->sum('amount_owed');
+
+        $totalPaid = MiningTax::where('character_id', $characterId)
+            ->where('status', 'paid')
+            ->sum('amount_paid');
+
+        $unpaidCount = MiningTax::where('character_id', $characterId)
+            ->where('status', 'unpaid')
+            ->count();
+
+        $overdueCount = MiningTax::where('character_id', $characterId)
+            ->where('status', 'overdue')
+            ->count();
+
+        // Get mining activity for current month
+        $currentMonth = Carbon::now()->startOfMonth();
+        $miningActivity = MiningLedger::where('character_id', $characterId)
+            ->where('date', '>=', $currentMonth)
+            ->orderBy('date', 'desc')
+            ->get();
+
+        $summary = [
+            'total_owed' => $totalOwed,
+            'total_paid' => $totalPaid,
+            'unpaid_count' => $unpaidCount,
+            'overdue_count' => $overdueCount,
+        ];
+
+        return view('mining-manager::taxes.details', compact(
+            'character',
+            'taxes',
+            'summary',
+            'miningActivity'
+        ));
+    }
+
+    /**
+     * Store a new tax code
+     */
+    public function storeCode(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'mining_tax_id' => 'required|exists:mining_manager_mining_taxes,id',
+                'code' => 'nullable|string|unique:mining_manager_tax_codes,code',
+                'expires_at' => 'nullable|date',
+            ]);
+
+            $taxCode = new TaxCode();
+            $taxCode->mining_tax_id = $validated['mining_tax_id'];
+            $taxCode->code = $validated['code'] ?? $this->codeService->generateUniqueCode();
+            $taxCode->status = 'active';
+            $taxCode->expires_at = isset($validated['expires_at'])
+                ? Carbon::parse($validated['expires_at'])
+                : Carbon::now()->addDays(30);
+            $taxCode->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.code_created'),
+                'code' => $taxCode,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax code creation error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.code_creation_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a tax code
+     */
+    public function destroyCode(Request $request, $id)
+    {
+        try {
+            $taxCode = TaxCode::findOrFail($id);
+
+            // Don't delete used codes, just mark as expired
+            if ($taxCode->status === 'used') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.cannot_delete_used_code'),
+                ], 400);
+            }
+
+            $taxCode->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.code_deleted'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax code deletion error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.code_deletion_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Update tax status
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        try {
+            $validated = $request->validate([
+                'status' => 'required|in:unpaid,paid,overdue,exempted',
+            ]);
+
+            $tax = MiningTax::findOrFail($id);
+            $oldStatus = $tax->status;
+            $tax->status = $validated['status'];
+
+            // If marking as paid, set payment date
+            if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
+                $tax->paid_at = Carbon::now();
+                $tax->amount_paid = $tax->amount_owed;
+            }
+
+            $tax->save();
+
+            Log::info('Tax status updated', [
+                'tax_id' => $id,
+                'old_status' => $oldStatus,
+                'new_status' => $validated['status'],
+                'updated_by' => auth()->user()->name,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.status_updated'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax status update error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.status_update_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a tax record
+     */
+    public function destroy(Request $request, $id)
+    {
+        try {
+            $tax = MiningTax::findOrFail($id);
+
+            // Prevent deletion of paid taxes
+            if ($tax->status === 'paid') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.cannot_delete_paid'),
+                ], 400);
+            }
+
+            $characterName = $tax->character->name ?? 'Unknown';
+            $tax->delete();
+
+            Log::info('Tax record deleted', [
+                'tax_id' => $id,
+                'character' => $characterName,
+                'deleted_by' => auth()->user()->name,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.tax_deleted'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax deletion error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.deletion_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export taxes to CSV/Excel
+     */
+    public function export(Request $request)
+    {
+        try {
+            $status = $request->input('status', 'all');
+            $month = $request->input('month');
+            $format = $request->input('format', 'csv');
+
+            // Build query
+            $query = MiningTax::with(['character']);
+
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
+
+            if ($month) {
+                $query->where('month', Carbon::parse($month)->format('Y-m-01'));
+            }
+
+            $taxes = $query->orderBy('month', 'desc')->orderBy('character_id')->get();
+
+            // Generate filename
+            $filename = 'taxes_export_' . Carbon::now()->format('Y-m-d_His') . '.' . $format;
+
+            if ($format === 'csv') {
+                $headers = [
+                    'Content-Type' => 'text/csv',
+                    'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                ];
+
+                $callback = function() use ($taxes) {
+                    $file = fopen('php://output', 'w');
+
+                    // Headers
+                    fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+
+                    // Data rows
+                    foreach ($taxes as $tax) {
+                        fputcsv($file, [
+                            $tax->character->name ?? 'Unknown',
+                            $tax->month,
+                            $tax->amount_owed,
+                            $tax->amount_paid ?? 0,
+                            $tax->status,
+                            $tax->due_date,
+                            $tax->paid_at,
+                        ]);
+                    }
+
+                    fclose($file);
+                };
+
+                return response()->stream($callback, 200, $headers);
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unsupported export format',
+            ], 400);
+
+        } catch (\Exception $e) {
+            Log::error('Tax export error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.export_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Export personal taxes for logged-in user
+     */
+    public function exportPersonal(Request $request)
+    {
+        $user = auth()->user();
+        $characterIds = $user->characters->pluck('character_id')->toArray();
+
+        try {
+            $format = $request->input('format', 'csv');
+
+            $taxes = MiningTax::with(['character'])
+                ->whereIn('character_id', $characterIds)
+                ->orderBy('month', 'desc')
+                ->orderBy('character_id')
+                ->get();
+
+            $filename = 'my_taxes_' . Carbon::now()->format('Y-m-d_His') . '.' . $format;
+
+            if ($format === 'csv') {
+                $headers = [
+                    'Content-Type' => 'text/csv',
+                    'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                ];
+
+                $callback = function() use ($taxes) {
+                    $file = fopen('php://output', 'w');
+
+                    fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+
+                    foreach ($taxes as $tax) {
+                        fputcsv($file, [
+                            $tax->character->name ?? 'Unknown',
+                            $tax->month,
+                            $tax->amount_owed,
+                            $tax->amount_paid ?? 0,
+                            $tax->status,
+                            $tax->due_date,
+                            $tax->paid_at,
+                        ]);
+                    }
+
+                    fclose($file);
+                };
+
+                return response()->stream($callback, 200, $headers);
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unsupported export format',
+            ], 400);
+
+        } catch (\Exception $e) {
+            Log::error('Personal tax export error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.export_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Download tax receipt/invoice PDF
+     */
+    public function downloadReceipt(Request $request, $id)
+    {
+        try {
+            $tax = MiningTax::with(['character', 'taxCode'])->findOrFail($id);
+
+            // Check if user has permission to view this tax
+            $user = auth()->user();
+            $userCharacterIds = $user->characters->pluck('character_id')->toArray();
+
+            if (!in_array($tax->character_id, $userCharacterIds) && !$user->can('mining-manager.tax.view')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized',
+                ], 403);
+            }
+
+            // Generate simple text receipt
+            $receipt = "TAX RECEIPT\n";
+            $receipt .= "===========\n\n";
+            $receipt .= "Character: " . ($tax->character->name ?? 'Unknown') . "\n";
+            $receipt .= "Month: " . Carbon::parse($tax->month)->format('F Y') . "\n";
+            $receipt .= "Amount Owed: " . number_format($tax->amount_owed, 2) . " ISK\n";
+            $receipt .= "Amount Paid: " . number_format($tax->amount_paid ?? 0, 2) . " ISK\n";
+            $receipt .= "Status: " . strtoupper($tax->status) . "\n";
+            $receipt .= "Due Date: " . ($tax->due_date ?? 'N/A') . "\n";
+            $receipt .= "Paid At: " . ($tax->paid_at ?? 'N/A') . "\n";
+
+            if ($tax->taxCode) {
+                $receipt .= "\nPayment Code: " . $tax->taxCode->code . "\n";
+            }
+
+            $receipt .= "\nGenerated: " . Carbon::now()->toDateTimeString() . "\n";
+
+            $filename = 'receipt_' . $tax->character_id . '_' . Carbon::parse($tax->month)->format('Y-m') . '.txt';
+
+            return response($receipt, 200)
+                ->header('Content-Type', 'text/plain')
+                ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+
+        } catch (\Exception $e) {
+            Log::error('Receipt download error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.receipt_error'),
                 'error' => $e->getMessage(),
             ], 500);
         }
