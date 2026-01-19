@@ -303,30 +303,176 @@ class AnalyticsController extends Controller
     }
     
     /**
-     * Compare miners (placeholder - implement based on your needs)
+     * Compare miners - show top miners by quantity and value
      */
     private function compareMiners(Request $request)
     {
-        // TODO: Implement miner comparison logic
-        return [];
+        $startDate = $request->input('start_date')
+            ? Carbon::parse($request->input('start_date'))
+            : Carbon::now()->subDays(30);
+        $endDate = $request->input('end_date')
+            ? Carbon::parse($request->input('end_date'))
+            : Carbon::now();
+        $limit = $request->input('limit', 10);
+
+        // Get top miners by quantity
+        $topByQuantity = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('character_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT date) as days_active')
+            ->groupBy('character_id')
+            ->orderByDesc('total_quantity')
+            ->limit($limit)
+            ->with('character')
+            ->get()
+            ->map(function($ledger) {
+                return [
+                    'character_id' => $ledger->character_id,
+                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'total_quantity' => $ledger->total_quantity,
+                    'total_value' => $ledger->total_value,
+                    'days_active' => $ledger->days_active,
+                    'avg_per_day' => $ledger->days_active > 0 ? $ledger->total_quantity / $ledger->days_active : 0,
+                ];
+            });
+
+        // Get top miners by value
+        $topByValue = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('character_id, SUM(value) as total_value, SUM(quantity) as total_quantity, COUNT(DISTINCT date) as days_active')
+            ->groupBy('character_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->with('character')
+            ->get()
+            ->map(function($ledger) {
+                return [
+                    'character_id' => $ledger->character_id,
+                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'total_value' => $ledger->total_value,
+                    'total_quantity' => $ledger->total_quantity,
+                    'days_active' => $ledger->days_active,
+                    'avg_value_per_day' => $ledger->days_active > 0 ? $ledger->total_value / $ledger->days_active : 0,
+                ];
+            });
+
+        return [
+            'by_quantity' => $topByQuantity,
+            'by_value' => $topByValue,
+            'date_range' => [
+                'start' => $startDate->toDateString(),
+                'end' => $endDate->toDateString(),
+            ],
+        ];
     }
-    
+
     /**
-     * Compare systems (placeholder - implement based on your needs)
+     * Compare systems - show most productive solar systems
      */
     private function compareSystems(Request $request)
     {
-        // TODO: Implement system comparison logic
-        return [];
+        $startDate = $request->input('start_date')
+            ? Carbon::parse($request->input('start_date'))
+            : Carbon::now()->subDays(30);
+        $endDate = $request->input('end_date')
+            ? Carbon::parse($request->input('end_date'))
+            : Carbon::now();
+        $limit = $request->input('limit', 10);
+
+        // Get mining activity by system
+        $systemStats = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('solar_system_id')
+            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT character_id) as unique_miners, COUNT(DISTINCT date) as days_active')
+            ->groupBy('solar_system_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->map(function($stat) {
+                // Get system name from SeAT's database
+                $systemName = \DB::table('mapSolarSystems')
+                    ->where('solarSystemID', $stat->solar_system_id)
+                    ->value('solarSystemName');
+
+                return [
+                    'solar_system_id' => $stat->solar_system_id,
+                    'system_name' => $systemName ?? 'Unknown System',
+                    'total_quantity' => $stat->total_quantity,
+                    'total_value' => $stat->total_value,
+                    'unique_miners' => $stat->unique_miners,
+                    'days_active' => $stat->days_active,
+                    'avg_value_per_day' => $stat->days_active > 0 ? $stat->total_value / $stat->days_active : 0,
+                ];
+            });
+
+        return [
+            'systems' => $systemStats,
+            'date_range' => [
+                'start' => $startDate->toDateString(),
+                'end' => $endDate->toDateString(),
+            ],
+        ];
     }
-    
+
     /**
-     * Compare ore types (placeholder - implement based on your needs)
+     * Compare ore types - show most valuable and most mined ores
      */
     private function compareOres(Request $request)
     {
-        // TODO: Implement ore comparison logic
-        return [];
+        $startDate = $request->input('start_date')
+            ? Carbon::parse($request->input('start_date'))
+            : Carbon::now()->subDays(30);
+        $endDate = $request->input('end_date')
+            ? Carbon::parse($request->input('end_date'))
+            : Carbon::now();
+        $limit = $request->input('limit', 15);
+
+        // Get ore statistics
+        $oreStats = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT character_id) as miners_count')
+            ->groupBy('type_id')
+            ->orderByDesc('total_value')
+            ->limit($limit)
+            ->get()
+            ->map(function($stat) {
+                // Get ore name from SeAT's database
+                $oreName = \DB::table('invTypes')
+                    ->where('typeID', $stat->type_id)
+                    ->value('typeName');
+
+                return [
+                    'type_id' => $stat->type_id,
+                    'ore_name' => $oreName ?? 'Unknown Ore',
+                    'total_quantity' => $stat->total_quantity,
+                    'total_value' => $stat->total_value,
+                    'miners_count' => $stat->miners_count,
+                    'avg_value_per_unit' => $stat->total_quantity > 0 ? $stat->total_value / $stat->total_quantity : 0,
+                ];
+            });
+
+        // Get most mined ores (by quantity)
+        $mostMined = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('type_id, SUM(quantity) as total_quantity')
+            ->groupBy('type_id')
+            ->orderByDesc('total_quantity')
+            ->limit($limit)
+            ->get()
+            ->map(function($stat) {
+                $oreName = \DB::table('invTypes')
+                    ->where('typeID', $stat->type_id)
+                    ->value('typeName');
+
+                return [
+                    'type_id' => $stat->type_id,
+                    'ore_name' => $oreName ?? 'Unknown Ore',
+                    'total_quantity' => $stat->total_quantity,
+                ];
+            });
+
+        return [
+            'by_value' => $oreStats,
+            'by_quantity' => $mostMined,
+            'date_range' => [
+                'start' => $startDate->toDateString(),
+                'end' => $endDate->toDateString(),
+            ],
+        ];
     }
 
     /**

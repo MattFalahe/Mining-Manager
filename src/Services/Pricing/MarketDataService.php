@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\Setting;
+use MiningManager\Services\ReprocessingRegistry;
 use Carbon\Carbon;
 use Exception;
 
@@ -253,22 +254,81 @@ class MarketDataService
         $totalValue = 0;
 
         foreach ($items as $typeId => $quantity) {
-            if (!isset($prices[$typeId])) {
-                Log::warning('Price not found for type', ['type_id' => $typeId]);
-                continue;
-            }
-
             if ($useRefinedValue) {
-                // TODO: Implement refined material calculation
-                // This would require getting refined materials for the ore
-                // and calculating their total value
-                $totalValue += $prices[$typeId] * $quantity;
+                // Calculate refined material value
+                $refiningEfficiency = $this->getRefiningEfficiency();
+
+                // Get minerals from reprocessing
+                $minerals = ReprocessingRegistry::getMinerals($typeId);
+
+                if ($minerals !== null && !empty($minerals)) {
+                    // Get mineral prices
+                    $mineralTypeIds = array_keys($minerals);
+                    $mineralPrices = $this->getCachedPrices($mineralTypeIds);
+
+                    // Calculate refined value using ReprocessingRegistry
+                    $refinedValue = ReprocessingRegistry::calculateRefinedValue(
+                        $typeId,
+                        $quantity,
+                        $refiningEfficiency,
+                        $mineralPrices
+                    );
+
+                    $totalValue += $refinedValue;
+                } else {
+                    // Fallback to ore price if no reprocessing data
+                    if (isset($prices[$typeId])) {
+                        $totalValue += $prices[$typeId] * $quantity;
+                    } else {
+                        Log::warning('No reprocessing data or price for type', ['type_id' => $typeId]);
+                    }
+                }
             } else {
+                // Use raw ore price
+                if (!isset($prices[$typeId])) {
+                    Log::warning('Price not found for type', ['type_id' => $typeId]);
+                    continue;
+                }
+
                 $totalValue += $prices[$typeId] * $quantity;
             }
         }
 
         return $totalValue;
+    }
+
+    /**
+     * Get refining efficiency from settings or use default
+     *
+     * @return float Efficiency value between 0.0 and 1.0
+     */
+    private function getRefiningEfficiency(): float
+    {
+        // Try to get from settings (using dot-notation key)
+        try {
+            $efficiency = Setting::getValue('pricing.refining_efficiency', null, null);
+
+            if ($efficiency !== null) {
+                // Convert percentage to decimal (e.g., 87.5 -> 0.875)
+                $value = floatval($efficiency);
+
+                // If value is > 1, assume it's a percentage
+                if ($value > 1) {
+                    $value = $value / 100;
+                }
+
+                // Clamp between 0 and 1
+                return max(0.0, min(1.0, $value));
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to get refining efficiency from settings', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        // Fallback to config, then default to 87.5% (perfect skills with T1 station)
+        $configValue = config('mining-manager.pricing.refining_efficiency', 87.5);
+        return $configValue > 1 ? $configValue / 100 : $configValue;
     }
 
     /**
