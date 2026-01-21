@@ -57,15 +57,20 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-incident-resolved').checked = webhook.notify_incident_resolved;
 
                 // Discord settings
-                if (webhook.discord_role_id) document.getElementById('discord-role-id').value = webhook.discord_role_id;
-                if (webhook.discord_username) document.getElementById('discord-username').value = webhook.discord_username;
+                const discordRoleField = document.getElementById('discord-role-id');
+                const discordUsernameField = document.getElementById('discord-username');
+                if (webhook.discord_role_id && discordRoleField) discordRoleField.value = webhook.discord_role_id;
+                if (webhook.discord_username && discordUsernameField) discordUsernameField.value = webhook.discord_username;
 
                 // Slack settings
-                if (webhook.slack_channel) document.getElementById('slack-channel').value = webhook.slack_channel;
-                if (webhook.slack_username) document.getElementById('slack-username').value = webhook.slack_username;
+                const slackChannelField = document.getElementById('slack-channel');
+                const slackUsernameField = document.getElementById('slack-username');
+                if (webhook.slack_channel && slackChannelField) slackChannelField.value = webhook.slack_channel;
+                if (webhook.slack_username && slackUsernameField) slackUsernameField.value = webhook.slack_username;
 
                 // Custom settings
-                if (webhook.custom_payload_template) document.getElementById('custom-payload-template').value = webhook.custom_payload_template;
+                const customPayloadField = document.getElementById('custom-payload-template');
+                if (webhook.custom_payload_template && customPayloadField) customPayloadField.value = webhook.custom_payload_template;
 
                 // Update visible settings based on type
                 updateWebhookTypeSettings(webhook.type);
@@ -93,11 +98,11 @@ function saveWebhook() {
         notify_critical_theft: document.getElementById('notify-critical-theft').checked ? 1 : 0,
         notify_active_theft: document.getElementById('notify-active-theft').checked ? 1 : 0,
         notify_incident_resolved: document.getElementById('notify-incident-resolved').checked ? 1 : 0,
-        discord_role_id: document.getElementById('discord-role-id').value || null,
-        discord_username: document.getElementById('discord-username').value || null,
-        slack_channel: document.getElementById('slack-channel').value || null,
-        slack_username: document.getElementById('slack-username').value || null,
-        custom_payload_template: document.getElementById('custom-payload-template').value || null,
+        discord_role_id: document.getElementById('discord-role-id')?.value || null,
+        discord_username: document.getElementById('discord-username')?.value || null,
+        slack_channel: document.getElementById('slack-channel')?.value || null,
+        slack_username: document.getElementById('slack-username')?.value || null,
+        custom_payload_template: document.getElementById('custom-payload-template')?.value || null,
     };
 
     const url = isUpdate
