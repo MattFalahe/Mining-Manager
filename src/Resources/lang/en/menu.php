@@ -51,10 +51,13 @@ return [
     'generate_report' => 'Generate Report',
     'scheduled_reports' => 'Scheduled Reports',
     'export_data' => 'Export Data',
-    
+
+    // Theft Detection
+    'theft_detection' => 'Theft Detection',
+
     // Settings
     'settings' => 'Settings',
-    
+
     // Help
     'help' => 'Help & Documentation',
 ];

@@ -148,7 +148,7 @@
                             </div>
 
                             {{-- Character Filter --}}
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="characterFilter">{{ trans('mining-manager::ledger.character') }}</label>
                                     <select class="form-control" id="characterFilter" name="character_id">
@@ -165,8 +165,23 @@
                                 </div>
                             </div>
 
+                            {{-- Corporation Filter --}}
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label for="corporationFilter">{{ trans('mining-manager::ledger.corporation') }}</label>
+                                    <select class="form-control" id="corporationFilter" name="corporation_id">
+                                        <option value="">{{ trans('mining-manager::ledger.all_corporations') }}</option>
+                                        @foreach($corporations as $corp)
+                                        <option value="{{ $corp->corporation_id }}" {{ request('corporation_id') == $corp->corporation_id ? 'selected' : '' }}>
+                                            [{{ $corp->ticker }}] {{ $corp->name }}
+                                        </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
                             {{-- Ore Type Filter --}}
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="oreTypeFilter">{{ trans('mining-manager::ledger.ore_type') }}</label>
                                     <select class="form-control" id="oreTypeFilter" name="ore_type">

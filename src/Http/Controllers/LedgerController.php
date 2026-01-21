@@ -37,11 +37,12 @@ class LedgerController extends Controller
         $dateFrom = $request->get('date_from', now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', now()->format('Y-m-d'));
         $characterId = $request->get('character_id');
+        $corporationId = $request->get('corporation_id');
         $oreType = $request->get('ore_type');
         $system = $request->get('system');
         $sortBy = $request->get('sort_by', 'date_desc');
         $perPage = $request->get('per_page', 50);
-        
+
         // Build query with eager loading
         $query = MiningLedger::with(['character', 'solarSystem', 'type'])
             ->whereBetween('date', [$dateFrom, $dateTo]);
@@ -49,6 +50,17 @@ class LedgerController extends Controller
         // Apply filters
         if ($characterId) {
             $query->where('character_id', $characterId);
+        }
+
+        // Corporation filter
+        if ($corporationId) {
+            $query->whereHas('character', function($q) use ($corporationId) {
+                $q->whereIn('character_id', function($subQuery) use ($corporationId) {
+                    $subQuery->select('character_id')
+                        ->from('character_affiliations')
+                        ->where('corporation_id', $corporationId);
+                });
+            });
         }
 
         if ($oreType) {
@@ -129,13 +141,31 @@ class LedgerController extends Controller
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
         $characters = collect($charactersInfo)->sortBy('name');
 
+        // Get corporations with mining activity
+        $corporationIds = DB::table('character_affiliations')
+            ->whereIn('character_id', function($query) {
+                $query->select('character_id')
+                    ->from('mining_ledger')
+                    ->distinct();
+            })
+            ->distinct()
+            ->pluck('corporation_id');
+
+        $corporations = DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corporationIds)
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+
         return view('mining-manager::ledger.index', compact(
             'ledgerEntries',
             'summary',
             'characters',
+            'corporations',
             'dateFrom',
             'dateTo',
             'characterId',
+            'corporationId',
             'oreType',
             'system',
             'sortBy',

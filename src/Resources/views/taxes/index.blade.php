@@ -129,6 +129,82 @@
                             </div>
                         </div>
                     </div>
+
+                    {{-- Corp vs Guest Breakdown (if moon owner corp is configured) --}}
+                    @if($moonOwnerCorpId && isset($summary['corp_members']) && isset($summary['guest_miners']))
+                    <hr>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <h5><i class="fas fa-users"></i> Miner Type Breakdown</h5>
+                        </div>
+
+                        {{-- Corp Members --}}
+                        <div class="col-lg-6">
+                            <div class="card bg-dark">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">
+                                        <i class="fas fa-building text-primary"></i> Corp Members
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-4 text-center">
+                                            <div class="text-warning">
+                                                <strong style="font-size: 1.5rem;">{{ number_format($summary['corp_members']['owed'], 0) }}</strong>
+                                                <br><small>ISK Owed</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 text-center">
+                                            <div class="text-info">
+                                                <strong style="font-size: 1.5rem;">{{ $summary['corp_members']['count'] }}</strong>
+                                                <br><small>Miners</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 text-center">
+                                            <div class="text-success">
+                                                <strong style="font-size: 1.5rem;">{{ number_format($summary['corp_members']['collected'], 0) }}</strong>
+                                                <br><small>ISK Paid</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Guest Miners --}}
+                        <div class="col-lg-6">
+                            <div class="card bg-dark">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">
+                                        <i class="fas fa-user-friends text-secondary"></i> Guest Miners
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-4 text-center">
+                                            <div class="text-warning">
+                                                <strong style="font-size: 1.5rem;">{{ number_format($summary['guest_miners']['owed'], 0) }}</strong>
+                                                <br><small>ISK Owed</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 text-center">
+                                            <div class="text-info">
+                                                <strong style="font-size: 1.5rem;">{{ $summary['guest_miners']['count'] }}</strong>
+                                                <br><small>Miners</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 text-center">
+                                            <div class="text-success">
+                                                <strong style="font-size: 1.5rem;">{{ number_format($summary['guest_miners']['collected'], 0) }}</strong>
+                                                <br><small>ISK Paid</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -156,32 +232,67 @@
                     <form id="filterForm">
                         <div class="row">
                             {{-- Status Filter --}}
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="statusFilter">{{ trans('mining-manager::taxes.status') }}</label>
                                     <select class="form-control" id="statusFilter" name="status">
                                         <option value="">{{ trans('mining-manager::taxes.all_statuses') }}</option>
-                                        <option value="unpaid">{{ trans('mining-manager::taxes.unpaid') }}</option>
-                                        <option value="paid">{{ trans('mining-manager::taxes.paid') }}</option>
-                                        <option value="overdue">{{ trans('mining-manager::taxes.overdue') }}</option>
-                                        <option value="partial">{{ trans('mining-manager::taxes.partial') }}</option>
+                                        <option value="unpaid" {{ request('status') == 'unpaid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.unpaid') }}</option>
+                                        <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.paid') }}</option>
+                                        <option value="overdue" {{ request('status') == 'overdue' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.overdue') }}</option>
+                                        <option value="partial" {{ request('status') == 'partial' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.partial') }}</option>
                                     </select>
                                 </div>
                             </div>
 
+                            {{-- Miner Type Filter (Corp/Guest) --}}
+                            @if($moonOwnerCorpId)
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label for="minerTypeFilter">
+                                        <i class="fas fa-users"></i> Miner Type
+                                    </label>
+                                    <select class="form-control" id="minerTypeFilter" name="miner_type">
+                                        <option value="all" {{ request('miner_type', 'all') == 'all' ? 'selected' : '' }}>All Miners</option>
+                                        <option value="corp" {{ request('miner_type') == 'corp' ? 'selected' : '' }}>
+                                            <i class="fas fa-building"></i> Corp Members
+                                        </option>
+                                        <option value="guest" {{ request('miner_type') == 'guest' ? 'selected' : '' }}>
+                                            <i class="fas fa-user-friends"></i> Guest Miners
+                                        </option>
+                                    </select>
+                                </div>
+                            </div>
+                            @endif
+
                             {{-- Month Filter --}}
-                            <div class="col-md-3">
+                            <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="monthFilter">{{ trans('mining-manager::taxes.month') }}</label>
-                                    <input type="month" class="form-control" id="monthFilter" name="month" value="{{ now()->format('Y-m') }}">
+                                    <input type="month" class="form-control" id="monthFilter" name="month" value="{{ request('month', now()->format('Y-m')) }}">
+                                </div>
+                            </div>
+
+                            {{-- Corporation Filter --}}
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label for="corporationFilter">{{ trans('mining-manager::taxes.corporation') }}</label>
+                                    <select class="form-control" id="corporationFilter" name="corporation_id">
+                                        <option value="">{{ trans('mining-manager::taxes.all_corporations') }}</option>
+                                        @foreach($corporations as $corp)
+                                        <option value="{{ $corp->corporation_id }}" {{ request('corporation_id') == $corp->corporation_id ? 'selected' : '' }}>
+                                            [{{ $corp->ticker }}] {{ $corp->name }}
+                                        </option>
+                                        @endforeach
+                                    </select>
                                 </div>
                             </div>
 
                             {{-- Character Search --}}
-                            <div class="col-md-4">
+                            <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="characterSearch">{{ trans('mining-manager::taxes.search_character') }}</label>
-                                    <input type="text" class="form-control" id="characterSearch" name="character" placeholder="{{ trans('mining-manager::taxes.enter_character_name') }}">
+                                    <input type="text" class="form-control" id="characterSearch" name="character" placeholder="{{ trans('mining-manager::taxes.enter_character_name') }}" value="{{ request('character') }}">
                                 </div>
                             </div>
 
@@ -239,14 +350,30 @@
                                         <input type="checkbox" class="tax-checkbox" value="{{ $tax->id }}">
                                     </td>
                                     <td>
-                                        <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32" 
-                                             class="img-circle" 
+                                        <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32"
+                                             class="img-circle"
                                              style="width: 32px; height: 32px;">
                                         <a href="{{ route('mining-manager.taxes.details', $tax->id) }}">
                                             {{ $tax->character->name ?? 'Unknown' }}
                                         </a>
+                                        @if($moonOwnerCorpId)
+                                            @if($tax->character && $tax->character->corporation_id == $moonOwnerCorpId)
+                                                <span class="badge badge-primary ml-1" data-toggle="tooltip" title="Corporation Member">
+                                                    <i class="fas fa-building"></i>
+                                                </span>
+                                            @else
+                                                <span class="badge badge-secondary ml-1" data-toggle="tooltip" title="Guest Miner">
+                                                    <i class="fas fa-user-friends"></i>
+                                                </span>
+                                            @endif
+                                        @endif
                                     </td>
-                                    <td>{{ $tax->character->corporation->name ?? 'Unknown' }}</td>
+                                    <td>
+                                        {{ $tax->character->corporation->name ?? 'Unknown' }}
+                                        @if($moonOwnerCorpId && $tax->character && $tax->character->corporation_id == $moonOwnerCorpId)
+                                            <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
+                                        @endif
+                                    </td>
                                     <td>{{ \Carbon\Carbon::parse($tax->month)->format('F Y') }}</td>
                                     <td class="text-right">
                                         <strong>{{ number_format($tax->amount_owed, 0) }}</strong>

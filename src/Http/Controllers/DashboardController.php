@@ -493,6 +493,7 @@ class DashboardController extends Controller
     /**
      * Get top miners ranking by account (not individual characters)
      * UPDATED: Uses CharacterInfoService for proper character/corp names and unregistered character support
+     * UPDATED: Now supports corporation filtering based on dashboard settings
      */
     private function getTopMinersRanking($oreType, $startDate, $endDate, $limit = 20)
     {
@@ -503,6 +504,22 @@ class DashboardController extends Controller
         if ($oreType === 'moon_ore') {
             $moonOreTypeIds = $this->getMoonOreTypeIds();
             $query->whereIn('type_id', $moonOreTypeIds);
+        }
+
+        // Apply corporation filter from dashboard settings
+        $corporationFilter = \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_filter', 'all');
+
+        if ($corporationFilter === 'specific') {
+            $corporationIdsJson = \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_ids', '[]');
+            $corporationIds = json_decode($corporationIdsJson, true);
+
+            if (!empty($corporationIds)) {
+                $query->whereIn('character_id', function($subQuery) use ($corporationIds) {
+                    $subQuery->select('character_id')
+                        ->from('character_affiliations')
+                        ->whereIn('corporation_id', $corporationIds);
+                });
+            }
         }
 
         $miningData = $query->get();

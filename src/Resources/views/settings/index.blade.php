@@ -208,6 +208,15 @@
                         @include('mining-manager::settings.tabs.features', ['settings' => (object)$settings['features']])
                     </div>
 
+                    {{-- Dashboard Settings Tab --}}
+                    <div id="dashboard" class="settings-section">
+                        @include('mining-manager::settings.tabs.dashboard', [
+                            'settings' => $settings,
+                            'corporations' => $corporations,
+                            'selectedCorporationId' => $corporationId ?? null
+                        ])
+                    </div>
+
                     {{-- Advanced Settings --}}
                     <div id="advanced" class="settings-section">
                         <h4>

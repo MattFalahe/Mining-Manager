@@ -59,6 +59,13 @@ return [
                 'permission' => 'mining-manager.reports.view',
             ],
             [
+                'name'       => 'Theft Detection',
+                'label'      => 'mining-manager::menu.theft_detection',
+                'icon'       => 'fas fa-exclamation-triangle',
+                'route'      => 'mining-manager.theft.index',
+                'permission' => 'mining-manager.view',
+            ],
+            [
                 'name'       => 'Settings',
                 'label'      => 'mining-manager::menu.settings',
                 'icon'       => 'fas fa-cog',

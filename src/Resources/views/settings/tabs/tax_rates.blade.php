@@ -255,6 +255,246 @@
         </div>
     </div>
 
+    {{-- Guest Miner Tax Settings --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-user-friends"></i>
+                Guest Miner Tax Rates
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>What are Guest Miners?</strong>
+                Guest miners are characters whose corporation does NOT match the <strong>Moon Owner Corporation</strong> set in General Settings.
+                Configure separate tax rates for guest miners below. If left at 0%, guests will use the same rates as corp members (configured above).
+            </div>
+
+            {{-- Guest Moon Ore Rates --}}
+            <h6 class="mb-3"><i class="fas fa-moon"></i> Guest Miner Moon Ore Rates</h6>
+            <div class="row mb-3">
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="guest_moon_ore_r64">
+                            <i class="fas fa-star" style="color: #FFD700;"></i>
+                            R64 (Exceptional)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_moon_ore_r64') is-invalid @enderror"
+                                   id="guest_moon_ore_r64"
+                                   name="guest_moon_ore_r64"
+                                   value="{{ old('guest_moon_ore_r64', $settings->guest_moon_ore_r64 ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="guest_moon_ore_r32">
+                            <i class="fas fa-star" style="color: #C0C0C0;"></i>
+                            R32 (Rare)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_moon_ore_r32') is-invalid @enderror"
+                                   id="guest_moon_ore_r32"
+                                   name="guest_moon_ore_r32"
+                                   value="{{ old('guest_moon_ore_r32', $settings->guest_moon_ore_r32 ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="guest_moon_ore_r16">
+                            <i class="fas fa-star" style="color: #CD7F32;"></i>
+                            R16 (Uncommon)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_moon_ore_r16') is-invalid @enderror"
+                                   id="guest_moon_ore_r16"
+                                   name="guest_moon_ore_r16"
+                                   value="{{ old('guest_moon_ore_r16', $settings->guest_moon_ore_r16 ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="guest_moon_ore_r8">
+                            <i class="fas fa-certificate" style="color: #90EE90;"></i>
+                            R8 (Common)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_moon_ore_r8') is-invalid @enderror"
+                                   id="guest_moon_ore_r8"
+                                   name="guest_moon_ore_r8"
+                                   value="{{ old('guest_moon_ore_r8', $settings->guest_moon_ore_r8 ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 col-lg-2">
+                    <div class="form-group">
+                        <label for="guest_moon_ore_r4">
+                            <i class="fas fa-circle" style="color: #808080;"></i>
+                            R4 (Ubiquitous)
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_moon_ore_r4') is-invalid @enderror"
+                                   id="guest_moon_ore_r4"
+                                   name="guest_moon_ore_r4"
+                                   value="{{ old('guest_moon_ore_r4', $settings->guest_moon_ore_r4 ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Guest Regular Ore Type Rates --}}
+            <hr>
+            <h6 class="mb-3"><i class="fas fa-percentage"></i> Guest Miner Regular Ore Rates</h6>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="guest_ore_tax">
+                            <i class="fas fa-gem"></i>
+                            Regular Ore
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_ore_tax') is-invalid @enderror"
+                                   id="guest_ore_tax"
+                                   name="guest_ore_tax"
+                                   value="{{ old('guest_ore_tax', $settings->guest_ore_tax ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="guest_ice_tax">
+                            <i class="fas fa-snowflake"></i>
+                            Ice
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_ice_tax') is-invalid @enderror"
+                                   id="guest_ice_tax"
+                                   name="guest_ice_tax"
+                                   value="{{ old('guest_ice_tax', $settings->guest_ice_tax ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="guest_gas_tax">
+                            <i class="fas fa-cloud"></i>
+                            Gas
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_gas_tax') is-invalid @enderror"
+                                   id="guest_gas_tax"
+                                   name="guest_gas_tax"
+                                   value="{{ old('guest_gas_tax', $settings->guest_gas_tax ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="guest_abyssal_ore_tax">
+                            <i class="fas fa-skull"></i>
+                            Abyssal Ore
+                        </label>
+                        <div class="input-group">
+                            <input type="number"
+                                   class="form-control @error('guest_abyssal_ore_tax') is-invalid @enderror"
+                                   id="guest_abyssal_ore_tax"
+                                   name="guest_abyssal_ore_tax"
+                                   value="{{ old('guest_abyssal_ore_tax', $settings->guest_abyssal_ore_tax ?? 0) }}"
+                                   min="0"
+                                   max="100"
+                                   step="0.1"
+                                   placeholder="0 = use corp rate">
+                            <div class="input-group-append">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-warning mt-3 mb-0">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Note:</strong> Set to <strong>0%</strong> for any ore type to make guests use the same rate as corp members.
+                Set to a value (e.g., 20%) to charge guests that specific rate instead.
+            </div>
+        </div>
+    </div>
+
     {{-- Tax Exemption Settings --}}
     <div class="card bg-dark mb-3">
         <div class="card-header">

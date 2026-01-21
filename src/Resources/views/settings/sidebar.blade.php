@@ -32,11 +32,19 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a href="#" 
-                   class="nav-link" 
+                <a href="#"
+                   class="nav-link"
                    data-tab="features">
                     <i class="fas fa-toggle-on"></i>
                     {{ trans('mining-manager::settings.features') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
+                   data-tab="dashboard">
+                    <i class="fas fa-tachometer-alt"></i>
+                    Dashboard Settings
                 </a>
             </li>
             <li class="nav-item">

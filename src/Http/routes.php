@@ -647,6 +647,12 @@ Route::group([
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
 
+        Route::post('/dashboard', [
+            'as' => 'mining-manager.settings.update-dashboard',
+            'uses' => 'SettingsController@updateDashboard',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
         Route::post('/reset', [
             'as' => 'mining-manager.settings.reset',
             'uses' => 'SettingsController@reset',
@@ -681,6 +687,39 @@ Route::group([
             'as' => 'mining-manager.settings.update',
             'uses' => 'SettingsController@updateSetting',
             'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+    });
+
+    // Theft Detection Routes
+    Route::group(['prefix' => 'theft'], function () {
+        Route::get('/', [
+            'as' => 'mining-manager.theft.index',
+            'uses' => 'TheftIncidentController@index',
+            'middleware' => 'can:mining-manager.view',
+        ]);
+
+        Route::get('/{id}', [
+            'as' => 'mining-manager.theft.show',
+            'uses' => 'TheftIncidentController@show',
+            'middleware' => 'can:mining-manager.view',
+        ]);
+
+        Route::post('/{id}/status', [
+            'as' => 'mining-manager.theft.update-status',
+            'uses' => 'TheftIncidentController@updateStatus',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/{id}/resolve', [
+            'as' => 'mining-manager.theft.resolve',
+            'uses' => 'TheftIncidentController@resolve',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::get('/export/csv', [
+            'as' => 'mining-manager.theft.export',
+            'uses' => 'TheftIncidentController@export',
+            'middleware' => 'can:mining-manager.view',
         ]);
     });
 

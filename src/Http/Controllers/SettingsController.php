@@ -295,6 +295,19 @@ class SettingsController extends Controller
             'gas_tax' => 'required|numeric|min:0|max:100',
             'abyssal_ore_tax' => 'required|numeric|min:0|max:100',
 
+            // Guest Miner Tax Settings - Moon Ore
+            'guest_moon_ore_r64' => 'required|numeric|min:0|max:100',
+            'guest_moon_ore_r32' => 'required|numeric|min:0|max:100',
+            'guest_moon_ore_r16' => 'required|numeric|min:0|max:100',
+            'guest_moon_ore_r8' => 'required|numeric|min:0|max:100',
+            'guest_moon_ore_r4' => 'required|numeric|min:0|max:100',
+
+            // Guest Miner Tax Settings - Regular Ore
+            'guest_ore_tax' => 'required|numeric|min:0|max:100',
+            'guest_ice_tax' => 'required|numeric|min:0|max:100',
+            'guest_gas_tax' => 'required|numeric|min:0|max:100',
+            'guest_abyssal_ore_tax' => 'required|numeric|min:0|max:100',
+
             // Tax Exemption Settings
             'exemption_enabled' => 'nullable|boolean',
             'exemption_threshold' => 'required|numeric|min:0',
@@ -529,6 +542,74 @@ class SettingsController extends Controller
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Error updating pricing settings: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update dashboard settings
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function updateDashboard(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'dashboard_leaderboard_corporation_filter' => 'required|in:all,specific',
+            'dashboard_leaderboard_corporation_ids' => 'nullable|array',
+            'dashboard_leaderboard_corporation_ids.*' => 'integer|exists:corporation_infos,corporation_id',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
+        try {
+            $data = $validator->validated();
+
+            // Set corporation context if provided
+            $corporationId = $request->input('selected_corporation_id');
+            if ($corporationId) {
+                $this->settingsService->setActiveCorporation((int)$corporationId);
+            }
+
+            // Store dashboard settings using Setting model
+            \MiningManager\Models\Setting::setValue(
+                'dashboard_leaderboard_corporation_filter',
+                $data['dashboard_leaderboard_corporation_filter']
+            );
+
+            // Store corporation IDs as JSON
+            if ($data['dashboard_leaderboard_corporation_filter'] === 'specific') {
+                $corpIds = $data['dashboard_leaderboard_corporation_ids'] ?? [];
+                \MiningManager\Models\Setting::setValue(
+                    'dashboard_leaderboard_corporation_ids',
+                    json_encode($corpIds)
+                );
+            } else {
+                \MiningManager\Models\Setting::setValue(
+                    'dashboard_leaderboard_corporation_ids',
+                    json_encode([])
+                );
+            }
+
+            // Clear dashboard cache
+            cache()->tags(['mining-manager', 'dashboard'])->flush();
+
+            // Redirect back with corporation_id to maintain context
+            $redirectUrl = route('mining-manager.settings.index');
+            if ($corporationId) {
+                $redirectUrl .= '?corporation_id=' . $corporationId;
+            }
+
+            return redirect($redirectUrl)
+                ->with('success', 'Dashboard settings updated successfully');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error updating dashboard settings: ' . $e->getMessage());
         }
     }
 

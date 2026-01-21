@@ -87,8 +87,11 @@
         <div class="card-body">
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
-                <strong>Why set this?</strong> Many groups have a separate holding corporation for structures/moons.
-                This setting tells the plugin which corporation owns the moons and receives tax payments.
+                <strong>Important:</strong> This setting specifies which corporation <strong>owns the moons and structures</strong>.<br>
+                <strong>Why set this?</strong> Many alliances have a separate holding corporation (alt corp) that owns all structures while multiple other corporations mine from those moons.
+                <br><br>
+                <strong>Example:</strong> If your holding corp "XALFA Holdings" owns the moons, but "MINC Mining" and "COSMOS Logistics" both mine from those moons,
+                set this to "XALFA Holdings". Then configure separate tax rates for corp members vs guests in the Tax Rates tab.
             </div>
 
             <div class="form-group">

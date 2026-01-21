@@ -49,6 +49,10 @@ class TaxController extends Controller
         $status = $request->input('status', 'all');
         $month = $request->input('month');
         $corporationId = $request->input('corporation_id');
+        $minerType = $request->input('miner_type', 'all'); // 'all', 'corp', 'guest'
+
+        // Get moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('moon_owner_corporation_id');
 
         // Build query
         $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices']);
@@ -67,11 +71,40 @@ class TaxController extends Controller
             });
         }
 
+        // Filter by miner type (corp member vs guest)
+        if ($minerType === 'corp' && $moonOwnerCorpId) {
+            // Only show corp members
+            $query->whereHas('character', function($q) use ($moonOwnerCorpId) {
+                $q->where('corporation_id', $moonOwnerCorpId);
+            });
+        } elseif ($minerType === 'guest' && $moonOwnerCorpId) {
+            // Only show guest miners (not corp members)
+            $query->whereHas('character', function($q) use ($moonOwnerCorpId) {
+                $q->where('corporation_id', '!=', $moonOwnerCorpId);
+            });
+        }
+
         $taxes = $query->orderBy('month', 'desc')
             ->orderBy('character_id')
             ->paginate(50);
 
-        // Summary statistics
+        // Summary statistics - split by corp/guest if moon owner is configured
+        $summaryQuery = MiningTax::query();
+        $corpSummaryQuery = null;
+        $guestSummaryQuery = null;
+
+        if ($moonOwnerCorpId) {
+            // Corp members summary
+            $corpSummaryQuery = MiningTax::whereHas('character', function($q) use ($moonOwnerCorpId) {
+                $q->where('corporation_id', $moonOwnerCorpId);
+            });
+
+            // Guest miners summary
+            $guestSummaryQuery = MiningTax::whereHas('character', function($q) use ($moonOwnerCorpId) {
+                $q->where('corporation_id', '!=', $moonOwnerCorpId);
+            });
+        }
+
         $totalOwed = MiningTax::where('status', 'unpaid')->sum('amount_owed');
         $totalOverdue = MiningTax::where('status', 'overdue')->sum('amount_owed');
         $collectedThisMonth = MiningTax::where('status', 'paid')
@@ -82,11 +115,11 @@ class TaxController extends Controller
         $paidCount = MiningTax::where('status', 'paid')
             ->whereMonth('paid_at', Carbon::now()->month)
             ->count();
-        
+
         // Calculate collection rate
         $totalExpected = $totalOwed + $totalOverdue + $collectedThisMonth;
         $collectionRate = $totalExpected > 0 ? ($collectedThisMonth / $totalExpected) * 100 : 0;
-        
+
         $summary = [
             'total_owed' => $totalOwed,
             'overdue_amount' => $totalOverdue,
@@ -97,28 +130,53 @@ class TaxController extends Controller
             'collection_rate' => $collectionRate,
         ];
 
+        // Add corp vs guest breakdown if moon owner is configured
+        if ($moonOwnerCorpId && $corpSummaryQuery && $guestSummaryQuery) {
+            $summary['corp_members'] = [
+                'owed' => $corpSummaryQuery->where('status', 'unpaid')->sum('amount_owed'),
+                'count' => $corpSummaryQuery->whereIn('status', ['unpaid', 'overdue'])->count(),
+                'collected' => $corpSummaryQuery->where('status', 'paid')
+                    ->whereMonth('paid_at', Carbon::now()->month)
+                    ->sum('amount_paid'),
+            ];
+            $summary['guest_miners'] = [
+                'owed' => $guestSummaryQuery->where('status', 'unpaid')->sum('amount_owed'),
+                'count' => $guestSummaryQuery->whereIn('status', ['unpaid', 'overdue'])->count(),
+                'collected' => $guestSummaryQuery->where('status', 'paid')
+                    ->whereMonth('paid_at', Carbon::now()->month)
+                    ->sum('amount_paid'),
+            ];
+        }
+
         // Get payment method from settings
         $paymentMethod = $this->settingsService->getPaymentSettings()['method'];
 
-        // Get active corporations with taxes (through character relationship)
-        $characterIds = MiningTax::distinct()->pluck('character_id');
-        // In SeAT v5, corporation_id is accessed via the affiliation relationship
-        $corporationIds = CharacterInfo::whereIn('character_id', $characterIds)
-            ->with('affiliation')
-            ->get()
-            ->pluck('affiliation.corporation_id')
-            ->unique()
-            ->filter(); // Remove nulls
-        $corporations = CorporationInfo::whereIn('corporation_id', $corporationIds)->get();
+        // Get active corporations with taxes
+        $corporationIds = DB::table('character_affiliations')
+            ->whereIn('character_id', function($query) {
+                $query->select('character_id')
+                    ->from('mining_manager_mining_taxes')
+                    ->distinct();
+            })
+            ->distinct()
+            ->pluck('corporation_id');
+
+        $corporations = DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corporationIds)
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
 
         return view('mining-manager::taxes.index', compact(
-            'taxes', 
-            'summary', 
+            'taxes',
+            'summary',
             'paymentMethod',
             'corporations',
             'status',
             'month',
-            'corporationId'
+            'corporationId',
+            'minerType',
+            'moonOwnerCorpId'
         ));
     }
 

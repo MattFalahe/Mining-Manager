@@ -39,6 +39,7 @@ class EventController extends Controller
     public function index(Request $request)
     {
         $status = $request->input('status', 'all');
+        $corporationId = $request->input('corporation_id');
 
         $query = MiningEvent::with('creator');
 
@@ -46,9 +47,36 @@ class EventController extends Controller
             $query->where('status', $status);
         }
 
+        // Corporation filter - filter events by participants' corporation
+        if ($corporationId) {
+            $query->whereHas('participants', function($q) use ($corporationId) {
+                $q->whereIn('character_id', function($subQuery) use ($corporationId) {
+                    $subQuery->select('character_id')
+                        ->from('character_affiliations')
+                        ->where('corporation_id', $corporationId);
+                });
+            });
+        }
+
         $events = $query->orderBy('start_time', 'desc')->paginate(20);
 
-        return view('mining-manager::events.index', compact('events', 'status'));
+        // Get corporations with event participation
+        $corporationIds = DB::table('character_affiliations')
+            ->whereIn('character_id', function($query) {
+                $query->select('character_id')
+                    ->from('mining_manager_event_participants')
+                    ->distinct();
+            })
+            ->distinct()
+            ->pluck('corporation_id');
+
+        $corporations = DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corporationIds)
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+
+        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations'));
     }
 
     /**

@@ -315,6 +315,68 @@ class SettingsManagerService
     }
 
     /**
+     * Get tax rates for a specific corporation.
+     * If the character is a guest miner (not from moon owner corporation),
+     * uses the configured guest miner tax rates (or falls back to corp rates if guest rate is 0).
+     *
+     * @param int|null $characterCorporationId The corporation ID of the character being taxed
+     * @return array
+     */
+    public function getTaxRatesForCorporation(?int $characterCorporationId): array
+    {
+        // Get base (corp member) tax rates
+        $corpTaxRates = $this->getTaxRates();
+
+        // Get moon owner corporation ID
+        $moonOwnerCorpId = $this->getSetting('moon_owner_corporation_id');
+
+        // If no corporation ID provided or moon owner not configured, use corp rates
+        if (!$characterCorporationId || !$moonOwnerCorpId) {
+            return $corpTaxRates;
+        }
+
+        // If the character is from the moon owner corporation, use corp member rates
+        if ($characterCorporationId == $moonOwnerCorpId) {
+            return $corpTaxRates;
+        }
+
+        // Character is a guest miner - get guest tax rates
+        $guestRates = $corpTaxRates; // Start with corp rates as fallback
+
+        // Get guest moon ore rates (if 0, fallback to corp rate)
+        foreach (['r64', 'r32', 'r16', 'r8', 'r4'] as $rarity) {
+            $guestRate = $this->getSetting("guest_tax_rates.moon_ore.{$rarity}", 0);
+            if ($guestRate > 0) {
+                $guestRates['moon_ore'][$rarity] = $guestRate;
+            }
+            // If 0 or not set, keeps the corp rate from $corpTaxRates
+        }
+
+        // Get guest regular ore rates (if 0, fallback to corp rate)
+        $guestIceRate = $this->getSetting('guest_tax_rates.ice', 0);
+        if ($guestIceRate > 0) {
+            $guestRates['ice'] = $guestIceRate;
+        }
+
+        $guestOreRate = $this->getSetting('guest_tax_rates.ore', 0);
+        if ($guestOreRate > 0) {
+            $guestRates['ore'] = $guestOreRate;
+        }
+
+        $guestGasRate = $this->getSetting('guest_tax_rates.gas', 0);
+        if ($guestGasRate > 0) {
+            $guestRates['gas'] = $guestGasRate;
+        }
+
+        $guestAbyssalRate = $this->getSetting('guest_tax_rates.abyssal_ore', 0);
+        if ($guestAbyssalRate > 0) {
+            $guestRates['abyssal_ore'] = $guestAbyssalRate;
+        }
+
+        return $guestRates;
+    }
+
+    /**
      * Update tax rates
      * COMPLETELY REWRITTEN: Now handles all form fields including moon ore rarities,
      * exemptions, tax selectors, and all other settings
@@ -356,6 +418,37 @@ class SettingsManagerService
             }
             if (isset($rates['abyssal_ore_tax'])) {
                 $this->updateSetting('tax_rates.abyssal_ore', $rates['abyssal_ore_tax'], 'float');
+            }
+
+            // Update guest miner tax settings - Moon ore rates
+            if (isset($rates['guest_moon_ore_r64'])) {
+                $this->updateSetting('guest_tax_rates.moon_ore.r64', $rates['guest_moon_ore_r64'], 'float');
+            }
+            if (isset($rates['guest_moon_ore_r32'])) {
+                $this->updateSetting('guest_tax_rates.moon_ore.r32', $rates['guest_moon_ore_r32'], 'float');
+            }
+            if (isset($rates['guest_moon_ore_r16'])) {
+                $this->updateSetting('guest_tax_rates.moon_ore.r16', $rates['guest_moon_ore_r16'], 'float');
+            }
+            if (isset($rates['guest_moon_ore_r8'])) {
+                $this->updateSetting('guest_tax_rates.moon_ore.r8', $rates['guest_moon_ore_r8'], 'float');
+            }
+            if (isset($rates['guest_moon_ore_r4'])) {
+                $this->updateSetting('guest_tax_rates.moon_ore.r4', $rates['guest_moon_ore_r4'], 'float');
+            }
+
+            // Update guest miner tax settings - Regular ore rates
+            if (isset($rates['guest_ore_tax'])) {
+                $this->updateSetting('guest_tax_rates.ore', $rates['guest_ore_tax'], 'float');
+            }
+            if (isset($rates['guest_ice_tax'])) {
+                $this->updateSetting('guest_tax_rates.ice', $rates['guest_ice_tax'], 'float');
+            }
+            if (isset($rates['guest_gas_tax'])) {
+                $this->updateSetting('guest_tax_rates.gas', $rates['guest_gas_tax'], 'float');
+            }
+            if (isset($rates['guest_abyssal_ore_tax'])) {
+                $this->updateSetting('guest_tax_rates.abyssal_ore', $rates['guest_abyssal_ore_tax'], 'float');
             }
 
             // Update exemption settings

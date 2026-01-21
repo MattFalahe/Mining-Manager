@@ -344,6 +344,10 @@ class TaxCalculationService
             return 0;
         }
 
+        // Get character's corporation ID for tax rate determination
+        $character = CharacterInfo::find($characterId);
+        $characterCorpId = $character ? $character->corporation_id : null;
+
         // Pre-fetch all corp moon data for this character and date range (batch optimization)
         $corpMoonCache = $this->batchLoadCorpMoonData($characterId, $startDate, $endDate);
 
@@ -358,7 +362,7 @@ class TaxCalculationService
             }
 
             $value = $this->calculateOreValue($entry);
-            $taxRate = $this->getTaxRateForOre($entry->type_id) / 100;
+            $taxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId) / 100;
 
             $totalValue += $value;
             $totalTax += $value * $taxRate;
@@ -439,20 +443,23 @@ class TaxCalculationService
 
     /**
      * Get tax rate for specific ore type.
+     * Now supports per-corporation tax rates (guest miner multiplier).
      *
      * @param int $typeId
+     * @param int|null $characterCorpId Corporation ID of the character being taxed
      * @return float
      */
-    private function getTaxRateForOre(int $typeId): float
+    private function getTaxRateForOre(int $typeId, ?int $characterCorpId = null): float
     {
-        $taxRates = $this->settingsService->getTaxRates();
-        
+        // Get tax rates for this corporation (applies guest multiplier if applicable)
+        $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
+
         // Check if it's moon ore first
         $moonRarity = $this->getMoonOreRarity($typeId);
         if ($moonRarity) {
             return $taxRates['moon_ore'][$moonRarity];
         }
-        
+
         // Check other categories
         $category = $this->getOreCategory($typeId);
         return $taxRates[$category] ?? 10.0;
@@ -762,6 +769,10 @@ class TaxCalculationService
             ->whereNotNull('processed_at')
             ->get();
 
+        // Get character's corporation ID for tax rate determination
+        $character = CharacterInfo::find($characterId);
+        $characterCorpId = $character ? $character->corporation_id : null;
+
         $breakdown = [];
         $totalValue = 0;
         $totalTax = 0;
@@ -772,7 +783,7 @@ class TaxCalculationService
             }
 
             $value = $this->calculateOreValue($entry);
-            $taxRate = $this->getTaxRateForOre($entry->type_id) / 100;
+            $taxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId) / 100;
             $tax = $value * $taxRate;
 
             $totalValue += $value;
@@ -793,7 +804,7 @@ class TaxCalculationService
                     'rarity' => $moonRarity,
                     'quantity' => 0,
                     'value' => 0,
-                    'tax_rate' => $this->getTaxRateForOre($entry->type_id),
+                    'tax_rate' => $this->getTaxRateForOre($entry->type_id, $characterCorpId),
                     'tax' => 0,
                 ];
             }
