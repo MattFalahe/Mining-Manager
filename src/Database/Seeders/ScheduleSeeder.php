@@ -101,7 +101,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Recalculate extraction values - runs twice daily at 6 AM and 6 PM
             // (Updates values 4 hours before chunk arrival with current market prices)
             [
-                'command' => 'mining-manager:recalculate-extraction-values --hours=4',
+                'command' => 'mining-manager:recalculate-extraction-values',
                 'expression' => '0 6,18 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
@@ -111,7 +111,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Archive old extractions - runs daily at 5 AM
             // (Archives completed extractions older than 7 days, keeps 12 months)
             [
-                'command' => 'mining-manager:archive-extractions --days=7 --keep-months=12',
+                'command' => 'mining-manager:archive-extractions',
                 'expression' => '0 5 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
@@ -121,7 +121,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Detect moon theft - runs twice monthly (1st and 15th at 1 AM)
             // (Full scan: manages theft list, adds/removes characters based on tax status)
             [
-                'command' => 'mining-manager:detect-theft --days=15 --notify',
+                'command' => 'mining-manager:detect-theft',
                 'expression' => '0 1 1,15 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
@@ -131,7 +131,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Monitor active thefts - runs every 6 hours
             // (Fast check: only monitors characters already on theft list)
             [
-                'command' => 'mining-manager:monitor-active-thefts --hours=6 --notify',
+                'command' => 'mining-manager:monitor-active-thefts',
                 'expression' => '0 */6 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,

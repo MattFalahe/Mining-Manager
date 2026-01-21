@@ -16,7 +16,7 @@ class RecalculateExtractionValuesCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:recalculate-extraction-values
-                            {--hours=3 : Recalculate values for extractions arriving within this many hours}
+                            {--hours=4 : Recalculate values for extractions arriving within this many hours}
                             {--force : Force recalculation even if already done recently}';
 
     /**

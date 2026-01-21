@@ -25,8 +25,8 @@ class DetectMoonTheftCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:detect-theft
-                            {--days=30 : Number of days to look back for mining activity}
-                            {--notify : Send notifications for detected thefts (not yet implemented)}';
+                            {--days=15 : Number of days to look back for mining activity}
+                            {--notify : Send notifications for detected thefts}';
 
     /**
      * The console command description.
