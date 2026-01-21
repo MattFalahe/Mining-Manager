@@ -21,7 +21,6 @@ use Carbon\Carbon;
  * @property bool $notify_incident_resolved
  * @property string|null $discord_role_id
  * @property string|null $discord_username
- * @property string|null $discord_avatar_url
  * @property string|null $slack_channel
  * @property string|null $slack_username
  * @property string|null $custom_payload_template
@@ -60,7 +59,6 @@ class WebhookConfiguration extends Model
         'notify_incident_resolved',
         'discord_role_id',
         'discord_username',
-        'discord_avatar_url',
         'slack_channel',
         'slack_username',
         'custom_payload_template',

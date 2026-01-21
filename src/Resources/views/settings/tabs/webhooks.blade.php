@@ -327,19 +327,6 @@
                                    placeholder="Mining Manager Bot">
                             <small class="form-text text-muted">{{ trans('mining-manager::settings.discord_username_help') }}</small>
                         </div>
-
-                        <div class="form-group">
-                            <label for="discord-avatar-url">
-                                {{ trans('mining-manager::settings.discord_avatar_url') }}
-                                <span class="text-muted">({{ trans('mining-manager::settings.optional') }})</span>
-                            </label>
-                            <input type="url"
-                                   class="form-control"
-                                   id="discord-avatar-url"
-                                   name="discord_avatar_url"
-                                   placeholder="https://...">
-                            <small class="form-text text-muted">{{ trans('mining-manager::settings.discord_avatar_help') }}</small>
-                        </div>
                     </div>
 
                     {{-- Slack Specific Settings --}}

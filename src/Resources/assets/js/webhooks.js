@@ -59,7 +59,6 @@ function loadWebhookData(webhookId) {
                 // Discord settings
                 if (webhook.discord_role_id) document.getElementById('discord-role-id').value = webhook.discord_role_id;
                 if (webhook.discord_username) document.getElementById('discord-username').value = webhook.discord_username;
-                if (webhook.discord_avatar_url) document.getElementById('discord-avatar-url').value = webhook.discord_avatar_url;
 
                 // Slack settings
                 if (webhook.slack_channel) document.getElementById('slack-channel').value = webhook.slack_channel;
@@ -86,6 +85,7 @@ function saveWebhook() {
     const isUpdate = webhookId !== '';
 
     const formData = {
+        _token: $('meta[name="csrf-token"]').attr('content'),
         name: document.getElementById('webhook-name').value,
         type: document.getElementById('webhook-type').value,
         webhook_url: document.getElementById('webhook-url').value,
@@ -95,7 +95,6 @@ function saveWebhook() {
         notify_incident_resolved: document.getElementById('notify-incident-resolved').checked ? 1 : 0,
         discord_role_id: document.getElementById('discord-role-id').value || null,
         discord_username: document.getElementById('discord-username').value || null,
-        discord_avatar_url: document.getElementById('discord-avatar-url').value || null,
         slack_channel: document.getElementById('slack-channel').value || null,
         slack_username: document.getElementById('slack-username').value || null,
         custom_payload_template: document.getElementById('custom-payload-template').value || null,
@@ -111,6 +110,9 @@ function saveWebhook() {
         url: url,
         method: method,
         data: formData,
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         success: function(response) {
             if (response.success) {
                 toastr.success(response.message);
@@ -145,6 +147,9 @@ function toggleWebhookStatus(webhookId, isEnabled) {
     $.ajax({
         url: `/mining-manager/settings/webhooks/${webhookId}/toggle`,
         method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         success: function(response) {
             if (response.success) {
                 toastr.success(response.message);
@@ -182,6 +187,9 @@ function testWebhook(webhookId) {
     $.ajax({
         url: `/mining-manager/settings/webhooks/${webhookId}/test`,
         method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         success: function(response) {
             if (response.success) {
                 toastr.success(response.message);
@@ -222,6 +230,9 @@ function deleteWebhook(webhookId) {
     $.ajax({
         url: `/mining-manager/settings/webhooks/${webhookId}`,
         method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         success: function(response) {
             if (response.success) {
                 toastr.success(response.message);

@@ -29,7 +29,6 @@ class CreateWebhookConfigurationsTable extends Migration
             // Discord-specific settings
             $table->string('discord_role_id')->nullable(); // Discord role ID to ping (optional)
             $table->string('discord_username')->nullable(); // Custom webhook username
-            $table->string('discord_avatar_url')->nullable(); // Custom avatar URL
 
             // Slack-specific settings
             $table->string('slack_channel')->nullable(); // Channel name (e.g., #mining-alerts)
