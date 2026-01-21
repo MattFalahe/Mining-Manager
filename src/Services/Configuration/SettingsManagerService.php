@@ -819,6 +819,25 @@ class SettingsManagerService
     }
 
     /**
+     * Get all corporations that have settings configured
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public function getAllCorporations()
+    {
+        return DB::table('corporation_infos')
+            ->whereIn('corporation_id', function($query) {
+                $query->select('corporation_id')
+                    ->from('mining_manager_settings')
+                    ->whereNotNull('corporation_id')
+                    ->distinct();
+            })
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
      * Test price provider connection
      *
      * @return array
@@ -826,10 +845,10 @@ class SettingsManagerService
     public function testPriceProviderConnection(): array
     {
         $provider = $this->getSetting('general.price_provider', 'eve_market');
-        
+
         // Test connection logic here
         // This is a placeholder - implement actual testing
-        
+
         return [
             'provider' => $provider,
             'status' => 'connected',

@@ -393,7 +393,7 @@
                                       id="custom-payload-template"
                                       name="custom_payload_template"
                                       rows="6"
-                                      placeholder='{"event": "{{event_type}}", "character": "{{character_name}}", "value": {{ore_value}}}'></textarea>
+                                      placeholder='{"event": "@{{event_type}}", "character": "@{{character_name}}", "value": @{{ore_value}}}'></textarea>
                             <small class="form-text text-muted">{{ trans('mining-manager::settings.custom_payload_help') }}</small>
                         </div>
                     </div>
