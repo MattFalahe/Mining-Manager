@@ -22,7 +22,7 @@ class CreateTheftIncidentsTable extends Migration
             $table->bigInteger('corporation_id')->nullable()->index();
 
             // Related tax record
-            $table->bigInteger('mining_tax_id')->nullable()->index();
+            $table->unsignedBigInteger('mining_tax_id')->nullable()->index();
             $table->foreign('mining_tax_id')
                   ->references('id')
                   ->on('mining_taxes')
