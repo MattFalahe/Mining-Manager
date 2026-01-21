@@ -314,4 +314,68 @@ return [
     // Additional Settings Terms
     'clear_cache' => 'Clear Cache',
     'help_documentation' => 'Help & Documentation',
+
+    // Webhook Settings
+    'webhooks' => 'Webhooks',
+    'webhook_notifications' => 'Webhook Notifications',
+    'webhooks_info' => 'Configure webhooks to receive real-time theft detection notifications in Discord, Slack, or custom endpoints.',
+    'webhook_statistics' => 'Webhook Statistics',
+    'webhooks_configured' => 'Configured',
+    'webhooks_enabled' => 'Enabled',
+    'total_sent' => 'Total Sent',
+    'total_failed' => 'Total Failed',
+    'add_webhook' => 'Add Webhook',
+    'configured_webhooks' => 'Configured Webhooks',
+    'no_webhooks_configured' => 'No webhooks configured yet',
+    'add_first_webhook' => 'Add Your First Webhook',
+    'name' => 'Name',
+    'type' => 'Type',
+    'events' => 'Events',
+    'health' => 'Health',
+    'actions' => 'Actions',
+    'not_tested' => 'Not Tested',
+    'test_webhook' => 'Test Webhook',
+    'edit_webhook' => 'Edit Webhook',
+    'delete_webhook' => 'Delete Webhook',
+
+    // Webhook Form
+    'webhook_name' => 'Webhook Name',
+    'webhook_name_help' => 'A friendly name to identify this webhook',
+    'webhook_type' => 'Webhook Type',
+    'webhook_url' => 'Webhook URL',
+    'discord_webhook_help' => 'Go to Discord Server Settings → Integrations → Webhooks to get your webhook URL',
+    'slack_webhook_help' => 'Go to Slack App Settings → Incoming Webhooks to get your webhook URL',
+    'custom_webhook_help' => 'Enter your custom webhook endpoint URL',
+    'notify_on_events' => 'Notify On Events',
+    'theft_detected' => 'Theft Detected',
+    'critical_theft' => 'Critical Theft',
+    'active_theft' => 'Active Theft in Progress',
+    'incident_resolved' => 'Incident Resolved',
+
+    // Discord Settings
+    'discord_settings' => 'Discord Settings',
+    'discord_role_id' => 'Discord Role ID',
+    'discord_role_id_help' => 'Enter a Discord role ID to ping when notifications are sent (enable Developer Mode in Discord, right-click role → Copy ID)',
+    'discord_username' => 'Custom Username',
+    'discord_username_help' => 'Override the webhook\'s username (optional)',
+    'discord_avatar_url' => 'Custom Avatar URL',
+    'discord_avatar_help' => 'URL to an image to use as the webhook avatar (optional)',
+
+    // Slack Settings
+    'slack_settings' => 'Slack Settings',
+    'slack_channel' => 'Slack Channel',
+    'slack_channel_help' => 'Override the default channel (e.g., #mining-alerts)',
+    'slack_username' => 'Custom Username',
+    'slack_username_help' => 'Override the webhook\'s username (optional)',
+
+    // Custom Webhook Settings
+    'custom_webhook_settings' => 'Custom Webhook Settings',
+    'custom_webhook_info' => 'Custom webhooks receive a JSON payload with theft incident data. You can customize the payload structure below.',
+    'custom_payload_template' => 'Custom Payload Template',
+    'custom_payload_help' => 'JSON template with variables: {{event_type}}, {{character_id}}, {{character_name}}, {{ore_value}}, {{tax_owed}}, {{severity}}, {{status}}',
+
+    // Common
+    'optional' => 'Optional',
+    'cancel' => 'Cancel',
+    'save_webhook' => 'Save Webhook',
 ];

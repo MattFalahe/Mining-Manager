@@ -150,6 +150,11 @@
             </a>
         </li>
         <li>
+            <a href="#webhook-testing" data-toggle="tab">
+                <i class="fas fa-satellite-dish"></i> Webhook Testing
+            </a>
+        </li>
+        <li>
             <a href="#price-provider" data-toggle="tab">
                 <i class="fas fa-dollar-sign"></i> Price Provider Testing
             </a>
@@ -347,6 +352,137 @@
                             </ol>
                             <p class="mb-0"><strong>CLI Alternative:</strong> You can also use the artisan command:</p>
                             <code>php artisan mining-manager:generate-test-data --corporations=3 --characters=5 --days=30 --entries=10</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Webhook Testing Tab -->
+        <div class="tab-pane" id="webhook-testing">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-satellite-dish"></i> Webhook Testing & Simulation
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Test your configured webhooks with simulated theft detection notifications. You can override Discord role IDs temporarily for testing purposes.</p>
+
+                            <!-- Webhook Selection -->
+                            <div class="form-group">
+                                <label>Select Webhook to Test</label>
+                                <select id="webhookSelect" class="form-control">
+                                    <option value="">-- Select a Webhook --</option>
+                                    @foreach(\MiningManager\Models\WebhookConfiguration::all() as $webhook)
+                                        <option value="{{ $webhook->id }}"
+                                                data-type="{{ $webhook->type }}"
+                                                data-role-id="{{ $webhook->discord_role_id ?? '' }}">
+                                            {{ $webhook->name }} ({{ ucfirst($webhook->type) }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @if(\MiningManager\Models\WebhookConfiguration::count() === 0)
+                                    <small class="form-text text-warning">
+                                        <i class="fas fa-exclamation-triangle"></i> No webhooks configured.
+                                        <a href="{{ route('mining-manager.settings.index') }}#webhooks">Go to Settings to add one</a>.
+                                    </small>
+                                @endif
+                            </div>
+
+                            <!-- Discord Role Override -->
+                            <div id="discordRoleOverride" class="form-group" style="display: none;">
+                                <label>Temporary Discord Role ID (Optional Override)</label>
+                                <input type="text" id="tempRoleId" class="form-control" placeholder="123456789012345678">
+                                <small class="form-text text-muted">
+                                    Override the configured role ID for this test only. Leave empty to use configured role.
+                                    <br>To get a role ID: Enable Developer Mode in Discord → Right-click role → Copy ID
+                                </small>
+                            </div>
+
+                            <!-- Event Type Selection -->
+                            <div class="form-group">
+                                <label>Notification Type to Test</label>
+                                <select id="eventTypeSelect" class="form-control">
+                                    <option value="theft_detected">⚠️ Theft Detected (Regular)</option>
+                                    <option value="critical_theft">🔴 Critical Theft (High Value)</option>
+                                    <option value="active_theft">🔥 Active Theft in Progress</option>
+                                    <option value="incident_resolved">✅ Incident Resolved</option>
+                                </select>
+                            </div>
+
+                            <!-- Simulated Data Customization -->
+                            <div class="card bg-secondary mb-3">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-edit"></i> Customize Test Data
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Character Name</label>
+                                                <input type="text" id="testCharacterName" class="form-control" value="Test Miner" placeholder="Character Name">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Severity</label>
+                                                <select id="testSeverity" class="form-control">
+                                                    <option value="low">🟢 Low</option>
+                                                    <option value="medium" selected>🟡 Medium</option>
+                                                    <option value="high">🟠 High</option>
+                                                    <option value="critical">🔴 Critical</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Ore Value (ISK)</label>
+                                                <input type="number" id="testOreValue" class="form-control" value="50000000" min="0" step="1000000">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Tax Owed (ISK)</label>
+                                                <input type="number" id="testTaxOwed" class="form-control" value="5000000" min="0" step="100000">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row" id="activeTheftFields" style="display: none;">
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>New Mining Value (ISK)</label>
+                                                <input type="number" id="testNewMiningValue" class="form-control" value="10000000" min="0" step="1000000">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group">
+                                                <label>Activity Count</label>
+                                                <input type="number" id="testActivityCount" class="form-control" value="3" min="1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Test Buttons -->
+                            <button type="button" class="btn btn-mm-primary" onclick="sendTestNotification()">
+                                <i class="fas fa-paper-plane"></i> <span id="sendBtnText">Send Test Notification</span>
+                                <span id="sendSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <button type="button" class="btn btn-secondary ml-2" onclick="previewPayload()">
+                                <i class="fas fa-eye"></i> Preview Payload
+                            </button>
+
+                            <!-- Test Results Container -->
+                            <div id="webhook-test-results" class="mt-4"></div>
                         </div>
                     </div>
                 </div>
@@ -1156,6 +1292,175 @@ function warmCache() {
         `;
     });
 }
+
+// ============================================================================
+// WEBHOOK TESTING FUNCTIONS
+// ============================================================================
+
+// Show/hide Discord role override based on webhook selection
+document.getElementById('webhookSelect')?.addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const webhookType = selectedOption.dataset.type;
+    const roleOverrideDiv = document.getElementById('discordRoleOverride');
+    const tempRoleInput = document.getElementById('tempRoleId');
+
+    if (webhookType === 'discord') {
+        roleOverrideDiv.style.display = 'block';
+        // Pre-fill with current role ID if exists
+        const currentRoleId = selectedOption.dataset.roleId;
+        if (currentRoleId) {
+            tempRoleInput.placeholder = `Current: ${currentRoleId}`;
+        }
+    } else {
+        roleOverrideDiv.style.display = 'none';
+        tempRoleInput.value = '';
+    }
+});
+
+// Show/hide active theft fields based on event type
+document.getElementById('eventTypeSelect')?.addEventListener('change', function() {
+    const activeTheftFields = document.getElementById('activeTheftFields');
+    if (this.value === 'active_theft') {
+        activeTheftFields.style.display = 'flex';
+    } else {
+        activeTheftFields.style.display = 'none';
+    }
+});
+
+function sendTestNotification() {
+    const webhookId = document.getElementById('webhookSelect').value;
+    const eventType = document.getElementById('eventTypeSelect').value;
+    const resultsDiv = document.getElementById('webhook-test-results');
+    const btnText = document.getElementById('sendBtnText');
+    const spinner = document.getElementById('sendSpinner');
+
+    if (!webhookId) {
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error">
+                <h5><i class="fas fa-times-circle text-danger"></i> Error</h5>
+                <p>Please select a webhook to test</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Collect test data
+    const testData = {
+        event_type: eventType,
+        character_name: document.getElementById('testCharacterName').value,
+        severity: document.getElementById('testSeverity').value,
+        ore_value: parseFloat(document.getElementById('testOreValue').value),
+        tax_owed: parseFloat(document.getElementById('testTaxOwed').value),
+        temp_role_id: document.getElementById('tempRoleId')?.value || null,
+    };
+
+    // Add active theft specific data
+    if (eventType === 'active_theft') {
+        testData.new_mining_value = parseFloat(document.getElementById('testNewMiningValue').value);
+        testData.activity_count = parseInt(document.getElementById('testActivityCount').value);
+    }
+
+    btnText.textContent = 'Sending...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    fetch(`/mining-manager/diagnostic/test-webhook/${webhookId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(testData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Send Test Notification';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let resultHtml = `
+                <div class="provider-test-result success">
+                    <h5><i class="fas fa-check-circle text-success"></i> Test Notification Sent Successfully!</h5>
+                    <p><strong>Webhook:</strong> ${data.webhook_name}</p>
+                    <p><strong>Type:</strong> ${data.webhook_type}</p>
+                    <p><strong>Event:</strong> ${data.event_type}</p>
+                    <p><strong>Delivery Time:</strong> ${data.duration_ms}ms</p>
+            `;
+
+            if (data.role_mention) {
+                resultHtml += `<p><strong>Role Mentioned:</strong> ${data.role_mention}</p>`;
+            }
+
+            if (data.temp_role_used) {
+                resultHtml += `<p class="text-warning"><i class="fas fa-info-circle"></i> Temporary role ID was used for this test</p>`;
+            }
+
+            resultHtml += `<p class="mb-0 text-success">Check your Discord/Slack channel for the notification!</p></div>`;
+            resultsDiv.innerHTML = resultHtml;
+        } else {
+            resultsDiv.innerHTML = `
+                <div class="provider-test-result error">
+                    <h5><i class="fas fa-times-circle text-danger"></i> Test Failed</h5>
+                    <p><strong>Error:</strong> ${data.error || data.message}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Send Test Notification';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error">
+                <h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5>
+                <p>${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+function previewPayload() {
+    const webhookId = document.getElementById('webhookSelect').value;
+    const eventType = document.getElementById('eventTypeSelect').value;
+    const resultsDiv = document.getElementById('webhook-test-results');
+
+    if (!webhookId) {
+        resultsDiv.innerHTML = `
+            <div class="provider-test-result error">
+                <h5><i class="fas fa-times-circle text-danger"></i> Error</h5>
+                <p>Please select a webhook to preview</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Build preview of what will be sent
+    const testData = {
+        event_type: eventType,
+        character_name: document.getElementById('testCharacterName').value,
+        severity: document.getElementById('testSeverity').value,
+        ore_value: parseFloat(document.getElementById('testOreValue').value),
+        tax_owed: parseFloat(document.getElementById('testTaxOwed').value),
+    };
+
+    if (eventType === 'active_theft') {
+        testData.new_mining_value = parseFloat(document.getElementById('testNewMiningValue').value);
+        testData.activity_count = parseInt(document.getElementById('testActivityCount').value);
+    }
+
+    resultsDiv.innerHTML = `
+        <div class="provider-test-result success">
+            <h5><i class="fas fa-eye text-info"></i> Payload Preview</h5>
+            <p><strong>Notification Data:</strong></p>
+            <pre style="background: #1a252f; padding: 15px; border-radius: 5px; max-height: 400px; overflow: auto;">${JSON.stringify(testData, null, 2)}</pre>
+            <p class="mb-0 text-muted">This is the data that will be sent to your webhook. The actual Discord/Slack embed will be formatted based on this data.</p>
+        </div>
+    `;
+}
+
+// ============================================================================
+// TYPE ID VALIDATION
+// ============================================================================
 
 function validateTypeIds() {
     const category = document.getElementById('validateCategory').value;

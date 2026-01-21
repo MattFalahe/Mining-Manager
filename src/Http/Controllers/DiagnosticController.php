@@ -965,4 +965,120 @@ class DiagnosticController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Test webhook with simulated theft notification
+     *
+     * @param Request $request
+     * @param int $webhookId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testWebhook(Request $request, $webhookId)
+    {
+        try {
+            $startTime = microtime(true);
+
+            // Get webhook
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($webhookId);
+
+            // Get test data from request
+            $eventType = $request->input('event_type', 'theft_detected');
+            $characterName = $request->input('character_name', 'Test Miner');
+            $severity = $request->input('severity', 'medium');
+            $oreValue = $request->input('ore_value', 50000000);
+            $taxOwed = $request->input('tax_owed', 5000000);
+            $tempRoleId = $request->input('temp_role_id');
+
+            // Temporarily override Discord role ID if provided
+            $originalRoleId = null;
+            $tempRoleUsed = false;
+            if ($tempRoleId && $webhook->type === 'discord') {
+                $originalRoleId = $webhook->discord_role_id;
+                $webhook->discord_role_id = $tempRoleId;
+                $tempRoleUsed = true;
+            }
+
+            // Create simulated theft incident
+            $testIncident = new \MiningManager\Models\TheftIncident([
+                'character_id' => 123456789,
+                'character_name' => $characterName,
+                'severity' => $severity,
+                'ore_value' => $oreValue,
+                'tax_owed' => $taxOwed,
+                'status' => 'open',
+                'detected_at' => now(),
+            ]);
+
+            // Add additional data based on event type
+            $additionalData = [
+                'test_mode' => true,
+                'incident_url' => route('mining-manager.diagnostic.index'),
+            ];
+
+            if ($eventType === 'active_theft') {
+                $additionalData['new_mining_value'] = $request->input('new_mining_value', 10000000);
+                $additionalData['last_activity'] = now()->format('Y-m-d H:i:s');
+                $testIncident->activity_count = $request->input('activity_count', 3);
+                $testIncident->last_activity_at = now();
+            } elseif ($eventType === 'incident_resolved') {
+                $additionalData['resolved_by'] = 'Diagnostic Test';
+                $testIncident->status = 'resolved';
+                $testIncident->resolved_by = 'Test Admin';
+            }
+
+            // Send notification
+            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+            $result = $webhookService->sendTheftNotification($testIncident, $eventType, $additionalData);
+
+            // Restore original role ID if it was temporarily changed
+            if ($originalRoleId !== null) {
+                $webhook->discord_role_id = $originalRoleId;
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            // Check if notification was successful
+            $success = false;
+            $error = null;
+            foreach ($result as $webhookResult) {
+                if ($webhookResult['success']) {
+                    $success = true;
+                    break;
+                } else {
+                    $error = $webhookResult['error'] ?? 'Unknown error';
+                }
+            }
+
+            if ($success) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Test notification sent successfully!',
+                    'webhook_name' => $webhook->name,
+                    'webhook_type' => $webhook->type,
+                    'event_type' => $eventType,
+                    'duration_ms' => $duration,
+                    'temp_role_used' => $tempRoleUsed,
+                    'role_mention' => $tempRoleUsed ? $tempRoleId : $webhook->discord_role_id,
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => $error,
+                    'message' => 'Failed to send test notification',
+                ], 400);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to test webhook', [
+                'webhook_id' => $webhookId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+                'message' => 'Exception occurred while testing webhook'
+            ], 500);
+        }
+    }
 }

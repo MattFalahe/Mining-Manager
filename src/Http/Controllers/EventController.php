@@ -64,7 +64,7 @@ class EventController extends Controller
         $corporationIds = DB::table('character_affiliations')
             ->whereIn('character_id', function($query) {
                 $query->select('character_id')
-                    ->from('mining_manager_event_participants')
+                    ->from('event_participants')
                     ->distinct();
             })
             ->distinct()

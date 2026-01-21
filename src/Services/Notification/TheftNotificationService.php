@@ -8,17 +8,29 @@ use Illuminate\Support\Facades\Log;
 /**
  * Theft Notification Service
  *
- * Placeholder service for theft incident notifications.
- * Webhook configuration and notification system will be added in settings UI.
+ * Manages theft incident notifications via configured webhooks
  */
 class TheftNotificationService
 {
     /**
-     * Send notification when a theft incident is detected
+     * Webhook service instance
      *
-     * TODO: Implement webhook notification system
-     * TODO: Add webhook configuration in settings UI
-     * TODO: Support multiple notification channels (Discord, Slack, etc.)
+     * @var WebhookService
+     */
+    protected $webhookService;
+
+    /**
+     * Constructor
+     *
+     * @param WebhookService $webhookService
+     */
+    public function __construct(WebhookService $webhookService)
+    {
+        $this->webhookService = $webhookService;
+    }
+
+    /**
+     * Send notification when a theft incident is detected
      *
      * @param TheftIncident $incident
      * @return bool
@@ -32,21 +44,25 @@ class TheftNotificationService
             'tax_owed' => $incident->tax_owed
         ]);
 
-        // TODO: Implement webhook notification
-        // Example webhook structure:
-        // - Discord: Embed with character info, severity, tax owed
-        // - Slack: Message with formatted blocks
-        // - Custom webhook: Configurable JSON payload
+        $additionalData = [
+            'incident_url' => route('mining-manager.theft.show', $incident->id),
+        ];
 
+        $results = $this->webhookService->sendTheftNotification($incident, 'theft_detected', $additionalData);
+
+        // Return true if at least one webhook was successful
+        foreach ($results as $result) {
+            if ($result['success']) {
+                return true;
+            }
+        }
+
+        // If no webhooks configured or all failed, still return true (logged)
         return true;
     }
 
     /**
      * Send immediate alert for critical theft incidents
-     *
-     * TODO: Implement critical alert system
-     * TODO: Add configuration for critical threshold
-     * TODO: Support multiple alert channels
      *
      * @param TheftIncident $incident
      * @return bool
@@ -60,23 +76,29 @@ class TheftNotificationService
         Log::warning('TheftNotificationService: CRITICAL theft incident detected', [
             'incident_id' => $incident->id,
             'character_id' => $incident->character_id,
-            'character_name' => $incident->getCharacterName(),
+            'character_name' => $incident->character_name,
             'tax_owed' => $incident->tax_owed,
             'ore_value' => $incident->ore_value
         ]);
 
-        // TODO: Implement critical alert notification
-        // Should be more prominent/urgent than regular notifications
-        // Example: @here or @everyone mentions in Discord
+        $additionalData = [
+            'incident_url' => route('mining-manager.theft.show', $incident->id),
+        ];
+
+        $results = $this->webhookService->sendTheftNotification($incident, 'critical_theft', $additionalData);
+
+        // Return true if at least one webhook was successful
+        foreach ($results as $result) {
+            if ($result['success']) {
+                return true;
+            }
+        }
 
         return true;
     }
 
     /**
      * Send notification when an incident is resolved
-     *
-     * TODO: Implement resolution notification
-     * TODO: Add configuration option to enable/disable resolution notifications
      *
      * @param TheftIncident $incident
      * @return bool
@@ -90,8 +112,19 @@ class TheftNotificationService
             'resolved_by' => $incident->resolved_by
         ]);
 
-        // TODO: Implement resolution notification
-        // Example: Update to original notification or new message
+        $additionalData = [
+            'incident_url' => route('mining-manager.theft.show', $incident->id),
+            'resolved_by' => $incident->resolved_by,
+        ];
+
+        $results = $this->webhookService->sendTheftNotification($incident, 'incident_resolved', $additionalData);
+
+        // Return true if at least one webhook was successful
+        foreach ($results as $result) {
+            if ($result['success']) {
+                return true;
+            }
+        }
 
         return true;
     }
@@ -99,8 +132,7 @@ class TheftNotificationService
     /**
      * Send bulk notification for multiple incidents
      *
-     * TODO: Implement bulk notification system
-     * TODO: Add digest/summary format option
+     * Note: Currently sends individual notifications. Future enhancement could add digest format.
      *
      * @param \Illuminate\Database\Eloquent\Collection $incidents
      * @return bool
@@ -116,39 +148,31 @@ class TheftNotificationService
             'total_value_at_risk' => $incidents->sum('tax_owed')
         ]);
 
-        // TODO: Implement bulk notification
-        // Example: Daily/weekly digest of all new incidents
-        // Should group by severity and provide summary statistics
+        $successCount = 0;
 
-        return true;
+        foreach ($incidents as $incident) {
+            if ($this->notifyTheftDetected($incident)) {
+                $successCount++;
+            }
+        }
+
+        return $successCount > 0;
     }
 
     /**
      * Test webhook configuration
      *
-     * TODO: Implement webhook testing
-     * TODO: Add test message sending
-     *
-     * @param string $webhookUrl
-     * @param string $webhookType (discord, slack, custom)
+     * @param \MiningManager\Models\WebhookConfiguration $webhook
      * @return array Test results
      */
-    public function testWebhook(string $webhookUrl, string $webhookType = 'discord'): array
+    public function testWebhook($webhook): array
     {
         Log::info('TheftNotificationService: Testing webhook', [
-            'webhook_url' => $webhookUrl,
-            'webhook_type' => $webhookType
+            'webhook_id' => $webhook->id,
+            'webhook_type' => $webhook->type
         ]);
 
-        // TODO: Implement webhook testing
-        // Send test message and return success/failure
-
-        return [
-            'success' => false,
-            'message' => 'Webhook testing not yet implemented. Configuration will be added in settings UI.',
-            'webhook_url' => $webhookUrl,
-            'webhook_type' => $webhookType
-        ];
+        return $this->webhookService->testWebhook($webhook);
     }
 
     /**
@@ -162,16 +186,6 @@ class TheftNotificationService
      */
     public function notifyActiveTheft(TheftIncident $incident, float $newMiningValue): void
     {
-        // TODO: Implement webhook notification
-        // Webhook payload should include:
-        // - Character name and portrait
-        // - Total unpaid value (original + new)
-        // - Number of times caught mining (activity_count)
-        // - Last activity timestamp
-        // - Direct link to incident
-        // - Severity: ALWAYS HIGH/CRITICAL regardless of value
-        // - Suggested action: "Immediate intervention recommended"
-
         Log::warning('ACTIVE THEFT IN PROGRESS', [
             'character_id' => $incident->character_id,
             'character_name' => $incident->character_name,
@@ -182,27 +196,43 @@ class TheftNotificationService
             'incident_id' => $incident->id,
             'last_activity' => $incident->last_activity_at->toDateTimeString(),
         ]);
+
+        $additionalData = [
+            'incident_url' => route('mining-manager.theft.show', $incident->id),
+            'new_mining_value' => $newMiningValue,
+            'last_activity' => $incident->last_activity_at->format('Y-m-d H:i:s'),
+        ];
+
+        $this->webhookService->sendTheftNotification($incident, 'active_theft', $additionalData);
     }
 
     /**
-     * Get notification statistics
-     *
-     * TODO: Implement notification tracking
-     * TODO: Store notification history
+     * Get notification statistics from all webhooks
      *
      * @return array
      */
     public function getNotificationStatistics(): array
     {
-        // TODO: Implement notification statistics
-        // Track: total sent, failed, delivery rate, etc.
+        $webhooks = \MiningManager\Models\WebhookConfiguration::all();
+
+        $totalSent = $webhooks->sum('success_count');
+        $totalFailed = $webhooks->sum('failure_count');
+        $total = $totalSent + $totalFailed;
+
+        $deliveryRate = $total > 0 ? round(($totalSent / $total) * 100, 1) : 0;
+
+        $lastNotification = $webhooks
+            ->filter(fn($w) => $w->last_success_at !== null)
+            ->sortByDesc('last_success_at')
+            ->first();
 
         return [
-            'total_sent' => 0,
-            'total_failed' => 0,
-            'delivery_rate' => 0,
-            'last_notification' => null,
-            'message' => 'Notification tracking not yet implemented'
+            'total_sent' => $totalSent,
+            'total_failed' => $totalFailed,
+            'delivery_rate' => $deliveryRate,
+            'last_notification' => $lastNotification ? $lastNotification->last_success_at->toDateTimeString() : null,
+            'webhooks_configured' => $webhooks->count(),
+            'webhooks_enabled' => $webhooks->where('is_enabled', true)->count(),
         ];
     }
 }

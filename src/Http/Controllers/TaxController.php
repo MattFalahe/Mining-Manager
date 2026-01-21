@@ -155,7 +155,7 @@ class TaxController extends Controller
         $corporationIds = DB::table('character_affiliations')
             ->whereIn('character_id', function($query) {
                 $query->select('character_id')
-                    ->from('mining_manager_mining_taxes')
+                    ->from('mining_taxes')
                     ->distinct();
             })
             ->distinct()
@@ -1025,8 +1025,8 @@ class TaxController extends Controller
     {
         try {
             $validated = $request->validate([
-                'mining_tax_id' => 'required|exists:mining_manager_mining_taxes,id',
-                'code' => 'nullable|string|unique:mining_manager_tax_codes,code',
+                'mining_tax_id' => 'required|exists:mining_taxes,id',
+                'code' => 'nullable|string|unique:mining_tax_codes,code',
                 'expires_at' => 'nullable|date',
             ]);
 

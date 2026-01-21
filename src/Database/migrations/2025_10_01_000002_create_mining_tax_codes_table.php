@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class CreateMiningTaxCodesTable extends Migration
 {
     /**
      * Run the migrations.
@@ -15,25 +15,18 @@ return new class extends Migration
     {
         Schema::create('mining_tax_codes', function (Blueprint $table) {
             $table->bigIncrements('id');
-            $table->bigInteger('mining_tax_id')->unsigned();
-            $table->bigInteger('character_id')->unsigned();
-            $table->string('code', 20)->unique();
-            $table->enum('status', ['active', 'used', 'expired', 'cancelled'])->default('active');
-            $table->timestamp('generated_at');
-            $table->timestamp('expires_at')->nullable();
+            $table->bigInteger('tax_id')->unsigned();
+            $table->string('code', 16)->unique();
+            $table->boolean('is_used')->default(false);
             $table->timestamp('used_at')->nullable();
-            $table->bigInteger('transaction_id')->unsigned()->nullable();
-            $table->text('notes')->nullable();
+            $table->bigInteger('used_by_character_id')->unsigned()->nullable();
             $table->timestamps();
 
-            $table->foreign('mining_tax_id')->references('id')->on('mining_taxes')->onDelete('cascade');
-            
-            $table->index('mining_tax_id');
-            $table->index('character_id');
-            $table->index('code');
-            $table->index('status');
-            $table->index(['character_id', 'status']);
-            $table->index('transaction_id');
+            // Foreign key
+            $table->foreign('tax_id')
+                  ->references('id')
+                  ->on('mining_taxes')
+                  ->onDelete('cascade');
         });
     }
 
@@ -46,4 +39,4 @@ return new class extends Migration
     {
         Schema::dropIfExists('mining_tax_codes');
     }
-};
+}

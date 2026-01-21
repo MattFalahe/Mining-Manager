@@ -3,7 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Seat\Services\Models\Schedule;
 
-return new class extends Migration
+class AddMiningManagerSchedules extends Migration
 {
     /**
      * Run the migrations.
@@ -119,4 +119,4 @@ return new class extends Migration
         Schedule::where('command', 'mining-manager:generate-reports')->delete();
         Schedule::where('command', 'mining-manager:cache-prices')->delete();
     }
-};
+}

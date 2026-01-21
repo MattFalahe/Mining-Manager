@@ -42,6 +42,14 @@
             <li class="nav-item">
                 <a href="#"
                    class="nav-link"
+                   data-tab="webhooks">
+                    <i class="fas fa-satellite-dish"></i>
+                    {{ trans('mining-manager::settings.webhooks') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
                    data-tab="dashboard">
                     <i class="fas fa-tachometer-alt"></i>
                     Dashboard Settings

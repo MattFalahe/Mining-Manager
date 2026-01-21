@@ -210,6 +210,11 @@
                         @include('mining-manager::settings.tabs.features', ['settings' => (object)$settings['features']])
                     </div>
 
+                    {{-- Webhooks Tab --}}
+                    <div id="webhooks" class="settings-section">
+                        @include('mining-manager::settings.tabs.webhooks', ['webhooks' => $webhooks ?? collect()])
+                    </div>
+
                     {{-- Dashboard Settings Tab --}}
                     <div id="dashboard" class="settings-section">
                         @include('mining-manager::settings.tabs.dashboard', [
@@ -540,5 +545,8 @@ $(document).ready(function() {
     });
 });
 </script>
+
+{{-- Webhook Management JavaScript --}}
+<script src="{{ asset('vendor/mining-manager/js/webhooks.js') }}"></script>
 @endpush
 @endsection

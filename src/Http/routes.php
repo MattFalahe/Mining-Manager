@@ -677,6 +677,49 @@ Route::group([
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
 
+        // Webhook Management Routes
+        Route::get('/webhooks', [
+            'as' => 'mining-manager.settings.webhooks.index',
+            'uses' => 'SettingsController@getWebhooks',
+            'middleware' => 'can:mining-manager.settings.view',
+        ]);
+
+        Route::get('/webhooks/{id}', [
+            'as' => 'mining-manager.settings.webhooks.show',
+            'uses' => 'SettingsController@getWebhook',
+            'middleware' => 'can:mining-manager.settings.view',
+        ]);
+
+        Route::post('/webhooks', [
+            'as' => 'mining-manager.settings.webhooks.store',
+            'uses' => 'SettingsController@storeWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::put('/webhooks/{id}', [
+            'as' => 'mining-manager.settings.webhooks.update',
+            'uses' => 'SettingsController@updateWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/webhooks/{id}/toggle', [
+            'as' => 'mining-manager.settings.webhooks.toggle',
+            'uses' => 'SettingsController@toggleWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/webhooks/{id}/test', [
+            'as' => 'mining-manager.settings.webhooks.test',
+            'uses' => 'SettingsController@testWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::delete('/webhooks/{id}', [
+            'as' => 'mining-manager.settings.webhooks.destroy',
+            'uses' => 'SettingsController@deleteWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
         Route::get('/{key}', [
             'as' => 'mining-manager.settings.get',
             'uses' => 'SettingsController@getSetting',
@@ -808,6 +851,12 @@ Route::group([
         Route::post('/validate-type-ids', [
             'as' => 'mining-manager.diagnostic.validate-type-ids',
             'uses' => 'DiagnosticController@validateTypeIds',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/test-webhook/{id}', [
+            'as' => 'mining-manager.diagnostic.test-webhook',
+            'uses' => 'DiagnosticController@testWebhook',
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
     });

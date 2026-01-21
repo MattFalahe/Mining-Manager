@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class AddMissingColumnsToMiningLedger extends Migration
 {
     /**
      * Run the migrations.
@@ -20,17 +20,17 @@ return new class extends Migration
             $table->decimal('ore_value', 20, 2)->default(0)->after('unit_price');
             $table->decimal('mineral_value', 20, 2)->default(0)->after('ore_value');
             $table->decimal('total_value', 20, 2)->default(0)->after('mineral_value');
-            
+
             // Add tax calculation columns
             $table->decimal('tax_rate', 5, 2)->default(0)->after('total_value');
             $table->decimal('tax_amount', 20, 2)->default(0)->after('tax_rate');
-            
+
             // Add metadata columns
             $table->string('ore_type')->nullable()->after('type_id');
             $table->integer('corporation_id')->unsigned()->nullable()->after('character_id');
             $table->boolean('is_taxable')->default(true)->after('tax_amount');
             $table->text('notes')->nullable()->after('is_taxable');
-            
+
             // Add indexes for performance
             $table->index('corporation_id');
             $table->index('ore_type');
@@ -60,4 +60,4 @@ return new class extends Migration
             ]);
         });
     }
-};
+}

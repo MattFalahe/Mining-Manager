@@ -71,12 +71,18 @@ class SettingsController extends Controller
         // Get available corporations from SeAT
         $corporations = $this->getAvailableCorporations();
 
+        // Get webhooks for the settings page
+        $webhooks = \MiningManager\Models\WebhookConfiguration::when($corporationId, function ($query) use ($corporationId) {
+            return $query->forCorporation($corporationId);
+        })->get();
+
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
             'corporationId',
             'hasCustomSettings',
-            'isFirstTimeSetup'
+            'isFirstTimeSetup',
+            'webhooks'
         ));
     }
 
@@ -800,6 +806,259 @@ class SettingsController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to search corporations: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ============================================================================
+    // WEBHOOK MANAGEMENT METHODS
+    // ============================================================================
+
+    /**
+     * Get all webhooks (Ajax)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getWebhooks(Request $request)
+    {
+        $corporationId = $request->input('corporation_id');
+
+        $webhooks = \MiningManager\Models\WebhookConfiguration::when($corporationId, function ($query) use ($corporationId) {
+            return $query->forCorporation($corporationId);
+        })->get();
+
+        return response()->json([
+            'success' => true,
+            'webhooks' => $webhooks,
+        ]);
+    }
+
+    /**
+     * Get single webhook by ID (Ajax)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getWebhook($id)
+    {
+        try {
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
+
+            // Include sensitive webhook_url in response
+            $webhook->makeVisible(['webhook_url']);
+
+            return response()->json([
+                'success' => true,
+                'webhook' => $webhook,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Webhook not found',
+            ], 404);
+        }
+    }
+
+    /**
+     * Store new webhook
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function storeWebhook(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'type' => 'required|in:discord,slack,custom',
+            'webhook_url' => 'required|url',
+            'notify_theft_detected' => 'nullable|boolean',
+            'notify_critical_theft' => 'nullable|boolean',
+            'notify_active_theft' => 'nullable|boolean',
+            'notify_incident_resolved' => 'nullable|boolean',
+            'discord_role_id' => 'nullable|string|max:255',
+            'discord_username' => 'nullable|string|max:255',
+            'discord_avatar_url' => 'nullable|url',
+            'slack_channel' => 'nullable|string|max:255',
+            'slack_username' => 'nullable|string|max:255',
+            'custom_payload_template' => 'nullable|string',
+            'corporation_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $data = $validator->validated();
+
+            // Convert checkboxes to booleans
+            $data['notify_theft_detected'] = $request->has('notify_theft_detected');
+            $data['notify_critical_theft'] = $request->has('notify_critical_theft');
+            $data['notify_active_theft'] = $request->has('notify_active_theft');
+            $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
+
+            $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Webhook created successfully',
+                'webhook' => $webhook,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error creating webhook: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Update existing webhook
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateWebhook(Request $request, $id)
+    {
+        try {
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'type' => 'required|in:discord,slack,custom',
+                'webhook_url' => 'required|url',
+                'notify_theft_detected' => 'nullable|boolean',
+                'notify_critical_theft' => 'nullable|boolean',
+                'notify_active_theft' => 'nullable|boolean',
+                'notify_incident_resolved' => 'nullable|boolean',
+                'discord_role_id' => 'nullable|string|max:255',
+                'discord_username' => 'nullable|string|max:255',
+                'discord_avatar_url' => 'nullable|url',
+                'slack_channel' => 'nullable|string|max:255',
+                'slack_username' => 'nullable|string|max:255',
+                'custom_payload_template' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $data = $validator->validated();
+
+            // Convert checkboxes to booleans
+            $data['notify_theft_detected'] = $request->has('notify_theft_detected');
+            $data['notify_critical_theft'] = $request->has('notify_critical_theft');
+            $data['notify_active_theft'] = $request->has('notify_active_theft');
+            $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
+
+            $webhook->update($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Webhook updated successfully',
+                'webhook' => $webhook,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating webhook: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle webhook enabled status
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function toggleWebhook(Request $request, $id)
+    {
+        try {
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
+
+            $webhook->is_enabled = !$webhook->is_enabled;
+            $webhook->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => $webhook->is_enabled ? 'Webhook enabled' : 'Webhook disabled',
+                'is_enabled' => $webhook->is_enabled,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error toggling webhook: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Test webhook
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testWebhook($id)
+    {
+        try {
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
+
+            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+            $result = $webhookService->testWebhook($webhook);
+
+            if ($result['success']) {
+                $webhook->recordSuccess();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Test notification sent successfully!',
+                ]);
+            } else {
+                $webhook->recordFailure($result['error'] ?? 'Unknown error');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Test failed: ' . ($result['error'] ?? 'Unknown error'),
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing webhook: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete webhook
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function deleteWebhook($id)
+    {
+        try {
+            $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
+            $webhook->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Webhook deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting webhook: ' . $e->getMessage(),
             ], 500);
         }
     }
