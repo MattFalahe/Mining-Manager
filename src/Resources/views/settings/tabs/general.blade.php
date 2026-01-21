@@ -88,10 +88,10 @@
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
                 <strong>Important:</strong> This setting specifies which corporation <strong>owns the moons and structures</strong>.<br>
-                <strong>Why set this?</strong> Many alliances have a separate holding corporation (alt corp) that owns all structures while multiple other corporations mine from those moons.
+                <strong>Why set this?</strong> Many alliances have a separate holding corporation that owns all structures while multiple other corporations mine from those moons.
                 <br><br>
-                <strong>Example:</strong> If your holding corp "XALFA Holdings" owns the moons, but "MINC Mining" and "COSMOS Logistics" both mine from those moons,
-                set this to "XALFA Holdings". Then configure separate tax rates for corp members vs guests in the Tax Rates tab.
+                <strong>Example:</strong> If your holding corp "Alpha Holdings" owns the moons, but "Alpha Mining" and "Beta Logistics" both mine from those moons,
+                set this to "Alpha Holdings". Then configure separate tax rates for corp members vs guests in the Tax Rates tab.
             </div>
 
             <div class="form-group">

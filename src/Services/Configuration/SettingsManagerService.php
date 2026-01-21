@@ -124,7 +124,8 @@ class SettingsManagerService
             'corporation_id' => $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id')),
             'corporation_name' => $this->getSetting('general.corporation_name', ''),
             'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
-            
+            'moon_owner_corporation_id' => $this->getSetting('general.moon_owner_corporation_id', config('mining-manager.general.moon_owner_corporation_id')),
+
             // Ore Refining Settings
             'ore_refining_rate' => $this->getSetting('general.ore_refining_rate', config('mining-manager.general.ore_refining_rate', 90.0)),
             'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),

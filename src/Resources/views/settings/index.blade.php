@@ -150,8 +150,10 @@
         <div class="warning-banner">
             <h5><i class="fas fa-exclamation-triangle"></i> Global Settings Mode</h5>
             <p class="mb-0">
-                You are currently viewing global settings. Select a corporation from the dropdown in General Settings
-                to configure corporation-specific tax rates and settings.
+                You are currently viewing global settings. To configure corporation-specific tax rates:
+                <br><strong>1.</strong> Go to General Settings tab
+                <br><strong>2.</strong> Select a corporation from the dropdown
+                <br><strong>3.</strong> Click the "Switch Corporation" button to load that corporation's settings
             </p>
         </div>
     @endif
