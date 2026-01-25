@@ -199,7 +199,7 @@ class WebhookService
         // Add detection date
         $embed['fields'][] = [
             'name' => '📅 Detected',
-            'value' => $incident->detected_at->format('Y-m-d H:i:s'),
+            'value' => $incident->detected_at ? $incident->detected_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
             'inline' => true,
         ];
 
@@ -462,7 +462,7 @@ class WebhookService
                 'ore_value' => $incident->ore_value,
                 'tax_owed' => $incident->tax_owed,
                 'status' => $incident->status,
-                'detected_at' => $incident->detected_at->toIso8601String(),
+                'detected_at' => $incident->detected_at ? $incident->detected_at->toIso8601String() : now()->toIso8601String(),
             ],
             'timestamp' => now()->toIso8601String(),
         ], $additionalData);
