@@ -77,7 +77,7 @@ function loadWebhookData(webhookId) {
             }
         },
         error: function(xhr) {
-            toastr.error('Failed to load webhook data');
+            alert('Failed to load webhook data');
         }
     });
 }
@@ -120,13 +120,11 @@ function saveWebhook() {
         },
         success: function(response) {
             if (response.success) {
-                toastr.success(response.message);
                 $('#webhookModal').modal('hide');
-
                 // Reload page to show updated webhooks list
                 location.reload();
             } else {
-                toastr.error(response.message);
+                alert(response.message || 'Failed to save webhook');
             }
         },
         error: function(xhr) {
@@ -137,9 +135,9 @@ function saveWebhook() {
                 for (const field in errors) {
                     errorMessage += `- ${errors[field].join(', ')}\n`;
                 }
-                toastr.error(errorMessage);
+                alert(errorMessage);
             } else {
-                toastr.error('Failed to save webhook');
+                alert('Failed to save webhook');
             }
         }
     });
@@ -157,17 +155,16 @@ function toggleWebhookStatus(webhookId, isEnabled) {
         },
         success: function(response) {
             if (response.success) {
-                toastr.success(response.message);
-
                 // Update UI
                 const toggle = document.querySelector(`#webhook-toggle-${webhookId}`);
                 if (toggle) {
                     toggle.checked = response.is_enabled;
                 }
+                location.reload();
             }
         },
         error: function(xhr) {
-            toastr.error('Failed to toggle webhook status');
+            alert('Failed to toggle webhook status');
 
             // Revert toggle
             const toggle = document.querySelector(`#webhook-toggle-${webhookId}`);
@@ -197,17 +194,15 @@ function testWebhook(webhookId) {
         },
         success: function(response) {
             if (response.success) {
-                toastr.success(response.message);
-
                 // Reload page to update health statistics
-                setTimeout(() => location.reload(), 1500);
+                location.reload();
             } else {
-                toastr.error(response.message);
+                alert(response.message || 'Test failed');
             }
         },
         error: function(xhr) {
             const message = xhr.responseJSON?.message || 'Failed to test webhook';
-            toastr.error(message);
+            alert(message);
         },
         complete: function() {
             // Restore button
@@ -240,20 +235,12 @@ function deleteWebhook(webhookId) {
         },
         success: function(response) {
             if (response.success) {
-                toastr.success(response.message);
-
-                // Remove row from table
-                const row = document.querySelector(`tr[data-webhook-id="${webhookId}"]`);
-                if (row) {
-                    row.remove();
-                }
-
                 // Reload page to update statistics
-                setTimeout(() => location.reload(), 1000);
+                location.reload();
             }
         },
         error: function(xhr) {
-            toastr.error('Failed to delete webhook');
+            alert('Failed to delete webhook');
         }
     });
 }
