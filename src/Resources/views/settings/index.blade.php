@@ -547,6 +547,6 @@ $(document).ready(function() {
 </script>
 
 {{-- Webhook Management JavaScript --}}
-<script src="{{ asset('vendor/mining-manager/js/webhooks.js') }}"></script>
+<script src="{{ asset('vendor/mining-manager/js/webhooks.js') }}?v={{ time() }}"></script>
 @endpush
 @endsection
