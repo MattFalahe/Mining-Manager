@@ -55,6 +55,27 @@ Route::group([
             'middleware' => 'can:mining-manager.ledger.view',
         ]);
 
+        // Hierarchical summary view (NEW)
+        Route::get('/summary', [
+            'as' => 'mining-manager.ledger.summary',
+            'uses' => 'LedgerController@summaryIndex',
+            'middleware' => 'can:mining-manager.ledger.view',
+        ]);
+
+        // AJAX endpoint for daily breakdown (NEW)
+        Route::get('/summary/character/{characterId}/daily', [
+            'as' => 'mining-manager.ledger.character-daily',
+            'uses' => 'LedgerController@getCharacterDailySummary',
+            'middleware' => 'can:mining-manager.ledger.view',
+        ]);
+
+        // AJAX endpoint for detailed entries (NEW)
+        Route::get('/summary/character/{characterId}/details', [
+            'as' => 'mining-manager.ledger.character-details',
+            'uses' => 'LedgerController@getDetailedEntries',
+            'middleware' => 'can:mining-manager.ledger.view',
+        ]);
+
         Route::get('/my-mining', [
             'as' => 'mining-manager.ledger.my-mining',
             'uses' => 'LedgerController@myMining',

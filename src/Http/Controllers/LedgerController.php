@@ -12,18 +12,21 @@ use MiningManager\Models\Setting;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use Carbon\Carbon;
 
 class LedgerController extends Controller
 {
     use EnrichesCharacterData;
-    
+
     protected $characterInfoService;
-    
-    public function __construct(CharacterInfoService $characterInfoService)
+    protected $summaryService;
+
+    public function __construct(CharacterInfoService $characterInfoService, LedgerSummaryService $summaryService)
     {
         $this->characterInfoService = $characterInfoService;
+        $this->summaryService = $summaryService;
     }
     /**
      * Display the mining ledger index with all mining activity
@@ -1283,6 +1286,167 @@ class LedgerController extends Controller
             return response()->json([
                 'success' => false,
                 'log' => trans('mining-manager::ledger.log_not_found') . ': ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display hierarchical mining summary with character monthly totals
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function summaryIndex(Request $request)
+    {
+        // Get month parameter or default to current month
+        $month = $request->get('month', now()->format('Y-m'));
+        $corporationId = $request->get('corporation_id');
+
+        // Validate month format
+        try {
+            $monthDate = Carbon::parse($month)->startOfMonth();
+        } catch (\Exception $e) {
+            $monthDate = now()->startOfMonth();
+            $month = $monthDate->format('Y-m');
+        }
+
+        // Get monthly summaries using the service
+        $summaries = $this->summaryService->getMonthlySummaries($month, $corporationId);
+
+        // Enrich character data
+        $summaries = $summaries->map(function ($summary) {
+            if (isset($summary->character)) {
+                $summary->character = $this->enrichCharacterData($summary->character);
+            }
+            return $summary;
+        });
+
+        // Calculate totals
+        $totals = [
+            'total_value' => $summaries->sum('total_value'),
+            'total_tax' => $summaries->sum('total_tax'),
+            'total_quantity' => $summaries->sum('total_quantity'),
+            'moon_ore_value' => $summaries->sum('moon_ore_value'),
+            'regular_ore_value' => $summaries->sum('regular_ore_value'),
+            'ice_value' => $summaries->sum('ice_value'),
+            'gas_value' => $summaries->sum('gas_value'),
+        ];
+
+        // Get corporations for filter dropdown
+        $corporations = DB::table('corporation_infos')
+            ->whereIn('corporation_id', function($query) use ($monthDate) {
+                $query->select('corporation_id')
+                    ->from('mining_ledger')
+                    ->whereYear('date', $monthDate->year)
+                    ->whereMonth('date', $monthDate->month)
+                    ->whereNotNull('corporation_id')
+                    ->distinct();
+            })
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+
+        return view('mining-manager::ledger.summary', [
+            'summaries' => $summaries,
+            'totals' => $totals,
+            'month' => $month,
+            'monthDate' => $monthDate,
+            'corporations' => $corporations,
+            'selectedCorporationId' => $corporationId,
+            'isCurrentMonth' => $monthDate->isSameMonth(now()),
+        ]);
+    }
+
+    /**
+     * Get daily breakdown for a specific character and month (AJAX)
+     *
+     * @param Request $request
+     * @param int $characterId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCharacterDailySummary(Request $request, $characterId)
+    {
+        $month = $request->get('month', now()->format('Y-m'));
+
+        try {
+            // Validate month format
+            $monthDate = Carbon::parse($month)->startOfMonth();
+
+            // Get daily summaries using the service
+            $dailySummaries = $this->summaryService->getDailySummaries($characterId, $month);
+
+            // Format the data for the response
+            $formattedData = $dailySummaries->map(function ($summary) {
+                return [
+                    'date' => $summary->date instanceof Carbon ? $summary->date->format('Y-m-d') : $summary->date,
+                    'total_quantity' => number_format($summary->total_quantity, 2),
+                    'total_value' => number_format($summary->total_value, 2),
+                    'total_tax' => number_format($summary->total_tax, 2),
+                    'moon_ore_value' => number_format($summary->moon_ore_value, 2),
+                    'regular_ore_value' => number_format($summary->regular_ore_value, 2),
+                    'ice_value' => number_format($summary->ice_value, 2),
+                    'gas_value' => number_format($summary->gas_value, 2),
+                    'ore_types' => $summary->ore_types ?? [],
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedData,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load daily summaries: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get detailed mining entries for a specific character and date (AJAX)
+     *
+     * @param Request $request
+     * @param int $characterId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDetailedEntries(Request $request, $characterId)
+    {
+        $date = $request->get('date');
+
+        try {
+            // Validate date format
+            $dateCarbon = Carbon::parse($date);
+
+            // Get detailed entries for the day
+            $entries = MiningLedger::with(['solarSystem', 'type'])
+                ->where('character_id', $characterId)
+                ->whereDate('date', $dateCarbon)
+                ->orderBy('date', 'desc')
+                ->get();
+
+            // Format the data for the response
+            $formattedData = $entries->map(function ($entry) {
+                return [
+                    'date' => $entry->date->format('Y-m-d H:i:s'),
+                    'quantity' => number_format($entry->quantity, 2),
+                    'total_value' => number_format($entry->total_value, 2),
+                    'tax_amount' => number_format($entry->tax_amount, 2),
+                    'ore_type' => $entry->ore_type,
+                    'type_name' => $entry->type->typeName ?? 'Unknown',
+                    'system_name' => $entry->solarSystem->name ?? 'Unknown',
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedData,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load detailed entries: ' . $e->getMessage(),
             ], 500);
         }
     }

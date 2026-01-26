@@ -221,4 +221,21 @@ return [
     'week' => 'Week',
     'year' => 'Year',
     'your_mining_summary' => 'Your Mining Summary',
+
+    // Hierarchical Summary View
+    'mining_summary' => 'Mining Summary',
+    'summary_view' => 'Summary View',
+    'detailed_view' => 'Detailed View',
+    'character_summaries' => 'Character Summaries',
+    'all_corporations' => 'All Corporations',
+    'corporation' => 'Corporation',
+    'regular_ore' => 'Regular Ore',
+    'total_quantity' => 'Total Quantity',
+    'loading_daily_breakdown' => 'Loading daily breakdown...',
+    'no_mining_data' => 'No mining data found for this period',
+    'failed_to_load' => 'Failed to load data',
+    'error_loading_data' => 'Error loading data',
+    'unknown_error' => 'Unknown error',
+    'ore_types' => 'Ore Types',
+    'tax' => 'Tax',
 ];

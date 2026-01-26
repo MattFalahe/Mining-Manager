@@ -25,6 +25,7 @@ use MiningManager\Console\Commands\ArchiveOldExtractionsCommand;
 use MiningManager\Console\Commands\BackfillExtractionNotificationsCommand;
 use MiningManager\Console\Commands\DetectMoonTheftCommand;
 use MiningManager\Console\Commands\MonitorActiveTheftsCommand;
+use MiningManager\Console\Commands\FinalizeMonthCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
@@ -85,6 +86,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 BackfillExtractionNotificationsCommand::class,
                 DetectMoonTheftCommand::class,
                 MonitorActiveTheftsCommand::class,
+                FinalizeMonthCommand::class,
             ]);
         }
 
