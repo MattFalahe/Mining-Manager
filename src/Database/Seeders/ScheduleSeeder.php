@@ -138,6 +138,36 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Finalize month summaries - runs on 2nd of each month at 3 AM
+            // (Creates pre-calculated summaries for previous month to improve ledger performance)
+            [
+                'command' => 'mining-manager:finalize-month',
+                'expression' => '0 3 2 * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Calculate monthly statistics - runs on 2nd of each month at 4 AM
+            // (Pre-calculates dashboard statistics for closed months, runs after finalization)
+            [
+                'command' => 'mining-manager:calculate-monthly-stats',
+                'expression' => '0 4 2 * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Detect jackpots - runs daily at 6 AM
+            // (Analyzes recent moon extractions to identify high-value jackpot ores)
+            [
+                'command' => 'mining-manager:detect-jackpots',
+                'expression' => '0 6 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
         ];
     }
 
