@@ -49,13 +49,14 @@ Route::group([
 
     // Mining Ledger Routes
     Route::group(['prefix' => 'ledger'], function () {
+        // Enhanced summary view is now the default
         Route::get('/', [
             'as' => 'mining-manager.ledger.index',
-            'uses' => 'LedgerController@index',
+            'uses' => 'LedgerController@summaryIndex',
             'middleware' => 'can:mining-manager.ledger.view',
         ]);
 
-        // Hierarchical summary view (NEW)
+        // Keep /summary route for backwards compatibility
         Route::get('/summary', [
             'as' => 'mining-manager.ledger.summary',
             'uses' => 'LedgerController@summaryIndex',

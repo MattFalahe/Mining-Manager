@@ -1319,7 +1319,8 @@ class LedgerController extends Controller
             $summaries = $this->summaryService->groupByMainCharacter($summaries);
         }
 
-        // Character data is already loaded via relationships - no enrichment needed
+        // Enrich with character information (names, corporations for unregistered characters)
+        $summaries = $this->enrichWithCharacterInfo($summaries, $this->characterInfoService);
 
         // Calculate totals
         $totals = [

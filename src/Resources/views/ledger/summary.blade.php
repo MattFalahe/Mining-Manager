@@ -96,23 +96,18 @@
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
     <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/ledger/summary') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.ledger.summary') }}">
-                <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.summary_view') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/ledger') && !Request::is('*/ledger/*') ? '' : '' }}">
+        <li class="{{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.ledger.index') }}">
-                <i class="fas fa-th-list"></i> {{ trans('mining-manager::ledger.advanced_view') }}
+                <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.mining_summary') }}
             </a>
         </li>
-        <li class="{{ Request::is('*/ledger/my-mining') ? '' : '' }}">
+        <li class="{{ Request::is('*/ledger/my-mining') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.ledger.my-mining') }}">
                 <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
             </a>
         </li>
         @can('mining-manager.ledger.process')
-        <li class="{{ Request::is('*/ledger/process') ? '' : '' }}">
+        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.ledger.process') }}">
                 <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
             </a>
@@ -305,8 +300,21 @@
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $summary->character_id }}/portrait?size=32"
                                              class="character-portrait"
-                                             alt="{{ $summary->character->name ?? 'Unknown' }}">
-                                        <strong>{{ $summary->character->name ?? 'Unknown' }}</strong>
+                                             alt="{{ $summary->character_info['name'] ?? ($summary->character->name ?? 'Unknown') }}">
+                                        <strong>{{ $summary->character_info['name'] ?? ($summary->character->name ?? 'Unknown') }}</strong>
+
+                                        {{-- Corporation Badge --}}
+                                        @if(isset($summary->character_info['corporation_name']))
+                                            <br>
+                                            <span class="badge badge-secondary" style="font-size: 85%;">
+                                                <img src="https://images.evetech.net/corporations/{{ $summary->character_info['corporation_id'] }}/logo?size=32"
+                                                     style="width: 16px; height: 16px; vertical-align: middle; margin-right: 3px;"
+                                                     alt="">
+                                                {{ $summary->character_info['corporation_name'] }}
+                                            </span>
+                                        @endif
+
+                                        {{-- Alt Count Badge --}}
                                         @if(isset($summary->alt_count) && $summary->alt_count > 0)
                                             <span class="alt-badge">+{{ $summary->alt_count }} {{ trans('mining-manager::ledger.alts') }}</span>
                                         @endif
