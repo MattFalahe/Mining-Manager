@@ -353,4 +353,173 @@ class LedgerSummaryService
             ->orderBy('date')
             ->get();
     }
+
+    /**
+     * Get enhanced monthly summaries with ore types and systems
+     *
+     * @param string $month YYYY-MM format
+     * @param int|null $corporationId
+     * @return \Illuminate\Support\Collection
+     */
+    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null)
+    {
+        $monthDate = Carbon::parse($month)->startOfMonth();
+
+        // Get base summaries
+        $summaries = $this->getMonthlySummaries($month, $corporationId);
+
+        // Enhance each summary with ore types and systems
+        $summaries = $summaries->map(function ($summary) use ($monthDate) {
+            // Get ore types for this character
+            $oreTypes = MiningLedger::where('character_id', $summary->character_id)
+                ->whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
+                ->select('type_id', 'ore_type')
+                ->distinct()
+                ->get()
+                ->pluck('type_id')
+                ->toArray();
+
+            // Get system information
+            $systems = MiningLedger::where('character_id', $summary->character_id)
+                ->whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
+                ->select('solar_system_id', DB::raw('SUM(total_value) as system_value'))
+                ->groupBy('solar_system_id')
+                ->orderByDesc('system_value')
+                ->get();
+
+            $summary->ore_type_ids = $oreTypes;
+            $summary->systems = $systems;
+            $summary->primary_system = $systems->first();
+            $summary->system_count = $systems->count();
+
+            return $summary;
+        });
+
+        return $summaries;
+    }
+
+    /**
+     * Get character mining details in a specific system
+     *
+     * @param int $characterId
+     * @param string $month YYYY-MM format
+     * @param int $systemId
+     * @return \Illuminate\Support\Collection
+     */
+    public function getCharacterSystemDetails(int $characterId, string $month, int $systemId)
+    {
+        $monthDate = Carbon::parse($month)->startOfMonth();
+
+        return MiningLedger::with(['type', 'solarSystem'])
+            ->where('character_id', $characterId)
+            ->where('solar_system_id', $systemId)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->orderBy('date', 'desc')
+            ->get();
+    }
+
+    /**
+     * Group character summaries by main character
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @return \Illuminate\Support\Collection
+     */
+    public function groupByMainCharacter($summaries)
+    {
+        // Get all character IDs
+        $characterIds = $summaries->pluck('character_id')->unique();
+
+        // Get user associations
+        $userCharacters = DB::table('user_settings')
+            ->whereIn('name', ['main_character_id'])
+            ->whereIn('user_id', function($query) use ($characterIds) {
+                $query->select('user_id')
+                    ->from('character_users')
+                    ->whereIn('character_id', $characterIds);
+            })
+            ->get()
+            ->pluck('value', 'user_id');
+
+        // Get all character-user mappings
+        $characterUsers = DB::table('character_users')
+            ->whereIn('character_id', $characterIds)
+            ->get()
+            ->groupBy('user_id');
+
+        // Group summaries by main character
+        $grouped = collect();
+
+        foreach ($characterUsers as $userId => $userChars) {
+            $userCharIds = $userChars->pluck('character_id');
+            $userSummaries = $summaries->whereIn('character_id', $userCharIds);
+
+            // Determine main character
+            $mainCharId = $userCharacters->get($userId);
+
+            if (!$mainCharId || !$userSummaries->where('character_id', $mainCharId)->first()) {
+                // Fallback to oldest character or first in summaries
+                $mainCharId = $userCharIds->first();
+            }
+
+            $mainSummary = $userSummaries->where('character_id', $mainCharId)->first();
+
+            if ($mainSummary) {
+                $mainSummary->alt_characters = $userSummaries->where('character_id', '!=', $mainCharId)->values();
+                $mainSummary->alt_count = $mainSummary->alt_characters->count();
+
+                // Aggregate totals from alts
+                $mainSummary->total_value = $userSummaries->sum('total_value');
+                $mainSummary->total_tax = $userSummaries->sum('total_tax');
+                $mainSummary->total_quantity = $userSummaries->sum('total_quantity');
+                $mainSummary->moon_ore_value = $userSummaries->sum('moon_ore_value');
+                $mainSummary->regular_ore_value = $userSummaries->sum('regular_ore_value');
+                $mainSummary->ice_value = $userSummaries->sum('ice_value');
+                $mainSummary->gas_value = $userSummaries->sum('gas_value');
+
+                // Merge ore types and systems from all characters
+                if (isset($mainSummary->ore_type_ids)) {
+                    $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
+                    $mainSummary->ore_type_ids = $allOreTypes->toArray();
+                }
+
+                if (isset($mainSummary->systems)) {
+                    $allSystems = $userSummaries->pluck('systems')->flatten();
+                    // Merge and re-aggregate by system
+                    $systemsById = $allSystems->groupBy('solar_system_id')->map(function($group) {
+                        $first = $group->first();
+                        $first->system_value = $group->sum('system_value');
+                        return $first;
+                    })->sortByDesc('system_value')->values();
+
+                    $mainSummary->systems = $systemsById;
+                    $mainSummary->primary_system = $systemsById->first();
+                    $mainSummary->system_count = $systemsById->count();
+                }
+
+                $grouped->push($mainSummary);
+            }
+        }
+
+        // Add characters not associated with any user
+        $orphanedSummaries = $summaries->filter(function($summary) use ($characterUsers) {
+            $characterId = $summary->character_id;
+            foreach ($characterUsers as $userChars) {
+                if ($userChars->pluck('character_id')->contains($characterId)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
+        foreach ($orphanedSummaries as $orphan) {
+            $orphan->alt_characters = collect();
+            $orphan->alt_count = 0;
+            $grouped->push($orphan);
+        }
+
+        return $grouped->sortByDesc('total_value')->values();
+    }
 }

@@ -238,4 +238,19 @@ return [
     'unknown_error' => 'Unknown error',
     'ore_types' => 'Ore Types',
     'tax' => 'Tax',
+
+    // Enhanced Summary View
+    'advanced_view' => 'Advanced View',
+    'view_mode' => 'View Mode',
+    'group_by_main' => 'Group by Main Character',
+    'show_all_characters' => 'Show All Characters',
+    'mains' => 'Mains',
+    'alts' => 'Alts',
+    'ore_types_mined' => 'Ore Types Mined',
+    'primary_system' => 'Primary System',
+    'more' => 'more',
+    'loading_details' => 'Loading details...',
+    'daily_activity' => 'Daily Activity',
+    'finalized' => 'Finalized',
+    'live' => 'Live',
 ];

@@ -76,6 +76,13 @@ Route::group([
             'middleware' => 'can:mining-manager.ledger.view',
         ]);
 
+        // AJAX endpoint for system-specific details (NEW)
+        Route::get('/summary/character/{characterId}/system/{systemId}', [
+            'as' => 'mining-manager.ledger.character-system',
+            'uses' => 'LedgerController@getCharacterSystemDetails',
+            'middleware' => 'can:mining-manager.ledger.view',
+        ]);
+
         Route::get('/my-mining', [
             'as' => 'mining-manager.ledger.my-mining',
             'uses' => 'LedgerController@myMining',

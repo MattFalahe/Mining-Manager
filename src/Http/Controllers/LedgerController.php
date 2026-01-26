@@ -1301,6 +1301,7 @@ class LedgerController extends Controller
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
         $corporationId = $request->get('corporation_id');
+        $groupByMain = $request->get('group_by_main', true); // Default to grouped view
 
         // Validate month format
         try {
@@ -1310,13 +1311,27 @@ class LedgerController extends Controller
             $month = $monthDate->format('Y-m');
         }
 
-        // Get monthly summaries using the service
-        $summaries = $this->summaryService->getMonthlySummaries($month, $corporationId);
+        // Get enhanced monthly summaries (includes ore types and systems)
+        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId);
+
+        // Group by main character if requested
+        if ($groupByMain) {
+            $summaries = $this->summaryService->groupByMainCharacter($summaries);
+        }
 
         // Enrich character data
         $summaries = $summaries->map(function ($summary) {
             if (isset($summary->character)) {
                 $summary->character = $this->enrichCharacterData($summary->character);
+            }
+            // Enrich alt characters too
+            if (isset($summary->alt_characters)) {
+                $summary->alt_characters = $summary->alt_characters->map(function($alt) {
+                    if (isset($alt->character)) {
+                        $alt->character = $this->enrichCharacterData($alt->character);
+                    }
+                    return $alt;
+                });
             }
             return $summary;
         });
@@ -1354,6 +1369,7 @@ class LedgerController extends Controller
             'corporations' => $corporations,
             'selectedCorporationId' => $corporationId,
             'isCurrentMonth' => $monthDate->isSameMonth(now()),
+            'groupByMain' => $groupByMain,
         ]);
     }
 
@@ -1447,6 +1463,49 @@ class LedgerController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to load detailed entries: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get character mining details in a specific system (AJAX)
+     *
+     * @param Request $request
+     * @param int $characterId
+     * @param int $systemId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCharacterSystemDetails(Request $request, $characterId, $systemId)
+    {
+        $month = $request->get('month', now()->format('Y-m'));
+
+        try {
+            // Get system details using the service
+            $entries = $this->summaryService->getCharacterSystemDetails($characterId, $month, $systemId);
+
+            // Format the data for the response
+            $formattedData = $entries->map(function ($entry) {
+                return [
+                    'date' => $entry->date->format('Y-m-d H:i:s'),
+                    'quantity' => number_format($entry->quantity, 2),
+                    'total_value' => number_format($entry->total_value, 2),
+                    'tax_amount' => number_format($entry->tax_amount, 2),
+                    'ore_type' => $entry->ore_type,
+                    'type_name' => $entry->type->typeName ?? 'Unknown',
+                    'type_id' => $entry->type_id,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedData,
+                'system_name' => $entries->first()->solarSystem->name ?? 'Unknown System',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load system details: ' . $e->getMessage(),
             ], 500);
         }
     }
