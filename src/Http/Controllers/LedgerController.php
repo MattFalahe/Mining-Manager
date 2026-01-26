@@ -1319,22 +1319,7 @@ class LedgerController extends Controller
             $summaries = $this->summaryService->groupByMainCharacter($summaries);
         }
 
-        // Enrich character data
-        $summaries = $summaries->map(function ($summary) {
-            if (isset($summary->character)) {
-                $summary->character = $this->enrichCharacterData($summary->character);
-            }
-            // Enrich alt characters too
-            if (isset($summary->alt_characters)) {
-                $summary->alt_characters = $summary->alt_characters->map(function($alt) {
-                    if (isset($alt->character)) {
-                        $alt->character = $this->enrichCharacterData($alt->character);
-                    }
-                    return $alt;
-                });
-            }
-            return $summary;
-        });
+        // Character data is already loaded via relationships - no enrichment needed
 
         // Calculate totals
         $totals = [
