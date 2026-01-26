@@ -1301,7 +1301,7 @@ class LedgerController extends Controller
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
         $corporationId = $request->get('corporation_id');
-        $groupByMain = $request->get('group_by_main', true); // Default to grouped view
+        $groupByMain = $request->get('group_by_main', false); // Default to ungrouped view for stability
 
         // Validate month format
         try {

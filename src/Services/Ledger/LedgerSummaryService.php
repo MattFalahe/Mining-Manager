@@ -5,6 +5,7 @@ namespace MiningManager\Services\Ledger;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerMonthlySummary;
 use MiningManager\Models\MiningLedgerDailySummary;
+use Seat\Eveapi\Models\Sde\SolarSystem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -380,14 +381,20 @@ class LedgerSummaryService
                 ->pluck('type_id')
                 ->toArray();
 
-            // Get system information
-            $systems = MiningLedger::where('character_id', $summary->character_id)
+            // Get system information with names
+            $systemData = MiningLedger::where('character_id', $summary->character_id)
                 ->whereYear('date', $monthDate->year)
                 ->whereMonth('date', $monthDate->month)
                 ->select('solar_system_id', DB::raw('SUM(total_value) as system_value'))
                 ->groupBy('solar_system_id')
                 ->orderByDesc('system_value')
                 ->get();
+
+            // Manually load system names
+            $systems = $systemData->map(function($item) {
+                $item->solarSystem = SolarSystem::find($item->solar_system_id);
+                return $item;
+            });
 
             $summary->ore_type_ids = $oreTypes;
             $summary->systems = $systems;
@@ -423,6 +430,7 @@ class LedgerSummaryService
 
     /**
      * Group character summaries by main character
+     * Uses SeAT v5 structure (refresh_tokens table for character-user mapping)
      *
      * @param \Illuminate\Support\Collection $summaries
      * @return \Illuminate\Support\Collection
@@ -430,47 +438,54 @@ class LedgerSummaryService
     public function groupByMainCharacter($summaries)
     {
         // Get all character IDs
-        $characterIds = $summaries->pluck('character_id')->unique();
+        $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
-        // Get user associations
-        $userCharacters = DB::table('user_settings')
-            ->whereIn('name', ['main_character_id'])
-            ->whereIn('user_id', function($query) use ($characterIds) {
-                $query->select('user_id')
-                    ->from('character_users')
-                    ->whereIn('character_id', $characterIds);
-            })
-            ->get()
-            ->pluck('value', 'user_id');
-
-        // Get all character-user mappings
-        $characterUsers = DB::table('character_users')
+        // Get user IDs for these characters from refresh_tokens table (SeAT v5.x standard)
+        $characterUserMapping = DB::table('refresh_tokens')
             ->whereIn('character_id', $characterIds)
+            ->select('character_id', 'user_id')
             ->get()
-            ->groupBy('user_id');
+            ->pluck('user_id', 'character_id');
 
-        // Group summaries by main character
+        // Get main character IDs for these users
+        $userIds = $characterUserMapping->values()->unique()->toArray();
+        $mainCharacterMapping = DB::table('users')
+            ->whereIn('id', $userIds)
+            ->pluck('main_character_id', 'id');
+
+        // Build character-to-main-character mapping
+        $characterToMain = [];
+        foreach ($characterUserMapping as $charId => $userId) {
+            $mainCharId = $mainCharacterMapping->get($userId, $charId);
+            $characterToMain[$charId] = $mainCharId;
+        }
+
+        // Group characters by their main character
+        $groupedByMain = [];
+        foreach ($summaries as $summary) {
+            $charId = $summary->character_id;
+            $mainCharId = $characterToMain[$charId] ?? $charId;
+
+            if (!isset($groupedByMain[$mainCharId])) {
+                $groupedByMain[$mainCharId] = collect();
+            }
+            $groupedByMain[$mainCharId]->push($summary);
+        }
+
+        // Build final grouped summaries
         $grouped = collect();
 
-        foreach ($characterUsers as $userId => $userChars) {
-            $userCharIds = $userChars->pluck('character_id');
-            $userSummaries = $summaries->whereIn('character_id', $userCharIds);
-
-            // Determine main character
-            $mainCharId = $userCharacters->get($userId);
-
-            if (!$mainCharId || !$userSummaries->where('character_id', $mainCharId)->first()) {
-                // Fallback to oldest character or first in summaries
-                $mainCharId = $userCharIds->first();
-            }
-
-            $mainSummary = $userSummaries->where('character_id', $mainCharId)->first();
+        foreach ($groupedByMain as $mainCharId => $userSummaries) {
+            // Find the main character's summary (or use first if main not in list)
+            $mainSummary = $userSummaries->where('character_id', $mainCharId)->first()
+                        ?? $userSummaries->first();
 
             if ($mainSummary) {
-                $mainSummary->alt_characters = $userSummaries->where('character_id', '!=', $mainCharId)->values();
+                // Get alt characters (all except the main)
+                $mainSummary->alt_characters = $userSummaries->where('character_id', '!=', $mainSummary->character_id)->values();
                 $mainSummary->alt_count = $mainSummary->alt_characters->count();
 
-                // Aggregate totals from alts
+                // Aggregate totals from all characters (main + alts)
                 $mainSummary->total_value = $userSummaries->sum('total_value');
                 $mainSummary->total_tax = $userSummaries->sum('total_tax');
                 $mainSummary->total_quantity = $userSummaries->sum('total_quantity');
@@ -479,12 +494,13 @@ class LedgerSummaryService
                 $mainSummary->ice_value = $userSummaries->sum('ice_value');
                 $mainSummary->gas_value = $userSummaries->sum('gas_value');
 
-                // Merge ore types and systems from all characters
+                // Merge ore types from all characters
                 if (isset($mainSummary->ore_type_ids)) {
                     $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
                     $mainSummary->ore_type_ids = $allOreTypes->toArray();
                 }
 
+                // Merge and re-aggregate systems from all characters
                 if (isset($mainSummary->systems)) {
                     $allSystems = $userSummaries->pluck('systems')->flatten();
                     // Merge and re-aggregate by system
@@ -501,23 +517,6 @@ class LedgerSummaryService
 
                 $grouped->push($mainSummary);
             }
-        }
-
-        // Add characters not associated with any user
-        $orphanedSummaries = $summaries->filter(function($summary) use ($characterUsers) {
-            $characterId = $summary->character_id;
-            foreach ($characterUsers as $userChars) {
-                if ($userChars->pluck('character_id')->contains($characterId)) {
-                    return false;
-                }
-            }
-            return true;
-        });
-
-        foreach ($orphanedSummaries as $orphan) {
-            $orphan->alt_characters = collect();
-            $orphan->alt_count = 0;
-            $grouped->push($orphan);
         }
 
         return $grouped->sortByDesc('total_value')->values();
