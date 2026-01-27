@@ -1302,6 +1302,8 @@ class LedgerController extends Controller
         $month = $request->get('month', now()->format('Y-m'));
         $corporationId = $request->get('corporation_id');
         $groupByMain = $request->get('group_by_main', true); // Default to grouped view
+        $sortBy = $request->get('sort_by', 'total_value'); // Default sort column
+        $sortDir = $request->get('sort_dir', 'desc'); // Default sort direction
 
         // Validate month format
         try {
@@ -1321,6 +1323,9 @@ class LedgerController extends Controller
 
         // Enrich with character information (names, corporations for unregistered characters)
         $summaries = $this->enrichWithCharacterInfo($summaries, $this->characterInfoService);
+
+        // Apply sorting
+        $summaries = $this->sortSummaries($summaries, $sortBy, $sortDir);
 
         // Calculate totals
         $totals = [
@@ -1356,7 +1361,62 @@ class LedgerController extends Controller
             'selectedCorporationId' => $corporationId,
             'isCurrentMonth' => $monthDate->isSameMonth(now()),
             'groupByMain' => $groupByMain,
+            'sortBy' => $sortBy,
+            'sortDir' => $sortDir,
         ]);
+    }
+
+    /**
+     * Sort summaries by specified column and direction
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @param string $sortBy
+     * @param string $sortDir
+     * @return \Illuminate\Support\Collection
+     */
+    protected function sortSummaries($summaries, $sortBy, $sortDir)
+    {
+        $validColumns = ['character_name', 'total_quantity', 'total_value', 'corporation_name'];
+
+        if (!in_array($sortBy, $validColumns)) {
+            $sortBy = 'total_value';
+        }
+
+        if (!in_array($sortDir, ['asc', 'desc'])) {
+            $sortDir = 'desc';
+        }
+
+        switch ($sortBy) {
+            case 'character_name':
+                $summaries = $sortDir === 'asc'
+                    ? $summaries->sortBy(function($s) {
+                        return $s->character_info['name'] ?? $s->character->name ?? 'Unknown';
+                    })
+                    : $summaries->sortByDesc(function($s) {
+                        return $s->character_info['name'] ?? $s->character->name ?? 'Unknown';
+                    });
+                break;
+
+            case 'corporation_name':
+                $summaries = $sortDir === 'asc'
+                    ? $summaries->sortBy(function($s) {
+                        return $s->character_info['corporation_name'] ?? 'Unknown';
+                    })
+                    : $summaries->sortByDesc(function($s) {
+                        return $s->character_info['corporation_name'] ?? 'Unknown';
+                    });
+                break;
+
+            case 'total_quantity':
+            case 'total_value':
+            default:
+                $summaries = $sortDir === 'asc'
+                    ? $summaries->sortBy($sortBy)
+                    : $summaries->sortByDesc($sortBy);
+                break;
+        }
+
+        return $summaries->values(); // Re-index the collection
     }
 
     /**
@@ -1370,6 +1430,8 @@ class LedgerController extends Controller
     {
         $month = $request->get('month', now()->format('Y-m'));
         $includeAlts = $request->get('include_alts', false); // Option to include alt characters
+        $sortBy = $request->get('sort_by', 'date'); // Default sort column
+        $sortDir = $request->get('sort_dir', 'desc'); // Default sort direction
 
         try {
             $monthDate = Carbon::parse($month)->startOfMonth();
@@ -1417,14 +1479,29 @@ class LedgerController extends Controller
             }
         }
 
+        // Validate sort parameters
+        $validColumns = ['date', 'quantity', 'total_value', 'character_id'];
+        if (!in_array($sortBy, $validColumns)) {
+            $sortBy = 'date';
+        }
+        if (!in_array($sortDir, ['asc', 'desc'])) {
+            $sortDir = 'desc';
+        }
+
         // Get all mining entries for these characters with pagination
         $entries = MiningLedger::with(['solarSystem', 'type', 'character'])
             ->whereIn('character_id', $characterIds)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
-            ->orderBy('date', 'desc')
+            ->orderBy($sortBy, $sortDir)
             ->orderBy('id', 'desc')
-            ->paginate(50);
+            ->paginate(50)
+            ->appends([
+                'month' => $month,
+                'include_alts' => $includeAlts ? '1' : '0',
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+            ]);
 
         // Calculate totals for all included characters
         $totals = MiningLedger::whereIn('character_id', $characterIds)
@@ -1449,6 +1526,8 @@ class LedgerController extends Controller
             'includeAlts' => count($characterIds) > 1,
             'altCharacters' => $altCharacters,
             'showingMultiple' => count($characterIds) > 1,
+            'sortBy' => $sortBy,
+            'sortDir' => $sortDir,
         ]);
     }
 

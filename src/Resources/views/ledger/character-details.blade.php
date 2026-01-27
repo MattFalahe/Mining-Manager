@@ -5,6 +5,23 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<style>
+    .sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+    .sortable:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    .sort-icon {
+        margin-left: 5px;
+        font-size: 0.8em;
+        opacity: 0.5;
+    }
+    .sort-icon.active {
+        opacity: 1;
+    }
+</style>
 @endpush
 
 @section('full')
@@ -141,15 +158,27 @@
                     <table class="table table-hover table-sm">
                         <thead>
                             <tr>
-                                <th>{{ trans('mining-manager::ledger.date') }}</th>
+                                <th class="sortable" onclick="sortTable('date')">
+                                    {{ trans('mining-manager::ledger.date') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'date' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'date' ? ' active' : '' }}"></i>
+                                </th>
                                 @if($showingMultiple ?? false)
-                                    <th>{{ trans('mining-manager::ledger.character') }}</th>
+                                    <th class="sortable" onclick="sortTable('character_id')">
+                                        {{ trans('mining-manager::ledger.character') }}
+                                        <i class="fas fa-sort{{ $sortBy === 'character_id' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'character_id' ? ' active' : '' }}"></i>
+                                    </th>
                                 @endif
                                 <th>{{ trans('mining-manager::ledger.system') }}</th>
                                 <th>{{ trans('mining-manager::ledger.ore_type') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::ledger.quantity') }}</th>
+                                <th class="text-right sortable" onclick="sortTable('quantity')">
+                                    {{ trans('mining-manager::ledger.quantity') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'quantity' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'quantity' ? ' active' : '' }}"></i>
+                                </th>
                                 <th class="text-right">{{ trans('mining-manager::ledger.price_per_unit') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::ledger.total_value') }}</th>
+                                <th class="text-right sortable" onclick="sortTable('total_value')">
+                                    {{ trans('mining-manager::ledger.total_value') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'total_value' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'total_value' ? ' active' : '' }}"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -198,7 +227,7 @@
                 </div>
                 @if($entries->hasPages())
                     <div class="card-footer">
-                        {{ $entries->appends(['month' => $month])->links() }}
+                        {{ $entries->links() }}
                     </div>
                 @endif
             </div>
@@ -216,3 +245,26 @@
 {{-- End mining-manager-wrapper --}}
 
 @endsection
+
+@push('javascript')
+<script>
+function sortTable(column) {
+    const currentSort = '{{ $sortBy }}';
+    const currentDir = '{{ $sortDir }}';
+
+    // Toggle direction if clicking the same column, otherwise default to desc
+    let newDir = 'desc';
+    if (column === currentSort) {
+        newDir = currentDir === 'asc' ? 'desc' : 'asc';
+    }
+
+    // Get current URL parameters
+    const url = new URL(window.location.href);
+    url.searchParams.set('sort_by', column);
+    url.searchParams.set('sort_dir', newDir);
+
+    // Navigate to new URL
+    window.location.href = url.toString();
+}
+</script>
+@endpush

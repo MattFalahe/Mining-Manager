@@ -66,6 +66,21 @@
     .details-table th {
         background-color: #e9ecef;
     }
+    .sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+    .sortable:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    .sort-icon {
+        margin-left: 5px;
+        font-size: 0.8em;
+        opacity: 0.5;
+    }
+    .sort-icon.active {
+        opacity: 1;
+    }
 </style>
 @endpush
 
@@ -257,10 +272,19 @@
                     <table class="table table-hover table-striped" id="summaryTable">
                         <thead>
                             <tr>
-                                <th>{{ trans('mining-manager::ledger.character') }}</th>
+                                <th class="sortable" onclick="sortTable('character_name')">
+                                    {{ trans('mining-manager::ledger.character') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'character_name' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'character_name' ? ' active' : '' }}"></i>
+                                </th>
                                 <th>{{ trans('mining-manager::ledger.ore_types_mined') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::ledger.total_quantity') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::ledger.total_value') }}</th>
+                                <th class="text-right sortable" onclick="sortTable('total_quantity')">
+                                    {{ trans('mining-manager::ledger.total_quantity') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'total_quantity' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'total_quantity' ? ' active' : '' }}"></i>
+                                </th>
+                                <th class="text-right sortable" onclick="sortTable('total_value')">
+                                    {{ trans('mining-manager::ledger.total_value') }}
+                                    <i class="fas fa-sort{{ $sortBy === 'total_value' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'total_value' ? ' active' : '' }}"></i>
+                                </th>
                                 <th>{{ trans('mining-manager::ledger.primary_system') }}</th>
                                 <th class="text-center" style="width: 120px;">{{ trans('mining-manager::ledger.actions') }}</th>
                             </tr>
@@ -361,4 +385,25 @@
 
 @endsection
 
-{{-- No JavaScript needed - using separate details page --}}
+@push('javascript')
+<script>
+function sortTable(column) {
+    const currentSort = '{{ $sortBy }}';
+    const currentDir = '{{ $sortDir }}';
+
+    // Toggle direction if clicking the same column, otherwise default to desc
+    let newDir = 'desc';
+    if (column === currentSort) {
+        newDir = currentDir === 'asc' ? 'desc' : 'asc';
+    }
+
+    // Get current URL parameters
+    const url = new URL(window.location.href);
+    url.searchParams.set('sort_by', column);
+    url.searchParams.set('sort_dir', newDir);
+
+    // Navigate to new URL
+    window.location.href = url.toString();
+}
+</script>
+@endpush
