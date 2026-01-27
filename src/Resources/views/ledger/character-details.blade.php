@@ -8,6 +8,7 @@
 @endpush
 
 @section('full')
+<div class="mining-manager-wrapper mining-ledger-details">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -32,8 +33,6 @@
     </ul>
     <div class="tab-content">
 
-<div class="mining-manager-wrapper mining-ledger-details">
-
     {{-- CHARACTER HEADER --}}
     <div class="row mb-3">
         <div class="col-12">
@@ -47,6 +46,11 @@
                         </div>
                         <div class="col">
                             <h3 class="mb-1">{{ $characterInfo['name'] ?? 'Unknown Character' }}</h3>
+                            @if($showingMultiple ?? false)
+                                <span class="badge badge-info">
+                                    <i class="fas fa-users"></i> Showing Main + {{ $altCharacters->count() }} {{ trans('mining-manager::ledger.alts') }}
+                                </span>
+                            @endif
                             @if(isset($characterInfo['corporation_name']))
                                 <p class="mb-0">
                                     <img src="https://images.evetech.net/corporations/{{ $characterInfo['corporation_id'] }}/logo?size=32"
@@ -138,6 +142,9 @@
                         <thead>
                             <tr>
                                 <th>{{ trans('mining-manager::ledger.date') }}</th>
+                                @if($showingMultiple ?? false)
+                                    <th>{{ trans('mining-manager::ledger.character') }}</th>
+                                @endif
                                 <th>{{ trans('mining-manager::ledger.system') }}</th>
                                 <th>{{ trans('mining-manager::ledger.ore_type') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::ledger.quantity') }}</th>
@@ -149,6 +156,14 @@
                             @forelse($entries as $entry)
                                 <tr>
                                     <td>{{ $entry->date->format('Y-m-d H:i') }}</td>
+                                    @if($showingMultiple ?? false)
+                                        <td>
+                                            <img src="https://images.evetech.net/characters/{{ $entry->character_id }}/portrait?size=32"
+                                                 style="width: 24px; height: 24px; border-radius: 4px; vertical-align: middle; margin-right: 5px;"
+                                                 alt="">
+                                            {{ $entry->character->name ?? "Character {$entry->character_id}" }}
+                                        </td>
+                                    @endif
                                     <td>
                                         {{ $entry->solarSystem->name ?? 'Unknown System' }}
                                     </td>
@@ -173,7 +188,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="text-center">
+                                    <td colspan="{{ ($showingMultiple ?? false) ? '7' : '6' }}" class="text-center">
                                         <em>{{ trans('mining-manager::ledger.no_entries') }}</em>
                                     </td>
                                 </tr>
@@ -189,10 +204,15 @@
             </div>
         </div>
     </div>
-
 </div>
 
-    </div>
 </div>
+{{-- End tab-content --}}
+
+</div>
+{{-- End nav-tabs-custom --}}
+
+</div>
+{{-- End mining-manager-wrapper --}}
 
 @endsection

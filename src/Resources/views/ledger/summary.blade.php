@@ -70,6 +70,7 @@
 @endpush
 
 @section('full')
+<div class="mining-manager-wrapper mining-ledger-summary">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -93,8 +94,6 @@
         @endcan
     </ul>
     <div class="tab-content">
-
-<div class="mining-manager-wrapper mining-ledger-summary">
 
     {{-- FILTERS --}}
     <div class="row">
@@ -286,6 +285,13 @@
                                             </span>
                                         @endif
 
+                                        {{-- Unregistered Badge --}}
+                                        @if(isset($summary->character_info['is_registered']) && !$summary->character_info['is_registered'])
+                                            <span class="badge badge-warning" style="font-size: 85%; margin-left: 5px;">
+                                                <i class="fas fa-exclamation-triangle"></i> {{ trans('mining-manager::ledger.not_registered') }}
+                                            </span>
+                                        @endif
+
                                         {{-- Alt Count Badge --}}
                                         @if(isset($summary->alt_count) && $summary->alt_count > 0)
                                             <span class="alt-badge">+{{ $summary->alt_count }} {{ trans('mining-manager::ledger.alts') }}</span>
@@ -319,7 +325,11 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        <a href="{{ route('mining-manager.ledger.character-details', ['characterId' => $summary->character_id, 'month' => $month]) }}"
+                                        <a href="{{ route('mining-manager.ledger.character-details', [
+                                                'characterId' => $summary->character_id,
+                                                'month' => $month,
+                                                'include_alts' => $groupByMain ? '1' : '0'
+                                            ]) }}"
                                            class="btn btn-sm btn-primary">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::ledger.view_details') }}
                                         </a>
@@ -338,11 +348,16 @@
             </div>
         </div>
     </div>
-
 </div>
 
-    </div>
 </div>
+{{-- End tab-content --}}
+
+</div>
+{{-- End nav-tabs-custom --}}
+
+</div>
+{{-- End mining-manager-wrapper --}}
 
 @endsection
 

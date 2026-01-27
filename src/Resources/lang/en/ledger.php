@@ -254,4 +254,5 @@ return [
     'daily_activity' => 'Daily Activity',
     'finalized' => 'Finalized',
     'live' => 'Live',
+    'not_registered' => 'Not Registered in SeAT',
 ];

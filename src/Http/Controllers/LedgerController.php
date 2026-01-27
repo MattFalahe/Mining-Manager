@@ -1369,6 +1369,7 @@ class LedgerController extends Controller
     public function showCharacterDetails(Request $request, $characterId)
     {
         $month = $request->get('month', now()->format('Y-m'));
+        $includeAlts = $request->get('include_alts', false); // Option to include alt characters
 
         try {
             $monthDate = Carbon::parse($month)->startOfMonth();
@@ -1380,17 +1381,53 @@ class LedgerController extends Controller
         // Get character information
         $characterInfo = $this->characterInfoService->getCharacterInfo($characterId);
 
-        // Get all mining entries for this character and month with pagination
-        $entries = MiningLedger::with(['solarSystem', 'type'])
-            ->where('character_id', $characterId)
+        // Determine which character IDs to include
+        $characterIds = [$characterId];
+        $altCharacters = collect();
+
+        // If this is a main character, check if we should include alts
+        if ($includeAlts || $characterInfo['is_registered']) {
+            // Get user ID for this character
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if ($userId) {
+                // Check if this character is the main for this user
+                $mainCharacterId = DB::table('users')
+                    ->where('id', $userId)
+                    ->value('main_character_id');
+
+                // If this IS the main character, get all alts
+                if ($mainCharacterId == $characterId) {
+                    $altCharacterIds = DB::table('refresh_tokens')
+                        ->where('user_id', $userId)
+                        ->where('character_id', '!=', $characterId)
+                        ->pluck('character_id')
+                        ->toArray();
+
+                    if (!empty($altCharacterIds)) {
+                        $characterIds = array_merge($characterIds, $altCharacterIds);
+
+                        // Get alt character info for display
+                        $altCharacters = collect($this->characterInfoService->getBatchCharacterInfo($altCharacterIds))
+                            ->values();
+                    }
+                }
+            }
+        }
+
+        // Get all mining entries for these characters with pagination
+        $entries = MiningLedger::with(['solarSystem', 'type', 'character'])
+            ->whereIn('character_id', $characterIds)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->paginate(50);
 
-        // Calculate totals
-        $totals = MiningLedger::where('character_id', $characterId)
+        // Calculate totals for all included characters
+        $totals = MiningLedger::whereIn('character_id', $characterIds)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
             ->selectRaw('
@@ -1409,6 +1446,9 @@ class LedgerController extends Controller
             'totals' => $totals,
             'month' => $month,
             'monthDate' => $monthDate,
+            'includeAlts' => count($characterIds) > 1,
+            'altCharacters' => $altCharacters,
+            'showingMultiple' => count($characterIds) > 1,
         ]);
     }
 

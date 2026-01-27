@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,11 @@ class ProcessMiningLedgerCommand extends Command
                     // Get structure's solar system
                     $solarSystemId = $entry->structure->solar_system_id ?? null;
 
+                    // Classify ore type
+                    $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
+                    $isIce = TypeIdRegistry::isIce($entry->type_id);
+                    $isGas = TypeIdRegistry::isGas($entry->type_id);
+
                     // Prepare data
                     $data = [
                         'character_id' => $entry->character_id,
@@ -127,6 +133,9 @@ class ProcessMiningLedgerCommand extends Command
                         'ore_type' => $entry->type->typeName ?? null,
                         'corporation_id' => $entry->corporation_id,
                         'is_taxable' => true,
+                        'is_moon_ore' => $isMoonOre,
+                        'is_ice' => $isIce,
+                        'is_gas' => $isGas,
                         'processed_at' => Carbon::now(),
                     ];
 

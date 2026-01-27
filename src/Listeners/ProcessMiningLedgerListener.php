@@ -9,6 +9,7 @@ use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
+use MiningManager\Services\TypeIdRegistry;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -70,6 +71,11 @@ class ProcessMiningLedgerListener implements ShouldQueue
                         Log::debug("Mining Manager: Updated ledger entry for character {$characterId}, type {$entry->type_id}, quantity changed from {$existing->quantity} to {$entry->quantity}");
                     }
                 } else {
+                    // Classify ore type
+                    $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
+                    $isIce = TypeIdRegistry::isIce($entry->type_id);
+                    $isGas = TypeIdRegistry::isGas($entry->type_id);
+
                     // Create new entry
                     MiningLedger::create([
                         'character_id' => $entry->character_id,
@@ -77,6 +83,9 @@ class ProcessMiningLedgerListener implements ShouldQueue
                         'type_id' => $entry->type_id,
                         'quantity' => $entry->quantity,
                         'solar_system_id' => $entry->solar_system_id,
+                        'is_moon_ore' => $isMoonOre,
+                        'is_ice' => $isIce,
+                        'is_gas' => $isGas,
                         'processed_at' => Carbon::now(),
                     ]);
                     $processed++;
