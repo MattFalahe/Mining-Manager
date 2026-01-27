@@ -1301,7 +1301,7 @@ class LedgerController extends Controller
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
         $corporationId = $request->get('corporation_id');
-        $groupByMain = $request->get('group_by_main', false); // Default to ungrouped view for stability
+        $groupByMain = $request->get('group_by_main', true); // Default to grouped view
 
         // Validate month format
         try {
@@ -1377,10 +1377,28 @@ class LedgerController extends Controller
             // Get daily summaries using the service
             $dailySummaries = $this->summaryService->getDailySummaries($characterId, $month);
 
-            // Format the data for the response
-            $formattedData = $dailySummaries->map(function ($summary) {
+            // Format the data for the response with system breakdown
+            $formattedData = $dailySummaries->map(function ($summary) use ($characterId, $monthDate) {
+                $date = $summary->date instanceof Carbon ? $summary->date : Carbon::parse($summary->date);
+
+                // Get system breakdown for this date
+                $systems = MiningLedger::where('character_id', $characterId)
+                    ->whereDate('date', $date)
+                    ->select('solar_system_id', 'solar_system_name', DB::raw('SUM(total_value) as system_value'), DB::raw('SUM(quantity) as system_quantity'))
+                    ->groupBy('solar_system_id', 'solar_system_name')
+                    ->orderByDesc('system_value')
+                    ->get()
+                    ->map(function($sys) {
+                        return [
+                            'system_id' => $sys->solar_system_id,
+                            'system_name' => $sys->solar_system_name,
+                            'value' => number_format($sys->system_value, 2),
+                            'quantity' => number_format($sys->system_quantity, 2),
+                        ];
+                    });
+
                 return [
-                    'date' => $summary->date instanceof Carbon ? $summary->date->format('Y-m-d') : $summary->date,
+                    'date' => $date->format('Y-m-d'),
                     'total_quantity' => number_format($summary->total_quantity, 2),
                     'total_value' => number_format($summary->total_value, 2),
                     'total_tax' => number_format($summary->total_tax, 2),
@@ -1388,7 +1406,7 @@ class LedgerController extends Controller
                     'regular_ore_value' => number_format($summary->regular_ore_value, 2),
                     'ice_value' => number_format($summary->ice_value, 2),
                     'gas_value' => number_format($summary->gas_value, 2),
-                    'ore_types' => $summary->ore_types ?? [],
+                    'systems' => $systems,
                 ];
             });
 

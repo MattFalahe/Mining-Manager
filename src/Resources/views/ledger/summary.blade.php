@@ -433,28 +433,15 @@ $(document).ready(function() {
     }
 
     function renderCharacterDetails(characterId, dailyData, targetRow) {
-        // Group by ore type
-        const oreTypeBreakdown = {};
-        dailyData.forEach(function(day) {
-            if (day.ore_types && day.ore_types.length > 0) {
-                day.ore_types.forEach(function(oreType) {
-                    if (!oreTypeBreakdown[oreType]) {
-                        oreTypeBreakdown[oreType] = [];
-                    }
-                    oreTypeBreakdown[oreType].push(day);
-                });
-            }
-        });
-
         let html = '<td colspan="6" style="padding: 20px;">' +
             '<h5><i class="fas fa-calendar-alt"></i> {{ trans("mining-manager::ledger.daily_activity") }}</h5>' +
-            '<table class="table table-sm details-table">' +
+            '<table class="table table-sm table-striped details-table">' +
             '<thead>' +
             '<tr>' +
             '<th>{{ trans("mining-manager::ledger.date") }}</th>' +
+            '<th>{{ trans("mining-manager::ledger.system") }}</th>' +
             '<th class="text-right">{{ trans("mining-manager::ledger.quantity") }}</th>' +
             '<th class="text-right">{{ trans("mining-manager::ledger.value") }}</th>' +
-            '<th>{{ trans("mining-manager::ledger.ore_types") }}</th>' +
             '</tr>' +
             '</thead>' +
             '<tbody>';
@@ -463,16 +450,34 @@ $(document).ready(function() {
             html += '<tr><td colspan="4" class="text-center"><em>{{ trans("mining-manager::ledger.no_data") }}</em></td></tr>';
         } else {
             dailyData.forEach(function(day) {
-                const oreTypes = day.ore_types && day.ore_types.length > 0
-                    ? day.ore_types.join(', ')
-                    : '-';
+                if (day.systems && day.systems.length > 0) {
+                    // First row shows date with first system
+                    const firstSystem = day.systems[0];
+                    html += '<tr>' +
+                        '<td rowspan="' + day.systems.length + '">' + day.date + '</td>' +
+                        '<td>' + firstSystem.system_name + '</td>' +
+                        '<td class="text-right">' + firstSystem.quantity + ' m³</td>' +
+                        '<td class="text-right">' + firstSystem.value + ' ISK</td>' +
+                        '</tr>';
 
-                html += '<tr>' +
-                    '<td>' + day.date + '</td>' +
-                    '<td class="text-right">' + day.total_quantity + ' m³</td>' +
-                    '<td class="text-right">' + day.total_value + ' ISK</td>' +
-                    '<td>' + oreTypes + '</td>' +
-                    '</tr>';
+                    // Additional systems on separate rows
+                    for (let i = 1; i < day.systems.length; i++) {
+                        const system = day.systems[i];
+                        html += '<tr>' +
+                            '<td>' + system.system_name + '</td>' +
+                            '<td class="text-right">' + system.quantity + ' m³</td>' +
+                            '<td class="text-right">' + system.value + ' ISK</td>' +
+                            '</tr>';
+                    }
+                } else {
+                    // No system data
+                    html += '<tr>' +
+                        '<td>' + day.date + '</td>' +
+                        '<td>-</td>' +
+                        '<td class="text-right">' + day.total_quantity + ' m³</td>' +
+                        '<td class="text-right">' + day.total_value + ' ISK</td>' +
+                        '</tr>';
+                }
             });
         }
 
