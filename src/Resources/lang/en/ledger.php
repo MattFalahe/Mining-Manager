@@ -50,6 +50,7 @@ return [
     'tax_outstanding' => 'Tax Outstanding',
     'unique_characters' => 'Unique Miners',
     'unique_ores' => 'Unique Ore Types',
+    'unique_systems' => 'Unique Systems',
     'mining_days' => 'Mining Days',
     'average_daily_value' => 'Average Daily Value',
     'favorite_ore' => 'Favorite Ore',

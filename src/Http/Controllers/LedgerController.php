@@ -1360,6 +1360,59 @@ class LedgerController extends Controller
     }
 
     /**
+     * Show detailed mining ledger for a specific character
+     *
+     * @param Request $request
+     * @param int $characterId
+     * @return \Illuminate\View\View
+     */
+    public function showCharacterDetails(Request $request, $characterId)
+    {
+        $month = $request->get('month', now()->format('Y-m'));
+
+        try {
+            $monthDate = Carbon::parse($month)->startOfMonth();
+        } catch (\Exception $e) {
+            $monthDate = now()->startOfMonth();
+            $month = $monthDate->format('Y-m');
+        }
+
+        // Get character information
+        $characterInfo = $this->characterInfoService->getCharacterInfo($characterId);
+
+        // Get all mining entries for this character and month with pagination
+        $entries = MiningLedger::with(['solarSystem', 'type'])
+            ->where('character_id', $characterId)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->paginate(50);
+
+        // Calculate totals
+        $totals = MiningLedger::where('character_id', $characterId)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->selectRaw('
+                SUM(quantity) as total_quantity,
+                SUM(total_value) as total_value,
+                SUM(tax_amount) as total_tax,
+                COUNT(DISTINCT solar_system_id) as unique_systems,
+                COUNT(DISTINCT type_id) as unique_ores
+            ')
+            ->first();
+
+        return view('mining-manager::ledger.character-details', [
+            'characterId' => $characterId,
+            'characterInfo' => $characterInfo,
+            'entries' => $entries,
+            'totals' => $totals,
+            'month' => $month,
+            'monthDate' => $monthDate,
+        ]);
+    }
+
+    /**
      * Get daily breakdown for a specific character and month (AJAX)
      *
      * @param Request $request
@@ -1382,16 +1435,17 @@ class LedgerController extends Controller
                 $date = $summary->date instanceof Carbon ? $summary->date : Carbon::parse($summary->date);
 
                 // Get system breakdown for this date
-                $systems = MiningLedger::where('character_id', $characterId)
+                $systems = MiningLedger::with('solarSystem')
+                    ->where('character_id', $characterId)
                     ->whereDate('date', $date)
-                    ->select('solar_system_id', 'solar_system_name', DB::raw('SUM(total_value) as system_value'), DB::raw('SUM(quantity) as system_quantity'))
-                    ->groupBy('solar_system_id', 'solar_system_name')
+                    ->select('solar_system_id', DB::raw('SUM(total_value) as system_value'), DB::raw('SUM(quantity) as system_quantity'))
+                    ->groupBy('solar_system_id')
                     ->orderByDesc('system_value')
                     ->get()
                     ->map(function($sys) {
                         return [
                             'system_id' => $sys->solar_system_id,
-                            'system_name' => $sys->solar_system_name,
+                            'system_name' => $sys->solarSystem->name ?? 'Unknown System',
                             'value' => number_format($sys->system_value, 2),
                             'quantity' => number_format($sys->system_quantity, 2),
                         ];

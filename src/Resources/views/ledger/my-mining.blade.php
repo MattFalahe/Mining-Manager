@@ -12,9 +12,9 @@
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
     <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/ledger') && !Request::is('*/ledger/*') ? 'active' : '' }}">
+        <li class="{{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? '' : '' }}">
             <a href="{{ route('mining-manager.ledger.index') }}">
-                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_ledger') }}
+                <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.mining_summary') }}
             </a>
         </li>
         <li class="{{ Request::is('*/ledger/my-mining') ? 'active' : '' }}">
@@ -23,7 +23,7 @@
             </a>
         </li>
         @can('mining-manager.ledger.process')
-        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
+        <li class="{{ Request::is('*/ledger/process') ? '' : '' }}">
             <a href="{{ route('mining-manager.ledger.process') }}">
                 <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
             </a>

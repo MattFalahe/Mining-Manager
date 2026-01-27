@@ -63,6 +63,13 @@ Route::group([
             'middleware' => 'can:mining-manager.ledger.view',
         ]);
 
+        // Character details page (full view)
+        Route::get('/character/{characterId}', [
+            'as' => 'mining-manager.ledger.character-details',
+            'uses' => 'LedgerController@showCharacterDetails',
+            'middleware' => 'can:mining-manager.ledger.view',
+        ]);
+
         // AJAX endpoint for daily breakdown (NEW)
         Route::get('/summary/character/{characterId}/daily', [
             'as' => 'mining-manager.ledger.character-daily',
@@ -71,8 +78,8 @@ Route::group([
         ]);
 
         // AJAX endpoint for detailed entries (NEW)
-        Route::get('/summary/character/{characterId}/details', [
-            'as' => 'mining-manager.ledger.character-details',
+        Route::get('/summary/character/{characterId}/entries', [
+            'as' => 'mining-manager.ledger.character-entries',
             'uses' => 'LedgerController@getDetailedEntries',
             'middleware' => 'can:mining-manager.ledger.view',
         ]);

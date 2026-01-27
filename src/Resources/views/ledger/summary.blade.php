@@ -6,28 +6,6 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
 <style>
-    .character-row {
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    .character-row:hover {
-        background-color: rgba(0,0,0,0.05);
-    }
-    .character-details-row {
-        background-color: #f8f9fa;
-        display: none;
-    }
-    .system-details-row {
-        background-color: #e9ecef;
-        display: none;
-    }
-    .expand-icon {
-        transition: transform 0.3s;
-        color: #6c757d;
-    }
-    .expand-icon.expanded {
-        transform: rotate(90deg);
-    }
     .character-portrait {
         width: 32px;
         height: 32px;
@@ -280,23 +258,17 @@
                     <table class="table table-hover table-striped" id="summaryTable">
                         <thead>
                             <tr>
-                                <th style="width: 30px;"></th>
                                 <th>{{ trans('mining-manager::ledger.character') }}</th>
                                 <th>{{ trans('mining-manager::ledger.ore_types_mined') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::ledger.total_quantity') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::ledger.total_value') }}</th>
                                 <th>{{ trans('mining-manager::ledger.primary_system') }}</th>
+                                <th class="text-center" style="width: 120px;">{{ trans('mining-manager::ledger.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse($summaries as $summary)
-                                <tr class="character-row"
-                                    data-character-id="{{ $summary->character_id }}"
-                                    data-month="{{ $month }}"
-                                    data-has-alts="{{ $summary->alt_count ?? 0 }}">
-                                    <td>
-                                        <i class="fas fa-chevron-right expand-icon"></i>
-                                    </td>
+                                <tr>
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $summary->character_id }}/portrait?size=32"
                                              class="character-portrait"
@@ -346,12 +318,11 @@
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
-                                </tr>
-                                <tr class="character-details-row" id="details-{{ $summary->character_id }}">
-                                    <td colspan="6">
-                                        <div class="loading-spinner">
-                                            <i class="fas fa-spinner fa-spin"></i> {{ trans('mining-manager::ledger.loading_details') }}
-                                        </div>
+                                    <td class="text-center">
+                                        <a href="{{ route('mining-manager.ledger.character-details', ['characterId' => $summary->character_id, 'month' => $month]) }}"
+                                           class="btn btn-sm btn-primary">
+                                            <i class="fas fa-eye"></i> {{ trans('mining-manager::ledger.view_details') }}
+                                        </a>
                                     </td>
                                 </tr>
                             @empty
@@ -375,115 +346,4 @@
 
 @endsection
 
-@push('javascript')
-<script>
-$(document).ready(function() {
-    const expandedCharacters = new Set();
-    const month = '{{ $month }}';
-
-    // Handle character row clicks
-    $('.character-row').on('click', function() {
-        const characterId = $(this).data('character-id');
-        const detailsRow = $('#details-' + characterId);
-        const expandIcon = $(this).find('.expand-icon');
-
-        if (expandedCharacters.has(characterId)) {
-            // Collapse
-            detailsRow.hide();
-            expandIcon.removeClass('expanded');
-            expandedCharacters.delete(characterId);
-        } else {
-            // Expand
-            detailsRow.show();
-            expandIcon.addClass('expanded');
-            expandedCharacters.add(characterId);
-
-            // Load details if not already loaded
-            if (!detailsRow.data('loaded')) {
-                loadCharacterDetails(characterId, month, detailsRow);
-            }
-        }
-    });
-
-    function loadCharacterDetails(characterId, month, targetRow) {
-        $.ajax({
-            url: '{{ route("mining-manager.ledger.character-daily", ":characterId") }}'.replace(':characterId', characterId),
-            method: 'GET',
-            data: { month: month },
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            success: function(response) {
-                if (response.success && response.data) {
-                    renderCharacterDetails(characterId, response.data, targetRow);
-                    targetRow.data('loaded', true);
-                } else {
-                    targetRow.html('<td colspan="6" class="text-center text-danger">' +
-                        '<i class="fas fa-exclamation-triangle"></i> {{ trans("mining-manager::ledger.failed_to_load") }}' +
-                        '</td>');
-                }
-            },
-            error: function(xhr) {
-                targetRow.html('<td colspan="6" class="text-center text-danger">' +
-                    '<i class="fas fa-exclamation-triangle"></i> {{ trans("mining-manager::ledger.error_loading_data") }}: ' +
-                    (xhr.responseJSON?.message || '{{ trans("mining-manager::ledger.unknown_error") }}') +
-                    '</td>');
-            }
-        });
-    }
-
-    function renderCharacterDetails(characterId, dailyData, targetRow) {
-        let html = '<td colspan="6" style="padding: 20px;">' +
-            '<h5><i class="fas fa-calendar-alt"></i> {{ trans("mining-manager::ledger.daily_activity") }}</h5>' +
-            '<table class="table table-sm table-striped details-table">' +
-            '<thead>' +
-            '<tr>' +
-            '<th>{{ trans("mining-manager::ledger.date") }}</th>' +
-            '<th>{{ trans("mining-manager::ledger.system") }}</th>' +
-            '<th class="text-right">{{ trans("mining-manager::ledger.quantity") }}</th>' +
-            '<th class="text-right">{{ trans("mining-manager::ledger.value") }}</th>' +
-            '</tr>' +
-            '</thead>' +
-            '<tbody>';
-
-        if (dailyData.length === 0) {
-            html += '<tr><td colspan="4" class="text-center"><em>{{ trans("mining-manager::ledger.no_data") }}</em></td></tr>';
-        } else {
-            dailyData.forEach(function(day) {
-                if (day.systems && day.systems.length > 0) {
-                    // First row shows date with first system
-                    const firstSystem = day.systems[0];
-                    html += '<tr>' +
-                        '<td rowspan="' + day.systems.length + '">' + day.date + '</td>' +
-                        '<td>' + firstSystem.system_name + '</td>' +
-                        '<td class="text-right">' + firstSystem.quantity + ' m³</td>' +
-                        '<td class="text-right">' + firstSystem.value + ' ISK</td>' +
-                        '</tr>';
-
-                    // Additional systems on separate rows
-                    for (let i = 1; i < day.systems.length; i++) {
-                        const system = day.systems[i];
-                        html += '<tr>' +
-                            '<td>' + system.system_name + '</td>' +
-                            '<td class="text-right">' + system.quantity + ' m³</td>' +
-                            '<td class="text-right">' + system.value + ' ISK</td>' +
-                            '</tr>';
-                    }
-                } else {
-                    // No system data
-                    html += '<tr>' +
-                        '<td>' + day.date + '</td>' +
-                        '<td>-</td>' +
-                        '<td class="text-right">' + day.total_quantity + ' m³</td>' +
-                        '<td class="text-right">' + day.total_value + ' ISK</td>' +
-                        '</tr>';
-                }
-            });
-        }
-
-        html += '</tbody></table></td>';
-        targetRow.html(html);
-    }
-});
-</script>
-@endpush
+{{-- No JavaScript needed - using separate details page --}}
