@@ -8,12 +8,42 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\Setting;
 
 class DiagnosticController extends Controller
 {
+    /**
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
+     * @var PriceProviderService
+     */
+    protected $priceService;
+
+    /**
+     * @var OreValuationService
+     */
+    protected $valuationService;
+
+    /**
+     * Constructor with dependency injection
+     */
+    public function __construct(
+        SettingsManagerService $settingsService,
+        PriceProviderService $priceService,
+        OreValuationService $valuationService
+    ) {
+        $this->settingsService = $settingsService;
+        $this->priceService = $priceService;
+        $this->valuationService = $valuationService;
+    }
+
     /**
      * Test endpoint to verify routes are working
      *
@@ -374,6 +404,7 @@ class DiagnosticController extends Controller
 
     /**
      * Test price providers
+     * FIXED: Uses injected services, adds finally block to restore provider
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -386,14 +417,14 @@ class DiagnosticController extends Controller
             'ip' => $request->ip()
         ]);
 
-        try {
-            $provider = $request->input('provider', 'seat');
-            $priceService = new PriceProviderService();
+        $provider = $request->input('provider', 'seat');
+        $originalProvider = null;
 
+        try {
             // Check if Janice API key is configured when testing Janice
             if ($provider === 'janice') {
-                $apiKey = Setting::getValue('janice_api_key')
-                    ?: config('mining-manager.general.price_provider_api_key');
+                $pricingSettings = $this->settingsService->getPricingSettings();
+                $apiKey = $pricingSettings['janice_api_key'] ?? '';
 
                 if (empty($apiKey)) {
                     return response()->json([
@@ -417,14 +448,12 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider
-            $originalProvider = Setting::getValue('price_provider');
-            Setting::setValue('price_provider', $provider);
+            // Temporarily set provider via settings service (ensures cache invalidation)
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
+            $this->settingsService->updateSetting('price_provider', $provider, 'string');
 
-            $prices = $priceService->getPrices($testTypeIds);
-
-            // Restore original provider
-            Setting::setValue('price_provider', $originalProvider);
+            $prices = $this->priceService->getPrices($testTypeIds);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
@@ -460,20 +489,26 @@ class DiagnosticController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Price provider test failed', [
-                'provider' => $provider ?? 'unknown',
+                'provider' => $provider,
                 'error' => $e->getMessage()
             ]);
 
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
-                'provider' => $provider ?? 'unknown'
+                'provider' => $provider
             ], 500);
+        } finally {
+            // Always restore original provider
+            if ($originalProvider !== null) {
+                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
+            }
         }
     }
 
     /**
      * Get price provider configuration
+     * FIXED: Uses injected services instead of new PriceProviderService() and Setting::getValue()
      *
      * @return \Illuminate\Http\JsonResponse
      */
@@ -482,14 +517,14 @@ class DiagnosticController extends Controller
         Log::info('DiagnosticController: getPriceProviderConfig called');
 
         try {
-            $priceService = new PriceProviderService();
-            $providers = $priceService->getAvailableProviders();
+            $providers = $this->priceService->getAvailableProviders();
 
-            $currentProvider = Setting::getValue('price_provider', 'seat');
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $generalSettings = $this->settingsService->getGeneralSettings();
+            $currentProvider = $pricingSettings['price_provider'] ?? 'seat';
 
             // Check if Janice API key is configured
-            $janiceApiKey = Setting::getValue('janice_api_key')
-                ?: config('mining-manager.general.price_provider_api_key');
+            $janiceApiKey = $pricingSettings['janice_api_key'] ?? '';
             $janiceConfigured = !empty($janiceApiKey);
 
             $config = [
@@ -498,13 +533,14 @@ class DiagnosticController extends Controller
                 'janice_configured' => $janiceConfigured,
                 'settings' => [
                     'janice_api_key' => $janiceConfigured ? '***configured***' : 'NOT CONFIGURED',
-                    'janice_market' => Setting::getValue('janice_market', 'jita'),
-                    'janice_price_method' => Setting::getValue('janice_price_method', 'buy'),
-                    'janice_batch_size' => Setting::getValue('janice_batch_size', 50),
-                    'janice_rate_limit_delay' => Setting::getValue('janice_rate_limit_delay', 50000) . ' microseconds',
-                    'janice_max_retries' => Setting::getValue('janice_max_retries', 3),
-                    'price_region_id' => Setting::getValue('price_region_id', 10000002),
-                    'price_method' => Setting::getValue('price_method', 'sell'),
+                    'janice_market' => $pricingSettings['janice_market'] ?? 'jita',
+                    'janice_price_method' => $pricingSettings['janice_price_method'] ?? 'buy',
+                    'price_type' => $pricingSettings['price_type'] ?? 'sell',
+                    'cache_duration' => ($pricingSettings['cache_duration'] ?? 60) . ' minutes',
+                    'auto_refresh' => ($pricingSettings['auto_refresh'] ?? true) ? 'Enabled' : 'Disabled',
+                    'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
+                    'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
+                    'default_region_id' => $generalSettings['default_region_id'] ?? 10000002,
                 ]
             ];
 
@@ -520,6 +556,7 @@ class DiagnosticController extends Controller
 
     /**
      * Batch test multiple ore types
+     * FIXED: Uses injected services, adds finally block to restore provider
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -527,15 +564,14 @@ class DiagnosticController extends Controller
     public function testBatchPricing(Request $request)
     {
         $provider = $request->input('provider', 'seat');
-        $oreCategory = $request->input('category', 'all'); // all, moon, ice, gas, ore
+        $oreCategory = $request->input('category', 'all');
+        $originalProvider = null;
 
         try {
-            $priceService = new PriceProviderService();
-
             // Check if Janice API key is configured when testing Janice
             if ($provider === 'janice') {
-                $apiKey = Setting::getValue('janice_api_key')
-                    ?: config('mining-manager.general.price_provider_api_key');
+                $pricingSettings = $this->settingsService->getPricingSettings();
+                $apiKey = $pricingSettings['janice_api_key'] ?? '';
 
                 if (empty($apiKey)) {
                     return response()->json([
@@ -584,14 +620,12 @@ class DiagnosticController extends Controller
 
             $startTime = microtime(true);
 
-            // Temporarily set provider
-            $originalProvider = Setting::getValue('price_provider');
-            Setting::setValue('price_provider', $provider);
+            // Temporarily set provider via settings service (ensures cache invalidation)
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $originalProvider = $pricingSettings['price_provider'] ?? 'seat';
+            $this->settingsService->updateSetting('price_provider', $provider, 'string');
 
-            $prices = $priceService->getPrices($typeIds);
-
-            // Restore original provider
-            Setting::setValue('price_provider', $originalProvider);
+            $prices = $this->priceService->getPrices($typeIds);
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
@@ -633,8 +667,8 @@ class DiagnosticController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Batch price test failed', [
-                'provider' => $provider ?? 'unknown',
-                'category' => $oreCategory ?? 'unknown',
+                'provider' => $provider,
+                'category' => $oreCategory,
                 'error' => $e->getMessage()
             ]);
 
@@ -642,21 +676,26 @@ class DiagnosticController extends Controller
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
+        } finally {
+            // Always restore original provider
+            if ($originalProvider !== null) {
+                $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
+            }
         }
     }
 
     /**
      * Get price cache health statistics
+     * FIXED: Uses settingsService for cache duration instead of wrong Setting key
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function getCacheHealth()
     {
         try {
-            $cacheStats = [];
-
-            // Get cache duration setting
-            $cacheDuration = Setting::getValue('price_cache_duration', 60); // minutes
+            // Get cache duration from settings service (correct key path)
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
 
             // Get total cached items
             $totalCached = MiningPriceCache::count();
@@ -793,6 +832,7 @@ class DiagnosticController extends Controller
 
     /**
      * Warm up price cache with common ore types
+     * FIXED: Uses injected services for provider and region ID
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -830,31 +870,48 @@ class DiagnosticController extends Controller
                     break;
             }
 
-            $priceService = new PriceProviderService();
             $startTime = microtime(true);
 
-            // Get configured provider
-            $provider = Setting::getValue('price_provider', 'seat');
+            // Get configured provider and region from settings service
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $generalSettings = $this->settingsService->getGeneralSettings();
+            $provider = $pricingSettings['price_provider'] ?? 'seat';
+            $regionId = (int) ($generalSettings['default_region_id'] ?? 10000002);
 
             // Fetch prices
-            $prices = $priceService->getPrices($typeIds);
+            $prices = $this->priceService->getPrices($typeIds);
 
-            // Store in cache
+            // Store in cache using correct price_type column
             $stored = 0;
             $failed = 0;
-            $regionId = Setting::getValue('price_region_id', 10000002);
+            $priceType = $pricingSettings['price_type'] ?? 'sell';
 
             foreach ($prices as $typeId => $price) {
                 if ($price > 0) {
                     try {
+                        $cacheData = [
+                            'cached_at' => now(),
+                        ];
+
+                        // Store price in the correct column based on price_type setting
+                        if ($priceType === 'buy') {
+                            $cacheData['buy_price'] = $price;
+                            $cacheData['sell_price'] = $price;
+                            $cacheData['average_price'] = $price;
+                        } elseif ($priceType === 'average') {
+                            $cacheData['average_price'] = $price;
+                            $cacheData['sell_price'] = $price;
+                            $cacheData['buy_price'] = $price;
+                        } else {
+                            // Default: sell
+                            $cacheData['sell_price'] = $price;
+                            $cacheData['buy_price'] = $price;
+                            $cacheData['average_price'] = $price;
+                        }
+
                         MiningPriceCache::updateOrCreate(
                             ['type_id' => $typeId, 'region_id' => $regionId],
-                            [
-                                'sell_price' => $price,
-                                'buy_price' => $price,
-                                'average_price' => $price,
-                                'cached_at' => now(),
-                            ]
+                            $cacheData
                         );
                         $stored++;
                     } catch (\Exception $e) {
@@ -1078,6 +1135,679 @@ class DiagnosticController extends Controller
                 'success' => false,
                 'error' => $e->getMessage(),
                 'message' => 'Exception occurred while testing webhook'
+            ], 500);
+        }
+    }
+
+    // ========================================================================
+    // NEW DIAGNOSTIC TOOLS
+    // ========================================================================
+
+    /**
+     * Settings Health Check
+     * Shows all plugin settings with source (DB / config / default), flags mismatches
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function settingsHealth()
+    {
+        try {
+            $results = [];
+
+            // Define all setting groups to check
+            $settingGroups = [
+                'General' => $this->settingsService->getGeneralSettings(),
+                'Tax Rates' => $this->settingsService->getTaxRates(),
+                'Pricing' => $this->settingsService->getPricingSettings(),
+                'Contract' => $this->settingsService->getContractSettings(),
+                'Payment' => $this->settingsService->getPaymentSettings(),
+            ];
+
+            foreach ($settingGroups as $groupName => $settings) {
+                $groupResults = [];
+                foreach ($settings as $key => $value) {
+                    // Check source: DB vs config vs hardcoded
+                    $source = 'default';
+                    $dbValue = null;
+
+                    if (is_array($value)) {
+                        // Nested settings (e.g., tax_rates.moon_ore)
+                        foreach ($value as $subKey => $subValue) {
+                            $fullKey = $key . '.' . $subKey;
+                            $dbRecord = Setting::where('key', $fullKey)->first()
+                                ?? Setting::where('key', strtolower($groupName) . '.' . $fullKey)->first();
+
+                            $groupResults[] = [
+                                'key' => $fullKey,
+                                'value' => $subValue,
+                                'source' => $dbRecord ? 'database' : (config('mining-manager.' . $fullKey) !== null ? 'config' : 'default'),
+                                'type' => gettype($subValue),
+                            ];
+                        }
+                    } else {
+                        $dbRecord = Setting::where('key', $key)->first()
+                            ?? Setting::where('key', strtolower($groupName) . '.' . $key)->first();
+
+                        // Mask sensitive values
+                        $displayValue = $value;
+                        if (in_array($key, ['janice_api_key']) && !empty($value)) {
+                            $displayValue = '***' . substr($value, -4);
+                        }
+
+                        $groupResults[] = [
+                            'key' => $key,
+                            'value' => $displayValue,
+                            'source' => $dbRecord ? 'database' : (config('mining-manager.' . $key) !== null ? 'config' : 'default'),
+                            'type' => gettype($value),
+                        ];
+                    }
+                }
+                $results[$groupName] = $groupResults;
+            }
+
+            // Check for corporation-specific overrides
+            $corpOverrides = Setting::whereNotNull('corporation_id')
+                ->select('corporation_id', DB::raw('COUNT(*) as setting_count'))
+                ->groupBy('corporation_id')
+                ->get()
+                ->map(function ($row) {
+                    $corpName = DB::table('corporation_infos')
+                        ->where('corporation_id', $row->corporation_id)
+                        ->value('name');
+                    return [
+                        'corporation_id' => $row->corporation_id,
+                        'corporation_name' => $corpName ?? 'Unknown',
+                        'setting_count' => $row->setting_count,
+                    ];
+                });
+
+            // Check for orphaned settings (settings for corporations that no longer exist)
+            $orphanedSettings = Setting::whereNotNull('corporation_id')
+                ->whereNotIn('corporation_id', function ($query) {
+                    $query->select('corporation_id')->from('corporation_infos');
+                })
+                ->count();
+
+            // Total DB settings count
+            $totalDbSettings = Setting::count();
+            $globalSettings = Setting::whereNull('corporation_id')->count();
+
+            return response()->json([
+                'success' => true,
+                'settings' => $results,
+                'summary' => [
+                    'total_db_settings' => $totalDbSettings,
+                    'global_settings' => $globalSettings,
+                    'corporation_overrides' => $corpOverrides,
+                    'orphaned_settings' => $orphanedSettings,
+                ],
+                'issues' => $orphanedSettings > 0
+                    ? ["{$orphanedSettings} orphaned setting(s) found for non-existent corporations"]
+                    : [],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Settings health check failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Tax Calculation Trace
+     * Dry-run tax calculation showing the full decision chain for a character + month
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function taxDiagnostic(Request $request)
+    {
+        try {
+            $characterId = (int) $request->input('character_id');
+            $month = $request->input('month', Carbon::now()->subMonth()->format('Y-m'));
+
+            if (!$characterId) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'character_id is required'
+                ], 400);
+            }
+
+            // Parse month
+            $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+            $monthEnd = $monthStart->copy()->endOfMonth();
+
+            // Get character info
+            $character = DB::table('character_infos')
+                ->where('character_id', $characterId)
+                ->first();
+
+            if (!$character) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Character {$characterId} not found"
+                ], 404);
+            }
+
+            // Get character's corporation
+            $affiliation = DB::table('character_affiliations')
+                ->where('character_id', $characterId)
+                ->first();
+
+            $corporationId = $affiliation->corporation_id ?? null;
+            $corporationName = null;
+            if ($corporationId) {
+                $corporationName = DB::table('corporation_infos')
+                    ->where('corporation_id', $corporationId)
+                    ->value('name');
+            }
+
+            // Get mining entries for this character in this month
+            $entries = DB::table('mining_ledger')
+                ->where('character_id', $characterId)
+                ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
+                ->orderBy('date')
+                ->get();
+
+            // Load settings
+            $taxRates = $this->settingsService->getTaxRates();
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $generalSettings = $this->settingsService->getGeneralSettings();
+
+            // Check exemptions
+            $exemptions = $this->settingsService->getSetting('tax_rates.exemptions', []);
+            $isExempt = false;
+            if (is_array($exemptions)) {
+                $isExempt = in_array($characterId, $exemptions)
+                    || ($corporationId && in_array($corporationId, $exemptions));
+            }
+
+            // Process each mining entry
+            $traceResults = [];
+            $totalTax = 0;
+            $totalValue = 0;
+
+            foreach ($entries as $entry) {
+                $typeId = $entry->type_id;
+                $quantity = $entry->quantity;
+
+                // Identify ore
+                $isMoonOre = TypeIdRegistry::isMoonOre($typeId);
+                $isIce = TypeIdRegistry::isIce($typeId);
+                $isGas = TypeIdRegistry::isGas($typeId);
+                $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
+                $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
+
+                // Determine category
+                $category = 'unknown';
+                if ($isMoonOre) $category = 'moon_ore';
+                elseif ($isIce) $category = 'ice';
+                elseif ($isGas) $category = 'gas';
+                elseif ($isRegularOre) $category = 'ore';
+
+                // Determine tax rate
+                $taxRate = 0;
+                if ($isMoonOre && $rarity) {
+                    $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
+                } elseif ($isIce) {
+                    $taxRate = $taxRates['ice'] ?? 0;
+                } elseif ($isGas) {
+                    $taxRate = $taxRates['gas'] ?? 0;
+                } elseif ($isRegularOre) {
+                    $taxRate = $taxRates['ore'] ?? 0;
+                }
+
+                // Get valuation
+                $oreValue = 0;
+                try {
+                    $unitPrice = $this->priceService->getPrice($typeId);
+                    $oreValue = ($unitPrice ?? 0) * $quantity;
+                } catch (\Exception $e) {
+                    // Price fetch failed, keep at 0
+                }
+
+                // Calculate tax
+                $taxAmount = $isExempt ? 0 : round($oreValue * ($taxRate / 100), 2);
+                $totalTax += $taxAmount;
+                $totalValue += $oreValue;
+
+                // Get type name
+                $typeName = DB::table('invTypes')
+                    ->where('typeID', $typeId)
+                    ->value('typeName') ?? "Type {$typeId}";
+
+                $traceResults[] = [
+                    'date' => $entry->date,
+                    'type_id' => $typeId,
+                    'type_name' => $typeName,
+                    'quantity' => $quantity,
+                    'category' => $category,
+                    'rarity' => $rarity,
+                    'tax_rate' => $taxRate,
+                    'unit_price' => round($oreValue / max($quantity, 1), 2),
+                    'total_value' => round($oreValue, 2),
+                    'tax_amount' => $taxAmount,
+                    'is_exempt' => $isExempt,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'character' => [
+                    'id' => $characterId,
+                    'name' => $character->name,
+                    'corporation_id' => $corporationId,
+                    'corporation_name' => $corporationName,
+                ],
+                'period' => [
+                    'month' => $month,
+                    'start' => $monthStart->format('Y-m-d'),
+                    'end' => $monthEnd->format('Y-m-d'),
+                ],
+                'settings_used' => [
+                    'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
+                    'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                    'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
+                    'is_exempt' => $isExempt,
+                ],
+                'tax_rates_applied' => $taxRates,
+                'summary' => [
+                    'total_entries' => count($entries),
+                    'total_value' => round($totalValue, 2),
+                    'total_tax' => round($totalTax, 2),
+                    'effective_rate' => $totalValue > 0 ? round(($totalTax / $totalValue) * 100, 2) : 0,
+                ],
+                'entries' => $traceResults,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax diagnostic failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Data Integrity Scan
+     * Scans for data quality problems across mining data
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function dataIntegrity()
+    {
+        try {
+            $issues = [];
+            $startTime = microtime(true);
+
+            // 1. Mining entries with unknown type_ids
+            $allKnownTypeIds = array_merge(
+                TypeIdRegistry::getAllRegularOres(),
+                TypeIdRegistry::getAllMoonOres(),
+                TypeIdRegistry::getAllIce(),
+                TypeIdRegistry::getAllGas(),
+                TypeIdRegistry::MINERALS,
+                TypeIdRegistry::getAllMoonMaterials(),
+                TypeIdRegistry::ICE_PRODUCTS
+            );
+
+            $unknownTypeEntries = DB::table('mining_ledger')
+                ->whereNotIn('type_id', $allKnownTypeIds)
+                ->select('type_id', DB::raw('COUNT(*) as count'))
+                ->groupBy('type_id')
+                ->limit(20)
+                ->get();
+
+            if ($unknownTypeEntries->isNotEmpty()) {
+                $typeNames = DB::table('invTypes')
+                    ->whereIn('typeID', $unknownTypeEntries->pluck('type_id'))
+                    ->pluck('typeName', 'typeID');
+
+                $issues[] = [
+                    'category' => 'Unknown Type IDs',
+                    'severity' => 'warning',
+                    'count' => $unknownTypeEntries->sum('count'),
+                    'message' => 'Mining entries with type IDs not in TypeIdRegistry',
+                    'details' => $unknownTypeEntries->map(function ($row) use ($typeNames) {
+                        return [
+                            'type_id' => $row->type_id,
+                            'type_name' => $typeNames[$row->type_id] ?? 'Unknown',
+                            'entry_count' => $row->count,
+                        ];
+                    }),
+                ];
+            }
+
+            // 2. Mining entries with zero quantities
+            $zeroQuantity = DB::table('mining_ledger')
+                ->where('quantity', '<=', 0)
+                ->count();
+
+            if ($zeroQuantity > 0) {
+                $issues[] = [
+                    'category' => 'Zero Quantities',
+                    'severity' => 'error',
+                    'count' => $zeroQuantity,
+                    'message' => 'Mining entries with zero or negative quantity',
+                ];
+            }
+
+            // 3. Mining entries with missing character records
+            $orphanedEntries = DB::table('mining_ledger')
+                ->whereNotIn('character_id', function ($query) {
+                    $query->select('character_id')->from('character_infos');
+                })
+                ->count();
+
+            if ($orphanedEntries > 0) {
+                $issues[] = [
+                    'category' => 'Orphaned Entries',
+                    'severity' => 'warning',
+                    'count' => $orphanedEntries,
+                    'message' => 'Mining entries for characters not in character_infos',
+                ];
+            }
+
+            // 4. Price cache entries with all-zero prices
+            $zeroPrices = MiningPriceCache::where('sell_price', '<=', 0)
+                ->where('buy_price', '<=', 0)
+                ->where('average_price', '<=', 0)
+                ->count();
+
+            if ($zeroPrices > 0) {
+                $issues[] = [
+                    'category' => 'Zero Price Cache',
+                    'severity' => 'warning',
+                    'count' => $zeroPrices,
+                    'message' => 'Price cache entries with all prices at zero',
+                ];
+            }
+
+            // 5. Tax records with negative amounts
+            $negativeTaxes = DB::table('mining_taxes')
+                ->where('tax_amount', '<', 0)
+                ->count();
+
+            if ($negativeTaxes > 0) {
+                $issues[] = [
+                    'category' => 'Negative Taxes',
+                    'severity' => 'error',
+                    'count' => $negativeTaxes,
+                    'message' => 'Tax records with negative amounts',
+                ];
+            }
+
+            // 6. Tax records for non-existent characters
+            $orphanedTaxes = DB::table('mining_taxes')
+                ->whereNotIn('character_id', function ($query) {
+                    $query->select('character_id')->from('character_infos');
+                })
+                ->count();
+
+            if ($orphanedTaxes > 0) {
+                $issues[] = [
+                    'category' => 'Orphaned Taxes',
+                    'severity' => 'warning',
+                    'count' => $orphanedTaxes,
+                    'message' => 'Tax records for characters not in character_infos',
+                ];
+            }
+
+            // 7. Duplicate mining entries (same character, date, type_id, solar_system)
+            $duplicates = DB::table('mining_ledger')
+                ->select('character_id', 'date', 'type_id', 'solar_system_id', DB::raw('COUNT(*) as dupe_count'))
+                ->groupBy('character_id', 'date', 'type_id', 'solar_system_id')
+                ->havingRaw('COUNT(*) > 1')
+                ->count();
+
+            if ($duplicates > 0) {
+                $issues[] = [
+                    'category' => 'Duplicate Entries',
+                    'severity' => 'warning',
+                    'count' => $duplicates,
+                    'message' => 'Potential duplicate mining ledger entries (same character+date+type+system)',
+                ];
+            }
+
+            // 8. Settings table health
+            $corruptSettings = Setting::whereNull('key')
+                ->orWhere('key', '')
+                ->count();
+
+            if ($corruptSettings > 0) {
+                $issues[] = [
+                    'category' => 'Corrupt Settings',
+                    'severity' => 'error',
+                    'count' => $corruptSettings,
+                    'message' => 'Settings entries with empty or null keys',
+                ];
+            }
+
+            $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            // Summary
+            $totalIssues = array_sum(array_column($issues, 'count'));
+            $errorCount = count(array_filter($issues, fn($i) => $i['severity'] === 'error'));
+            $warningCount = count(array_filter($issues, fn($i) => $i['severity'] === 'warning'));
+
+            return response()->json([
+                'success' => true,
+                'duration_ms' => $duration,
+                'health_status' => $errorCount > 0 ? 'error' : ($warningCount > 0 ? 'warning' : 'healthy'),
+                'summary' => [
+                    'total_issues' => $totalIssues,
+                    'error_categories' => $errorCount,
+                    'warning_categories' => $warningCount,
+                    'total_mining_entries' => DB::table('mining_ledger')->count(),
+                    'total_tax_records' => DB::table('mining_taxes')->count(),
+                    'total_price_cache' => MiningPriceCache::count(),
+                    'total_characters' => DB::table('character_infos')->count(),
+                ],
+                'issues' => $issues,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Data integrity scan failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Valuation Test
+     * Step-by-step trace of how a specific ore type_id + quantity is valued
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function valuationTest(Request $request)
+    {
+        try {
+            $typeId = (int) $request->input('type_id');
+            $quantity = (int) $request->input('quantity', 1000);
+
+            if (!$typeId) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'type_id is required'
+                ], 400);
+            }
+
+            // Get type info
+            $typeInfo = DB::table('invTypes')
+                ->where('typeID', $typeId)
+                ->select('typeID', 'typeName', 'groupID', 'volume')
+                ->first();
+
+            if (!$typeInfo) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Type ID {$typeId} not found in invTypes"
+                ], 404);
+            }
+
+            // Identify category
+            $isMoonOre = TypeIdRegistry::isMoonOre($typeId);
+            $isIce = TypeIdRegistry::isIce($typeId);
+            $isGas = TypeIdRegistry::isGas($typeId);
+            $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
+            $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
+            $isJackpot = $isMoonOre ? TypeIdRegistry::isJackpotOre($typeId) : false;
+
+            $category = 'unknown';
+            if ($isMoonOre) $category = 'moon_ore';
+            elseif ($isIce) $category = 'ice';
+            elseif ($isGas) $category = 'gas';
+            elseif ($isRegularOre) $category = 'ore';
+
+            // Load settings
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $generalSettings = $this->settingsService->getGeneralSettings();
+            $taxRates = $this->settingsService->getTaxRates();
+
+            $steps = [];
+
+            // Step 1: Ore identification
+            $steps[] = [
+                'step' => 1,
+                'action' => 'Ore Identification',
+                'result' => [
+                    'type_id' => $typeId,
+                    'type_name' => $typeInfo->typeName,
+                    'category' => $category,
+                    'rarity' => $rarity,
+                    'is_jackpot' => $isJackpot,
+                    'volume_per_unit' => $typeInfo->volume,
+                ],
+            ];
+
+            // Step 2: Settings loaded
+            $steps[] = [
+                'step' => 2,
+                'action' => 'Settings Loaded',
+                'result' => [
+                    'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
+                    'price_type' => $pricingSettings['price_type'] ?? 'sell',
+                    'use_refined_value' => $pricingSettings['use_refined_value'] ?? false,
+                    'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
+                    'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                ],
+            ];
+
+            // Step 3: Price fetch
+            $unitPrice = 0;
+            $priceSource = 'none';
+            try {
+                $unitPrice = $this->priceService->getPrice($typeId);
+                $priceSource = ($unitPrice && $unitPrice > 0) ? 'price_provider' : 'none';
+
+                // Check if from cache
+                $cacheEntry = MiningPriceCache::where('type_id', $typeId)->first();
+                if ($cacheEntry) {
+                    $priceSource = 'cache (age: ' . $cacheEntry->cached_at->diffForHumans() . ')';
+                }
+            } catch (\Exception $e) {
+                $priceSource = 'error: ' . $e->getMessage();
+            }
+
+            $steps[] = [
+                'step' => 3,
+                'action' => 'Price Fetch',
+                'result' => [
+                    'unit_price' => round($unitPrice ?? 0, 2),
+                    'price_source' => $priceSource,
+                    'cache_hit' => MiningPriceCache::where('type_id', $typeId)->exists(),
+                ],
+            ];
+
+            // Step 4: Value calculation
+            $totalValue = ($unitPrice ?? 0) * $quantity;
+
+            $steps[] = [
+                'step' => 4,
+                'action' => 'Value Calculation',
+                'result' => [
+                    'formula' => "unit_price ({$unitPrice}) x quantity ({$quantity})",
+                    'total_value' => round($totalValue, 2),
+                    'total_volume' => round($typeInfo->volume * $quantity, 2),
+                ],
+            ];
+
+            // Step 5: Tax rate determination
+            $taxRate = 0;
+            $taxRateSource = '';
+            if ($isMoonOre && $rarity) {
+                $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
+                $taxRateSource = "moon_ore.{$rarity}";
+            } elseif ($isIce) {
+                $taxRate = $taxRates['ice'] ?? 0;
+                $taxRateSource = 'ice';
+            } elseif ($isGas) {
+                $taxRate = $taxRates['gas'] ?? 0;
+                $taxRateSource = 'gas';
+            } elseif ($isRegularOre) {
+                $taxRate = $taxRates['ore'] ?? 0;
+                $taxRateSource = 'ore';
+            }
+
+            $taxAmount = round($totalValue * ($taxRate / 100), 2);
+
+            $steps[] = [
+                'step' => 5,
+                'action' => 'Tax Calculation',
+                'result' => [
+                    'tax_rate' => $taxRate,
+                    'tax_rate_source' => $taxRateSource,
+                    'tax_amount' => $taxAmount,
+                    'formula' => "total_value ({$totalValue}) x tax_rate ({$taxRate}%)",
+                ],
+            ];
+
+            // Step 6: Price modifier (if applicable)
+            $priceModifier = (float) ($generalSettings['price_modifier'] ?? 0);
+            $modifiedValue = $totalValue;
+            if ($priceModifier != 0) {
+                $modifiedValue = $totalValue * (1 + ($priceModifier / 100));
+            }
+
+            $steps[] = [
+                'step' => 6,
+                'action' => 'Price Modifier',
+                'result' => [
+                    'modifier' => $priceModifier . '%',
+                    'original_value' => round($totalValue, 2),
+                    'modified_value' => round($modifiedValue, 2),
+                    'applied' => $priceModifier != 0,
+                ],
+            ];
+
+            return response()->json([
+                'success' => true,
+                'type' => [
+                    'type_id' => $typeId,
+                    'type_name' => $typeInfo->typeName,
+                    'quantity' => $quantity,
+                    'category' => $category,
+                ],
+                'final_result' => [
+                    'unit_price' => round($unitPrice ?? 0, 2),
+                    'total_value' => round($totalValue, 2),
+                    'tax_rate' => $taxRate,
+                    'tax_amount' => $taxAmount,
+                ],
+                'steps' => $steps,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Valuation test failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
             ], 500);
         }
     }

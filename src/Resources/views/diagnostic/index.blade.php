@@ -169,6 +169,26 @@
                 <i class="fas fa-check-circle"></i> System Validation
             </a>
         </li>
+        <li>
+            <a href="#settings-health" data-toggle="tab">
+                <i class="fas fa-cogs"></i> Settings Health
+            </a>
+        </li>
+        <li>
+            <a href="#tax-trace" data-toggle="tab">
+                <i class="fas fa-calculator"></i> Tax Trace
+            </a>
+        </li>
+        <li>
+            <a href="#data-integrity" data-toggle="tab">
+                <i class="fas fa-shield-alt"></i> Data Integrity
+            </a>
+        </li>
+        <li>
+            <a href="#valuation-test" data-toggle="tab">
+                <i class="fas fa-search-dollar"></i> Valuation Test
+            </a>
+        </li>
     </ul>
     <div class="tab-content">
 
@@ -752,6 +772,138 @@
                                 <strong><i class="fas fa-flask"></i> With Jackpot Detection Tests</strong>
                                 <pre class="mb-0" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; margin-top: 10px;">php artisan mining-manager:diagnose-type-ids --verify-db --test-jackpot</pre>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Health Tab -->
+        <div class="tab-pane" id="settings-health">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-cogs"></i> Settings Health Check
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>View all plugin settings, their sources (database, config, or default), and detect any issues like orphaned corporation settings.</p>
+
+                            <button type="button" class="btn btn-mm-primary" onclick="loadSettingsHealth()">
+                                <i class="fas fa-stethoscope"></i> <span id="settingsHealthBtnText">Run Health Check</span>
+                                <span id="settingsHealthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="settingsHealthResults" style="margin-top: 20px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tax Trace Tab -->
+        <div class="tab-pane" id="tax-trace">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-calculator"></i> Tax Calculation Trace
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Trace the full tax calculation chain for a specific character and month. Shows every decision: ore category, rarity, tax rate, price, and final tax amount.</p>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Character ID</label>
+                                        <input type="number" id="taxTraceCharId" class="form-control" placeholder="e.g. 90000001">
+                                        <small class="form-text text-muted">Enter the character_id to trace</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Month (YYYY-MM)</label>
+                                        <input type="month" id="taxTraceMonth" class="form-control" value="{{ \Carbon\Carbon::now()->subMonth()->format('Y-m') }}">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-mm-primary" onclick="runTaxTrace()">
+                                <i class="fas fa-search"></i> <span id="taxTraceBtnText">Trace Tax Calculation</span>
+                                <span id="taxTraceSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="taxTraceResults" style="margin-top: 20px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Integrity Tab -->
+        <div class="tab-pane" id="data-integrity">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-shield-alt"></i> Data Integrity Scan
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Scan your mining data for problems: unknown type IDs, zero quantities, orphaned records, duplicate entries, corrupt settings, and more.</p>
+
+                            <button type="button" class="btn btn-mm-primary" onclick="runDataIntegrity()">
+                                <i class="fas fa-search"></i> <span id="integrityBtnText">Run Integrity Scan</span>
+                                <span id="integritySpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="integrityResults" style="margin-top: 20px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Valuation Test Tab -->
+        <div class="tab-pane" id="valuation-test">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-search-dollar"></i> Ore Valuation Test
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Enter an ore type ID and quantity to see step-by-step how the plugin values it: settings loaded, price fetched, tax rate applied, and final value.</p>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Type ID</label>
+                                        <input type="number" id="valuationTypeId" class="form-control" placeholder="e.g. 45506 (Xenotime)">
+                                        <small class="form-text text-muted">Common IDs: 34=Tritanium, 1230=Veldspar, 45506=Xenotime, 16262=Clear Icicle</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Quantity</label>
+                                        <input type="number" id="valuationQuantity" class="form-control" value="1000" min="1">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-mm-primary" onclick="runValuationTest()">
+                                <i class="fas fa-calculator"></i> <span id="valuationBtnText">Test Valuation</span>
+                                <span id="valuationSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
+                            </button>
+
+                            <div id="valuationResults" style="margin-top: 20px;"></div>
                         </div>
                     </div>
                 </div>
@@ -1462,6 +1614,300 @@ function previewPayload() {
 // TYPE ID VALIDATION
 // ============================================================================
 
+// ============================================================================
+// SETTINGS HEALTH CHECK
+// ============================================================================
+
+function loadSettingsHealth() {
+    const resultsDiv = document.getElementById('settingsHealthResults');
+    const btnText = document.getElementById('settingsHealthBtnText');
+    const spinner = document.getElementById('settingsHealthSpinner');
+
+    btnText.textContent = 'Checking...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    const url = '{{ route("mining-manager.diagnostic.settings-health") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, { headers: { 'Accept': 'application/json' } })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Run Health Check';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let html = `<div class="provider-test-result success">
+                <h5><i class="fas fa-check-circle text-success"></i> Settings Health Report</h5>
+                <div class="row mb-3">
+                    <div class="col-md-3"><strong>DB Settings:</strong> ${data.summary.total_db_settings}</div>
+                    <div class="col-md-3"><strong>Global:</strong> ${data.summary.global_settings}</div>
+                    <div class="col-md-3"><strong>Corp Overrides:</strong> ${data.summary.corporation_overrides.length}</div>
+                    <div class="col-md-3"><strong>Orphaned:</strong> <span class="${data.summary.orphaned_settings > 0 ? 'text-danger' : ''}">${data.summary.orphaned_settings}</span></div>
+                </div>`;
+
+            if (data.issues.length > 0) {
+                html += '<div class="alert alert-warning">';
+                data.issues.forEach(issue => { html += `<p class="mb-0"><i class="fas fa-exclamation-triangle"></i> ${issue}</p>`; });
+                html += '</div>';
+            }
+
+            // Show each settings group
+            for (const [group, settings] of Object.entries(data.settings)) {
+                html += `<hr><h6><i class="fas fa-folder"></i> ${group}</h6><div style="max-height: 300px; overflow-y: auto;">`;
+                settings.forEach(s => {
+                    const sourceColor = s.source === 'database' ? 'text-success' : (s.source === 'config' ? 'text-info' : 'text-muted');
+                    const sourceIcon = s.source === 'database' ? 'fa-database' : (s.source === 'config' ? 'fa-file-code' : 'fa-cog');
+                    html += `<div class="price-item"><span><i class="fas ${sourceIcon} ${sourceColor}"></i> ${s.key}</span>
+                        <span><strong>${s.value !== null && s.value !== '' ? s.value : '<em>empty</em>'}</strong> <small class="${sourceColor}">[${s.source}]</small></span></div>`;
+                });
+                html += '</div>';
+            }
+
+            // Corporation overrides
+            if (data.summary.corporation_overrides.length > 0) {
+                html += '<hr><h6><i class="fas fa-building"></i> Corporation Overrides</h6>';
+                data.summary.corporation_overrides.forEach(corp => {
+                    html += `<div class="price-item"><span>${corp.corporation_name} (${corp.corporation_id})</span><span><strong>${corp.setting_count} settings</strong></span></div>`;
+                });
+            }
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Run Health Check';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+    });
+}
+
+// ============================================================================
+// TAX TRACE
+// ============================================================================
+
+function runTaxTrace() {
+    const charId = document.getElementById('taxTraceCharId').value;
+    const month = document.getElementById('taxTraceMonth').value;
+    const resultsDiv = document.getElementById('taxTraceResults');
+    const btnText = document.getElementById('taxTraceBtnText');
+    const spinner = document.getElementById('taxTraceSpinner');
+
+    if (!charId) {
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Error</h5><p>Please enter a Character ID</p></div>`;
+        return;
+    }
+
+    btnText.textContent = 'Tracing...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    const url = '{{ route("mining-manager.diagnostic.tax-diagnostic") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl + '?character_id=' + charId + '&month=' + month, {
+        headers: { 'Accept': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Trace Tax Calculation';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let html = `<div class="provider-test-result ${data.summary.total_entries > 0 ? 'success' : 'warning'}">
+                <h5><i class="fas fa-calculator"></i> Tax Trace: ${data.character.name}</h5>
+                <div class="row mb-2">
+                    <div class="col-md-4"><strong>Corporation:</strong> ${data.character.corporation_name || 'Unknown'}</div>
+                    <div class="col-md-4"><strong>Period:</strong> ${data.period.start} to ${data.period.end}</div>
+                    <div class="col-md-4"><strong>Exempt:</strong> ${data.settings_used.is_exempt ? '<span class="text-warning">YES</span>' : 'No'}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Provider:</strong> ${data.settings_used.price_provider}</div>
+                    <div class="col-md-3"><strong>Method:</strong> ${data.settings_used.valuation_method}</div>
+                    <div class="col-md-3"><strong>Refining:</strong> ${data.settings_used.refining_efficiency}%</div>
+                    <div class="col-md-3"><strong>Entries:</strong> ${data.summary.total_entries}</div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4"><h6>Total Value: <strong>${Number(data.summary.total_value).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></h6></div>
+                    <div class="col-md-4"><h6>Total Tax: <strong>${Number(data.summary.total_tax).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></h6></div>
+                    <div class="col-md-4"><h6>Effective Rate: <strong>${data.summary.effective_rate}%</strong></h6></div>
+                </div>`;
+
+            if (data.entries.length > 0) {
+                html += `<hr><h6>Entry Details (${data.entries.length} entries):</h6><div style="max-height: 400px; overflow-y: auto;">`;
+                data.entries.forEach(e => {
+                    const icon = e.category === 'moon_ore' ? 'fa-moon' : (e.category === 'ice' ? 'fa-snowflake' : (e.category === 'gas' ? 'fa-cloud' : 'fa-gem'));
+                    html += `<div class="price-item">
+                        <span><i class="fas ${icon}"></i> ${e.type_name} x${e.quantity.toLocaleString()} <small class="text-muted">[${e.category}${e.rarity ? '/' + e.rarity : ''}] @ ${e.tax_rate}%</small></span>
+                        <span><strong>${Number(e.tax_amount).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></span>
+                    </div>`;
+                });
+                html += '</div>';
+            } else {
+                html += '<p class="text-muted mt-3">No mining entries found for this character in the selected month.</p>';
+            }
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Trace Tax Calculation';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+    });
+}
+
+// ============================================================================
+// DATA INTEGRITY SCAN
+// ============================================================================
+
+function runDataIntegrity() {
+    const resultsDiv = document.getElementById('integrityResults');
+    const btnText = document.getElementById('integrityBtnText');
+    const spinner = document.getElementById('integritySpinner');
+
+    btnText.textContent = 'Scanning...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    const url = '{{ route("mining-manager.diagnostic.data-integrity") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, { headers: { 'Accept': 'application/json' } })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Run Integrity Scan';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            const statusColors = { 'healthy': 'success', 'warning': 'warning', 'error': 'danger' };
+            const statusIcons = { 'healthy': 'fa-check-circle', 'warning': 'fa-exclamation-triangle', 'error': 'fa-times-circle' };
+
+            let html = `<div class="provider-test-result ${statusColors[data.health_status]}">
+                <h5><i class="fas ${statusIcons[data.health_status]} text-${statusColors[data.health_status]}"></i> Data Integrity: ${data.health_status.toUpperCase()}</h5>
+                <p><strong>Scan Duration:</strong> ${data.duration_ms}ms</p>
+                <div class="row mb-2">
+                    <div class="col-md-3"><strong>Mining Entries:</strong> ${data.summary.total_mining_entries.toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Tax Records:</strong> ${data.summary.total_tax_records.toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Price Cache:</strong> ${data.summary.total_price_cache.toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Characters:</strong> ${data.summary.total_characters.toLocaleString()}</div>
+                </div>`;
+
+            if (data.issues.length === 0) {
+                html += '<hr><p class="text-success"><i class="fas fa-check-circle"></i> No issues found! Your data looks clean.</p>';
+            } else {
+                html += `<hr><h6>Issues Found (${data.summary.total_issues} total):</h6>`;
+                data.issues.forEach(issue => {
+                    const sevColor = issue.severity === 'error' ? 'danger' : 'warning';
+                    const sevIcon = issue.severity === 'error' ? 'fa-times-circle' : 'fa-exclamation-triangle';
+                    html += `<div class="alert alert-${sevColor} mb-2">
+                        <strong><i class="fas ${sevIcon}"></i> ${issue.category}</strong> (${issue.count} items)<br>
+                        ${issue.message}`;
+                    if (issue.details) {
+                        html += '<ul class="mt-1 mb-0">';
+                        issue.details.forEach(d => {
+                            html += `<li>${d.type_name || ''} (${d.type_id || ''}) - ${d.entry_count || ''} entries</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    html += '</div>';
+                });
+            }
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Scan Failed</h5><p>${data.error}</p></div>`;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Run Integrity Scan';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+    });
+}
+
+// ============================================================================
+// VALUATION TEST
+// ============================================================================
+
+function runValuationTest() {
+    const typeId = document.getElementById('valuationTypeId').value;
+    const quantity = document.getElementById('valuationQuantity').value || 1000;
+    const resultsDiv = document.getElementById('valuationResults');
+    const btnText = document.getElementById('valuationBtnText');
+    const spinner = document.getElementById('valuationSpinner');
+
+    if (!typeId) {
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Error</h5><p>Please enter a Type ID</p></div>`;
+        return;
+    }
+
+    btnText.textContent = 'Testing...';
+    spinner.style.display = 'inline-block';
+    resultsDiv.innerHTML = '';
+
+    const url = '{{ route("mining-manager.diagnostic.valuation-test") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ type_id: parseInt(typeId), quantity: parseInt(quantity) })
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Test Valuation';
+        spinner.style.display = 'none';
+
+        if (data.success) {
+            let html = `<div class="provider-test-result success">
+                <h5><i class="fas fa-search-dollar"></i> Valuation: ${data.type.type_name} x${data.type.quantity.toLocaleString()}</h5>
+                <div class="row mb-3">
+                    <div class="col-md-3"><strong>Category:</strong> ${data.type.category}</div>
+                    <div class="col-md-3"><strong>Unit Price:</strong> ${Number(data.final_result.unit_price).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</div>
+                    <div class="col-md-3"><strong>Total Value:</strong> ${Number(data.final_result.total_value).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</div>
+                    <div class="col-md-3"><strong>Tax (${data.final_result.tax_rate}%):</strong> ${Number(data.final_result.tax_amount).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</div>
+                </div>
+                <hr><h6>Step-by-Step Trace:</h6>`;
+
+            data.steps.forEach(step => {
+                html += `<div class="alert alert-info mb-2"><strong>Step ${step.step}: ${step.action}</strong><br>`;
+                for (const [k, v] of Object.entries(step.result)) {
+                    const displayVal = (typeof v === 'boolean') ? (v ? 'Yes' : 'No') : v;
+                    html += `<small><strong>${k}:</strong> ${displayVal}</small><br>`;
+                }
+                html += '</div>';
+            });
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        } else {
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+        }
+    })
+    .catch(error => {
+        btnText.textContent = 'Test Valuation';
+        spinner.style.display = 'none';
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+    });
+}
+
+// ============================================================================
+// TYPE ID VALIDATION
+// ============================================================================
+
 function validateTypeIds() {
     const category = document.getElementById('validateCategory').value;
     const resultsDiv = document.getElementById('validate-results');
@@ -1475,14 +1921,11 @@ function validateTypeIds() {
     const url = '{{ route("mining-manager.diagnostic.validate-type-ids") }}';
     const relativeUrl = new URL(url, window.location.origin).pathname;
 
-    fetch(relativeUrl, {
-        method: 'POST',
+    fetch(relativeUrl + '?category=' + encodeURIComponent(category), {
+        method: 'GET',
         headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}',
             'Accept': 'application/json'
-        },
-        body: JSON.stringify({ category: category })
+        }
     })
     .then(response => {
         if (!response.ok) {

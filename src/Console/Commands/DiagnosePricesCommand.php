@@ -575,8 +575,9 @@ class DiagnosePricesCommand extends Command
         $this->info('🏥 PRICE PROVIDER HEALTH');
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        $provider = Setting::getValue('price_provider', 'seat');
-        
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $provider = $pricingSettings['price_provider'] ?? 'seat';
+
         // Count items in cache with valid prices
         $cacheWithPrices = MiningPriceCache::where('sell_price', '>', 0)->count();
         $cacheWithoutPrices = MiningPriceCache::where('sell_price', '=', 0)->count();
@@ -609,7 +610,7 @@ class DiagnosePricesCommand extends Command
         
         // Provider-specific diagnostics
         if ($provider === 'janice') {
-            $apiKey = Setting::getValue('janice_api_key');
+            $apiKey = $pricingSettings['janice_api_key'] ?? '';
             $hasKey = !empty($apiKey);
             
             $this->line("\n  <fg=cyan>Janice Provider Status:</>");

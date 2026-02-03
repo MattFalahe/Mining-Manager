@@ -884,7 +884,7 @@ Route::group([
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
 
-        Route::post('/validate-type-ids', [
+        Route::get('/validate-type-ids', [
             'as' => 'mining-manager.diagnostic.validate-type-ids',
             'uses' => 'DiagnosticController@validateTypeIds',
             'middleware' => 'can:mining-manager.settings.edit',
@@ -893,6 +893,31 @@ Route::group([
         Route::post('/test-webhook/{id}', [
             'as' => 'mining-manager.diagnostic.test-webhook',
             'uses' => 'DiagnosticController@testWebhook',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        // New Diagnostic Tools
+        Route::get('/settings-health', [
+            'as' => 'mining-manager.diagnostic.settings-health',
+            'uses' => 'DiagnosticController@settingsHealth',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::get('/tax-diagnostic', [
+            'as' => 'mining-manager.diagnostic.tax-diagnostic',
+            'uses' => 'DiagnosticController@taxDiagnostic',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::get('/data-integrity', [
+            'as' => 'mining-manager.diagnostic.data-integrity',
+            'uses' => 'DiagnosticController@dataIntegrity',
+            'middleware' => 'can:mining-manager.settings.edit',
+        ]);
+
+        Route::post('/valuation-test', [
+            'as' => 'mining-manager.diagnostic.valuation-test',
+            'uses' => 'DiagnosticController@valuationTest',
             'middleware' => 'can:mining-manager.settings.edit',
         ]);
     });
