@@ -55,6 +55,8 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-critical-theft').checked = webhook.notify_critical_theft;
                 document.getElementById('notify-active-theft').checked = webhook.notify_active_theft;
                 document.getElementById('notify-incident-resolved').checked = webhook.notify_incident_resolved;
+                document.getElementById('notify-moon-arrival').checked = webhook.notify_moon_arrival;
+                document.getElementById('notify-jackpot-detected').checked = webhook.notify_jackpot_detected;
 
                 // Discord settings
                 const discordRoleField = document.getElementById('discord-role-id');
@@ -98,6 +100,8 @@ function saveWebhook() {
         notify_critical_theft: document.getElementById('notify-critical-theft').checked ? 1 : 0,
         notify_active_theft: document.getElementById('notify-active-theft').checked ? 1 : 0,
         notify_incident_resolved: document.getElementById('notify-incident-resolved').checked ? 1 : 0,
+        notify_moon_arrival: document.getElementById('notify-moon-arrival').checked ? 1 : 0,
+        notify_jackpot_detected: document.getElementById('notify-jackpot-detected').checked ? 1 : 0,
         discord_role_id: document.getElementById('discord-role-id')?.value || null,
         discord_username: document.getElementById('discord-username')?.value || null,
         slack_channel: document.getElementById('slack-channel')?.value || null,

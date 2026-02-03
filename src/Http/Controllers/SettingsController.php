@@ -887,6 +887,8 @@ class SettingsController extends Controller
             'notify_critical_theft' => 'nullable|boolean',
             'notify_active_theft' => 'nullable|boolean',
             'notify_incident_resolved' => 'nullable|boolean',
+            'notify_moon_arrival' => 'nullable|boolean',
+            'notify_jackpot_detected' => 'nullable|boolean',
             'discord_role_id' => 'nullable|string|max:255',
             'discord_username' => 'nullable|string|max:255',
             'slack_channel' => 'nullable|string|max:255',
@@ -911,6 +913,8 @@ class SettingsController extends Controller
             $data['notify_critical_theft'] = $request->has('notify_critical_theft');
             $data['notify_active_theft'] = $request->has('notify_active_theft');
             $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
+            $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
+            $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
 
             $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
 
@@ -947,6 +951,8 @@ class SettingsController extends Controller
                 'notify_critical_theft' => 'nullable|boolean',
                 'notify_active_theft' => 'nullable|boolean',
                 'notify_incident_resolved' => 'nullable|boolean',
+                'notify_moon_arrival' => 'nullable|boolean',
+                'notify_jackpot_detected' => 'nullable|boolean',
                 'discord_role_id' => 'nullable|string|max:255',
                 'discord_username' => 'nullable|string|max:255',
                 'slack_channel' => 'nullable|string|max:255',
@@ -969,6 +975,8 @@ class SettingsController extends Controller
             $data['notify_critical_theft'] = $request->has('notify_critical_theft');
             $data['notify_active_theft'] = $request->has('notify_active_theft');
             $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
+            $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
+            $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
 
             $webhook->update($data);
 

@@ -8,9 +8,13 @@ use Seat\Eveapi\Events\CharacterMiningUpdated;
 use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Moon\MoonOreHelper;
+use MiningManager\Services\Notification\WebhookService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ProcessMiningLedgerListener implements ShouldQueue
@@ -101,6 +105,9 @@ class ProcessMiningLedgerListener implements ShouldQueue
                 if (config('mining-manager.features.mining_events', true)) {
                     $this->updateActiveEvents($characterId, $ledgerEntries);
                 }
+
+                // Check for jackpot ores in the new mining data
+                $this->checkForJackpotOres($characterId, $ledgerEntries);
             }
 
         } catch (\Exception $e) {
@@ -183,6 +190,117 @@ class ProcessMiningLedgerListener implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error("Mining Manager: Error updating active events for character {$characterId}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if any newly mined ores are jackpot variants and flag the extraction
+     *
+     * @param int $characterId
+     * @param \Illuminate\Support\Collection $ledgerEntries
+     * @return void
+     */
+    private function checkForJackpotOres(int $characterId, $ledgerEntries)
+    {
+        try {
+            $jackpotTypeIds = TypeIdRegistry::getAllJackpotOres();
+
+            // Filter ledger entries that contain jackpot ore type IDs
+            $jackpotEntries = $ledgerEntries->filter(function ($entry) use ($jackpotTypeIds) {
+                return in_array($entry->type_id, $jackpotTypeIds);
+            });
+
+            if ($jackpotEntries->isEmpty()) {
+                return;
+            }
+
+            Log::info("Mining Manager: Jackpot ores detected in mining data for character {$characterId}", [
+                'jackpot_type_ids' => $jackpotEntries->pluck('type_id')->unique()->toArray(),
+            ]);
+
+            // Group by solar system to match against extractions
+            $bySystem = $jackpotEntries->groupBy('solar_system_id');
+
+            foreach ($bySystem as $systemId => $entries) {
+                // Find active extraction in this solar system
+                $structure = DB::table('universe_structures')
+                    ->where('solar_system_id', $systemId)
+                    ->first();
+
+                if (!$structure) {
+                    continue;
+                }
+
+                // Find extraction that covers this date range
+                $entryDate = Carbon::parse($entries->first()->date);
+
+                $extraction = MoonExtraction::where('structure_id', $structure->structure_id)
+                    ->where('chunk_arrival_time', '<=', $entryDate->endOfDay())
+                    ->where('natural_decay_time', '>=', $entryDate->startOfDay())
+                    ->where('is_jackpot', false)
+                    ->first();
+
+                if (!$extraction) {
+                    // No matching extraction found, but still log it
+                    Log::info("Mining Manager: Jackpot ores found in system {$systemId} but no matching extraction");
+                    continue;
+                }
+
+                // Mark as jackpot
+                $extraction->is_jackpot = true;
+                $extraction->jackpot_detected_at = now();
+                $extraction->save();
+
+                Log::info("Mining Manager: JACKPOT EXTRACTION flagged!", [
+                    'extraction_id' => $extraction->id,
+                    'moon_name' => $extraction->moon_name,
+                    'structure_id' => $extraction->structure_id,
+                ]);
+
+                // Get character name for the notification
+                $characterName = DB::table('character_infos')
+                    ->where('character_id', $characterId)
+                    ->value('name') ?? "Character {$characterId}";
+
+                // Get system name
+                $systemName = DB::table('solar_systems')
+                    ->where('system_id', $systemId)
+                    ->value('name') ?? "System {$systemId}";
+
+                // Build jackpot ore details for the notification
+                $jackpotOreDetails = [];
+                foreach ($entries as $entry) {
+                    $oreName = DB::table('invTypes')
+                        ->where('typeID', $entry->type_id)
+                        ->value('typeName') ?? "Type {$entry->type_id}";
+
+                    $jackpotOreDetails[] = [
+                        'name' => $oreName,
+                        'type_id' => $entry->type_id,
+                        'quantity' => $entry->quantity,
+                    ];
+                }
+
+                // Send webhook notification
+                try {
+                    $webhookService = app(WebhookService::class);
+                    $webhookService->sendMoonNotification('jackpot_detected', [
+                        'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                        'structure_name' => $structure->name ?? "Structure {$extraction->structure_id}",
+                        'system_name' => $systemName,
+                        'detected_by' => $characterName,
+                        'jackpot_ores' => $jackpotOreDetails,
+                        'jackpot_percentage' => count($jackpotOreDetails) > 0 ? 100 : 0,
+                        'extraction_id' => $extraction->id,
+                    ], $extraction->corporation_id);
+                } catch (\Exception $e) {
+                    Log::error("Mining Manager: Failed to send jackpot notification", [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Error checking for jackpot ores: " . $e->getMessage());
         }
     }
 

@@ -19,6 +19,8 @@ use Carbon\Carbon;
  * @property bool $notify_critical_theft
  * @property bool $notify_active_theft
  * @property bool $notify_incident_resolved
+ * @property bool $notify_moon_arrival
+ * @property bool $notify_jackpot_detected
  * @property string|null $discord_role_id
  * @property string|null $discord_username
  * @property string|null $slack_channel
@@ -57,6 +59,8 @@ class WebhookConfiguration extends Model
         'notify_critical_theft',
         'notify_active_theft',
         'notify_incident_resolved',
+        'notify_moon_arrival',
+        'notify_jackpot_detected',
         'discord_role_id',
         'discord_username',
         'slack_channel',
@@ -77,6 +81,8 @@ class WebhookConfiguration extends Model
         'notify_critical_theft' => 'boolean',
         'notify_active_theft' => 'boolean',
         'notify_incident_resolved' => 'boolean',
+        'notify_moon_arrival' => 'boolean',
+        'notify_jackpot_detected' => 'boolean',
         'custom_headers' => 'array',
         'last_success_at' => 'datetime',
         'last_failure_at' => 'datetime',
@@ -145,6 +151,8 @@ class WebhookConfiguration extends Model
             'critical_theft' => 'notify_critical_theft',
             'active_theft' => 'notify_active_theft',
             'incident_resolved' => 'notify_incident_resolved',
+            'moon_arrival' => 'notify_moon_arrival',
+            'jackpot_detected' => 'notify_jackpot_detected',
         ];
 
         $column = $columnMap[$eventType] ?? null;
@@ -245,6 +253,8 @@ class WebhookConfiguration extends Model
             'critical_theft' => $this->notify_critical_theft,
             'active_theft' => $this->notify_active_theft,
             'incident_resolved' => $this->notify_incident_resolved,
+            'moon_arrival' => $this->notify_moon_arrival,
+            'jackpot_detected' => $this->notify_jackpot_detected,
         ];
 
         return $eventMap[$eventType] ?? false;

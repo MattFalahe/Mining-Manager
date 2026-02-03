@@ -3,9 +3,11 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Moon\MoonOreHelper;
+use MiningManager\Services\Notification\WebhookService;
 
 class DetectJackpotsCommand extends Command
 {
@@ -74,11 +76,36 @@ class DetectJackpotsCommand extends Command
 
             if ($hasJackpot) {
                 $extraction->is_jackpot = true;
+                $extraction->jackpot_detected_at = now();
                 $extraction->save();
                 $detected++;
-                
+
                 $this->newLine();
                 $this->info("  ⭐ JACKPOT DETECTED: {$extraction->moon_name}");
+
+                // Send webhook notification
+                try {
+                    $structure = DB::table('universe_structures')
+                        ->where('structure_id', $extraction->structure_id)
+                        ->first();
+
+                    $systemName = $structure
+                        ? (DB::table('solar_systems')->where('system_id', $structure->solar_system_id)->value('name') ?? 'Unknown')
+                        : 'Unknown';
+
+                    $webhookService = app(WebhookService::class);
+                    $webhookService->sendMoonNotification('jackpot_detected', [
+                        'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                        'structure_name' => $structure->name ?? "Structure {$extraction->structure_id}",
+                        'system_name' => $systemName,
+                        'detected_by' => 'Jackpot Detection Scan',
+                        'jackpot_ores' => [],
+                        'jackpot_percentage' => 100,
+                        'extraction_id' => $extraction->id,
+                    ], $extraction->corporation_id);
+                } catch (\Exception $e) {
+                    $this->warn("  ⚠️ Failed to send notification: {$e->getMessage()}");
+                }
             }
 
             $bar->advance();

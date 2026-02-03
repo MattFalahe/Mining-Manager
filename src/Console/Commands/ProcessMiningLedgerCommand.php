@@ -5,9 +5,11 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Notification\WebhookService;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -219,6 +221,11 @@ class ProcessMiningLedgerCommand extends Command
                 return Command::FAILURE;
             }
 
+            // Check for jackpot ores in processed entries
+            if ($processed > 0) {
+                $this->checkForJackpotOres($observerEntries);
+            }
+
             // Clear dashboard cache after processing new ledger data
             $this->info("\n🔄 Clearing dashboard cache to reflect new data...");
             Cache::tags(['dashboard'])->flush();
@@ -236,6 +243,105 @@ class ProcessMiningLedgerCommand extends Command
             $this->error("❌ Fatal error: {$e->getMessage()}");
             $this->error($e->getTraceAsString());
             return Command::FAILURE;
+        }
+    }
+
+    /**
+     * Check if any processed entries contain jackpot ores and flag extractions
+     *
+     * @param \Illuminate\Support\Collection $observerEntries
+     * @return void
+     */
+    private function checkForJackpotOres($observerEntries)
+    {
+        try {
+            $jackpotTypeIds = TypeIdRegistry::getAllJackpotOres();
+
+            $jackpotEntries = $observerEntries->filter(function ($entry) use ($jackpotTypeIds) {
+                return in_array($entry->type_id, $jackpotTypeIds);
+            });
+
+            if ($jackpotEntries->isEmpty()) {
+                return;
+            }
+
+            $this->line('');
+            $this->info('⭐ Jackpot ores detected in mining data!');
+
+            // Group by observer/structure
+            $byObserver = $jackpotEntries->groupBy('observer_id');
+            $jackpotsFound = 0;
+
+            foreach ($byObserver as $observerId => $entries) {
+                // Find extraction for this structure
+                $entryDate = Carbon::parse($entries->first()->last_updated);
+
+                $extraction = MoonExtraction::where('structure_id', $observerId)
+                    ->where('chunk_arrival_time', '<=', $entryDate->endOfDay())
+                    ->where('natural_decay_time', '>=', $entryDate->startOfDay())
+                    ->where('is_jackpot', false)
+                    ->first();
+
+                if (!$extraction) {
+                    continue;
+                }
+
+                $extraction->is_jackpot = true;
+                $extraction->jackpot_detected_at = now();
+                $extraction->save();
+                $jackpotsFound++;
+
+                $this->info("  ⭐ JACKPOT: {$extraction->moon_name} (Structure {$observerId})");
+
+                // Get details for notification
+                $structureName = DB::table('universe_structures')
+                    ->where('structure_id', $observerId)
+                    ->value('name') ?? "Structure {$observerId}";
+
+                $systemName = DB::table('universe_structures')
+                    ->join('solar_systems', 'universe_structures.solar_system_id', '=', 'solar_systems.system_id')
+                    ->where('universe_structures.structure_id', $observerId)
+                    ->value('solar_systems.name') ?? 'Unknown System';
+
+                $jackpotOreDetails = [];
+                foreach ($entries->unique('type_id') as $entry) {
+                    $oreName = $entry->type->typeName ?? "Type {$entry->type_id}";
+                    $totalQty = $entries->where('type_id', $entry->type_id)->sum('quantity');
+                    $jackpotOreDetails[] = [
+                        'name' => $oreName,
+                        'type_id' => $entry->type_id,
+                        'quantity' => $totalQty,
+                    ];
+                }
+
+                // First miner who mined jackpot ore
+                $firstEntry = $entries->first();
+                $detectedBy = $firstEntry->character_name ?? "Character {$firstEntry->character_id}";
+
+                // Send webhook notification
+                try {
+                    $webhookService = app(WebhookService::class);
+                    $webhookService->sendMoonNotification('jackpot_detected', [
+                        'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                        'structure_name' => $structureName,
+                        'system_name' => $systemName,
+                        'detected_by' => $detectedBy,
+                        'jackpot_ores' => $jackpotOreDetails,
+                        'jackpot_percentage' => 100,
+                        'extraction_id' => $extraction->id,
+                    ], $extraction->corporation_id);
+
+                    $this->info("  📡 Jackpot notification sent!");
+                } catch (\Exception $e) {
+                    $this->warn("  ⚠️ Failed to send jackpot notification: {$e->getMessage()}");
+                }
+            }
+
+            if ($jackpotsFound > 0) {
+                $this->info("💎 Found {$jackpotsFound} new jackpot extraction(s)!");
+            }
+        } catch (\Exception $e) {
+            $this->warn("⚠️ Error checking for jackpot ores: {$e->getMessage()}");
         }
     }
 }

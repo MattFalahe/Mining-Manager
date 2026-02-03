@@ -8,6 +8,7 @@ use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use MiningManager\Services\Notification\WebhookService;
 use Carbon\Carbon;
 use Symfony\Component\Yaml\Yaml;
 
@@ -505,13 +506,73 @@ class MoonExtractionService
         }
 
         // Mark as ready if chunk has arrived but not expired
-        $ready = MoonExtraction::where('status', 'extracting')
+        $readyExtractions = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
             ->where('natural_decay_time', '>', $now)
-            ->update(['status' => 'ready']);
+            ->get();
 
-        if ($ready > 0) {
-            Log::info("Mining Manager: Marked {$ready} extractions as ready");
+        if ($readyExtractions->isNotEmpty()) {
+            MoonExtraction::whereIn('id', $readyExtractions->pluck('id'))
+                ->update(['status' => 'ready']);
+
+            Log::info("Mining Manager: Marked {$readyExtractions->count()} extractions as ready");
+
+            // Send moon arrival notifications
+            foreach ($readyExtractions as $extraction) {
+                $this->sendMoonArrivalNotification($extraction);
+            }
+        }
+    }
+
+    /**
+     * Send moon arrival webhook notification
+     *
+     * @param MoonExtraction $extraction
+     * @return void
+     */
+    private function sendMoonArrivalNotification(MoonExtraction $extraction)
+    {
+        try {
+            // Get structure name
+            $structure = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->first();
+
+            $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
+
+            // Build ore composition summary
+            $oreSummary = '';
+            if (!empty($extraction->ore_composition)) {
+                $oreLines = [];
+                foreach ($extraction->ore_composition as $oreName => $oreData) {
+                    $percentage = $oreData['percentage'] ?? 0;
+                    $oreLines[] = "{$oreName}: " . round($percentage, 1) . '%';
+                }
+                $oreSummary = implode("\n", $oreLines);
+            }
+
+            $webhookService = app(WebhookService::class);
+            $webhookService->sendMoonNotification('moon_arrival', [
+                'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                'structure_name' => $structureName,
+                'chunk_arrival_time' => $extraction->chunk_arrival_time
+                    ? $extraction->chunk_arrival_time->format('Y-m-d H:i')
+                    : 'Unknown',
+                'natural_decay_time' => $extraction->natural_decay_time
+                    ? $extraction->natural_decay_time->format('Y-m-d H:i')
+                    : 'Unknown',
+                'estimated_value' => $extraction->estimated_value ?? 0,
+                'ore_summary' => $oreSummary,
+                'extraction_id' => $extraction->id,
+            ], $extraction->corporation_id);
+
+            Log::info("Mining Manager: Moon arrival notification sent for {$extraction->moon_name}");
+
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Failed to send moon arrival notification", [
+                'extraction_id' => $extraction->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

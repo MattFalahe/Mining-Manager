@@ -502,6 +502,336 @@ class WebhookService
         }
     }
 
+    // ============================================================================
+    // MOON EVENT NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * Send a moon-related notification to all configured webhooks
+     *
+     * @param string $eventType (moon_arrival, jackpot_detected)
+     * @param array $data Moon event data
+     * @param int|null $corporationId
+     * @return array Results for each webhook
+     */
+    public function sendMoonNotification(string $eventType, array $data, ?int $corporationId = null): array
+    {
+        $webhooks = WebhookConfiguration::enabled()
+            ->forEvent($eventType)
+            ->get()
+            ->filter(function ($webhook) use ($corporationId) {
+                // Global webhooks (null corp) always match, corp-specific only match their corp
+                return $webhook->corporation_id === null || $webhook->corporation_id == $corporationId;
+            });
+
+        if ($webhooks->isEmpty()) {
+            Log::debug("WebhookService: No webhooks configured for moon event: {$eventType}");
+            return [];
+        }
+
+        $results = [];
+
+        foreach ($webhooks as $webhook) {
+            try {
+                $result = $this->sendMoonToWebhook($webhook, $eventType, $data);
+                $results[$webhook->id] = $result;
+
+                if ($result['success']) {
+                    $webhook->recordSuccess();
+                } else {
+                    $webhook->recordFailure($result['error'] ?? 'Unknown error');
+                }
+            } catch (\Exception $e) {
+                Log::error("WebhookService: Exception sending moon notification to webhook {$webhook->id}", [
+                    'error' => $e->getMessage(),
+                    'event_type' => $eventType,
+                ]);
+
+                $webhook->recordFailure($e->getMessage());
+                $results[$webhook->id] = [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Send moon notification to a specific webhook
+     *
+     * @param WebhookConfiguration $webhook
+     * @param string $eventType
+     * @param array $data
+     * @return array
+     */
+    protected function sendMoonToWebhook(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        switch ($webhook->type) {
+            case 'discord':
+                return $this->sendMoonToDiscord($webhook, $eventType, $data);
+
+            case 'slack':
+                return $this->sendMoonToSlack($webhook, $eventType, $data);
+
+            case 'custom':
+                return $this->sendMoonToCustom($webhook, $eventType, $data);
+
+            default:
+                return ['success' => false, 'error' => "Unknown webhook type: {$webhook->type}"];
+        }
+    }
+
+    /**
+     * Send moon notification to Discord
+     */
+    protected function sendMoonToDiscord(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $embed = $this->buildMoonDiscordEmbed($eventType, $data);
+
+        $payload = ['embeds' => [$embed]];
+
+        if ($webhook->discord_role_id) {
+            $payload['content'] = $webhook->getDiscordRoleMention();
+        }
+
+        if ($webhook->discord_username) {
+            $payload['username'] = $webhook->discord_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+
+            if ($response->successful() || $response->status() === 204) {
+                return ['success' => true];
+            }
+
+            return [
+                'success' => false,
+                'error' => "Discord returned status {$response->status()}: {$response->body()}",
+            ];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Discord: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Build Discord embed for moon events
+     */
+    protected function buildMoonDiscordEmbed(string $eventType, array $data): array
+    {
+        $color = $this->getColorForEventType($eventType);
+        $title = $this->getTitleForEventType($eventType);
+
+        $embed = [
+            'title' => $title,
+            'color' => $color,
+            'timestamp' => now()->toIso8601String(),
+            'fields' => [],
+            'footer' => ['text' => 'Mining Manager - Moon Operations'],
+        ];
+
+        if ($eventType === 'jackpot_detected') {
+            if (isset($data['moon_name'])) {
+                $embed['fields'][] = [
+                    'name' => 'Moon',
+                    'value' => $data['moon_name'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['system_name'])) {
+                $embed['fields'][] = [
+                    'name' => 'System',
+                    'value' => $data['system_name'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['structure_name'])) {
+                $embed['fields'][] = [
+                    'name' => 'Structure',
+                    'value' => $data['structure_name'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['detected_by'])) {
+                $embed['fields'][] = [
+                    'name' => 'Detected By',
+                    'value' => $data['detected_by'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['jackpot_ores']) && !empty($data['jackpot_ores'])) {
+                $oreList = implode("\n", array_map(function ($ore) {
+                    return "- {$ore['name']} (x" . number_format($ore['quantity']) . ")";
+                }, $data['jackpot_ores']));
+
+                $embed['fields'][] = [
+                    'name' => 'Jackpot Ores Found',
+                    'value' => $oreList,
+                    'inline' => false,
+                ];
+            }
+
+            if (isset($data['jackpot_percentage'])) {
+                $embed['fields'][] = [
+                    'name' => 'Jackpot %',
+                    'value' => $data['jackpot_percentage'] . '% of ores are +100% variants',
+                    'inline' => true,
+                ];
+            }
+
+            $embed['description'] = 'A jackpot moon extraction has been confirmed! Miners found +100% variant ores in the belt.';
+
+        } elseif ($eventType === 'moon_arrival') {
+            if (isset($data['moon_name'])) {
+                $embed['fields'][] = [
+                    'name' => 'Moon',
+                    'value' => $data['moon_name'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['structure_name'])) {
+                $embed['fields'][] = [
+                    'name' => 'Structure',
+                    'value' => $data['structure_name'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['chunk_arrival_time'])) {
+                $embed['fields'][] = [
+                    'name' => 'Chunk Arrived',
+                    'value' => $data['chunk_arrival_time'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['natural_decay_time'])) {
+                $embed['fields'][] = [
+                    'name' => 'Decays At',
+                    'value' => $data['natural_decay_time'],
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['estimated_value']) && $data['estimated_value'] > 0) {
+                $embed['fields'][] = [
+                    'name' => 'Estimated Value',
+                    'value' => number_format($data['estimated_value'], 0) . ' ISK',
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($data['ore_summary']) && !empty($data['ore_summary'])) {
+                $embed['fields'][] = [
+                    'name' => 'Ore Composition',
+                    'value' => $data['ore_summary'],
+                    'inline' => false,
+                ];
+            }
+
+            $embed['description'] = 'A moon chunk is ready for mining!';
+        }
+
+        return $embed;
+    }
+
+    /**
+     * Send moon notification to Slack
+     */
+    protected function sendMoonToSlack(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $title = $this->getTitleForEventType($eventType);
+
+        $fields = [];
+
+        if (isset($data['moon_name'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Moon:*\n{$data['moon_name']}"];
+        }
+        if (isset($data['structure_name'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Structure:*\n{$data['structure_name']}"];
+        }
+
+        if ($eventType === 'jackpot_detected') {
+            if (isset($data['detected_by'])) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Detected By:*\n{$data['detected_by']}"];
+            }
+            if (isset($data['jackpot_percentage'])) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Jackpot:*\n{$data['jackpot_percentage']}% +100% ores"];
+            }
+        } elseif ($eventType === 'moon_arrival') {
+            if (isset($data['chunk_arrival_time'])) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Arrived:*\n{$data['chunk_arrival_time']}"];
+            }
+            if (isset($data['estimated_value'])) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Value:*\n" . number_format($data['estimated_value'], 0) . ' ISK'];
+            }
+        }
+
+        $blocks = [
+            ['type' => 'header', 'text' => ['type' => 'plain_text', 'text' => $title]],
+            ['type' => 'section', 'fields' => $fields],
+        ];
+
+        $payload = ['text' => $title, 'blocks' => $blocks];
+
+        if ($webhook->slack_channel) {
+            $payload['channel'] = $webhook->slack_channel;
+        }
+        if ($webhook->slack_username) {
+            $payload['username'] = $webhook->slack_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Slack returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Slack: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Send moon notification to custom webhook
+     */
+    protected function sendMoonToCustom(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $payload = array_merge([
+            'event_type' => $eventType,
+            'timestamp' => now()->toIso8601String(),
+        ], $data);
+
+        $request = Http::timeout(10);
+
+        if ($webhook->custom_headers && is_array($webhook->custom_headers)) {
+            foreach ($webhook->custom_headers as $key => $value) {
+                $request = $request->withHeader($key, $value);
+            }
+        }
+
+        try {
+            $response = $request->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Custom webhook returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to custom webhook: {$e->getMessage()}"];
+        }
+    }
+
+    // ============================================================================
+    // SHARED HELPERS
+    // ============================================================================
+
     /**
      * Get color for Discord embed based on event type
      *
@@ -511,11 +841,13 @@ class WebhookService
     protected function getColorForEventType(string $eventType): int
     {
         return match($eventType) {
-            'critical_theft' => 0xFF0000, // Red
-            'active_theft' => 0xFF6B00,   // Orange-red
-            'theft_detected' => 0xFFA500, // Orange
-            'incident_resolved' => 0x00FF00, // Green
-            default => 0xFFFF00, // Yellow
+            'critical_theft' => 0xFF0000,       // Red
+            'active_theft' => 0xFF6B00,         // Orange-red
+            'theft_detected' => 0xFFA500,       // Orange
+            'incident_resolved' => 0x00FF00,    // Green
+            'jackpot_detected' => 0xFFD700,     // Gold
+            'moon_arrival' => 0x3498DB,         // Blue
+            default => 0xFFFF00,                // Yellow
         };
     }
 
@@ -528,11 +860,13 @@ class WebhookService
     protected function getTitleForEventType(string $eventType): string
     {
         return match($eventType) {
-            'critical_theft' => '🚨 CRITICAL THEFT DETECTED',
-            'active_theft' => '🔥 ACTIVE THEFT IN PROGRESS',
-            'theft_detected' => '⚠️ Theft Incident Detected',
-            'incident_resolved' => '✅ Theft Incident Resolved',
-            default => '⚠️ Theft Alert',
+            'critical_theft' => 'CRITICAL THEFT DETECTED',
+            'active_theft' => 'ACTIVE THEFT IN PROGRESS',
+            'theft_detected' => 'Theft Incident Detected',
+            'incident_resolved' => 'Theft Incident Resolved',
+            'jackpot_detected' => 'JACKPOT MOON DETECTED!',
+            'moon_arrival' => 'Moon Chunk Ready',
+            default => 'Theft Alert',
         };
     }
 

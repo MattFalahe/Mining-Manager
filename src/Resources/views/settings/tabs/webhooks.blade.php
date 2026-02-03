@@ -139,6 +139,16 @@
                                                     <i class="fas fa-check"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_moon_arrival)
+                                                <span class="badge badge-info" title="Moon Arrival">
+                                                    <i class="fas fa-moon"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_jackpot_detected)
+                                                <span class="badge" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Jackpot Detected">
+                                                    <i class="fas fa-star"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -293,6 +303,24 @@
                             <label class="custom-control-label" for="notify-incident-resolved">
                                 <i class="fas fa-check text-success"></i>
                                 {{ trans('mining-manager::settings.incident_resolved') }}
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-2"><strong>Moon Events</strong></small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-arrival" name="notify_moon_arrival" value="1">
+                            <label class="custom-control-label" for="notify-moon-arrival">
+                                <i class="fas fa-moon text-info"></i>
+                                Moon Chunk Ready
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-jackpot-detected" name="notify_jackpot_detected" value="1">
+                            <label class="custom-control-label" for="notify-jackpot-detected">
+                                <i class="fas fa-star" style="color: #ffd700;"></i>
+                                Jackpot Detected
                             </label>
                         </div>
                     </div>
