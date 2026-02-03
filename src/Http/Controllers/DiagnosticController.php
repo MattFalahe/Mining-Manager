@@ -1528,7 +1528,7 @@ class DiagnosticController extends Controller
 
             // 5. Tax records with negative amounts
             $negativeTaxes = DB::table('mining_taxes')
-                ->where('tax_amount', '<', 0)
+                ->where('amount_owed', '<', 0)
                 ->count();
 
             if ($negativeTaxes > 0) {
@@ -1536,7 +1536,21 @@ class DiagnosticController extends Controller
                     'category' => 'Negative Taxes',
                     'severity' => 'error',
                     'count' => $negativeTaxes,
-                    'message' => 'Tax records with negative amounts',
+                    'message' => 'Tax records with negative amount_owed',
+                ];
+            }
+
+            // 5b. Mining ledger entries with negative tax_amount
+            $negativeLedgerTax = DB::table('mining_ledger')
+                ->where('tax_amount', '<', 0)
+                ->count();
+
+            if ($negativeLedgerTax > 0) {
+                $issues[] = [
+                    'category' => 'Negative Ledger Tax',
+                    'severity' => 'error',
+                    'count' => $negativeLedgerTax,
+                    'message' => 'Mining ledger entries with negative tax_amount',
                 ];
             }
 
@@ -1804,10 +1818,19 @@ class DiagnosticController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Valuation test failed', ['error' => $e->getMessage()]);
+            Log::error('Valuation test failed', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'debug' => [
+                    'file' => basename($e->getFile()),
+                    'line' => $e->getLine(),
+                ],
             ], 500);
         }
     }

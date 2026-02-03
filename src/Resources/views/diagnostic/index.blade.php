@@ -1866,7 +1866,20 @@ function runValuationTest() {
         },
         body: JSON.stringify({ type_id: parseInt(typeId), quantity: parseInt(quantity) })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                try {
+                    const json = JSON.parse(text);
+                    throw new Error(json.error || json.message || 'Server error ' + response.status);
+                } catch (e) {
+                    if (e.message.startsWith('Server error') || e.message.includes('error')) throw e;
+                    throw new Error('Server error ' + response.status + ': ' + text.substring(0, 200));
+                }
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         btnText.textContent = 'Test Valuation';
         spinner.style.display = 'none';
@@ -1885,7 +1898,7 @@ function runValuationTest() {
             data.steps.forEach(step => {
                 html += `<div class="alert alert-info mb-2"><strong>Step ${step.step}: ${step.action}</strong><br>`;
                 for (const [k, v] of Object.entries(step.result)) {
-                    const displayVal = (typeof v === 'boolean') ? (v ? 'Yes' : 'No') : v;
+                    const displayVal = (typeof v === 'boolean') ? (v ? 'Yes' : 'No') : (v === null ? 'null' : v);
                     html += `<small><strong>${k}:</strong> ${displayVal}</small><br>`;
                 }
                 html += '</div>';
@@ -1894,7 +1907,7 @@ function runValuationTest() {
             html += '</div>';
             resultsDiv.innerHTML = html;
         } else {
-            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error || data.message || 'Unknown error'}</p></div>`;
         }
     })
     .catch(error => {
