@@ -6,13 +6,14 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\Setting;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\ReprocessingRegistry;
 use Carbon\Carbon;
 use Exception;
 
 /**
  * Service for caching and managing market data
- * 
+ *
  * Handles:
  * - Price caching to reduce API calls
  * - Historical price tracking
@@ -34,11 +35,17 @@ class MarketDataService
     protected PriceProviderService $priceProvider;
 
     /**
+     * Settings manager service
+     */
+    protected SettingsManagerService $settingsService;
+
+    /**
      * Constructor
      */
-    public function __construct(PriceProviderService $priceProvider)
+    public function __construct(PriceProviderService $priceProvider, SettingsManagerService $settingsService)
     {
         $this->priceProvider = $priceProvider;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -173,7 +180,9 @@ class MarketDataService
         $lastPrice = end($prices);
         $averagePrice = array_sum($prices) / count($prices);
 
-        $changePercentage = (($lastPrice - $firstPrice) / $firstPrice) * 100;
+        $changePercentage = $firstPrice > 0
+            ? (($lastPrice - $firstPrice) / $firstPrice) * 100
+            : 0;
 
         $trend = 'stable';
         if ($changePercentage > 5) {
@@ -304,31 +313,16 @@ class MarketDataService
      */
     private function getRefiningEfficiency(): float
     {
-        // Try to get from settings (using dot-notation key)
-        try {
-            $efficiency = Setting::getValue('pricing.refining_efficiency', null, null);
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $value = floatval($pricingSettings['refining_efficiency'] ?? 87.5);
 
-            if ($efficiency !== null) {
-                // Convert percentage to decimal (e.g., 87.5 -> 0.875)
-                $value = floatval($efficiency);
-
-                // If value is > 1, assume it's a percentage
-                if ($value > 1) {
-                    $value = $value / 100;
-                }
-
-                // Clamp between 0 and 1
-                return max(0.0, min(1.0, $value));
-            }
-        } catch (\Exception $e) {
-            Log::warning('Failed to get refining efficiency from settings', [
-                'error' => $e->getMessage()
-            ]);
+        // If value is > 1, assume it's a percentage and convert to decimal
+        if ($value > 1) {
+            $value = $value / 100;
         }
 
-        // Fallback to config, then default to 87.5% (perfect skills with T1 station)
-        $configValue = config('mining-manager.pricing.refining_efficiency', 87.5);
-        return $configValue > 1 ? $configValue / 100 : $configValue;
+        // Clamp between 0 and 1
+        return max(0.0, min(1.0, $value));
     }
 
     /**
@@ -356,9 +350,16 @@ class MarketDataService
      */
     public function clearAllCaches(): void
     {
-        $pattern = self::CACHE_PREFIX . '*';
-        Cache::flush(); // Or use Cache::tags if using Redis/Memcached
-        
+        // Try tagged cache first (Redis/Memcached), fall back to forgetting known keys
+        try {
+            Cache::tags(['mining-manager', 'prices'])->flush();
+        } catch (\Exception $e) {
+            // File/database driver doesn't support tags - clear known keys individually
+            $oreTypeIds = $this->getAllOreTypeIds();
+            $cacheKey = $this->getPriceCacheKey($oreTypeIds);
+            Cache::forget($cacheKey);
+        }
+
         Log::info('Cleared all price caches');
     }
 
@@ -400,7 +401,7 @@ class MarketDataService
             'cached' => $isCached,
             'last_update' => $lastUpdate,
             'cache_duration' => $this->getCacheDuration(),
-            'provider' => Setting::getValue('price_provider', 'esi'),
+            'provider' => $this->settingsService->getPricingSettings()['price_provider'] ?? 'seat',
             'ore_count' => count($oreTypeIds)
         ];
     }
@@ -429,7 +430,7 @@ class MarketDataService
     {
         // This could be stored in config or database
         // For now, we'll get it from settings or use a default list
-        $customOres = Setting::getValue('tracked_ore_types', []);
+        $customOres = $this->settingsService->getSetting('tracked_ore_types', []);
         
         if (!empty($customOres)) {
             return $customOres;
@@ -486,7 +487,7 @@ class MarketDataService
     protected function getPriceCacheKey(array $typeIds): string
     {
         sort($typeIds);
-        $provider = Setting::getValue('price_provider', 'esi');
+        $provider = $this->settingsService->getPricingSettings()['price_provider'] ?? 'seat';
         return self::CACHE_PREFIX . $provider . '_' . md5(implode(',', $typeIds));
     }
 
@@ -512,7 +513,8 @@ class MarketDataService
      */
     protected function getCacheDuration(): int
     {
-        return Setting::getValue('price_cache_duration', self::CACHE_DURATION);
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        return (int) ($pricingSettings['cache_duration'] ?? self::CACHE_DURATION);
     }
 
     /**

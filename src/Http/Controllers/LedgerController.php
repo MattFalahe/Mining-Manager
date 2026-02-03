@@ -13,6 +13,9 @@ use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
+use MiningManager\Services\Pricing\OreValuationService;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use Carbon\Carbon;
 
@@ -22,11 +25,19 @@ class LedgerController extends Controller
 
     protected $characterInfoService;
     protected $summaryService;
+    protected OreValuationService $oreValuationService;
+    protected SettingsManagerService $settingsService;
 
-    public function __construct(CharacterInfoService $characterInfoService, LedgerSummaryService $summaryService)
-    {
+    public function __construct(
+        CharacterInfoService $characterInfoService,
+        LedgerSummaryService $summaryService,
+        OreValuationService $oreValuationService,
+        SettingsManagerService $settingsService
+    ) {
         $this->characterInfoService = $characterInfoService;
         $this->summaryService = $summaryService;
+        $this->oreValuationService = $oreValuationService;
+        $this->settingsService = $settingsService;
     }
     /**
      * Display the mining ledger index with all mining activity
@@ -356,12 +367,16 @@ class LedgerController extends Controller
                     ->where('solar_system_id', $seatEntry->solar_system_id)
                     ->first();
 
-                // Get price for the ore
-                $price = $this->getOrePrice($seatEntry->type_id, $seatEntry->date, $recalculatePrices);
-                $totalValue = $seatEntry->quantity * $price;
+                // Use OreValuationService for consistent pricing
+                $valuation = $this->oreValuationService->calculateOreValue(
+                    $seatEntry->type_id,
+                    $seatEntry->quantity
+                );
+                $price = $valuation['unit_price'];
+                $totalValue = $valuation['total_value'];
 
-                // Calculate tax
-                $taxRate = $this->getTaxRate($seatEntry->character_id, $seatEntry->type_id);
+                // Get tax rate from settings service (respects per-rarity moon ore rates)
+                $taxRate = $this->getOreTaxRate($seatEntry->type_id);
                 $taxAmount = $totalValue * ($taxRate / 100);
 
                 if ($existing) {
@@ -557,110 +572,33 @@ class LedgerController extends Controller
     }
 
     /**
-     * Get ore price from cache or fetch new price
+     * Get tax rate for an ore type using settings service.
+     * Respects per-rarity moon ore rates (R4-R64), ore, ice, gas rates.
      *
      * @param int $typeId
-     * @param string $date
-     * @param bool $forceRefresh
-     * @return float
+     * @return float Tax rate as percentage (0-100)
      */
-    protected function getOrePrice($typeId, $date, $forceRefresh = false)
+    protected function getOreTaxRate(int $typeId): float
     {
-        $cacheDate = Carbon::parse($date)->startOfDay();
+        $taxRates = $this->settingsService->getTaxRates();
 
-        if (!$forceRefresh) {
-            // Try to get cached price
-            $cached = MiningPriceCache::where('type_id', $typeId)
-                ->where('date', $cacheDate)
-                ->first();
-
-            if ($cached) {
-                return $cached->price;
-            }
+        // Check if it's moon ore
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
+            return (float) ($taxRates['moon_ore'][$rarity] ?? $taxRates['moon_ore']['r4'] ?? 5.0);
         }
 
-        // Get price source from settings
-        $priceSource = Setting::getValue('price_source', 'evepraisal');
-
-        // Fetch price based on source
-        $price = $this->fetchOrePrice($typeId, $priceSource);
-
-        // Cache the price
-        MiningPriceCache::updateOrCreate(
-            ['type_id' => $typeId, 'date' => $cacheDate],
-            ['price' => $price, 'source' => $priceSource]
-        );
-
-        return $price;
-    }
-
-    /**
-     * Fetch ore price from external source or SDE
-     *
-     * @param int $typeId
-     * @param string $source
-     * @return float
-     */
-    protected function fetchOrePrice($typeId, $source)
-    {
-        // This is a placeholder - implement actual price fetching based on your price source
-        // You might want to use the PriceProviderService here
-        
-        try {
-            // Query SDE table directly for basePrice
-            $basePrice = DB::table('invTypes')
-                ->where('typeID', $typeId)
-                ->value('basePrice');
-            
-            return $basePrice ?? 0;
-        } catch (\Exception $e) {
-            \Log::error('Failed to fetch ore price', [
-                'type_id' => $typeId,
-                'source' => $source,
-                'error' => $e->getMessage(),
-            ]);
-            
-            return 0;
+        // Check other categories
+        if (TypeIdRegistry::isIce($typeId)) {
+            return (float) ($taxRates['ice'] ?? 10.0);
         }
-    }
 
-    /**
-     * Get tax rate for character and ore type
-     *
-     * @param int $characterId
-     * @param int $typeId
-     * @return float
-     */
-    protected function getTaxRate($characterId, $typeId)
-    {
-        // Check if ore is moon ore
-        $isMoonOre = $this->isMoonOre($typeId);
-
-        // Get appropriate tax rate from settings
-        if ($isMoonOre) {
-            return (float) Setting::getValue('moon_ore_tax_rate', 10);
-        } else {
-            return (float) Setting::getValue('regular_ore_tax_rate', 5);
+        if (TypeIdRegistry::isGas($typeId)) {
+            return (float) ($taxRates['gas'] ?? 10.0);
         }
-    }
 
-    /**
-     * Check if type is moon ore
-     *
-     * @param int $typeId
-     * @return bool
-     */
-    protected function isMoonOre($typeId)
-    {
-        // Moon ore group IDs in EVE
-        $moonOreGroups = [1884, 1920, 1921, 1922, 1923];
-
-        // Query SDE table directly
-        $groupId = DB::table('invTypes')
-            ->where('typeID', $typeId)
-            ->value('groupID');
-
-        return $groupId && in_array($groupId, $moonOreGroups);
+        // Regular ore
+        return (float) ($taxRates['ore'] ?? 10.0);
     }
 
     /**
@@ -1012,9 +950,15 @@ class LedgerController extends Controller
                         ->exists();
 
                     if (!$exists) {
-                        // Get price from cache or API
-                        $price = $this->getTypePrice($mining->type_id);
-                        
+                        // Use OreValuationService for consistent pricing
+                        $valuation = $this->oreValuationService->calculateOreValue(
+                            $mining->type_id,
+                            $mining->quantity
+                        );
+                        $price = $valuation['unit_price'];
+                        $totalValue = $valuation['total_value'];
+                        $taxRate = $this->getOreTaxRate($mining->type_id);
+
                         MiningLedger::create([
                             'character_id' => $characterId,
                             'type_id' => $mining->type_id,
@@ -1022,9 +966,9 @@ class LedgerController extends Controller
                             'date' => $mining->date,
                             'solar_system_id' => $mining->solar_system_id,
                             'price' => $price,
-                            'total_value' => $mining->quantity * $price,
-                            'tax_rate' => $this->getDefaultTaxRate(),
-                            'tax_amount' => ($mining->quantity * $price) * ($this->getDefaultTaxRate() / 100),
+                            'total_value' => $totalValue,
+                            'tax_rate' => $taxRate,
+                            'tax_amount' => $totalValue * ($taxRate / 100),
                             'processed' => false,
                         ]);
                         
@@ -1117,10 +1061,14 @@ class LedgerController extends Controller
                         continue;
                     }
 
-                    // Get price (use model's primary key)
-                    $price = $this->getTypePrice($oreType->getKey());
-                    $totalValue = $quantity * $price;
-                    $taxRate = $this->getDefaultTaxRate();
+                    // Use OreValuationService for consistent pricing
+                    $valuation = $this->oreValuationService->calculateOreValue(
+                        $oreType->getKey(),
+                        (int) $quantity
+                    );
+                    $price = $valuation['unit_price'];
+                    $totalValue = $valuation['total_value'];
+                    $taxRate = $this->getOreTaxRate($oreType->getKey());
                     $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Create ledger entry (use model's getKey() to get primary key values)
@@ -1176,10 +1124,10 @@ class LedgerController extends Controller
     public function toggleQueue(Request $request)
     {
         try {
-            $currentState = Setting::get('ledger_queue_paused', false);
+            $currentState = Setting::getValue('ledger_queue_paused', false);
             $newState = !$currentState;
-            
-            Setting::set('ledger_queue_paused', $newState);
+
+            Setting::setValue('ledger_queue_paused', $newState, 'boolean');
 
             return response()->json([
                 'success' => true,
@@ -1197,35 +1145,6 @@ class LedgerController extends Controller
         }
     }
 
-    /**
-     * Helper: Get type price from cache or API
-     *
-     * @param int $typeId
-     * @return float
-     */
-    private function getTypePrice($typeId)
-    {
-        $cached = MiningPriceCache::where('type_id', $typeId)
-            ->where('expires_at', '>', now())
-            ->first();
-
-        if ($cached) {
-            return $cached->price;
-        }
-
-        // Default fallback price if no cache available
-        return 0.0;
-    }
-
-    /**
-     * Helper: Get default tax rate from settings
-     *
-     * @return float
-     */
-    private function getDefaultTaxRate()
-    {
-        return (float) Setting::get('default_tax_rate', 10.0);
-    }
 
     /**
      * Retry a failed processing job

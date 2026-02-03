@@ -884,6 +884,25 @@ class TypeIdRegistry
     }
 
     /**
+     * Get the rarity level for a moon ore type ID.
+     *
+     * @param int $typeId
+     * @return string|null Lowercase rarity (r4, r8, r16, r32, r64) or null if not moon ore
+     */
+    public static function getMoonOreRarity(int $typeId): ?string
+    {
+        $rarityMap = self::getMoonOreRarityMap();
+
+        foreach ($rarityMap as $rarity => $typeIds) {
+            if (in_array($typeId, $typeIds)) {
+                return strtolower($rarity);
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Check if a type ID is a regular ore (including new ores)
      */
     public static function isRegularOre(int $typeId): bool

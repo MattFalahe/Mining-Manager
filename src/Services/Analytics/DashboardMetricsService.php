@@ -95,9 +95,11 @@ class DashboardMetricsService
         $mined = MiningLedger::whereBetween('date', [$startDate, $endDate])->sum('quantity');
         $miners = MiningLedger::whereBetween('date', [$startDate, $endDate])->distinct('character_id')->count();
         
-        // Calculate value
-        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
+        // Calculate value using settings service
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $regionId = $generalSettings['default_region_id'] ?? 10000002;
+        $priceType = $pricingSettings['price_type'] ?? 'sell';
         $priceColumn = match ($priceType) {
             'buy' => 'buy_price',
             'average' => 'average_price',

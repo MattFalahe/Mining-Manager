@@ -124,9 +124,9 @@ class SettingsController extends Controller
                     'gas_tax' => $taxRates['gas'] ?? 0,
                     'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
                     'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
-                    'tax_regular_ore' => $taxSelector['tax_regular_ore'] ?? false,
-                    'tax_ice' => $taxSelector['tax_ice'] ?? false,
-                    'tax_gas' => $taxSelector['tax_gas'] ?? false,
+                    'tax_regular_ore' => $taxSelector['ore'] ?? false,
+                    'tax_ice' => $taxSelector['ice'] ?? false,
+                    'tax_gas' => $taxSelector['gas'] ?? false,
                 ];
             });
 
@@ -509,25 +509,23 @@ class SettingsController extends Controller
 
         try {
             $data = $validator->validated();
-            
-            // Store price provider setting
+
+            // Store price provider and Janice settings via settings service
+            // These use top-level keys (not 'pricing.' prefix) to match getPricingSettings() reads
             if (isset($data['price_provider'])) {
-                \MiningManager\Models\Setting::setValue('price_provider', $data['price_provider']);
+                $this->settingsService->updateSetting('price_provider', $data['price_provider'], 'string');
             }
-            
-            // Store Janice settings if provided
-            // These will override ENV settings when set
             if (isset($data['janice_api_key'])) {
-                \MiningManager\Models\Setting::setValue('janice_api_key', $data['janice_api_key']);
+                $this->settingsService->updateSetting('janice_api_key', $data['janice_api_key'], 'string');
             }
             if (isset($data['janice_market'])) {
-                \MiningManager\Models\Setting::setValue('janice_market', $data['janice_market']);
+                $this->settingsService->updateSetting('janice_market', $data['janice_market'], 'string');
             }
             if (isset($data['janice_price_method'])) {
-                \MiningManager\Models\Setting::setValue('janice_price_method', $data['janice_price_method']);
+                $this->settingsService->updateSetting('janice_price_method', $data['janice_price_method'], 'string');
             }
-            
-            // Update other pricing settings via service
+
+            // Update other pricing settings via service (these use 'pricing.' prefix)
             $this->settingsService->updatePricingSettings([
                 'price_type' => $data['price_type'],
                 'cache_duration' => $data['cache_duration'],
@@ -539,8 +537,13 @@ class SettingsController extends Controller
             ]);
 
             // Clear price cache AND moon value cache when settings change
-            cache()->tags(['mining-manager', 'prices'])->flush();
-            cache()->tags(['mining-manager', 'moon-values'])->flush();
+            try {
+                cache()->tags(['mining-manager', 'prices'])->flush();
+                cache()->tags(['mining-manager', 'moon-values'])->flush();
+            } catch (\Exception $cacheException) {
+                // File/database cache driver doesn't support tags - acceptable
+                \Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
+            }
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'Pricing settings updated successfully. Moon values will be recalculated on next view.');
@@ -602,7 +605,11 @@ class SettingsController extends Controller
             }
 
             // Clear dashboard cache
-            cache()->tags(['mining-manager', 'dashboard'])->flush();
+            try {
+                cache()->tags(['mining-manager', 'dashboard'])->flush();
+            } catch (\Exception $cacheException) {
+                \Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
+            }
 
             // Redirect back with corporation_id to maintain context
             $redirectUrl = route('mining-manager.settings.index');
@@ -730,7 +737,11 @@ class SettingsController extends Controller
     public function clearCache()
     {
         try {
-            cache()->tags(['mining-manager'])->flush();
+            try {
+                cache()->tags(['mining-manager'])->flush();
+            } catch (\Exception $cacheException) {
+                \Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
+            }
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'All caches cleared successfully');

@@ -9,6 +9,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\DashboardMetricsService;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
@@ -23,15 +24,18 @@ class DashboardController extends Controller
     protected $metricsService;
     protected $marketDataService;
     protected $characterInfoService;
+    protected SettingsManagerService $settingsService;
 
     public function __construct(
         DashboardMetricsService $metricsService,
         MarketDataService $marketDataService,
-        CharacterInfoService $characterInfoService
+        CharacterInfoService $characterInfoService,
+        SettingsManagerService $settingsService
     ) {
         $this->metricsService = $metricsService;
         $this->marketDataService = $marketDataService;
         $this->characterInfoService = $characterInfoService;
+        $this->settingsService = $settingsService;
     }
     
     /**
@@ -507,10 +511,10 @@ class DashboardController extends Controller
         }
 
         // Apply corporation filter from dashboard settings
-        $corporationFilter = \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_filter', 'all');
+        $corporationFilter = $this->settingsService->getSetting('dashboard_leaderboard_corporation_filter', 'all');
 
         if ($corporationFilter === 'specific') {
-            $corporationIdsJson = \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_ids', '[]');
+            $corporationIdsJson = $this->settingsService->getSetting('dashboard_leaderboard_corporation_ids', '[]');
             $corporationIds = json_decode($corporationIdsJson, true);
 
             if (!empty($corporationIds)) {

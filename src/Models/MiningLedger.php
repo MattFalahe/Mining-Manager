@@ -380,8 +380,12 @@ class MiningLedger extends Model
     public function getEstimatedValue()
     {
         try {
+            $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $generalSettings = $settingsService->getGeneralSettings();
+            $pricingSettings = $settingsService->getPricingSettings();
+
             $priceCache = MiningPriceCache::where('type_id', $this->type_id)
-                ->where('region_id', config('mining-manager.pricing.default_region_id', 10000002))
+                ->where('region_id', $generalSettings['default_region_id'] ?? 10000002)
                 ->latest('cached_at')
                 ->first();
 
@@ -389,7 +393,7 @@ class MiningLedger extends Model
                 return null;
             }
 
-            $priceType = config('mining-manager.pricing.price_type', 'sell');
+            $priceType = $pricingSettings['price_type'] ?? 'sell';
             $price = match ($priceType) {
                 'sell' => $priceCache->sell_price,
                 'buy' => $priceCache->buy_price,

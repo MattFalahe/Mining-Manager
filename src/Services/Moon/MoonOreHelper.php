@@ -313,6 +313,7 @@ class MoonOreHelper
 
         try {
             $valueService = app(\MiningManager\Services\Moon\MoonValueCalculationService::class);
+            $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
 
             // Use reflection to access private methods
             $reflection = new \ReflectionClass($valueService);
@@ -326,18 +327,17 @@ class MoonOreHelper
                 return [];
             }
 
-            // Get refining efficiency
-            $getSettingMethod = $reflection->getMethod('getSetting');
-            $getSettingMethod->setAccessible(true);
-            $refiningEfficiency = $getSettingMethod->invoke($valueService, 'pricing.refining_efficiency',
-                config('mining-manager.pricing.refining_efficiency', 87.5)) / 100;
+            // Get refining efficiency from settings service
+            $pricingSettings = $settingsService->getPricingSettings();
+            $generalSettings = $settingsService->getGeneralSettings();
+            $refiningEfficiency = floatval($pricingSettings['refining_efficiency'] ?? 87.5) / 100;
 
             // Get ore price method for fetching mineral prices
             $getOrePriceMethod = $reflection->getMethod('getOrePrice');
             $getOrePriceMethod->setAccessible(true);
 
-            $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-            $priceType = config('mining-manager.pricing.price_type', 'sell');
+            $regionId = $generalSettings['default_region_id'] ?? 10000002;
+            $priceType = $pricingSettings['price_type'] ?? 'sell';
 
             $minerals = [];
 

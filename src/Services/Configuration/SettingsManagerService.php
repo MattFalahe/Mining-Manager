@@ -126,8 +126,8 @@ class SettingsManagerService
             'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
             'moon_owner_corporation_id' => $this->getSetting('general.moon_owner_corporation_id', config('mining-manager.general.moon_owner_corporation_id')),
 
-            // Ore Refining Settings
-            'ore_refining_rate' => $this->getSetting('general.ore_refining_rate', config('mining-manager.general.ore_refining_rate', 90.0)),
+            // Ore Refining Settings (unified: reads from pricing.refining_efficiency)
+            'ore_refining_rate' => $this->getSetting('pricing.refining_efficiency', config('mining-manager.pricing.refining_efficiency', 87.5)),
             'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),
             
             // Price Provider Settings
@@ -674,7 +674,12 @@ class SettingsManagerService
      */
     public function getMoonSettings(): array
     {
-        return config('mining-manager.moon', []);
+        return [
+            'estimated_chunk_size' => $this->getSetting('moon.estimated_chunk_size', config('mining-manager.moon.estimated_chunk_size', 150000)),
+            'notification_hours_before' => $this->getSetting('moon.notification_hours_before', config('mining-manager.moon.notification_hours_before', [24, 4, 1])),
+            'auto_calculate_values' => $this->getSetting('moon.auto_calculate_values', config('mining-manager.moon.auto_calculate_values', true)),
+            'show_unscanned_moons' => $this->getSetting('moon.show_unscanned_moons', config('mining-manager.moon.show_unscanned_moons', true)),
+        ];
     }
 
     /**
@@ -704,7 +709,12 @@ class SettingsManagerService
      */
     public function getDashboardSettings(): array
     {
-        return config('mining-manager.dashboard', []);
+        $configDefaults = config('mining-manager.dashboard', []);
+
+        return array_merge($configDefaults, [
+            'dashboard_leaderboard_corporation_filter' => $this->getSetting('dashboard_leaderboard_corporation_filter', 'all'),
+            'dashboard_leaderboard_corporation_ids' => $this->getSetting('dashboard_leaderboard_corporation_ids', '[]'),
+        ]);
     }
 
     /**
@@ -758,13 +768,34 @@ class SettingsManagerService
     public function resetToDefaults()
     {
         DB::beginTransaction();
-        
+
         try {
+            // Get all setting keys before truncating so we can clear their cache entries
+            $settingKeys = Setting::pluck('key')->toArray();
+            $corporationIds = Setting::whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->toArray();
+
             Setting::truncate();
-            Cache::flush();
-            
+
+            // Clear only mining-manager cache keys (not the entire application cache)
+            foreach ($settingKeys as $key) {
+                Cache::forget(self::CACHE_PREFIX . 'global_' . $key);
+                foreach ($corporationIds as $corpId) {
+                    Cache::forget(self::CACHE_PREFIX . $corpId . '_' . $key);
+                }
+            }
+
+            // Also try tag-based flush if cache driver supports it
+            try {
+                Cache::tags(['mining-manager'])->flush();
+            } catch (\Exception $cacheException) {
+                // File/database cache driver doesn't support tags - acceptable
+            }
+
             Log::info('Mining Manager: All settings reset to defaults');
-            
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();

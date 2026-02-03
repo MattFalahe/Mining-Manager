@@ -479,6 +479,12 @@ class TaxCalculationService
 
         // Check if it's moon ore
         if ($this->isMoonOre($typeId)) {
+            // If no_moon_ore is set, skip all moon ore taxation
+            if (!empty($taxSelector['no_moon_ore'])) {
+                Log::debug("Mining Manager: Skipping moon ore type {$typeId} - no_moon_ore is enabled");
+                return false;
+            }
+
             // If only_corp_moon_ore is enabled, check if it's from corp moon
             if ($taxSelector['only_corp_moon_ore'] && $miningEntry) {
                 // Use cached corp moon data if available (batch optimization)
@@ -645,6 +651,38 @@ class TaxCalculationService
     }
 
     /**
+     * Build corp moon cache from a collection of mining entries.
+     * Uses batchLoadCorpMoonData for each unique character/date range.
+     *
+     * @param \Illuminate\Support\Collection $miningData
+     * @return array
+     */
+    private function buildCorpMoonCache($miningData): array
+    {
+        $cache = [];
+
+        // Group by character_id to batch-load per character
+        $grouped = $miningData->groupBy('character_id');
+
+        foreach ($grouped as $characterId => $entries) {
+            $dates = $entries->pluck('date');
+            $startDate = $dates->min();
+            $endDate = $dates->max();
+
+            if ($startDate && $endDate) {
+                $charCache = $this->batchLoadCorpMoonData(
+                    $characterId,
+                    $startDate instanceof \Carbon\Carbon ? $startDate : \Carbon\Carbon::parse($startDate),
+                    $endDate instanceof \Carbon\Carbon ? $endDate : \Carbon\Carbon::parse($endDate)
+                );
+                $cache = array_merge($cache, $charCache);
+            }
+        }
+
+        return $cache;
+    }
+
+    /**
      * Generate cache key for corp moon lookup
      *
      * @param int $characterId
@@ -773,12 +811,15 @@ class TaxCalculationService
         $character = CharacterInfo::find($characterId);
         $characterCorpId = $character ? $character->corporation_id : null;
 
+        // Pre-build corp moon cache for batch optimization (avoids N+1 queries)
+        $corpMoonCache = $this->buildCorpMoonCache($miningData);
+
         $breakdown = [];
         $totalValue = 0;
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
-            if (!$this->shouldTaxOre($entry->type_id, $entry)) {
+            if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
                 continue;
             }
 

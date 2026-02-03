@@ -10,10 +10,7 @@ return [
     'general' => [
         // Corporation ID (can be set via settings page)
         'corporation_id' => null,
-        
-        // Ore refining efficiency percentage (0-100)
-        'ore_refining_rate' => 90.0,
-        
+
         // Ore valuation method: 'ore_price' or 'mineral_price'
         'ore_valuation_method' => 'mineral_price',
         

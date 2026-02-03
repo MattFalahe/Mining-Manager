@@ -7,22 +7,29 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use MiningManager\Models\Setting;
 use MiningManager\Models\MiningPriceCache;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Exception;
 
 /**
  * Service for fetching ore prices from various providers
- * 
+ *
  * Supported providers:
  * - SeAT Database (market_prices table) - Default, no ESI calls
  * - Janice - Janice API (requires API key)
  * - Fuzzwork - Fuzzwork market data
  * - Custom - Manually configured prices
- * 
+ *
  * NO ESI CALLS - Uses SeAT's existing database tables
  */
 class PriceProviderService
 {
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected SettingsManagerService $settingsService;
     /**
      * Price provider constants
      */
@@ -42,6 +49,16 @@ class PriceProviderService
     const JANICE_PRICER_URL = 'https://janice.e-351.com/api/rest/v2/pricer';
     const JANICE_APPRAISAL_URL = 'https://janice.e-351.com/api/rest/v2/appraisal';
     const FUZZWORK_MARKET_URL = 'https://market.fuzzwork.co.uk/aggregates/';
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settingsService
+     */
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
 
     /**
      * Get prices for specified type IDs
@@ -110,7 +127,8 @@ class PriceProviderService
      */
     protected function getPricesFromSeAT(array $typeIds): array
     {
-        $priceMethod = Setting::getValue('price_method', 'average');
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $priceMethod = $pricingSettings['price_type'] ?? 'average';
         
         $prices = [];
 
@@ -149,19 +167,20 @@ class PriceProviderService
      */
     protected function getPricesFromJanice(array $typeIds): array
     {
+        $pricingSettings = $this->settingsService->getPricingSettings();
+
         // Check settings first, then fall back to ENV/config
-        $apiKey = Setting::getValue('janice_api_key')
-            ?: config('mining-manager.general.price_provider_api_key');
+        $apiKey = $pricingSettings['janice_api_key'] ?? '';
 
         if (empty($apiKey)) {
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
         $prices = [];
-        $market = Setting::getValue('janice_market', 'jita'); // jita or amarr
-        $batchSize = Setting::getValue('janice_batch_size', 50);
-        $rateLimitDelay = Setting::getValue('janice_rate_limit_delay', 50000); // microseconds
-        $maxRetries = Setting::getValue('janice_max_retries', 3);
+        $market = $pricingSettings['janice_market'] ?? 'jita';
+        $batchSize = $this->settingsService->getSetting('janice_batch_size', 50);
+        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000); // microseconds
+        $maxRetries = $this->settingsService->getSetting('janice_max_retries', 3);
 
         // For large batches, use appraisal endpoint (more efficient)
         if (count($typeIds) > $batchSize) {
@@ -208,7 +227,7 @@ class PriceProviderService
                     $data = $response->json();
 
                     // Get price based on configured method
-                    $priceMethod = Setting::getValue('janice_price_method', 'buy');
+                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
 
                     if (isset($data['immediatePrices'])) {
                         $prices[$typeId] = match($priceMethod) {
@@ -249,7 +268,9 @@ class PriceProviderService
     }
 
     /**
-     * Fetch prices from Janice Appraisal API (batch endpoint)
+     * Fetch prices from Janice for large batches.
+     * Uses the individual pricer endpoint since the appraisal endpoint
+     * only returns totals, not per-item prices.
      *
      * @param array $typeIds
      * @param string $apiKey
@@ -258,102 +279,9 @@ class PriceProviderService
      */
     protected function getPricesFromJaniceAppraisal(array $typeIds, string $apiKey, string $market): array
     {
-        $prices = [];
-        $maxRetries = Setting::getValue('janice_max_retries', 3);
-
-        // Build appraisal input (EFT format)
-        $items = [];
-        foreach ($typeIds as $typeId) {
-            // Get type name from invTypes table
-            $typeName = DB::table('invTypes')
-                ->where('typeID', $typeId)
-                ->value('typeName');
-
-            if ($typeName) {
-                $items[] = "{$typeName} x1";
-            }
-        }
-
-        if (empty($items)) {
-            Log::warning('No valid type names found for Janice appraisal');
-            return array_fill_keys($typeIds, 0);
-        }
-
-        $appraisalText = implode("\n", $items);
-        $attempts = 0;
-        $success = false;
-
-        while ($attempts < $maxRetries && !$success) {
-            try {
-                $url = sprintf('%s?market=%s',
-                    self::JANICE_APPRAISAL_URL,
-                    $market === 'jita' ? '2' : '1'
-                );
-
-                $response = Http::timeout(30)
-                    ->retry(2, 100)
-                    ->withHeaders([
-                        'X-ApiKey' => $apiKey,
-                        'accept' => 'application/json',
-                        'Content-Type' => 'text/plain'
-                    ])->send('POST', $url, [
-                        'body' => $appraisalText
-                    ]);
-
-                if (!$response->successful()) {
-                    Log::warning('Janice Appraisal API error', [
-                        'status' => $response->status(),
-                        'attempt' => $attempts + 1
-                    ]);
-                    $attempts++;
-
-                    if ($attempts < $maxRetries) {
-                        sleep(2);
-                        continue;
-                    }
-
-                    return array_fill_keys($typeIds, 0);
-                }
-
-                $data = $response->json();
-                $priceMethod = Setting::getValue('janice_price_method', 'buy');
-
-                // Parse the appraisal response
-                if (isset($data['immediatePrices'])) {
-                    $totalPrice = match($priceMethod) {
-                        'sell' => (float) ($data['immediatePrices']['totalSellPrice'] ?? 0),
-                        'buy' => (float) ($data['immediatePrices']['totalBuyPrice'] ?? 0),
-                        'split' => (float) ($data['effectivePrices']['totalSplitPrice'] ?? 0),
-                        default => (float) ($data['immediatePrices']['totalBuyPrice'] ?? 0)
-                    };
-
-                    Log::info('Janice appraisal completed', [
-                        'item_count' => count($typeIds),
-                        'total_price' => $totalPrice
-                    ]);
-                }
-
-                // For batch appraisal, fall back to individual pricing
-                // since we need per-item prices not just totals
-                Log::info('Falling back to individual pricing after appraisal');
-                return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
-
-            } catch (Exception $e) {
-                $attempts++;
-                Log::error('Failed to fetch Janice appraisal', [
-                    'error' => $e->getMessage(),
-                    'attempt' => $attempts
-                ]);
-
-                if ($attempts >= $maxRetries) {
-                    return array_fill_keys($typeIds, 0);
-                }
-
-                sleep(2);
-            }
-        }
-
-        return $prices;
+        // The appraisal endpoint only returns totals, not per-item prices.
+        // Use the individual pricer endpoint directly for per-item pricing.
+        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
     }
 
     /**
@@ -367,7 +295,8 @@ class PriceProviderService
     protected function getPricesFromJanicePricer(array $typeIds, string $apiKey, string $market): array
     {
         $prices = [];
-        $rateLimitDelay = Setting::getValue('janice_rate_limit_delay', 50000);
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000);
 
         foreach ($typeIds as $typeId) {
             try {
@@ -385,7 +314,7 @@ class PriceProviderService
 
                 if ($response->successful()) {
                     $data = $response->json();
-                    $priceMethod = Setting::getValue('janice_price_method', 'buy');
+                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
 
                     if (isset($data['immediatePrices'])) {
                         $prices[$typeId] = match($priceMethod) {
@@ -425,7 +354,9 @@ class PriceProviderService
      */
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
-        $regionId = Setting::getValue('price_region_id', self::DEFAULT_REGION_ID);
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
         $typeIdsString = implode(',', $typeIds);
 
         $response = Http::get(self::FUZZWORK_MARKET_URL, [
@@ -439,7 +370,7 @@ class PriceProviderService
 
         $data = $response->json();
         $prices = [];
-        $priceMethod = Setting::getValue('price_method', 'sell');
+        $priceMethod = $pricingSettings['price_type'] ?? 'sell';
 
         foreach ($typeIds as $typeId) {
             if (isset($data[$typeId])) {
@@ -475,7 +406,7 @@ class PriceProviderService
      */
     protected function getCustomPrices(array $typeIds): array
     {
-        $customPrices = Setting::getValue('custom_prices', []);
+        $customPrices = $this->settingsService->getSetting('custom_prices', []);
         $prices = [];
 
         foreach ($typeIds as $typeId) {
@@ -492,7 +423,8 @@ class PriceProviderService
      */
     protected function getConfiguredProvider(): string
     {
-        return Setting::getValue('price_provider', self::PROVIDER_SEAT);
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        return $pricingSettings['price_provider'] ?? self::PROVIDER_SEAT;
     }
 
     /**
@@ -503,16 +435,15 @@ class PriceProviderService
      */
     public function testProvider(string $provider): bool
     {
+        $originalProvider = $this->getConfiguredProvider();
+
         try {
             $testTypeId = 34; // Tritanium for testing
-            
-            $originalProvider = $this->getConfiguredProvider();
-            Setting::set('price_provider', $provider);
-            
+
+            $this->settingsService->updateSetting('price_provider', $provider, 'string');
+
             $price = $this->getPrice($testTypeId);
-            
-            Setting::set('price_provider', $originalProvider);
-            
+
             return $price !== null && $price > 0;
         } catch (Exception $e) {
             Log::error('Provider test failed', [
@@ -520,6 +451,9 @@ class PriceProviderService
                 'error' => $e->getMessage()
             ]);
             return false;
+        } finally {
+            // Always restore the original provider, even if an exception occurred
+            $this->settingsService->updateSetting('price_provider', $originalProvider, 'string');
         }
     }
 
@@ -578,7 +512,7 @@ class PriceProviderService
 
         // Check if required config fields are set
         foreach ($providerConfig['config_fields'] as $field) {
-            if (empty(Setting::getValue($field))) {
+            if (empty($this->settingsService->getSetting($field))) {
                 return false;
             }
         }
@@ -671,7 +605,8 @@ class PriceProviderService
         }
 
         // Check if cache is fresh based on configuration
-        $cacheDuration = config('mining-manager.pricing.cache_duration', 60); // minutes
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60); // minutes
         $cacheAge = $cacheEntry->cached_at->diffInMinutes(Carbon::now());
 
         return $cacheAge < $cacheDuration;

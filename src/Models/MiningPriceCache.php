@@ -59,8 +59,11 @@ class MiningPriceCache extends Model
      */
     public function scopeFresh($query, int $minutes = null)
     {
-        $minutes = $minutes ?? config('mining-manager.pricing.cache_duration', 60);
-        
+        if ($minutes === null) {
+            $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
+            $minutes = (int) ($pricingSettings['cache_duration'] ?? 60);
+        }
+
         return $query->where('cached_at', '>=', now()->subMinutes($minutes));
     }
 
@@ -72,8 +75,11 @@ class MiningPriceCache extends Model
      */
     public function isFresh(?int $minutes = null)
     {
-        $minutes = $minutes ?? config('mining-manager.pricing.cache_duration', 60);
-        
+        if ($minutes === null) {
+            $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
+            $minutes = (int) ($pricingSettings['cache_duration'] ?? 60);
+        }
+
         return $this->cached_at->greaterThanOrEqualTo(now()->subMinutes($minutes));
     }
 
@@ -84,7 +90,8 @@ class MiningPriceCache extends Model
      */
     public function getConfiguredPrice()
     {
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
+        $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
+        $priceType = $pricingSettings['price_type'] ?? 'sell';
 
         return match ($priceType) {
             'sell' => $this->sell_price,

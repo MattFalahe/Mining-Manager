@@ -41,10 +41,10 @@
                 <select name="dashboard_leaderboard_corporation_filter"
                         id="dashboard_leaderboard_corporation_filter"
                         class="form-control">
-                    <option value="all" {{ old('dashboard_leaderboard_corporation_filter', \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_filter', 'all')) == 'all' ? 'selected' : '' }}>
+                    <option value="all" {{ old('dashboard_leaderboard_corporation_filter', ($settings['dashboard']['dashboard_leaderboard_corporation_filter'] ?? 'all')) == 'all' ? 'selected' : '' }}>
                         Show All Corporations
                     </option>
-                    <option value="specific" {{ old('dashboard_leaderboard_corporation_filter', \MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_filter', 'all')) == 'specific' ? 'selected' : '' }}>
+                    <option value="specific" {{ old('dashboard_leaderboard_corporation_filter', ($settings['dashboard']['dashboard_leaderboard_corporation_filter'] ?? 'all')) == 'specific' ? 'selected' : '' }}>
                         Show Specific Corporations Only
                     </option>
                 </select>
@@ -65,7 +65,7 @@
                             multiple
                             size="5">
                         @php
-                            $selectedCorps = json_decode(\MiningManager\Models\Setting::getValue('dashboard_leaderboard_corporation_ids', '[]'), true);
+                            $selectedCorps = json_decode(($settings['dashboard']['dashboard_leaderboard_corporation_ids'] ?? '[]'), true);
                         @endphp
                         @foreach($corporations as $corp)
                         <option value="{{ $corp->corporation_id }}"

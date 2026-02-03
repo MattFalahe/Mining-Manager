@@ -5,6 +5,7 @@ namespace MiningManager\Services\Events;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -19,13 +20,22 @@ class EventManagementService
     protected $trackingService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
      * Constructor
      *
      * @param EventTrackingService $trackingService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(EventTrackingService $trackingService)
+    public function __construct(EventTrackingService $trackingService, SettingsManagerService $settingsService)
     {
         $this->trackingService = $trackingService;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -252,8 +262,10 @@ class EventManagementService
 
         Log::info("Mining Manager: Calculating bonuses for event {$event->id} ({$event->bonus_percentage}% bonus)");
 
-        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $regionId = $generalSettings['default_region_id'] ?? 10000002;
+        $priceType = $pricingSettings['price_type'] ?? 'sell';
         
         $priceColumn = match ($priceType) {
             'buy' => 'buy_price',

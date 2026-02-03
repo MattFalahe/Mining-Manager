@@ -4,6 +4,7 @@ namespace MiningManager\Services\Pricing;
 
 use MiningManager\Services\ReprocessingRegistry;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Models\MiningPriceCache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -16,8 +17,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Handles special cases:
  * - Gas cannot be refined (always uses raw ore price)
- * - Respects ore_valuation_method setting from config
- * - Applies refining efficiency from config
+ * - Respects ore_valuation_method setting from UI/DB settings
+ * - Applies refining efficiency from UI/DB settings
  *
  * Price Fallback Strategy:
  * 1. Check MiningPriceCache (fastest, pre-populated via cache command)
@@ -34,13 +35,22 @@ class OreValuationService
     protected $marketDataService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected SettingsManagerService $settingsService;
+
+    /**
      * Constructor
      *
      * @param MarketDataService $marketDataService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(MarketDataService $marketDataService)
+    public function __construct(MarketDataService $marketDataService, SettingsManagerService $settingsService)
     {
         $this->marketDataService = $marketDataService;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -53,17 +63,20 @@ class OreValuationService
      */
     public function calculateOreValue(int $typeId, int $quantity, array $options = []): array
     {
-        // Get settings from config or options
+        // Get settings from DB (via SettingsManagerService), with $options as overrides
+        $generalSettings = $this->settingsService->getGeneralSettings();
+        $pricingSettings = $this->settingsService->getPricingSettings();
+
         $valuationMethod = $options['ore_valuation_method']
-            ?? config('mining-manager.general.ore_valuation_method', 'mineral_price');
+            ?? $generalSettings['ore_valuation_method'] ?? 'mineral_price';
         $refiningRate = $options['ore_refining_rate']
-            ?? config('mining-manager.general.ore_refining_rate', 90.0);
+            ?? floatval($pricingSettings['refining_efficiency'] ?? 87.5);
         $regionId = $options['default_region_id']
-            ?? config('mining-manager.general.default_region_id', 10000002);
+            ?? $generalSettings['default_region_id'] ?? 10000002;
         $priceType = $options['price_type']
-            ?? config('mining-manager.pricing.price_type', 'sell');
+            ?? $pricingSettings['price_type'] ?? 'sell';
         $priceModifier = $options['price_modifier']
-            ?? config('mining-manager.general.price_modifier', 0.0);
+            ?? $generalSettings['price_modifier'] ?? 0.0;
 
         // Always calculate raw ore value
         $orePrice = $this->getOrePrice($typeId, $regionId, $priceType);
@@ -240,26 +253,36 @@ class OreValuationService
      *
      * @param int $typeId
      * @param int $regionId
-     * @param float $price
+     * @param float $price The fetched price (stored only in the column matching configured price_type)
      * @return void
      */
     protected function storePriceInCache(int $typeId, int $regionId, float $price): void
     {
         try {
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $priceType = $pricingSettings['price_type'] ?? 'sell';
+
+            // Only update the column that matches the configured price type
+            // to avoid corrupting other price columns with the wrong value
+            $priceData = [
+                'cached_at' => now(),
+            ];
+
+            match ($priceType) {
+                'buy' => $priceData['buy_price'] = $price,
+                'average' => $priceData['average_price'] = $price,
+                default => $priceData['sell_price'] = $price,
+            };
+
             MiningPriceCache::updateOrCreate(
                 [
                     'type_id' => $typeId,
                     'region_id' => $regionId,
                 ],
-                [
-                    'sell_price' => $price,
-                    'buy_price' => $price,
-                    'average_price' => $price,
-                    'cached_at' => now(),
-                ]
+                $priceData
             );
 
-            Log::debug("OreValuationService: Stored price {$price} for type_id {$typeId} in cache");
+            Log::debug("OreValuationService: Stored {$priceType} price {$price} for type_id {$typeId} in cache");
         } catch (\Exception $e) {
             Log::warning("OreValuationService: Failed to store price in cache: {$e->getMessage()}");
         }

@@ -105,21 +105,39 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     {
         // Register sidebar configuration (SeAT 5.x method)
         $this->mergeConfigFrom(
-            __DIR__ . '/Config/Menu/package.sidebar.php', 
+            __DIR__ . '/Config/Menu/package.sidebar.php',
             'package.sidebar'
         );
-        
+
         // Register permissions - FIXED: Use correct file in Permissions subfolder
         // SeAT v5 expects permissions to be in /Config/Permissions/ folder
         $this->registerPermissions(
-            __DIR__ . '/Config/Permissions/mining-manager.permissions.php', 
+            __DIR__ . '/Config/Permissions/mining-manager.permissions.php',
             'mining-manager'
         );
-        
+
         // Register config
         $this->mergeConfigFrom(
-            __DIR__ . '/Config/mining-manager.config.php', 
+            __DIR__ . '/Config/mining-manager.config.php',
             'mining-manager'
+        );
+
+        // Register service singletons for consistent state across the request lifecycle
+        // SettingsManagerService holds activeCorporationId state, so must be singleton
+        $this->app->singleton(
+            \MiningManager\Services\Configuration\SettingsManagerService::class
+        );
+
+        $this->app->singleton(
+            \MiningManager\Services\Pricing\PriceProviderService::class
+        );
+
+        $this->app->singleton(
+            \MiningManager\Services\Pricing\MarketDataService::class
+        );
+
+        $this->app->singleton(
+            \MiningManager\Services\Pricing\OreValuationService::class
         );
 
         // Add database seeders

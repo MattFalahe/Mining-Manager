@@ -4,11 +4,29 @@ namespace MiningManager\Services\Moon;
 
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MiningPriceCache;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 class MoonValueCalculationService
 {
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected SettingsManagerService $settingsService;
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settingsService
+     */
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
+
     /**
      * Calculate the estimated ISK value of a moon extraction.
      *
@@ -23,7 +41,8 @@ class MoonValueCalculationService
         }
 
         $cacheKey = "mining-manager:moon-value:{$extraction->id}";
-        $cacheDuration = config('mining-manager.pricing.cache_duration', 60);
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
             // Ensure ore_composition is an array
@@ -43,8 +62,8 @@ class MoonValueCalculationService
      */
     private function calculateValue(array $oreComposition): float
     {
-        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
+        $regionId = ($this->settingsService->getGeneralSettings()['default_region_id'] ?? 10000002);
+        $priceType = ($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
 
         // IMPORTANT: Moon extraction value is ALWAYS calculated based on refined materials
         // This is because the moon composition already shows what ores are present:
@@ -54,7 +73,7 @@ class MoonValueCalculationService
         // Note: Individual miner taxation can still use raw ore prices (configured separately)
 
         // Get estimated chunk size from config (default: 150,000 m³)
-        $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
+        $chunkSize = ($this->settingsService->getMoonSettings()['estimated_chunk_size'] ?? 150000);
 
         $totalValue = 0;
 
@@ -145,7 +164,7 @@ class MoonValueCalculationService
 
         if ($priceCache) {
             // Check if cache is fresh
-            $cacheDuration = config('mining-manager.pricing.cache_duration', 60);
+            $cacheDuration = ($this->settingsService->getPricingSettings()['cache_duration'] ?? 60);
             if (!$priceCache->cached_at->addMinutes($cacheDuration)->isPast()) {
                 // Cache is fresh, use it
                 Log::debug("Mining Manager: Using cached price for type_id {$typeId} from mining_price_cache");
@@ -207,9 +226,9 @@ class MoonValueCalculationService
      */
     private function calculateRefinedValue(int $typeId, float $quantity): float
     {
-        // Get refining efficiency from settings (database first, then config)
-        $refiningEfficiency = $this->getSetting('pricing.refining_efficiency',
-            config('mining-manager.pricing.refining_efficiency', 87.5)) / 100;
+        // Get refining efficiency from settings service (DB → config → default fallback)
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $refiningEfficiency = floatval($pricingSettings['refining_efficiency'] ?? 87.5) / 100;
 
         // Get mineral yields for this ore type
         $mineralYields = $this->getMineralYields($typeId);
@@ -218,8 +237,8 @@ class MoonValueCalculationService
             Log::warning("Mining Manager: No mineral yields found for ore type_id {$typeId}, using fallback");
             
             // Fallback: Try to use raw ore price with efficiency modifier
-            $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-            $priceType = config('mining-manager.pricing.price_type', 'sell');
+            $regionId = ($this->settingsService->getGeneralSettings()['default_region_id'] ?? 10000002);
+            $priceType = ($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
             $orePrice = $this->getOrePrice($typeId, $regionId, $priceType);
             
             if ($orePrice) {
@@ -230,8 +249,8 @@ class MoonValueCalculationService
             return 0;
         }
 
-        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
+        $regionId = ($this->settingsService->getGeneralSettings()['default_region_id'] ?? 10000002);
+        $priceType = ($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
 
         $totalRefinedValue = 0;
 
@@ -261,39 +280,6 @@ class MoonValueCalculationService
         return $totalRefinedValue;
     }
     
-    /**
-     * Get a setting value from database.
-     * Helper method to access settings without circular dependency.
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    private function getSetting(string $key, $default = null)
-    {
-        try {
-            $setting = \DB::table('mining_manager_settings')
-                ->where('key', $key)
-                ->first();
-            
-            if (!$setting) {
-                return $default;
-            }
-            
-            // Cast value based on type
-            return match($setting->type) {
-                'boolean' => (bool) $setting->value,
-                'integer' => (int) $setting->value,
-                'float' => (float) $setting->value,
-                'array' => json_decode($setting->value, true),
-                default => $setting->value,
-            };
-            
-        } catch (\Exception $e) {
-            Log::debug("Mining Manager: Could not get setting {$key}: " . $e->getMessage());
-            return $default;
-        }
-    }
 
     /**
      * Get mineral yields for an ore type.
@@ -648,9 +634,9 @@ class MoonValueCalculationService
             return [];
         }
 
-        $regionId = config('mining-manager.pricing.default_region_id', 10000002);
-        $priceType = config('mining-manager.pricing.price_type', 'sell');
-        $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
+        $regionId = ($this->settingsService->getGeneralSettings()['default_region_id'] ?? 10000002);
+        $priceType = ($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
+        $chunkSize = ($this->settingsService->getMoonSettings()['estimated_chunk_size'] ?? 150000);
 
         $breakdown = [];
         $totalValue = 0;
@@ -752,7 +738,7 @@ class MoonValueCalculationService
             return null;
         }
 
-        $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
+        $chunkSize = ($this->settingsService->getMoonSettings()['estimated_chunk_size'] ?? 150000);
         $totalVolume = 0;
 
         foreach ($oreComposition as $oreName => $oreData) {
@@ -834,7 +820,7 @@ class MoonValueCalculationService
             ];
         }
 
-        $chunkSize = config('mining-manager.moon.estimated_chunk_size', 150000);
+        $chunkSize = ($this->settingsService->getMoonSettings()['estimated_chunk_size'] ?? 150000);
         $totalVolume = 0;
 
         foreach ($oreComposition as $oreName => $oreData) {
@@ -995,8 +981,12 @@ class MoonValueCalculationService
             Cache::forget("mining-manager:moon-value:{$extractionId}");
         } else {
             // Clear all moon value caches
-            // This is implementation-specific based on your cache driver
-            Cache::tags(['mining-manager', 'moon-values'])->flush();
+            try {
+                Cache::tags(['mining-manager', 'moon-values'])->flush();
+            } catch (\Exception $e) {
+                // File/database cache driver doesn't support tags - log and continue
+                Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
+            }
         }
     }
 }

@@ -14,10 +14,10 @@ class ScheduleSeeder extends AbstractScheduleSeeder
     public function getSchedules(): array
     {
         return [
-            // Process mining ledger - runs every 4 hours to sync mining data
+            // Process mining ledger - runs every 30 minutes at :15 and :45 to keep data fresh
             [
                 'command' => 'mining-manager:process-ledger',
-                'expression' => '0 */4 * * *',
+                'expression' => '15,45 * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
