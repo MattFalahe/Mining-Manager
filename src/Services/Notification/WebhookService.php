@@ -199,7 +199,7 @@ class WebhookService
         // Add detection date
         $embed['fields'][] = [
             'name' => '📅 Detected',
-            'value' => $incident->detected_at ? $incident->detected_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
+            'value' => $incident->incident_date ? $incident->incident_date->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s'),
             'inline' => true,
         ];
 
@@ -429,7 +429,7 @@ class WebhookService
             'ore_value' => $incident->ore_value,
             'tax_owed' => $incident->tax_owed,
             'status' => $incident->status,
-            'detected_at' => $incident->detected_at->toIso8601String(),
+            'detected_at' => $incident->incident_date->toIso8601String(),
             'event_type' => $eventType,
         ], $additionalData);
 
@@ -462,7 +462,7 @@ class WebhookService
                 'ore_value' => $incident->ore_value,
                 'tax_owed' => $incident->tax_owed,
                 'status' => $incident->status,
-                'detected_at' => $incident->detected_at ? $incident->detected_at->toIso8601String() : now()->toIso8601String(),
+                'detected_at' => $incident->incident_date ? $incident->incident_date->toIso8601String() : now()->toIso8601String(),
             ],
             'timestamp' => now()->toIso8601String(),
         ], $additionalData);
@@ -483,8 +483,8 @@ class WebhookService
             'severity' => 'medium',
             'ore_value' => 50000000,
             'tax_owed' => 5000000,
-            'status' => 'open',
-            'detected_at' => now(),
+            'status' => 'detected',
+            'incident_date' => now(),
         ]);
 
         $additionalData = [
@@ -896,10 +896,11 @@ class WebhookService
     protected function getStatusEmoji(string $status): string
     {
         return match($status) {
-            'open' => '🔓',
+            'detected' => '🔓',
             'investigating' => '🔍',
             'resolved' => '✅',
-            'dismissed' => '❌',
+            'false_alarm' => '❌',
+            'removed_paid' => '💰',
             default => '❓',
         };
     }
