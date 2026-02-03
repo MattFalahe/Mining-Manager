@@ -1671,7 +1671,7 @@ class DiagnosticController extends Controller
             $isGas = TypeIdRegistry::isGas($typeId);
             $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
             $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
-            $isJackpot = $isMoonOre ? TypeIdRegistry::isJackpotOre($typeId) : false;
+            $isJackpot = $isMoonOre ? in_array($typeId, TypeIdRegistry::getAllJackpotOres()) : false;
 
             $category = 'unknown';
             if ($isMoonOre) $category = 'moon_ore';
