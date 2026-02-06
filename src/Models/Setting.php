@@ -36,21 +36,37 @@ class Setting extends Model
      */
     public static function getValue(string $key, $default = null, ?int $corporationId = null)
     {
-        $query = self::where('key', $key);
-
+        // First, try to find corporation-specific setting
         if ($corporationId) {
-            $query->where('corporation_id', $corporationId);
-        } else {
-            $query->whereNull('corporation_id');
+            $setting = self::where('key', $key)
+                ->where('corporation_id', $corporationId)
+                ->first();
+
+            if ($setting) {
+                return self::castValue($setting->value, $setting->type);
+            }
         }
 
-        $setting = $query->first();
+        // Fallback to global setting (corporation_id IS NULL)
+        $setting = self::where('key', $key)
+            ->whereNull('corporation_id')
+            ->first();
 
-        if (!$setting) {
-            return $default;
+        if ($setting) {
+            return self::castValue($setting->value, $setting->type);
         }
 
-        return self::castValue($setting->value, $setting->type);
+        // If no corporation was specified but we still didn't find a global setting,
+        // try to find ANY setting with this key (for backwards compatibility)
+        if (!$corporationId) {
+            $setting = self::where('key', $key)->first();
+
+            if ($setting) {
+                return self::castValue($setting->value, $setting->type);
+            }
+        }
+
+        return $default;
     }
 
     /**

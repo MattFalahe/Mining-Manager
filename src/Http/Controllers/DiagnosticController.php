@@ -1316,13 +1316,11 @@ class DiagnosticController extends Controller
             $pricingSettings = $this->settingsService->getPricingSettings();
             $generalSettings = $this->settingsService->getGeneralSettings();
 
-            // Check exemptions
-            $exemptions = $this->settingsService->getSetting('tax_rates.exemptions', []);
+            // Check exemptions - get exemption settings (not a list of exempt IDs)
+            $exemptionSettings = $this->settingsService->getExemptions();
             $isExempt = false;
-            if (is_array($exemptions)) {
-                $isExempt = in_array($characterId, $exemptions)
-                    || ($corporationId && in_array($corporationId, $exemptions));
-            }
+            // Note: Current exemption system is threshold-based, not ID-based
+            // Characters with mining value below threshold may be exempt
 
             // Process each mining entry
             $traceResults = [];

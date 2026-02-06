@@ -131,7 +131,7 @@ class SettingsManagerService
             'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),
             
             // Price Provider Settings
-            'price_provider' => $this->getSetting('general.price_provider', config('mining-manager.general.price_provider', 'eve_market')),
+            'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'eve_market')),
             'default_region_id' => $this->getSetting('general.default_region_id', config('mining-manager.general.default_region_id', 10000002)),
             'price_modifier' => $this->getSetting('general.price_modifier', config('mining-manager.general.price_modifier', 0.0)),
             
@@ -875,7 +875,7 @@ class SettingsManagerService
      */
     public function testPriceProviderConnection(): array
     {
-        $provider = $this->getSetting('general.price_provider', 'eve_market');
+        $provider = $this->getSetting('price_provider', 'eve_market');
 
         // Test connection logic here
         // This is a placeholder - implement actual testing
