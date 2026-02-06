@@ -37,7 +37,7 @@ class DashboardMetricsService
      */
     protected function getMoonOwnerCorporationId(): ?int
     {
-        return $this->settingsService->getSetting('moon_owner_corporation_id');
+        return $this->settingsService->getSetting('general.moon_owner_corporation_id');
     }
     /**
      * Get dashboard summary metrics.

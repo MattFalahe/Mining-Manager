@@ -52,7 +52,7 @@ class TaxController extends Controller
         $minerType = $request->input('miner_type', 'all'); // 'all', 'corp', 'guest'
 
         // Get moon owner corporation ID from settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('moon_owner_corporation_id');
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
         // Build query
         $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices']);
@@ -325,7 +325,7 @@ class TaxController extends Controller
         $days = $request->input('days', 30);
 
         // Get corporation ID from settings (or use first corporation if not configured)
-        $corporationId = $this->settingsService->getSetting('moon_owner_corporation_id');
+        $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
         if (!$corporationId) {
             // Try to get from first configured corporation
@@ -447,7 +447,7 @@ class TaxController extends Controller
             $days = $request->input('days', 30);
 
             // Get corporation ID from settings
-            $corporationId = $this->settingsService->getSetting('moon_owner_corporation_id');
+            $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
             if (!$corporationId) {
                 $corporations = $this->settingsService->getAllCorporations();

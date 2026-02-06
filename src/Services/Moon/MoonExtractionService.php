@@ -48,22 +48,28 @@ class MoonExtractionService
      */
     protected function getMoonOwnerCorporationId(): ?int
     {
-        $moonOwnerCorpId = $this->settingsService->getSetting('moon_owner_corporation_id');
+        // Use the correct key with 'general.' prefix to match how settings are stored
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
         if (!$moonOwnerCorpId) {
-            // Fallback to first corporation if not configured
-            $firstCorp = DB::table('corporation_infos')
-                ->orderBy('corporation_id')
+            // Fallback to general.corporation_id (the currently selected corporation)
+            $moonOwnerCorpId = $this->settingsService->getSetting('general.corporation_id');
+        }
+
+        if (!$moonOwnerCorpId) {
+            // Last resort: check corporation_industry_mining_extractions for any corporation
+            $firstExtraction = DB::table('corporation_industry_mining_extractions')
+                ->select('corporation_id')
                 ->first();
 
-            $moonOwnerCorpId = $firstCorp->corporation_id ?? null;
+            $moonOwnerCorpId = $firstExtraction->corporation_id ?? null;
 
             if ($moonOwnerCorpId) {
-                Log::warning("Mining Manager: moon_owner_corporation_id not configured, falling back to corporation {$moonOwnerCorpId}");
+                Log::warning("Mining Manager: moon_owner_corporation_id not configured, falling back to corporation {$moonOwnerCorpId} from extraction data");
             }
         }
 
-        return $moonOwnerCorpId;
+        return $moonOwnerCorpId ? (int) $moonOwnerCorpId : null;
     }
 
     /**

@@ -329,7 +329,7 @@ class SettingsManagerService
         $corpTaxRates = $this->getTaxRates();
 
         // Get moon owner corporation ID
-        $moonOwnerCorpId = $this->getSetting('moon_owner_corporation_id');
+        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
 
         // If no corporation ID provided or moon owner not configured, use corp rates
         if (!$characterCorporationId || !$moonOwnerCorpId) {

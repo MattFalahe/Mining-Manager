@@ -56,7 +56,7 @@ class TheftDetectionService
         ]);
 
         // Get moon owner corporation ID from settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('moon_owner_corporation_id');
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
         if (!$moonOwnerCorpId) {
             Log::warning('TheftDetectionService: No moon owner corporation configured');
