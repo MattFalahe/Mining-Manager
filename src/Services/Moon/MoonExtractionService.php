@@ -4,6 +4,7 @@ namespace MiningManager\Services\Moon;
 
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Moon\MoonOreHelper;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -262,12 +263,19 @@ class MoonExtractionService
                     $unitVolume = $oreType->volume ?? 16; // Moon ores are typically 16 m³/unit
                     $quantityInUnits = $actualVolume > 0 ? ($actualVolume / $unitVolume) : 0;
 
+                    // Calculate the refined value of this ore
+                    $oreValue = 0;
+                    if ($quantityInUnits > 0) {
+                        $minerals = MoonOreHelper::getRefinedMinerals($content->type_id, $quantityInUnits);
+                        $oreValue = array_sum(array_column($minerals, 'value'));
+                    }
+
                     $composition[$oreType->typeName] = [
                         'type_id' => $content->type_id,
                         'percentage' => $content->rate * 100, // Convert to percentage
                         'quantity' => $quantityInUnits, // Actual quantity in units (not m³)
                         'volume_m3' => $actualVolume, // Store actual volume for reference
-                        'value' => 0, // Will be calculated by value service
+                        'value' => $oreValue, // Calculated refined value
                     ];
                 }
             }
