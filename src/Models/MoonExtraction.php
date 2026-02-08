@@ -53,6 +53,16 @@ class MoonExtraction extends Model
     ];
 
     /**
+     * The accessors to append to the model's array/JSON form.
+     *
+     * @var array
+     */
+    protected $appends = [
+        'structure_name',
+        'moon_name',
+    ];
+
+    /**
      * Get the corporation.
      */
     public function corporation()
@@ -85,6 +95,7 @@ class MoonExtraction extends Model
             return 'Unknown Structure';
         }
 
+        // Try universe_structures first (has actual names from structure browser)
         $universeStructure = \DB::table('universe_structures')
             ->where('structure_id', $this->structure_id)
             ->first();
@@ -93,15 +104,47 @@ class MoonExtraction extends Model
             return $universeStructure->name;
         }
 
+        // Try corporation_structures for type info
         $corpStructure = \DB::table('corporation_structures')
             ->where('structure_id', $this->structure_id)
             ->first();
 
-        if ($corpStructure) {
-            return "Structure {$this->structure_id}";
+        // Get moon name for context
+        $moonName = null;
+        if ($this->moon_id) {
+            $moon = \DB::table('moons')
+                ->where('moon_id', $this->moon_id)
+                ->first();
+            $moonName = $moon ? $moon->name : null;
         }
 
-        return "Unknown Structure";
+        if ($corpStructure) {
+            // Check if name column exists and has value (some SeAT versions may have it)
+            if (isset($corpStructure->name) && !empty($corpStructure->name)) {
+                return $corpStructure->name;
+            }
+
+            // Build name from type + moon location
+            if (isset($corpStructure->type_id)) {
+                $typeName = \DB::table('invTypes')
+                    ->where('typeID', $corpStructure->type_id)
+                    ->value('typeName');
+
+                if ($typeName && $moonName) {
+                    // Format: "Athanor - 3AE-CP III - Moon 3"
+                    return "{$typeName} - {$moonName}";
+                } elseif ($typeName) {
+                    return "{$typeName} #{$this->structure_id}";
+                }
+            }
+        }
+
+        // Fallback with moon name if available
+        if ($moonName) {
+            return "Refinery at {$moonName}";
+        }
+
+        return "Structure {$this->structure_id}";
     }
 
     /**
