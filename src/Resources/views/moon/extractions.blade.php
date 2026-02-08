@@ -176,7 +176,7 @@
                                     <th>{{ trans('mining-manager::moons.status') }}</th>
                                     <th>{{ trans('mining-manager::moons.started') }}</th>
                                     <th>{{ trans('mining-manager::moons.chunk_arrival') }}</th>
-                                    <th>{{ trans('mining-manager::moons.decay') }}</th>
+                                    <th>{{ trans('mining-manager::moons.auto_fracture') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::moons.estimated_value') }}</th>
                                     <th>{{ trans('mining-manager::moons.actions') }}</th>
                                 </tr>
@@ -192,11 +192,13 @@
                                         {{ $extraction->moon_name ?? 'Unknown Moon' }}
                                     </td>
                                     <td>
-                                        <span class="badge badge-{{ 
-                                            $extraction->status === 'extracting' ? 'warning' : 
-                                            ($extraction->status === 'ready' ? 'success' : 'secondary') 
-                                        }}">
-                                            {{ trans('mining-manager::moons.' . $extraction->status) }}
+                                        @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                                        <span class="badge badge-{{
+                                            $effectiveStatus === 'extracting' ? 'warning' :
+                                            ($effectiveStatus === 'ready' ? 'success' :
+                                            ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
+                                        }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                            {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                         </span>
                                     </td>
                                     <td>

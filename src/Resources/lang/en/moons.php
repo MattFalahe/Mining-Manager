@@ -11,6 +11,7 @@ return [
     // Status
     'extracting' => 'Extracting',
     'ready' => 'Ready',
+    'unstable' => 'Unstable',
     'completed' => 'Completed',
     
     // General Terms
@@ -39,9 +40,9 @@ return [
     'extraction_started' => 'Extraction Started',
     'chunk_arrival' => 'Chunk Arrival',
     'chunk_arrives_in' => 'Chunk Arrives In',
-    'natural_decay' => 'Natural Decay',
-    'decay' => 'Decay',
-    'decays_in' => 'Decays In',
+    'natural_decay' => 'Auto Fracture',
+    'auto_fracture' => 'Auto Fracture',
+    'auto_fractures_in' => 'Auto Fractures In',
     'time_remaining' => 'Time Remaining',
     'today' => 'Today',
     'this_week' => 'This Week',
@@ -125,7 +126,9 @@ return [
     'arrival_time' => 'Arrival Time',
     'auto_refresh_active' => 'This page automatically refreshes to show live extraction data.',
     'refreshing_60s' => 'Auto-refresh: 60s',
-    'decay_warning' => 'Decay Warning',
+    'auto_fracture_warning' => 'Auto Fracture Warning',
+    'unstable_warning' => 'Unstable Moon',
+    'unstable_message' => 'This moon has been ready for over 48 hours and will auto-fracture soon!',
     'estimated' => 'Estimated',
     'value_unknown' => 'Value Unknown',
     

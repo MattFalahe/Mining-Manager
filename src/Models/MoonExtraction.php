@@ -156,24 +156,51 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Check if decay warning should be shown (within 3 hours of decay).
+     * Check if moon is in unstable state (48-51h after arrival).
+     * After 48 hours from chunk arrival, the moon becomes unstable.
+     * Auto-fracture happens at 51h (natural_decay_time).
      */
-    public function shouldShowDecayWarning()
+    public function isUnstable(): bool
+    {
+        if (!$this->chunk_arrival_time || !$this->natural_decay_time) {
+            return false;
+        }
+
+        $now = Carbon::now();
+        $unstableStart = $this->chunk_arrival_time->copy()->addHours(48);
+
+        // Unstable: past 48h from arrival but before auto-fracture
+        return $now >= $unstableStart && $now < $this->natural_decay_time;
+    }
+
+    /**
+     * Check if auto-fracture warning should be shown (within 3 hours of auto-fracture).
+     */
+    public function shouldShowAutoFractureWarning(): bool
     {
         if (!$this->natural_decay_time) {
             return false;
         }
 
         $now = Carbon::now();
-        $threeHoursBeforeDecay = $this->natural_decay_time->copy()->subHours(3);
+        $threeHoursBeforeAutoFracture = $this->natural_decay_time->copy()->subHours(3);
 
-        return $now >= $threeHoursBeforeDecay && $now < $this->natural_decay_time;
+        return $now >= $threeHoursBeforeAutoFracture && $now < $this->natural_decay_time;
     }
 
     /**
-     * Get time until decay in human readable format.
+     * Check if decay warning should be shown (within 3 hours of decay).
+     * @deprecated Use shouldShowAutoFractureWarning() instead
      */
-    public function getTimeUntilDecay()
+    public function shouldShowDecayWarning()
+    {
+        return $this->shouldShowAutoFractureWarning();
+    }
+
+    /**
+     * Get time until auto-fracture in human readable format.
+     */
+    public function getTimeUntilAutoFracture(): ?string
     {
         if (!$this->natural_decay_time || $this->natural_decay_time->isPast()) {
             return null;
@@ -181,6 +208,69 @@ class MoonExtraction extends Model
 
         $diff = Carbon::now()->diff($this->natural_decay_time);
         return sprintf('%dd %dh', $diff->days, $diff->h);
+    }
+
+    /**
+     * Get time until decay in human readable format.
+     * @deprecated Use getTimeUntilAutoFracture() instead
+     */
+    public function getTimeUntilDecay()
+    {
+        return $this->getTimeUntilAutoFracture();
+    }
+
+    /**
+     * Get hours since chunk arrived.
+     */
+    public function getHoursSinceArrival(): ?int
+    {
+        if (!$this->chunk_arrival_time || $this->chunk_arrival_time->isFuture()) {
+            return null;
+        }
+
+        return (int) $this->chunk_arrival_time->diffInHours(Carbon::now());
+    }
+
+    /**
+     * Check if moon is still within the "Today" display window (within 48h of arrival).
+     * Ready moons are shown as "Today" for 48 hours after arrival.
+     */
+    public function isWithinTodayWindow(): bool
+    {
+        if (!$this->chunk_arrival_time) {
+            return false;
+        }
+
+        $now = Carbon::now();
+        $fortyEightHoursAfterArrival = $this->chunk_arrival_time->copy()->addHours(48);
+
+        // Within 48h window: arrived and within 48h
+        return $now >= $this->chunk_arrival_time && $now < $fortyEightHoursAfterArrival;
+    }
+
+    /**
+     * Get the effective status including unstable state.
+     * Returns: 'extracting', 'ready', 'unstable', 'expired'
+     */
+    public function getEffectiveStatus(): string
+    {
+        // If expired (past auto-fracture time)
+        if ($this->isExpired()) {
+            return 'expired';
+        }
+
+        // If chunk hasn't arrived yet
+        if ($this->chunk_arrival_time && $this->chunk_arrival_time->isFuture()) {
+            return 'extracting';
+        }
+
+        // If in unstable window (48-51h after arrival)
+        if ($this->isUnstable()) {
+            return 'unstable';
+        }
+
+        // Otherwise ready (arrived and within 48h)
+        return 'ready';
     }
 
     /**

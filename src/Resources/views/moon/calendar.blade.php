@@ -96,11 +96,13 @@
                             {{ $extraction->chunk_arrival_time->format('H:i') }}
                         </p>
                         <p class="mb-0 small">
-                            <span class="badge badge-{{ 
-                                $extraction->status === 'extracting' ? 'warning' : 
-                                ($extraction->status === 'ready' ? 'success' : 'secondary') 
-                            }}">
-                                {{ trans('mining-manager::moons.' . $extraction->status) }}
+                            @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                            <span class="badge badge-{{
+                                $effectiveStatus === 'extracting' ? 'warning' :
+                                ($effectiveStatus === 'ready' ? 'success' :
+                                ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
+                            }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                             </span>
                         </p>
                     </div>
@@ -247,8 +249,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let html = '<div class="extraction-details">';
         html += '<p><strong>{{ trans("mining-manager::moons.status") }}:</strong> <span class="badge badge-';
-        html += props.status === 'extracting' ? 'warning' : (props.status === 'ready' ? 'success' : 'secondary');
-        html += '">' + props.status.charAt(0).toUpperCase() + props.status.slice(1) + '</span></p>';
+        let badgeClass = props.status === 'extracting' ? 'warning' : (props.status === 'ready' ? 'success' : (props.status === 'unstable' ? 'warning' : 'secondary'));
+        let badgeStyle = props.status === 'unstable' ? ' style="background: linear-gradient(45deg, #ff9800, #ffc107);"' : '';
+        html += badgeClass + '"' + badgeStyle + '>' + props.status.charAt(0).toUpperCase() + props.status.slice(1) + '</span></p>';
         
         html += '<p><strong>{{ trans("mining-manager::moons.moon") }}:</strong> ' + props.moon + '</p>';
         html += '<p><strong>{{ trans("mining-manager::moons.chunk_arrival") }}:</strong> ' + new Date(event.start).toLocaleString() + '</p>';

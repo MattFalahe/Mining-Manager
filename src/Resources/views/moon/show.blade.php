@@ -71,11 +71,13 @@
                         {{ trans('mining-manager::moons.extraction_information') }}
                     </h3>
                     <div class="card-tools">
-                        <span class="badge badge-{{ 
-                            $extraction->status === 'extracting' ? 'warning' : 
-                            ($extraction->status === 'ready' ? 'success' : 'secondary') 
-                        }}">
-                            {{ trans('mining-manager::moons.' . $extraction->status) }}
+                        @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                        <span class="badge badge-{{
+                            $effectiveStatus === 'extracting' ? 'warning' :
+                            ($effectiveStatus === 'ready' ? 'success' :
+                            ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
+                        }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                            {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                         </span>
                     </div>
                 </div>
@@ -101,11 +103,13 @@
 
                             <p><strong>{{ trans('mining-manager::moons.status') }}:</strong></p>
                             <p class="ml-3 mb-3">
-                                <span class="badge badge-lg badge-{{ 
-                                    $extraction->status === 'extracting' ? 'warning' : 
-                                    ($extraction->status === 'ready' ? 'success' : 'secondary') 
-                                }}">
-                                    {{ trans('mining-manager::moons.' . $extraction->status) }}
+                                @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                                <span class="badge badge-lg badge-{{
+                                    $effectiveStatus === 'extracting' ? 'warning' :
+                                    ($effectiveStatus === 'ready' ? 'success' :
+                                    ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
+                                }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                    {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                 </span>
                             </p>
                         </div>
@@ -127,6 +131,9 @@
                             <p class="ml-3 mb-3">
                                 {{ $extraction->natural_decay_time->format('M d, Y H:i') }}<br>
                                 <small class="text-muted">{{ $extraction->natural_decay_time->diffForHumans() }}</small>
+                                @if($extraction->isUnstable())
+                                    <br><span class="badge badge-warning">{{ trans('mining-manager::moons.unstable') }}</span>
+                                @endif
                             </p>
 
                             @if($estimatedValue)
@@ -156,10 +163,13 @@
             @endif
 
             @if($timeUntilDecay !== null && $timeUntilDecay > 0)
-            <div class="card card-danger card-outline">
+            <div class="card card-{{ $extraction->isUnstable() ? 'warning' : 'danger' }} card-outline">
                 <div class="card-body p-0">
-                    <div class="timer-box" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-                        <p class="mb-2">{{ trans('mining-manager::moons.decays_in') }}</p>
+                    <div class="timer-box" style="background: linear-gradient(135deg, {{ $extraction->isUnstable() ? '#ff9800 0%, #ffc107' : '#fa709a 0%, #fee140' }} 100%);">
+                        @if($extraction->isUnstable())
+                            <span class="badge badge-dark mb-2">{{ trans('mining-manager::moons.unstable') }}</span>
+                        @endif
+                        <p class="mb-2">{{ trans('mining-manager::moons.auto_fractures_in') }}</p>
                         <h2>{{ floor($timeUntilDecay / 24) }}d {{ $timeUntilDecay % 24 }}h</h2>
                         <small>{{ $extraction->natural_decay_time->format('M d, H:i') }}</small>
                     </div>

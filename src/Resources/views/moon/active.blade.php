@@ -290,14 +290,28 @@
                                 </div>
                             </div>
 
-                            {{-- Decay Warning (only shows 3h before decay) --}}
-                            @if($extraction->shouldShowDecayWarning())
+                            {{-- Unstable Moon Warning (48-51h after arrival) --}}
+                            @if($extraction->isUnstable())
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <div class="alert alert-warning mb-0 py-2" style="background: linear-gradient(45deg, #ff9800, #ffc107); border: none;">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            <strong>{{ trans('mining-manager::moons.unstable_warning') }}:</strong>
+                                            {{ trans('mining-manager::moons.unstable_message') }}
+                                            <span class="badge badge-dark ml-2">
+                                                {{ trans('mining-manager::moons.auto_fractures_in') }}: {{ $extraction->getTimeUntilAutoFracture() }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            {{-- Auto Fracture Warning (within 3h of auto-fracture) --}}
+                            @elseif($extraction->shouldShowAutoFractureWarning())
                                 <div class="row mt-2">
                                     <div class="col-12">
                                         <div class="alert alert-danger mb-0 py-2">
                                             <i class="fas fa-exclamation-triangle"></i>
-                                            <strong>{{ trans('mining-manager::moons.decay_warning') }}:</strong>
-                                            {{ trans('mining-manager::moons.decays_in') }} {{ $extraction->getTimeUntilDecay() }}
+                                            <strong>{{ trans('mining-manager::moons.auto_fracture_warning') }}:</strong>
+                                            {{ trans('mining-manager::moons.auto_fractures_in') }} {{ $extraction->getTimeUntilAutoFracture() }}
                                             ({{ $extraction->natural_decay_time->format('M d, H:i') }})
                                         </div>
                                     </div>

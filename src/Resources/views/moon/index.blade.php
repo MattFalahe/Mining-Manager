@@ -260,11 +260,13 @@
                                 {{-- Status & Times --}}
                                 <div class="col-md-4">
                                     <div class="mb-2">
-                                        <span class="status-badge badge badge-{{ 
-                                            $extraction->status === 'extracting' ? 'warning' : 
-                                            ($extraction->status === 'ready' ? 'success' : 'secondary') 
-                                        }}">
-                                            {{ trans('mining-manager::moons.' . $extraction->status) }}
+                                        @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                                        <span class="status-badge badge badge-{{
+                                            $effectiveStatus === 'extracting' ? 'warning' :
+                                            ($effectiveStatus === 'ready' ? 'success' :
+                                            ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
+                                        }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                            {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                         </span>
                                     </div>
                                     <p class="mb-1">
@@ -276,7 +278,10 @@
                                     </p>
                                     @if($extraction->natural_decay_time)
                                     <p class="mb-0 text-muted small">
-                                        <strong>{{ trans('mining-manager::moons.decay') }}:</strong> {{ $extraction->natural_decay_time->format('M d, H:i') }}
+                                        <strong>{{ trans('mining-manager::moons.auto_fracture') }}:</strong> {{ $extraction->natural_decay_time->format('M d, H:i') }}
+                                        @if($extraction->isUnstable())
+                                            <span class="badge badge-warning ml-1">{{ trans('mining-manager::moons.unstable') }}</span>
+                                        @endif
                                     </p>
                                     @endif
                                 </div>
