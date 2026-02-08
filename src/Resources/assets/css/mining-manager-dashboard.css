@@ -3149,3 +3149,261 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     background-color: #161922 !important;
 }
 
+/* ============================================
+   Moon Extraction Calendar Styles
+   ============================================ */
+
+/* Calendar Container */
+.mining-manager-wrapper.moon-calendar-page #calendar {
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+/* FullCalendar Dark Theme Overrides */
+.mining-manager-wrapper.moon-calendar-page .fc {
+    --fc-border-color: rgba(255, 255, 255, 0.1);
+    --fc-button-bg-color: #f39c12;
+    --fc-button-border-color: #e08e0b;
+    --fc-button-hover-bg-color: #e08e0b;
+    --fc-button-hover-border-color: #c87f0a;
+    --fc-button-active-bg-color: #c87f0a;
+    --fc-button-active-border-color: #c87f0a;
+    --fc-event-bg-color: #3498db;
+    --fc-event-border-color: #2980b9;
+    --fc-today-bg-color: rgba(243, 156, 18, 0.15);
+    --fc-neutral-bg-color: #2d3748;
+    --fc-page-bg-color: transparent;
+    --fc-list-event-hover-bg-color: rgba(243, 156, 18, 0.2);
+}
+
+/* Week view time slots */
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-slot {
+    height: 3em !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-event {
+    font-size: 0.8em;
+    padding: 2px 4px;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-event .fc-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timegrid-col-events {
+    margin: 0 1px !important;
+}
+
+/* Remove scrollbars from calendar */
+.mining-manager-wrapper.moon-calendar-page .fc-scroller {
+    overflow: visible !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-scroller-liquid-absolute {
+    position: relative !important;
+    overflow: visible !important;
+}
+
+/* Calendar header styling */
+.mining-manager-wrapper.moon-calendar-page .fc .fc-col-header-cell {
+    background: rgba(243, 156, 18, 0.15);
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-col-header-cell-cushion,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-daygrid-day-number,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-list-day-text,
+.mining-manager-wrapper.moon-calendar-page .fc .fc-list-day-side-text {
+    color: #e2e8f0;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
+    color: #6b7280;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-event {
+    cursor: pointer;
+    font-size: 0.85em;
+    border-radius: 3px;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc .fc-toolbar-title {
+    color: #e2e8f0;
+}
+
+/* Status-based event colors */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-extracting {
+    background-color: #f39c12 !important;
+    border-color: #e08e0b !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-ready {
+    background-color: #27ae60 !important;
+    border-color: #219a52 !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-unstable {
+    background: linear-gradient(45deg, #ff9800, #ffc107) !important;
+    border-color: #ff9800 !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-completed {
+    background-color: #6c757d !important;
+    border-color: #5a6268 !important;
+}
+
+/* Status legend */
+.mining-manager-wrapper .mm-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.mining-manager-wrapper .mm-status-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #d1d5db;
+}
+
+.mining-manager-wrapper .mm-status-legend-color {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-extracting {
+    background-color: #f39c12;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-ready {
+    background-color: #27ae60;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-unstable {
+    background: linear-gradient(45deg, #ff9800, #ffc107);
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-completed {
+    background-color: #6c757d;
+}
+
+/* Event detail modal */
+.mining-manager-wrapper .mm-event-detail-row {
+    display: flex;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mining-manager-wrapper .mm-event-detail-row:last-child {
+    border-bottom: none;
+}
+
+.mining-manager-wrapper .mm-event-detail-label {
+    font-weight: 600;
+    color: #9ca3af;
+    width: 140px;
+    flex-shrink: 0;
+}
+
+.mining-manager-wrapper .mm-event-detail-value {
+    color: #e2e8f0;
+}
+
+/* Sidebar extraction items */
+.mining-manager-wrapper .mm-sidebar-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid;
+    transition: background 0.2s;
+}
+
+.mining-manager-wrapper .mm-sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-extracting {
+    border-left-color: #f39c12;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-ready {
+    border-left-color: #27ae60;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-unstable {
+    border-left-color: #ff9800;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-completed {
+    border-left-color: #6c757d;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-structure-name {
+    font-weight: 600;
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-extraction-time {
+    color: #9ca3af;
+    font-size: 0.85em;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-extraction-value {
+    color: #27ae60;
+    font-weight: 600;
+    font-size: 0.9em;
+    margin-top: 4px;
+}
+
+/* Status Badges - Unstable gradient */
+.mining-manager-wrapper .mm-badge-unstable {
+    background: linear-gradient(45deg, #ff9800, #ffc107) !important;
+    color: #000 !important;
+}
+
+/* Timer boxes for countdown displays */
+.mining-manager-wrapper .mm-timer-box {
+    padding: 20px;
+    text-align: center;
+    color: #fff;
+    border-radius: var(--mm-radius-md);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-arrival {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-fracture {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-unstable {
+    background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+}
+
+.mining-manager-wrapper .mm-timer-box h2 {
+    margin: 10px 0;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* Alert styles for warnings */
+.mining-manager-wrapper .mm-alert-unstable {
+    background: linear-gradient(45deg, #ff9800, #ffc107);
+    border: none;
+    color: #000;
+}
+
+.mining-manager-wrapper .mm-alert-auto-fracture {
+    background-color: #dc3545;
+    border: none;
+    color: #fff;
+}
+

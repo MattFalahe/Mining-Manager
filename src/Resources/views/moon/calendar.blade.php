@@ -42,120 +42,154 @@
     </ul>
     <div class="tab-content">
 
-
 <div class="extraction-calendar">
-    
-    {{-- CONTROLS --}}
-    <div class="row mb-3">
-        <div class="col-12">
-            <a href="{{ route('mining-manager.moon.index') }}" class="btn btn-secondary">
-                <i class="fas fa-list"></i> {{ trans('mining-manager::moons.list_view') }}
-            </a>
-            <a href="{{ route('mining-manager.moon.compositions') }}" class="btn btn-success">
-                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::moons.compositions') }}
-            </a>
-        </div>
-    </div>
 
-    {{-- CALENDAR --}}
+    {{-- CALENDAR CARD --}}
     <div class="row">
         <div class="col-lg-9">
-            <div class="card card-dark">
+            <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="fas fa-calendar-alt"></i>
-                        {{ trans('mining-manager::moons.calendar_view') }}
-                    </h3>
+                    <h3 class="card-title"><i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::moons.calendar_view') }}</h3>
+                    <div class="card-tools">
+                        <a href="{{ route('mining-manager.moon.index') }}" class="btn btn-sm btn-outline-secondary mr-1">
+                            <i class="fas fa-list"></i> {{ trans('mining-manager::moons.list_view') }}
+                        </a>
+                        <a href="{{ route('mining-manager.moon.active') }}" class="btn btn-sm btn-warning">
+                            <i class="fas fa-broadcast-tower"></i> {{ trans('mining-manager::moons.active_extractions') }}
+                        </a>
+                    </div>
                 </div>
                 <div class="card-body">
+                    {{-- Status legend --}}
+                    <div class="mm-status-legend">
+                        <div class="mm-status-legend-item">
+                            <div class="mm-status-legend-color mm-extracting"></div>
+                            {{ trans('mining-manager::moons.extracting') }}
+                        </div>
+                        <div class="mm-status-legend-item">
+                            <div class="mm-status-legend-color mm-ready"></div>
+                            {{ trans('mining-manager::moons.ready') }}
+                        </div>
+                        <div class="mm-status-legend-item">
+                            <div class="mm-status-legend-color mm-unstable"></div>
+                            {{ trans('mining-manager::moons.unstable') }}
+                        </div>
+                        <div class="mm-status-legend-item">
+                            <div class="mm-status-legend-color mm-completed"></div>
+                            {{ trans('mining-manager::moons.completed') }}
+                        </div>
+                    </div>
+
                     <div id="calendar"></div>
                 </div>
             </div>
         </div>
 
-        {{-- TODAY'S EXTRACTIONS --}}
+        {{-- SIDEBAR --}}
         <div class="col-lg-3">
+            {{-- TODAY'S EXTRACTIONS --}}
             <div class="card card-warning card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-calendar-day"></i>
                         {{ trans('mining-manager::moons.today') }}
                     </h3>
+                    <div class="card-tools">
+                        @php
+                            $today = \Carbon\Carbon::now()->format('Y-m-d');
+                            $todayExtractions = $calendar[$today] ?? [];
+                        @endphp
+                        <span class="badge badge-warning">{{ count($todayExtractions) }}</span>
+                    </div>
                 </div>
-                <div class="card-body">
-                    @php
-                        $today = \Carbon\Carbon::now()->format('Y-m-d');
-                        $todayExtractions = $calendar[$today] ?? [];
-                    @endphp
-                    
+                <div class="card-body p-2">
                     @forelse($todayExtractions as $extraction)
-                    <div class="extraction-item status-{{ $extraction->status }}">
-                        <h6 class="mb-1">{{ $extraction->structure_name ?? 'Unknown' }}</h6>
-                        <p class="mb-1 small text-muted">
-                            <i class="fas fa-clock"></i> 
-                            {{ $extraction->chunk_arrival_time->format('H:i') }}
-                        </p>
-                        <p class="mb-0 small">
-                            @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
-                            <span class="badge badge-{{
-                                $effectiveStatus === 'extracting' ? 'warning' :
-                                ($effectiveStatus === 'ready' ? 'success' :
-                                ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
-                            }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
-                                {{ trans('mining-manager::moons.' . $effectiveStatus) }}
-                            </span>
-                        </p>
-                    </div>
+                        @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                        <div class="mm-sidebar-item mm-status-{{ $effectiveStatus }}">
+                            <div class="mm-structure-name">
+                                <i class="fas fa-building"></i>
+                                {{ $extraction->structure_name ?? 'Unknown' }}
+                            </div>
+                            <div class="mm-extraction-time">
+                                <i class="fas fa-clock"></i>
+                                {{ $extraction->chunk_arrival_time->format('H:i') }} EVE
+                                <span class="badge badge-sm badge-{{
+                                    $effectiveStatus === 'extracting' ? 'warning' :
+                                    ($effectiveStatus === 'ready' ? 'success' :
+                                    ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                                }}">
+                                    {{ trans('mining-manager::moons.' . $effectiveStatus) }}
+                                </span>
+                            </div>
+                            @if($extraction->calculated_value ?? $extraction->estimated_value ?? 0 > 0)
+                                <div class="mm-extraction-value">
+                                    <i class="fas fa-coins"></i>
+                                    {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
+                                </div>
+                            @endif
+                        </div>
                     @empty
-                    <div class="text-center text-muted py-3">
-                        <i class="fas fa-calendar-times fa-2x mb-2"></i>
-                        <p>{{ trans('mining-manager::moons.no_extractions_today') }}</p>
-                    </div>
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-calendar-times fa-2x mb-2"></i>
+                            <p class="mb-0">{{ trans('mining-manager::moons.no_extractions_today') }}</p>
+                        </div>
                     @endforelse
                 </div>
             </div>
 
-            {{-- UPCOMING THIS WEEK --}}
+            {{-- THIS WEEK --}}
             <div class="card card-info card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-calendar-week"></i>
                         {{ trans('mining-manager::moons.this_week') }}
                     </h3>
-                </div>
-                <div class="card-body">
-                    @php
-                        $weekStart = \Carbon\Carbon::now()->startOfWeek();
-                        $weekEnd = \Carbon\Carbon::now()->endOfWeek();
-                        $weekExtractions = collect();
-                        foreach ($calendar as $date => $extractions) {
-                            $carbonDate = \Carbon\Carbon::parse($date);
-                            if ($carbonDate->between($weekStart, $weekEnd) && $carbonDate->isAfter(\Carbon\Carbon::now())) {
-                                foreach ($extractions as $extraction) {
-                                    $weekExtractions->push($extraction);
+                    <div class="card-tools">
+                        @php
+                            $weekStart = \Carbon\Carbon::now();
+                            $weekEnd = \Carbon\Carbon::now()->addDays(7);
+                            $weekExtractions = collect();
+                            foreach ($calendar as $date => $extractions) {
+                                $carbonDate = \Carbon\Carbon::parse($date);
+                                if ($carbonDate->between($weekStart, $weekEnd)) {
+                                    foreach ($extractions as $extraction) {
+                                        if ($extraction->chunk_arrival_time->isAfter(\Carbon\Carbon::now())) {
+                                            $weekExtractions->push($extraction);
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        $weekExtractions = $weekExtractions->sortBy('chunk_arrival_time')->take(10);
-                    @endphp
-                    
+                            $weekExtractions = $weekExtractions->sortBy('chunk_arrival_time')->take(8);
+                        @endphp
+                        <span class="badge badge-info">{{ $weekExtractions->count() }}</span>
+                    </div>
+                </div>
+                <div class="card-body p-2">
                     @forelse($weekExtractions as $extraction)
-                    <div class="extraction-item status-{{ $extraction->status }} mb-2">
-                        <h6 class="mb-1">{{ $extraction->structure_name ?? 'Unknown' }}</h6>
-                        <p class="mb-1 small">
-                            <i class="fas fa-calendar"></i> 
-                            {{ $extraction->chunk_arrival_time->format('D, M d') }}
-                        </p>
-                        <p class="mb-0 small">
-                            <i class="fas fa-clock"></i> 
-                            {{ $extraction->chunk_arrival_time->format('H:i') }}
-                        </p>
-                    </div>
+                        @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
+                        <div class="mm-sidebar-item mm-status-{{ $effectiveStatus }}">
+                            <div class="mm-structure-name">
+                                <i class="fas fa-moon text-info"></i>
+                                {{ $extraction->moon_name ?? 'Unknown Moon' }}
+                            </div>
+                            <div class="mm-extraction-time">
+                                <i class="fas fa-calendar"></i>
+                                {{ $extraction->chunk_arrival_time->format('D, M d') }}
+                                <br>
+                                <i class="fas fa-clock"></i>
+                                {{ $extraction->chunk_arrival_time->format('H:i') }} EVE
+                            </div>
+                            @if($extraction->calculated_value ?? $extraction->estimated_value ?? 0 > 0)
+                                <div class="mm-extraction-value">
+                                    {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
+                                </div>
+                            @endif
+                        </div>
                     @empty
-                    <div class="text-center text-muted py-3">
-                        <i class="fas fa-calendar-times fa-2x mb-2"></i>
-                        <p>{{ trans('mining-manager::moons.no_upcoming_week') }}</p>
-                    </div>
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-calendar-times fa-2x mb-2"></i>
+                            <p class="mb-0">{{ trans('mining-manager::moons.no_upcoming_week') }}</p>
+                        </div>
                     @endforelse
                 </div>
             </div>
@@ -166,21 +200,39 @@
 
 {{-- EXTRACTION DETAILS MODAL --}}
 <div class="modal fade" id="extractionModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content bg-dark">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="extractionModalTitle"></h5>
-                <button type="button" class="close text-light" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
+                <h5 class="modal-title">
+                    <i class="fas fa-gem"></i>
+                    <span id="extractionModalTitle"></span>
+                </h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body" id="extractionModalBody">
-                <div class="text-center">
-                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <div class="mm-event-detail-row">
+                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.status') }}</div>
+                    <div class="mm-event-detail-value" id="eventStatus"></div>
+                </div>
+                <div class="mm-event-detail-row">
+                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.moon') }}</div>
+                    <div class="mm-event-detail-value" id="eventMoon"></div>
+                </div>
+                <div class="mm-event-detail-row">
+                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.chunk_arrival') }}</div>
+                    <div class="mm-event-detail-value" id="eventArrival"></div>
+                </div>
+                <div class="mm-event-detail-row" id="eventValueRow">
+                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.estimated_value') }}</div>
+                    <div class="mm-event-detail-value" id="eventValue"></div>
+                </div>
+                <div class="mm-event-detail-row" id="eventOreRow" style="display: none;">
+                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.ore_composition') }}</div>
+                    <div class="mm-event-detail-value" id="eventOres"></div>
                 </div>
             </div>
             <div class="modal-footer">
-                <a href="#" id="extractionViewButton" class="btn btn-info" target="_blank">
+                <a href="#" id="extractionViewButton" class="btn btn-info">
                     <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.view_details') }}
                 </a>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">
@@ -197,18 +249,34 @@
 document.addEventListener('DOMContentLoaded', function() {
     const calendarEl = document.getElementById('calendar');
     const calendarData = @json($calendar);
-    
+
     // Convert calendar data to FullCalendar events
     const events = [];
     for (const [date, extractions] of Object.entries(calendarData)) {
         extractions.forEach(extraction => {
+            // Determine effective status
+            let effectiveStatus = extraction.status;
+            if (extraction.chunk_arrival_time) {
+                const arrivalTime = new Date(extraction.chunk_arrival_time);
+                const now = new Date();
+                const hoursSinceArrival = (now - arrivalTime) / (1000 * 60 * 60);
+
+                if (arrivalTime > now) {
+                    effectiveStatus = 'extracting';
+                } else if (hoursSinceArrival >= 48 && hoursSinceArrival < 51) {
+                    effectiveStatus = 'unstable';
+                } else if (hoursSinceArrival < 48) {
+                    effectiveStatus = 'ready';
+                }
+            }
+
             events.push({
                 id: extraction.id,
                 title: extraction.structure_name || 'Unknown',
                 start: extraction.chunk_arrival_time,
-                className: 'status-' + extraction.status,
+                className: 'mm-status-' + effectiveStatus,
                 extendedProps: {
-                    status: extraction.status,
+                    status: effectiveStatus,
                     moon: extraction.moon_name || 'Unknown',
                     structure: extraction.structure_name || 'Unknown',
                     estimatedValue: extraction.calculated_value || extraction.estimated_value || 0,
@@ -217,7 +285,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-    
+
     const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         initialDate: '{{ $month->format("Y-m-d") }}',
@@ -226,49 +294,67 @@ document.addEventListener('DOMContentLoaded', function() {
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,listWeek'
         },
-        height: 'auto',
         events: events,
         eventClick: function(info) {
             info.jsEvent.preventDefault();
             showExtractionDetails(info.event);
         },
-        eventContent: function(arg) {
-            return {
-                html: '<div class="fc-event-title fc-sticky">' + arg.event.title + '</div>'
-            };
-        }
+        height: 700,
+        contentHeight: 650,
+        firstDay: 1,
+        nowIndicator: true,
+        eventDisplay: 'block',
+        dayMaxEvents: 4,
+        moreLinkClick: 'popover',
+        slotEventOverlap: false,
+        slotDuration: '01:00:00',
+        expandRows: true,
+        eventMaxStack: 5
     });
-    
+
     calendar.render();
-    
+
     function showExtractionDetails(event) {
         const props = event.extendedProps;
-        
+        const startDate = event.start;
+
+        // Format time as EVE
+        const timeStr = startDate.getUTCFullYear() + '-' +
+            String(startDate.getUTCMonth() + 1).padStart(2, '0') + '-' +
+            String(startDate.getUTCDate()).padStart(2, '0') + ' ' +
+            String(startDate.getUTCHours()).padStart(2, '0') + ':' +
+            String(startDate.getUTCMinutes()).padStart(2, '0') + ' EVE';
+
         $('#extractionModalTitle').text(props.structure);
         $('#extractionViewButton').attr('href', '{{ route("mining-manager.moon.show", ":id") }}'.replace(':id', event.id));
-        
-        let html = '<div class="extraction-details">';
-        html += '<p><strong>{{ trans("mining-manager::moons.status") }}:</strong> <span class="badge badge-';
-        let badgeClass = props.status === 'extracting' ? 'warning' : (props.status === 'ready' ? 'success' : (props.status === 'unstable' ? 'warning' : 'secondary'));
-        let badgeStyle = props.status === 'unstable' ? ' style="background: linear-gradient(45deg, #ff9800, #ffc107);"' : '';
-        html += badgeClass + '"' + badgeStyle + '>' + props.status.charAt(0).toUpperCase() + props.status.slice(1) + '</span></p>';
-        
-        html += '<p><strong>{{ trans("mining-manager::moons.moon") }}:</strong> ' + props.moon + '</p>';
-        html += '<p><strong>{{ trans("mining-manager::moons.chunk_arrival") }}:</strong> ' + new Date(event.start).toLocaleString() + '</p>';
-        
+
+        // Status badge
+        let badgeClass = props.status === 'extracting' ? 'warning' :
+                        (props.status === 'ready' ? 'success' :
+                        (props.status === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'));
+        $('#eventStatus').html('<span class="badge badge-' + badgeClass + '">' +
+            props.status.charAt(0).toUpperCase() + props.status.slice(1) + '</span>');
+
+        $('#eventMoon').html('<i class="fas fa-moon text-info"></i> ' + props.moon);
+        $('#eventArrival').text(timeStr);
+
+        // Value
         if (props.estimatedValue && props.estimatedValue > 0) {
-            html += '<p><strong>{{ trans("mining-manager::moons.estimated_value") }}:</strong> ';
-            html += '<span class="text-success h5">' + props.estimatedValue.toLocaleString() + ' ISK</span></p>';
+            $('#eventValue').html('<span class="text-success font-weight-bold">' +
+                props.estimatedValue.toLocaleString() + ' ISK</span>');
+            $('#eventValueRow').show();
+        } else {
+            $('#eventValueRow').hide();
         }
-        
+
+        // Ore composition indicator
         if (props.oreComposition) {
-            html += '<hr><p><strong>{{ trans("mining-manager::moons.ore_composition") }}:</strong></p>';
-            html += '<p class="text-muted small">{{ trans("mining-manager::moons.view_full_details") }}</p>';
+            $('#eventOres').html('<span class="text-muted">Click "View Details" for full composition</span>');
+            $('#eventOreRow').show();
+        } else {
+            $('#eventOreRow').hide();
         }
-        
-        html += '</div>';
-        
-        $('#extractionModalBody').html(html);
+
         $('#extractionModal').modal('show');
     }
 });

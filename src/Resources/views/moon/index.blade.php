@@ -264,8 +264,8 @@
                                         <span class="status-badge badge badge-{{
                                             $effectiveStatus === 'extracting' ? 'warning' :
                                             ($effectiveStatus === 'ready' ? 'success' :
-                                            ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
-                                        }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                            ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                                        }}">
                                             {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                         </span>
                                     </div>

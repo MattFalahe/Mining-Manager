@@ -75,8 +75,8 @@
                         <span class="badge badge-{{
                             $effectiveStatus === 'extracting' ? 'warning' :
                             ($effectiveStatus === 'ready' ? 'success' :
-                            ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
-                        }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                            ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                        }}">
                             {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                         </span>
                     </div>
@@ -107,8 +107,8 @@
                                 <span class="badge badge-lg badge-{{
                                     $effectiveStatus === 'extracting' ? 'warning' :
                                     ($effectiveStatus === 'ready' ? 'success' :
-                                    ($effectiveStatus === 'unstable' ? 'warning' : 'secondary'))
-                                }}" @if($effectiveStatus === 'unstable') style="background: linear-gradient(45deg, #ff9800, #ffc107);" @endif>
+                                    ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                                }}">
                                     {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                 </span>
                             </p>
@@ -153,7 +153,7 @@
             @if($timeUntilArrival !== null && $timeUntilArrival > 0)
             <div class="card card-warning card-outline mb-3">
                 <div class="card-body p-0">
-                    <div class="timer-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <div class="mm-timer-box mm-timer-arrival">
                         <p class="mb-2">{{ trans('mining-manager::moons.chunk_arrives_in') }}</p>
                         <h2>{{ floor($timeUntilArrival / 24) }}d {{ $timeUntilArrival % 24 }}h</h2>
                         <small>{{ $extraction->chunk_arrival_time->format('M d, H:i') }}</small>
@@ -165,7 +165,7 @@
             @if($timeUntilDecay !== null && $timeUntilDecay > 0)
             <div class="card card-{{ $extraction->isUnstable() ? 'warning' : 'danger' }} card-outline">
                 <div class="card-body p-0">
-                    <div class="timer-box" style="background: linear-gradient(135deg, {{ $extraction->isUnstable() ? '#ff9800 0%, #ffc107' : '#fa709a 0%, #fee140' }} 100%);">
+                    <div class="mm-timer-box {{ $extraction->isUnstable() ? 'mm-timer-unstable' : 'mm-timer-fracture' }}">
                         @if($extraction->isUnstable())
                             <span class="badge badge-dark mb-2">{{ trans('mining-manager::moons.unstable') }}</span>
                         @endif

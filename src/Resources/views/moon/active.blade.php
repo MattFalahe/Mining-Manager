@@ -294,7 +294,7 @@
                             @if($extraction->isUnstable())
                                 <div class="row mt-2">
                                     <div class="col-12">
-                                        <div class="alert alert-warning mb-0 py-2" style="background: linear-gradient(45deg, #ff9800, #ffc107); border: none;">
+                                        <div class="alert mm-alert-unstable mb-0 py-2">
                                             <i class="fas fa-exclamation-triangle"></i>
                                             <strong>{{ trans('mining-manager::moons.unstable_warning') }}:</strong>
                                             {{ trans('mining-manager::moons.unstable_message') }}
@@ -308,7 +308,7 @@
                             @elseif($extraction->shouldShowAutoFractureWarning())
                                 <div class="row mt-2">
                                     <div class="col-12">
-                                        <div class="alert alert-danger mb-0 py-2">
+                                        <div class="alert mm-alert-auto-fracture mb-0 py-2">
                                             <i class="fas fa-exclamation-triangle"></i>
                                             <strong>{{ trans('mining-manager::moons.auto_fracture_warning') }}:</strong>
                                             {{ trans('mining-manager::moons.auto_fractures_in') }} {{ $extraction->getTimeUntilAutoFracture() }}
