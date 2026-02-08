@@ -357,7 +357,7 @@
                                             {{ $tax->character->name ?? 'Unknown' }}
                                         </a>
                                         @if($moonOwnerCorpId)
-                                            @if($tax->character && $tax->character->corporation_id == $moonOwnerCorpId)
+                                            @if($tax->corporation_id == $moonOwnerCorpId)
                                                 <span class="badge badge-primary ml-1" data-toggle="tooltip" title="Corporation Member">
                                                     <i class="fas fa-building"></i>
                                                 </span>
@@ -370,7 +370,7 @@
                                     </td>
                                     <td>
                                         {{ $tax->character->corporation->name ?? 'Unknown' }}
-                                        @if($moonOwnerCorpId && $tax->character && $tax->character->corporation_id == $moonOwnerCorpId)
+                                        @if($moonOwnerCorpId && $tax->corporation_id == $moonOwnerCorpId)
                                             <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
                                         @endif
                                     </td>

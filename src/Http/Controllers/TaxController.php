@@ -54,8 +54,8 @@ class TaxController extends Controller
         // Get moon owner corporation ID from settings
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
-        // Build query
-        $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices']);
+        // Build query - include affiliation for corporation_id lookup
+        $query = MiningTax::with(['character', 'character.corporation', 'affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -66,21 +66,28 @@ class TaxController extends Controller
         }
 
         if ($corporationId) {
-            $query->whereHas('character', function($q) use ($corporationId) {
-                $q->where('corporation_id', $corporationId);
+            // Use character_affiliations table for corporation_id lookup
+            $query->whereIn('character_id', function($q) use ($corporationId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', $corporationId);
             });
         }
 
-        // Filter by miner type (corp member vs guest)
+        // Filter by miner type (corp member vs guest) - use character_affiliations for corporation_id
         if ($minerType === 'corp' && $moonOwnerCorpId) {
             // Only show corp members
-            $query->whereHas('character', function($q) use ($moonOwnerCorpId) {
-                $q->where('corporation_id', $moonOwnerCorpId);
+            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', $moonOwnerCorpId);
             });
         } elseif ($minerType === 'guest' && $moonOwnerCorpId) {
             // Only show guest miners (not corp members)
-            $query->whereHas('character', function($q) use ($moonOwnerCorpId) {
-                $q->where('corporation_id', '!=', $moonOwnerCorpId);
+            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', '!=', $moonOwnerCorpId);
             });
         }
 
@@ -94,14 +101,18 @@ class TaxController extends Controller
         $guestSummaryQuery = null;
 
         if ($moonOwnerCorpId) {
-            // Corp members summary
-            $corpSummaryQuery = MiningTax::whereHas('character', function($q) use ($moonOwnerCorpId) {
-                $q->where('corporation_id', $moonOwnerCorpId);
+            // Corp members summary - use character_affiliations table for corporation_id
+            $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', $moonOwnerCorpId);
             });
 
-            // Guest miners summary
-            $guestSummaryQuery = MiningTax::whereHas('character', function($q) use ($moonOwnerCorpId) {
-                $q->where('corporation_id', '!=', $moonOwnerCorpId);
+            // Guest miners summary - use character_affiliations table for corporation_id
+            $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', '!=', $moonOwnerCorpId);
             });
         }
 

@@ -4,6 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
+use Seat\Eveapi\Models\Character\CharacterAffiliation;
 
 class MiningTax extends Model
 {
@@ -54,6 +55,35 @@ class MiningTax extends Model
     public function character()
     {
         return $this->belongsTo(CharacterInfo::class, 'character_id', 'character_id');
+    }
+
+    /**
+     * Get the character affiliation (contains corporation_id).
+     */
+    public function affiliation()
+    {
+        return $this->belongsTo(CharacterAffiliation::class, 'character_id', 'character_id');
+    }
+
+    /**
+     * Get the corporation ID for this tax record's character.
+     * Uses affiliation table which is more reliable than character_infos.
+     *
+     * @return int|null
+     */
+    public function getCorporationIdAttribute(): ?int
+    {
+        // Try affiliation first (more reliable)
+        if ($this->affiliation && $this->affiliation->corporation_id) {
+            return $this->affiliation->corporation_id;
+        }
+
+        // Fallback to character_infos if it has corporation_id
+        if ($this->character && isset($this->character->corporation_id)) {
+            return $this->character->corporation_id;
+        }
+
+        return null;
     }
 
     /**
