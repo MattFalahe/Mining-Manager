@@ -3233,24 +3233,28 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 }
 
 /* Status-based event colors */
+/* Extracting: Orange - moon chunk is being pulled */
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-extracting {
     background-color: #f39c12 !important;
     border-color: #e08e0b !important;
 }
 
+/* Ready: Green - chunk arrived, ready to mine */
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-ready {
     background-color: #27ae60 !important;
     border-color: #219a52 !important;
 }
 
+/* Unstable: Red - past 48h, will auto-fracture soon */
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-unstable {
-    background: linear-gradient(45deg, #ff9800, #ffc107) !important;
-    border-color: #ff9800 !important;
+    background-color: #dc3545 !important;
+    border-color: #c82333 !important;
 }
 
+/* Completed: Blue - past extractions */
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-completed {
-    background-color: #6c757d !important;
-    border-color: #5a6268 !important;
+    background-color: #3498db !important;
+    border-color: #2980b9 !important;
 }
 
 /* Status legend */
@@ -3285,11 +3289,11 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 }
 
 .mining-manager-wrapper .mm-status-legend-color.mm-unstable {
-    background: linear-gradient(45deg, #ff9800, #ffc107);
+    background-color: #dc3545;
 }
 
 .mining-manager-wrapper .mm-status-legend-color.mm-completed {
-    background-color: #6c757d;
+    background-color: #3498db;
 }
 
 /* Event detail modal */
@@ -3337,11 +3341,11 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 }
 
 .mining-manager-wrapper .mm-sidebar-item.mm-status-unstable {
-    border-left-color: #ff9800;
+    border-left-color: #dc3545;
 }
 
 .mining-manager-wrapper .mm-sidebar-item.mm-status-completed {
-    border-left-color: #6c757d;
+    border-left-color: #3498db;
 }
 
 .mining-manager-wrapper .mm-sidebar-item .mm-structure-name {
@@ -3362,10 +3366,10 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     margin-top: 4px;
 }
 
-/* Status Badges - Unstable gradient */
+/* Status Badges - Unstable red */
 .mining-manager-wrapper .mm-badge-unstable {
-    background: linear-gradient(45deg, #ff9800, #ffc107) !important;
-    color: #000 !important;
+    background-color: #dc3545 !important;
+    color: #fff !important;
 }
 
 /* Timer boxes for countdown displays */
