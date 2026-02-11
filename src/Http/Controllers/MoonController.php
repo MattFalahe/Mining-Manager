@@ -350,16 +350,24 @@ class MoonController extends Controller
             }
         }
 
-        // Get statistics
-        $stats = [
-            'total_active' => $activeExtractions->count(),
-            'arriving_soon' => $activeExtractions->filter(function ($extraction) {
-                return $extraction->hours_until_arrival <= 24;
-            })->count(),
-            'total_estimated_value' => $activeExtractions->sum('calculated_value'),
-        ];
+        // Get statistics for the view
+        $totalValue = $activeExtractions->sum('calculated_value');
 
-        return view('mining-manager::moon.active', compact('activeExtractions', 'stats'));
+        $arrivingSoon = $activeExtractions->filter(function ($extraction) {
+            return $extraction->hours_until_arrival <= 24 && $extraction->hours_until_arrival > 0;
+        })->count();
+
+        // Get extractions arriving within 24 hours for the urgent section
+        $imminentArrivals = $activeExtractions->filter(function ($extraction) {
+            return $extraction->hours_until_arrival <= 24 && $extraction->hours_until_arrival > 0;
+        });
+
+        return view('mining-manager::moon.active', compact(
+            'activeExtractions',
+            'totalValue',
+            'arrivingSoon',
+            'imminentArrivals'
+        ));
     }
 
     /**

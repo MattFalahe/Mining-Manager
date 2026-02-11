@@ -402,12 +402,18 @@ setInterval(function() {
     // For now, the meta refresh tag handles it
 }, 30000);
 
-// Add visual feedback for extractions arriving soon
+// Add visual feedback for extractions arriving very soon (< 6 hours)
 $(document).ready(function() {
     $('.countdown-timer').each(function() {
-        const text = $(this).text();
-        if (text.includes('0d') && !text.includes('Ready')) {
-            $(this).addClass('text-danger').parent().parent().addClass('border-danger');
+        const text = $(this).text().trim();
+        // Only highlight if 0d and less than 6 hours remaining
+        const match = text.match(/(\d+)d\s+(\d+)h/);
+        if (match) {
+            const days = parseInt(match[1]);
+            const hours = parseInt(match[2]);
+            if (days === 0 && hours < 6) {
+                $(this).addClass('text-warning');
+            }
         }
     });
 });
