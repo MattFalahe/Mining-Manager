@@ -53,7 +53,7 @@
                 </span>
                 <div class="info-box-content">
                     <span class="info-box-text">{{ trans('mining-manager::moons.extracting') }}</span>
-                    <span class="info-box-number">{{ $extractions->where('status', 'extracting')->count() }}</span>
+                    <span class="info-box-number">{{ $stats['extracting'] ?? 0 }}</span>
                     <small>{{ trans('mining-manager::moons.active_extractions') }}</small>
                 </div>
             </div>
@@ -66,7 +66,7 @@
                 </span>
                 <div class="info-box-content">
                     <span class="info-box-text">{{ trans('mining-manager::moons.ready') }}</span>
-                    <span class="info-box-number">{{ $extractions->where('status', 'ready')->count() }}</span>
+                    <span class="info-box-number">{{ $stats['ready'] ?? 0 }}</span>
                     <small>{{ trans('mining-manager::moons.ready_to_mine') }}</small>
                 </div>
             </div>
@@ -92,7 +92,7 @@
                 </span>
                 <div class="info-box-content">
                     <span class="info-box-text">{{ trans('mining-manager::moons.completed') }}</span>
-                    <span class="info-box-number">{{ $extractions->where('status', 'completed')->count() }}</span>
+                    <span class="info-box-number">{{ $stats['completed'] ?? 0 }}</span>
                     <small>{{ trans('mining-manager::moons.this_month') }}</small>
                 </div>
             </div>

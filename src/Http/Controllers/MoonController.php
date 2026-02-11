@@ -80,7 +80,16 @@ class MoonController extends Controller
             }
         }
 
-        return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status'));
+        // Get stats for ALL extractions (not just current page)
+        $stats = [
+            'extracting' => MoonExtraction::where('status', 'extracting')->count(),
+            'ready' => MoonExtraction::where('status', 'ready')->count(),
+            'completed' => MoonExtraction::where('status', 'completed')
+                ->where('chunk_arrival_time', '>=', Carbon::now()->startOfMonth())
+                ->count(),
+        ];
+
+        return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status', 'stats'));
     }
 
     /**
