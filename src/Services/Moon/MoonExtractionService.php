@@ -5,6 +5,7 @@ namespace MiningManager\Services\Moon;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonOreHelper;
+use MiningManager\Services\Pricing\PriceProviderService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -30,15 +31,24 @@ class MoonExtractionService
     protected $settingsService;
 
     /**
+     * Price provider service
+     *
+     * @var PriceProviderService
+     */
+    protected $priceService;
+
+    /**
      * Constructor
      *
      * @param MoonValueCalculationService $valueService
      * @param SettingsManagerService $settingsService
+     * @param PriceProviderService $priceService
      */
-    public function __construct(MoonValueCalculationService $valueService, SettingsManagerService $settingsService)
+    public function __construct(MoonValueCalculationService $valueService, SettingsManagerService $settingsService, PriceProviderService $priceService)
     {
         $this->valueService = $valueService;
         $this->settingsService = $settingsService;
+        $this->priceService = $priceService;
     }
 
     /**
@@ -997,8 +1007,8 @@ class MoonExtractionService
                 $unitVolume = $oreType->volume ?? 16; // Moon ores typically 16 m³/unit
                 $quantityInUnits = floor($oreVolume / $unitVolume);
 
-                // Get unit price for the ore itself
-                $unitPrice = $this->valueService->getTypePrice($content->type_id);
+                // Get unit price for the ore itself using price provider
+                $unitPrice = $this->priceService->getPrice($content->type_id) ?? 0;
                 $oreValue = $quantityInUnits * $unitPrice;
                 $totalValue += $oreValue;
 
