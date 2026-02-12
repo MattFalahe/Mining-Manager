@@ -895,4 +895,140 @@ class MoonExtractionService
             ->where('moon_id', $moonId)
             ->exists();
     }
+
+    /**
+     * Get all scanned moons with their basic info.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public function getScannedMoons(): \Illuminate\Support\Collection
+    {
+        if (!Schema::hasTable('universe_moon_contents')) {
+            return collect();
+        }
+
+        // Get unique moon IDs that have been scanned
+        $moonIds = DB::table('universe_moon_contents')
+            ->select('moon_id')
+            ->distinct()
+            ->pluck('moon_id');
+
+        if ($moonIds->isEmpty()) {
+            return collect();
+        }
+
+        // Get moon details
+        return DB::table('moons')
+            ->whereIn('moon_id', $moonIds)
+            ->select('moon_id', 'name')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Simulate an extraction for a given moon and duration.
+     *
+     * @param int $moonId
+     * @param int $extractionDays Number of days for extraction (6-56)
+     * @return array|null
+     */
+    public function simulateExtraction(int $moonId, int $extractionDays = 14): ?array
+    {
+        if (!Schema::hasTable('universe_moon_contents')) {
+            return null;
+        }
+
+        // Get moon composition percentages
+        $contents = DB::table('universe_moon_contents')
+            ->where('moon_id', $moonId)
+            ->get();
+
+        if ($contents->isEmpty()) {
+            return null;
+        }
+
+        // Calculate total composition percentage (moon ore vs regular ore)
+        // Moons don't always have 100% moon ore - the remainder is regular asteroid ore
+        $compositionSum = $contents->sum('rate');
+        $compositionPercent = round($compositionSum * 100, 1);
+
+        // Dynamic extraction rate based on composition percentage
+        // Based on observed real data:
+        // - ~100% composition = ~30,000-31,000 m³/h
+        // - ~80% composition  = ~30,000 m³/h
+        // - ~70% composition  = ~21,000 m³/h
+        // Formula derived: base rate scales with composition richness
+        // Using linear interpolation between observed data points
+        $baseRateAt100Percent = 31000;  // m³/h for 100% composition moon
+        $baseRateAt70Percent = 21000;   // m³/h for 70% composition moon
+
+        // Linear interpolation: rate = minRate + (compositionSum - 0.70) * slope
+        // slope = (31000 - 21000) / (1.0 - 0.70) = 10000 / 0.30 = 33333
+        if ($compositionSum >= 0.70) {
+            $extractionRatePerHour = $baseRateAt70Percent + (($compositionSum - 0.70) / 0.30) * ($baseRateAt100Percent - $baseRateAt70Percent);
+        } else {
+            // For very low composition moons, extrapolate down (minimum ~15,000)
+            $extractionRatePerHour = max(15000, $baseRateAt70Percent * ($compositionSum / 0.70));
+        }
+
+        $extractionRatePerHour = round($extractionRatePerHour);
+        $totalHours = $extractionDays * 24;
+        $totalVolume = $extractionRatePerHour * $totalHours;
+
+        // Get moon name
+        $moon = DB::table('moons')->where('moon_id', $moonId)->first();
+        $moonName = $moon ? $moon->name : "Moon {$moonId}";
+
+        // Build composition with calculated volumes and values
+        $composition = [];
+        $totalValue = 0;
+
+        foreach ($contents as $content) {
+            // Get ore type info
+            $oreType = DB::table('invTypes')
+                ->where('typeID', $content->type_id)
+                ->first();
+
+            if ($oreType) {
+                // Calculate volume for this ore based on percentage
+                $oreVolume = $totalVolume * $content->rate;
+
+                // Convert volume to quantity (units)
+                $unitVolume = $oreType->volume ?? 16; // Moon ores typically 16 m³/unit
+                $quantityInUnits = floor($oreVolume / $unitVolume);
+
+                // Get unit price for the ore itself
+                $unitPrice = $this->valueService->getTypePrice($content->type_id);
+                $oreValue = $quantityInUnits * $unitPrice;
+                $totalValue += $oreValue;
+
+                $composition[] = [
+                    'ore_name' => $oreType->typeName,
+                    'type_id' => $content->type_id,
+                    'percentage' => round($content->rate * 100, 2),
+                    'volume' => round($oreVolume, 0),
+                    'quantity' => $quantityInUnits,
+                    'unit_price' => $unitPrice,
+                    'value' => $oreValue,
+                ];
+            }
+        }
+
+        // Sort by value descending
+        usort($composition, function ($a, $b) {
+            return $b['value'] <=> $a['value'];
+        });
+
+        return [
+            'moon_id' => $moonId,
+            'moon_name' => $moonName,
+            'extraction_days' => $extractionDays,
+            'extraction_hours' => $totalHours,
+            'extraction_rate_m3h' => $extractionRatePerHour,
+            'composition_percent' => $compositionPercent,
+            'total_volume_m3' => $totalVolume,
+            'total_value' => $totalValue,
+            'composition' => $composition,
+        ];
+    }
 }

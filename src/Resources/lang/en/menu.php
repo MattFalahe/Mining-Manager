@@ -36,7 +36,7 @@ return [
     'active_extractions' => 'Active Extractions',
     'extraction_calendar' => 'Extraction Calendar',
     'moon_compositions' => 'Moon Compositions',
-    'moon_value_calculator' => 'Value Calculator',
+    'moon_value_calculator' => 'Extraction Simulator',
     
     // Analytics
     'analytics' => 'Analytics',

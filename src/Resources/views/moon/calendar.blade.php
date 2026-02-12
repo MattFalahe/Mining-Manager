@@ -36,7 +36,7 @@
         </li>
         <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.moon.calculator') }}">
-                <i class="fas fa-coins"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+                <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
             </a>
         </li>
     </ul>

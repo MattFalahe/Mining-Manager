@@ -474,6 +474,12 @@ Route::group([
             'middleware' => 'can:mining-manager.moon.view',
         ]);
 
+        Route::post('/simulate', [
+            'as' => 'mining-manager.moon.simulate',
+            'uses' => 'MoonController@simulate',
+            'middleware' => 'can:mining-manager.moon.view',
+        ]);
+
         Route::get('/active', [
             'as' => 'mining-manager.moon.active',
             'uses' => 'MoonController@active',

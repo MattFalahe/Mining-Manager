@@ -380,24 +380,53 @@ class MoonController extends Controller
     }
 
     /**
-     * Display moon value calculator
+     * Display moon extraction simulator
      *
      * @return \Illuminate\View\View
      */
     public function calculator()
     {
-        // Get recent extraction data for presets
+        // Get all scanned moons for the dropdown
+        $scannedMoons = $this->extractionService->getScannedMoons();
+
+        // Get recent extractions for comparison
         $recentExtractions = MoonExtraction::whereNotNull('ore_composition')
             ->with(['structure'])
             ->orderBy('extraction_start_time', 'desc')
-            ->limit(10)
+            ->limit(5)
             ->get();
 
-        // Calculate values for recent extractions
         foreach ($recentExtractions as $extraction) {
             $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
         }
 
-        return view('mining-manager::moon.calculator', compact('recentExtractions'));
+        return view('mining-manager::moon.calculator', compact('scannedMoons', 'recentExtractions'));
+    }
+
+    /**
+     * Simulate extraction for a given moon (AJAX endpoint)
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function simulate(Request $request)
+    {
+        $moonId = $request->input('moon_id');
+        $extractionDays = $request->input('extraction_days', 14);
+
+        if (!$moonId) {
+            return response()->json(['error' => 'Moon ID is required'], 400);
+        }
+
+        // Validate extraction days (6-56 days per EVE mechanics)
+        $extractionDays = max(6, min(56, (int) $extractionDays));
+
+        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays);
+
+        if (!$result) {
+            return response()->json(['error' => 'Moon not found or not scanned'], 404);
+        }
+
+        return response()->json($result);
     }
 }
