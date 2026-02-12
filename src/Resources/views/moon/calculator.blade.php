@@ -83,26 +83,26 @@
                             <table class="table table-sm table-dark small">
                                 <thead>
                                     <tr>
-                                        <th>{{ trans('mining-manager::moons.moon_ore_percent') }}</th>
+                                        <th>{{ trans('mining-manager::moons.composition') }}</th>
                                         <th>{{ trans('mining-manager::moons.extraction_rate') }}</th>
-                                        <th>{{ trans('mining-manager::moons.example') }}</th>
+                                        <th>{{ trans('mining-manager::moons.example_ores') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr>
                                         <td><span class="badge badge-success">100%</span></td>
                                         <td>~31,000 m³/h</td>
-                                        <td class="text-muted">The Veil of Ashes</td>
+                                        <td class="text-muted small">Sylvite 46%, Chromite 34%, Zeolites 20%</td>
                                     </tr>
                                     <tr>
                                         <td><span class="badge badge-info">~82%</span></td>
                                         <td>~30,500 m³/h</td>
-                                        <td class="text-muted">The Offering Line</td>
+                                        <td class="text-muted small">Euxenite 36%, Coesite 24%, Cobaltite 22%</td>
                                     </tr>
                                     <tr>
                                         <td><span class="badge badge-warning">~70%</span></td>
                                         <td>~21,600 m³/h</td>
-                                        <td class="text-muted">The Severed Pantheon</td>
+                                        <td class="text-muted small">Sylvite 40%, Euxenite 21%, Sperrylite 9%</td>
                                     </tr>
                                 </tbody>
                             </table>
