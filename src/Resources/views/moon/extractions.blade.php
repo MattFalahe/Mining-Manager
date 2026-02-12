@@ -137,11 +137,12 @@
                     <span class="info-box-text">{{ trans('mining-manager::moons.avg_value') }}</span>
                     <span class="info-box-number">
                         @php
-                            $extractionsWithValue = $extractions->filter(function($e) { 
-                                return isset($e->calculated_value ?? $e->estimated_value) && $e->calculated_value ?? $e->estimated_value > 0; 
+                            $extractionsWithValue = $extractions->filter(function($e) {
+                                $value = $e->calculated_value ?? $e->estimated_value ?? 0;
+                                return $value > 0;
                             });
-                            $avgValue = $extractionsWithValue->count() > 0 
-                                ? $extractionsWithValue->avg('calculated_value') 
+                            $avgValue = $extractionsWithValue->count() > 0
+                                ? $extractionsWithValue->avg('calculated_value')
                                 : 0;
                         @endphp
                         {{ number_format($avgValue, 0) }}
