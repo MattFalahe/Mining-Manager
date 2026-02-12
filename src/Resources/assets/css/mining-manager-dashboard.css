@@ -3196,6 +3196,34 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     margin: 0 1px !important;
 }
 
+/* Week view - fix non-business hours background to fill full height */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-non-business {
+    background: rgba(0, 0, 0, 0.3) !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-col {
+    background: transparent;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-slots,
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-cols {
+    height: 100% !important;
+}
+
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-body {
+    min-height: 100% !important;
+}
+
+/* Ensure the day columns stretch full height */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-col-frame {
+    min-height: 100% !important;
+}
+
+/* Fix today column highlighting in week view */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-day-today {
+    background: rgba(243, 156, 18, 0.1) !important;
+}
+
 /* Remove scrollbars from calendar */
 .mining-manager-wrapper.moon-calendar-page .fc-scroller {
     overflow: visible !important;
@@ -3364,6 +3392,40 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     font-weight: 600;
     font-size: 0.9em;
     margin-top: 4px;
+}
+
+/* Countdown timers in sidebar */
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown {
+    font-size: 0.85em;
+    margin-top: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-warning {
+    background: rgba(243, 156, 18, 0.15);
+    border: 1px solid rgba(243, 156, 18, 0.3);
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-danger {
+    background: rgba(220, 53, 69, 0.15);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown .countdown-text {
+    color: #d1d5db;
+}
+
+.mining-manager-wrapper .mm-sidebar-item .mm-countdown.mm-countdown-danger .countdown-text strong {
+    animation: pulse-danger 1.5s infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
 /* Status Badges - Unstable red */

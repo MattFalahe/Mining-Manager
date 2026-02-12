@@ -137,6 +137,80 @@
                 </div>
             </div>
 
+            {{-- READY TO MINE --}}
+            <div class="card card-success card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-check-circle"></i>
+                        {{ trans('mining-manager::moons.ready_to_mine') }}
+                    </h3>
+                    <div class="card-tools">
+                        @php
+                            $now = \Carbon\Carbon::now();
+                            $readyExtractions = collect();
+                            foreach ($calendar as $date => $extractions) {
+                                foreach ($extractions as $extraction) {
+                                    $effectiveStatus = $extraction->getEffectiveStatus();
+                                    if (in_array($effectiveStatus, ['ready', 'unstable'])) {
+                                        $readyExtractions->push($extraction);
+                                    }
+                                }
+                            }
+                            $readyExtractions = $readyExtractions->sortBy('chunk_arrival_time');
+                        @endphp
+                        <span class="badge badge-success">{{ $readyExtractions->count() }}</span>
+                    </div>
+                </div>
+                <div class="card-body p-2">
+                    @forelse($readyExtractions as $extraction)
+                        @php
+                            $effectiveStatus = $extraction->getEffectiveStatus();
+                            $arrivalTime = $extraction->chunk_arrival_time;
+                            $hoursSinceArrival = $now->diffInHours($arrivalTime, false) * -1;
+                            $hoursUntilUnstable = 48 - $hoursSinceArrival;
+                            $hoursUntilAutoFracture = 51 - $hoursSinceArrival;
+                        @endphp
+                        <div class="mm-sidebar-item mm-status-{{ $effectiveStatus }}">
+                            <div class="mm-structure-name">
+                                <i class="fas fa-moon {{ $effectiveStatus === 'unstable' ? 'text-danger' : 'text-success' }}"></i>
+                                {{ $extraction->moon_name ?? 'Unknown Moon' }}
+                            </div>
+                            <div class="mm-extraction-time">
+                                <i class="fas fa-clock"></i>
+                                {{ trans('mining-manager::moons.ready_since') }}: {{ $arrivalTime->format('M d, H:i') }} EVE
+                            </div>
+                            @if($effectiveStatus === 'ready')
+                                <div class="mm-countdown mm-countdown-warning" data-hours-until-unstable="{{ $hoursUntilUnstable }}">
+                                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                                    <span class="countdown-text">
+                                        {{ trans('mining-manager::moons.unstable_in') }}:
+                                        <strong>{{ floor($hoursUntilUnstable) }}h {{ round(($hoursUntilUnstable - floor($hoursUntilUnstable)) * 60) }}m</strong>
+                                    </span>
+                                </div>
+                            @else
+                                <div class="mm-countdown mm-countdown-danger" data-hours-until-fracture="{{ $hoursUntilAutoFracture }}">
+                                    <i class="fas fa-bomb text-danger"></i>
+                                    <span class="countdown-text">
+                                        {{ trans('mining-manager::moons.auto_fracture_in') }}:
+                                        <strong class="text-danger">{{ floor($hoursUntilAutoFracture) }}h {{ round(($hoursUntilAutoFracture - floor($hoursUntilAutoFracture)) * 60) }}m</strong>
+                                    </span>
+                                </div>
+                            @endif
+                            @if($extraction->calculated_value ?? $extraction->estimated_value ?? 0 > 0)
+                                <div class="mm-extraction-value">
+                                    {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-check-circle fa-2x mb-2"></i>
+                            <p class="mb-0">{{ trans('mining-manager::moons.no_ready_extractions') }}</p>
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+
             {{-- THIS WEEK --}}
             <div class="card card-info card-outline">
                 <div class="card-header">
