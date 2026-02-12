@@ -13,6 +13,9 @@ return [
     'ready' => 'Ready',
     'unstable' => 'Unstable',
     'completed' => 'Completed',
+    'expired' => 'Expired',
+    'fractured' => 'Fractured',
+    'past' => 'Past',
     
     // General Terms
     'structure' => 'Structure',
@@ -103,6 +106,10 @@ return [
     // Messages
     'no_extractions' => 'No Extractions Found',
     'no_extractions_message' => 'No moon extractions have been recorded yet.',
+    'no_past_extractions' => 'No Past Extractions',
+    'no_past_extractions_message' => 'No completed or expired extractions have been recorded yet. Past extractions will appear here after they expire or are fractured.',
+    'past_extractions' => 'Past Extractions',
+    'past_extractions_this_month' => 'Past Extractions (This Month)',
     'no_extractions_today' => 'No extractions today',
     'no_upcoming_week' => 'No upcoming extractions this week',
     'ready_to_mine' => 'Ready to Mine',

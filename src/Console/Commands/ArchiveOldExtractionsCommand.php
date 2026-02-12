@@ -46,6 +46,17 @@ class ArchiveOldExtractionsCommand extends Command
             $this->warn("DRY RUN MODE - No changes will be made");
         }
 
+        // First, update status for extractions that have passed their natural decay time
+        $now = Carbon::now();
+        $expiredCount = MoonExtraction::where('status', '!=', 'expired')
+            ->where('status', '!=', 'fractured')
+            ->where('natural_decay_time', '<', $now)
+            ->update(['status' => 'expired']);
+
+        if ($expiredCount > 0) {
+            $this->info("Updated {$expiredCount} extractions to 'expired' status");
+        }
+
         // Find extractions to archive
         $cutoffDate = Carbon::now()->subDays($daysOld);
         $extractionsToArchive = MoonExtraction::where('natural_decay_time', '<', $cutoffDate)

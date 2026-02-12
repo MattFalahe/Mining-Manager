@@ -203,7 +203,7 @@
                                         <option value="all" {{ $status === 'all' ? 'selected' : '' }}>{{ trans('mining-manager::moons.all') }}</option>
                                         <option value="extracting" {{ $status === 'extracting' ? 'selected' : '' }}>{{ trans('mining-manager::moons.extracting') }}</option>
                                         <option value="ready" {{ $status === 'ready' ? 'selected' : '' }}>{{ trans('mining-manager::moons.ready') }}</option>
-                                        <option value="completed" {{ $status === 'completed' ? 'selected' : '' }}>{{ trans('mining-manager::moons.completed') }}</option>
+                                        <option value="completed" {{ $status === 'completed' ? 'selected' : '' }}>{{ trans('mining-manager::moons.completed') }} ({{ trans('mining-manager::moons.past') }})</option>
                                     </select>
                                 </div>
                             </div>
@@ -264,10 +264,16 @@
                                         <span class="status-badge badge badge-{{
                                             $effectiveStatus === 'extracting' ? 'warning' :
                                             ($effectiveStatus === 'ready' ? 'success' :
-                                            ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                                            ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' :
+                                            ($effectiveStatus === 'expired' ? 'dark' : 'secondary')))
                                         }}">
                                             {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                         </span>
+                                        @if($extraction->is_jackpot)
+                                            <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
+                                                <i class="fas fa-star"></i> JACKPOT
+                                            </span>
+                                        @endif
                                     </div>
                                     <p class="mb-1">
                                         <strong>{{ trans('mining-manager::moons.chunk_arrival') }}:</strong><br>
@@ -330,6 +336,104 @@
             </div>
         </div>
     </div>
+
+    {{-- ARCHIVED PAST EXTRACTIONS (from history table) --}}
+    @if(isset($historyExtractions) && $historyExtractions->count() > 0)
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-secondary card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-archive"></i>
+                        {{ trans('mining-manager::moons.past_extractions') }} (Archived)
+                    </h3>
+                    <div class="card-tools">
+                        <span class="badge badge-secondary">{{ $historyExtractions->count() }} archived</span>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ trans('mining-manager::moons.moon') }}</th>
+                                    <th>{{ trans('mining-manager::moons.chunk_arrival') }}</th>
+                                    <th>{{ trans('mining-manager::moons.status') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::moons.estimated_value') }}</th>
+                                    <th class="text-right">Actual Mined</th>
+                                    <th class="text-center">Completion</th>
+                                    <th>Archived</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($historyExtractions as $history)
+                                <tr>
+                                    <td>
+                                        <i class="fas fa-moon text-secondary"></i>
+                                        @php
+                                            $moonName = 'Unknown Moon';
+                                            if ($history->moon_id) {
+                                                $moon = \DB::table('moons')->where('moon_id', $history->moon_id)->first();
+                                                $moonName = $moon ? $moon->name : "Moon {$history->moon_id}";
+                                            }
+                                        @endphp
+                                        {{ $moonName }}
+                                    </td>
+                                    <td>
+                                        {{ $history->chunk_arrival_time->format('M d, Y H:i') }}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-{{
+                                            $history->final_status === 'fractured' ? 'success' :
+                                            ($history->final_status === 'expired' ? 'dark' : 'secondary')
+                                        }}">
+                                            {{ ucfirst($history->final_status) }}
+                                        </span>
+                                        @if($history->is_jackpot)
+                                            <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
+                                                <i class="fas fa-star"></i> JACKPOT
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td class="text-right">
+                                        @if($history->final_estimated_value)
+                                            <span class="text-success">{{ number_format($history->final_estimated_value, 0) }} ISK</span>
+                                        @else
+                                            <span class="text-muted">N/A</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-right">
+                                        @if($history->actual_mined_value)
+                                            <span class="text-info">{{ number_format($history->actual_mined_value, 0) }} ISK</span>
+                                        @else
+                                            <span class="text-muted">N/A</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        @if($history->completion_percentage > 0)
+                                            <div class="progress" style="height: 18px; min-width: 60px;">
+                                                <div class="progress-bar bg-{{ $history->completion_percentage >= 80 ? 'success' : ($history->completion_percentage >= 50 ? 'warning' : 'danger') }}"
+                                                     style="width: {{ min($history->completion_percentage, 100) }}%">
+                                                    {{ number_format($history->completion_percentage, 0) }}%
+                                                </div>
+                                            </div>
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ $history->archived_at->diffForHumans() }}</small>
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 
 </div>
 

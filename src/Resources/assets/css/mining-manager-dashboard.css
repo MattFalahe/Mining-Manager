@@ -3285,6 +3285,20 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     border-color: #2980b9 !important;
 }
 
+/* Expired: Dark gray - extractions past decay time */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-expired {
+    background-color: #4a5568 !important;
+    border-color: #2d3748 !important;
+    opacity: 0.85;
+}
+
+/* Fractured: Dark blue-gray - successfully fractured extractions */
+.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-fractured {
+    background-color: #2d3748 !important;
+    border-color: #1a202c !important;
+    opacity: 0.85;
+}
+
 /* Status legend */
 .mining-manager-wrapper .mm-status-legend {
     display: flex;
@@ -3322,6 +3336,14 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 
 .mining-manager-wrapper .mm-status-legend-color.mm-completed {
     background-color: #3498db;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-expired {
+    background-color: #4a5568;
+}
+
+.mining-manager-wrapper .mm-status-legend-color.mm-fractured {
+    background-color: #2d3748;
 }
 
 /* Event detail modal */
@@ -3374,6 +3396,16 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 
 .mining-manager-wrapper .mm-sidebar-item.mm-status-completed {
     border-left-color: #3498db;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-expired {
+    border-left-color: #4a5568;
+    opacity: 0.85;
+}
+
+.mining-manager-wrapper .mm-sidebar-item.mm-status-fractured {
+    border-left-color: #2d3748;
+    opacity: 0.85;
 }
 
 .mining-manager-wrapper .mm-sidebar-item .mm-structure-name {

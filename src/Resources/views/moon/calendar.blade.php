@@ -75,8 +75,8 @@
                             {{ trans('mining-manager::moons.unstable') }}
                         </div>
                         <div class="mm-status-legend-item">
-                            <div class="mm-status-legend-color mm-completed"></div>
-                            {{ trans('mining-manager::moons.completed') }}
+                            <div class="mm-status-legend-color mm-expired"></div>
+                            {{ trans('mining-manager::moons.expired') }}
                         </div>
                     </div>
 
@@ -116,7 +116,8 @@
                                 <span class="badge badge-sm badge-{{
                                     $effectiveStatus === 'extracting' ? 'warning' :
                                     ($effectiveStatus === 'ready' ? 'success' :
-                                    ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' : 'secondary'))
+                                    ($effectiveStatus === 'unstable' ? 'warning mm-badge-unstable' :
+                                    ($effectiveStatus === 'expired' ? 'dark' : 'secondary')))
                                 }}">
                                     {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                 </span>
@@ -330,18 +331,28 @@ document.addEventListener('DOMContentLoaded', function() {
         extractions.forEach(extraction => {
             // Determine effective status
             let effectiveStatus = extraction.status;
+            const isArchived = extraction.is_archived || false;
+
             if (extraction.chunk_arrival_time) {
                 const arrivalTime = new Date(extraction.chunk_arrival_time);
+                const decayTime = extraction.natural_decay_time ? new Date(extraction.natural_decay_time) : null;
                 const now = new Date();
                 const hoursSinceArrival = (now - arrivalTime) / (1000 * 60 * 60);
 
                 if (arrivalTime > now) {
                     effectiveStatus = 'extracting';
+                } else if (decayTime && now > decayTime) {
+                    effectiveStatus = 'expired';
                 } else if (hoursSinceArrival >= 48 && hoursSinceArrival < 51) {
                     effectiveStatus = 'unstable';
                 } else if (hoursSinceArrival < 48) {
                     effectiveStatus = 'ready';
                 }
+            }
+
+            // Override for archived extractions
+            if (isArchived) {
+                effectiveStatus = extraction.status || 'expired';
             }
 
             events.push({

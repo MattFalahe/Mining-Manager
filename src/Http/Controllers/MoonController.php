@@ -7,6 +7,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Models\MoonExtractionHistory;
 use Carbon\Carbon;
 
 class MoonController extends Controller
@@ -47,10 +48,28 @@ class MoonController extends Controller
         $status = $request->input('status', 'all');
         $corporationId = $request->input('corporation_id');
 
+        // Quick status sync - update extractions that have expired
+        $now = Carbon::now();
+        MoonExtraction::where('status', '!=', 'expired')
+            ->where('status', '!=', 'fractured')
+            ->where('natural_decay_time', '<', $now)
+            ->update(['status' => 'expired']);
+
+        // Update ready status for arrived chunks
+        MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '<=', $now)
+            ->where('natural_decay_time', '>', $now)
+            ->update(['status' => 'ready']);
+
         $query = MoonExtraction::with(['structure', 'corporation']);
 
         if ($status !== 'all') {
-            $query->where('status', $status);
+            // Map 'completed' filter to actual database statuses
+            if ($status === 'completed') {
+                $query->whereIn('status', ['expired', 'fractured', 'completed']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($corporationId) {
@@ -84,12 +103,21 @@ class MoonController extends Controller
         $stats = [
             'extracting' => MoonExtraction::where('status', 'extracting')->count(),
             'ready' => MoonExtraction::where('status', 'ready')->count(),
-            'completed' => MoonExtraction::where('status', 'completed')
+            // Count expired/fractured extractions this month as "completed"
+            'completed' => MoonExtraction::whereIn('status', ['expired', 'fractured', 'completed'])
                 ->where('chunk_arrival_time', '>=', Carbon::now()->startOfMonth())
                 ->count(),
         ];
 
-        return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status', 'stats'));
+        // Get archived history for past extractions display
+        $historyExtractions = collect();
+        if ($status === 'completed' || $status === 'all') {
+            $historyExtractions = MoonExtractionHistory::orderBy('chunk_arrival_time', 'desc')
+                ->limit(20)
+                ->get();
+        }
+
+        return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status', 'stats', 'historyExtractions'));
     }
 
     /**
@@ -153,7 +181,14 @@ class MoonController extends Controller
             ? Carbon::parse($request->input('month'))
             : Carbon::now();
 
-        // Get extractions for the month
+        // Quick status sync for this month
+        $now = Carbon::now();
+        MoonExtraction::where('status', '!=', 'expired')
+            ->where('status', '!=', 'fractured')
+            ->where('natural_decay_time', '<', $now)
+            ->update(['status' => 'expired']);
+
+        // Get extractions for the month (including expired/past)
         $extractions = MoonExtraction::whereBetween('chunk_arrival_time', [
             $month->copy()->startOfMonth(),
             $month->copy()->endOfMonth()
@@ -168,7 +203,14 @@ class MoonController extends Controller
             }
         }
 
-        // Group by day
+        // Also get archived history extractions for past months
+        $historyExtractions = MoonExtractionHistory::whereBetween('chunk_arrival_time', [
+            $month->copy()->startOfMonth(),
+            $month->copy()->endOfMonth()
+        ])->orderBy('chunk_arrival_time')
+            ->get();
+
+        // Group by day (current extractions)
         $calendar = [];
         foreach ($extractions as $extraction) {
             $day = $extraction->chunk_arrival_time->format('Y-m-d');
@@ -176,6 +218,30 @@ class MoonController extends Controller
                 $calendar[$day] = [];
             }
             $calendar[$day][] = $extraction;
+        }
+
+        // Add history extractions to calendar (convert to similar format)
+        foreach ($historyExtractions as $history) {
+            $day = $history->chunk_arrival_time->format('Y-m-d');
+            if (!isset($calendar[$day])) {
+                $calendar[$day] = [];
+            }
+            // Create a pseudo-extraction object for display
+            $historyExtraction = new MoonExtraction();
+            $historyExtraction->id = $history->id;
+            $historyExtraction->structure_id = $history->structure_id;
+            $historyExtraction->corporation_id = $history->corporation_id;
+            $historyExtraction->moon_id = $history->moon_id;
+            $historyExtraction->extraction_start_time = $history->extraction_start_time;
+            $historyExtraction->chunk_arrival_time = $history->chunk_arrival_time;
+            $historyExtraction->natural_decay_time = $history->natural_decay_time;
+            $historyExtraction->status = $history->final_status;
+            $historyExtraction->ore_composition = $history->ore_composition;
+            $historyExtraction->estimated_value = $history->final_estimated_value;
+            $historyExtraction->calculated_value = $history->final_estimated_value;
+            $historyExtraction->is_jackpot = $history->is_jackpot;
+            $historyExtraction->is_archived = true; // Flag to indicate this is archived
+            $calendar[$day][] = $historyExtraction;
         }
 
         return view('mining-manager::moon.calendar', compact('calendar', 'month'));
