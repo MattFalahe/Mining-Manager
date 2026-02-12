@@ -240,7 +240,9 @@ return [
     'average' => 'Average',
     'poor' => 'Poor',
     'standard' => 'Standard',
-    
+    'moon_class' => 'Moon Class',
+    'rarity' => 'Rarity',
+
     // Additional Moon Mining Terms
     'total_ores' => 'Total Ores',
     'view_all_extractions' => 'View All Extractions',

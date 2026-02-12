@@ -275,6 +275,7 @@
                                 <thead>
                                     <tr>
                                         <th>{{ trans('mining-manager::moons.ore_name') }}</th>
+                                        <th class="text-center">{{ trans('mining-manager::moons.rarity') }}</th>
                                         <th class="text-right">%</th>
                                         <th class="text-right">{{ trans('mining-manager::moons.volume_m3') }}</th>
                                         <th class="text-right">{{ trans('mining-manager::moons.unit_price') }}</th>
@@ -297,7 +298,7 @@
 
             {{-- QUICK STATS --}}
             <div class="row" id="quickStatsRow" style="display: none;">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="info-box bg-gradient-success">
                         <span class="info-box-icon"><i class="fas fa-gem"></i></span>
                         <div class="info-box-content">
@@ -306,7 +307,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="info-box bg-gradient-info">
                         <span class="info-box-icon"><i class="fas fa-cubes"></i></span>
                         <div class="info-box-content">
@@ -315,7 +316,16 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <div class="info-box bg-gradient-purple">
+                        <span class="info-box-icon"><i class="fas fa-layer-group"></i></span>
+                        <div class="info-box-content">
+                            <span class="info-box-text">{{ trans('mining-manager::moons.moon_class') }}</span>
+                            <span class="info-box-number" id="statClassification">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
                     <div class="info-box bg-gradient-warning">
                         <span class="info-box-icon"><i class="fas fa-star"></i></span>
                         <div class="info-box-content">
@@ -477,10 +487,12 @@ function displayResults(data) {
         sortedOres.forEach((ore, index) => {
             const percentage = (ore.value / totalValue * 100) || 0;
             const barColor = getBarColor(index);
+            const rarityBadge = getRarityBadge(ore.rarity);
 
             tableHtml += `
                 <tr>
                     <td><i class="fas fa-gem" style="color: ${barColor};"></i> ${ore.ore_name}</td>
+                    <td class="text-center">${rarityBadge}</td>
                     <td class="text-right">${ore.percentage.toFixed(1)}%</td>
                     <td class="text-right">${formatNumber(ore.volume)}</td>
                     <td class="text-right">${formatNumber(ore.unit_price)} ISK</td>
@@ -514,6 +526,7 @@ function displayResults(data) {
     // Update quick stats
     $('#statMostValuable').text(mostValuable.name);
     $('#statTotalOres').text(data.composition?.length || 0);
+    $('#statClassification').text(data.moon_classification || 'Standard');
     $('#statQuality').text(getMoonQuality(totalValue, data.extraction_days));
 
     toastr.success('{{ trans("mining-manager::moons.simulation_complete") }}');
@@ -529,14 +542,29 @@ function getBarColor(index) {
     return colors[index % colors.length];
 }
 
-function getMoonQuality(value, days) {
-    // Normalize to 14-day value for comparison
-    const normalizedValue = value / days * 14;
+function getRarityBadge(rarity) {
+    if (!rarity) return '<span class="badge badge-secondary">-</span>';
 
-    if (normalizedValue > 3000000000) return '{{ trans("mining-manager::moons.exceptional") }}';
-    if (normalizedValue > 2000000000) return '{{ trans("mining-manager::moons.excellent") }}';
-    if (normalizedValue > 1000000000) return '{{ trans("mining-manager::moons.good") }}';
-    if (normalizedValue > 500000000) return '{{ trans("mining-manager::moons.average") }}';
+    const rarityColors = {
+        'R64': 'danger',
+        'R32': 'warning',
+        'R16': 'info',
+        'R8': 'success',
+        'R4': 'secondary'
+    };
+
+    const badgeClass = rarityColors[rarity] || 'secondary';
+    return `<span class="badge badge-${badgeClass}">${rarity}</span>`;
+}
+
+function getMoonQuality(value, days) {
+    // Normalize to 28-day value for comparison
+    const normalizedValue = value / days * 28;
+
+    if (normalizedValue > 10000000000) return '{{ trans("mining-manager::moons.exceptional") }}';
+    if (normalizedValue > 8000000000) return '{{ trans("mining-manager::moons.excellent") }}';
+    if (normalizedValue > 5000000000) return '{{ trans("mining-manager::moons.good") }}';
+    if (normalizedValue > 2000000000) return '{{ trans("mining-manager::moons.average") }}';
     return '{{ trans("mining-manager::moons.poor") }}';
 }
 

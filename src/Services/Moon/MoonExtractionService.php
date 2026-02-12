@@ -1012,6 +1012,9 @@ class MoonExtractionService
                 $oreValue = $quantityInUnits * $unitPrice;
                 $totalValue += $oreValue;
 
+                // Get R-value classification for this ore
+                $rarity = MoonOreHelper::getRarity($content->type_id);
+
                 $composition[] = [
                     'ore_name' => $oreType->typeName,
                     'type_id' => $content->type_id,
@@ -1020,6 +1023,7 @@ class MoonExtractionService
                     'quantity' => $quantityInUnits,
                     'unit_price' => $unitPrice,
                     'value' => $oreValue,
+                    'rarity' => $rarity,
                 ];
             }
         }
@@ -1028,6 +1032,9 @@ class MoonExtractionService
         usort($composition, function ($a, $b) {
             return $b['value'] <=> $a['value'];
         });
+
+        // Determine moon classification based on highest R-value ore
+        $moonClassification = $this->determineMoonClassification($composition);
 
         return [
             'moon_id' => $moonId,
@@ -1039,6 +1046,32 @@ class MoonExtractionService
             'total_volume_m3' => $totalVolume,
             'total_value' => $totalValue,
             'composition' => $composition,
+            'moon_classification' => $moonClassification,
         ];
+    }
+
+    /**
+     * Determine moon classification based on the highest R-value ore present.
+     *
+     * @param array $composition
+     * @return string
+     */
+    private function determineMoonClassification(array $composition): string
+    {
+        $rarityOrder = ['R64' => 5, 'R32' => 4, 'R16' => 3, 'R8' => 2, 'R4' => 1];
+        $highestRarity = null;
+        $highestOrder = 0;
+
+        foreach ($composition as $ore) {
+            $rarity = $ore['rarity'] ?? null;
+            if ($rarity && isset($rarityOrder[$rarity])) {
+                if ($rarityOrder[$rarity] > $highestOrder) {
+                    $highestOrder = $rarityOrder[$rarity];
+                    $highestRarity = $rarity;
+                }
+            }
+        }
+
+        return $highestRarity ?? 'Standard';
     }
 }
