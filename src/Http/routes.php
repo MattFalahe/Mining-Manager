@@ -198,10 +198,10 @@ Route::group([
             'middleware' => 'can:mining-manager.tax.view',
         ]);
 
-        // Tax calculation
+        // Tax calculation form (GET displays form)
         Route::get('/calculate', [
             'as' => 'mining-manager.taxes.calculate',  // FIXED: was mining-manager.tax.calculate
-            'uses' => 'TaxController@calculate',
+            'uses' => 'TaxController@showCalculateForm',
             'middleware' => 'can:mining-manager.tax.calculate',
         ]);
 

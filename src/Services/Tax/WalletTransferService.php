@@ -363,11 +363,19 @@ class WalletTransferService
     {
         $cutoffDate = Carbon::now()->subDays($days);
 
-        return DB::table('corporation_wallet_journals')
-            ->where('corporation_id', $corporationId)
-            ->where('ref_type', 'player_donation')
-            ->where('date', '>=', $cutoffDate)
-            ->orderBy('date', 'desc')
+        return DB::table('corporation_wallet_journals as cwj')
+            ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
+            ->where('cwj.corporation_id', $corporationId)
+            ->where('cwj.ref_type', 'player_donation')
+            ->where('cwj.date', '>=', $cutoffDate)
+            ->select(
+                'cwj.*',
+                'ci.name as character_name',
+                DB::raw('false as verified'),
+                DB::raw('false as mismatch'),
+                DB::raw('null as matched_tax_id')
+            )
+            ->orderBy('cwj.date', 'desc')
             ->get();
     }
 
@@ -451,11 +459,13 @@ class WalletTransferService
     {
         $cutoffDate = Carbon::now()->subDays($days);
 
-        // Get all donations
-        $donations = DB::table('corporation_wallet_journals')
-            ->where('corporation_id', $corporationId)
-            ->where('ref_type', 'player_donation')
-            ->where('date', '>=', $cutoffDate)
+        // Get all donations with character names
+        $donations = DB::table('corporation_wallet_journals as cwj')
+            ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
+            ->where('cwj.corporation_id', $corporationId)
+            ->where('cwj.ref_type', 'player_donation')
+            ->where('cwj.date', '>=', $cutoffDate)
+            ->select('cwj.*', 'ci.name as character_name')
             ->get();
 
         // Filter out donations that have matching tax codes
@@ -463,6 +473,7 @@ class WalletTransferService
 
         foreach ($donations as $donation) {
             $foundMatch = false;
+            $matchedTaxId = null;
 
             // Try to extract any tax code pattern from reason or description
             $text = ($donation->reason ?? '') . ' ' . ($donation->description ?? '');
@@ -475,10 +486,15 @@ class WalletTransferService
 
                 if ($taxCode) {
                     $foundMatch = true;
+                    $matchedTaxId = $taxCode->mining_tax_id;
                 }
             }
 
             if (!$foundMatch) {
+                // Add computed fields expected by the view
+                $donation->verified = false;
+                $donation->mismatch = false;
+                $donation->matched_tax_id = $matchedTaxId;
                 $unmatched[] = $donation;
             }
         }
