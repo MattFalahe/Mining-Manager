@@ -140,7 +140,7 @@
                         <tbody>
                             @forelse($transactions ?? [] as $transaction)
                             <tr>
-                                <td>{{ $transaction->date->format('Y-m-d H:i') }}</td>
+                                <td>{{ \Carbon\Carbon::parse($transaction->date)->format('Y-m-d H:i') }}</td>
                                 <td>{{ $transaction->character_name }}</td>
                                 <td class="text-right">{{ number_format($transaction->amount, 0) }} ISK</td>
                                 <td><small>{{ $transaction->description }}</small></td>
