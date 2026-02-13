@@ -84,7 +84,7 @@
 @endpush
 
 @section('full')
-
+<div class="mining-manager-wrapper reports-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
@@ -114,8 +114,7 @@
     </ul>
     <div class="tab-content">
 
-
-<div class="mining-manager-wrapper reports-index">
+<div class="reports-index">
     
     {{-- QUICK STATS --}}
     <div class="row mb-3">
@@ -462,4 +461,5 @@ $(document).ready(function() {
     </div>{{-- /.tab-content --}}
 </div>{{-- /.nav-tabs-custom --}}
 
+</div>{{-- /.mining-manager-wrapper --}}
 @endsection
