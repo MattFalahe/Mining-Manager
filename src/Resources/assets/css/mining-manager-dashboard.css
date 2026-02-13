@@ -3196,32 +3196,29 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     margin: 0 1px !important;
 }
 
-/* Week view - fix non-business hours background to fill full height */
-.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-non-business {
-    background: rgba(0, 0, 0, 0.3) !important;
+/* Week view - darker background for past time slots */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-slot {
+    background: rgba(0, 0, 0, 0.2);
 }
 
+/* Week view columns background */
 .mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-col {
-    background: transparent;
+    background: rgba(0, 0, 0, 0.1);
 }
 
-.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-slots,
-.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-cols {
-    height: 100% !important;
-}
-
+/* Override for the entire time grid body in week view */
 .mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-body {
-    min-height: 100% !important;
-}
-
-/* Ensure the day columns stretch full height */
-.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-timegrid-col-frame {
-    min-height: 100% !important;
+    background: rgba(0, 0, 0, 0.15);
 }
 
 /* Fix today column highlighting in week view */
 .mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-day-today {
-    background: rgba(243, 156, 18, 0.1) !important;
+    background: rgba(243, 156, 18, 0.15) !important;
+}
+
+/* Past days should be slightly darker */
+.mining-manager-wrapper.moon-calendar-page .fc-timeGridWeek-view .fc-day-past {
+    background: rgba(0, 0, 0, 0.25) !important;
 }
 
 /* Remove scrollbars from calendar */
@@ -3261,6 +3258,12 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 }
 
 /* Status-based event colors */
+/* Default fallback for any event - use extracting color (orange) */
+.mining-manager-wrapper.moon-calendar-page .fc-event {
+    background-color: #f39c12 !important;
+    border-color: #e08e0b !important;
+}
+
 /* Extracting: Orange - moon chunk is being pulled */
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-extracting {
     background-color: #f39c12 !important;
@@ -3277,12 +3280,6 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 .mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-unstable {
     background-color: #dc3545 !important;
     border-color: #c82333 !important;
-}
-
-/* Completed: Blue - past extractions */
-.mining-manager-wrapper.moon-calendar-page .fc-event.mm-status-completed {
-    background-color: #3498db !important;
-    border-color: #2980b9 !important;
 }
 
 /* Expired: Dark gray - extractions past decay time */
@@ -3332,10 +3329,6 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 
 .mining-manager-wrapper .mm-status-legend-color.mm-unstable {
     background-color: #dc3545;
-}
-
-.mining-manager-wrapper .mm-status-legend-color.mm-completed {
-    background-color: #3498db;
 }
 
 .mining-manager-wrapper .mm-status-legend-color.mm-expired {
@@ -3392,10 +3385,6 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
 
 .mining-manager-wrapper .mm-sidebar-item.mm-status-unstable {
     border-left-color: #dc3545;
-}
-
-.mining-manager-wrapper .mm-sidebar-item.mm-status-completed {
-    border-left-color: #3498db;
 }
 
 .mining-manager-wrapper .mm-sidebar-item.mm-status-expired {

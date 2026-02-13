@@ -330,12 +330,39 @@ document.addEventListener('DOMContentLoaded', function() {
     for (const [date, extractions] of Object.entries(calendarData)) {
         extractions.forEach(extraction => {
             // Determine effective status
-            let effectiveStatus = extraction.status;
+            let effectiveStatus = extraction.status || 'extracting';
             const isArchived = extraction.is_archived || false;
 
             if (extraction.chunk_arrival_time) {
-                const arrivalTime = new Date(extraction.chunk_arrival_time);
-                const decayTime = extraction.natural_decay_time ? new Date(extraction.natural_decay_time) : null;
+                // Parse datetime - Carbon serializes to ISO 8601 format
+                // Handle both "2026-02-09T17:00:00.000000Z" and "2026-02-09 17:00:00" formats
+                let arrivalStr = extraction.chunk_arrival_time;
+                let decayStr = extraction.natural_decay_time;
+
+                // If it's an object with date property (Carbon serialization), extract the date string
+                if (typeof arrivalStr === 'object' && arrivalStr.date) {
+                    arrivalStr = arrivalStr.date;
+                }
+                if (typeof decayStr === 'object' && decayStr.date) {
+                    decayStr = decayStr.date;
+                }
+
+                // Ensure proper ISO format for parsing
+                if (typeof arrivalStr === 'string') {
+                    arrivalStr = arrivalStr.replace(' ', 'T');
+                    if (!arrivalStr.includes('Z') && !arrivalStr.includes('+')) {
+                        arrivalStr += 'Z'; // Assume UTC
+                    }
+                }
+                if (typeof decayStr === 'string') {
+                    decayStr = decayStr.replace(' ', 'T');
+                    if (!decayStr.includes('Z') && !decayStr.includes('+')) {
+                        decayStr += 'Z';
+                    }
+                }
+
+                const arrivalTime = new Date(arrivalStr);
+                const decayTime = decayStr ? new Date(decayStr) : null;
                 const now = new Date();
                 const hoursSinceArrival = (now - arrivalTime) / (1000 * 60 * 60);
 
@@ -347,12 +374,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     effectiveStatus = 'unstable';
                 } else if (hoursSinceArrival < 48) {
                     effectiveStatus = 'ready';
+                } else {
+                    // Past 51h - should be expired
+                    effectiveStatus = 'expired';
                 }
             }
 
             // Override for archived extractions
             if (isArchived) {
                 effectiveStatus = extraction.status || 'expired';
+            }
+
+            // Ensure we only use valid statuses that have CSS defined
+            const validStatuses = ['extracting', 'ready', 'unstable', 'expired', 'fractured'];
+            if (!validStatuses.includes(effectiveStatus)) {
+                effectiveStatus = 'extracting'; // fallback
             }
 
             events.push({
