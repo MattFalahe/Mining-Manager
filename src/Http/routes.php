@@ -576,6 +576,63 @@ Route::group([
             'middleware' => 'can:mining-manager.reports.generate',
         ]);
 
+        Route::post('/cleanup', [
+            'as' => 'mining-manager.reports.cleanup',
+            'uses' => 'ReportController@cleanup',
+            'middleware' => 'can:mining-manager.reports.delete',
+        ]);
+
+        // Scheduled reports routes - MUST be before /{id} wildcard
+        Route::get('/scheduled', [
+            'as' => 'mining-manager.reports.scheduled',
+            'uses' => 'ReportController@scheduled',
+            'middleware' => 'can:mining-manager.reports.view',
+        ]);
+
+        Route::post('/schedules', [
+            'as' => 'mining-manager.reports.schedules.store',
+            'uses' => 'ReportController@storeSchedule',
+            'middleware' => 'can:mining-manager.reports.generate',
+        ]);
+
+        Route::post('/schedules/{id}/toggle', [
+            'as' => 'mining-manager.reports.schedules.toggle',
+            'uses' => 'ReportController@toggleSchedule',
+            'middleware' => 'can:mining-manager.reports.generate',
+        ]);
+
+        Route::post('/schedules/{id}/run', [
+            'as' => 'mining-manager.reports.schedules.run',
+            'uses' => 'ReportController@runSchedule',
+            'middleware' => 'can:mining-manager.reports.generate',
+        ]);
+
+        Route::delete('/schedules/{id}', [
+            'as' => 'mining-manager.reports.schedules.destroy',
+            'uses' => 'ReportController@destroySchedule',
+            'middleware' => 'can:mining-manager.reports.delete',
+        ]);
+
+        // Export routes - MUST be before /{id} wildcard
+        Route::get('/export', [
+            'as' => 'mining-manager.reports.export',
+            'uses' => 'ReportController@exportView',
+            'middleware' => 'can:mining-manager.reports.view',
+        ]);
+
+        Route::post('/export/process', [
+            'as' => 'mining-manager.reports.export.process',
+            'uses' => 'ReportController@processExport',
+            'middleware' => 'can:mining-manager.reports.export',
+        ]);
+
+        Route::get('/export/{id}/download', [
+            'as' => 'mining-manager.reports.export.download',
+            'uses' => 'ReportController@downloadExport',
+            'middleware' => 'can:mining-manager.reports.view',
+        ]);
+
+        // Wildcard routes - MUST be last to avoid catching /scheduled, /export, etc.
         Route::get('/{id}', [
             'as' => 'mining-manager.reports.show',
             'uses' => 'ReportController@show',
@@ -592,61 +649,6 @@ Route::group([
             'as' => 'mining-manager.reports.destroy',
             'uses' => 'ReportController@destroy',
             'middleware' => 'can:mining-manager.reports.delete',
-        ]);
-
-        Route::post('/cleanup', [
-            'as' => 'mining-manager.reports.cleanup',
-            'uses' => 'ReportController@cleanup',
-            'middleware' => 'can:mining-manager.reports.delete',
-        ]);
-
-        Route::get('/scheduled', [
-            'as' => 'mining-manager.reports.scheduled',
-            'uses' => 'ReportController@scheduled',
-            'middleware' => 'can:mining-manager.reports.view',
-        ]);
-        
-        Route::post('/schedules', [
-            'as' => 'mining-manager.reports.schedules.store',
-            'uses' => 'ReportController@storeSchedule',
-            'middleware' => 'can:mining-manager.reports.generate',
-        ]);
-        
-        Route::post('/schedules/{id}/toggle', [
-            'as' => 'mining-manager.reports.schedules.toggle',
-            'uses' => 'ReportController@toggleSchedule',
-            'middleware' => 'can:mining-manager.reports.generate',
-        ]);
-        
-        Route::post('/schedules/{id}/run', [
-            'as' => 'mining-manager.reports.schedules.run',
-            'uses' => 'ReportController@runSchedule',
-            'middleware' => 'can:mining-manager.reports.generate',
-        ]);
-        
-        Route::delete('/schedules/{id}', [
-            'as' => 'mining-manager.reports.schedules.destroy',
-            'uses' => 'ReportController@destroySchedule',
-            'middleware' => 'can:mining-manager.reports.delete',
-        ]);
-        
-        // Export routes
-        Route::get('/export', [
-            'as' => 'mining-manager.reports.export',
-            'uses' => 'ReportController@exportView',
-            'middleware' => 'can:mining-manager.reports.view',
-        ]);
-        
-        Route::post('/export/process', [
-            'as' => 'mining-manager.reports.export.process',
-            'uses' => 'ReportController@processExport',
-            'middleware' => 'can:mining-manager.reports.export',
-        ]);
-        
-        Route::get('/export/{id}/download', [
-            'as' => 'mining-manager.reports.export.download',
-            'uses' => 'ReportController@downloadExport',
-            'middleware' => 'can:mining-manager.reports.view',
         ]);
     });
 
