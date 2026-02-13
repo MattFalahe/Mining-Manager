@@ -379,6 +379,12 @@
                                 {{ trans('mining-manager::help.permissions') }}
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="developer">
+                                <i class="fas fa-code"></i>
+                                {{ trans('mining-manager::help.developer_tools') }}
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </div>
@@ -799,6 +805,255 @@
 
                     <h4>{{ trans('mining-manager::help.setting_permissions') }}</h4>
                     <p>{{ trans('mining-manager::help.setting_permissions_desc') }}</p>
+                </div>
+            </div>
+
+            {{-- Developer Tools Section --}}
+            <div id="developer" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-code"></i>
+                        {{ trans('mining-manager::help.developer_guide') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.developer_intro') }}</p>
+
+                    {{-- Diagnostics Page --}}
+                    <h4><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostics') }}</h4>
+                    <p>{{ trans('mining-manager::help.diagnostics_desc') }}</p>
+                    <p><strong>{{ trans('mining-manager::help.diagnostics_features') }}</strong></p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.diag_price_test') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_type_ids') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_cache') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_settings') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_webhooks') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_valuation') }}</li>
+                    </ul>
+                    <a href="{{ route('mining-manager.diagnostic.index') }}" class="btn btn-info mb-4">
+                        <i class="fas fa-external-link-alt"></i> Access Diagnostics Page
+                    </a>
+
+                    {{-- Moon Extraction Lifecycle --}}
+                    <h4><i class="fas fa-moon text-warning"></i> {{ trans('mining-manager::help.moon_lifecycle') }}</h4>
+                    <p>{{ trans('mining-manager::help.moon_lifecycle_intro') }}</p>
+
+                    <div class="feature-grid">
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><span class="badge badge-warning">{{ trans('mining-manager::help.moon_status_extracting') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_extracting_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #28a745;">
+                            <h5><span class="badge badge-success">{{ trans('mining-manager::help.moon_status_ready') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_ready_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
+                            <h5><span class="badge badge-danger">{{ trans('mining-manager::help.moon_status_unstable') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_unstable_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
+                            <h5><span class="badge badge-secondary">{{ trans('mining-manager::help.moon_status_expired') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_expired_desc') }}</p>
+                        </div>
+                    </div>
+
+                    <h5 class="mt-4">{{ trans('mining-manager::help.moon_classification') }}</h5>
+                    <p>{{ trans('mining-manager::help.moon_classification_desc') }}</p>
+                    <ul>
+                        <li><span class="badge badge-danger">R64</span> {{ trans('mining-manager::help.moon_r64') }}</li>
+                        <li><span class="badge badge-warning">R32</span> {{ trans('mining-manager::help.moon_r32') }}</li>
+                        <li><span class="badge badge-info">R16</span> {{ trans('mining-manager::help.moon_r16') }}</li>
+                        <li><span class="badge badge-success">R8</span> {{ trans('mining-manager::help.moon_r8') }}</li>
+                        <li><span class="badge badge-secondary">R4</span> {{ trans('mining-manager::help.moon_r4') }}</li>
+                    </ul>
+
+                    <h5 class="mt-4">{{ trans('mining-manager::help.moon_quality') }}</h5>
+                    <p>{{ trans('mining-manager::help.moon_quality_desc') }}</p>
+                    <ul>
+                        <li><span class="badge" style="background: linear-gradient(135deg, #9b59b6, #8e44ad);">Exceptional</span> {{ trans('mining-manager::help.moon_quality_exceptional') }}</li>
+                        <li><span class="badge badge-success">Excellent</span> {{ trans('mining-manager::help.moon_quality_excellent') }}</li>
+                        <li><span class="badge badge-info">Good</span> {{ trans('mining-manager::help.moon_quality_good') }}</li>
+                        <li><span class="badge badge-warning">Average</span> {{ trans('mining-manager::help.moon_quality_average') }}</li>
+                        <li><span class="badge badge-secondary">Poor</span> {{ trans('mining-manager::help.moon_quality_poor') }}</li>
+                    </ul>
+                </div>
+
+                {{-- CLI Commands --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-terminal"></i>
+                        {{ trans('mining-manager::help.cli_commands') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.cli_intro') }}</p>
+
+                    {{-- Scheduled Commands --}}
+                    <h4><i class="fas fa-clock text-primary"></i> {{ trans('mining-manager::help.cli_scheduled') }}</h4>
+                    <p>{{ trans('mining-manager::help.cli_scheduled_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <thead>
+                                <tr>
+                                    <th>Command</th>
+                                    <th>Schedule</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>mining-manager:process-ledger</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
+                                    <td>Process mining ledger data from ESI</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-extractions</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Update moon extraction data from ESI</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-events</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
+                                    <td>Update mining events</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:cache-prices</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
+                                    <td>Cache ore prices from price provider</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:recalculate-extraction-values</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_twice_daily') }}</span></td>
+                                    <td>Update extraction values with current prices</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:calculate-taxes</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Calculate monthly tax obligations</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:archive-extractions</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Archive completed extractions</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:detect-jackpots</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Detect jackpot moon ores</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:verify-payments</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Verify wallet payments</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:detect-theft</code></td>
+                                    <td><span class="badge badge-warning">{{ trans('mining-manager::help.schedule_twice_monthly') }}</span></td>
+                                    <td>Full theft detection scan</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:monitor-active-thefts</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Monitor active theft incidents</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:generate-invoices</code></td>
+                                    <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span></td>
+                                    <td>Generate tax invoices</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:finalize-month</code></td>
+                                    <td><span class="badge badge-success">2nd of month</span></td>
+                                    <td>Finalize previous month summaries</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:send-reminders</code></td>
+                                    <td><span class="badge badge-success">25th of month</span></td>
+                                    <td>Send tax payment reminders</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Diagnostic Commands --}}
+                    <h4 class="mt-4"><i class="fas fa-wrench text-info"></i> {{ trans('mining-manager::help.cli_diagnostic') }}</h4>
+                    <p>{{ trans('mining-manager::help.cli_diagnostic_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 50%;"><code>mining-manager:diagnose-character {character_id}</code></td>
+                                    <td>Diagnose a specific character's data</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:diagnose-affiliations</code></td>
+                                    <td>Check character affiliations</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:diagnose-extractions</code></td>
+                                    <td>Diagnose moon extraction issues</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:diagnose-prices</code></td>
+                                    <td>Test price provider connectivity</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:diagnose-type-ids</code></td>
+                                    <td>Validate ore type ID mappings</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Manual Execution Commands --}}
+                    <h4 class="mt-4"><i class="fas fa-sync text-warning"></i> {{ trans('mining-manager::help.cli_manual') }}</h4>
+                    <p>{{ trans('mining-manager::help.cli_manual_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 50%;"><code>mining-manager:process-ledger --force</code></td>
+                                    <td>Force process all mining data</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-extractions --corporation={id}</code></td>
+                                    <td>Update extractions for specific corp</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:detect-theft --dry-run</code></td>
+                                    <td>Preview theft detection without changes</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:archive-extractions --dry-run</code></td>
+                                    <td>Preview archival without changes</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:backfill-ore-flags</code></td>
+                                    <td>Backfill ore type flags</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Test Commands --}}
+                    <h4 class="mt-4"><i class="fas fa-flask text-danger"></i> {{ trans('mining-manager::help.cli_test') }}</h4>
+                    <p>{{ trans('mining-manager::help.cli_test_desc') }}</p>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Warning:</strong> Test commands should only be used in development environments.
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 50%;"><code>mining-manager:generate-test-data</code></td>
+                                    <td>Generate test mining data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
