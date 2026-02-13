@@ -207,13 +207,11 @@
                                                 <p class="mb-1">{{ trans('mining-manager::events.quantity') }}: 
                                                     <strong>{{ number_format($myParticipation->quantity_mined ?? 0, 0) }}</strong>
                                                 </p>
-                                                @if($event->tax_modifier != 0)
-                                                <p class="mb-1">{{ trans('mining-manager::events.tax_bonus') }}: 
-                                                    <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : 'warning' }}">
-                                                        {{ $event->tax_modifier > 0 ? '+' : '' }}{{ $event->tax_modifier }}%
+                                                <p class="mb-1">{{ trans('mining-manager::events.tax_modifier') }}:
+                                                    <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
+                                                        {{ $event->getTaxModifierLabel() }}
                                                     </span>
                                                 </p>
-                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -269,13 +267,11 @@
                                                 {{ $event->start_time->diff($event->end_time)->format('%h hours %i minutes') }}
                                             </p>
                                             <p><strong>{{ trans('mining-manager::events.registered_participants') }}:</strong> {{ $event->participants->count() }}</p>
-                                            @if($event->tax_modifier != 0)
-                                            <p><strong>{{ trans('mining-manager::events.tax_bonus') }}:</strong> 
-                                                <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : 'warning' }}">
-                                                    {{ $event->tax_modifier > 0 ? '+' : '' }}{{ $event->tax_modifier }}%
+                                            <p><strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
+                                                <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
+                                                    {{ $event->getTaxModifierLabel() }}
                                                 </span>
                                             </p>
-                                            @endif
                                             @if($event->description)
                                             <p class="text-muted mt-2">{{ Str::limit($event->description, 100) }}</p>
                                             @endif

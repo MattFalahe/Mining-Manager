@@ -54,12 +54,13 @@ class EventManagementService
             'start_time' => $data['start_time'],
             'end_time' => $data['end_time'] ?? null,
             'solar_system_id' => $data['solar_system_id'] ?? null,
-            'bonus_percentage' => $data['bonus_percentage'] ?? 0,
+            'tax_modifier' => $data['tax_modifier'] ?? 0,
+            'corporation_id' => $data['corporation_id'] ?? null,
             'status' => $data['status'] ?? 'planned',
             'created_by' => $data['created_by'] ?? auth()->id(),
         ]);
 
-        Log::info("Mining Manager: Created mining event {$event->id}: {$event->name}");
+        Log::info("Mining Manager: Created mining event {$event->id}: {$event->name} (Tax Modifier: {$event->tax_modifier}%)");
 
         return $event;
     }
@@ -140,17 +141,12 @@ class EventManagementService
         // Update event data one final time
         $this->updateEventData($event);
 
-        // Calculate bonuses if enabled
-        if ($event->bonus_percentage > 0 && config('mining-manager.events.enable_bonuses', false)) {
-            $this->calculateBonuses($event);
-        }
-
         $event->update([
             'status' => 'completed',
             'end_time' => Carbon::now(),
         ]);
 
-        Log::info("Mining Manager: Event {$eventId} completed. Total mined: " . number_format($event->total_mined) . ", Participants: {$event->participant_count}");
+        Log::info("Mining Manager: Event {$eventId} completed. Total mined: " . number_format($event->total_mined) . ", Participants: {$event->participant_count}, Tax Modifier: {$event->tax_modifier}%");
 
         return $event->fresh();
     }
@@ -246,75 +242,6 @@ class EventManagementService
     }
 
     /**
-     * Calculate bonuses for event participants.
-     *
-     * @param MiningEvent $event
-     * @return array
-     */
-    public function calculateBonuses(MiningEvent $event): array
-    {
-        if ($event->bonus_percentage <= 0) {
-            return [
-                'participants' => 0,
-                'total_bonus' => 0,
-            ];
-        }
-
-        Log::info("Mining Manager: Calculating bonuses for event {$event->id} ({$event->bonus_percentage}% bonus)");
-
-        $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $regionId = $generalSettings['default_region_id'] ?? 10000002;
-        $priceType = $pricingSettings['price_type'] ?? 'sell';
-        
-        $priceColumn = match ($priceType) {
-            'buy' => 'buy_price',
-            'average' => 'average_price',
-            default => 'sell_price',
-        };
-
-        $participants = $event->participants;
-        $bonusRate = $event->bonus_percentage / 100;
-        $totalBonus = 0;
-
-        foreach ($participants as $participant) {
-            // Get mining details for this participant during the event
-            $query = MiningLedger::where('character_id', $participant->character_id)
-                ->whereBetween('date', [
-                    $event->start_time,
-                    $event->end_time ?? Carbon::now()
-                ]);
-
-            if ($event->solar_system_id) {
-                $query->where('solar_system_id', $event->solar_system_id);
-            }
-
-            // Calculate value with prices
-            $value = $query->leftJoin('mining_price_cache', function ($join) use ($regionId) {
-                    $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
-                        ->where('mining_price_cache.region_id', '=', $regionId);
-                })
-                ->select(DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$priceColumn}, 0)) as total_value"))
-                ->value('total_value') ?? 0;
-
-            $bonus = $value * $bonusRate;
-
-            $participant->update([
-                'bonus_earned' => $bonus,
-            ]);
-
-            $totalBonus += $bonus;
-        }
-
-        Log::info("Mining Manager: Calculated bonuses for event {$event->id}: " . number_format($totalBonus, 2) . " ISK total");
-
-        return [
-            'participants' => $participants->count(),
-            'total_bonus' => $totalBonus,
-        ];
-    }
-
-    /**
      * Add participant to event.
      *
      * @param int $eventId
@@ -334,7 +261,6 @@ class EventManagementService
             ],
             [
                 'quantity_mined' => 0,
-                'bonus_earned' => 0,
                 'joined_at' => Carbon::now(),
             ]
         );
@@ -415,13 +341,14 @@ class EventManagementService
         return [
             'total_participants' => $participants->count(),
             'total_mined' => $participants->sum('quantity_mined'),
-            'total_bonuses' => $participants->sum('bonus_earned'),
-            'average_per_participant' => $participants->count() > 0 
-                ? $participants->sum('quantity_mined') / $participants->count() 
+            'tax_modifier' => $event->tax_modifier,
+            'tax_modifier_label' => $event->getTaxModifierLabel(),
+            'average_per_participant' => $participants->count() > 0
+                ? $participants->sum('quantity_mined') / $participants->count()
                 : 0,
             'top_miner' => $participants->sortByDesc('quantity_mined')->first(),
-            'duration_hours' => $event->end_time 
-                ? $event->start_time->diffInHours($event->end_time) 
+            'duration_hours' => $event->end_time
+                ? $event->start_time->diffInHours($event->end_time)
                 : null,
         ];
     }
@@ -495,28 +422,40 @@ class EventManagementService
      * Get upcoming events.
      *
      * @param int $days
+     * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
      */
-    public function getUpcomingEvents(int $days = 7)
+    public function getUpcomingEvents(int $days = 7, ?int $corporationId = null)
     {
-        return MiningEvent::whereIn('status', ['planned', 'active'])
+        $query = MiningEvent::whereIn('status', ['planned', 'active'])
             ->where('start_time', '>=', Carbon::now())
             ->where('start_time', '<=', Carbon::now()->addDays($days))
-            ->orderBy('start_time')
-            ->get();
+            ->orderBy('start_time');
+
+        if ($corporationId) {
+            $query->forCorporation($corporationId);
+        }
+
+        return $query->get();
     }
 
     /**
      * Get active events.
      *
+     * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
      */
-    public function getActiveEvents()
+    public function getActiveEvents(?int $corporationId = null)
     {
-        return MiningEvent::where('status', 'active')
+        $query = MiningEvent::where('status', 'active')
             ->with(['participants.character'])
-            ->orderBy('start_time', 'desc')
-            ->get();
+            ->orderBy('start_time', 'desc');
+
+        if ($corporationId) {
+            $query->forCorporation($corporationId);
+        }
+
+        return $query->get();
     }
 
     /**
@@ -532,7 +471,7 @@ class EventManagementService
         // Check minimum participants if starting
         if (isset($data['status']) && $data['status'] === 'active') {
             $minimumParticipants = config('mining-manager.events.minimum_participants', 3);
-            
+
             if (isset($data['id'])) {
                 $event = MiningEvent::find($data['id']);
                 if ($event && $event->participant_count < $minimumParticipants) {
@@ -551,10 +490,10 @@ class EventManagementService
             }
         }
 
-        // Check bonus percentage
-        if (isset($data['bonus_percentage'])) {
-            if ($data['bonus_percentage'] < 0 || $data['bonus_percentage'] > 100) {
-                $errors[] = "Bonus percentage must be between 0 and 100";
+        // Check tax modifier range
+        if (isset($data['tax_modifier'])) {
+            if ($data['tax_modifier'] < -100 || $data['tax_modifier'] > 100) {
+                $errors[] = "Tax modifier must be between -100 and +100";
             }
         }
 
@@ -569,7 +508,7 @@ class EventManagementService
      */
     public function exportEventData(int $eventId): array
     {
-        $event = MiningEvent::with(['participants.character', 'solarSystem'])->findOrFail($eventId);
+        $event = MiningEvent::with(['participants.character', 'solarSystem', 'corporation'])->findOrFail($eventId);
 
         return [
             'event' => [
@@ -578,15 +517,16 @@ class EventManagementService
                 'start_time' => $event->start_time->toIso8601String(),
                 'end_time' => $event->end_time?->toIso8601String(),
                 'system' => $event->solarSystem?->name,
+                'corporation' => $event->corporation?->name,
                 'status' => $event->status,
-                'bonus_percentage' => $event->bonus_percentage,
+                'tax_modifier' => $event->tax_modifier,
+                'tax_modifier_label' => $event->getTaxModifierLabel(),
             ],
             'statistics' => $this->getEventStatistics($eventId),
             'participants' => $event->participants->map(function ($participant) {
                 return [
-                    'character' => $participant->character->name,
+                    'character' => $participant->character->name ?? 'Unknown',
                     'quantity_mined' => $participant->quantity_mined,
-                    'bonus_earned' => $participant->bonus_earned,
                     'joined_at' => $participant->joined_at?->toIso8601String(),
                 ];
             })->toArray(),

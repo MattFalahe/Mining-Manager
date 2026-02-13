@@ -5,6 +5,7 @@ namespace MiningManager\Models;
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
+use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use Seat\Web\Models\User;
 
 class MiningEvent extends Model
@@ -30,7 +31,8 @@ class MiningEvent extends Model
         'status',
         'participant_count',
         'total_mined',
-        'bonus_percentage',
+        'tax_modifier',
+        'corporation_id',
         'created_by',
         'last_updated',
     ];
@@ -45,8 +47,24 @@ class MiningEvent extends Model
         'end_time' => 'datetime',
         'participant_count' => 'integer',
         'total_mined' => 'integer',
-        'bonus_percentage' => 'decimal:2',
+        'tax_modifier' => 'integer',
+        'corporation_id' => 'integer',
         'last_updated' => 'datetime',
+    ];
+
+    /**
+     * Tax modifier preset labels for UI display.
+     */
+    public const TAX_MODIFIER_LABELS = [
+        -100 => 'Tax Free',
+        -75 => 'Reduced Tax (-75%)',
+        -50 => 'Half Tax (-50%)',
+        -25 => 'Light Discount (-25%)',
+        0 => 'Normal Tax',
+        25 => 'Slight Increase (+25%)',
+        50 => 'Heavy Tax (+50%)',
+        75 => 'Punitive Tax (+75%)',
+        100 => 'Double Tax (+100%)',
     ];
 
     /**
@@ -63,6 +81,14 @@ class MiningEvent extends Model
     public function solarSystem()
     {
         return $this->belongsTo(MapDenormalize::class, 'solar_system_id', 'itemID');
+    }
+
+    /**
+     * Get the corporation this event belongs to.
+     */
+    public function corporation()
+    {
+        return $this->belongsTo(CorporationInfo::class, 'corporation_id', 'corporation_id');
     }
 
     /**
@@ -104,6 +130,21 @@ class MiningEvent extends Model
     public function scopeCompleted($query)
     {
         return $query->where('status', 'completed');
+    }
+
+    /**
+     * Scope a query to filter by corporation.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|null $corporationId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeForCorporation($query, ?int $corporationId)
+    {
+        if ($corporationId) {
+            return $query->where('corporation_id', $corporationId);
+        }
+        return $query;
     }
 
     /**
@@ -178,9 +219,71 @@ class MiningEvent extends Model
     public function isParticipating($user)
     {
         $userId = is_object($user) ? $user->id : $user;
-        
+
         return $this->participants()
             ->where('character_id', $userId)
             ->exists();
+    }
+
+    /**
+     * Get the human-readable label for the tax modifier.
+     *
+     * @return string
+     */
+    public function getTaxModifierLabel(): string
+    {
+        // Check for exact preset match
+        if (isset(self::TAX_MODIFIER_LABELS[$this->tax_modifier])) {
+            return self::TAX_MODIFIER_LABELS[$this->tax_modifier];
+        }
+
+        // Format custom value
+        $sign = $this->tax_modifier >= 0 ? '+' : '';
+        return "{$sign}{$this->tax_modifier}%";
+    }
+
+    /**
+     * Get formatted tax modifier with sign for display.
+     *
+     * @return string
+     */
+    public function getFormattedTaxModifier(): string
+    {
+        if ($this->tax_modifier == 0) {
+            return '0%';
+        }
+
+        $sign = $this->tax_modifier > 0 ? '+' : '';
+        return "{$sign}{$this->tax_modifier}%";
+    }
+
+    /**
+     * Check if this event reduces taxes (negative modifier).
+     *
+     * @return bool
+     */
+    public function reducesTax(): bool
+    {
+        return $this->tax_modifier < 0;
+    }
+
+    /**
+     * Check if this event increases taxes (positive modifier).
+     *
+     * @return bool
+     */
+    public function increasesTax(): bool
+    {
+        return $this->tax_modifier > 0;
+    }
+
+    /**
+     * Check if this is a tax-free event.
+     *
+     * @return bool
+     */
+    public function isTaxFree(): bool
+    {
+        return $this->tax_modifier <= -100;
     }
 }

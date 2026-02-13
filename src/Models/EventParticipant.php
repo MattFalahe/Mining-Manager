@@ -23,7 +23,6 @@ class EventParticipant extends Model
         'event_id',
         'character_id',
         'quantity_mined',
-        'bonus_earned',
         'joined_at',
         'last_updated',
     ];
@@ -35,7 +34,6 @@ class EventParticipant extends Model
      */
     protected $casts = [
         'quantity_mined' => 'integer',
-        'bonus_earned' => 'decimal:2',
         'joined_at' => 'datetime',
         'last_updated' => 'datetime',
     ];
@@ -57,18 +55,12 @@ class EventParticipant extends Model
     }
 
     /**
-     * Calculate bonus based on event bonus percentage.
+     * Get formatted quantity mined for display.
      *
-     * @return float
+     * @return string
      */
-    public function calculateBonus()
+    public function getFormattedQuantity(): string
     {
-        if (!$this->event || $this->event->bonus_percentage <= 0) {
-            return 0;
-        }
-
-        // This would need price calculation logic
-        // For now, return a placeholder
-        return 0;
+        return number_format($this->quantity_mined);
     }
 }

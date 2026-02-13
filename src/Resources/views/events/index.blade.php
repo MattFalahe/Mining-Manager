@@ -153,7 +153,7 @@
                                     <label for="statusFilter">{{ trans('mining-manager::events.status') }}</label>
                                     <select class="form-control" id="statusFilter" name="status">
                                         <option value="">{{ trans('mining-manager::events.all_statuses') }}</option>
-                                        <option value="upcoming" {{ request('status') == 'upcoming' ? 'selected' : '' }}>{{ trans('mining-manager::events.upcoming') }}</option>
+                                        <option value="planned" {{ request('status') == 'planned' ? 'selected' : '' }}>{{ trans('mining-manager::events.planned') }}</option>
                                         <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>{{ trans('mining-manager::events.active') }}</option>
                                         <option value="completed" {{ request('status') == 'completed' ? 'selected' : '' }}>{{ trans('mining-manager::events.completed') }}</option>
                                         <option value="cancelled" {{ request('status') == 'cancelled' ? 'selected' : '' }}>{{ trans('mining-manager::events.cancelled') }}</option>
@@ -218,8 +218,8 @@
                     </h3>
                     <div class="card-tools">
                         @switch($event->status)
-                            @case('upcoming')
-                                <span class="badge badge-info">{{ trans('mining-manager::events.upcoming') }}</span>
+                            @case('planned')
+                                <span class="badge badge-info">{{ trans('mining-manager::events.planned') }}</span>
                                 @break
                             @case('active')
                                 <span class="badge badge-success">
@@ -298,7 +298,7 @@
                             </a>
                         </div>
                         <div class="col-6">
-                            @if($event->status === 'upcoming' || $event->status === 'active')
+                            @if($event->status === 'planned' || $event->status === 'active')
                                 @if($event->isParticipating(auth()->user()))
                                     <button class="btn btn-danger btn-block btn-sm leave-event" data-event-id="{{ $event->id }}">
                                         <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave') }}

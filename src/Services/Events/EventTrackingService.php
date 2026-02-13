@@ -280,7 +280,6 @@ class EventTrackingService
                 'name' => $participant->character->name,
                 'joined_at' => $participant->joined_at,
                 'total_mined' => $participant->quantity_mined,
-                'bonus_earned' => $participant->bonus_earned,
             ],
             'ore_breakdown' => $oreBreakdown->values()->toArray(),
             'timeline' => $timeline->toArray(),
@@ -384,10 +383,9 @@ class EventTrackingService
                     'rank' => $index + 1,
                     'character_name' => $participant->character->name,
                     'quantity_mined' => $participant->quantity_mined,
-                    'percentage_of_total' => $totalMined > 0 
-                        ? round(($participant->quantity_mined / $totalMined) * 100, 2) 
+                    'percentage_of_total' => $totalMined > 0
+                        ? round(($participant->quantity_mined / $totalMined) * 100, 2)
                         : 0,
-                    'bonus_earned' => $participant->bonus_earned,
                     'joined_at' => $participant->joined_at?->toDateTimeString(),
                 ];
             })->toArray(),

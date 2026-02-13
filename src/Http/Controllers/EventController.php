@@ -103,7 +103,8 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'solar_system_id' => 'nullable|integer',
-            'bonus_percentage' => 'nullable|numeric|min:0|max:100',
+            'tax_modifier' => 'required|integer|min:-100|max:100',
+            'corporation_id' => 'nullable|integer',
         ]);
 
         try {
@@ -113,7 +114,8 @@ class EventController extends Controller
                 'start_time' => Carbon::parse($request->input('start_time')),
                 'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
                 'solar_system_id' => $request->input('solar_system_id'),
-                'bonus_percentage' => $request->input('bonus_percentage', 0),
+                'tax_modifier' => $request->input('tax_modifier', 0),
+                'corporation_id' => $request->input('corporation_id'),
                 'status' => 'planned',
                 'created_by' => auth()->user()->id,
             ]);
@@ -153,10 +155,11 @@ class EventController extends Controller
             $stats = [
                 'total_mined' => $participants->sum('quantity_mined'),
                 'participant_count' => $participants->count(),
-                'average_per_miner' => $participants->count() > 0 
-                    ? $participants->sum('quantity_mined') / $participants->count() 
+                'average_per_miner' => $participants->count() > 0
+                    ? $participants->sum('quantity_mined') / $participants->count()
                     : 0,
-                'total_bonuses' => $participants->sum('bonus_earned'),
+                'tax_modifier' => $event->tax_modifier,
+                'tax_modifier_label' => $event->getTaxModifierLabel(),
             ];
 
             return view('mining-manager::events.show', compact('event', 'participants', 'stats'));
@@ -199,7 +202,8 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'solar_system_id' => 'nullable|integer',
-            'bonus_percentage' => 'nullable|numeric|min:0|max:100',
+            'tax_modifier' => 'required|integer|min:-100|max:100',
+            'corporation_id' => 'nullable|integer',
             'status' => 'required|in:planned,active,completed,cancelled',
         ]);
 
@@ -212,7 +216,8 @@ class EventController extends Controller
                 'start_time' => Carbon::parse($request->input('start_time')),
                 'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
                 'solar_system_id' => $request->input('solar_system_id'),
-                'bonus_percentage' => $request->input('bonus_percentage', 0),
+                'tax_modifier' => $request->input('tax_modifier', 0),
+                'corporation_id' => $request->input('corporation_id'),
                 'status' => $request->input('status'),
             ]);
 
@@ -294,25 +299,23 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
+
+            // Update event data one final time before completing
+            $this->eventService->updateEventData($event);
+
             $event->update([
                 'status' => 'completed',
                 'end_time' => Carbon::now(),
             ]);
 
-            // Calculate final bonuses if enabled
-            if ($event->bonus_percentage > 0) {
-                $this->eventService->calculateBonuses($event);
-            }
-
             return redirect()->route('mining-manager.events.show', $event->id)
-                ->with('success', 'Event completed successfully');
+                ->with('success', 'Event completed successfully. Tax modifier: ' . $event->getTaxModifierLabel());
         } catch (\Exception $e) {
             \Log::error('EventController: Error completing event', [
                 'event_id' => $id,
                 'error' => $e->getMessage()
             ]);
-            
+
             return redirect()->back()
                 ->with('error', 'Error completing event: ' . $e->getMessage());
         }
@@ -359,14 +362,15 @@ class EventController extends Controller
                 'id' => $event->id,
                 'title' => $event->name,
                 'start' => $event->start_time->toIso8601String(),
-                'end' => $event->end_time->toIso8601String(),
+                'end' => $event->end_time ? $event->end_time->toIso8601String() : null,
                 'className' => 'status-' . $event->status,
                 'extendedProps' => [
                     'status' => $event->status,
                     'solar_system_id' => $event->solar_system_id,
                     'description' => $event->description ?? '',
                     'participants' => $event->participant_count ?? 0,
-                    'bonus_percentage' => $event->bonus_percentage ?? 0,
+                    'tax_modifier' => $event->tax_modifier ?? 0,
+                    'tax_modifier_label' => $event->getTaxModifierLabel(),
                     'total_mined' => $event->total_mined ?? 0
                 ]
             ];

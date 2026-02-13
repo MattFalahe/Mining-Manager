@@ -5,6 +5,7 @@ namespace MiningManager\Services\Tax;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningPriceCache;
+use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\ReprocessingRegistry;
@@ -362,7 +363,15 @@ class TaxCalculationService
             }
 
             $value = $this->calculateOreValue($entry);
-            $taxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId) / 100;
+
+            // Get base tax rate and apply event modifier if applicable
+            $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
+            $eventModifier = $this->getEventTaxModifier($characterId, $entry);
+
+            // Apply event modifier: modifier is a percentage adjustment to the tax rate
+            // -100 = tax-free, -50 = half tax, +100 = double tax
+            $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
+            $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
 
             $totalValue += $value;
             $totalTax += $value * $taxRate;
@@ -386,6 +395,46 @@ class TaxCalculationService
         }
 
         return round($totalTax, 2);
+    }
+
+    /**
+     * Get the event tax modifier for a specific mining entry.
+     * Checks if the character is participating in any active events during this mining entry.
+     *
+     * @param int $characterId
+     * @param object $entry Mining ledger entry
+     * @return int Tax modifier (-100 to +100)
+     */
+    private function getEventTaxModifier(int $characterId, $entry): int
+    {
+        // Find active events during this mining entry's date
+        $events = MiningEvent::where('status', 'active')
+            ->where('start_time', '<=', $entry->date)
+            ->where(function ($query) use ($entry) {
+                $query->whereNull('end_time')
+                      ->orWhere('end_time', '>=', $entry->date);
+            })
+            ->whereHas('participants', function ($query) use ($characterId) {
+                $query->where('character_id', $characterId);
+            })
+            ->get();
+
+        if ($events->isEmpty()) {
+            return 0;
+        }
+
+        // Check if entry matches event's system restriction (if any)
+        foreach ($events as $event) {
+            // If event is system-specific and entry is not in that system, skip
+            if ($event->solar_system_id && $event->solar_system_id != $entry->solar_system_id) {
+                continue;
+            }
+
+            Log::debug("Mining Manager: Applying event '{$event->name}' tax modifier ({$event->tax_modifier}%) for character {$characterId}");
+            return $event->tax_modifier;
+        }
+
+        return 0;
     }
 
     /**
@@ -824,7 +873,13 @@ class TaxCalculationService
             }
 
             $value = $this->calculateOreValue($entry);
-            $taxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId) / 100;
+
+            // Get base tax rate and apply event modifier if applicable
+            $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
+            $eventModifier = $this->getEventTaxModifier($characterId, $entry);
+            $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
+            $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
+
             $tax = $value * $taxRate;
 
             $totalValue += $value;
@@ -845,7 +900,9 @@ class TaxCalculationService
                     'rarity' => $moonRarity,
                     'quantity' => 0,
                     'value' => 0,
-                    'tax_rate' => $this->getTaxRateForOre($entry->type_id, $characterCorpId),
+                    'tax_rate' => $baseTaxRate,
+                    'event_modifier' => $eventModifier,
+                    'effective_rate' => max(0, $adjustedRate),
                     'tax' => 0,
                 ];
             }

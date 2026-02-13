@@ -185,9 +185,9 @@ return [
         'ore' => 10.0,
         'gas' => 10.0,
         'abyssal_ore' => 15.0,
-        
-        // Mining event bonuses (percentage reduction)
-        'event_bonus' => 2.0,  // 2% tax reduction for event participation
+
+        // Note: Event tax modifiers are configured per-event, not globally.
+        // See event creation/edit for tax modifier options (-100% to +100%).
     ],
 
     /*

@@ -309,11 +309,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         html += '<p><strong>{{ trans("mining-manager::events.participants") }}:</strong> ' + props.participants + '</p>';
         
-        if (props.tax_modifier && props.tax_modifier != 0) {
-            html += '<p><strong>{{ trans("mining-manager::events.tax_modifier") }}:</strong> ';
-            html += '<span class="badge badge-' + (props.tax_modifier < 0 ? 'success' : 'warning') + '">';
-            html += (props.tax_modifier > 0 ? '+' : '') + props.tax_modifier + '%</span></p>';
-        }
+        html += '<p><strong>{{ trans("mining-manager::events.tax_modifier") }}:</strong> ';
+        html += '<span class="badge badge-' + (props.tax_modifier < 0 ? 'success' : (props.tax_modifier > 0 ? 'warning' : 'secondary')) + '">';
+        html += props.tax_modifier_label + '</span></p>';
         
         if (props.description) {
             html += '<hr><p><strong>{{ trans("mining-manager::events.description") }}:</strong></p>';

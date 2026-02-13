@@ -83,15 +83,17 @@
                                     <h5>{{ trans('mining-manager::events.statistics') }}</h5>
                                     <p><i class="fas fa-users"></i> <strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participants_count ?? 0 }} / {{ $event->max_participants ?? '∞' }}</p>
                                     <p><i class="fas fa-coins"></i> <strong>{{ trans('mining-manager::events.total_mined') }}:</strong> {{ number_format($event->total_mined_value ?? 0, 0) }} ISK</p>
-                                    @if($event->tax_modifier != 0)
-                                    <p><i class="fas fa-percentage"></i> <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong> {{ $event->tax_modifier > 0 ? '+' : '' }}{{ $event->tax_modifier }}%</p>
-                                    @endif
+                                    <p><i class="fas fa-percentage"></i> <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
+                                        <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
+                                            {{ $event->getTaxModifierLabel() }}
+                                        </span>
+                                    </p>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="text-center">
-                                @if($event->status === 'upcoming' || $event->status === 'active')
+                                @if($event->status === 'planned' || $event->status === 'active')
                                     @if($event->isParticipating(auth()->user()))
                                         <button class="btn btn-danger btn-lg btn-block leave-event" data-event-id="{{ $event->id }}">
                                             <i class="fas fa-sign-out-alt"></i> {{ trans('mining-manager::events.leave_event') }}

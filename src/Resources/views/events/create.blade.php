@@ -133,9 +133,22 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="tax_modifier">{{ trans('mining-manager::events.tax_modifier') }} (%)</label>
-                            <input type="number" class="form-control" id="tax_modifier" name="tax_modifier" value="{{ old('tax_modifier', 0) }}" step="0.1" min="-100" max="100">
-                            <small class="form-text text-muted">{{ trans('mining-manager::events.negative_bonus') }}</small>
+                            <label for="tax_modifier">{{ trans('mining-manager::events.tax_modifier') }}</label>
+                            <select class="form-control @error('tax_modifier') is-invalid @enderror" id="tax_modifier" name="tax_modifier" required>
+                                <option value="-100" {{ old('tax_modifier') == -100 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_tax_free') }}</option>
+                                <option value="-75" {{ old('tax_modifier') == -75 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_75') }}</option>
+                                <option value="-50" {{ old('tax_modifier') == -50 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_50') }}</option>
+                                <option value="-25" {{ old('tax_modifier') == -25 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_reduced_25') }}</option>
+                                <option value="0" {{ old('tax_modifier', 0) == 0 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_normal') }}</option>
+                                <option value="25" {{ old('tax_modifier') == 25 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_25') }}</option>
+                                <option value="50" {{ old('tax_modifier') == 50 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_50') }}</option>
+                                <option value="75" {{ old('tax_modifier') == 75 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_increase_75') }}</option>
+                                <option value="100" {{ old('tax_modifier') == 100 ? 'selected' : '' }}>{{ trans('mining-manager::events.modifier_double') }}</option>
+                            </select>
+                            @error('tax_modifier')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
+                            <small class="form-text text-muted">{{ trans('mining-manager::events.tax_modifier_help') }}</small>
                         </div>
 
                         <div class="form-check mb-3">

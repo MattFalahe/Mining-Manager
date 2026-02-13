@@ -78,14 +78,12 @@
                             <p><strong>{{ trans('mining-manager::events.started') }}:</strong> {{ $event->start_time->diffForHumans() }}</p>
                             <p><strong>{{ trans('mining-manager::events.duration') }}:</strong> {{ $event->start_time->diff($event->end_time)->format('%h hours %i minutes') }}</p>
                             <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location ?? 'N/A' }}</p>
-                            @if($event->tax_modifier != 0)
                             <p>
-                                <strong>{{ trans('mining-manager::events.tax_bonus') }}:</strong>
-                                <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : 'warning' }}">
-                                    {{ $event->tax_modifier > 0 ? '+' : '' }}{{ $event->tax_modifier }}%
+                                <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
+                                <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
+                                    {{ $event->getTaxModifierLabel() }}
                                 </span>
                             </p>
-                            @endif
                         </div>
 
                         {{-- Participants --}}
