@@ -117,16 +117,24 @@ class SettingsController extends Controller
                     'settings_count' => DB::table('mining_manager_settings')
                         ->where('corporation_id', $corp->corporation_id)
                         ->count(),
+                    // Moon ore tax rates by rarity
                     'moon_ore_r64_tax' => $taxRates['moon_ore']['r64'] ?? 0,
                     'moon_ore_r32_tax' => $taxRates['moon_ore']['r32'] ?? 0,
+                    'moon_ore_r16_tax' => $taxRates['moon_ore']['r16'] ?? 0,
+                    'moon_ore_r8_tax' => $taxRates['moon_ore']['r8'] ?? 0,
+                    'moon_ore_r4_tax' => $taxRates['moon_ore']['r4'] ?? 0,
+                    // Regular ore type tax rates
                     'ore_tax' => $taxRates['ore'] ?? 0,
                     'ice_tax' => $taxRates['ice'] ?? 0,
                     'gas_tax' => $taxRates['gas'] ?? 0,
+                    'abyssal_ore_tax' => $taxRates['abyssal_ore'] ?? 0,
+                    // Tax selectors
                     'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
                     'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
                     'tax_regular_ore' => $taxSelector['ore'] ?? false,
                     'tax_ice' => $taxSelector['ice'] ?? false,
                     'tax_gas' => $taxSelector['gas'] ?? false,
+                    'tax_abyssal_ore' => $taxSelector['abyssal_ore'] ?? false,
                 ];
             });
 

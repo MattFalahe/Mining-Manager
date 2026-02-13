@@ -193,6 +193,7 @@
 
             <h5><i class="fas fa-percent"></i> Tax Rates</h5>
             <div class="tax-grid">
+                {{-- Moon Ore Tax Rates by Rarity --}}
                 <div class="tax-item">
                     <div class="tax-label">Moon Ore (R64)</div>
                     <div class="tax-value">{{ number_format($corp['moon_ore_r64_tax'], 1) }}%</div>
@@ -201,6 +202,19 @@
                     <div class="tax-label">Moon Ore (R32)</div>
                     <div class="tax-value">{{ number_format($corp['moon_ore_r32_tax'], 1) }}%</div>
                 </div>
+                <div class="tax-item">
+                    <div class="tax-label">Moon Ore (R16)</div>
+                    <div class="tax-value">{{ number_format($corp['moon_ore_r16_tax'], 1) }}%</div>
+                </div>
+                <div class="tax-item">
+                    <div class="tax-label">Moon Ore (R8)</div>
+                    <div class="tax-value">{{ number_format($corp['moon_ore_r8_tax'], 1) }}%</div>
+                </div>
+                <div class="tax-item">
+                    <div class="tax-label">Moon Ore (R4)</div>
+                    <div class="tax-value">{{ number_format($corp['moon_ore_r4_tax'], 1) }}%</div>
+                </div>
+                {{-- Regular Ore Type Tax Rates --}}
                 <div class="tax-item">
                     <div class="tax-label">Regular Ore</div>
                     <div class="tax-value">{{ number_format($corp['ore_tax'], 1) }}%</div>
@@ -213,11 +227,16 @@
                     <div class="tax-label">Gas</div>
                     <div class="tax-value">{{ number_format($corp['gas_tax'], 1) }}%</div>
                 </div>
+                <div class="tax-item">
+                    <div class="tax-label">Abyssal Ore</div>
+                    <div class="tax-value">{{ number_format($corp['abyssal_ore_tax'], 1) }}%</div>
+                </div>
             </div>
 
             <div class="selector-status">
                 <strong><i class="fas fa-filter"></i> Active Tax Selectors:</strong>
                 <div class="mt-2">
+                    {{-- Moon Ore Selector --}}
                     @if($corp['all_moon_ore'])
                         <span class="status-item enabled">
                             <i class="fas fa-check"></i> All Moon Ore
@@ -232,6 +251,7 @@
                         </span>
                     @endif
 
+                    {{-- Regular Ore Types --}}
                     <span class="status-item {{ $corp['tax_regular_ore'] ? 'enabled' : 'disabled' }}">
                         <i class="fas fa-{{ $corp['tax_regular_ore'] ? 'check' : 'times' }}"></i> Regular Ore
                     </span>
@@ -242,6 +262,10 @@
 
                     <span class="status-item {{ $corp['tax_gas'] ? 'enabled' : 'disabled' }}">
                         <i class="fas fa-{{ $corp['tax_gas'] ? 'check' : 'times' }}"></i> Gas
+                    </span>
+
+                    <span class="status-item {{ $corp['tax_abyssal_ore'] ? 'enabled' : 'disabled' }}">
+                        <i class="fas fa-{{ $corp['tax_abyssal_ore'] ? 'check' : 'times' }}"></i> Abyssal Ore
                     </span>
                 </div>
             </div>

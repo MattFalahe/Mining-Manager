@@ -197,7 +197,10 @@
                                 $settings['exemptions']
                             );
                         @endphp
-                        @include('mining-manager::settings.tabs.tax_rates', ['settings' => (object)$taxSettings])
+                        @include('mining-manager::settings.tabs.tax_rates', [
+                            'settings' => (object)$taxSettings,
+                            'selectedCorporationId' => $corporationId ?? null
+                        ])
                     </div>
 
                     {{-- Pricing Tab --}}

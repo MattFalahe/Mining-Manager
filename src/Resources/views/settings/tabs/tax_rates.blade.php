@@ -2,7 +2,7 @@
     @csrf
 
     {{-- Hidden field to maintain corporation context --}}
-    <input type="hidden" name="selected_corporation_id" value="{{ request('corporation_id') ?? '' }}">
+    <input type="hidden" name="selected_corporation_id" value="{{ $selectedCorporationId ?? '' }}">
 
     <h4>
         <i class="fas fa-percent"></i>
