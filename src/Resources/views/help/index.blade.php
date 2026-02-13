@@ -374,6 +374,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="commands">
+                                <i class="fas fa-terminal"></i>
+                                {{ trans('mining-manager::help.cli_commands') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="permissions">
                                 <i class="fas fa-shield-alt"></i>
                                 {{ trans('mining-manager::help.permissions') }}
@@ -666,6 +672,60 @@
                         {{ trans('mining-manager::help.moon_value_desc') }}
                     </div>
                 </div>
+
+                {{-- Moon Extraction Lifecycle --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-sync-alt"></i>
+                        {{ trans('mining-manager::help.moon_lifecycle') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.moon_lifecycle_intro') }}</p>
+
+                    <div class="feature-grid">
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><span class="badge badge-warning">{{ trans('mining-manager::help.moon_status_extracting') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_extracting_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #28a745;">
+                            <h5><span class="badge badge-success">{{ trans('mining-manager::help.moon_status_ready') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_ready_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
+                            <h5><span class="badge badge-danger">{{ trans('mining-manager::help.moon_status_unstable') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_unstable_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
+                            <h5><span class="badge badge-secondary">{{ trans('mining-manager::help.moon_status_expired') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.moon_status_expired_desc') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Moon Classification --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-gem"></i>
+                        {{ trans('mining-manager::help.moon_classification') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.moon_classification_desc') }}</p>
+                    <ul>
+                        <li><span class="badge badge-danger">R64</span> {{ trans('mining-manager::help.moon_r64') }}</li>
+                        <li><span class="badge badge-warning">R32</span> {{ trans('mining-manager::help.moon_r32') }}</li>
+                        <li><span class="badge badge-info">R16</span> {{ trans('mining-manager::help.moon_r16') }}</li>
+                        <li><span class="badge badge-success">R8</span> {{ trans('mining-manager::help.moon_r8') }}</li>
+                        <li><span class="badge badge-secondary">R4</span> {{ trans('mining-manager::help.moon_r4') }}</li>
+                    </ul>
+
+                    <h4 class="mt-4">{{ trans('mining-manager::help.moon_quality') }}</h4>
+                    <p>{{ trans('mining-manager::help.moon_quality_desc') }}</p>
+                    <ul>
+                        <li><span class="badge" style="background: linear-gradient(135deg, #9b59b6, #8e44ad);">Exceptional</span> {{ trans('mining-manager::help.moon_quality_exceptional') }}</li>
+                        <li><span class="badge badge-success">Excellent</span> {{ trans('mining-manager::help.moon_quality_excellent') }}</li>
+                        <li><span class="badge badge-info">Good</span> {{ trans('mining-manager::help.moon_quality_good') }}</li>
+                        <li><span class="badge badge-warning">Average</span> {{ trans('mining-manager::help.moon_quality_average') }}</li>
+                        <li><span class="badge badge-secondary">Poor</span> {{ trans('mining-manager::help.moon_quality_poor') }}</li>
+                    </ul>
+                </div>
             </div>
 
             {{-- Analytics & Reports Section --}}
@@ -808,76 +868,8 @@
                 </div>
             </div>
 
-            {{-- Developer Tools Section --}}
-            <div id="developer" class="help-section">
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-code"></i>
-                        {{ trans('mining-manager::help.developer_guide') }}
-                    </h3>
-                    <p>{{ trans('mining-manager::help.developer_intro') }}</p>
-
-                    {{-- Diagnostics Page --}}
-                    <h4><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostics') }}</h4>
-                    <p>{{ trans('mining-manager::help.diagnostics_desc') }}</p>
-                    <p><strong>{{ trans('mining-manager::help.diagnostics_features') }}</strong></p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.diag_price_test') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_type_ids') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_cache') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_settings') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_webhooks') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_valuation') }}</li>
-                    </ul>
-                    <a href="{{ route('mining-manager.diagnostic.index') }}" class="btn btn-info mb-4">
-                        <i class="fas fa-external-link-alt"></i> Access Diagnostics Page
-                    </a>
-
-                    {{-- Moon Extraction Lifecycle --}}
-                    <h4><i class="fas fa-moon text-warning"></i> {{ trans('mining-manager::help.moon_lifecycle') }}</h4>
-                    <p>{{ trans('mining-manager::help.moon_lifecycle_intro') }}</p>
-
-                    <div class="feature-grid">
-                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
-                            <h5><span class="badge badge-warning">{{ trans('mining-manager::help.moon_status_extracting') }}</span></h5>
-                            <p>{{ trans('mining-manager::help.moon_status_extracting_desc') }}</p>
-                        </div>
-                        <div class="feature-item" style="border-left: 4px solid #28a745;">
-                            <h5><span class="badge badge-success">{{ trans('mining-manager::help.moon_status_ready') }}</span></h5>
-                            <p>{{ trans('mining-manager::help.moon_status_ready_desc') }}</p>
-                        </div>
-                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
-                            <h5><span class="badge badge-danger">{{ trans('mining-manager::help.moon_status_unstable') }}</span></h5>
-                            <p>{{ trans('mining-manager::help.moon_status_unstable_desc') }}</p>
-                        </div>
-                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
-                            <h5><span class="badge badge-secondary">{{ trans('mining-manager::help.moon_status_expired') }}</span></h5>
-                            <p>{{ trans('mining-manager::help.moon_status_expired_desc') }}</p>
-                        </div>
-                    </div>
-
-                    <h5 class="mt-4">{{ trans('mining-manager::help.moon_classification') }}</h5>
-                    <p>{{ trans('mining-manager::help.moon_classification_desc') }}</p>
-                    <ul>
-                        <li><span class="badge badge-danger">R64</span> {{ trans('mining-manager::help.moon_r64') }}</li>
-                        <li><span class="badge badge-warning">R32</span> {{ trans('mining-manager::help.moon_r32') }}</li>
-                        <li><span class="badge badge-info">R16</span> {{ trans('mining-manager::help.moon_r16') }}</li>
-                        <li><span class="badge badge-success">R8</span> {{ trans('mining-manager::help.moon_r8') }}</li>
-                        <li><span class="badge badge-secondary">R4</span> {{ trans('mining-manager::help.moon_r4') }}</li>
-                    </ul>
-
-                    <h5 class="mt-4">{{ trans('mining-manager::help.moon_quality') }}</h5>
-                    <p>{{ trans('mining-manager::help.moon_quality_desc') }}</p>
-                    <ul>
-                        <li><span class="badge" style="background: linear-gradient(135deg, #9b59b6, #8e44ad);">Exceptional</span> {{ trans('mining-manager::help.moon_quality_exceptional') }}</li>
-                        <li><span class="badge badge-success">Excellent</span> {{ trans('mining-manager::help.moon_quality_excellent') }}</li>
-                        <li><span class="badge badge-info">Good</span> {{ trans('mining-manager::help.moon_quality_good') }}</li>
-                        <li><span class="badge badge-warning">Average</span> {{ trans('mining-manager::help.moon_quality_average') }}</li>
-                        <li><span class="badge badge-secondary">Poor</span> {{ trans('mining-manager::help.moon_quality_poor') }}</li>
-                    </ul>
-                </div>
-
-                {{-- CLI Commands --}}
+            {{-- Commands Section --}}
+            <div id="commands" class="help-section">
                 <div class="help-card">
                     <h3>
                         <i class="fas fa-terminal"></i>
@@ -1054,6 +1046,39 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Note:</strong>
+                        All commands should be run from your SeAT installation directory using <code>php artisan</code>.
+                    </div>
+                </div>
+            </div>
+
+            {{-- Developer Tools Section --}}
+            <div id="developer" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-code"></i>
+                        {{ trans('mining-manager::help.developer_guide') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.developer_intro') }}</p>
+
+                    {{-- Diagnostics Page --}}
+                    <h4><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostics') }}</h4>
+                    <p>{{ trans('mining-manager::help.diagnostics_desc') }}</p>
+                    <p><strong>{{ trans('mining-manager::help.diagnostics_features') }}</strong></p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.diag_price_test') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_type_ids') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_cache') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_settings') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_webhooks') }}</li>
+                        <li>{{ trans('mining-manager::help.diag_valuation') }}</li>
+                    </ul>
+                    <a href="{{ route('mining-manager.diagnostic.index') }}" class="btn btn-info">
+                        <i class="fas fa-external-link-alt"></i> Access Diagnostics Page
+                    </a>
                 </div>
             </div>
 
