@@ -363,6 +363,13 @@ Route::group([
             'middleware' => 'can:mining-manager.events.view',
         ]);
 
+        // Location search for AJAX dropdown (must be before wildcards)
+        Route::get('/search-locations', [
+            'as' => 'mining-manager.events.search-locations',
+            'uses' => 'EventController@searchLocations',
+            'middleware' => 'can:mining-manager.events.view',
+        ]);
+
         Route::get('/create', [
             'as' => 'mining-manager.events.create',
             'uses' => 'EventController@create',

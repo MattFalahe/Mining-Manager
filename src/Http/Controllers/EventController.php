@@ -9,6 +9,7 @@ use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
 use Seat\Eveapi\Models\Character\CharacterInfo;
+use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Carbon\Carbon;
 
 class EventController extends Controller
@@ -76,7 +77,20 @@ class EventController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations'));
+        // Calculate event statistics for summary boxes
+        $stats = [
+            'active' => MiningEvent::where('status', 'active')->count(),
+            'upcoming' => MiningEvent::where('status', 'planned')
+                ->where('start_time', '<=', now()->addDays(7))
+                ->where('start_time', '>', now())
+                ->count(),
+            'participants' => DB::table('event_participants')->distinct('character_id')->count('character_id'),
+            'total_value' => MiningEvent::whereMonth('start_time', now()->month)
+                ->whereYear('start_time', now()->year)
+                ->sum('total_mined'),
+        ];
+
+        return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats'));
     }
 
     /**
@@ -100,8 +114,10 @@ class EventController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
+            'location_scope' => 'required|string|in:any,system,constellation,region',
             'solar_system_id' => 'nullable|integer',
             'tax_modifier' => 'required|integer|min:-100|max:100',
             'corporation_id' => 'nullable|integer',
@@ -111,9 +127,11 @@ class EventController extends Controller
             $event = MiningEvent::create([
                 'name' => $request->input('name'),
                 'description' => $request->input('description'),
+                'type' => $request->input('type', 'mining_op'),
                 'start_time' => Carbon::parse($request->input('start_time')),
                 'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'solar_system_id' => $request->input('solar_system_id'),
+                'location_scope' => $request->input('location_scope', 'any'),
+                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
                 'tax_modifier' => $request->input('tax_modifier', 0),
                 'corporation_id' => $request->input('corporation_id'),
                 'status' => 'planned',
@@ -199,8 +217,10 @@ class EventController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'type' => 'required|string|in:mining_op,moon_extraction,ice_mining,gas_huffing,special',
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
+            'location_scope' => 'required|string|in:any,system,constellation,region',
             'solar_system_id' => 'nullable|integer',
             'tax_modifier' => 'required|integer|min:-100|max:100',
             'corporation_id' => 'nullable|integer',
@@ -213,9 +233,11 @@ class EventController extends Controller
             $event->update([
                 'name' => $request->input('name'),
                 'description' => $request->input('description'),
+                'type' => $request->input('type', 'mining_op'),
                 'start_time' => Carbon::parse($request->input('start_time')),
                 'end_time' => $request->input('end_time') ? Carbon::parse($request->input('end_time')) : null,
-                'solar_system_id' => $request->input('solar_system_id'),
+                'location_scope' => $request->input('location_scope', 'any'),
+                'solar_system_id' => $request->input('location_scope') !== 'any' ? $request->input('solar_system_id') : null,
                 'tax_modifier' => $request->input('tax_modifier', 0),
                 'corporation_id' => $request->input('corporation_id'),
                 'status' => $request->input('status'),
@@ -719,7 +741,53 @@ class EventController extends Controller
         \Log::warning('EventController: No main character ID found for user', [
             'user_id' => $user->id
         ]);
-        
+
         return null;
+    }
+
+    /**
+     * Search for locations (systems, constellations, regions) for event creation.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function searchLocations(Request $request)
+    {
+        $query = $request->input('q', '');
+        $scope = $request->input('scope', 'system');
+
+        if (strlen($query) < 2) {
+            return response()->json([]);
+        }
+
+        // Map scope to groupID in mapDenormalize
+        // 3 = Region, 4 = Constellation, 5 = Solar System
+        $groupIDs = match($scope) {
+            'system' => [5],
+            'constellation' => [4],
+            'region' => [3],
+            default => [5, 4, 3],
+        };
+
+        $results = MapDenormalize::whereIn('groupID', $groupIDs)
+            ->where('itemName', 'like', "%{$query}%")
+            ->select('itemID as id', 'itemName as text', 'groupID')
+            ->orderBy('itemName')
+            ->limit(25)
+            ->get()
+            ->map(function ($item) {
+                $typeLabel = match($item->groupID) {
+                    3 => 'Region',
+                    4 => 'Constellation',
+                    5 => 'System',
+                    default => '',
+                };
+                return [
+                    'id' => $item->id,
+                    'text' => $item->text . ($typeLabel ? " ({$typeLabel})" : ''),
+                ];
+            });
+
+        return response()->json($results);
     }
 }

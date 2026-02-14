@@ -239,7 +239,7 @@
                     {{-- Event Type Badge --}}
                     <div class="mb-2">
                         <span class="badge badge-primary">
-                            {{ trans('mining-manager::events.' . $event->type) }}
+                            {{ $event->getTypeLabel() }}
                         </span>
                         @if($event->is_mandatory)
                             <span class="badge badge-warning">
@@ -272,11 +272,17 @@
                             <strong>{{ trans('mining-manager::events.participants') }}:</strong>
                             {{ $event->participants_count ?? 0 }} / {{ $event->max_participants ?? '∞' }}
                         </p>
-                        @if($event->location)
+                        @if($event->getLocationName())
                         <p class="mb-1">
                             <i class="fas fa-map-marker-alt text-danger"></i>
                             <strong>{{ trans('mining-manager::events.location') }}:</strong>
-                            {{ $event->location }}
+                            {{ $event->getLocationName() }}
+                        </p>
+                        @elseif($event->location_scope !== 'any')
+                        <p class="mb-1">
+                            <i class="fas fa-globe text-info"></i>
+                            <strong>{{ trans('mining-manager::events.location') }}:</strong>
+                            {{ $event->getLocationScopeLabel() }}
                         </p>
                         @endif
                     </div>

@@ -69,15 +69,17 @@
                             <div class="row mt-3">
                                 <div class="col-md-6">
                                     <h5>{{ trans('mining-manager::events.event_information') }}</h5>
-                                    <p><i class="fas fa-tag"></i> <strong>{{ trans('mining-manager::events.type') }}:</strong> {{ trans('mining-manager::events.' . $event->type) }}</p>
+                                    <p><i class="fas fa-tag"></i> <strong>{{ trans('mining-manager::events.type') }}:</strong> {{ $event->getTypeLabel() }}</p>
                                     <p><i class="fas fa-calendar-alt"></i> <strong>{{ trans('mining-manager::events.starts') }}:</strong> {{ $event->start_time->format('F d, Y H:i') }}</p>
                                     @if($event->end_time)
                                     <p><i class="fas fa-clock"></i> <strong>{{ trans('mining-manager::events.ends') }}:</strong> {{ $event->end_time->format('F d, Y H:i') }}</p>
                                     @endif
-                                    @if($event->location)
-                                    <p><i class="fas fa-map-marker-alt"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location }}</p>
+                                    @if($event->getLocationName())
+                                    <p><i class="fas fa-map-marker-alt"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->getLocationName() }} ({{ $event->getLocationScopeLabel() }})</p>
+                                    @else
+                                    <p><i class="fas fa-globe"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ trans('mining-manager::events.scope_any') }}</p>
                                     @endif
-                                    <p><i class="fas fa-user"></i> <strong>{{ trans('mining-manager::events.organizer') }}:</strong> {{ $event->organizer->name ?? 'Unknown' }}</p>
+                                    <p><i class="fas fa-user"></i> <strong>{{ trans('mining-manager::events.organizer') }}:</strong> {{ $event->creator->name ?? 'Unknown' }}</p>
                                 </div>
                                 <div class="col-md-6">
                                     <h5>{{ trans('mining-manager::events.statistics') }}</h5>
@@ -174,37 +176,57 @@
 
 @push('javascript')
 <script>
-$('.join-event, .leave-event, .delete-event').on('click', function() {
-    const eventId = $(this).data('event-id');
-    const action = $(this).hasClass('join-event') ? 'join' : $(this).hasClass('leave-event') ? 'leave' : 'delete';
-    
-    let route, method, confirmMsg;
-    if (action === 'join') {
-        route = '{{ route("mining-manager.events.join", ":id") }}'.replace(':id', eventId);
-        method = 'POST';
-    } else if (action === 'leave') {
-        route = '{{ route("mining-manager.events.leave", ":id") }}'.replace(':id', eventId);
-        method = 'POST';
-        confirmMsg = '{{ trans("mining-manager::events.confirm_leave") }}';
-    } else {
-        route = '{{ route("mining-manager.events.destroy", ":id") }}'.replace(':id', eventId);
-        method = 'DELETE';
-        confirmMsg = '{{ trans("mining-manager::events.confirm_delete") }}';
-    }
-    
-    if (confirmMsg && !confirm(confirmMsg)) return;
-    
-    $.ajax({
-        url: route,
-        method: method,
-        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-        success: function(response) {
-            toastr.success(response.message);
-            setTimeout(() => location.reload(), 1000);
-        },
-        error: function(xhr) {
-            toastr.error(xhr.responseJSON?.message);
+$(document).ready(function() {
+    $('.join-event, .leave-event, .delete-event').on('click', function(e) {
+        e.preventDefault();
+        const btn = $(this);
+        const eventId = btn.data('event-id');
+        const action = btn.hasClass('join-event') ? 'join' : btn.hasClass('leave-event') ? 'leave' : 'delete';
+
+        console.log('Event action:', action, 'Event ID:', eventId);
+
+        let route, method, confirmMsg;
+        if (action === 'join') {
+            route = '{{ route("mining-manager.events.join", ":id") }}'.replace(':id', eventId);
+            method = 'POST';
+        } else if (action === 'leave') {
+            route = '{{ route("mining-manager.events.leave", ":id") }}'.replace(':id', eventId);
+            method = 'POST';
+            confirmMsg = '{{ trans("mining-manager::events.confirm_leave") }}';
+        } else {
+            route = '{{ route("mining-manager.events.destroy", ":id") }}'.replace(':id', eventId);
+            method = 'DELETE';
+            confirmMsg = '{{ trans("mining-manager::events.confirm_delete") }}';
         }
+
+        if (confirmMsg && !confirm(confirmMsg)) return;
+
+        // Disable button to prevent double-clicks
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: route,
+            method: method,
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function(response) {
+                if (typeof toastr !== 'undefined') {
+                    toastr.success(response.message || 'Action completed successfully');
+                } else {
+                    alert(response.message || 'Action completed successfully');
+                }
+                setTimeout(() => location.reload(), 1000);
+            },
+            error: function(xhr) {
+                btn.prop('disabled', false);
+                const errorMsg = xhr.responseJSON?.message || 'An error occurred. Please try again.';
+                console.error('Event action error:', xhr.status, errorMsg);
+                if (typeof toastr !== 'undefined') {
+                    toastr.error(errorMsg);
+                } else {
+                    alert('Error: ' + errorMsg);
+                }
+            }
+        });
     });
 });
 </script>

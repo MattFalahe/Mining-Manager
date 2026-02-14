@@ -110,6 +110,26 @@ return [
     'confirm_delete' => 'Are you sure you want to delete this event?',
     'error_leaving' => 'Error leaving event. Please try again.',
     
+    // Location Scope
+    'location_scope' => 'Location Scope',
+    'scope_any' => 'Any Location (Global)',
+    'scope_system' => 'Specific System',
+    'scope_constellation' => 'Constellation',
+    'scope_region' => 'Region',
+    'search_location' => 'Search for location...',
+
+    // Success/Error Messages
+    'created_success' => 'Event created successfully',
+    'create_failed' => 'Failed to create event',
+    'update_failed' => 'Failed to update event',
+    'joined_success' => 'You have joined the event',
+    'join_failed' => 'Failed to join event',
+    'left_success' => 'You have left the event',
+    'leave_failed' => 'Failed to leave event',
+    'deleted_success' => 'Event deleted successfully',
+    'delete_failed' => 'Failed to delete event',
+    'confirm_delete_warning' => 'Are you sure you want to permanently delete this event? This action cannot be undone.',
+
     // Additional Event Management
     'active_miners' => 'Active Miners',
     'all_statuses' => 'All Statuses',

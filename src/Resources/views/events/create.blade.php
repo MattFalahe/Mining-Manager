@@ -73,27 +73,47 @@
                             @enderror
                         </div>
 
+                        <div class="form-group">
+                            <label for="type">{{ trans('mining-manager::events.event_type') }} <span class="text-danger">*</span></label>
+                            <select class="form-control @error('type') is-invalid @enderror" id="type" name="type" required>
+                                <option value="">{{ trans('mining-manager::events.select_type') }}</option>
+                                <option value="mining_op" {{ old('type') == 'mining_op' ? 'selected' : '' }}>{{ trans('mining-manager::events.mining_op') }}</option>
+                                <option value="moon_extraction" {{ old('type') == 'moon_extraction' ? 'selected' : '' }}>{{ trans('mining-manager::events.moon_extraction') }}</option>
+                                <option value="ice_mining" {{ old('type') == 'ice_mining' ? 'selected' : '' }}>{{ trans('mining-manager::events.ice_mining') }}</option>
+                                <option value="gas_huffing" {{ old('type') == 'gas_huffing' ? 'selected' : '' }}>{{ trans('mining-manager::events.gas_huffing') }}</option>
+                                <option value="special" {{ old('type') == 'special' ? 'selected' : '' }}>{{ trans('mining-manager::events.special') }}</option>
+                            </select>
+                            @error('type')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
+                        </div>
+
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <div class="form-group">
-                                    <label for="type">{{ trans('mining-manager::events.event_type') }} <span class="text-danger">*</span></label>
-                                    <select class="form-control @error('type') is-invalid @enderror" id="type" name="type" required>
-                                        <option value="">{{ trans('mining-manager::events.select_type') }}</option>
-                                        <option value="mining_op">{{ trans('mining-manager::events.mining_op') }}</option>
-                                        <option value="moon_extraction">{{ trans('mining-manager::events.moon_extraction') }}</option>
-                                        <option value="ice_mining">{{ trans('mining-manager::events.ice_mining') }}</option>
-                                        <option value="gas_huffing">{{ trans('mining-manager::events.gas_huffing') }}</option>
-                                        <option value="special">{{ trans('mining-manager::events.special') }}</option>
+                                    <label for="location_scope">{{ trans('mining-manager::events.location_scope') }}</label>
+                                    <select class="form-control @error('location_scope') is-invalid @enderror" id="location_scope" name="location_scope">
+                                        <option value="any" {{ old('location_scope', 'any') == 'any' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_any') }}</option>
+                                        <option value="region" {{ old('location_scope') == 'region' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_region') }}</option>
+                                        <option value="constellation" {{ old('location_scope') == 'constellation' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_constellation') }}</option>
+                                        <option value="system" {{ old('location_scope') == 'system' ? 'selected' : '' }}>{{ trans('mining-manager::events.scope_system') }}</option>
                                     </select>
-                                    @error('type')
+                                    @error('location_scope')
                                     <span class="invalid-feedback">{{ $message }}</span>
                                     @enderror
                                 </div>
                             </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label for="location">{{ trans('mining-manager::events.location') }}</label>
-                                    <input type="text" class="form-control" id="location" name="location" value="{{ old('location') }}" placeholder="Jita, Amarr, etc.">
+                            <div class="col-md-8">
+                                <div class="form-group" id="location-select-group" style="{{ old('location_scope', 'any') == 'any' ? 'display:none;' : '' }}">
+                                    <label for="solar_system_id">{{ trans('mining-manager::events.location') }}</label>
+                                    <select class="form-control select2-location @error('solar_system_id') is-invalid @enderror" id="solar_system_id" name="solar_system_id" style="width: 100%;">
+                                        @if(old('solar_system_id'))
+                                        <option value="{{ old('solar_system_id') }}" selected>{{ old('location_name', 'Selected Location') }}</option>
+                                        @endif
+                                    </select>
+                                    @error('solar_system_id')
+                                    <span class="invalid-feedback">{{ $message }}</span>
+                                    @enderror
                                 </div>
                             </div>
                         </div>
@@ -217,26 +237,72 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // Initialize Select2 for location search
+    $('.select2-location').select2({
+        theme: 'bootstrap4',
+        ajax: {
+            url: '{{ route("mining-manager.events.search-locations") }}',
+            dataType: 'json',
+            delay: 300,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    scope: $('#location_scope').val()
+                };
+            },
+            processResults: function(data) {
+                return { results: data };
+            },
+            cache: true
+        },
+        placeholder: '{{ trans("mining-manager::events.search_location") }}',
+        minimumInputLength: 2,
+        allowClear: true
+    });
+
+    // Toggle location selector based on scope
+    $('#location_scope').on('change', function() {
+        if ($(this).val() === 'any') {
+            $('#location-select-group').hide();
+            $('#solar_system_id').val(null).trigger('change');
+        } else {
+            $('#location-select-group').show();
+            // Clear the current selection when scope changes
+            $('#solar_system_id').val(null).trigger('change');
+        }
+    });
+
     // Form submission
     $('#eventForm').on('submit', function(e) {
         e.preventDefault();
-        
+
         $.ajax({
             url: $(this).attr('action'),
             method: 'POST',
             data: $(this).serialize(),
             success: function(response) {
-                toastr.success(response.message || '{{ trans("mining-manager::events.created_success") }}');
+                if (typeof toastr !== 'undefined') {
+                    toastr.success(response.message || '{{ trans("mining-manager::events.created_success") }}');
+                }
                 setTimeout(() => window.location.href = '{{ route("mining-manager.events.index") }}', 1000);
             },
             error: function(xhr) {
                 if (xhr.status === 422) {
                     const errors = xhr.responseJSON.errors;
                     Object.keys(errors).forEach(key => {
-                        toastr.error(errors[key][0]);
+                        if (typeof toastr !== 'undefined') {
+                            toastr.error(errors[key][0]);
+                        } else {
+                            alert('Error: ' + errors[key][0]);
+                        }
                     });
                 } else {
-                    toastr.error(xhr.responseJSON?.message || '{{ trans("mining-manager::events.create_failed") }}');
+                    const errorMsg = xhr.responseJSON?.message || '{{ trans("mining-manager::events.create_failed") }}';
+                    if (typeof toastr !== 'undefined') {
+                        toastr.error(errorMsg);
+                    } else {
+                        alert('Error: ' + errorMsg);
+                    }
                 }
             }
         });
@@ -244,16 +310,15 @@ $(document).ready(function() {
 
     // Preview event
     $('#previewEvent').on('click', function() {
-        const formData = $('#eventForm').serializeArray();
-        let preview = '<div class="event-preview">';
-        preview += '<h4>' + $('#name').val() + '</h4>';
-        preview += '<p>' + $('#description').val() + '</p>';
-        preview += '<p><strong>Type:</strong> ' + $('#type option:selected').text() + '</p>';
-        preview += '<p><strong>Start:</strong> ' + $('#start_time').val() + '</p>';
-        preview += '</div>';
-        
-        // Show preview in modal or alert
-        alert('Event Preview:\n\n' + $('#name').val() + '\n' + $('#description').val());
+        let preview = 'Event Preview:\n\n';
+        preview += 'Name: ' + $('#name').val() + '\n';
+        preview += 'Description: ' + $('#description').val() + '\n';
+        preview += 'Type: ' + $('#type option:selected').text() + '\n';
+        preview += 'Location: ' + ($('#location_scope').val() === 'any' ? 'Any Location' : ($('#solar_system_id option:selected').text() || 'Not Selected')) + '\n';
+        preview += 'Start: ' + $('#start_time').val() + '\n';
+        preview += 'Tax Modifier: ' + $('#tax_modifier option:selected').text();
+
+        alert(preview);
     });
 });
 </script>

@@ -25,9 +25,11 @@ class MiningEvent extends Model
     protected $fillable = [
         'name',
         'description',
+        'type',
         'start_time',
         'end_time',
         'solar_system_id',
+        'location_scope',
         'status',
         'participant_count',
         'total_mined',
@@ -50,6 +52,27 @@ class MiningEvent extends Model
         'tax_modifier' => 'integer',
         'corporation_id' => 'integer',
         'last_updated' => 'datetime',
+    ];
+
+    /**
+     * Event type constants.
+     */
+    public const EVENT_TYPES = [
+        'mining_op' => 'Mining Operation',
+        'moon_extraction' => 'Moon Extraction',
+        'ice_mining' => 'Ice Mining',
+        'gas_huffing' => 'Gas Huffing',
+        'special' => 'Special Event',
+    ];
+
+    /**
+     * Location scope constants.
+     */
+    public const LOCATION_SCOPES = [
+        'any' => 'Any Location (Global)',
+        'system' => 'Specific System',
+        'constellation' => 'Constellation',
+        'region' => 'Region',
     ];
 
     /**
@@ -285,5 +308,55 @@ class MiningEvent extends Model
     public function isTaxFree(): bool
     {
         return $this->tax_modifier <= -100;
+    }
+
+    /**
+     * Get the human-readable label for the event type.
+     *
+     * @return string
+     */
+    public function getTypeLabel(): string
+    {
+        return self::EVENT_TYPES[$this->type] ?? ucfirst(str_replace('_', ' ', $this->type ?? 'mining_op'));
+    }
+
+    /**
+     * Get the human-readable label for the location scope.
+     *
+     * @return string
+     */
+    public function getLocationScopeLabel(): string
+    {
+        return self::LOCATION_SCOPES[$this->location_scope] ?? 'Any Location';
+    }
+
+    /**
+     * Get the location name (system/constellation/region name).
+     *
+     * @return string|null
+     */
+    public function getLocationName(): ?string
+    {
+        if ($this->location_scope === 'any' || !$this->solar_system_id) {
+            return null;
+        }
+
+        $location = MapDenormalize::where('itemID', $this->solar_system_id)->first();
+        return $location ? $location->itemName : null;
+    }
+
+    /**
+     * Get top participants for leaderboard.
+     *
+     * @param int $limit
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function topParticipants(int $limit = 10)
+    {
+        return $this->participants()
+            ->with('character')
+            ->orderByDesc('quantity_mined')
+            ->limit($limit)
+            ->get();
     }
 }

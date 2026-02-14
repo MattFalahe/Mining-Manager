@@ -74,10 +74,12 @@
                         {{-- Event Info --}}
                         <div class="col-md-4">
                             <h5>{{ trans('mining-manager::events.event_information') }}</h5>
-                            <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ trans('mining-manager::events.' . $event->type) }}</p>
+                            <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ $event->getTypeLabel() }}</p>
                             <p><strong>{{ trans('mining-manager::events.started') }}:</strong> {{ $event->start_time->diffForHumans() }}</p>
+                            @if($event->end_time)
                             <p><strong>{{ trans('mining-manager::events.duration') }}:</strong> {{ $event->start_time->diff($event->end_time)->format('%h hours %i minutes') }}</p>
-                            <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location ?? 'N/A' }}</p>
+                            @endif
+                            <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->getLocationName() ?? $event->getLocationScopeLabel() }}</p>
                             <p>
                                 <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
                                 <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
