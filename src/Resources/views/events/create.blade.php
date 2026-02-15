@@ -171,6 +171,24 @@
                             <small class="form-text text-muted">{{ trans('mining-manager::events.tax_modifier_help') }}</small>
                         </div>
 
+                        <div class="form-group">
+                            <label for="corporation_id">{{ trans('mining-manager::events.corporation_scope') }}</label>
+                            <select class="form-control @error('corporation_id') is-invalid @enderror" id="corporation_id" name="corporation_id">
+                                <option value="">{{ trans('mining-manager::events.all_corporations') }}</option>
+                                @if(isset($corporations))
+                                    @foreach($corporations as $corp)
+                                        <option value="{{ $corp->corporation_id }}" {{ old('corporation_id') == $corp->corporation_id ? 'selected' : '' }}>
+                                            [{{ $corp->ticker }}] {{ $corp->name }}
+                                        </option>
+                                    @endforeach
+                                @endif
+                            </select>
+                            @error('corporation_id')
+                            <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
+                            <small class="form-text text-muted">{{ trans('mining-manager::events.corporation_scope_help') }}</small>
+                        </div>
+
                         <div class="form-check mb-3">
                             <input type="checkbox" class="form-check-input" id="is_mandatory" name="is_mandatory" value="1" {{ old('is_mandatory') ? 'checked' : '' }}>
                             <label class="form-check-label" for="is_mandatory">

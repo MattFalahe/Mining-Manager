@@ -366,7 +366,7 @@ class TaxCalculationService
 
             // Get base tax rate and apply event modifier if applicable
             $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
-            $eventModifier = $this->getEventTaxModifier($characterId, $entry);
+            $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
 
             // Apply event modifier: modifier is a percentage adjustment to the tax rate
             // -100 = tax-free, -50 = half tax, +100 = double tax
@@ -401,13 +401,22 @@ class TaxCalculationService
      * Get the event tax modifier for a specific mining entry.
      * Checks if the character is participating in any active events during this mining entry.
      *
+     * When multiple events overlap (same date, same location), the MOST BENEFICIAL
+     * modifier for the miner is used (lowest value = most tax discount).
+     *
+     * Events can be:
+     * - Global (corporation_id = null): Applies to all corporations
+     * - Corp-specific (corporation_id set): Only applies to that corporation's miners
+     *
      * @param int $characterId
      * @param object $entry Mining ledger entry
+     * @param int|null $characterCorpId The character's corporation ID for filtering corp-specific events
      * @return int Tax modifier (-100 to +100)
      */
-    private function getEventTaxModifier(int $characterId, $entry): int
+    private function getEventTaxModifier(int $characterId, $entry, ?int $characterCorpId = null): int
     {
         // Find active events during this mining entry's date
+        // Order by tax_modifier ASC (best for miner first) and id ASC (tie-breaker)
         $events = MiningEvent::where('status', 'active')
             ->where('start_time', '<=', $entry->date)
             ->where(function ($query) use ($entry) {
@@ -417,21 +426,45 @@ class TaxCalculationService
             ->whereHas('participants', function ($query) use ($characterId) {
                 $query->where('character_id', $characterId);
             })
+            // Filter by corporation: global events (null) OR character's corporation
+            ->where(function ($query) use ($characterCorpId) {
+                $query->whereNull('corporation_id')  // Global events
+                      ->orWhere('corporation_id', $characterCorpId);  // Corp-specific events
+            })
+            ->orderBy('tax_modifier', 'asc')  // Best benefit first (lowest = most discount)
+            ->orderBy('id', 'asc')            // Tie-breaker: earliest created
             ->get();
 
         if ($events->isEmpty()) {
             return 0;
         }
 
-        // Check if entry matches event's system restriction (if any)
+        // Find the best (most beneficial) modifier among applicable events
+        // Lower modifier = more tax discount for miner (-100 = tax-free, 0 = normal, +100 = double)
+        $bestModifier = 0;
+        $appliedEvent = null;
+
         foreach ($events as $event) {
             // If event is system-specific and entry is not in that system, skip
             if ($event->solar_system_id && $event->solar_system_id != $entry->solar_system_id) {
                 continue;
             }
 
-            Log::debug("Mining Manager: Applying event '{$event->name}' tax modifier ({$event->tax_modifier}%) for character {$characterId}");
-            return $event->tax_modifier;
+            // Take the most beneficial modifier (lowest value = most tax discount)
+            if ($appliedEvent === null || $event->tax_modifier < $bestModifier) {
+                $bestModifier = $event->tax_modifier;
+                $appliedEvent = $event;
+            }
+        }
+
+        if ($appliedEvent) {
+            Log::debug("Mining Manager: Applying event '{$appliedEvent->name}' tax modifier ({$bestModifier}%) for character {$characterId}", [
+                'event_id' => $appliedEvent->id,
+                'character_id' => $characterId,
+                'mining_date' => $entry->date,
+                'solar_system_id' => $entry->solar_system_id ?? null,
+            ]);
+            return $bestModifier;
         }
 
         return 0;
@@ -876,7 +909,7 @@ class TaxCalculationService
 
             // Get base tax rate and apply event modifier if applicable
             $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
-            $eventModifier = $this->getEventTaxModifier($characterId, $entry);
+            $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
             $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
             $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
 

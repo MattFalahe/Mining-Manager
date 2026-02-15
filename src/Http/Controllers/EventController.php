@@ -123,7 +123,13 @@ class EventController extends Controller
      */
     public function create()
     {
-        return view('mining-manager::events.create');
+        // Get configured corporations for the dropdown
+        $corporations = DB::table('corporation_infos')
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+
+        return view('mining-manager::events.create', compact('corporations'));
     }
 
     /**
@@ -247,7 +253,13 @@ class EventController extends Controller
     {
         $event = MiningEvent::findOrFail($id);
 
-        return view('mining-manager::events.edit', compact('event'));
+        // Get configured corporations for the dropdown
+        $corporations = DB::table('corporation_infos')
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
+
+        return view('mining-manager::events.edit', compact('event', 'corporations'));
     }
 
     /**

@@ -48,6 +48,9 @@ return [
     'description' => 'Description',
     'tax_modifier' => 'Tax Modifier',
     'tax_modifier_help' => 'Adjust tax rates during this event. Negative = discount, Positive = increase.',
+    'corporation_scope' => 'Corporation Scope',
+    'all_corporations' => 'All Corporations (Global Event)',
+    'corporation_scope_help' => 'Leave empty for global event (applies to all corps), or select specific corporation.',
     'completed_on' => 'Completed On',
 
     // Tax Modifier Presets
