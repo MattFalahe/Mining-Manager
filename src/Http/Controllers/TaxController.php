@@ -217,7 +217,90 @@ class TaxController extends Controller
      */
     public function showCalculateForm()
     {
-        return view('mining-manager::taxes.calculate');
+        // Get corporations for dropdown
+        $corporations = CorporationInfo::orderBy('name')->get();
+
+        // Generate years array (current year and past 2 years)
+        $currentYear = now()->year;
+        $years = range($currentYear - 2, $currentYear);
+
+        // Get settings
+        $generalSettings = [
+            'tax_calculation_method' => $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated'),
+        ];
+
+        $sourceSettings = [
+            'source' => $this->settingsService->getSetting('general.data_source', 'archived'),
+        ];
+
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+
+        // Get live tracking data for current month
+        $liveTracking = $this->getLiveTrackingData();
+
+        return view('mining-manager::taxes.calculate', compact(
+            'corporations',
+            'years',
+            'generalSettings',
+            'sourceSettings',
+            'paymentSettings',
+            'liveTracking'
+        ));
+    }
+
+    /**
+     * Get live mining tracking data for current month
+     *
+     * @return array
+     */
+    protected function getLiveTrackingData(): array
+    {
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $currentMonth = now()->startOfMonth();
+
+        // Get mining ledger entries for current month
+        $entries = MiningLedger::with('character')
+            ->when($moonOwnerCorpId, function($query) use ($moonOwnerCorpId) {
+                $query->whereHas('character.affiliation', function($q) use ($moonOwnerCorpId) {
+                    $q->where('corporation_id', $moonOwnerCorpId);
+                });
+            })
+            ->where('date', '>=', $currentMonth)
+            ->orderBy('date', 'desc')
+            ->limit(50)
+            ->get();
+
+        if ($entries->isEmpty()) {
+            return [
+                'has_data' => false,
+                'entries' => [],
+                'total_value' => 0,
+                'estimated_tax' => 0,
+                'character_count' => 0,
+                'month' => $currentMonth->format('F Y'),
+            ];
+        }
+
+        $totalValue = $entries->sum('value');
+        $estimatedTax = $totalValue * 0.10; // Rough estimate using default rate
+        $characterCount = $entries->pluck('character_id')->unique()->count();
+
+        return [
+            'has_data' => true,
+            'entries' => $entries->map(function($entry) {
+                return [
+                    'date' => $entry->date,
+                    'character' => ['name' => $entry->character->name ?? 'Unknown'],
+                    'quantity' => $entry->quantity,
+                    'volume' => $entry->volume ?? 0,
+                    'value' => $entry->value ?? 0,
+                ];
+            })->toArray(),
+            'total_value' => $totalValue,
+            'estimated_tax' => $estimatedTax,
+            'character_count' => $characterCount,
+            'month' => $currentMonth->format('F Y'),
+        ];
     }
 
     /**
