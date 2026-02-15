@@ -46,6 +46,7 @@ class NotificationService
     const TYPE_TAX_REMINDER = 'tax_reminder';
     const TYPE_TAX_INVOICE = 'tax_invoice';
     const TYPE_TAX_OVERDUE = 'tax_overdue';
+    const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
     const TYPE_MOON_READY = 'moon_ready';
@@ -172,6 +173,33 @@ class NotificationService
     }
 
     /**
+     * Send event created notification
+     *
+     * @param MiningEvent $event
+     * @return array
+     */
+    public function sendEventCreated(MiningEvent $event): array
+    {
+        if (!$this->settings->get('notification_event_updates', true)) {
+            return ['skipped' => true];
+        }
+
+        $data = [
+            'event_id' => $event->id,
+            'event_name' => $event->name,
+            'event_type' => $event->getTypeLabel(),
+            'event_type_key' => $event->type,
+            'start_date' => $event->start_time->format('Y-m-d H:i'),
+            'end_date' => $event->end_time ? $event->end_time->format('Y-m-d H:i') : null,
+            'tax_modifier' => $event->tax_modifier,
+            'tax_modifier_label' => $event->getTaxModifierLabel(),
+            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
+        ];
+
+        return $this->sendBroadcast(self::TYPE_EVENT_CREATED, $data);
+    }
+
+    /**
      * Send event started notification
      *
      * @param MiningEvent $event
@@ -187,10 +215,13 @@ class NotificationService
         $data = [
             'event_id' => $event->id,
             'event_name' => $event->name,
-            'event_type' => $event->type,
-            'start_date' => $event->start_date->format('Y-m-d H:i'),
-            'end_date' => $event->end_date->format('Y-m-d H:i'),
-            'bonus' => $event->bonus_multiplier
+            'event_type' => $event->getTypeLabel(),
+            'event_type_key' => $event->type,
+            'start_date' => $event->start_time->format('Y-m-d H:i'),
+            'end_date' => $event->end_time ? $event->end_time->format('Y-m-d H:i') : null,
+            'tax_modifier' => $event->tax_modifier,
+            'tax_modifier_label' => $event->getTaxModifierLabel(),
+            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
         ];
 
         // If no specific participants, notify all corp members
@@ -217,8 +248,12 @@ class NotificationService
         $data = [
             'event_id' => $event->id,
             'event_name' => $event->name,
-            'total_mined' => $event->total_value ?? 0,
-            'participants' => $event->participants_count ?? 0
+            'event_type' => $event->getTypeLabel(),
+            'total_mined' => $event->total_mined ?? 0,
+            'participants' => $event->participant_count ?? 0,
+            'tax_modifier' => $event->tax_modifier,
+            'tax_modifier_label' => $event->getTaxModifierLabel(),
+            'location' => $event->getLocationName() ?? $event->getLocationScopeLabel(),
         ];
 
         if (empty($participantIds)) {
@@ -477,19 +512,37 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
+            self::TYPE_EVENT_CREATED => [
+                'subject' => 'New Mining Event: ' . $data['event_name'],
+                'body' => sprintf(
+                    "A new mining event has been scheduled!\n\n" .
+                    "Event: %s\nType: %s\nTax Modifier: %s\n" .
+                    "Location: %s\nStart: %s\n%s\n\n" .
+                    "Mark your calendars and get ready to mine!\n\n" .
+                    "%s Management",
+                    $data['event_name'],
+                    $data['event_type'],
+                    $data['tax_modifier_label'],
+                    $data['location'],
+                    $data['start_date'],
+                    $data['end_date'] ? "End: {$data['end_date']}" : '',
+                    $this->getCorpName()
+                )
+            ],
             self::TYPE_EVENT_STARTED => [
                 'subject' => 'Mining Event Started: ' . $data['event_name'],
                 'body' => sprintf(
-                    "A new mining event has started!\n\n" .
-                    "Event: %s\nType: %s\nBonus: %.1f%%\n" .
-                    "Start: %s\nEnd: %s\n\n" .
-                    "Get mining and earn bonus rewards!\n\n" .
+                    "A mining event has started!\n\n" .
+                    "Event: %s\nType: %s\nTax Modifier: %s\n" .
+                    "Location: %s\nStart: %s\n%s\n\n" .
+                    "Get mining now!\n\n" .
                     "%s Management",
                     $data['event_name'],
-                    ucfirst($data['event_type']),
-                    ($data['bonus'] - 1) * 100,
+                    $data['event_type'],
+                    $data['tax_modifier_label'],
+                    $data['location'],
                     $data['start_date'],
-                    $data['end_date'],
+                    $data['end_date'] ? "End: {$data['end_date']}" : '',
                     $this->getCorpName()
                 )
             ],
@@ -497,12 +550,15 @@ class NotificationService
                 'subject' => 'Mining Event Completed: ' . $data['event_name'],
                 'body' => sprintf(
                     "Mining event has completed!\n\n" .
-                    "Event: %s\nTotal Mined: %s ISK\nParticipants: %d\n\n" .
+                    "Event: %s\nType: %s\nTotal Mined: %s ISK\nParticipants: %d\n" .
+                    "Tax Modifier: %s\n\n" .
                     "Thank you for your participation!\n\n" .
                     "%s Management",
                     $data['event_name'],
-                    number_format($data['total_mined'], 2),
+                    $data['event_type'],
+                    number_format($data['total_mined'], 0),
                     $data['participants'],
+                    $data['tax_modifier_label'],
                     $this->getCorpName()
                 )
             ],
@@ -541,6 +597,7 @@ class NotificationService
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 'danger',
             self::TYPE_TAX_REMINDER => 'warning',
+            self::TYPE_EVENT_CREATED => '#439FE0',
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 'good',
             default => '#439FE0'
         };
@@ -549,6 +606,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => "Tax Payment Reminder: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_INVOICE => "New Tax Invoice: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_OVERDUE => "Overdue Tax: {$data['formatted_amount']} - {$data['days_overdue']} days overdue",
+            self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
             self::TYPE_MOON_READY => "Moon Extraction Ready",
@@ -580,6 +638,7 @@ class NotificationService
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 15158332, // Red
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
+            self::TYPE_EVENT_CREATED => 4437216, // Blue
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 3066993, // Green
             default => 4437216 // Blue
         };
@@ -588,6 +647,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => '⏰ Tax Payment Reminder',
             self::TYPE_TAX_INVOICE => '📧 New Tax Invoice',
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
+            self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
             self::TYPE_MOON_READY => '🌙 Moon Extraction Ready',
@@ -627,11 +687,24 @@ class NotificationService
                 ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true],
                 ['title' => 'Days Overdue', 'value' => $data['days_overdue'], 'short' => true]
             ],
+            self::TYPE_EVENT_CREATED => [
+                ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
+                ['title' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'short' => true],
+                ['title' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'short' => true],
+                ['title' => 'Location', 'value' => $data['location'] ?? 'Any', 'short' => true],
+                ['title' => 'Start', 'value' => $data['start_date'], 'short' => true],
+                ['title' => 'End', 'value' => $data['end_date'] ?? 'Open', 'short' => true]
+            ],
             self::TYPE_EVENT_STARTED => [
                 ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
-                ['title' => 'Bonus', 'value' => (($data['bonus'] - 1) * 100) . '%', 'short' => true],
-                ['title' => 'Start', 'value' => $data['start_date'], 'short' => true],
-                ['title' => 'End', 'value' => $data['end_date'], 'short' => true]
+                ['title' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'short' => true],
+                ['title' => 'Location', 'value' => $data['location'] ?? 'Any', 'short' => true],
+                ['title' => 'End', 'value' => $data['end_date'] ?? 'Open', 'short' => true]
+            ],
+            self::TYPE_EVENT_COMPLETED => [
+                ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
+                ['title' => 'Total Mined', 'value' => isset($data['total_mined']) ? number_format($data['total_mined'], 2) . ' ISK' : 'N/A', 'short' => true],
+                ['title' => 'Participants', 'value' => (string)($data['participants'] ?? 0), 'short' => true]
             ],
             default => []
         };
@@ -655,16 +728,24 @@ class NotificationService
                 ['name' => 'Amount', 'value' => $data['formatted_amount'], 'inline' => true],
                 ['name' => 'Days Overdue', 'value' => (string)$data['days_overdue'], 'inline' => true]
             ],
+            self::TYPE_EVENT_CREATED => [
+                ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
+                ['name' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'inline' => true],
+                ['name' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'inline' => true],
+                ['name' => 'Location', 'value' => $data['location'] ?? 'Any', 'inline' => true],
+                ['name' => 'Start', 'value' => $data['start_date'], 'inline' => true],
+                ['name' => 'End', 'value' => $data['end_date'] ?? 'Open', 'inline' => true]
+            ],
             self::TYPE_EVENT_STARTED => [
                 ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
-                ['name' => 'Bonus', 'value' => (($data['bonus'] - 1) * 100) . '%', 'inline' => true],
-                ['name' => 'Start', 'value' => $data['start_date'], 'inline' => true],
-                ['name' => 'End', 'value' => $data['end_date'], 'inline' => true]
+                ['name' => 'Tax Modifier', 'value' => $data['tax_modifier_label'] ?? 'Normal', 'inline' => true],
+                ['name' => 'Location', 'value' => $data['location'] ?? 'Any', 'inline' => true],
+                ['name' => 'End', 'value' => $data['end_date'] ?? 'Open', 'inline' => true]
             ],
             self::TYPE_EVENT_COMPLETED => [
                 ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
-                ['name' => 'Total Mined', 'value' => number_format($data['total_mined'], 2) . ' ISK', 'inline' => true],
-                ['name' => 'Participants', 'value' => (string)$data['participants'], 'inline' => true]
+                ['name' => 'Total Mined', 'value' => isset($data['total_mined']) ? number_format($data['total_mined'], 2) . ' ISK' : 'N/A', 'inline' => true],
+                ['name' => 'Participants', 'value' => (string)($data['participants'] ?? 0), 'inline' => true]
             ],
             default => []
         };

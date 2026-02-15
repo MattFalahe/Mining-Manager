@@ -57,6 +57,9 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-incident-resolved').checked = webhook.notify_incident_resolved;
                 document.getElementById('notify-moon-arrival').checked = webhook.notify_moon_arrival;
                 document.getElementById('notify-jackpot-detected').checked = webhook.notify_jackpot_detected;
+                document.getElementById('notify-event-created').checked = webhook.notify_event_created;
+                document.getElementById('notify-event-started').checked = webhook.notify_event_started;
+                document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
 
                 // Discord settings
                 const discordRoleField = document.getElementById('discord-role-id');
@@ -102,6 +105,9 @@ function saveWebhook() {
         notify_incident_resolved: document.getElementById('notify-incident-resolved').checked ? 1 : 0,
         notify_moon_arrival: document.getElementById('notify-moon-arrival').checked ? 1 : 0,
         notify_jackpot_detected: document.getElementById('notify-jackpot-detected').checked ? 1 : 0,
+        notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
+        notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
+        notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,
         discord_role_id: document.getElementById('discord-role-id')?.value || null,
         discord_username: document.getElementById('discord-username')?.value || null,
         slack_channel: document.getElementById('slack-channel')?.value || null,

@@ -21,6 +21,9 @@ use Carbon\Carbon;
  * @property bool $notify_incident_resolved
  * @property bool $notify_moon_arrival
  * @property bool $notify_jackpot_detected
+ * @property bool $notify_event_created
+ * @property bool $notify_event_started
+ * @property bool $notify_event_completed
  * @property string|null $discord_role_id
  * @property string|null $discord_username
  * @property string|null $slack_channel
@@ -61,6 +64,9 @@ class WebhookConfiguration extends Model
         'notify_incident_resolved',
         'notify_moon_arrival',
         'notify_jackpot_detected',
+        'notify_event_created',
+        'notify_event_started',
+        'notify_event_completed',
         'discord_role_id',
         'discord_username',
         'slack_channel',
@@ -83,6 +89,9 @@ class WebhookConfiguration extends Model
         'notify_incident_resolved' => 'boolean',
         'notify_moon_arrival' => 'boolean',
         'notify_jackpot_detected' => 'boolean',
+        'notify_event_created' => 'boolean',
+        'notify_event_started' => 'boolean',
+        'notify_event_completed' => 'boolean',
         'custom_headers' => 'array',
         'last_success_at' => 'datetime',
         'last_failure_at' => 'datetime',
@@ -153,6 +162,9 @@ class WebhookConfiguration extends Model
             'incident_resolved' => 'notify_incident_resolved',
             'moon_arrival' => 'notify_moon_arrival',
             'jackpot_detected' => 'notify_jackpot_detected',
+            'event_created' => 'notify_event_created',
+            'event_started' => 'notify_event_started',
+            'event_completed' => 'notify_event_completed',
         ];
 
         $column = $columnMap[$eventType] ?? null;
@@ -255,6 +267,9 @@ class WebhookConfiguration extends Model
             'incident_resolved' => $this->notify_incident_resolved,
             'moon_arrival' => $this->notify_moon_arrival,
             'jackpot_detected' => $this->notify_jackpot_detected,
+            'event_created' => $this->notify_event_created,
+            'event_started' => $this->notify_event_started,
+            'event_completed' => $this->notify_event_completed,
         ];
 
         return $eventMap[$eventType] ?? false;

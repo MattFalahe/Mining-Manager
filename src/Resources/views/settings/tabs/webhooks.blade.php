@@ -149,6 +149,21 @@
                                                     <i class="fas fa-star"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_event_created)
+                                                <span class="badge badge-primary" title="Event Created">
+                                                    <i class="fas fa-calendar-plus"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_event_started)
+                                                <span class="badge badge-success" title="Event Started">
+                                                    <i class="fas fa-play"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_event_completed)
+                                                <span class="badge badge-secondary" title="Event Completed">
+                                                    <i class="fas fa-flag-checkered"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -321,6 +336,31 @@
                             <label class="custom-control-label" for="notify-jackpot-detected">
                                 <i class="fas fa-star" style="color: #ffd700;"></i>
                                 Jackpot Detected
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-2"><strong>Mining Events</strong></small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-event-created" name="notify_event_created" value="1">
+                            <label class="custom-control-label" for="notify-event-created">
+                                <i class="fas fa-calendar-plus text-primary"></i>
+                                Event Created
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-event-started" name="notify_event_started" value="1" checked>
+                            <label class="custom-control-label" for="notify-event-started">
+                                <i class="fas fa-play text-success"></i>
+                                Event Started
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-event-completed" name="notify_event_completed" value="1">
+                            <label class="custom-control-label" for="notify-event-completed">
+                                <i class="fas fa-flag-checkered text-secondary"></i>
+                                Event Completed
                             </label>
                         </div>
                     </div>

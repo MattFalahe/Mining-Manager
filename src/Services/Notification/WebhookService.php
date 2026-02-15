@@ -4,6 +4,7 @@ namespace MiningManager\Services\Notification;
 
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Models\TheftIncident;
+use MiningManager\Models\MiningEvent;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -829,6 +830,297 @@ class WebhookService
     }
 
     // ============================================================================
+    // MINING EVENT NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * Send an event notification to all configured webhooks
+     *
+     * @param string $eventType (event_created, event_started, event_completed)
+     * @param MiningEvent $event
+     * @param array $additionalData
+     * @return array Results for each webhook
+     */
+    public function sendEventNotification(string $eventType, MiningEvent $event, array $additionalData = []): array
+    {
+        $webhooks = WebhookConfiguration::enabled()
+            ->forEvent($eventType)
+            ->get()
+            ->filter(function ($webhook) use ($event) {
+                return $webhook->corporation_id === null || $webhook->corporation_id == $event->corporation_id;
+            });
+
+        if ($webhooks->isEmpty()) {
+            Log::debug("WebhookService: No webhooks configured for event type: {$eventType}");
+            return [];
+        }
+
+        $results = [];
+
+        foreach ($webhooks as $webhook) {
+            try {
+                $result = $this->sendEventToWebhook($webhook, $eventType, $event, $additionalData);
+                $results[$webhook->id] = $result;
+
+                if ($result['success']) {
+                    $webhook->recordSuccess();
+                } else {
+                    $webhook->recordFailure($result['error'] ?? 'Unknown error');
+                }
+            } catch (\Exception $e) {
+                Log::error("WebhookService: Exception sending event notification to webhook {$webhook->id}", [
+                    'error' => $e->getMessage(),
+                    'event_type' => $eventType,
+                    'mining_event_id' => $event->id,
+                ]);
+
+                $webhook->recordFailure($e->getMessage());
+                $results[$webhook->id] = [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Send event notification to a specific webhook
+     */
+    protected function sendEventToWebhook(WebhookConfiguration $webhook, string $eventType, MiningEvent $event, array $additionalData): array
+    {
+        switch ($webhook->type) {
+            case 'discord':
+                return $this->sendEventToDiscord($webhook, $eventType, $event, $additionalData);
+
+            case 'slack':
+                return $this->sendEventToSlack($webhook, $eventType, $event, $additionalData);
+
+            case 'custom':
+                return $this->sendEventToCustom($webhook, $eventType, $event, $additionalData);
+
+            default:
+                return ['success' => false, 'error' => "Unknown webhook type: {$webhook->type}"];
+        }
+    }
+
+    /**
+     * Send event notification to Discord
+     */
+    protected function sendEventToDiscord(WebhookConfiguration $webhook, string $eventType, MiningEvent $event, array $additionalData): array
+    {
+        $embed = $this->buildEventDiscordEmbed($eventType, $event, $additionalData);
+
+        $payload = ['embeds' => [$embed]];
+
+        if ($webhook->discord_role_id) {
+            $payload['content'] = $webhook->getDiscordRoleMention();
+        }
+
+        if ($webhook->discord_username) {
+            $payload['username'] = $webhook->discord_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+
+            if ($response->successful() || $response->status() === 204) {
+                return ['success' => true];
+            }
+
+            return [
+                'success' => false,
+                'error' => "Discord returned status {$response->status()}: {$response->body()}",
+            ];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Discord: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Build Discord embed for mining events
+     */
+    protected function buildEventDiscordEmbed(string $eventType, MiningEvent $event, array $additionalData): array
+    {
+        $color = $this->getColorForEventType($eventType);
+        $title = $this->getTitleForEventType($eventType);
+
+        $embed = [
+            'title' => $title,
+            'color' => $color,
+            'timestamp' => now()->toIso8601String(),
+            'fields' => [],
+            'footer' => ['text' => 'Mining Manager - Events'],
+        ];
+
+        // Event name
+        $embed['fields'][] = [
+            'name' => '📋 Event',
+            'value' => $event->name,
+            'inline' => false,
+        ];
+
+        // Event type
+        $embed['fields'][] = [
+            'name' => '🏷️ Type',
+            'value' => $event->getTypeLabel(),
+            'inline' => true,
+        ];
+
+        // Tax modifier
+        $embed['fields'][] = [
+            'name' => '💰 Tax Modifier',
+            'value' => $event->getTaxModifierLabel(),
+            'inline' => true,
+        ];
+
+        // Location
+        $location = $event->getLocationName() ?? $event->getLocationScopeLabel();
+        $embed['fields'][] = [
+            'name' => '📍 Location',
+            'value' => $location,
+            'inline' => true,
+        ];
+
+        // Times based on event type
+        if ($eventType === 'event_created' || $eventType === 'event_started') {
+            $embed['fields'][] = [
+                'name' => '🕐 Start',
+                'value' => $event->start_time ? $event->start_time->format('Y-m-d H:i') : 'TBD',
+                'inline' => true,
+            ];
+
+            if ($event->end_time) {
+                $embed['fields'][] = [
+                    'name' => '🕐 End',
+                    'value' => $event->end_time->format('Y-m-d H:i'),
+                    'inline' => true,
+                ];
+            }
+        }
+
+        // Completion stats
+        if ($eventType === 'event_completed') {
+            $embed['fields'][] = [
+                'name' => '⛏️ Total Mined',
+                'value' => number_format($event->total_mined ?? 0, 0) . ' ISK',
+                'inline' => true,
+            ];
+
+            $embed['fields'][] = [
+                'name' => '👥 Participants',
+                'value' => (string)($event->participant_count ?? 0),
+                'inline' => true,
+            ];
+        }
+
+        // Description for different event types
+        $embed['description'] = match($eventType) {
+            'event_created' => 'A new mining event has been scheduled!',
+            'event_started' => 'A mining event is now active! Join in and mine!',
+            'event_completed' => 'The mining event has concluded. Thank you to all participants!',
+            default => '',
+        };
+
+        return $embed;
+    }
+
+    /**
+     * Send event notification to Slack
+     */
+    protected function sendEventToSlack(WebhookConfiguration $webhook, string $eventType, MiningEvent $event, array $additionalData): array
+    {
+        $title = $this->getTitleForEventType($eventType);
+
+        $fields = [
+            ['type' => 'mrkdwn', 'text' => "*Event:*\n{$event->name}"],
+            ['type' => 'mrkdwn', 'text' => "*Type:*\n{$event->getTypeLabel()}"],
+            ['type' => 'mrkdwn', 'text' => "*Tax Modifier:*\n{$event->getTaxModifierLabel()}"],
+        ];
+
+        $location = $event->getLocationName() ?? $event->getLocationScopeLabel();
+        $fields[] = ['type' => 'mrkdwn', 'text' => "*Location:*\n{$location}"];
+
+        if ($eventType === 'event_completed') {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Total Mined:*\n" . number_format($event->total_mined ?? 0, 0) . ' ISK'];
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Participants:*\n" . ($event->participant_count ?? 0)];
+        } else {
+            if ($event->start_time) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Start:*\n{$event->start_time->format('Y-m-d H:i')}"];
+            }
+        }
+
+        $blocks = [
+            ['type' => 'header', 'text' => ['type' => 'plain_text', 'text' => $title]],
+            ['type' => 'section', 'fields' => $fields],
+        ];
+
+        $payload = ['text' => $title, 'blocks' => $blocks];
+
+        if ($webhook->slack_channel) {
+            $payload['channel'] = $webhook->slack_channel;
+        }
+        if ($webhook->slack_username) {
+            $payload['username'] = $webhook->slack_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Slack returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Slack: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Send event notification to custom webhook
+     */
+    protected function sendEventToCustom(WebhookConfiguration $webhook, string $eventType, MiningEvent $event, array $additionalData): array
+    {
+        $payload = array_merge([
+            'event_type' => $eventType,
+            'timestamp' => now()->toIso8601String(),
+            'event' => [
+                'id' => $event->id,
+                'name' => $event->name,
+                'type' => $event->type,
+                'type_label' => $event->getTypeLabel(),
+                'tax_modifier' => $event->tax_modifier,
+                'tax_modifier_label' => $event->getTaxModifierLabel(),
+                'location_scope' => $event->location_scope,
+                'location_name' => $event->getLocationName(),
+                'start_time' => $event->start_time ? $event->start_time->toIso8601String() : null,
+                'end_time' => $event->end_time ? $event->end_time->toIso8601String() : null,
+                'total_mined' => $event->total_mined ?? 0,
+                'participant_count' => $event->participant_count ?? 0,
+                'status' => $event->status,
+            ],
+        ], $additionalData);
+
+        $request = Http::timeout(10);
+
+        if ($webhook->custom_headers && is_array($webhook->custom_headers)) {
+            foreach ($webhook->custom_headers as $key => $value) {
+                $request = $request->withHeader($key, $value);
+            }
+        }
+
+        try {
+            $response = $request->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Custom webhook returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to custom webhook: {$e->getMessage()}"];
+        }
+    }
+
+    // ============================================================================
     // SHARED HELPERS
     // ============================================================================
 
@@ -847,6 +1139,9 @@ class WebhookService
             'incident_resolved' => 0x00FF00,    // Green
             'jackpot_detected' => 0xFFD700,     // Gold
             'moon_arrival' => 0x3498DB,         // Blue
+            'event_created' => 0x3498DB,        // Blue
+            'event_started' => 0x2ECC71,        // Green
+            'event_completed' => 0x9B59B6,      // Purple
             default => 0xFFFF00,                // Yellow
         };
     }
@@ -866,7 +1161,10 @@ class WebhookService
             'incident_resolved' => 'Theft Incident Resolved',
             'jackpot_detected' => 'JACKPOT MOON DETECTED!',
             'moon_arrival' => 'Moon Chunk Ready',
-            default => 'Theft Alert',
+            'event_created' => '📅 New Mining Event',
+            'event_started' => '🚀 Mining Event Started',
+            'event_completed' => '🏁 Mining Event Completed',
+            default => 'Mining Manager Alert',
         };
     }
 

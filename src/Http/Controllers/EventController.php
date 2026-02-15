@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Events\EventManagementService;
+use MiningManager\Services\Notification\NotificationService;
+use MiningManager\Services\Notification\WebhookService;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -22,13 +24,34 @@ class EventController extends Controller
     protected $eventService;
 
     /**
+     * Notification service
+     *
+     * @var NotificationService
+     */
+    protected $notificationService;
+
+    /**
+     * Webhook service
+     *
+     * @var WebhookService
+     */
+    protected $webhookService;
+
+    /**
      * Constructor
      *
      * @param EventManagementService $eventService
+     * @param NotificationService $notificationService
+     * @param WebhookService $webhookService
      */
-    public function __construct(EventManagementService $eventService)
-    {
+    public function __construct(
+        EventManagementService $eventService,
+        NotificationService $notificationService,
+        WebhookService $webhookService
+    ) {
         $this->eventService = $eventService;
+        $this->notificationService = $notificationService;
+        $this->webhookService = $webhookService;
     }
 
     /**
@@ -137,6 +160,28 @@ class EventController extends Controller
                 'status' => 'planned',
                 'created_by' => auth()->user()->id,
             ]);
+
+            // Send notifications if requested
+            if ($request->input('send_notifications')) {
+                try {
+                    $this->notificationService->sendEventCreated($event);
+                } catch (\Exception $e) {
+                    \Log::warning('EventController: Failed to send event created notification', [
+                        'event_id' => $event->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+
+                // Also send to configured webhooks
+                try {
+                    $this->webhookService->sendEventNotification('event_created', $event);
+                } catch (\Exception $e) {
+                    \Log::warning('EventController: Failed to send event created webhook', [
+                        'event_id' => $event->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Mining event created successfully');
@@ -292,11 +337,31 @@ class EventController extends Controller
     {
         try {
             $event = MiningEvent::findOrFail($id);
-            
+
             $event->update([
                 'status' => 'active',
                 'start_time' => Carbon::now(),
             ]);
+
+            // Send event started notification
+            try {
+                $this->notificationService->sendEventStarted($event);
+            } catch (\Exception $e) {
+                \Log::warning('EventController: Failed to send event started notification', [
+                    'event_id' => $event->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            // Also send to configured webhooks
+            try {
+                $this->webhookService->sendEventNotification('event_started', $event);
+            } catch (\Exception $e) {
+                \Log::warning('EventController: Failed to send event started webhook', [
+                    'event_id' => $event->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event started successfully');
@@ -305,7 +370,7 @@ class EventController extends Controller
                 'event_id' => $id,
                 'error' => $e->getMessage()
             ]);
-            
+
             return redirect()->back()
                 ->with('error', 'Error starting event: ' . $e->getMessage());
         }
@@ -329,6 +394,29 @@ class EventController extends Controller
                 'status' => 'completed',
                 'end_time' => Carbon::now(),
             ]);
+
+            // Refresh the event to get updated totals
+            $event->refresh();
+
+            // Send event completed notification
+            try {
+                $this->notificationService->sendEventCompleted($event);
+            } catch (\Exception $e) {
+                \Log::warning('EventController: Failed to send event completed notification', [
+                    'event_id' => $event->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            // Also send to configured webhooks
+            try {
+                $this->webhookService->sendEventNotification('event_completed', $event);
+            } catch (\Exception $e) {
+                \Log::warning('EventController: Failed to send event completed webhook', [
+                    'event_id' => $event->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             return redirect()->route('mining-manager.events.show', $event->id)
                 ->with('success', 'Event completed successfully. Tax modifier: ' . $event->getTaxModifierLabel());

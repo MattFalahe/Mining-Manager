@@ -897,6 +897,9 @@ class SettingsController extends Controller
             'notify_incident_resolved' => 'nullable|boolean',
             'notify_moon_arrival' => 'nullable|boolean',
             'notify_jackpot_detected' => 'nullable|boolean',
+            'notify_event_created' => 'nullable|boolean',
+            'notify_event_started' => 'nullable|boolean',
+            'notify_event_completed' => 'nullable|boolean',
             'discord_role_id' => 'nullable|string|max:255',
             'discord_username' => 'nullable|string|max:255',
             'slack_channel' => 'nullable|string|max:255',
@@ -923,6 +926,9 @@ class SettingsController extends Controller
             $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
             $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
+            $data['notify_event_created'] = $request->has('notify_event_created');
+            $data['notify_event_started'] = $request->has('notify_event_started');
+            $data['notify_event_completed'] = $request->has('notify_event_completed');
 
             $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
 
@@ -961,6 +967,9 @@ class SettingsController extends Controller
                 'notify_incident_resolved' => 'nullable|boolean',
                 'notify_moon_arrival' => 'nullable|boolean',
                 'notify_jackpot_detected' => 'nullable|boolean',
+                'notify_event_created' => 'nullable|boolean',
+                'notify_event_started' => 'nullable|boolean',
+                'notify_event_completed' => 'nullable|boolean',
                 'discord_role_id' => 'nullable|string|max:255',
                 'discord_username' => 'nullable|string|max:255',
                 'slack_channel' => 'nullable|string|max:255',
@@ -985,6 +994,9 @@ class SettingsController extends Controller
             $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
             $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
+            $data['notify_event_created'] = $request->has('notify_event_created');
+            $data['notify_event_started'] = $request->has('notify_event_started');
+            $data['notify_event_completed'] = $request->has('notify_event_completed');
 
             $webhook->update($data);
 
