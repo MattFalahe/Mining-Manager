@@ -127,34 +127,33 @@
     </div>
     @endif
 
-    {{-- Corporation Settings Status Indicators --}}
+    {{-- Corporation Context Indicator --}}
     @if(isset($corporationId) && $corporationId)
-        @if($isFirstTimeSetup)
-            <div class="info-banner">
-                <h5><i class="fas fa-info-circle"></i> First Time Setup</h5>
+        @php
+            $selectedCorp = $corporations->firstWhere('corporation_id', $corporationId);
+        @endphp
+        <div class="alert alert-info d-flex align-items-center justify-content-between mb-3" style="border-left: 4px solid #17a2b8;">
+            <div>
+                <h5 class="mb-1">
+                    <i class="fas fa-building"></i>
+                    Editing Corporation-Specific Tax Settings
+                </h5>
                 <p class="mb-0">
-                    You are setting up tax settings for this corporation for the first time.
-                    These settings will be saved specifically for this corporation and can be different from your other corporations.
+                    @if($selectedCorp)
+                        <strong>[{{ $selectedCorp->ticker }}] {{ $selectedCorp->name }}</strong>
+                    @else
+                        Corporation ID: {{ $corporationId }}
+                    @endif
+                    @if($isFirstTimeSetup ?? false)
+                        <span class="badge badge-warning ml-2">First Time Setup</span>
+                    @elseif($hasCustomSettings ?? false)
+                        <span class="badge badge-success ml-2">Custom Settings Active</span>
+                    @endif
                 </p>
             </div>
-        @elseif($hasCustomSettings)
-            <div class="success-banner">
-                <h5><i class="fas fa-check-circle"></i> Custom Corporation Settings Active</h5>
-                <p class="mb-0">
-                    This corporation has custom tax settings configured.
-                    You are viewing and editing settings specific to this corporation.
-                </p>
-            </div>
-        @endif
-    @else
-        <div class="warning-banner">
-            <h5><i class="fas fa-exclamation-triangle"></i> Global Settings Mode</h5>
-            <p class="mb-0">
-                You are currently viewing global settings. To configure corporation-specific tax rates:
-                <br><strong>1.</strong> Go to General Settings tab
-                <br><strong>2.</strong> Select a corporation from the dropdown
-                <br><strong>3.</strong> Click the "Switch Corporation" button to load that corporation's settings
-            </p>
+            <a href="{{ route('mining-manager.settings.index') }}" class="btn btn-outline-light btn-sm">
+                <i class="fas fa-globe"></i> Switch to Global
+            </a>
         </div>
     @endif
 

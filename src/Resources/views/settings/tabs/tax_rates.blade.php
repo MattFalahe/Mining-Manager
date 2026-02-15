@@ -7,8 +7,24 @@
     <h4>
         <i class="fas fa-percent"></i>
         {{ trans('mining-manager::settings.tax_rate_settings') }}
+        <span class="badge badge-info ml-2">Per-Corporation</span>
     </h4>
     <hr>
+
+    {{-- Corporation Context Banner --}}
+    @if(isset($selectedCorporationId) && $selectedCorporationId)
+        <div class="alert alert-info">
+            <i class="fas fa-building"></i>
+            <strong>Corporation-Specific Settings</strong> - These tax rates will only apply to this corporation.
+            Other corporations will use their own rates or fall back to global defaults.
+        </div>
+    @else
+        <div class="alert alert-success">
+            <i class="fas fa-globe"></i>
+            <strong>Global Default Settings</strong> - These tax rates will apply to all corporations that don't have custom settings.
+            To set corporation-specific rates, switch to a corporation in the General tab first.
+        </div>
+    @endif
 
     <div class="info-banner">
         <i class="fas fa-info-circle"></i>
