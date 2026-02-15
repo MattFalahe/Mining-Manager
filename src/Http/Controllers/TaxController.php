@@ -42,6 +42,24 @@ class TaxController extends Controller
     }
 
     /**
+     * Set corporation context for all services.
+     * This ensures settings are retrieved for the correct corporation.
+     *
+     * @param int|null $corporationId
+     * @return void
+     */
+    protected function setCorporationContext(?int $corporationId): void
+    {
+        if ($corporationId) {
+            $this->settingsService->setActiveCorporation($corporationId);
+            $this->taxService->setCorporationContext($corporationId);
+            $this->contractService->setCorporationContext($corporationId);
+            $this->walletService->setCorporationContext($corporationId);
+            $this->codeService->setCorporationContext($corporationId);
+        }
+    }
+
+    /**
      * Display tax overview dashboard
      */
     public function index(Request $request)
@@ -53,6 +71,9 @@ class TaxController extends Controller
 
         // Get moon owner corporation ID from settings
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
+        // Set corporation context for settings retrieval
+        $this->setCorporationContext($moonOwnerCorpId);
 
         // Build query - include affiliation for corporation_id lookup
         $query = MiningTax::with(['character', 'character.corporation', 'affiliation', 'taxCodes', 'taxInvoices']);
@@ -208,6 +229,7 @@ class TaxController extends Controller
             'month' => 'required|date_format:Y-m',
             'recalculate' => 'boolean',
             'character_id' => 'nullable|integer',
+            'corporation_id' => 'nullable|integer',
         ]);
 
         try {
@@ -215,13 +237,20 @@ class TaxController extends Controller
             $recalculate = $validated['recalculate'] ?? false;
             $characterId = $validated['character_id'] ?? null;
 
+            // Set corporation context for settings (use provided or fall back to moon owner)
+            $corporationId = $validated['corporation_id'] ?? null;
+            if (!$corporationId) {
+                $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            }
+            $this->setCorporationContext($corporationId);
+
             // Check if taxes already exist for this month
             $existingQuery = MiningTax::where('month', $month->format('Y-m-01'));
-            
+
             if ($characterId) {
                 $existingQuery->where('character_id', $characterId);
             }
-            
+
             $existingCount = $existingQuery->count();
 
             if ($existingCount > 0 && !$recalculate) {
@@ -235,7 +264,7 @@ class TaxController extends Controller
                 ], 200);
             }
 
-            // Calculate taxes
+            // Calculate taxes (corporation context already set)
             $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate, $characterId);
 
             return response()->json([
@@ -260,6 +289,10 @@ class TaxController extends Controller
      */
     public function contracts(Request $request)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         $status = $request->input('status', 'pending');
         $month = $request->input('month');
 
@@ -302,6 +335,10 @@ class TaxController extends Controller
      */
     public function generateContracts(Request $request)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $month = $request->input('month');
             $regenerate = $request->input('regenerate', false);
@@ -343,6 +380,9 @@ class TaxController extends Controller
             $corporations = $this->settingsService->getAllCorporations();
             $corporationId = $corporations->first()->corporation_id ?? null;
         }
+
+        // Set corporation context for all services
+        $this->setCorporationContext($corporationId);
 
         if (!$corporationId) {
             // No corporation configured, return empty view
@@ -428,6 +468,10 @@ class TaxController extends Controller
      */
     public function verifyPayment(Request $request, $transactionId)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $result = $this->walletService->verifyPayment($transactionId);
 
@@ -439,7 +483,7 @@ class TaxController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Payment verification error: ' . $e->getMessage());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => trans('mining-manager::taxes.verification_error'),
@@ -464,6 +508,9 @@ class TaxController extends Controller
                 $corporations = $this->settingsService->getAllCorporations();
                 $corporationId = $corporations->first()->corporation_id ?? null;
             }
+
+            // Set corporation context for services
+            $this->setCorporationContext($corporationId);
 
             // Run auto-verification using corporation wallet journals
             $results = $this->walletService->autoVerifyFromCorporationWallet($corporationId, $days);
@@ -810,6 +857,10 @@ class TaxController extends Controller
      */
     public function generateCodes(Request $request)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $month = $request->input('month');
             $regenerate = $request->input('regenerate', false);
@@ -886,6 +937,10 @@ class TaxController extends Controller
      */
     public function regeneratePayments(Request $request)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $month = $request->input('month');
 
@@ -898,7 +953,7 @@ class TaxController extends Controller
 
             $monthDate = Carbon::parse($month)->startOfMonth();
 
-            // Recalculate taxes for the month
+            // Recalculate taxes for the month (corporation context already set)
             $results = $this->taxService->calculateMonthlyTaxes($monthDate, true);
 
             return response()->json([
@@ -931,6 +986,10 @@ class TaxController extends Controller
      */
     public function verifyPayments(Request $request)
     {
+        // Set corporation context for settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $transactionIds = $request->input('transaction_ids', []);
 
@@ -1034,6 +1093,10 @@ class TaxController extends Controller
      */
     public function storeCode(Request $request)
     {
+        // Set corporation context for settings (for code length, prefix, etc.)
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
         try {
             $validated = $request->validate([
                 'mining_tax_id' => 'required|exists:mining_taxes,id',
@@ -1041,13 +1104,21 @@ class TaxController extends Controller
                 'expires_at' => 'nullable|date',
             ]);
 
+            // Get tax to determine character_id
+            $tax = MiningTax::findOrFail($validated['mining_tax_id']);
+
             $taxCode = new TaxCode();
             $taxCode->mining_tax_id = $validated['mining_tax_id'];
+            $taxCode->character_id = $tax->character_id;
             $taxCode->code = $validated['code'] ?? $this->codeService->generateUniqueCode();
             $taxCode->status = 'active';
+            $taxCode->generated_at = Carbon::now();
             $taxCode->expires_at = isset($validated['expires_at'])
                 ? Carbon::parse($validated['expires_at'])
-                : Carbon::now()->addDays(30);
+                : Carbon::now()->addDays(
+                    $this->settingsService->getSetting('exemptions.grace_period_days', 7) +
+                    $this->settingsService->getSetting('tax_rates.tax_code_expiration_buffer', 30)
+                );
             $taxCode->save();
 
             return response()->json([

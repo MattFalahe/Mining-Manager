@@ -263,6 +263,68 @@
         </div>
     </div>
 
+    {{-- Payment Settings --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-money-check-alt"></i>
+                {{ trans('mining-manager::settings.payment_settings') }}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="payment_match_tolerance">
+                    <i class="fas fa-balance-scale"></i>
+                    {{ trans('mining-manager::settings.payment_match_tolerance') }}
+                </label>
+                <div class="input-group">
+                    <input type="number"
+                           class="form-control @error('payment_match_tolerance') is-invalid @enderror"
+                           id="payment_match_tolerance"
+                           name="payment_match_tolerance"
+                           value="{{ old('payment_match_tolerance', $settings->payment_match_tolerance ?? 100) }}"
+                           min="0"
+                           max="10000"
+                           step="100">
+                    <div class="input-group-append">
+                        <span class="input-group-text">ISK</span>
+                    </div>
+                </div>
+                @error('payment_match_tolerance')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+                <small class="form-text text-muted">
+                    {{ trans('mining-manager::settings.payment_match_tolerance_help') }}
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="payment_grace_period_hours">
+                    <i class="fas fa-hourglass-half"></i>
+                    {{ trans('mining-manager::settings.payment_grace_period') }}
+                </label>
+                <div class="input-group">
+                    <input type="number"
+                           class="form-control @error('payment_grace_period_hours') is-invalid @enderror"
+                           id="payment_grace_period_hours"
+                           name="payment_grace_period_hours"
+                           value="{{ old('payment_grace_period_hours', $settings->payment_grace_period_hours ?? 24) }}"
+                           min="1"
+                           max="168">
+                    <div class="input-group-append">
+                        <span class="input-group-text">{{ trans('mining-manager::settings.hours') }}</span>
+                    </div>
+                </div>
+                @error('payment_grace_period_hours')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+                <small class="form-text text-muted">
+                    {{ trans('mining-manager::settings.payment_grace_period_help') }}
+                </small>
+            </div>
+        </div>
+    </div>
+
     {{-- Notification Settings --}}
     <div class="card bg-dark mb-3">
         <div class="card-header">

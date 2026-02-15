@@ -58,7 +58,14 @@ return [
     'show_character_portraits_help' => 'Display character portraits in tables and lists',
     'compact_mode' => 'Compact Mode',
     'compact_mode_help' => 'Use a more compact layout with less spacing',
-    
+
+    // Payment Settings
+    'payment_settings' => 'Payment Settings',
+    'payment_match_tolerance' => 'Payment Match Tolerance',
+    'payment_match_tolerance_help' => 'ISK tolerance when matching wallet payments to tax amounts. Default: 100 ISK',
+    'payment_grace_period' => 'Payment Grace Period',
+    'payment_grace_period_help' => 'Hours before a payment is considered late after the deadline. Default: 24 hours',
+
     // Notification Settings
     'notification_settings' => 'Notification Settings',
     'enable_notifications' => 'Enable Notifications',

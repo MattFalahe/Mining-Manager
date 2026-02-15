@@ -5,11 +5,41 @@ namespace MiningManager\Services\Tax;
 use MiningManager\Models\TaxCode;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class TaxCodeGeneratorService
 {
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settings;
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settings
+     */
+    public function __construct(SettingsManagerService $settings)
+    {
+        $this->settings = $settings;
+    }
+
+    /**
+     * Set the corporation context for settings retrieval.
+     *
+     * @param int|null $corporationId
+     * @return self
+     */
+    public function setCorporationContext(?int $corporationId): self
+    {
+        $this->settings->setActiveCorporation($corporationId);
+        return $this;
+    }
+
     /**
      * Generate a unique tax code for a tax record.
      *
@@ -21,7 +51,9 @@ class TaxCodeGeneratorService
     {
         $code = $this->generateUniqueCode();
 
-        $expirationDays = config('mining-manager.tax_payment.grace_period_days', 7) + 30; // Grace period + 30 days
+        $gracePeriodDays = $this->settings->getSetting('exemptions.grace_period_days', 7);
+        $expirationBuffer = $this->settings->getSetting('tax_rates.tax_code_expiration_buffer', 30);
+        $expirationDays = $gracePeriodDays + $expirationBuffer;
 
         $taxCode = TaxCode::create([
             'mining_tax_id' => $tax->id,
@@ -42,9 +74,9 @@ class TaxCodeGeneratorService
      *
      * @return string
      */
-    private function generateUniqueCode(): string
+    public function generateUniqueCode(): string
     {
-        $length = config('mining-manager.wallet.tax_code_length', 6);
+        $length = $this->settings->getSetting('tax_rates.tax_code_length', 8);
         $characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed ambiguous characters (I, O, 0, 1)
 
         do {
@@ -65,7 +97,7 @@ class TaxCodeGeneratorService
      */
     public function getFullCode(string $code): string
     {
-        $prefix = config('mining-manager.wallet.tax_code_prefix', 'TAX-');
+        $prefix = $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-');
         return $prefix . $code;
     }
 

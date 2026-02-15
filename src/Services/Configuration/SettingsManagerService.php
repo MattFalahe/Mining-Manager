@@ -182,12 +182,18 @@ class SettingsManagerService
     public function updateGeneralSettings(array $settings)
     {
         DB::beginTransaction();
-        
+
         try {
             foreach ($settings as $key => $value) {
-                $this->updateSetting('general.' . $key, $value);
+                // Payment settings use payment. prefix instead of general.
+                if (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours'])) {
+                    $settingKey = str_replace('payment_', 'payment.', $key);
+                    $this->updateSetting($settingKey, $value);
+                } else {
+                    $this->updateSetting('general.' . $key, $value);
+                }
             }
-            
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -246,6 +252,7 @@ class SettingsManagerService
             'payment_character_id' => $this->getSetting('payment.payment_character_id'),
             'auto_verify' => $this->getSetting('payment.auto_verify', false),
             'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),
+            'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
         ];
     }
 

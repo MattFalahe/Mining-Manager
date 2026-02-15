@@ -135,7 +135,9 @@ class MarketDataService
     {
         $cacheKey = $this->getHistoricalCacheKey($typeId, $startDate, $endDate);
 
-        return Cache::remember($cacheKey, 1440, function () use ($typeId, $startDate, $endDate) {
+        // Historical prices cache for 24 hours (1440 minutes) by default, use setting if configured
+        $historicalCacheDuration = $this->getCacheDuration() * 24; // 24x normal cache for historical data
+        return Cache::remember($cacheKey, $historicalCacheDuration, function () use ($typeId, $startDate, $endDate) {
             return DB::table('mining_historical_prices')
                 ->where('type_id', $typeId)
                 ->whereBetween('date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])

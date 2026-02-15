@@ -34,6 +34,29 @@ class TaxCalculationService
     }
 
     /**
+     * Set the corporation context for settings retrieval.
+     * This ensures all settings are retrieved for the correct corporation.
+     *
+     * @param int|null $corporationId
+     * @return self
+     */
+    public function setCorporationContext(?int $corporationId): self
+    {
+        $this->settingsService->setActiveCorporation($corporationId);
+        return $this;
+    }
+
+    /**
+     * Get the current corporation context.
+     *
+     * @return int|null
+     */
+    public function getCorporationContext(): ?int
+    {
+        return $this->settingsService->getActiveCorporation();
+    }
+
+    /**
      * Calculate taxes for all miners in a month.
      * Handles both individual and accumulated calculation methods.
      *
@@ -43,6 +66,14 @@ class TaxCalculationService
      */
     public function calculateMonthlyTaxes(Carbon $month, bool $recalculate = false): array
     {
+        // Ensure corporation context is set (use moon_owner_corporation_id if not explicitly set)
+        if ($this->settingsService->getActiveCorporation() === null) {
+            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            if ($moonOwnerCorpId) {
+                $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
+                Log::debug("Mining Manager: Auto-set corporation context to moon owner: {$moonOwnerCorpId}");
+            }
+        }
         $startDate = $month->copy()->startOfMonth();
         $endDate = $month->copy()->endOfMonth();
 

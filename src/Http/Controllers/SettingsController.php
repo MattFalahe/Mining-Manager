@@ -200,6 +200,10 @@ class SettingsController extends Controller
             'notify_tax_due' => 'nullable|boolean',
             'notify_moon_extractions' => 'nullable|boolean',
             'notify_events' => 'nullable|boolean',
+
+            // Payment Settings
+            'payment_match_tolerance' => 'nullable|integer|min:0|max:10000',
+            'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
         ]);
 
         if ($validator->fails()) {

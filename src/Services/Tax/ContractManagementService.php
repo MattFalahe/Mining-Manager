@@ -4,6 +4,7 @@ namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -17,13 +18,34 @@ class ContractManagementService
     protected $taxCodeService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settings;
+
+    /**
      * Constructor
      *
      * @param TaxCodeGeneratorService $taxCodeService
+     * @param SettingsManagerService $settings
      */
-    public function __construct(TaxCodeGeneratorService $taxCodeService)
+    public function __construct(TaxCodeGeneratorService $taxCodeService, SettingsManagerService $settings)
     {
         $this->taxCodeService = $taxCodeService;
+        $this->settings = $settings;
+    }
+
+    /**
+     * Set the corporation context for settings retrieval.
+     *
+     * @param int|null $corporationId
+     * @return self
+     */
+    public function setCorporationContext(?int $corporationId): self
+    {
+        $this->settings->setActiveCorporation($corporationId);
+        return $this;
     }
 
     /**
@@ -76,7 +98,7 @@ class ContractManagementService
                 $invoice = $this->createInvoice($tax);
 
                 // Generate tax code if enabled
-                if (config('mining-manager.wallet.enable_tax_codes', true)) {
+                if ($this->settings->getSetting('tax_rates.auto_generate_tax_codes', true)) {
                     $this->taxCodeService->generateTaxCode($tax, $invoice);
                 }
 
@@ -112,7 +134,9 @@ class ContractManagementService
      */
     private function createInvoice(MiningTax $tax): TaxInvoice
     {
-        $expirationDays = config('mining-manager.tax_payment.grace_period_days', 7) + 14; // Grace period + 2 weeks
+        $gracePeriodDays = $this->settings->getSetting('exemptions.grace_period_days', 7);
+        $invoiceBuffer = $this->settings->getSetting('contract.invoice_expiration_buffer', 14);
+        $expirationDays = $gracePeriodDays + $invoiceBuffer;
 
         return TaxInvoice::create([
             'mining_tax_id' => $tax->id,
@@ -244,7 +268,9 @@ class ContractManagementService
             }
 
             // Extend expiration date
-            $expirationDays = config('mining-manager.tax_payment.grace_period_days', 7) + 14;
+            $gracePeriodDays = $this->settings->getSetting('exemptions.grace_period_days', 7);
+            $invoiceBuffer = $this->settings->getSetting('contract.invoice_expiration_buffer', 14);
+            $expirationDays = $gracePeriodDays + $invoiceBuffer;
             $invoice->update([
                 'status' => 'pending',
                 'expires_at' => Carbon::now()->addDays($expirationDays),
@@ -253,7 +279,8 @@ class ContractManagementService
             ]);
 
             // Recreate in-game contract if applicable
-            if (config('mining-manager.features.tax_invoices', true)) {
+            $featureFlags = $this->settings->getFeatureFlags();
+            if ($featureFlags['tax_invoices'] ?? true) {
                 $this->createIngameContract($invoice);
             }
 
@@ -323,7 +350,7 @@ class ContractManagementService
 
                 $invoice = $this->createInvoice($tax);
 
-                if (config('mining-manager.wallet.enable_tax_codes', true)) {
+                if ($this->settings->getSetting('tax_rates.auto_generate_tax_codes', true)) {
                     $this->taxCodeService->generateTaxCode($tax, $invoice);
                 }
 

@@ -4,6 +4,7 @@ namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxCode;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +12,35 @@ use Carbon\Carbon;
 
 class WalletTransferService
 {
+    /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settings;
+
+    /**
+     * Constructor
+     *
+     * @param SettingsManagerService $settings
+     */
+    public function __construct(SettingsManagerService $settings)
+    {
+        $this->settings = $settings;
+    }
+
+    /**
+     * Set the corporation context for settings retrieval.
+     *
+     * @param int|null $corporationId
+     * @return self
+     */
+    public function setCorporationContext(?int $corporationId): self
+    {
+        $this->settings->setActiveCorporation($corporationId);
+        return $this;
+    }
+
     /**
      * Verify wallet payments against outstanding taxes.
      *
@@ -107,7 +137,7 @@ class WalletTransferService
 
         // Verify amount
         $amount = abs($transaction->amount);
-        $tolerance = 100; // 100 ISK tolerance
+        $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
 
         if (abs($amount - $tax->amount_owed) > $tolerance) {
             Log::warning("Mining Manager: Amount mismatch for tax code '{$taxCode}': Expected {$tax->amount_owed}, Got {$amount}");
@@ -164,8 +194,8 @@ class WalletTransferService
             return null;
         }
 
-        $prefix = config('mining-manager.wallet.tax_code_prefix', 'TAX-');
-        $length = config('mining-manager.wallet.tax_code_length', 6);
+        $prefix = $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-');
+        $length = $this->settings->getSetting('tax_rates.tax_code_length', 8);
 
         // Look for pattern: PREFIX-XXXXXX
         $pattern = '/' . preg_quote($prefix, '/') . '([A-Z0-9]{' . $length . '})/i';
@@ -318,7 +348,7 @@ class WalletTransferService
             }
 
             // Look for transactions around the expected amount
-            $tolerance = 100; // 100 ISK tolerance
+            $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
             $query->whereBetween('amount', [
                 $taxRecord->amount_owed - $tolerance,
                 $taxRecord->amount_owed + $tolerance
