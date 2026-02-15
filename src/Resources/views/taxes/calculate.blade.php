@@ -162,7 +162,7 @@
                                         @endif
                                     </div>
                                     <div class="input-group-append">
-                                        <a href="{{ route('mining-manager.settings', ['tab' => 'tax_payment']) }}" 
+                                        <a href="{{ route('mining-manager.settings.index') }}#tax-rates"
                                            class="btn btn-outline-secondary"
                                            data-toggle="tooltip"
                                            title="{{ trans('mining-manager::taxes.change_in_settings') }}">
