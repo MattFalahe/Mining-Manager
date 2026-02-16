@@ -332,12 +332,20 @@
                                     @foreach ($liveTracking['entries'] as $entry)
                                         <tr>
                                             <td>{{ \Carbon\Carbon::parse($entry['date'])->format('Y-m-d') }}</td>
-                                            <td>{{ $entry['character']['name'] ?? 'Unknown' }}</td>
-                                            <td>{{ number_format($entry['quantity']) }}</td>
+                                            <td>
+                                                {{ $entry['character']['name'] ?? 'Unknown' }}
+                                                @if(!($entry['character']['is_registered'] ?? true))
+                                                    <span class="badge badge-secondary" style="font-size: 0.65em;">Not in SeAT</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                {{ number_format($entry['quantity']) }}
+                                                <small class="text-muted d-block">{{ $entry['ore_name'] ?? '' }}</small>
+                                            </td>
                                             <td>{{ number_format($entry['quantity'] * ($entry['volume'] ?? 0), 2) }} m³</td>
-                                            <td>{{ number_format($entry['value'] ?? 0, 0) }} ISK</td>
-                                            <td>{{ number_format(($entry['value'] ?? 0) * 0.10, 0) }} ISK</td>
-                                            <td>0</td>
+                                            <td>{{ number_format($entry['total_value'] ?? 0, 0) }} ISK</td>
+                                            <td>{{ number_format($entry['tax_amount'] ?? 0, 0) }} ISK</td>
+                                            <td>{{ number_format($entry['event_tax'] ?? 0, 0) }} ISK</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -346,7 +354,7 @@
 
                         <!-- Pagination Info -->
                         <div class="text-muted mt-2">
-                            {{ trans('mining-manager::taxes.showing_entries', ['count' => min(10, count($liveTracking['entries'])), 'total' => count($liveTracking['entries'])]) }}
+                            {{ trans('mining-manager::taxes.showing_entries', ['count' => min(50, count($liveTracking['entries'])), 'total' => count($liveTracking['entries'])]) }}
                         </div>
                     @else
                         <div class="alert alert-info">

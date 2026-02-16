@@ -10,6 +10,9 @@ use MiningManager\Services\Tax\ContractManagementService;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\Pricing\OreValuationService;
+use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\TaxInvoice;
@@ -21,24 +24,32 @@ use Illuminate\Support\Facades\DB;
 
 class TaxController extends Controller
 {
+    use EnrichesCharacterData;
+
     protected $taxService;
     protected $contractService;
     protected $walletService;
     protected $codeService;
     protected $settingsService;
+    protected $characterInfoService;
+    protected $oreValuationService;
 
     public function __construct(
         TaxCalculationService $taxService,
         ContractManagementService $contractService,
         WalletTransferService $walletService,
         TaxCodeGeneratorService $codeService,
-        SettingsManagerService $settingsService
+        SettingsManagerService $settingsService,
+        CharacterInfoService $characterInfoService,
+        OreValuationService $oreValuationService
     ) {
         $this->taxService = $taxService;
         $this->contractService = $contractService;
         $this->walletService = $walletService;
         $this->codeService = $codeService;
         $this->settingsService = $settingsService;
+        $this->characterInfoService = $characterInfoService;
+        $this->oreValuationService = $oreValuationService;
     }
 
     /**
@@ -259,8 +270,7 @@ class TaxController extends Controller
         $currentMonth = now()->startOfMonth();
 
         // Get mining ledger entries for current month
-        $query = MiningLedger::with('character')
-            ->where('date', '>=', $currentMonth);
+        $query = MiningLedger::where('date', '>=', $currentMonth);
 
         if ($moonOwnerCorpId) {
             // Filter by corporation using a subquery to avoid duplicate rows from joins
@@ -286,21 +296,60 @@ class TaxController extends Controller
             ];
         }
 
-        $totalValue = $entries->sum('value');
-        $estimatedTax = $totalValue * 0.10; // Rough estimate using default rate
-        $characterCount = $entries->pluck('character_id')->unique()->count();
+        // Batch-resolve character names (handles unregistered/external characters)
+        $characterIds = $entries->pluck('character_id')->unique()->toArray();
+        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+
+        // Batch-resolve ore type names from invTypes table
+        $typeIds = $entries->pluck('type_id')->unique()->toArray();
+        $typeNames = DB::table('invTypes')
+            ->whereIn('typeID', $typeIds)
+            ->pluck('typeName', 'typeID')
+            ->toArray();
+
+        // Get configured tax rate
+        $taxRate = floatval($this->settingsService->getSetting('tax_rates.default_tax_rate', 10));
+
+        // Map entries with enriched data
+        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $typeNames, $taxRate) {
+            $charInfo = $charactersInfo[$entry->character_id] ?? null;
+
+            // Use stored total_value, or calculate on-the-fly if missing
+            $totalValue = $entry->total_value ?? 0;
+            if ($totalValue == 0 && $entry->type_id && $entry->quantity) {
+                try {
+                    $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                    $totalValue = $valuation['total_value'] ?? 0;
+                } catch (\Exception $e) {
+                    $totalValue = 0;
+                }
+            }
+
+            $taxAmount = $totalValue * ($taxRate / 100);
+
+            return [
+                'date' => $entry->date,
+                'character' => [
+                    'name' => $charInfo['name'] ?? "Character {$entry->character_id}",
+                    'is_registered' => $charInfo['is_registered'] ?? false,
+                ],
+                'type_id' => $entry->type_id,
+                'ore_name' => $typeNames[$entry->type_id] ?? "Type {$entry->type_id}",
+                'quantity' => $entry->quantity,
+                'volume' => $entry->volume ?? 0,
+                'total_value' => $totalValue,
+                'tax_amount' => $taxAmount,
+                'event_tax' => $entry->event_tax_amount ?? 0,
+            ];
+        })->toArray();
+
+        $totalValue = collect($mappedEntries)->sum('total_value');
+        $estimatedTax = collect($mappedEntries)->sum('tax_amount');
+        $characterCount = count($characterIds);
 
         return [
             'has_data' => true,
-            'entries' => $entries->map(function($entry) {
-                return [
-                    'date' => $entry->date,
-                    'character' => ['name' => $entry->character->name ?? 'Unknown'],
-                    'quantity' => $entry->quantity,
-                    'volume' => $entry->volume ?? 0,
-                    'value' => $entry->value ?? 0,
-                ];
-            })->toArray(),
+            'entries' => $mappedEntries,
             'total_value' => $totalValue,
             'estimated_tax' => $estimatedTax,
             'character_count' => $characterCount,

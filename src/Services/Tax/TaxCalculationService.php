@@ -300,8 +300,8 @@ class TaxCalculationService
                 continue;
             }
 
-            // Get user_id (this links all alts to the same player)
-            $userId = DB::table('character_infos')
+            // Get user_id via refresh_tokens (SeAT v5.x links characters to users here)
+            $userId = DB::table('refresh_tokens')
                 ->where('character_id', $characterId)
                 ->value('user_id');
 
@@ -348,8 +348,8 @@ class TaxCalculationService
             return $mainCharacterId;
         }
 
-        // Fallback: Get the oldest/first character for this user
-        $firstCharacter = DB::table('character_infos')
+        // Fallback: Get the oldest/first character for this user via refresh_tokens
+        $firstCharacter = DB::table('refresh_tokens')
             ->where('user_id', $userId)
             ->orderBy('character_id', 'asc')
             ->value('character_id');
