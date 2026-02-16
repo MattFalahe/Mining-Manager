@@ -83,13 +83,15 @@
                             <tr>
                                 <td><code>{{ $code->code }}</code></td>
                                 <td>{{ $code->character->name ?? 'Unknown' }}</td>
-                                <td>{{ \Carbon\Carbon::parse($code->month)->format('F Y') }}</td>
-                                <td>{{ number_format($code->amount, 0) }} ISK</td>
+                                <td>{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y') : '-' }}</td>
+                                <td>{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
                                 <td>
-                                    @if($code->used)
+                                    @if($code->status === 'used')
                                         <span class="badge badge-success">{{ trans('mining-manager::taxes.used') }}</span>
+                                    @elseif($code->status === 'expired' || $code->isExpired())
+                                        <span class="badge badge-danger">{{ trans('mining-manager::taxes.expired') }}</span>
                                     @else
-                                        <span class="badge badge-warning">{{ trans('mining-manager::taxes.unused') }}</span>
+                                        <span class="badge badge-warning">{{ trans('mining-manager::taxes.active') }}</span>
                                     @endif
                                 </td>
                                 <td class="text-center">
@@ -148,9 +150,33 @@ function copyCode(code) {
 }
 
 function generateCodes() {
-    // Implementation
-    $('#generateCodeModal').modal('hide');
-    toastr.success('{{ trans("mining-manager::taxes.codes_generated") }}');
+    var formData = $('#generateCodeForm').serializeArray();
+    formData.push({ name: '_token', value: '{{ csrf_token() }}' });
+
+    var btn = $('#generateCodeModal .btn-primary');
+    btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::taxes.generating") }}');
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.codes.generate") }}',
+        method: 'POST',
+        data: $.param(formData),
+        success: function(response) {
+            $('#generateCodeModal').modal('hide');
+            if (response.status === 'success') {
+                toastr.success(response.message);
+                setTimeout(function() { location.reload(); }, 1500);
+            } else {
+                toastr.warning(response.message);
+            }
+        },
+        error: function(xhr) {
+            $('#generateCodeModal').modal('hide');
+            toastr.error(xhr.responseJSON?.message || '{{ trans("mining-manager::taxes.error_occurred") }}');
+        },
+        complete: function() {
+            btn.prop('disabled', false).html('{{ trans("mining-manager::taxes.generate") }}');
+        }
+    });
 }
 </script>
 @endpush

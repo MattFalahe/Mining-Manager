@@ -279,6 +279,13 @@ Route::group([
             'middleware' => 'can:mining-manager.tax.view',
         ]);
 
+        // ADDED: Bulk generate tax codes
+        Route::post('/codes/generate', [
+            'as' => 'mining-manager.taxes.codes.generate',
+            'uses' => 'TaxController@generateCodes',
+            'middleware' => 'can:mining-manager.tax.manage',
+        ]);
+
         Route::post('/codes', [
             'as' => 'mining-manager.taxes.codes.store',  // FIXED: was mining-manager.tax.codes.store
             'uses' => 'TaxController@storeCode',

@@ -80,26 +80,28 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse($contracts ?? [] as $contract)
+                            @forelse($invoices ?? [] as $contract)
                             <tr>
                                 <td>{{ $contract->contract_id }}</td>
                                 <td>{{ $contract->character->name ?? 'Unknown' }}</td>
                                 <td>{{ number_format($contract->amount, 0) }} ISK</td>
                                 <td>
                                     @switch($contract->status)
-                                        @case('outstanding')
-                                            <span class="badge badge-warning">{{ trans('mining-manager::taxes.outstanding') }}</span>
+                                        @case('pending')
+                                            <span class="badge badge-warning">{{ trans('mining-manager::taxes.pending') }}</span>
                                             @break
-                                        @case('completed')
+                                        @case('sent')
+                                            <span class="badge badge-info">{{ trans('mining-manager::taxes.sent') }}</span>
+                                            @break
+                                        @case('accepted')
                                             <span class="badge badge-success">{{ trans('mining-manager::taxes.completed') }}</span>
                                             @break
-                                        @case('expired')
-                                            <span class="badge badge-danger">{{ trans('mining-manager::taxes.expired') }}</span>
-                                            @break
+                                        @default
+                                            <span class="badge badge-secondary">{{ $contract->status }}</span>
                                     @endswitch
                                 </td>
-                                <td>{{ $contract->created_at->format('Y-m-d') }}</td>
-                                <td>{{ $contract->expires_at->format('Y-m-d') }}</td>
+                                <td>{{ $contract->created_at ? $contract->created_at->format('Y-m-d') : '-' }}</td>
+                                <td>{{ $contract->expires_at ? $contract->expires_at->format('Y-m-d') : '-' }}</td>
                                 <td class="text-center">
                                     <a href="#" class="btn btn-sm btn-info">
                                         <i class="fas fa-eye"></i>
@@ -151,8 +153,33 @@
 @push('javascript')
 <script>
 function generateContracts() {
-    $('#generateContractModal').modal('hide');
-    toastr.success('{{ trans("mining-manager::taxes.contracts_generated") }}');
+    var formData = $('#generateContractForm').serializeArray();
+    formData.push({ name: '_token', value: '{{ csrf_token() }}' });
+
+    var btn = $('#generateContractModal .btn-success');
+    btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::taxes.generating") }}');
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.contracts.generate") }}',
+        method: 'POST',
+        data: $.param(formData),
+        success: function(response) {
+            $('#generateContractModal').modal('hide');
+            if (response.status === 'success') {
+                toastr.success(response.message);
+                setTimeout(function() { location.reload(); }, 1500);
+            } else {
+                toastr.warning(response.message);
+            }
+        },
+        error: function(xhr) {
+            $('#generateContractModal').modal('hide');
+            toastr.error(xhr.responseJSON?.message || '{{ trans("mining-manager::taxes.error_occurred") }}');
+        },
+        complete: function() {
+            btn.prop('disabled', false).html('{{ trans("mining-manager::taxes.generate") }}');
+        }
+    });
 }
 </script>
 @endpush

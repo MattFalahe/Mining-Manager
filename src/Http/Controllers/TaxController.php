@@ -424,9 +424,9 @@ class TaxController extends Controller
 
         try {
             $month = $request->input('month');
-            $regenerate = $request->input('regenerate', false);
+            $monthDate = $month ? Carbon::parse($month)->startOfMonth() : null;
 
-            $results = $this->contractService->generateTaxContracts($month, $regenerate);
+            $results = $this->contractService->generateInvoices($monthDate);
 
             return response()->json([
                 'status' => 'success',
@@ -898,7 +898,7 @@ class TaxController extends Controller
         $search = $request->input('search');
 
         // Build query
-        $query = TaxCode::with(['miningTax.character']);
+        $query = TaxCode::with(['character', 'miningTax']);
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -946,9 +946,26 @@ class TaxController extends Controller
 
         try {
             $month = $request->input('month');
-            $regenerate = $request->input('regenerate', false);
+            $monthDate = $month ? Carbon::parse($month)->startOfMonth() : Carbon::now()->startOfMonth();
 
-            $results = $this->codeService->generateTaxCodes($month, $regenerate);
+            // Get unpaid tax IDs for this month
+            $taxIds = MiningTax::where('month', $monthDate->format('Y-m-01'))
+                ->whereIn('status', ['unpaid', 'overdue'])
+                ->whereDoesntHave('taxCodes', function($q) {
+                    $q->where('status', 'active');
+                })
+                ->pluck('id')
+                ->toArray();
+
+            if (empty($taxIds)) {
+                return response()->json([
+                    'status' => 'warning',
+                    'message' => trans('mining-manager::taxes.no_unpaid_taxes_for_codes'),
+                    'results' => ['generated' => 0, 'errors' => []],
+                ]);
+            }
+
+            $results = $this->codeService->generateBulkTaxCodes($taxIds);
 
             return response()->json([
                 'status' => 'success',
@@ -977,41 +994,15 @@ class TaxController extends Controller
     }
 
     /**
-     * Live tracking endpoint for calculation progress
-     * Returns SSE stream of calculation progress
+     * Live tracking endpoint - returns current mining tracking data as JSON
      */
     public function liveTracking(Request $request)
     {
-        return response()->stream(function () {
-            // Send initial connection message
-            echo "data: " . json_encode(['status' => 'connected', 'message' => 'Connected to live tracking']) . "\n\n";
-            ob_flush();
-            flush();
+        $data = $this->getLiveTrackingData();
 
-            // This is a placeholder for real-time tracking
-            // In a full implementation, this would track job progress from a queue
-            for ($i = 0; $i <= 100; $i += 10) {
-                echo "data: " . json_encode([
-                    'status' => 'processing',
-                    'progress' => $i,
-                    'message' => "Processing... {$i}%"
-                ]) . "\n\n";
-                ob_flush();
-                flush();
-
-                if ($i < 100) {
-                    sleep(1);
-                }
-            }
-
-            // Send completion message
-            echo "data: " . json_encode(['status' => 'complete', 'progress' => 100, 'message' => 'Calculation complete']) . "\n\n";
-            ob_flush();
-            flush();
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
-            'X-Accel-Buffering' => 'no',
+        return response()->json([
+            'status' => 'success',
+            'data' => $data,
         ]);
     }
 

@@ -369,39 +369,52 @@ $(document).ready(function() {
     // Tax Calculation Form Submission
     $('#tax-calculation-form').on('submit', function(e) {
         e.preventDefault();
-        
+
         $('#calculate-btn').prop('disabled', true);
         $('#calculation-progress').show();
         $('#calculation-results').hide();
 
+        // Build month in YYYY-MM format from separate month/year fields
+        var monthVal = String($('#month').val()).padStart(2, '0');
+        var yearVal = $('#year').val();
+        var formData = $(this).serializeArray().filter(function(field) {
+            return field.name !== 'month' && field.name !== 'year';
+        });
+        formData.push({ name: 'month', value: yearVal + '-' + monthVal });
+
         $.ajax({
             url: '{{ route("mining-manager.taxes.process-calculation") }}',
             method: 'POST',
-            data: $(this).serialize(),
+            data: $.param(formData),
             success: function(response) {
                 $('#calculation-progress').hide();
                 $('#calculate-btn').prop('disabled', false);
 
-                if (response.success) {
+                if (response.status === 'success') {
                     $('#results-alert')
-                        .removeClass('alert-danger')
+                        .removeClass('alert-danger alert-warning')
                         .addClass('alert-success')
                         .html(`
                             <h5><i class="fas fa-check-circle"></i> ${response.message}</h5>
                             <hr>
-                            <p><strong>{{ trans('mining-manager::taxes.scope') }}:</strong> ${response.data.scope}</p>
-                            <p><strong>{{ trans('mining-manager::taxes.month') }}:</strong> ${response.data.month}</p>
-                            <p><strong>{{ trans('mining-manager::taxes.taxes_calculated') }}:</strong> ${response.data.count}</p>
-                            <p><strong>{{ trans('mining-manager::taxes.total_tax') }}:</strong> ${Number(response.data.total).toLocaleString()} ISK</p>
-                            ${response.data.errors.length > 0 ? '<p class="text-warning"><strong>{{ trans("mining-manager::taxes.errors") }}:</strong> ' + response.data.errors.length + '</p>' : ''}
+                            <p><strong>{{ trans('mining-manager::taxes.scope') }}:</strong> ${response.results.method}</p>
+                            <p><strong>{{ trans('mining-manager::taxes.taxes_calculated') }}:</strong> ${response.results.count}</p>
+                            <p><strong>{{ trans('mining-manager::taxes.total_tax') }}:</strong> ${Number(response.results.total).toLocaleString()} ISK</p>
+                            ${response.results.errors && response.results.errors.length > 0 ? '<p class="text-warning"><strong>{{ trans("mining-manager::taxes.errors") }}:</strong> ' + response.results.errors.length + '</p>' : ''}
                         `);
                     $('#calculation-results').show();
 
                     // Refresh live tracking
                     refreshLiveTracking();
+                } else if (response.status === 'warning') {
+                    $('#results-alert')
+                        .removeClass('alert-success alert-danger')
+                        .addClass('alert-warning')
+                        .html(`<i class="fas fa-exclamation-triangle"></i> ${response.message}`);
+                    $('#calculation-results').show();
                 } else {
                     $('#results-alert')
-                        .removeClass('alert-success')
+                        .removeClass('alert-success alert-warning')
                         .addClass('alert-danger')
                         .html(`<i class="fas fa-exclamation-triangle"></i> ${response.message}`);
                     $('#calculation-results').show();
@@ -409,7 +422,7 @@ $(document).ready(function() {
             },
             error: function(xhr) {
                 $('#calculation-progress').hide();
-                $('#calculate-btn').prop('disabled', false');
+                $('#calculate-btn').prop('disabled', false);
                 $('#results-alert')
                     .removeClass('alert-success')
                     .addClass('alert-danger')
@@ -443,10 +456,10 @@ $(document).ready(function() {
                 payment_method: paymentMethod
             },
             success: function(response) {
-                if (response.success) {
-                    alert(response.message);
+                if (response.status === 'success') {
+                    toastr.success(response.message);
                 } else {
-                    alert('{{ trans("mining-manager::taxes.error") }}: ' + response.message);
+                    toastr.error(response.message);
                 }
                 $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> ' + (paymentMethod == 'contract' ? '{{ trans("mining-manager::taxes.regenerate_contracts") }}' : '{{ trans("mining-manager::taxes.regenerate_codes") }}'));
             },
@@ -468,11 +481,17 @@ $(document).ready(function() {
             url: '{{ route("mining-manager.taxes.live-tracking") }}',
             method: 'GET',
             success: function(response) {
-                if (response.success && response.data.has_data) {
-                    // Update the live tracking display
-                    // (You can implement a more sophisticated update here)
-                    $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString());
+                if (response.status === 'success' && response.data.has_data) {
+                    // Update summary stats
+                    $('.info-box-number').eq(0).text(Number(response.data.total_value).toLocaleString() + ' ISK');
+                    $('.info-box-number').eq(1).text(Number(response.data.estimated_tax).toLocaleString() + ' ISK');
+                    $('.info-box-number').eq(2).text(response.data.character_count);
+                    $('.info-box-number').eq(3).text(response.data.month);
                 }
+                $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString());
+            },
+            error: function() {
+                toastr.warning('{{ trans("mining-manager::taxes.error_refreshing_tracking") }}');
             }
         });
     }
