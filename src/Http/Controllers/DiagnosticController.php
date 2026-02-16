@@ -302,17 +302,22 @@ class DiagnosticController extends Controller
                         $quantity = rand(1000, 50000);
                         $solarSystem = $solarSystems[array_rand($solarSystems)];
 
-                        DB::table('mining_ledger')->insert([
-                            'character_id' => $character->character_id,
-                            'date' => $date->format('Y-m-d'),
-                            'type_id' => $ore['id'],
-                            'quantity' => $quantity,
-                            'solar_system_id' => $solarSystem,
-                            'processed_at' => $date,
-                            'is_moon_ore' => $ore['is_moon_ore'] ?? false,
-                            'created_at' => $date,
-                            'updated_at' => $date,
-                        ]);
+                        DB::table('mining_ledger')->updateOrInsert(
+                            [
+                                'character_id' => $character->character_id,
+                                'date' => $date->format('Y-m-d'),
+                                'type_id' => $ore['id'],
+                                'observer_id' => null,
+                            ],
+                            [
+                                'quantity' => $quantity,
+                                'solar_system_id' => $solarSystem,
+                                'processed_at' => $date,
+                                'is_moon_ore' => $ore['is_moon_ore'] ?? false,
+                                'created_at' => $date,
+                                'updated_at' => $date,
+                            ]
+                        );
 
                         $entriesCreated++;
                     }

@@ -259,14 +259,19 @@ class TaxController extends Controller
         $currentMonth = now()->startOfMonth();
 
         // Get mining ledger entries for current month
-        $entries = MiningLedger::with('character')
-            ->when($moonOwnerCorpId, function($query) use ($moonOwnerCorpId) {
-                $query->whereHas('character.affiliation', function($q) use ($moonOwnerCorpId) {
-                    $q->where('corporation_id', $moonOwnerCorpId);
-                });
-            })
-            ->where('date', '>=', $currentMonth)
-            ->orderBy('date', 'desc')
+        $query = MiningLedger::with('character')
+            ->where('date', '>=', $currentMonth);
+
+        if ($moonOwnerCorpId) {
+            // Filter by corporation using a subquery to avoid duplicate rows from joins
+            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+                $q->select('character_id')
+                    ->from('character_affiliations')
+                    ->where('corporation_id', $moonOwnerCorpId);
+            });
+        }
+
+        $entries = $query->orderBy('date', 'desc')
             ->limit(50)
             ->get();
 
