@@ -10,6 +10,7 @@ use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Analytics\MiningAnalyticsService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class ApiController extends Controller
 {
@@ -310,5 +311,29 @@ class ApiController extends Controller
             'version' => config('mining-manager.version', '1.0.0'),
             'timestamp' => Carbon::now()->toIso8601String(),
         ]);
+    }
+
+    /**
+     * Get characters belonging to a corporation
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function corporationCharacters(Request $request)
+    {
+        $corporationId = $request->input('corporation_id');
+
+        if (!$corporationId) {
+            return response()->json([]);
+        }
+
+        $characters = DB::table('character_affiliations')
+            ->join('character_infos', 'character_affiliations.character_id', '=', 'character_infos.character_id')
+            ->where('character_affiliations.corporation_id', $corporationId)
+            ->select('character_infos.character_id', 'character_infos.name')
+            ->orderBy('character_infos.name')
+            ->get();
+
+        return response()->json($characters);
     }
 }

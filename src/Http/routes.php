@@ -978,5 +978,10 @@ Route::group([
             'as' => 'mining-manager.api.health',
             'uses' => 'ApiController@health',
         ]);
+
+        Route::get('/corporation-characters', [
+            'as' => 'mining-manager.api.corporation-characters',
+            'uses' => 'ApiController@corporationCharacters',
+        ]);
     });
 });
