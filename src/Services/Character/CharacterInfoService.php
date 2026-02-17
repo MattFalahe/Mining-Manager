@@ -294,6 +294,46 @@ class CharacterInfoService
     }
 
     /**
+     * Get all characters belonging to the same SeAT user account
+     *
+     * @param int $characterId Any character ID from the account
+     * @return array Array of character info arrays, keyed by character_id
+     */
+    public function getAccountCharacters(int $characterId): array
+    {
+        try {
+            // Find user_id for this character
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if (!$userId) {
+                return [];
+            }
+
+            // Get all character IDs for this user
+            $characterIds = DB::table('refresh_tokens')
+                ->where('user_id', $userId)
+                ->pluck('character_id')
+                ->toArray();
+
+            if (empty($characterIds)) {
+                return [];
+            }
+
+            // Get character info for all of them
+            return $this->getBatchCharacterInfo($characterIds);
+
+        } catch (\Exception $e) {
+            Log::debug('CharacterInfoService: Failed to get account characters', [
+                'character_id' => $characterId,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
      * Get batch character information
      * Optimized for multiple characters at once
      *

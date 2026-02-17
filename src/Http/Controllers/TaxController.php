@@ -808,6 +808,7 @@ class TaxController extends Controller
 
     /**
      * Display user's personal tax overview
+     * Supports both accumulated (account) and individual (per-character) tax modes
      *
      * @param Request $request
      * @return \Illuminate\Contracts\View\View
@@ -815,9 +816,25 @@ class TaxController extends Controller
     public function myTaxes(Request $request)
     {
         $user = auth()->user();
-        
+
         // Get all character IDs for this user
         $characterIds = $user->characters->pluck('character_id')->toArray();
+
+        // Determine tax calculation method
+        $taxCalculationMethod = $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated');
+        $taxMethod = ($taxCalculationMethod === 'accumulated') ? 'account' : 'character';
+        $mainCharacterId = $user->main_character_id ?? ($characterIds[0] ?? null);
+
+        // Get account characters info
+        $accountCharacters = collect();
+        if (!empty($characterIds)) {
+            $charInfos = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+            $accountCharacters = collect($charInfos);
+        }
+        $mainCharacterName = $accountCharacters[$mainCharacterId]['name'] ?? 'Unknown';
+
+        // Get payment method from settings
+        $paymentMethod = $this->settingsService->getPaymentSettings()['method'];
 
         if (empty($characterIds)) {
             return view('mining-manager::taxes.my-taxes', [
@@ -829,23 +846,35 @@ class TaxController extends Controller
                     'unpaid_count' => 0,
                     'overdue_count' => 0,
                 ],
-                'miningData' => [],
                 'currentTax' => null,
                 'totalTaxPaid' => 0,
                 'onTimePayments' => 0,
                 'latePayments' => 0,
                 'status' => $request->input('status', 'all'),
                 'month' => $request->input('month'),
-                'paymentMethod' => $this->settingsService->getPaymentSettings()['method'],
+                'paymentMethod' => $paymentMethod,
+                'taxMethod' => $taxMethod,
+                'accountCharacters' => $accountCharacters,
+                'mainCharacterName' => $mainCharacterName,
+                'currentMonthBreakdown' => [],
             ]);
+        }
+
+        // Determine which character IDs to query for taxes
+        if ($taxMethod === 'account') {
+            // In accumulated mode, taxes are stored under the main character
+            $taxCharacterIds = [$mainCharacterId];
+        } else {
+            // In individual mode, each character has own tax records
+            $taxCharacterIds = $characterIds;
         }
 
         // Get taxes for user's characters
         $status = $request->input('status', 'all');
         $month = $request->input('month');
 
-        $query = MiningTax::with(['character', 'taxCode', 'invoice'])
-            ->whereIn('character_id', $characterIds);
+        $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])
+            ->whereIn('character_id', $taxCharacterIds);
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -859,25 +888,25 @@ class TaxController extends Controller
             ->orderBy('character_id')
             ->paginate(25);
 
-        // Personal summary statistics
-        $totalOwed = MiningTax::whereIn('character_id', $characterIds)
+        // Personal summary statistics (query all user characters for mining data)
+        $totalOwed = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'unpaid')
             ->sum('amount_owed');
-            
-        $totalOverdue = MiningTax::whereIn('character_id', $characterIds)
+
+        $totalOverdue = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'overdue')
             ->sum('amount_owed');
-            
-        $paidThisMonth = MiningTax::whereIn('character_id', $characterIds)
+
+        $paidThisMonth = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->whereMonth('paid_at', Carbon::now()->month)
             ->sum('amount_paid');
-            
-        $unpaidCount = MiningTax::whereIn('character_id', $characterIds)
+
+        $unpaidCount = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'unpaid')
             ->count();
-            
-        $overdueCount = MiningTax::whereIn('character_id', $characterIds)
+
+        $overdueCount = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'overdue')
             ->count();
 
@@ -889,55 +918,110 @@ class TaxController extends Controller
             'overdue_count' => $overdueCount,
         ];
 
-        // Get recent mining activity
-        $startOfMonth = Carbon::now()->startOfMonth();
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
-            ->where('date', '>=', $startOfMonth)
-            ->orderBy('date', 'desc')
-            ->limit(10)
-            ->get();
-
         // Get current month's tax for display
         $currentMonth = Carbon::now()->startOfMonth()->format('Y-m-01');
-        $currentTax = MiningTax::with(['character', 'taxCode'])
-            ->whereIn('character_id', $characterIds)
+        $currentTax = MiningTax::with(['character', 'taxCodes'])
+            ->whereIn('character_id', $taxCharacterIds)
             ->where('month', $currentMonth)
             ->first();
 
+        // Get current month mining breakdown per character, per ore type
+        $currentMonthBreakdown = $this->getMyTaxBreakdownData($characterIds, Carbon::now()->startOfMonth());
+
         // Get payment statistics (all time)
-        $totalTaxPaid = MiningTax::whereIn('character_id', $characterIds)
+        $totalTaxPaid = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->sum('amount_paid');
 
-        $onTimePayments = MiningTax::whereIn('character_id', $characterIds)
+        $onTimePayments = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereNotNull('due_date')
             ->whereColumn('paid_at', '<=', 'due_date')
             ->count();
 
-        $latePayments = MiningTax::whereIn('character_id', $characterIds)
+        $latePayments = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereNotNull('due_date')
             ->whereColumn('paid_at', '>', 'due_date')
             ->count();
 
-        // Get payment method from settings
-        $paymentMethod = $this->settingsService->getPaymentSettings()['method'];
-
         return view('mining-manager::taxes.my-taxes', compact(
             'taxHistory',
             'summary',
-            'miningData',
             'currentTax',
             'totalTaxPaid',
             'onTimePayments',
             'latePayments',
             'status',
             'month',
-            'paymentMethod'
+            'paymentMethod',
+            'taxMethod',
+            'accountCharacters',
+            'mainCharacterName',
+            'currentMonthBreakdown'
         ));
+    }
+
+    /**
+     * Get mining breakdown data for a user's characters for a given month.
+     *
+     * @param array $characterIds
+     * @param Carbon $month
+     * @return array Grouped by character_id
+     */
+    protected function getMyTaxBreakdownData(array $characterIds, Carbon $month): array
+    {
+        $startDate = $month->copy()->startOfMonth();
+        $endDate = $month->copy()->endOfMonth();
+        $breakdowns = [];
+
+        foreach ($characterIds as $characterId) {
+            try {
+                $breakdown = $this->taxService->getTaxBreakdown($characterId, $startDate, $endDate);
+                if (!empty($breakdown['breakdown'])) {
+                    $charInfo = $this->characterInfoService->getCharacterInfo($characterId);
+                    $breakdowns[$characterId] = [
+                        'character_name' => $charInfo['name'] ?? "Character {$characterId}",
+                        'character_id' => $characterId,
+                        'breakdown' => $breakdown['breakdown'],
+                        'total_value' => $breakdown['total_value'],
+                        'total_tax' => $breakdown['total_tax'],
+                    ];
+                }
+            } catch (\Exception $e) {
+                Log::debug("Mining Manager: Error getting breakdown for character {$characterId}: " . $e->getMessage());
+            }
+        }
+
+        return $breakdowns;
+    }
+
+    /**
+     * AJAX endpoint: Get mining breakdown for a given month
+     *
+     * @param Request $request
+     * @param string|null $month
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function myTaxBreakdown(Request $request, $month = null)
+    {
+        $user = auth()->user();
+        $characterIds = $user->characters->pluck('character_id')->toArray();
+
+        if (empty($characterIds)) {
+            return response()->json(['status' => 'success', 'data' => []]);
+        }
+
+        $monthDate = $month ? Carbon::parse($month)->startOfMonth() : Carbon::now()->startOfMonth();
+        $breakdowns = $this->getMyTaxBreakdownData($characterIds, $monthDate);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $breakdowns,
+            'month' => $monthDate->format('F Y'),
+        ]);
     }
 
     /**
@@ -1165,54 +1249,78 @@ class TaxController extends Controller
     }
 
     /**
-     * Show tax details for a specific character
+     * Show tax details for a specific tax record
      */
-    public function details(Request $request, $characterId)
+    public function details(Request $request, $taxId)
     {
-        $character = CharacterInfo::findOrFail($characterId);
+        $tax = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
 
-        // Get all taxes for this character
-        $taxes = MiningTax::with(['taxCode', 'invoice'])
-            ->where('character_id', $characterId)
-            ->orderBy('month', 'desc')
-            ->paginate(25);
+        // Get tax calculation method to determine if we should show alt breakdowns
+        $taxCalculationMethod = $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated');
 
-        // Calculate statistics
-        $totalOwed = MiningTax::where('character_id', $characterId)
-            ->whereIn('status', ['unpaid', 'overdue'])
-            ->sum('amount_owed');
+        // Get mining breakdown for the tax's character and month
+        $startDate = Carbon::parse($tax->month)->startOfMonth();
+        $endDate = Carbon::parse($tax->month)->endOfMonth();
 
-        $totalPaid = MiningTax::where('character_id', $characterId)
-            ->where('status', 'paid')
-            ->sum('amount_paid');
+        $miningBreakdown = [];
+        $miningTotal = 0;
 
-        $unpaidCount = MiningTax::where('character_id', $characterId)
-            ->where('status', 'unpaid')
-            ->count();
+        if ($taxCalculationMethod === 'accumulated') {
+            // In accumulated mode, get breakdown for all alts in the account
+            $user = auth()->user();
+            $characterIds = $user ? $user->characters->pluck('character_id')->toArray() : [$tax->character_id];
 
-        $overdueCount = MiningTax::where('character_id', $characterId)
-            ->where('status', 'overdue')
-            ->count();
-
-        // Get mining activity for current month
-        $currentMonth = Carbon::now()->startOfMonth();
-        $miningActivity = MiningLedger::where('character_id', $characterId)
-            ->where('date', '>=', $currentMonth)
-            ->orderBy('date', 'desc')
-            ->get();
-
-        $summary = [
-            'total_owed' => $totalOwed,
-            'total_paid' => $totalPaid,
-            'unpaid_count' => $unpaidCount,
-            'overdue_count' => $overdueCount,
-        ];
+            foreach ($characterIds as $charId) {
+                try {
+                    $breakdown = $this->taxService->getTaxBreakdown($charId, $startDate, $endDate);
+                    if (!empty($breakdown['breakdown'])) {
+                        $charInfo = $this->characterInfoService->getCharacterInfo($charId);
+                        foreach ($breakdown['breakdown'] as $ore) {
+                            $miningBreakdown[] = [
+                                'character_name' => $charInfo['name'] ?? "Character {$charId}",
+                                'type_name' => $ore['name'],
+                                'category' => $ore['category'],
+                                'rarity' => $ore['rarity'],
+                                'quantity' => $ore['quantity'],
+                                'total_value' => $ore['value'],
+                                'tax_rate' => $ore['effective_rate'],
+                                'tax_amount' => $ore['tax'],
+                                'event_modifier' => $ore['event_modifier'],
+                            ];
+                        }
+                        $miningTotal += $breakdown['total_value'];
+                    }
+                } catch (\Exception $e) {
+                    Log::debug("Mining Manager: Error getting breakdown for char {$charId}: " . $e->getMessage());
+                }
+            }
+        } else {
+            // Individual mode - just this character
+            try {
+                $breakdown = $this->taxService->getTaxBreakdown($tax->character_id, $startDate, $endDate);
+                foreach ($breakdown['breakdown'] ?? [] as $ore) {
+                    $miningBreakdown[] = [
+                        'type_name' => $ore['name'],
+                        'category' => $ore['category'],
+                        'rarity' => $ore['rarity'],
+                        'quantity' => $ore['quantity'],
+                        'total_value' => $ore['value'],
+                        'tax_rate' => $ore['effective_rate'],
+                        'tax_amount' => $ore['tax'],
+                        'event_modifier' => $ore['event_modifier'],
+                    ];
+                }
+                $miningTotal = $breakdown['total_value'] ?? 0;
+            } catch (\Exception $e) {
+                Log::debug("Mining Manager: Error getting breakdown for tax {$taxId}: " . $e->getMessage());
+            }
+        }
 
         return view('mining-manager::taxes.details', compact(
-            'character',
-            'taxes',
-            'summary',
-            'miningActivity'
+            'tax',
+            'miningBreakdown',
+            'miningTotal',
+            'taxCalculationMethod'
         ));
     }
 

@@ -55,7 +55,43 @@
 
 
 <div class="my-taxes">
-    
+
+    {{-- TAX METHOD BANNER --}}
+    <div class="row">
+        <div class="col-12">
+            @if($taxMethod === 'account')
+            <div class="alert alert-info" style="border-left: 4px solid #17a2b8;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-users fa-2x mr-3"></i>
+                    <div>
+                        <strong>Account-Based Taxation</strong> - All your characters' mining is combined into a single tax.
+                        You receive 1 tax code for the total amount.
+                        <br>
+                        <small class="text-muted">
+                            Characters:
+                            @foreach($accountCharacters as $charInfo)
+                                <img src="https://images.evetech.net/characters/{{ $charInfo['character_id'] }}/portrait?size=32"
+                                     class="img-circle" style="width:20px;height:20px;margin-right:2px;"
+                                     title="{{ $charInfo['name'] }}">
+                                {{ $charInfo['name'] }}@if(!$loop->last), @endif
+                            @endforeach
+                        </small>
+                    </div>
+                </div>
+            </div>
+            @else
+            <div class="alert alert-info" style="border-left: 4px solid #17a2b8;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-user fa-2x mr-3"></i>
+                    <div>
+                        <strong>Per-Character Taxation</strong> - Each character is taxed individually with its own tax code.
+                    </div>
+                </div>
+            </div>
+            @endif
+        </div>
+    </div>
+
     {{-- CURRENT TAX STATUS --}}
     <div class="row">
         <div class="col-12">
@@ -125,18 +161,21 @@
                             <div class="alert alert-info">
                                 <h5><i class="icon fas fa-info-circle"></i> {{ trans('mining-manager::taxes.payment_instructions') }}</h5>
                                 <p>{{ trans('mining-manager::taxes.payment_info_text') }}</p>
-                                
+
                                 <strong>{{ trans('mining-manager::taxes.payment_options') }}:</strong>
                                 <ul>
                                     <li>{{ trans('mining-manager::taxes.option_contract') }}</li>
-                                    <li>{{ trans('mining-manager::taxes.option_wallet_transfer') }}: 
-                                        <code class="text-dark">{{ $currentTax->tax_code ?? trans('mining-manager::taxes.code_pending') }}</code>
+                                    <li>{{ trans('mining-manager::taxes.option_wallet_transfer') }}:
+                                        @php
+                                            $activeTaxCode = $currentTax->taxCodes->where('status', 'active')->first();
+                                        @endphp
+                                        <code class="text-dark">{{ $activeTaxCode->code ?? trans('mining-manager::taxes.code_pending') }}</code>
                                     </li>
                                 </ul>
 
                                 <div class="mt-2">
-                                    @if($currentTax->tax_code)
-                                    <button type="button" class="btn btn-sm btn-primary" onclick="copyTaxCode('{{ $currentTax->tax_code }}')">
+                                    @if($activeTaxCode)
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="copyTaxCode('{{ $activeTaxCode->code }}')">
                                         <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy_tax_code') }}
                                     </button>
                                     @endif
@@ -170,6 +209,114 @@
             </div>
         </div>
     </div>
+
+    {{-- CURRENT MONTH MINING BREAKDOWN --}}
+    @if(!empty($currentMonthBreakdown))
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-gem"></i>
+                        Mining Breakdown - {{ now()->format('F Y') }}
+                    </h3>
+                    <div class="card-tools">
+                        <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    @foreach($currentMonthBreakdown as $charId => $charBreakdown)
+                    <div class="breakdown-character-section">
+                        @if(count($currentMonthBreakdown) > 1)
+                        <div class="p-3 bg-secondary d-flex align-items-center">
+                            <img src="https://images.evetech.net/characters/{{ $charId }}/portrait?size=32"
+                                 class="img-circle mr-2" style="width:28px;height:28px;">
+                            <strong>{{ $charBreakdown['character_name'] }}</strong>
+                            <span class="ml-auto badge badge-primary">
+                                {{ number_format($charBreakdown['total_value'], 0) }} ISK mined
+                            </span>
+                            <span class="ml-2 badge badge-danger">
+                                {{ number_format($charBreakdown['total_tax'], 0) }} ISK tax
+                            </span>
+                        </div>
+                        @endif
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            @if($loop->first)
+                            <thead>
+                                <tr>
+                                    <th>Ore Type</th>
+                                    <th>Category</th>
+                                    <th class="text-right">Quantity</th>
+                                    <th class="text-right">Value (ISK)</th>
+                                    <th class="text-right">Tax Rate</th>
+                                    <th class="text-right">Tax (ISK)</th>
+                                </tr>
+                            </thead>
+                            @endif
+                            <tbody>
+                                @foreach($charBreakdown['breakdown'] as $ore)
+                                <tr>
+                                    <td>
+                                        {{ $ore['name'] }}
+                                        @if($ore['rarity'])
+                                            <span class="badge badge-{{ $ore['rarity'] === 'r64' ? 'warning' : ($ore['rarity'] === 'r32' ? 'info' : 'secondary') }}">
+                                                {{ strtoupper($ore['rarity']) }}
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ ucfirst($ore['category']) }}</small>
+                                    </td>
+                                    <td class="text-right">{{ number_format($ore['quantity'], 0) }}</td>
+                                    <td class="text-right">{{ number_format($ore['value'], 0) }}</td>
+                                    <td class="text-right">
+                                        {{ number_format($ore['effective_rate'], 1) }}%
+                                        @if($ore['event_modifier'] != 0)
+                                            <br><small class="text-{{ $ore['event_modifier'] < 0 ? 'success' : 'danger' }}">
+                                                ({{ $ore['event_modifier'] > 0 ? '+' : '' }}{{ $ore['event_modifier'] }}% event)
+                                            </small>
+                                        @endif
+                                    </td>
+                                    <td class="text-right">{{ number_format($ore['tax'], 0) }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                            @if(count($currentMonthBreakdown) > 1)
+                            <tfoot class="bg-dark">
+                                <tr>
+                                    <td colspan="3"><strong>Subtotal - {{ $charBreakdown['character_name'] }}</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_value'], 0) }}</strong></td>
+                                    <td></td>
+                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_tax'], 0) }}</strong></td>
+                                </tr>
+                            </tfoot>
+                            @endif
+                        </table>
+                    </div>
+                    @endforeach
+
+                    {{-- Grand Total --}}
+                    @php
+                        $grandTotalValue = collect($currentMonthBreakdown)->sum('total_value');
+                        $grandTotalTax = collect($currentMonthBreakdown)->sum('total_tax');
+                    @endphp
+                    <table class="table table-dark mb-0">
+                        <tfoot class="bg-primary">
+                            <tr>
+                                <td colspan="3"><strong>Grand Total</strong></td>
+                                <td class="text-right"><strong>{{ number_format($grandTotalValue, 0) }} ISK</strong></td>
+                                <td></td>
+                                <td class="text-right"><strong>{{ number_format($grandTotalTax, 0) }} ISK</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- TAX HISTORY --}}
     <div class="row">
@@ -244,6 +391,9 @@
                             <thead>
                                 <tr>
                                     <th>{{ trans('mining-manager::taxes.month') }}</th>
+                                    @if($taxMethod === 'character')
+                                    <th>Character</th>
+                                    @endif
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_owed') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
@@ -258,6 +408,13 @@
                                     <td>
                                         <strong>{{ \Carbon\Carbon::parse($tax->month)->format('F Y') }}</strong>
                                     </td>
+                                    @if($taxMethod === 'character')
+                                    <td>
+                                        <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32"
+                                             class="img-circle mr-1" style="width:20px;height:20px;">
+                                        {{ $tax->character->name ?? 'Unknown' }}
+                                    </td>
+                                    @endif
                                     <td class="text-right">
                                         {{ number_format($tax->amount_owed, 0) }} ISK
                                     </td>
@@ -302,11 +459,15 @@
                                         @endif
                                     </td>
                                     <td>
-                                        @if($tax->tax_code)
-                                            <code>{{ $tax->tax_code }}</code>
-                                            <button type="button" 
-                                                    class="btn btn-xs btn-link" 
-                                                    onclick="copyTaxCode('{{ $tax->tax_code }}')"
+                                        @php
+                                            $taxCode = $tax->taxCodes->where('status', 'active')->first()
+                                                     ?? $tax->taxCodes->where('status', 'used')->first();
+                                        @endphp
+                                        @if($taxCode)
+                                            <code>{{ $taxCode->code }}</code>
+                                            <button type="button"
+                                                    class="btn btn-xs btn-link"
+                                                    onclick="copyTaxCode('{{ $taxCode->code }}')"
                                                     data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.copy') }}">
                                                 <i class="fas fa-copy"></i>
@@ -316,14 +477,14 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        <a href="{{ route('mining-manager.taxes.details', $tax->id) }}" 
+                                        <a href="{{ route('mining-manager.taxes.details', $tax->id) }}"
                                            class="btn btn-sm btn-info"
                                            data-toggle="tooltip"
                                            title="{{ trans('mining-manager::taxes.view_details') }}">
                                             <i class="fas fa-eye"></i>
                                         </a>
                                         @if($tax->status === 'paid')
-                                        <button type="button" 
+                                        <button type="button"
                                                 class="btn btn-sm btn-primary download-receipt"
                                                 data-tax-id="{{ $tax->id }}"
                                                 data-toggle="tooltip"
@@ -335,7 +496,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted">
+                                    <td colspan="{{ $taxMethod === 'character' ? 8 : 7 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_history') }}</p>
                                     </td>
@@ -346,14 +507,23 @@
                             <tfoot class="bg-secondary">
                                 <tr>
                                     <td><strong>{{ trans('mining-manager::taxes.totals') }}</strong></td>
+                                    @if($taxMethod === 'character')
+                                    <td></td>
+                                    @endif
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_owed'), 0) }} ISK</strong></td>
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_paid'), 0) }} ISK</strong></td>
-                                    <td colspan="4"></td>
+                                    <td colspan="{{ $taxMethod === 'character' ? 4 : 4 }}"></td>
                                 </tr>
                             </tfoot>
                             @endif
                         </table>
                     </div>
+
+                    @if($taxHistory instanceof \Illuminate\Pagination\LengthAwarePaginator && $taxHistory->hasPages())
+                    <div class="mt-3">
+                        {{ $taxHistory->links() }}
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -402,6 +572,7 @@ $('.download-receipt').on('click', function() {
 });
 
 // Tax Trend Chart
+@if($taxHistory->count() > 0)
 const taxTrendCtx = document.getElementById('taxTrendChart').getContext('2d');
 const taxTrendData = {
     labels: @json($taxHistory->pluck('month')->map(fn($m) => \Carbon\Carbon::parse($m)->format('M Y'))),
@@ -467,6 +638,7 @@ const taxTrendChart = new Chart(taxTrendCtx, {
         }
     }
 });
+@endif
 
 // Print styles
 window.onbeforeprint = function() {

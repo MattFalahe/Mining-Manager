@@ -258,9 +258,9 @@ Route::group([
             'middleware' => 'can:mining-manager.tax.verify_payments',
         ]);
 
-        // Tax details
-        Route::get('/details/{characterId}', [
-            'as' => 'mining-manager.taxes.details',  // FIXED: was mining-manager.tax.details
+        // Tax details (by tax ID)
+        Route::get('/details/{taxId}', [
+            'as' => 'mining-manager.taxes.details',
             'uses' => 'TaxController@details',
             'middleware' => 'can:mining-manager.tax.view',
         ]);
@@ -269,6 +269,13 @@ Route::group([
         Route::get('/my-taxes', [
             'as' => 'mining-manager.taxes.my-taxes',  // FIXED: was mining-manager.tax.my-taxes
             'uses' => 'TaxController@myTaxes',
+            'middleware' => 'can:mining-manager.view',
+        ]);
+
+        // My taxes - AJAX breakdown by month
+        Route::get('/my-taxes/breakdown/{month?}', [
+            'as' => 'mining-manager.taxes.my-breakdown',
+            'uses' => 'TaxController@myTaxBreakdown',
             'middleware' => 'can:mining-manager.view',
         ]);
 

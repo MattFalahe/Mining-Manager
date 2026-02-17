@@ -54,7 +54,19 @@
 
 
 <div class="tax-contracts">
-    
+
+    {{-- ESI Integration Status --}}
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-warning">
+                <i class="fas fa-info-circle"></i>
+                <strong>Note:</strong> In-game contract creation via ESI is not yet implemented.
+                Invoices are tracked internally for record-keeping.
+                Use <strong>wallet transfers with tax codes</strong> for payment verification.
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-12">
             <div class="card card-dark">
