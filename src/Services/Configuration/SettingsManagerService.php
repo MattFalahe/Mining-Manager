@@ -246,9 +246,17 @@ class SettingsManagerService
      */
     public function getPaymentSettings(): array
     {
+        // Primary source: tax_rates.tax_payment_method (set by UI)
+        // Fallback: payment.method (legacy path)
+        $method = $this->getSetting('tax_rates.tax_payment_method',
+            $this->getSetting('payment.method', 'contract')
+        );
+
         return [
-            'method' => $this->getSetting('payment.method', 'contract'),
-            'wallet_division' => $this->getSetting('payment.wallet_division', 1),
+            'method' => $method,
+            'wallet_division' => $this->getSetting('tax_rates.tax_wallet_division',
+                $this->getSetting('payment.wallet_division', 1000)
+            ),
             'payment_character_id' => $this->getSetting('payment.payment_character_id'),
             'auto_verify' => $this->getSetting('payment.auto_verify', false),
             'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),

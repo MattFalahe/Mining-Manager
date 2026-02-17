@@ -229,21 +229,24 @@
                 <div class="card-body p-0">
                     @foreach($currentMonthBreakdown as $charId => $charBreakdown)
                     <div class="breakdown-character-section">
-                        @if(count($currentMonthBreakdown) > 1)
                         <div class="p-3 bg-secondary d-flex align-items-center">
-                            <img src="https://images.evetech.net/characters/{{ $charId }}/portrait?size=32"
-                                 class="img-circle mr-2" style="width:28px;height:28px;">
-                            <strong>{{ $charBreakdown['character_name'] }}</strong>
-                            <span class="ml-auto badge badge-primary">
-                                {{ number_format($charBreakdown['total_value'], 0) }} ISK mined
-                            </span>
-                            <span class="ml-2 badge badge-danger">
-                                {{ number_format($charBreakdown['total_tax'], 0) }} ISK tax
-                            </span>
+                            <img src="https://images.evetech.net/characters/{{ $charId }}/portrait?size=64"
+                                 class="img-circle mr-3" style="width:48px;height:48px;">
+                            <div>
+                                <strong class="d-block">{{ $charBreakdown['character_name'] }}</strong>
+                                <small class="text-muted">Character ID: {{ $charId }}</small>
+                            </div>
+                            <div class="ml-auto text-right">
+                                <span class="badge badge-primary" style="font-size: 0.9em;">
+                                    {{ number_format($charBreakdown['total_value'], 0) }} ISK mined
+                                </span>
+                                <br>
+                                <span class="badge badge-danger mt-1" style="font-size: 0.9em;">
+                                    {{ number_format($charBreakdown['total_tax'], 0) }} ISK tax
+                                </span>
+                            </div>
                         </div>
-                        @endif
                         <table class="table table-dark table-striped table-sm mb-0">
-                            @if($loop->first)
                             <thead>
                                 <tr>
                                     <th>Ore Type</th>
@@ -254,7 +257,6 @@
                                     <th class="text-right">Tax (ISK)</th>
                                 </tr>
                             </thead>
-                            @endif
                             <tbody>
                                 @foreach($charBreakdown['breakdown'] as $ore)
                                 <tr>
@@ -283,16 +285,14 @@
                                 </tr>
                                 @endforeach
                             </tbody>
-                            @if(count($currentMonthBreakdown) > 1)
                             <tfoot class="bg-dark">
                                 <tr>
                                     <td colspan="3"><strong>Subtotal - {{ $charBreakdown['character_name'] }}</strong></td>
-                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_value'], 0) }}</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_value'], 0) }} ISK</strong></td>
                                     <td></td>
-                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_tax'], 0) }}</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($charBreakdown['total_tax'], 0) }} ISK</strong></td>
                                 </tr>
                             </tfoot>
-                            @endif
                         </table>
                     </div>
                     @endforeach

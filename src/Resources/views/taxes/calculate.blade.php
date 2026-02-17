@@ -314,42 +314,149 @@
                             </div>
                         </div>
 
-                        <!-- Mining Activity Table -->
-                        <div class="table-responsive mt-3">
-                            <table class="table table-striped table-hover" id="live-tracking-table">
-                                <thead>
-                                    <tr>
-                                        <th>{{ trans('mining-manager::taxes.date') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.character_name') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.mined_units') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.mined_volume') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.mineral_price') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.tax') }}</th>
-                                        <th>{{ trans('mining-manager::taxes.event_tax') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($liveTracking['entries'] as $entry)
+                        <!-- View Toggle -->
+                        <div class="mb-3 mt-3">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary active" id="view-flat-btn">
+                                    <i class="fas fa-list"></i> Flat View
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" id="view-grouped-btn">
+                                    <i class="fas fa-layer-group"></i> Grouped by Account
+                                    @if(isset($liveTracking['account_count']))
+                                        <span class="badge badge-light">{{ $liveTracking['account_count'] }}</span>
+                                    @endif
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- FLAT VIEW (default) -->
+                        <div id="flat-view">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover" id="live-tracking-table">
+                                    <thead>
                                         <tr>
-                                            <td>{{ \Carbon\Carbon::parse($entry['date'])->format('Y-m-d') }}</td>
-                                            <td>
-                                                {{ $entry['character']['name'] ?? 'Unknown' }}
-                                                @if(!($entry['character']['is_registered'] ?? true))
-                                                    <span class="badge badge-secondary" style="font-size: 0.65em;">Not in SeAT</span>
-                                                @endif
-                                            </td>
-                                            <td>
-                                                {{ number_format($entry['quantity']) }}
-                                                <small class="text-muted d-block">{{ $entry['ore_name'] ?? '' }}</small>
-                                            </td>
-                                            <td>{{ number_format($entry['quantity'] * ($entry['volume'] ?? 0), 2) }} m³</td>
-                                            <td>{{ number_format($entry['total_value'] ?? 0, 0) }} ISK</td>
-                                            <td>{{ number_format($entry['tax_amount'] ?? 0, 0) }} ISK</td>
-                                            <td>{{ number_format($entry['event_tax'] ?? 0, 0) }} ISK</td>
+                                            <th>{{ trans('mining-manager::taxes.date') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.character_name') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.mined_units') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.mined_volume') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.mineral_price') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.tax') }}</th>
+                                            <th>{{ trans('mining-manager::taxes.event_tax') }}</th>
                                         </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($liveTracking['entries'] as $entry)
+                                            <tr>
+                                                <td>{{ \Carbon\Carbon::parse($entry['date'])->format('Y-m-d') }}</td>
+                                                <td>
+                                                    {{ $entry['character']['name'] ?? 'Unknown' }}
+                                                    @if(!($entry['character']['is_registered'] ?? true))
+                                                        <span class="badge badge-secondary" style="font-size: 0.65em;">Not in SeAT</span>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    {{ number_format($entry['quantity']) }}
+                                                    <small class="text-muted d-block">{{ $entry['ore_name'] ?? '' }}</small>
+                                                </td>
+                                                <td>{{ number_format($entry['quantity'] * ($entry['volume'] ?? 0), 2) }} m³</td>
+                                                <td>{{ number_format($entry['total_value'] ?? 0, 0) }} ISK</td>
+                                                <td>{{ number_format($entry['tax_amount'] ?? 0, 0) }} ISK</td>
+                                                <td>{{ number_format($entry['event_tax'] ?? 0, 0) }} ISK</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- GROUPED BY ACCOUNT VIEW -->
+                        <div id="grouped-view" style="display:none;">
+                            @php
+                                $groupedEntries = collect($liveTracking['entries'])->groupBy('main_character_id');
+                            @endphp
+
+                            @foreach($groupedEntries as $mainCharId => $accountEntries)
+                            @php
+                                $accountTotalValue = $accountEntries->sum('total_value');
+                                $accountTotalTax = $accountEntries->sum('tax_amount');
+                                $accountCharacters = $accountEntries->unique('character_id');
+                                $mainCharName = $accountEntries->first()['main_character_name'] ?? 'Unknown Account';
+                            @endphp
+                            <div class="account-group-card">
+                                <div class="account-group-header"
+                                     data-toggle="collapse"
+                                     data-target="#account-group-{{ $mainCharId }}"
+                                     aria-expanded="false">
+                                    <img src="https://images.evetech.net/characters/{{ $mainCharId }}/portrait?size=64"
+                                         class="img-circle mr-3" style="width:40px;height:40px;">
+                                    <div>
+                                        <strong>{{ $mainCharName }}</strong>
+                                        <br>
+                                        <small class="text-muted">
+                                            {{ $accountCharacters->count() }} character(s)
+                                            @if($accountCharacters->count() > 1)
+                                                -
+                                                @foreach($accountCharacters as $ac)
+                                                    {{ $ac['character']['name'] }}@if(!$loop->last), @endif
+                                                @endforeach
+                                            @endif
+                                        </small>
+                                    </div>
+                                    <div class="ml-auto text-right">
+                                        <span class="badge badge-primary" style="font-size: 0.85em;">
+                                            {{ number_format($accountTotalValue, 0) }} ISK mined
+                                        </span>
+                                        <span class="badge badge-danger ml-1" style="font-size: 0.85em;">
+                                            {{ number_format($accountTotalTax, 0) }} ISK tax
+                                        </span>
+                                        <i class="fas fa-chevron-down ml-2 chevron-icon"></i>
+                                    </div>
+                                </div>
+                                <div class="collapse" id="account-group-{{ $mainCharId }}">
+                                    <div class="table-responsive">
+                                        <table class="table table-striped table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>{{ trans('mining-manager::taxes.date') }}</th>
+                                                    <th>{{ trans('mining-manager::taxes.character_name') }}</th>
+                                                    <th>Ore</th>
+                                                    <th class="text-right">Qty</th>
+                                                    <th class="text-right">Value (ISK)</th>
+                                                    <th class="text-right">Tax (ISK)</th>
+                                                    <th class="text-right">Event Tax</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($accountEntries as $entry)
+                                                <tr>
+                                                    <td>{{ \Carbon\Carbon::parse($entry['date'])->format('Y-m-d') }}</td>
+                                                    <td>
+                                                        {{ $entry['character']['name'] }}
+                                                        @if(!($entry['character']['is_registered'] ?? true))
+                                                            <span class="badge badge-secondary" style="font-size: 0.6em;">Not in SeAT</span>
+                                                        @endif
+                                                    </td>
+                                                    <td>{{ $entry['ore_name'] }}</td>
+                                                    <td class="text-right">{{ number_format($entry['quantity']) }}</td>
+                                                    <td class="text-right">{{ number_format($entry['total_value'], 0) }}</td>
+                                                    <td class="text-right">{{ number_format($entry['tax_amount'], 0) }}</td>
+                                                    <td class="text-right">{{ number_format($entry['event_tax'] ?? 0, 0) }}</td>
+                                                </tr>
+                                                @endforeach
+                                            </tbody>
+                                            <tfoot class="bg-light">
+                                                <tr>
+                                                    <td colspan="4"><strong>Account Total</strong></td>
+                                                    <td class="text-right"><strong>{{ number_format($accountTotalValue, 0) }} ISK</strong></td>
+                                                    <td class="text-right"><strong>{{ number_format($accountTotalTax, 0) }} ISK</strong></td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            @endforeach
                         </div>
 
                         <!-- Pagination Info -->
@@ -503,6 +610,21 @@ $(document).ready(function() {
             }
         });
     }
+
+    // View Toggle: Flat vs Grouped
+    $('#view-flat-btn').on('click', function() {
+        $('#flat-view').show();
+        $('#grouped-view').hide();
+        $(this).addClass('active');
+        $('#view-grouped-btn').removeClass('active');
+    });
+
+    $('#view-grouped-btn').on('click', function() {
+        $('#flat-view').hide();
+        $('#grouped-view').show();
+        $(this).addClass('active');
+        $('#view-flat-btn').removeClass('active');
+    });
 
     // Load characters when corporation changes
     $('#corporation_id').on('change', function() {

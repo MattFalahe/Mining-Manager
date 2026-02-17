@@ -650,6 +650,53 @@
 }
 
 /* ============================================
+   Character Breakdown Sections (My Taxes)
+   ============================================ */
+.breakdown-character-section + .breakdown-character-section {
+    margin-top: 1rem;
+    border-top: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+.breakdown-character-section .bg-secondary {
+    border-radius: 0;
+}
+
+.breakdown-character-section:first-child .bg-secondary {
+    border-radius: var(--mm-radius-md) var(--mm-radius-md) 0 0;
+}
+
+/* ============================================
+   Account Grouping (Calculate Taxes)
+   ============================================ */
+.account-group-card {
+    border: 1px solid var(--mm-border);
+    border-radius: var(--mm-radius-md);
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.account-group-header {
+    background: rgba(102, 126, 234, 0.15);
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color var(--mm-transition-fast) ease;
+}
+
+.account-group-header:hover {
+    background: rgba(102, 126, 234, 0.25);
+}
+
+.account-group-header .chevron-icon {
+    transition: transform var(--mm-transition-fast) ease;
+}
+
+.account-group-header[aria-expanded="true"] .chevron-icon {
+    transform: rotate(180deg);
+}
+
+/* ============================================
    Responsive Styles
    ============================================ */
 @media (max-width: 768px) {

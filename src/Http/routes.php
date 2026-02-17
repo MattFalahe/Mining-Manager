@@ -245,6 +245,13 @@ Route::group([
             'middleware' => 'can:mining-manager.tax.generate_invoices',
         ]);
 
+        // Scan corporation contracts for tax code matches
+        Route::post('/contracts/scan', [
+            'as' => 'mining-manager.taxes.contracts.scan',
+            'uses' => 'TaxController@scanContracts',
+            'middleware' => 'can:mining-manager.tax.generate_invoices',
+        ]);
+
         // Wallet
         Route::get('/wallet', [
             'as' => 'mining-manager.taxes.wallet',  // FIXED: was mining-manager.tax.wallet

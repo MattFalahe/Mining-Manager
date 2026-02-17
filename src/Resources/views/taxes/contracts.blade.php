@@ -55,17 +55,65 @@
 
 <div class="tax-contracts">
 
-    {{-- ESI Integration Status --}}
+    {{-- Payment Method Banner --}}
     <div class="row">
         <div class="col-12">
-            <div class="alert alert-warning">
-                <i class="fas fa-info-circle"></i>
-                <strong>Note:</strong> In-game contract creation via ESI is not yet implemented.
-                Invoices are tracked internally for record-keeping.
-                Use <strong>wallet transfers with tax codes</strong> for payment verification.
+            @if(($paymentMethod ?? 'contract') === 'contract')
+                {{-- Contract Payment Mode - Show Observation System --}}
+                <div class="alert alert-info">
+                    <i class="fas fa-satellite-dish mr-1"></i>
+                    <strong>Contract Observation System</strong>
+                    <span class="badge badge-primary ml-2">Active Payment Method</span>
+                    <p class="mb-1 mt-2">Tax payments are tracked by observing corporation contracts:</p>
+                    <ol class="mb-1" style="padding-left: 1.2rem;">
+                        <li><strong>Generate invoices</strong> below to create tax codes (e.g. <code>TAX-K7F3MP9A</code>)</li>
+                        <li><strong>Create an in-game contract</strong> from the holding corporation to the miner with the tax code in the title</li>
+                        <li><strong>Miner accepts</strong> the contract in-game</li>
+                        <li><strong>System scans</strong> corporation contracts automatically (every 30 min) and matches by tax code</li>
+                    </ol>
+                    <small class="text-muted">
+                        <i class="fas fa-clock mr-1"></i> Auto-scan runs every 30 minutes.
+                        Use the <strong>Scan Now</strong> button to trigger an immediate scan.
+                    </small>
+                </div>
+            @else
+                {{-- Wallet Payment Mode - Contract scanning is disabled --}}
+                <div class="alert alert-warning">
+                    <i class="fas fa-wallet mr-1"></i>
+                    <strong>Wallet Transfer Mode Active</strong>
+                    <p class="mb-1 mt-2">
+                        Your tax payment method is currently set to <strong>Wallet Transfer</strong>.
+                        Contract observation scanning is disabled.
+                    </p>
+                    <p class="mb-1">
+                        Miners pay by sending ISK to the corporation wallet with their tax code as the reason.
+                        Use <a href="{{ route('mining-manager.taxes.wallet') }}"><strong>Wallet Verification</strong></a> to match payments.
+                    </p>
+                    <small class="text-muted">
+                        <i class="fas fa-cog mr-1"></i> To switch to contract-based payments, change the
+                        <strong>Tax Payment Method</strong> in
+                        <a href="{{ route('mining-manager.settings.index') }}">Settings &raquo; Tax Rates</a>.
+                    </small>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- Scan Results Banner (hidden by default, shown after scan) --}}
+    @if(($paymentMethod ?? 'contract') === 'contract')
+    <div class="row" id="scan-results-row" style="display: none;">
+        <div class="col-12">
+            <div class="alert alert-success" id="scan-results-alert">
+                <i class="fas fa-check-circle mr-1"></i>
+                <strong>Scan Complete:</strong>
+                <span id="scan-results-text"></span>
+                <button type="button" class="close" onclick="$('#scan-results-row').fadeOut();">
+                    <span>&times;</span>
+                </button>
             </div>
         </div>
     </div>
+    @endif
 
     <div class="row">
         <div class="col-12">
@@ -73,6 +121,11 @@
                 <div class="card-header">
                     <h3 class="card-title">{{ trans('mining-manager::taxes.manage_contracts') }}</h3>
                     <div class="card-tools">
+                        @if(($paymentMethod ?? 'contract') === 'contract')
+                        <button class="btn btn-primary btn-sm mr-2" id="scanContractsBtn" onclick="scanCorporationContracts()">
+                            <i class="fas fa-satellite-dish"></i> Scan Now
+                        </button>
+                        @endif
                         <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#generateContractModal">
                             <i class="fas fa-plus"></i> {{ trans('mining-manager::taxes.generate_contracts') }}
                         </button>
@@ -107,6 +160,12 @@
                                             @break
                                         @case('accepted')
                                             <span class="badge badge-success">{{ trans('mining-manager::taxes.completed') }}</span>
+                                            @break
+                                        @case('rejected')
+                                            <span class="badge badge-danger">Rejected</span>
+                                            @break
+                                        @case('expired')
+                                            <span class="badge badge-secondary">Expired</span>
                                             @break
                                         @default
                                             <span class="badge badge-secondary">{{ $contract->status }}</span>
@@ -164,6 +223,67 @@
 
 @push('javascript')
 <script>
+@if(($paymentMethod ?? 'contract') === 'contract')
+function scanCorporationContracts() {
+    var btn = $('#scanContractsBtn');
+    btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Scanning...');
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.contracts.scan") }}',
+        method: 'POST',
+        data: { _token: '{{ csrf_token() }}' },
+        success: function(response) {
+            if (response.status === 'success') {
+                var results = response.results;
+                var text = 'Scanned ' + results.scanned + ' contracts, '
+                    + results.matched + ' matched to tax codes, '
+                    + results.paid + ' marked as paid.';
+
+                if (results.errors && results.errors.length > 0) {
+                    text += ' (' + results.errors.length + ' errors)';
+                }
+
+                $('#scan-results-text').text(text);
+
+                // Use success or info alert based on results
+                var alertEl = $('#scan-results-alert');
+                if (results.matched > 0 || results.paid > 0) {
+                    alertEl.removeClass('alert-info alert-warning').addClass('alert-success');
+                    alertEl.find('i:first').removeClass().addClass('fas fa-check-circle mr-1');
+                } else {
+                    alertEl.removeClass('alert-success alert-warning').addClass('alert-info');
+                    alertEl.find('i:first').removeClass().addClass('fas fa-info-circle mr-1');
+                }
+
+                $('#scan-results-row').fadeIn();
+
+                toastr.success(text);
+
+                // Reload page if any matches were found to refresh the table
+                if (results.matched > 0 || results.paid > 0) {
+                    setTimeout(function() { location.reload(); }, 2500);
+                }
+            } else {
+                toastr.warning(response.message || 'Scan completed with no results.');
+            }
+        },
+        error: function(xhr) {
+            var msg = xhr.responseJSON?.message || 'Error scanning corporation contracts.';
+            toastr.error(msg);
+
+            // Show error in results banner
+            $('#scan-results-text').text(msg);
+            $('#scan-results-alert').removeClass('alert-success alert-info').addClass('alert-warning');
+            $('#scan-results-alert').find('i:first').removeClass().addClass('fas fa-exclamation-triangle mr-1');
+            $('#scan-results-row').fadeIn();
+        },
+        complete: function() {
+            btn.prop('disabled', false).html('<i class="fas fa-satellite-dish"></i> Scan Now');
+        }
+    });
+}
+@endif
+
 function generateContracts() {
     var formData = $('#generateContractForm').serializeArray();
     formData.push({ name: '_token', value: '{{ csrf_token() }}' });

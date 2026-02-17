@@ -7,7 +7,9 @@ use Illuminate\Queue\InteractsWithQueue;
 use Seat\Eveapi\Events\CharacterContractsUpdated;
 use Seat\Eveapi\Models\Contracts\CharacterContract;
 use MiningManager\Models\TaxInvoice;
+use MiningManager\Models\TaxCode;
 use MiningManager\Models\MiningTax;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -26,6 +28,18 @@ class ProcessContractUpdatesListener implements ShouldQueue
         // Check if tax invoices feature is enabled
         if (!config('mining-manager.features.tax_invoices', true)) {
             return;
+        }
+
+        // Only process contracts when payment method is 'contract'
+        try {
+            $settingsService = app(SettingsManagerService::class);
+            $paymentMethod = $settingsService->getSetting('tax_rates.tax_payment_method', 'contract');
+            if ($paymentMethod !== 'contract') {
+                return;
+            }
+        } catch (\Exception $e) {
+            // If settings service unavailable, proceed with processing (safe fallback)
+            Log::debug('Mining Manager: Could not check payment method setting, proceeding with contract processing');
         }
 
         $characterId = $event->character_id;
@@ -117,6 +131,7 @@ class ProcessContractUpdatesListener implements ShouldQueue
             return false;
         }
 
+        // Check for keyword-based identifiers
         $identifiers = [
             'Mining Tax',
             'Tax Invoice',
@@ -129,7 +144,45 @@ class ProcessContractUpdatesListener implements ShouldQueue
             }
         }
 
+        // Check for tax code pattern in title (e.g. "TAX-K7F3MP9A")
+        $prefix = config('mining-manager.tax.code_prefix', 'TAX-');
+        $escapedPrefix = preg_quote($prefix, '/');
+        if (preg_match('/' . $escapedPrefix . '[A-Z0-9]{6,12}/i', $contract->title)) {
+            // Verify the code actually exists in our database
+            $code = $this->extractTaxCodeFromTitle($contract->title, $prefix);
+            if ($code) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * Extract and verify a tax code from contract title
+     *
+     * @param string $title
+     * @param string $prefix
+     * @return string|null The verified tax code, or null if not found
+     */
+    private function extractTaxCodeFromTitle(string $title, string $prefix = 'TAX-'): ?string
+    {
+        $escapedPrefix = preg_quote($prefix, '/');
+
+        if (preg_match('/(' . $escapedPrefix . '[A-Z0-9]{6,12})/i', $title, $matches)) {
+            $code = strtoupper($matches[1]);
+
+            // Verify this code exists in the database
+            $exists = TaxCode::where('code', $code)
+                ->orWhere('code', str_replace($prefix, '', $code))
+                ->exists();
+
+            if ($exists) {
+                return $code;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -141,7 +194,31 @@ class ProcessContractUpdatesListener implements ShouldQueue
      */
     private function findMatchingInvoice(CharacterContract $contract, int $characterId): ?TaxInvoice
     {
-        // Try to find invoice by character and approximate amount
+        // First, try to match by tax code in the contract title
+        if ($contract->title) {
+            $prefix = config('mining-manager.tax.code_prefix', 'TAX-');
+            $code = $this->extractTaxCodeFromTitle($contract->title, $prefix);
+
+            if ($code) {
+                $taxCode = TaxCode::where('code', $code)
+                    ->orWhere('code', str_replace($prefix, '', $code))
+                    ->first();
+
+                if ($taxCode && $taxCode->miningTax) {
+                    // Find the invoice for this tax
+                    $invoice = TaxInvoice::where('mining_tax_id', $taxCode->mining_tax_id)
+                        ->whereIn('status', ['pending', 'sent'])
+                        ->first();
+
+                    if ($invoice) {
+                        Log::info("Mining Manager: Matched contract {$contract->contract_id} to invoice {$invoice->id} via tax code {$code}");
+                        return $invoice;
+                    }
+                }
+            }
+        }
+
+        // Fallback: try to find invoice by character and approximate amount
         $tolerance = 1000; // 1000 ISK tolerance
 
         $invoice = TaxInvoice::where('character_id', $characterId)

@@ -310,9 +310,26 @@ class TaxController extends Controller
         // Get configured tax rate
         $taxRate = floatval($this->settingsService->getSetting('tax_rates.default_tax_rate', 10));
 
-        // Map entries with enriched data
-        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $typeNames, $taxRate) {
+        // Build account grouping map (main character ID -> account info)
+        $accountGroups = [];
+        foreach ($charactersInfo as $charId => $charInfo) {
+            $mainId = $charInfo['main_character_id'] ?? $charId;
+            if (!isset($accountGroups[$mainId])) {
+                $accountGroups[$mainId] = [
+                    'main_character_id' => $mainId,
+                    'main_character_name' => $charactersInfo[$mainId]['name'] ?? "Account {$mainId}",
+                    'characters' => [],
+                ];
+            }
+            if (!in_array($charId, $accountGroups[$mainId]['characters'])) {
+                $accountGroups[$mainId]['characters'][] = $charId;
+            }
+        }
+
+        // Map entries with enriched data (including account grouping)
+        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $accountGroups, $typeNames, $taxRate) {
             $charInfo = $charactersInfo[$entry->character_id] ?? null;
+            $mainId = $charInfo['main_character_id'] ?? $entry->character_id;
 
             // Use stored total_value, or calculate on-the-fly if missing
             $totalValue = $entry->total_value ?? 0;
@@ -329,10 +346,13 @@ class TaxController extends Controller
 
             return [
                 'date' => $entry->date,
+                'character_id' => $entry->character_id,
                 'character' => [
                     'name' => $charInfo['name'] ?? "Character {$entry->character_id}",
                     'is_registered' => $charInfo['is_registered'] ?? false,
                 ],
+                'main_character_id' => $mainId,
+                'main_character_name' => $accountGroups[$mainId]['main_character_name'] ?? "Account {$mainId}",
                 'type_id' => $entry->type_id,
                 'ore_name' => $typeNames[$entry->type_id] ?? "Type {$entry->type_id}",
                 'quantity' => $entry->quantity,
@@ -350,9 +370,11 @@ class TaxController extends Controller
         return [
             'has_data' => true,
             'entries' => $mappedEntries,
+            'account_groups' => $accountGroups,
             'total_value' => $totalValue,
             'estimated_tax' => $estimatedTax,
             'character_count' => $characterCount,
+            'account_count' => count($accountGroups),
             'month' => $currentMonth->format('F Y'),
         ];
     }
@@ -433,6 +455,9 @@ class TaxController extends Controller
         $status = $request->input('status', 'pending');
         $month = $request->input('month');
 
+        // Get payment method from settings
+        $paymentMethod = $this->settingsService->getSetting('tax_rates.tax_payment_method', 'contract');
+
         // Build query for tax invoices
         $query = TaxInvoice::with(['miningTax.character', 'miningTax.taxCode']);
 
@@ -463,7 +488,8 @@ class TaxController extends Controller
             'invoices',
             'summary',
             'status',
-            'month'
+            'month',
+            'paymentMethod'
         ));
     }
 
@@ -1191,6 +1217,53 @@ class TaxController extends Controller
     public function generateInvoices(Request $request)
     {
         return $this->generateContracts($request);
+    }
+
+    /**
+     * Scan corporation contracts for tax code matches.
+     * Matches manually-created contracts by tax code in title/description.
+     * Only available when payment method is set to 'contract'.
+     */
+    public function scanContracts(Request $request)
+    {
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        // Check if contract payment method is enabled
+        $paymentMethod = $this->settingsService->getSetting('tax_rates.tax_payment_method', 'contract');
+        if ($paymentMethod !== 'contract') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Contract scanning is only available when payment method is set to "Item Exchange Contract". Current method: ' . ucfirst($paymentMethod),
+            ], 400);
+        }
+
+        try {
+            $results = $this->contractService->scanCorporationContracts($moonOwnerCorpId);
+
+            $message = "Scanned {$results['scanned']} contracts";
+            if ($results['matched'] > 0) {
+                $message .= ", matched {$results['matched']}";
+            }
+            if ($results['paid'] > 0) {
+                $message .= ", {$results['paid']} marked as paid";
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'results' => $results,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Contract scan error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error scanning corporation contracts',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

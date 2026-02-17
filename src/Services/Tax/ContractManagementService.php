@@ -4,7 +4,9 @@ namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
+use MiningManager\Models\TaxCode;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -368,5 +370,224 @@ class ContractManagementService
             'generated' => $generated,
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Scan corporation contracts for tax code matches.
+     *
+     * Matches manually-created contracts (by holding corp) against active tax codes.
+     * When a match is found and contract is completed, marks the tax as paid.
+     *
+     * Flow: Holding corp creates contract with tax code in title -> Player accepts ->
+     * SeAT pulls corp contracts from ESI -> This method matches and updates status.
+     *
+     * @param int|null $corporationId Corporation ID to scan contracts for
+     * @return array ['scanned' => int, 'matched' => int, 'paid' => int, 'errors' => []]
+     */
+    public function scanCorporationContracts(?int $corporationId = null): array
+    {
+        $corpId = $corporationId ?? $this->settings->getSetting('general.moon_owner_corporation_id');
+
+        if (!$corpId) {
+            Log::warning('Mining Manager: Cannot scan contracts - no corporation ID configured');
+            return ['scanned' => 0, 'matched' => 0, 'paid' => 0, 'errors' => []];
+        }
+
+        $taxCodePrefix = $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-');
+
+        Log::info("Mining Manager: Scanning corporation contracts for corp {$corpId} with prefix '{$taxCodePrefix}'");
+
+        // Try multiple possible SeAT contract table names
+        $contracts = collect();
+        $tableName = null;
+
+        // SeAT v5.x typically uses 'corporation_contracts'
+        $possibleTables = ['corporation_contracts', 'contract_details'];
+
+        foreach ($possibleTables as $table) {
+            try {
+                if (DB::getSchemaBuilder()->hasTable($table)) {
+                    $tableName = $table;
+                    $contracts = DB::table($table)
+                        ->where(function ($query) use ($corpId) {
+                            $query->where('issuer_corporation_id', $corpId)
+                                  ->orWhere('corporation_id', $corpId);
+                        })
+                        ->where('updated_at', '>=', Carbon::now()->subDays(14))
+                        ->get();
+
+                    Log::info("Mining Manager: Found {$contracts->count()} contracts in '{$table}' table");
+                    break;
+                }
+            } catch (\Exception $e) {
+                Log::debug("Mining Manager: Table '{$table}' not available: " . $e->getMessage());
+            }
+        }
+
+        // Also try character_contracts as fallback (issued by corp characters)
+        if ($contracts->isEmpty()) {
+            try {
+                $contracts = DB::table('character_contracts')
+                    ->where('issuer_corporation_id', $corpId)
+                    ->where('updated_at', '>=', Carbon::now()->subDays(14))
+                    ->get();
+
+                if ($contracts->isNotEmpty()) {
+                    $tableName = 'character_contracts';
+                    Log::info("Mining Manager: Found {$contracts->count()} contracts in 'character_contracts' table");
+                }
+            } catch (\Exception $e) {
+                Log::debug("Mining Manager: character_contracts fallback failed: " . $e->getMessage());
+            }
+        }
+
+        if ($contracts->isEmpty()) {
+            Log::info('Mining Manager: No corporation contracts found to scan');
+            return ['scanned' => 0, 'matched' => 0, 'paid' => 0, 'errors' => []];
+        }
+
+        $scanned = $contracts->count();
+        $matched = 0;
+        $paid = 0;
+        $errors = [];
+
+        foreach ($contracts as $contract) {
+            try {
+                // Extract tax code from contract title
+                $title = $contract->title ?? '';
+                $code = $this->extractTaxCodeFromText($title, $taxCodePrefix);
+
+                // Also check description if title didn't match
+                if (!$code && !empty($contract->description)) {
+                    $code = $this->extractTaxCodeFromText($contract->description, $taxCodePrefix);
+                }
+
+                if (!$code) {
+                    continue;
+                }
+
+                Log::debug("Mining Manager: Found tax code '{$code}' in contract {$contract->contract_id}");
+
+                // Find matching TaxCode record (full code including prefix)
+                $fullCode = $taxCodePrefix . $code;
+                $taxCodeRecord = TaxCode::where('code', $fullCode)->first();
+
+                // Also try without prefix in case the whole thing was in the title
+                if (!$taxCodeRecord) {
+                    $taxCodeRecord = TaxCode::where('code', $code)->first();
+                }
+
+                // Try matching the raw title against any active tax code
+                if (!$taxCodeRecord) {
+                    $taxCodeRecord = TaxCode::where('code', 'LIKE', "%{$code}%")
+                        ->whereIn('status', ['active', 'used'])
+                        ->first();
+                }
+
+                if (!$taxCodeRecord) {
+                    Log::debug("Mining Manager: No tax code record found for code '{$code}'");
+                    continue;
+                }
+
+                // Find the invoice for this tax
+                $invoice = TaxInvoice::where('mining_tax_id', $taxCodeRecord->mining_tax_id)
+                    ->whereIn('status', ['pending', 'sent'])
+                    ->first();
+
+                // If no pending invoice, check if we need to create a link
+                if (!$invoice) {
+                    // Check if invoice already processed for this contract
+                    $existingLink = TaxInvoice::where('contract_id', $contract->contract_id)->first();
+                    if ($existingLink) {
+                        continue; // Already processed
+                    }
+
+                    // No invoice exists yet, check if there's any invoice for this tax
+                    $anyInvoice = TaxInvoice::where('mining_tax_id', $taxCodeRecord->mining_tax_id)->first();
+                    if ($anyInvoice && in_array($anyInvoice->status, ['accepted'])) {
+                        continue; // Already paid via another method
+                    }
+
+                    Log::debug("Mining Manager: No pending invoice found for tax code {$taxCodeRecord->code}");
+                    continue;
+                }
+
+                // Update invoice with contract ID
+                $contractStatus = $contract->status ?? 'outstanding';
+                $updated = $this->updateInvoiceFromContract($invoice, $contractStatus);
+
+                if ($updated) {
+                    $invoice->update(['contract_id' => $contract->contract_id]);
+                    $matched++;
+
+                    // If accepted/finished, mark tax code as used
+                    if (in_array($contractStatus, ['finished', 'finished_issuer', 'finished_contractor'])) {
+                        $taxCodeRecord->update([
+                            'status' => 'used',
+                            'used_at' => Carbon::now(),
+                        ]);
+                        $paid++;
+
+                        Log::info("Mining Manager: Contract {$contract->contract_id} matched and paid - tax code {$taxCodeRecord->code}");
+                    } else {
+                        Log::info("Mining Manager: Contract {$contract->contract_id} matched - status '{$contractStatus}' - tax code {$taxCodeRecord->code}");
+                    }
+                }
+
+            } catch (\Exception $e) {
+                $contractId = $contract->contract_id ?? 'unknown';
+                Log::error("Mining Manager: Error processing contract {$contractId}: " . $e->getMessage());
+                $errors[] = [
+                    'contract_id' => $contractId,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        Log::info("Mining Manager: Contract scan complete. Scanned: {$scanned}, Matched: {$matched}, Paid: {$paid}");
+
+        return [
+            'scanned' => $scanned,
+            'matched' => $matched,
+            'paid' => $paid,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Extract a tax code from text (contract title or description).
+     *
+     * Looks for patterns like "TAX-ABCD1234" or just the code portion after the prefix.
+     *
+     * @param string $text The text to search
+     * @param string $prefix The tax code prefix (e.g. "TAX-")
+     * @return string|null The extracted code (without prefix), or null if not found
+     */
+    public function extractTaxCodeFromText(string $text, string $prefix = 'TAX-'): ?string
+    {
+        if (empty($text)) {
+            return null;
+        }
+
+        // Try to match with prefix first (e.g. "TAX-K7F3MP9A")
+        $escapedPrefix = preg_quote($prefix, '/');
+        if (preg_match('/' . $escapedPrefix . '([A-Z0-9]{4,16})/i', $text, $matches)) {
+            return strtoupper($matches[1]);
+        }
+
+        // Try to match a standalone alphanumeric code that looks like a tax code (8+ chars)
+        if (preg_match('/\b([A-Z0-9]{8,16})\b/', strtoupper($text), $matches)) {
+            // Verify it's actually a tax code in our database
+            $potentialCode = $matches[1];
+            $exists = TaxCode::where('code', $prefix . $potentialCode)
+                ->orWhere('code', $potentialCode)
+                ->exists();
+
+            if ($exists) {
+                return $potentialCode;
+            }
+        }
+
+        return null;
     }
 }
