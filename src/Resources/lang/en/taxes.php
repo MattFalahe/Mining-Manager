@@ -5,13 +5,11 @@ return [
     'tax_overview' => 'Tax Overview',
     'my_taxes' => 'My Taxes',
     'tax_codes' => 'Tax Codes',
-    'tax_contracts' => 'Tax Contracts',
     'tax_details' => 'Tax Details',
     'calculate_title' => 'Calculate Taxes',
     'calculate_mining_tax' => 'Calculate Mining Tax',
     'wallet_verification' => 'Wallet Verification',
     'manage_tax_codes' => 'Manage Tax Codes',
-    'manage_contracts' => 'Manage Contracts',
 
     // Status Labels
     'status' => 'Status',
@@ -86,14 +84,6 @@ return [
     'copy' => 'Copy',
     'expiry_days' => 'Expires in :days days',
 
-    // Contracts
-    'contract_id' => 'Contract ID',
-    'generate_contracts' => 'Generate Contracts',
-    'regenerate_contracts' => 'Regenerate Contracts',
-    'generate_contracts_help' => 'Generate payment contracts for unpaid taxes',
-    'no_contracts' => 'No contracts found',
-    'payment_contracts' => 'Payment Contracts',
-
     // Payment
     'payment_method' => 'Payment Method',
     'payment_method_help' => 'Choose how players will pay their mining taxes',
@@ -101,7 +91,6 @@ return [
     'payment_instructions' => 'Payment Instructions',
     'payment_info_text' => 'Please make payment using the tax code below',
     'payment_wallet' => 'Payment Wallet',
-    'option_contract' => 'Item Exchange Contract',
     'option_wallet_transfer' => 'Wallet Transfer with Tax Code',
     'mark_as_paid' => 'Mark as Paid',
     'manual_payment_entry' => 'Manual Payment Entry',
@@ -210,4 +199,24 @@ return [
     'error_bulk_marking' => 'Error bulk marking taxes as paid',
     'bulk_reminders_sent' => ':count reminders sent successfully',
     'error_bulk_reminders' => 'Error sending bulk reminders',
+
+    // Scope / Permission
+    'director_view' => 'Director View',
+    'director_view_desc' => 'Showing all corporation member data',
+    'your_account' => 'Your Account',
+    'your_account_desc' => 'Showing your data only',
+    'no_permission_view_tax' => 'You do not have permission to view this tax record.',
+
+    // 3-tier permission labels
+    'admin_view' => 'Admin View',
+    'admin_view_desc' => 'Full management access - showing all corporation data',
+    'viewing_all_corp_data' => 'Viewing All Corporation Data',
+    'viewing_my_data' => 'Viewing My Data Only',
+    'switch_to_all_data' => 'Show All Corp Data',
+    'switch_to_my_data' => 'Show My Data Only',
+    'switched_to_all_data' => 'Now showing all corporation data',
+    'switched_to_my_data' => 'Now showing your data only',
+
+    // Feature flags
+    'feature_disabled' => 'This feature is currently disabled. An administrator can enable it in Settings.',
 ];

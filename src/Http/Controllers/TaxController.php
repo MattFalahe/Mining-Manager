@@ -6,7 +6,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Tax\TaxCalculationService;
-use MiningManager\Services\Tax\ContractManagementService;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -27,7 +26,6 @@ class TaxController extends Controller
     use EnrichesCharacterData;
 
     protected $taxService;
-    protected $contractService;
     protected $walletService;
     protected $codeService;
     protected $settingsService;
@@ -36,7 +34,6 @@ class TaxController extends Controller
 
     public function __construct(
         TaxCalculationService $taxService,
-        ContractManagementService $contractService,
         WalletTransferService $walletService,
         TaxCodeGeneratorService $codeService,
         SettingsManagerService $settingsService,
@@ -44,7 +41,6 @@ class TaxController extends Controller
         OreValuationService $oreValuationService
     ) {
         $this->taxService = $taxService;
-        $this->contractService = $contractService;
         $this->walletService = $walletService;
         $this->codeService = $codeService;
         $this->settingsService = $settingsService;
@@ -64,10 +60,106 @@ class TaxController extends Controller
         if ($corporationId) {
             $this->settingsService->setActiveCorporation($corporationId);
             $this->taxService->setCorporationContext($corporationId);
-            $this->contractService->setCorporationContext($corporationId);
             $this->walletService->setCorporationContext($corporationId);
             $this->codeService->setCorporationContext($corporationId);
         }
+    }
+
+    /**
+     * Check if the current user has admin permissions.
+     */
+    private function isAdmin(): bool
+    {
+        return auth()->user()?->can('mining-manager.admin') ?? false;
+    }
+
+    /**
+     * Check if the current user has director permissions (includes admin).
+     */
+    private function isDirector(): bool
+    {
+        return $this->isAdmin() || (auth()->user()?->can('mining-manager.director') ?? false);
+    }
+
+    /**
+     * Check if the current user has member permissions (includes director/admin).
+     */
+    private function isMember(): bool
+    {
+        return $this->isDirector() || (auth()->user()?->can('mining-manager.member') ?? false);
+    }
+
+    /**
+     * Check if the current user should see all corporation data.
+     * Admins always see all. Directors see all when toggled on.
+     */
+    private function isViewingAll(): bool
+    {
+        return $this->isAdmin() || ($this->isDirector() && session('mining-manager.view-all', false));
+    }
+
+    /**
+     * Toggle between viewing own data and all corporation data (directors only).
+     */
+    public function toggleView(Request $request)
+    {
+        $current = session('mining-manager.view-all', false);
+        session(['mining-manager.view-all' => !$current]);
+
+        $message = !$current
+            ? trans('mining-manager::taxes.switched_to_all_data')
+            : trans('mining-manager::taxes.switched_to_my_data');
+
+        return redirect()->back()->with('success', $message);
+    }
+
+    /**
+     * Get feature flags from settings for view visibility.
+     */
+    private function getFeatureFlags(): array
+    {
+        return [
+            'tax_tracking' => (bool) $this->settingsService->getSetting('features.enable_tax_tracking', true),
+            'wallet_verification' => (bool) $this->settingsService->getSetting('features.verify_wallet_transactions', true),
+            'tax_codes' => (bool) $this->settingsService->getSetting('tax_rates.auto_generate_tax_codes', true),
+            'reminders' => (bool) $this->settingsService->getSetting('tax_rates.send_tax_reminders', false),
+        ];
+    }
+
+    /**
+     * Get all character IDs linked to the authenticated user.
+     */
+    private function getUserCharacterIds(): array
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return [];
+        }
+
+        $ids = $user->characters->pluck('character_id')->toArray();
+        if (empty($ids) && $user->main_character_id) {
+            $ids = [$user->main_character_id];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Get character IDs relevant for tax queries (respects accumulated vs individual tax mode).
+     */
+    private function getUserTaxCharacterIds(): array
+    {
+        $characterIds = $this->getUserCharacterIds();
+        $taxMethod = $this->settingsService->getSetting('tax_rates.tax_calculation_method',
+            $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated')
+        );
+
+        if ($taxMethod === 'accumulated' || $taxMethod === 'account') {
+            $mainId = auth()->user()->main_character_id;
+            return $mainId ? [$mainId] : $characterIds;
+        }
+
+        return $characterIds;
     }
 
     /**
@@ -123,24 +215,40 @@ class TaxController extends Controller
             });
         }
 
+        // Scope data: members/directors (default) see own data; admin/directors (toggled) see all
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+        $taxCharacterIds = !$viewAll ? $this->getUserTaxCharacterIds() : [];
+        if (!$viewAll) {
+            $query->whereIn('character_id', $taxCharacterIds);
+        }
+
         $taxes = $query->orderBy('month', 'desc')
             ->orderBy('character_id')
             ->paginate(50);
 
         // Summary statistics - split by corp/guest if moon owner is configured
+        // Helper to apply user scoping to summary queries
+        $scopeSummary = function($query) use ($viewAll, $taxCharacterIds) {
+            if (!$viewAll && !empty($taxCharacterIds)) {
+                $query->whereIn('character_id', $taxCharacterIds);
+            }
+            return $query;
+        };
+
         $summaryQuery = MiningTax::query();
         $corpSummaryQuery = null;
         $guestSummaryQuery = null;
 
-        if ($moonOwnerCorpId) {
-            // Corp members summary - use character_affiliations table for corporation_id
+        if ($moonOwnerCorpId && $viewAll) {
+            // Corp vs guest breakdown only shown to directors
             $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
                 $q->select('character_id')
                     ->from('character_affiliations')
                     ->where('corporation_id', $moonOwnerCorpId);
             });
 
-            // Guest miners summary - use character_affiliations table for corporation_id
             $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
                 $q->select('character_id')
                     ->from('character_affiliations')
@@ -148,16 +256,14 @@ class TaxController extends Controller
             });
         }
 
-        $totalOwed = MiningTax::where('status', 'unpaid')->sum('amount_owed');
-        $totalOverdue = MiningTax::where('status', 'overdue')->sum('amount_owed');
-        $collectedThisMonth = MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month)
-            ->sum('amount_paid');
-        $unpaidCount = MiningTax::where('status', 'unpaid')->count();
-        $overdueCount = MiningTax::where('status', 'overdue')->count();
-        $paidCount = MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month)
-            ->count();
+        $totalOwed = $scopeSummary(MiningTax::where('status', 'unpaid'))->sum('amount_owed');
+        $totalOverdue = $scopeSummary(MiningTax::where('status', 'overdue'))->sum('amount_owed');
+        $collectedThisMonth = $scopeSummary(MiningTax::where('status', 'paid')
+            ->whereMonth('paid_at', Carbon::now()->month))->sum('amount_paid');
+        $unpaidCount = $scopeSummary(MiningTax::where('status', 'unpaid'))->count();
+        $overdueCount = $scopeSummary(MiningTax::where('status', 'overdue'))->count();
+        $paidCount = $scopeSummary(MiningTax::where('status', 'paid')
+            ->whereMonth('paid_at', Carbon::now()->month))->count();
 
         // Calculate collection rate
         $totalExpected = $totalOwed + $totalOverdue + $collectedThisMonth;
@@ -210,6 +316,8 @@ class TaxController extends Controller
             ->orderBy('name')
             ->get();
 
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.index', compact(
             'taxes',
             'summary',
@@ -219,7 +327,11 @@ class TaxController extends Controller
             'month',
             'corporationId',
             'minerType',
-            'moonOwnerCorpId'
+            'moonOwnerCorpId',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -249,13 +361,22 @@ class TaxController extends Controller
         // Get live tracking data for current month
         $liveTracking = $this->getLiveTrackingData();
 
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.calculate', compact(
             'corporations',
             'years',
             'generalSettings',
             'sourceSettings',
             'paymentSettings',
-            'liveTracking'
+            'liveTracking',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -444,96 +565,24 @@ class TaxController extends Controller
     }
 
     /**
-     * Display tax contracts management
-     */
-    public function contracts(Request $request)
-    {
-        // Set corporation context for settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $this->setCorporationContext($moonOwnerCorpId);
-
-        $status = $request->input('status', 'pending');
-        $month = $request->input('month');
-
-        // Get payment method from settings
-        $paymentMethod = $this->settingsService->getSetting('tax_rates.tax_payment_method', 'contract');
-
-        // Build query for tax invoices
-        $query = TaxInvoice::with(['miningTax.character', 'miningTax.taxCode']);
-
-        if ($status !== 'all') {
-            $query->where('status', $status);
-        }
-
-        if ($month) {
-            $query->whereHas('miningTax', function($q) use ($month) {
-                $q->where('month', Carbon::parse($month)->format('Y-m-01'));
-            });
-        }
-
-        $invoices = $query->orderBy('created_at', 'desc')->paginate(50);
-
-        // Summary stats
-        $pendingCount = TaxInvoice::where('status', 'pending')->count();
-        $completedCount = TaxInvoice::where('status', 'completed')->count();
-        $totalValue = TaxInvoice::where('status', 'pending')->sum('amount');
-
-        $summary = [
-            'pending_count' => $pendingCount,
-            'completed_count' => $completedCount,
-            'total_value' => $totalValue,
-        ];
-
-        return view('mining-manager::taxes.contracts', compact(
-            'invoices',
-            'summary',
-            'status',
-            'month',
-            'paymentMethod'
-        ));
-    }
-
-    /**
-     * Generate tax contracts for unpaid taxes
-     */
-    public function generateContracts(Request $request)
-    {
-        // Set corporation context for settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $this->setCorporationContext($moonOwnerCorpId);
-
-        try {
-            $month = $request->input('month');
-            $monthDate = $month ? Carbon::parse($month)->startOfMonth() : null;
-
-            $results = $this->contractService->generateInvoices($monthDate);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => trans('mining-manager::taxes.contracts_generated'),
-                'results' => $results,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Contract generation error: ' . $e->getMessage());
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => trans('mining-manager::taxes.contract_generation_error'),
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
      * Display wallet verification page
      * TODO: Implement WalletTransaction model and wallet verification feature
      */
     public function wallet(Request $request)
     {
+        // Check if wallet verification feature is enabled
+        $featureFlags = $this->getFeatureFlags();
+        if (!$featureFlags['wallet_verification']) {
+            return redirect()->route('mining-manager.taxes.index')
+                ->with('warning', trans('mining-manager::taxes.feature_disabled'));
+        }
+
         $status = $request->input('status', 'pending');
         $month = $request->input('month');
         $days = $request->input('days', 30);
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
 
         // Get corporation ID from settings (or use first corporation if not configured)
         $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
@@ -561,6 +610,10 @@ class TaxController extends Controller
                 'status' => $status,
                 'month' => $month,
                 'corporationId' => null,
+                'isAdmin' => $isAdmin,
+                'isDirector' => $isDirector,
+                'viewAll' => $viewAll,
+                'features' => $this->getFeatureFlags(),
             ]);
         }
 
@@ -616,13 +669,19 @@ class TaxController extends Controller
         $offset = ($page - 1) * $perPage;
         $paginatedTransactions = $transactions->slice($offset, $perPage);
 
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.wallet', compact(
             'transactions',
             'summary',
             'status',
             'month',
             'corporationId',
-            'paginatedTransactions'
+            'paginatedTransactions',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -883,6 +942,10 @@ class TaxController extends Controller
                 'accountCharacters' => $accountCharacters,
                 'mainCharacterName' => $mainCharacterName,
                 'currentMonthBreakdown' => [],
+                'isAdmin' => $this->isAdmin(),
+                'isDirector' => $this->isDirector(),
+                'viewAll' => $this->isViewingAll(),
+                'features' => $this->getFeatureFlags(),
             ]);
         }
 
@@ -973,6 +1036,11 @@ class TaxController extends Controller
             ->whereColumn('paid_at', '>', 'due_date')
             ->count();
 
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.my-taxes', compact(
             'taxHistory',
             'summary',
@@ -986,7 +1054,11 @@ class TaxController extends Controller
             'taxMethod',
             'accountCharacters',
             'mainCharacterName',
-            'currentMonthBreakdown'
+            'currentMonthBreakdown',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -1058,11 +1130,28 @@ class TaxController extends Controller
      */
     public function codes(Request $request)
     {
+        // Check if tax codes feature is enabled
+        $features = $this->getFeatureFlags();
+        if (!$features['tax_codes']) {
+            return redirect()->route('mining-manager.taxes.index')
+                ->with('warning', trans('mining-manager::taxes.feature_disabled'));
+        }
+
         $status = $request->input('status', 'active');
         $search = $request->input('search');
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
 
         // Build query
         $query = TaxCode::with(['character', 'miningTax']);
+
+        // Scope: only show own codes unless viewing all
+        $taxCharacterIds = [];
+        if (!$viewAll) {
+            $taxCharacterIds = $this->getUserTaxCharacterIds();
+            $query->whereIn('character_id', $taxCharacterIds);
+        }
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -1080,10 +1169,14 @@ class TaxController extends Controller
         $taxCodes = $query->orderBy('created_at', 'desc')
             ->paginate(50);
 
-        // Summary statistics
-        $activeCount = TaxCode::where('status', 'active')->count();
-        $usedCount = TaxCode::where('status', 'used')->count();
-        $expiredCount = TaxCode::where('status', 'expired')->count();
+        // Summary statistics (scoped unless viewing all)
+        $summaryBase = TaxCode::query();
+        if (!$viewAll && !empty($taxCharacterIds)) {
+            $summaryBase = TaxCode::whereIn('character_id', $taxCharacterIds);
+        }
+        $activeCount = (clone $summaryBase)->where('status', 'active')->count();
+        $usedCount = (clone $summaryBase)->where('status', 'used')->count();
+        $expiredCount = (clone $summaryBase)->where('status', 'expired')->count();
 
         $summary = [
             'active_count' => $activeCount,
@@ -1091,11 +1184,17 @@ class TaxController extends Controller
             'expired_count' => $expiredCount,
         ];
 
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.codes', compact(
             'taxCodes',
             'summary',
             'status',
-            'search'
+            'search',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -1212,61 +1311,6 @@ class TaxController extends Controller
     }
 
     /**
-     * Generate invoices (alias for generateContracts)
-     */
-    public function generateInvoices(Request $request)
-    {
-        return $this->generateContracts($request);
-    }
-
-    /**
-     * Scan corporation contracts for tax code matches.
-     * Matches manually-created contracts by tax code in title/description.
-     * Only available when payment method is set to 'contract'.
-     */
-    public function scanContracts(Request $request)
-    {
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $this->setCorporationContext($moonOwnerCorpId);
-
-        // Check if contract payment method is enabled
-        $paymentMethod = $this->settingsService->getSetting('tax_rates.tax_payment_method', 'contract');
-        if ($paymentMethod !== 'contract') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Contract scanning is only available when payment method is set to "Item Exchange Contract". Current method: ' . ucfirst($paymentMethod),
-            ], 400);
-        }
-
-        try {
-            $results = $this->contractService->scanCorporationContracts($moonOwnerCorpId);
-
-            $message = "Scanned {$results['scanned']} contracts";
-            if ($results['matched'] > 0) {
-                $message .= ", matched {$results['matched']}";
-            }
-            if ($results['paid'] > 0) {
-                $message .= ", {$results['paid']} marked as paid";
-            }
-
-            return response()->json([
-                'status' => 'success',
-                'message' => $message,
-                'results' => $results,
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Contract scan error: ' . $e->getMessage());
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Error scanning corporation contracts',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
      * Verify multiple payments (alias for batch verification)
      */
     public function verifyPayments(Request $request)
@@ -1327,6 +1371,17 @@ class TaxController extends Controller
     public function details(Request $request, $taxId)
     {
         $tax = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+
+        // Ownership check: members and directors (not viewing all) can only see their own
+        if (!$viewAll) {
+            $taxCharacterIds = $this->getUserTaxCharacterIds();
+            if (!in_array($tax->character_id, $taxCharacterIds)) {
+                abort(403, trans('mining-manager::taxes.no_permission_view_tax'));
+            }
+        }
 
         // Get tax calculation method to determine if we should show alt breakdowns
         $taxCalculationMethod = $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated');
@@ -1340,8 +1395,26 @@ class TaxController extends Controller
 
         if ($taxCalculationMethod === 'accumulated') {
             // In accumulated mode, get breakdown for all alts in the account
-            $user = auth()->user();
-            $characterIds = $user ? $user->characters->pluck('character_id')->toArray() : [$tax->character_id];
+            // Resolve the tax OWNER's characters (not the viewer's) for correct breakdown
+            $characterIds = [$tax->character_id];
+            try {
+                $ownerUserId = DB::table('refresh_tokens')
+                    ->where('character_id', $tax->character_id)
+                    ->value('user_id');
+
+                if ($ownerUserId) {
+                    $ownerUser = \Seat\Web\Models\User::find($ownerUserId);
+                    if ($ownerUser) {
+                        $characterIds = $ownerUser->characters->pluck('character_id')->toArray();
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::debug("Mining Manager: Could not resolve tax owner's characters: " . $e->getMessage());
+            }
+
+            if (empty($characterIds)) {
+                $characterIds = [$tax->character_id];
+            }
 
             foreach ($characterIds as $charId) {
                 try {
@@ -1389,11 +1462,17 @@ class TaxController extends Controller
             }
         }
 
+        $features = $this->getFeatureFlags();
+
         return view('mining-manager::taxes.details', compact(
             'tax',
             'miningBreakdown',
             'miningTotal',
-            'taxCalculationMethod'
+            'taxCalculationMethod',
+            'isAdmin',
+            'isDirector',
+            'viewAll',
+            'features'
         ));
     }
 
@@ -1580,6 +1659,11 @@ class TaxController extends Controller
             // Build query
             $query = MiningTax::with(['character']);
 
+            // Scope: only export own taxes unless viewing all
+            if (!$this->isViewingAll()) {
+                $query->whereIn('character_id', $this->getUserTaxCharacterIds());
+            }
+
             if ($status !== 'all') {
                 $query->where('status', $status);
             }
@@ -1716,7 +1800,7 @@ class TaxController extends Controller
             $user = auth()->user();
             $userCharacterIds = $user->characters->pluck('character_id')->toArray();
 
-            if (!in_array($tax->character_id, $userCharacterIds) && !$user->can('mining-manager.tax.view')) {
+            if (!in_array($tax->character_id, $userCharacterIds) && !$this->isViewingAll()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized',

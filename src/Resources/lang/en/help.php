@@ -46,7 +46,7 @@ return [
     // Quick Start Steps
     'quick_start_guide' => 'Quick Start Guide',
     'step_1_title' => 'Configure Settings',
-    'step_1_desc' => 'Navigate to Settings and configure your corporation name, tax rates, and pricing preferences. Set up your preferred payment method (contracts or wallet transfers).',
+    'step_1_desc' => 'Navigate to Settings and configure your corporation name, tax rates, and pricing preferences. Set up wallet transfer payment settings.',
     'step_2_title' => 'Set Tax Rates',
     'step_2_desc' => 'Configure default tax rates for different ore types (ore, ice, gas, moon ore, mercoxit). These can be adjusted per member if needed.',
     'step_3_title' => 'Enable Features',
@@ -98,19 +98,13 @@ return [
     'tax_step_3_title' => 'Members are Notified',
     'tax_step_3_desc' => 'Members receive an EVE Mail notification with their tax amount, unique tax code, and payment deadline.',
     'tax_step_4_title' => 'Payment is Made',
-    'tax_step_4_desc' => 'Members pay their taxes either by creating an item exchange contract with refined ore or by sending ISK directly to the corporation wallet.',
+    'tax_step_4_desc' => 'Members pay their taxes by sending ISK directly to the corporation wallet with their unique tax code.',
     'tax_step_5_title' => 'Payment is Verified',
-    'tax_step_5_desc' => 'The system automatically verifies payments by checking contracts or wallet transactions that include the unique tax code.',
-    
+    'tax_step_5_desc' => 'The system automatically verifies payments by checking wallet transactions that include the unique tax code.',
+
     // Payment Methods
     'payment_methods' => 'Payment Methods',
-    'contract_method_title' => 'Contract Method (Recommended)',
-    'contract_method_desc' => 'Members create item exchange contracts with refined ore equal to their tax value:',
-    'contract_step_1' => 'Check your tax invoice for the exact ore amounts needed',
-    'contract_step_2' => 'Refine your ore to minerals (use station with best refining rates)',
-    'contract_step_3' => 'Create an item exchange contract to the corporation',
-    'contract_step_4' => 'Include your tax code in the contract description',
-    'wallet_method_title' => 'Wallet Method',
+    'wallet_method_title' => 'Wallet Transfer Method',
     'wallet_method_desc' => 'Members send ISK directly to the corporation wallet:',
     'wallet_step_1' => 'Send ISK to the configured corporation wallet division',
     'wallet_step_2' => 'Include your unique tax code in the transaction reason',
@@ -225,7 +219,7 @@ return [
     
     'issue_3_title' => 'Tax payment not being recognized',
     'issue_3_desc' => 'If your payment isn\'t showing as received:',
-    'issue_3_solution_1' => 'Verify you included your unique tax code in the transaction/contract',
+    'issue_3_solution_1' => 'Verify you included your unique tax code in the wallet transaction reason',
     'issue_3_solution_2' => 'Wait 24 hours for automatic verification to run',
     'issue_3_solution_3' => 'Contact a director to manually verify your payment',
     

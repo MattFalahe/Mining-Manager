@@ -579,15 +579,6 @@
                     </ol>
 
                     <h4>{{ trans('mining-manager::help.payment_methods') }}</h4>
-                    <p><strong>{{ trans('mining-manager::help.contract_method_title') }}</strong></p>
-                    <p>{{ trans('mining-manager::help.contract_method_desc') }}</p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.contract_step_1') }}</li>
-                        <li>{{ trans('mining-manager::help.contract_step_2') }}</li>
-                        <li>{{ trans('mining-manager::help.contract_step_3') }}</li>
-                        <li>{{ trans('mining-manager::help.contract_step_4') }}</li>
-                    </ul>
-
                     <p><strong>{{ trans('mining-manager::help.wallet_method_title') }}</strong></p>
                     <p>{{ trans('mining-manager::help.wallet_method_desc') }}</p>
                     <ul>

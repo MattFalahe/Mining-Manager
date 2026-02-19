@@ -168,16 +168,6 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Scan corporation contracts for tax payments - runs every 30 minutes
-            // (Matches manually-created contracts with tax codes in title to mark taxes as paid)
-            [
-                'command' => 'mining-manager:scan-corporation-contracts',
-                'expression' => '5,35 * * * *',
-                'allow_overlap' => false,
-                'allow_maintenance' => false,
-                'ping_before' => null,
-                'ping_after' => null,
-            ],
         ];
     }
 
@@ -190,8 +180,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
     public function getDeprecatedSchedules(): array
     {
         return [
-            // Add any old/deprecated command names here if you rename commands
-            // Example: 'mining-manager:old-command-name',
+            'mining-manager:scan-corporation-contracts', // Removed: contract-based taxing replaced by wallet transfers
         ];
     }
 }

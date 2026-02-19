@@ -11,47 +11,7 @@
 <div class="mining-manager-wrapper taxes-calculate-page">
 
 
-{{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/tax') && !Request::is('*/tax/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.index') }}">
-                <i class="fas fa-chart-pie"></i> {{ trans('mining-manager::menu.tax_overview') }}
-            </a>
-        </li>
-        @can('mining-manager.tax.calculate')
-        <li class="{{ Request::is('*/tax/calculate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.calculate') }}">
-                <i class="fas fa-calculator"></i> {{ trans('mining-manager::menu.calculate_taxes') }}
-            </a>
-        </li>
-        @endcan
-        <li class="{{ Request::is('*/tax/my-taxes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.my-taxes') }}">
-                <i class="fas fa-receipt"></i> {{ trans('mining-manager::menu.my_taxes') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/tax/codes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.codes') }}">
-                <i class="fas fa-barcode"></i> {{ trans('mining-manager::menu.tax_codes') }}
-            </a>
-        </li>
-        @can('mining-manager.tax.generate_invoices')
-        <li class="{{ Request::is('*/tax/contracts') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.contracts') }}">
-                <i class="fas fa-file-contract"></i> {{ trans('mining-manager::menu.tax_contracts') }}
-            </a>
-        </li>
-        @endcan
-        @can('mining-manager.tax.verify_payments')
-        <li class="{{ Request::is('*/tax/wallet') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.wallet') }}">
-                <i class="fas fa-wallet"></i> {{ trans('mining-manager::menu.wallet_verification') }}
-            </a>
-        </li>
-        @endcan
-    </ul>
-    <div class="tab-content">
+@include('mining-manager::taxes.partials.tab-navigation')
 
 
 <div class="row">
@@ -153,13 +113,8 @@
                                 <label>{{ trans('mining-manager::taxes.payment_method') }}</label>
                                 <div class="input-group">
                                     <div class="form-control" readonly>
-                                        @if ($paymentSettings['method'] == 'contract')
-                                            <i class="fas fa-file-contract"></i>
-                                            {{ trans('mining-manager::taxes.payment_contracts') }}
-                                        @else
-                                            <i class="fas fa-money-bill-wave"></i>
-                                            {{ trans('mining-manager::taxes.payment_wallet') }}
-                                        @endif
+                                        <i class="fas fa-money-bill-wave"></i>
+                                        {{ trans('mining-manager::taxes.payment_wallet') }}
                                     </div>
                                     <div class="input-group-append">
                                         <a href="{{ route('mining-manager.settings.index') }}#tax-rates"
@@ -230,9 +185,7 @@
                             </button>
                             <button type="button" class="btn btn-success ml-2" id="regenerate-payments-btn">
                                 <i class="fas fa-sync"></i>
-                                {{ $paymentSettings['method'] == 'contract' 
-                                    ? trans('mining-manager::taxes.regenerate_contracts') 
-                                    : trans('mining-manager::taxes.regenerate_codes') }}
+                                {{ trans('mining-manager::taxes.regenerate_codes') }}
                             </button>
                             <button type="button" class="btn btn-info ml-2" id="refresh-tracking-btn">
                                 <i class="fas fa-refresh"></i>
@@ -576,11 +529,11 @@ $(document).ready(function() {
                 } else {
                     toastr.error(response.message);
                 }
-                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> ' + (paymentMethod == 'contract' ? '{{ trans("mining-manager::taxes.regenerate_contracts") }}' : '{{ trans("mining-manager::taxes.regenerate_codes") }}'));
+                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
             },
             error: function(xhr) {
                 alert('{{ trans("mining-manager::taxes.error_occurred") }}');
-                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> ' + (paymentMethod == 'contract' ? '{{ trans("mining-manager::taxes.regenerate_contracts") }}' : '{{ trans("mining-manager::taxes.regenerate_codes") }}'));
+                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
             }
         });
     });

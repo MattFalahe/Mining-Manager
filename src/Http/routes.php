@@ -188,191 +188,179 @@ Route::group([
     });
 
     // Tax Management Routes
-    // FIXED: All route names changed from 'tax' to 'taxes' (singular to plural)
-    // ADDED: 10 missing routes that views were expecting
+    // 3-tier permissions: member (view own) < director (toggle all, verify) < admin (full management)
     Route::group(['prefix' => 'tax'], function () {
+
+        // --- Member routes (view own data) ---
+
         // Main tax index
         Route::get('/', [
-            'as' => 'mining-manager.taxes.index',  // FIXED: was mining-manager.tax.index
+            'as' => 'mining-manager.taxes.index',
             'uses' => 'TaxController@index',
-            'middleware' => 'can:mining-manager.tax.view',
-        ]);
-
-        // Tax calculation form (GET displays form)
-        Route::get('/calculate', [
-            'as' => 'mining-manager.taxes.calculate',  // FIXED: was mining-manager.tax.calculate
-            'uses' => 'TaxController@showCalculateForm',
-            'middleware' => 'can:mining-manager.tax.calculate',
-        ]);
-
-        Route::post('/calculate', [
-            'as' => 'mining-manager.taxes.calculate.process',  // FIXED: was mining-manager.tax.calculate.process
-            'uses' => 'TaxController@processCalculation',
-            'middleware' => 'can:mining-manager.tax.calculate',
-        ]);
-
-        // ADDED: Process calculation (alternative route name that views expect)
-        Route::post('/calculate/process', [
-            'as' => 'mining-manager.taxes.process-calculation',
-            'uses' => 'TaxController@processCalculation',
-            'middleware' => 'can:mining-manager.tax.calculate',
-        ]);
-
-        // ADDED: Live tracking during calculation
-        Route::get('/calculate/live-tracking', [
-            'as' => 'mining-manager.taxes.live-tracking',
-            'uses' => 'TaxController@liveTracking',
-            'middleware' => 'can:mining-manager.tax.calculate',
-        ]);
-
-        // ADDED: Regenerate payments
-        Route::post('/calculate/regenerate', [
-            'as' => 'mining-manager.taxes.regenerate-payments',
-            'uses' => 'TaxController@regeneratePayments',
-            'middleware' => 'can:mining-manager.tax.calculate',
-        ]);
-
-        // Contracts
-        Route::get('/contracts', [
-            'as' => 'mining-manager.taxes.contracts',  // FIXED: was mining-manager.tax.contracts
-            'uses' => 'TaxController@contracts',
-            'middleware' => 'can:mining-manager.tax.generate_invoices',
-        ]);
-
-        Route::post('/contracts/generate', [
-            'as' => 'mining-manager.taxes.contracts.generate',  // FIXED: was mining-manager.tax.contracts.generate
-            'uses' => 'TaxController@generateInvoices',
-            'middleware' => 'can:mining-manager.tax.generate_invoices',
-        ]);
-
-        // Scan corporation contracts for tax code matches
-        Route::post('/contracts/scan', [
-            'as' => 'mining-manager.taxes.contracts.scan',
-            'uses' => 'TaxController@scanContracts',
-            'middleware' => 'can:mining-manager.tax.generate_invoices',
-        ]);
-
-        // Wallet
-        Route::get('/wallet', [
-            'as' => 'mining-manager.taxes.wallet',  // FIXED: was mining-manager.tax.wallet
-            'uses' => 'TaxController@wallet',
-            'middleware' => 'can:mining-manager.tax.verify_payments',
-        ]);
-
-        Route::post('/wallet/verify', [
-            'as' => 'mining-manager.taxes.wallet.verify',  // FIXED: was mining-manager.tax.wallet.verify
-            'uses' => 'TaxController@verifyPayments',
-            'middleware' => 'can:mining-manager.tax.verify_payments',
-        ]);
-
-        // Tax details (by tax ID)
-        Route::get('/details/{taxId}', [
-            'as' => 'mining-manager.taxes.details',
-            'uses' => 'TaxController@details',
-            'middleware' => 'can:mining-manager.tax.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         // My taxes
         Route::get('/my-taxes', [
-            'as' => 'mining-manager.taxes.my-taxes',  // FIXED: was mining-manager.tax.my-taxes
+            'as' => 'mining-manager.taxes.my-taxes',
             'uses' => 'TaxController@myTaxes',
-            'middleware' => 'can:mining-manager.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         // My taxes - AJAX breakdown by month
         Route::get('/my-taxes/breakdown/{month?}', [
             'as' => 'mining-manager.taxes.my-breakdown',
             'uses' => 'TaxController@myTaxBreakdown',
-            'middleware' => 'can:mining-manager.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
         // Tax codes
         Route::get('/codes', [
-            'as' => 'mining-manager.taxes.codes',  // FIXED: was mining-manager.tax.codes
+            'as' => 'mining-manager.taxes.codes',
             'uses' => 'TaxController@codes',
-            'middleware' => 'can:mining-manager.tax.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
-        // ADDED: Bulk generate tax codes
-        Route::post('/codes/generate', [
-            'as' => 'mining-manager.taxes.codes.generate',
-            'uses' => 'TaxController@generateCodes',
-            'middleware' => 'can:mining-manager.tax.manage',
+        // Tax details (by tax ID) - ownership checked in controller
+        Route::get('/details/{taxId}', [
+            'as' => 'mining-manager.taxes.details',
+            'uses' => 'TaxController@details',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
-        Route::post('/codes', [
-            'as' => 'mining-manager.taxes.codes.store',  // FIXED: was mining-manager.tax.codes.store
-            'uses' => 'TaxController@storeCode',
-            'middleware' => 'can:mining-manager.tax.manage',
+        // Wallet verification page (members see own payment status)
+        Route::get('/wallet', [
+            'as' => 'mining-manager.taxes.wallet',
+            'uses' => 'TaxController@wallet',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
-        Route::delete('/codes/{id}', [
-            'as' => 'mining-manager.taxes.codes.destroy',  // FIXED: was mining-manager.tax.codes.destroy
-            'uses' => 'TaxController@destroyCode',
-            'middleware' => 'can:mining-manager.tax.manage',
-        ]);
-
-        // ADDED: Mark as paid (single) - ID comes from request body, not URL
-        Route::post('/mark-paid', [
-            'as' => 'mining-manager.taxes.mark-paid',
-            'uses' => 'TaxController@markPaid',
-            'middleware' => 'can:mining-manager.tax.manage',
-        ]);
-
-        // ADDED: Send reminder (single) - ID comes from request body, not URL
-        Route::post('/send-reminder', [
-            'as' => 'mining-manager.taxes.send-reminder',
-            'uses' => 'TaxController@sendReminder',
-            'middleware' => 'can:mining-manager.tax.manage',
-        ]);
-
-        // ADDED: Bulk mark as paid
-        Route::post('/bulk/mark-paid', [
-            'as' => 'mining-manager.taxes.bulk-mark-paid',
-            'uses' => 'TaxController@bulkMarkPaid',
-            'middleware' => 'can:mining-manager.tax.manage',
-        ]);
-
-        // ADDED: Bulk send reminders
-        Route::post('/bulk/send-reminders', [
-            'as' => 'mining-manager.taxes.bulk-send-reminders',
-            'uses' => 'TaxController@bulkSendReminders',
-            'middleware' => 'can:mining-manager.tax.manage',
-        ]);
-
-        // ADDED: Export taxes
-        Route::get('/export', [
-            'as' => 'mining-manager.taxes.export',
-            'uses' => 'TaxController@export',
-            'middleware' => 'can:mining-manager.tax.view',
-        ]);
-
-        // ADDED: Export personal taxes
+        // Export personal taxes
         Route::get('/my-taxes/export', [
             'as' => 'mining-manager.taxes.export-personal',
             'uses' => 'TaxController@exportPersonal',
-            'middleware' => 'can:mining-manager.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
-        // ADDED: Download receipt
+        // Download receipt
         Route::get('/{id}/receipt', [
             'as' => 'mining-manager.taxes.download-receipt',
             'uses' => 'TaxController@downloadReceipt',
-            'middleware' => 'can:mining-manager.view',
+            'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Update status
+        // --- Director routes (toggle view, verify payments, export all) ---
+
+        // Toggle between own data and all corporation data
+        Route::post('/toggle-view', [
+            'as' => 'mining-manager.taxes.toggle-view',
+            'uses' => 'TaxController@toggleView',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        // Verify wallet payments
+        Route::post('/wallet/verify', [
+            'as' => 'mining-manager.taxes.wallet.verify',
+            'uses' => 'TaxController@verifyPayments',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        // Export all taxes
+        Route::get('/export', [
+            'as' => 'mining-manager.taxes.export',
+            'uses' => 'TaxController@export',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        // --- Admin routes (full tax management) ---
+
+        // Tax calculation
+        Route::get('/calculate', [
+            'as' => 'mining-manager.taxes.calculate',
+            'uses' => 'TaxController@showCalculateForm',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/calculate', [
+            'as' => 'mining-manager.taxes.calculate.process',
+            'uses' => 'TaxController@processCalculation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/calculate/process', [
+            'as' => 'mining-manager.taxes.process-calculation',
+            'uses' => 'TaxController@processCalculation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::get('/calculate/live-tracking', [
+            'as' => 'mining-manager.taxes.live-tracking',
+            'uses' => 'TaxController@liveTracking',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/calculate/regenerate', [
+            'as' => 'mining-manager.taxes.regenerate-payments',
+            'uses' => 'TaxController@regeneratePayments',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Tax code management
+        Route::post('/codes/generate', [
+            'as' => 'mining-manager.taxes.codes.generate',
+            'uses' => 'TaxController@generateCodes',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/codes', [
+            'as' => 'mining-manager.taxes.codes.store',
+            'uses' => 'TaxController@storeCode',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::delete('/codes/{id}', [
+            'as' => 'mining-manager.taxes.codes.destroy',
+            'uses' => 'TaxController@destroyCode',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Mark as paid / send reminders
+        Route::post('/mark-paid', [
+            'as' => 'mining-manager.taxes.mark-paid',
+            'uses' => 'TaxController@markPaid',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/send-reminder', [
+            'as' => 'mining-manager.taxes.send-reminder',
+            'uses' => 'TaxController@sendReminder',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Bulk actions
+        Route::post('/bulk/mark-paid', [
+            'as' => 'mining-manager.taxes.bulk-mark-paid',
+            'uses' => 'TaxController@bulkMarkPaid',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/bulk/send-reminders', [
+            'as' => 'mining-manager.taxes.bulk-send-reminders',
+            'uses' => 'TaxController@bulkSendReminders',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Update status / delete
         Route::post('/{id}/status', [
-            'as' => 'mining-manager.taxes.update-status',  // FIXED: was mining-manager.tax.update-status
+            'as' => 'mining-manager.taxes.update-status',
             'uses' => 'TaxController@updateStatus',
-            'middleware' => 'can:mining-manager.tax.manage',
+            'middleware' => 'can:mining-manager.admin',
         ]);
 
-        // Delete tax
         Route::delete('/{id}', [
-            'as' => 'mining-manager.taxes.destroy',  // FIXED: was mining-manager.tax.destroy
+            'as' => 'mining-manager.taxes.destroy',
             'uses' => 'TaxController@destroy',
-            'middleware' => 'can:mining-manager.tax.manage',
+            'middleware' => 'can:mining-manager.admin',
         ]);
     });
 

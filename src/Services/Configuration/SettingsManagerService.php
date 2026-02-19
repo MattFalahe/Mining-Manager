@@ -202,44 +202,6 @@ class SettingsManagerService
     }
 
     /**
-     * Get contract settings
-     *
-     * @return array
-     */
-    public function getContractSettings(): array
-    {
-        return [
-            'issuer_character_name' => $this->getSetting('contract.issuer_character_name', ''),
-            'contract_tag' => $this->getSetting('contract.contract_tag', 'MINC TAX {year}-{month}'),
-            'minimum_tax_value' => $this->getSetting('contract.minimum_tax_value', 1000000),
-            'expire_in_days' => $this->getSetting('contract.expire_in_days', 7),
-            'auto_generate' => $this->getSetting('contract.auto_generate', false),
-        ];
-    }
-
-    /**
-     * Update contract settings
-     *
-     * @param array $settings
-     * @return void
-     */
-    public function updateContractSettings(array $settings)
-    {
-        DB::beginTransaction();
-        
-        try {
-            foreach ($settings as $key => $value) {
-                $this->updateSetting('contract.' . $key, $value);
-            }
-            
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
-    }
-
-    /**
      * Get payment settings
      *
      * @return array
@@ -249,7 +211,7 @@ class SettingsManagerService
         // Primary source: tax_rates.tax_payment_method (set by UI)
         // Fallback: payment.method (legacy path)
         $method = $this->getSetting('tax_rates.tax_payment_method',
-            $this->getSetting('payment.method', 'contract')
+            $this->getSetting('payment.method', 'wallet')
         );
 
         return [
@@ -314,7 +276,7 @@ class SettingsManagerService
             'event_bonus' => $this->getSetting('tax_rates.event_bonus', config('mining-manager.tax_rates.event_bonus', 2.0)),
 
             // Tax Payment Method
-            'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'contract'),
+            'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'wallet'),
             'tax_wallet_division' => $this->getSetting('tax_rates.tax_wallet_division', 1000),
 
             // Tax Code Settings

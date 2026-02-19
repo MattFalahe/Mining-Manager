@@ -144,7 +144,6 @@ class NotificationService
             'invoice_id' => $invoice->id,
             'amount' => $invoice->amount,
             'due_date' => $invoice->due_date->format('Y-m-d'),
-            'contract_id' => $invoice->contract_id,
             'formatted_amount' => number_format($invoice->amount, 2) . ' ISK'
         ];
 
@@ -491,11 +490,10 @@ class NotificationService
                 'body' => sprintf(
                     "Hello,\n\nA new mining tax invoice has been created for you.\n\n" .
                     "Amount: %s\nDue Date: %s\n" .
-                    "%s\n\n" .
+                    "Please use direct wallet transfer with your tax code.\n\n" .
                     "Thank you,\n%s Management",
                     $data['formatted_amount'],
                     $data['due_date'],
-                    isset($data['contract_id']) ? "Contract ID: {$data['contract_id']}" : "Please use direct wallet transfer",
                     $this->getCorpName()
                 )
             ],

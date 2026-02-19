@@ -55,7 +55,6 @@ class SettingsController extends Controller
         // Get all current settings (will use corporation context if set)
         $settings = [
             'general' => $this->settingsService->getGeneralSettings(),
-            'contract' => $this->settingsService->getContractSettings(),
             'tax_rates' => $this->settingsService->getTaxRates(),
             'tax_selector' => $this->settingsService->getTaxSelector(),
             'exemptions' => $this->settingsService->getExemptions(),
@@ -257,40 +256,6 @@ class SettingsController extends Controller
     }
 
     /**
-     * Update contract settings
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateContract(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'issuer_character_name' => 'nullable|string|max:255',
-            'contract_tag' => 'nullable|string|max:255',
-            'minimum_tax_value' => 'required|numeric|min:0',
-            'expire_in_days' => 'required|integer|min:1|max:30',
-            'auto_generate' => 'boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            $this->settingsService->updateContractSettings($validator->validated());
-
-            return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Contract settings updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating contract settings: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Update tax rates
      * COMPLETELY REWRITTEN: Now handles moon ore rarity rates and all new field names
      *
@@ -341,7 +306,7 @@ class SettingsController extends Controller
             'tax_abyssal_ore' => 'nullable|boolean',
 
             // Tax Payment Method
-            'tax_payment_method' => 'required|in:contract,wallet',
+            'tax_payment_method' => 'required|in:wallet',
             'tax_wallet_division' => 'required|integer|min:1000|max:1006',
 
             // Tax Code Settings

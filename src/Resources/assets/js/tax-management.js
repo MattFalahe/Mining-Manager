@@ -12,7 +12,7 @@ const TaxManagement = {
         currentPeriod: 'monthly',
         taxCode: null,
         calculation: null,
-        paymentMethod: 'contract'
+        paymentMethod: 'wallet'
     },
     
     // Configuration
@@ -319,7 +319,7 @@ TaxManagement.initPaymentMethodSelector = function() {
     });
     
     // Set initial method
-    const savedMethod = MiningManager.loadLocal('payment_method', 'contract');
+    const savedMethod = MiningManager.loadLocal('payment_method', 'wallet');
     $(`.payment-method-card[data-method="${savedMethod}"]`).addClass('selected');
     this.state.paymentMethod = savedMethod;
 };
@@ -338,53 +338,9 @@ TaxManagement.updatePaymentInstructions = function(data) {
     
     let html = '';
     
-    if (method === 'contract') {
-        html = this.getContractInstructions(taxCode, amount);
-    } else if (method === 'wallet') {
-        html = this.getWalletInstructions(taxCode, amount);
-    }
+    html = this.getWalletInstructions(taxCode, amount);
     
     $instructions.html(html);
-};
-
-/**
- * Get contract payment instructions
- * @param {string} taxCode - Tax code
- * @param {number} amount - Tax amount
- * @returns {string} HTML instructions
- */
-TaxManagement.getContractInstructions = function(taxCode, amount) {
-    return `
-        <div class="payment-steps">
-            <div class="payment-step">
-                <div class="payment-step-title">Step 1: Create Item Exchange Contract</div>
-                <div class="payment-step-description">
-                    In EVE Online, create an Item Exchange contract for the items you've mined.
-                </div>
-            </div>
-            <div class="payment-step">
-                <div class="payment-step-title">Step 2: Set Contract Details</div>
-                <div class="payment-step-description">
-                    Assign the contract to: <strong>${this.getCorpName()}</strong><br>
-                    Include all mined items from the period.
-                </div>
-            </div>
-            <div class="payment-step">
-                <div class="payment-step-title">Step 3: Add Tax Code to Description</div>
-                <div class="payment-step-description">
-                    In the contract description, include your tax code: <code>${taxCode || 'TAX-XXXXXX'}</code><br>
-                    This helps us match your payment to your mining activity.
-                </div>
-            </div>
-            <div class="payment-step">
-                <div class="payment-step-title">Step 4: Submit Contract</div>
-                <div class="payment-step-description">
-                    Submit the contract. It will be processed within 24 hours.
-                    You can track the status on the Tax History page.
-                </div>
-            </div>
-        </div>
-    `;
 };
 
 /**
@@ -726,7 +682,7 @@ TaxManagement.savePreferences = function() {
  */
 TaxManagement.loadPreferences = function() {
     this.state.currentPeriod = MiningManager.loadLocal('tax_period', 'monthly');
-    this.state.paymentMethod = MiningManager.loadLocal('payment_method', 'contract');
+    this.state.paymentMethod = MiningManager.loadLocal('payment_method', 'wallet');
 };
 
 /* ============================================

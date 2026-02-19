@@ -95,8 +95,6 @@ return [
     // Tax Payment Method
     'tax_payment_method' => 'Tax Payment Method',
     'payment_method' => 'Payment Method',
-    'contract_method' => 'Item Exchange Contract',
-    'contract_method_desc' => 'Members create item exchange contracts with refined ore',
     'wallet_method' => 'Direct ISK Transfer',
     'wallet_method_desc' => 'Members send ISK directly to corporation wallet',
     'tax_wallet_division' => 'Tax Wallet Division',
@@ -298,7 +296,7 @@ return [
     'help_tax' => 'Tax Settings',
     'help_tax_desc' => 'Set up tax rates and payment methods:',
     'help_tax_1' => 'Configure default tax rates for different ore types',
-    'help_tax_2' => 'Choose between contracts or direct ISK transfers',
+    'help_tax_2' => 'Set up wallet transfer payment with tax codes',
     'help_tax_3' => 'Set payment deadlines and reminder schedules',
     'help_pricing' => 'Pricing Settings',
     'help_pricing_desc' => 'Control how ore values are calculated:',

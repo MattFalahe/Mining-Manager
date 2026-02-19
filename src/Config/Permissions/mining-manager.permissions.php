@@ -31,39 +31,9 @@ return [
         'division' => 'financial',
     ],
 
-    'tax.view' => [
-        'label' => 'mining-manager::permissions.tax_view_label',
-        'description' => 'mining-manager::permissions.tax_view_description',
-        'division' => 'financial',
-    ],
-    
-    'tax.calculate' => [
-        'label' => 'mining-manager::permissions.tax_calculate_label',
-        'description' => 'mining-manager::permissions.tax_calculate_description',
-        'division' => 'financial',
-    ],
-    
-    'tax.generate_invoices' => [
-        'label' => 'mining-manager::permissions.tax_generate_invoices_label',
-        'description' => 'mining-manager::permissions.tax_generate_invoices_description',
-        'division' => 'financial',
-    ],
-    
-    'tax.verify_payments' => [
-        'label' => 'mining-manager::permissions.tax_verify_payments_label',
-        'description' => 'mining-manager::permissions.tax_verify_payments_description',
-        'division' => 'financial',
-    ],
-    
-    'tax.send_reminders' => [
-        'label' => 'mining-manager::permissions.tax_send_reminders_label',
-        'description' => 'mining-manager::permissions.tax_send_reminders_description',
-        'division' => 'financial',
-    ],
-    
-    'tax.manage' => [
-        'label' => 'mining-manager::permissions.tax_manage_label',
-        'description' => 'mining-manager::permissions.tax_manage_description',
+    'member' => [
+        'label' => 'mining-manager::permissions.member_label',
+        'description' => 'mining-manager::permissions.member_description',
         'division' => 'financial',
     ],
 

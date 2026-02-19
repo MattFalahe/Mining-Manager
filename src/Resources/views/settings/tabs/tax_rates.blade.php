@@ -718,41 +718,11 @@
                     <i class="fas fa-hand-holding-usd"></i>
                     {{ trans('mining-manager::settings.payment_method') }}
                 </label>
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="custom-control custom-radio">
-                            <input type="radio"
-                                   id="payment_contract"
-                                   name="tax_payment_method"
-                                   value="contract"
-                                   class="custom-control-input"
-                                   {{ old('tax_payment_method', $settings->tax_payment_method ?? 'contract') == 'contract' ? 'checked' : '' }}>
-                            <label class="custom-control-label" for="payment_contract">
-                                <strong>{{ trans('mining-manager::settings.contract_method') }}</strong>
-                                <br>
-                                <small class="text-muted">
-                                    {{ trans('mining-manager::settings.contract_method_desc') }}
-                                </small>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="custom-control custom-radio">
-                            <input type="radio"
-                                   id="payment_wallet"
-                                   name="tax_payment_method"
-                                   value="wallet"
-                                   class="custom-control-input"
-                                   {{ old('tax_payment_method', $settings->tax_payment_method ?? '') == 'wallet' ? 'checked' : '' }}>
-                            <label class="custom-control-label" for="payment_wallet">
-                                <strong>{{ trans('mining-manager::settings.wallet_method') }}</strong>
-                                <br>
-                                <small class="text-muted">
-                                    {{ trans('mining-manager::settings.wallet_method_desc') }}
-                                </small>
-                            </label>
-                        </div>
-                    </div>
+                <input type="hidden" name="tax_payment_method" value="wallet">
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-wallet"></i>
+                    <strong>{{ trans('mining-manager::settings.wallet_method') }}</strong> &mdash;
+                    {{ trans('mining-manager::settings.wallet_method_desc') }}
                 </div>
             </div>
 

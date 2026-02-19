@@ -5,7 +5,6 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
-use MiningManager\Services\Tax\ContractManagementService;
 use Carbon\Carbon;
 
 class GenerateTaxInvoicesCommand extends Command
@@ -25,24 +24,14 @@ class GenerateTaxInvoicesCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Generate tax invoices/contracts for unpaid mining taxes';
-
-    /**
-     * Contract management service
-     *
-     * @var ContractManagementService
-     */
-    protected $contractService;
+    protected $description = 'Generate tax invoice records for unpaid mining taxes';
 
     /**
      * Create a new command instance.
-     *
-     * @param ContractManagementService $contractService
      */
-    public function __construct(ContractManagementService $contractService)
+    public function __construct()
     {
         parent::__construct();
-        $this->contractService = $contractService;
     }
 
     /**
@@ -114,10 +103,6 @@ class GenerateTaxInvoicesCommand extends Command
                     'status' => 'pending',
                     'generated_at' => Carbon::now(),
                 ]);
-
-                // Note: Actual contract creation via ESI would happen here
-                // For now, we just create the invoice record
-                // $this->contractService->createIngameContract($invoice);
 
                 $this->line("Generated invoice for character {$tax->character_id}: " . number_format($tax->amount_owed, 2) . " ISK");
                 $generated++;

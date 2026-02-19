@@ -40,6 +40,7 @@ class MiningLedger extends Model
         'type_id',
         'quantity',
         'solar_system_id',
+        'observer_id',
         'processed_at',
         'unit_price',
         'ore_value',

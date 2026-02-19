@@ -28,7 +28,7 @@ return [
                 'label'      => 'mining-manager::menu.tax_management',
                 'icon'       => 'fas fa-file-invoice-dollar',
                 'route'      => 'mining-manager.taxes.index',
-                'permission' => 'mining-manager.tax.view',
+                'permission' => 'mining-manager.member',
             ],
             [
                 'name'       => 'Mining Events',

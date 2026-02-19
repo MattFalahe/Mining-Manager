@@ -408,7 +408,7 @@ class TheftDetectionService
     {
         try {
             // Get from price cache if available
-            $priceCache = DB::table('mining_manager_price_cache')
+            $priceCache = DB::table('mining_price_cache')
                 ->where('type_id', $typeId)
                 ->where('updated_at', '>', Carbon::now()->subDays(1))
                 ->first();
@@ -610,7 +610,7 @@ class TheftDetectionService
                 DB::raw('MAX(mining.last_updated) as last_activity')
             )
             ->leftJoin('invTypes as types', 'mining.type_id', '=', 'types.typeID')
-            ->leftJoin('mining_manager_price_cache as prices', function($join) {
+            ->leftJoin('mining_price_cache as prices', function($join) {
                 $join->on('mining.type_id', '=', 'prices.type_id')
                      ->where('prices.updated_at', '>', DB::raw('NOW() - INTERVAL 7 DAY'));
             })

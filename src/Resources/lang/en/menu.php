@@ -19,7 +19,6 @@ return [
     'calculate_taxes' => 'Calculate Taxes',
     'my_taxes' => 'My Taxes',
     'tax_codes' => 'Tax Codes',
-    'tax_contracts' => 'Tax Contracts',
     'wallet_verification' => 'Wallet Verification',
     
     // Mining Events

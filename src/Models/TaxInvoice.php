@@ -24,7 +24,6 @@ class TaxInvoice extends Model
         'character_id',
         'amount',
         'status',
-        'contract_id',
         'generated_at',
         'sent_at',
         'expires_at',

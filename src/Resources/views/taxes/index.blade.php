@@ -11,48 +11,7 @@
 @section('full')
 <div class="mining-manager-wrapper taxes-index-page">
 
-{{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/tax') && !Request::is('*/tax/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.index') }}">
-                <i class="fas fa-chart-pie"></i> {{ trans('mining-manager::menu.tax_overview') }}
-            </a>
-        </li>
-        @can('mining-manager.tax.calculate')
-        <li class="{{ Request::is('*/tax/calculate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.calculate') }}">
-                <i class="fas fa-calculator"></i> {{ trans('mining-manager::menu.calculate_taxes') }}
-            </a>
-        </li>
-        @endcan
-        <li class="{{ Request::is('*/tax/my-taxes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.my-taxes') }}">
-                <i class="fas fa-receipt"></i> {{ trans('mining-manager::menu.my_taxes') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/tax/codes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.codes') }}">
-                <i class="fas fa-barcode"></i> {{ trans('mining-manager::menu.tax_codes') }}
-            </a>
-        </li>
-        @can('mining-manager.tax.generate_invoices')
-        <li class="{{ Request::is('*/tax/contracts') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.contracts') }}">
-                <i class="fas fa-file-contract"></i> {{ trans('mining-manager::menu.tax_contracts') }}
-            </a>
-        </li>
-        @endcan
-        @can('mining-manager.tax.verify_payments')
-        <li class="{{ Request::is('*/tax/wallet') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.wallet') }}">
-                <i class="fas fa-wallet"></i> {{ trans('mining-manager::menu.wallet_verification') }}
-            </a>
-        </li>
-        @endcan
-    </ul>
-    <div class="tab-content">
-
+@include('mining-manager::taxes.partials.tab-navigation')
 
 <div class="tax-management">
     
@@ -223,9 +182,11 @@
                         <button type="button" class="btn btn-sm btn-info" id="exportTaxes">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::taxes.export') }}
                         </button>
+                        @if($isAdmin ?? false)
                         <button type="button" class="btn btn-sm btn-success" id="sendReminders" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.send_reminders_to_selected') }}">
                             <i class="fas fa-envelope"></i> {{ trans('mining-manager::taxes.send_reminders') }}
                         </button>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">
@@ -245,8 +206,8 @@
                                 </div>
                             </div>
 
-                            {{-- Miner Type Filter (Corp/Guest) --}}
-                            @if($moonOwnerCorpId)
+                            {{-- Miner Type Filter (Corp/Guest) - only when viewing all --}}
+                            @if(($viewAll ?? false) && $moonOwnerCorpId)
                             <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="minerTypeFilter">
@@ -273,7 +234,8 @@
                                 </div>
                             </div>
 
-                            {{-- Corporation Filter --}}
+                            {{-- Corporation Filter - only when viewing all --}}
+                            @if($viewAll ?? false)
                             <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="corporationFilter">{{ trans('mining-manager::taxes.corporation') }}</label>
@@ -287,6 +249,7 @@
                                     </select>
                                 </div>
                             </div>
+                            @endif
 
                             {{-- Character Search --}}
                             <div class="col-md-2">
@@ -330,9 +293,11 @@
                         <table class="table table-dark table-striped table-hover" id="taxTable">
                             <thead>
                                 <tr>
+                                    @if($isAdmin ?? false)
                                     <th style="width: 40px">
                                         <input type="checkbox" id="selectAll">
                                     </th>
+                                    @endif
                                     <th>{{ trans('mining-manager::taxes.character') }}</th>
                                     <th>{{ trans('mining-manager::taxes.corporation') }}</th>
                                     <th>{{ trans('mining-manager::taxes.month') }}</th>
@@ -346,9 +311,11 @@
                             <tbody>
                                 @forelse($taxes as $tax)
                                 <tr data-tax-id="{{ $tax->id }}">
+                                    @if($isAdmin ?? false)
                                     <td>
                                         <input type="checkbox" class="tax-checkbox" value="{{ $tax->id }}">
                                     </td>
+                                    @endif
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32"
                                              class="img-circle"
@@ -425,25 +392,25 @@
                                     </td>
                                     <td class="text-center">
                                         <div class="btn-group">
-                                            <a href="{{ route('mining-manager.taxes.details', $tax->id) }}" 
-                                               class="btn btn-sm btn-info" 
-                                               data-toggle="tooltip" 
+                                            <a href="{{ route('mining-manager.taxes.details', $tax->id) }}"
+                                               class="btn btn-sm btn-info"
+                                               data-toggle="tooltip"
                                                title="{{ trans('mining-manager::taxes.view_details') }}">
                                                 <i class="fas fa-eye"></i>
                                             </a>
-                                            @if($tax->status !== 'paid')
-                                            <button type="button" 
-                                                    class="btn btn-sm btn-success mark-paid" 
+                                            @if(($isAdmin ?? false) && $tax->status !== 'paid')
+                                            <button type="button"
+                                                    class="btn btn-sm btn-success mark-paid"
                                                     data-tax-id="{{ $tax->id }}"
-                                                    data-toggle="tooltip" 
+                                                    data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.mark_as_paid') }}">
                                                 <i class="fas fa-check"></i>
                                             </button>
-                                            <button type="button" 
-                                                    class="btn btn-sm btn-warning send-reminder" 
+                                            <button type="button"
+                                                    class="btn btn-sm btn-warning send-reminder"
                                                     data-tax-id="{{ $tax->id }}"
                                                     data-character-name="{{ $tax->character->name ?? 'Unknown' }}"
-                                                    data-toggle="tooltip" 
+                                                    data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.send_reminder') }}">
                                                 <i class="fas fa-envelope"></i>
                                             </button>
@@ -453,7 +420,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted">
+                                    <td colspan="{{ ($isAdmin ?? false) ? 9 : 8 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_taxes_found') }}</p>
                                     </td>

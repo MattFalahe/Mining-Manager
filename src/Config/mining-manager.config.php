@@ -36,12 +36,10 @@ return [
     |--------------------------------------------------------------------------
     | Tax Payment Method
     |--------------------------------------------------------------------------
-    | Choose how players pay their mining taxes:
-    | - 'contract': Item exchange contracts issued by designated character
-    | - 'wallet': Direct wallet transfers with tax codes
+    | Players pay their mining taxes via direct wallet transfers with tax codes.
     */
     'tax_payment' => [
-        // Active payment method: 'contract' or 'wallet'
+        // Payment method (wallet transfers only)
         'method' => 'wallet',
         
         // Grace period days after month end before overdue
@@ -55,46 +53,6 @@ return [
         
         // Minimum tax amount to collect (ISK)
         'minimum_tax_amount' => 1000000,
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Contract Payment Settings
-    |--------------------------------------------------------------------------
-    | Settings for contract-based tax payment method
-    */
-    'contract' => [
-        // Character name who issues tax contracts
-        // This character MUST have ESI scopes for contract creation
-        'issuer_character_name' => '',
-        
-        // Character ID of contract issuer (auto-filled from name)
-        'issuer_character_id' => null,
-        
-        // Contract description template
-        // Available variables: {year}, {month}, {month_name}, {character}, {amount}
-        'contract_tag' => 'MINC TAX {year}-{month}',
-        
-        // Contract title template
-        'contract_title' => 'Mining Tax - {month_name} {year}',
-        
-        // Minimum tax value to create contract (ISK)
-        'minimum_contract_value' => 1000000,
-        
-        // Contract expiration time (days)
-        'expire_in_days' => 7,
-        
-        // Contract type: 'item_exchange'
-        'contract_type' => 'item_exchange',
-        
-        // Auto-generate contracts after tax calculation
-        'auto_generate' => false,
-        
-        // Automatically mark paid when contract completed
-        'auto_mark_paid' => true,
-        
-        // Delete expired contracts and regenerate
-        'auto_regenerate_expired' => false,
     ],
 
     /*

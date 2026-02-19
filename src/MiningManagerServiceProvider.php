@@ -27,19 +27,16 @@ use MiningManager\Console\Commands\BackfillExtractionNotificationsCommand;
 use MiningManager\Console\Commands\DetectMoonTheftCommand;
 use MiningManager\Console\Commands\MonitorActiveTheftsCommand;
 use MiningManager\Console\Commands\FinalizeMonthCommand;
-use MiningManager\Console\Commands\ScanCorporationContractsCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
 // Import Events
 use Seat\Eveapi\Events\CharacterMiningUpdated;
 use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
-use Seat\Eveapi\Events\CharacterContractsUpdated;
 
 // Import Listeners
 use MiningManager\Listeners\ProcessMiningLedgerListener;
 use MiningManager\Listeners\ProcessWalletJournalListener;
-use MiningManager\Listeners\ProcessContractUpdatesListener;
 
 class MiningManagerServiceProvider extends AbstractSeatPlugin
 {
@@ -90,7 +87,6 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 DetectMoonTheftCommand::class,
                 MonitorActiveTheftsCommand::class,
                 FinalizeMonthCommand::class,
-                ScanCorporationContractsCommand::class,
             ]);
         }
 
@@ -171,12 +167,6 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         Event::listen(
             CharacterWalletJournalUpdated::class,
             ProcessWalletJournalListener::class
-        );
-
-        // Contract Updates - Process tax invoice contracts
-        Event::listen(
-            CharacterContractsUpdated::class,
-            ProcessContractUpdatesListener::class
         );
     }
 

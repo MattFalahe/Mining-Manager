@@ -417,8 +417,8 @@ class TaxCalculationService
 
         // Apply minimum tax (only for individual characters, not when accumulating)
         // Note: Minimum tax only applies if exemption check passes
-        $contractSettings = $this->settingsService->getContractSettings();
-        $minimumAmount = $contractSettings['minimum_tax_value'];
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $minimumAmount = $paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000);
 
         if ($totalTax > 0 && $totalTax < $minimumAmount) {
             Log::debug("Mining Manager: Adjusting tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");

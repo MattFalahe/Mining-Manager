@@ -1164,7 +1164,6 @@ class DiagnosticController extends Controller
                 'General' => $this->settingsService->getGeneralSettings(),
                 'Tax Rates' => $this->settingsService->getTaxRates(),
                 'Pricing' => $this->settingsService->getPricingSettings(),
-                'Contract' => $this->settingsService->getContractSettings(),
                 'Payment' => $this->settingsService->getPaymentSettings(),
             ];
 

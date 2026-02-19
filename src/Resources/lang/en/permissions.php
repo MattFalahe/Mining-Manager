@@ -18,24 +18,9 @@ return [
     'ledger_delete_label' => 'Delete Ledger Entries',
     'ledger_delete_description' => 'Delete individual or multiple mining ledger entries',
     
-    // Tax permissions
-    'tax_view_label' => 'View Tax Information',
-    'tax_view_description' => 'View tax calculations, rates, and personal tax obligations',
-    
-    'tax_calculate_label' => 'Calculate Taxes',
-    'tax_calculate_description' => 'Calculate taxes for miners',
-    
-    'tax_generate_invoices_label' => 'Generate Tax Invoices',
-    'tax_generate_invoices_description' => 'Generate tax invoices and contracts',
-    
-    'tax_verify_payments_label' => 'Verify Tax Payments',
-    'tax_verify_payments_description' => 'Verify and match wallet payments to taxes',
-    
-    'tax_send_reminders_label' => 'Send Tax Reminders',
-    'tax_send_reminders_description' => 'Send tax payment reminders to miners',
-    
-    'tax_manage_label' => 'Manage Taxes',
-    'tax_manage_description' => 'Calculate taxes, update tax rates, manage tax codes and process tax records',
+    // Tax permissions (3-tier: member < director < admin)
+    'member_label' => 'Tax Member',
+    'member_description' => 'View own tax data, tax codes, and payment status. Read-only access to personal mining tax information.',
     
     // Event permissions
     'events_view_label' => 'View Mining Events',
@@ -95,9 +80,9 @@ return [
     'api_access_description' => 'Access Mining Manager API endpoints',
     
     // Special permissions
-    'director_label' => 'Director Access',
-    'director_description' => 'Director level access to Mining Manager',
-    
-    'admin_label' => 'Full Admin Access',
-    'admin_description' => 'Full administrative access to all Mining Manager features',
+    'director_label' => 'Tax Director',
+    'director_description' => 'View all corporation tax data (toggle), verify wallet payments. Includes all Member permissions.',
+
+    'admin_label' => 'Tax Admin',
+    'admin_description' => 'Full tax management: calculate taxes, generate codes, send reminders, mark paid, manage settings. Includes all Director permissions.',
 ];
