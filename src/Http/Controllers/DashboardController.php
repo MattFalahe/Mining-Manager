@@ -819,37 +819,24 @@ class DashboardController extends Controller
 
     /**
      * Get corporation mining performance chart
+     * Shows sum of ALL mining (all ore types) by corporation characters
      */
     private function getCorpMiningPerformanceLast12Months($corporationId)
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
-        return $this->getMiningPerformanceLast12Months($characterIds);
-    }
-
-    /**
-     * Get corporation moon mining performance chart
-     * FIXED: Current month (i=0) is included in the loop, no need to add it twice
-     */
-    private function getCorpMoonMiningPerformanceLast12Months($corporationId)
-    {
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
 
         $months = [];
         $data = [];
 
-        // Loop from 11 months ago to current month (i=0 is current month)
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
             $monthEnd = $month->copy()->endOfMonth();
 
-            // For current month, use today as end date instead of end of month
             if ($i === 0) {
                 $monthEnd = Carbon::now();
             }
 
             $totalValue = MiningLedger::whereIn('character_id', $characterIds)
-                ->whereIn('type_id', $moonOreTypeIds)
                 ->whereBetween('date', [$month, $monthEnd])
                 ->whereNotNull('processed_at')
                 ->get()
@@ -868,7 +855,75 @@ class DashboardController extends Controller
     }
 
     /**
+     * Get corporation moon mining performance chart
+     * Uses corporation_industry_mining_observer_data which contains mining activity
+     * from the holding corporation's moon mining structures only.
+     * This is the authoritative data source for moon mining (same as tax calculation).
+     */
+    private function getCorpMoonMiningPerformanceLast12Months($corporationId)
+    {
+        $moonOreTypeIds = $this->getMoonOreTypeIds();
+
+        // Get the moon owner corporation ID from settings
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
+        $months = [];
+        $data = [];
+
+        for ($i = 11; $i >= 0; $i--) {
+            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $monthEnd = $month->copy()->endOfMonth();
+
+            if ($i === 0) {
+                $monthEnd = Carbon::now();
+            }
+
+            $totalValue = 0;
+
+            if ($moonOwnerCorpId) {
+                // Query observer data from the holding corporation's moon structures
+                // This table only contains mining from YOUR corp's refineries/observers
+                $observerData = DB::table('corporation_industry_mining_observer_data as d')
+                    ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
+                    ->where('o.corporation_id', $moonOwnerCorpId)
+                    ->whereIn('d.type_id', $moonOreTypeIds)
+                    ->whereBetween('d.last_updated', [$month, $monthEnd])
+                    ->select('d.type_id', DB::raw('SUM(d.quantity) as total_quantity'))
+                    ->groupBy('d.type_id')
+                    ->get();
+
+                // Calculate value using OreValuationService for each ore type
+                $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+                foreach ($observerData as $ore) {
+                    $values = $valuationService->calculateOreValue($ore->type_id, $ore->total_quantity);
+                    $totalValue += $values['total_value'];
+                }
+            } else {
+                // Fallback: if no moon owner configured, use mining_ledger data for corp characters
+                $characterIds = $this->getCorporationCharacterIds($corporationId);
+                $totalValue = MiningLedger::whereIn('character_id', $characterIds)
+                    ->whereIn('type_id', $moonOreTypeIds)
+                    ->whereBetween('date', [$month, $monthEnd])
+                    ->whereNotNull('processed_at')
+                    ->get()
+                    ->sum(function($entry) {
+                        return $this->calculateEntryValue($entry);
+                    });
+            }
+
+            $months[] = $month->format('Y-m');
+            $data[] = $totalValue;
+        }
+
+        return [
+            'labels' => $months,
+            'data' => $data,
+        ];
+    }
+
+    /**
      * Get mining tax chart for last 12 months
+     * Current month shows live running totals that update as the month progresses
      */
     private function getMiningTaxLast12Months($corporationId)
     {
@@ -890,6 +945,19 @@ class DashboardController extends Controller
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
 
+            // For current month, if no tax records exist yet, estimate from mining ledger
+            if ($i === 0 && $owedAmount == 0) {
+                $monthEnd = Carbon::now();
+                $currentMonthMining = MiningLedger::whereIn('character_id', $characterIds)
+                    ->whereBetween('date', [$month, $monthEnd])
+                    ->whereNotNull('processed_at')
+                    ->sum('tax_amount');
+
+                if ($currentMonthMining > 0) {
+                    $owedAmount = $currentMonthMining;
+                }
+            }
+
             $months[] = $month->format('Y-m');
             $collected[] = $collectedAmount;
             $owed[] = $owedAmount;
@@ -904,17 +972,49 @@ class DashboardController extends Controller
 
     /**
      * Get event tax chart for last 12 months
+     * Shows the tax impact from mining events (tax modifier adjustments)
+     * Events with negative modifiers reduce tax, positive modifiers increase tax
+     * Current month shows running total as events progress
      */
     private function getEventTaxLast12Months($corporationId)
     {
-        // Placeholder - implement based on your event tax system
         $months = [];
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $monthEnd = $month->copy()->endOfMonth();
+
+            if ($i === 0) {
+                $monthEnd = Carbon::now();
+            }
+
+            // Get completed and active events for this corporation in this month
+            $events = MiningEvent::where('corporation_id', $corporationId)
+                ->whereIn('status', ['completed', 'active'])
+                ->where(function($query) use ($month, $monthEnd) {
+                    $query->whereBetween('start_time', [$month, $monthEnd])
+                        ->orWhereBetween('end_time', [$month, $monthEnd]);
+                })
+                ->where('tax_modifier', '!=', 0)
+                ->get();
+
+            $eventTaxTotal = 0;
+            foreach ($events as $event) {
+                // Calculate the tax impact from this event's modifier
+                // total_mined is the ISK value mined during the event
+                // tax_modifier is the percentage adjustment (e.g. -50 = half tax, +100 = double tax)
+                if ($event->total_mined > 0) {
+                    // Get the base tax rate to calculate the modifier impact
+                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
+                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
+                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
+                    $eventTaxTotal += $modifiedTax - $normalTax;
+                }
+            }
+
             $months[] = $month->format('Y-m');
-            $data[] = 0; // Replace with actual event tax calculation
+            $data[] = abs($eventTaxTotal);
         }
 
         return [

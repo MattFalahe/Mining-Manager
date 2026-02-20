@@ -100,13 +100,6 @@
                 <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
             </a>
         </li>
-        @can('mining-manager.director')
-        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.ledger.process') }}">
-                <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
-            </a>
-        </li>
-        @endcan
     </ul>
     <div class="tab-content">
 

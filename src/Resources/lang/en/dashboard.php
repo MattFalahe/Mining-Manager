@@ -23,6 +23,7 @@ return [
     // Member Dashboard
     'total_mined_quantity' => 'Total Mined Quantity',
     'total_mined_volume' => 'Total Mined Volume',
+    'total_mined_value' => 'Total Mined Value',
     'total_mined_isk' => 'Total Mined ISK',
     'tax_isk' => 'Tax ISK',
     'total_quantity' => 'Total Quantity',

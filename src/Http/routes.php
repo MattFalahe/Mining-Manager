@@ -108,58 +108,10 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Process/import routes - Director
-        Route::get('/process', [
-            'as' => 'mining-manager.ledger.process',
-            'uses' => 'LedgerController@process',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::post('/process', [
-            'as' => 'mining-manager.ledger.process.submit',
-            'uses' => 'LedgerController@processSubmit',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
+        // Director routes
         Route::get('/export', [
             'as' => 'mining-manager.ledger.export',
             'uses' => 'LedgerController@export',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::get('/download-template', [
-            'as' => 'mining-manager.ledger.download-template',
-            'uses' => 'LedgerController@downloadTemplate',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::post('/import-esi', [
-            'as' => 'mining-manager.ledger.import-esi',
-            'uses' => 'LedgerController@importFromESI',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::post('/upload-csv', [
-            'as' => 'mining-manager.ledger.upload-csv',
-            'uses' => 'LedgerController@uploadCSV',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::post('/toggle-queue', [
-            'as' => 'mining-manager.ledger.toggle-queue',
-            'uses' => 'LedgerController@toggleQueue',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::post('/retry-job/{id}', [
-            'as' => 'mining-manager.ledger.retry-job',
-            'uses' => 'LedgerController@retryJob',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::get('/job-log/{id}', [
-            'as' => 'mining-manager.ledger.job-log',
-            'uses' => 'LedgerController@getJobLog',
             'middleware' => 'can:mining-manager.director',
         ]);
 

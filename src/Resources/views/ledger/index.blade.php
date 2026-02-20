@@ -22,13 +22,6 @@
                 <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
             </a>
         </li>
-        @can('mining-manager.director')
-        <li class="{{ Request::is('*/ledger/process') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.ledger.process') }}">
-                <i class="fas fa-cogs"></i> {{ trans('mining-manager::menu.process_ledger') }}
-            </a>
-        </li>
-        @endcan
     </ul>
     <div class="tab-content">
 
@@ -122,9 +115,6 @@
                         {{ trans('mining-manager::ledger.filters') }}
                     </h3>
                     <div class="card-tools">
-                        <a href="{{ route('mining-manager.ledger.process') }}" class="btn btn-sm btn-success">
-                            <i class="fas fa-cog"></i> {{ trans('mining-manager::ledger.process_ledger') }}
-                        </a>
                         <button type="button" class="btn btn-sm btn-info" id="exportLedger">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::ledger.export') }}
                         </button>
