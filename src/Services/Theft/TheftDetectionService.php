@@ -86,7 +86,7 @@ class TheftDetectionService
         ]);
 
         // Query corporation_industry_mining_observer_data for moon mining
-        $miningData = DB::table('corporation_industry_mining_observer')
+        $miningData = DB::table('corporation_industry_mining_observer_data')
             ->whereBetween('last_updated', [$startDate, $endDate])
             ->whereIn('type_id', $moonOreTypeIds)
             ->select('character_id', 'type_id', 'quantity', 'last_updated')
@@ -179,7 +179,7 @@ class TheftDetectionService
         // Get mining data for this character
         $moonOreTypeIds = $this->getMoonOreTypeIds();
 
-        $miningRecords = DB::table('corporation_industry_mining_observer')
+        $miningRecords = DB::table('corporation_industry_mining_observer_data')
             ->where('character_id', $characterId)
             ->whereBetween('last_updated', [$startDate, $endDate])
             ->whereIn('type_id', $moonOreTypeIds)
@@ -407,30 +407,30 @@ class TheftDetectionService
     protected function getOrePrice(int $typeId): float
     {
         try {
-            // Get from price cache if available
+            // Get from our price cache if available (uses cached_at, not updated_at)
+            $priceType = $this->settingsService->getSetting('pricing.price_type', 'sell');
+
             $priceCache = DB::table('mining_price_cache')
                 ->where('type_id', $typeId)
-                ->where('updated_at', '>', Carbon::now()->subDays(1))
+                ->where('cached_at', '>', Carbon::now()->subDays(1))
                 ->first();
 
             if ($priceCache) {
-                return $priceCache->price ?? 0;
+                // Use correct column names: sell_price, buy_price, average_price
+                return match ($priceType) {
+                    'buy' => (float) ($priceCache->buy_price ?? 0),
+                    'average' => (float) ($priceCache->average_price ?? 0),
+                    default => (float) ($priceCache->sell_price ?? 0),
+                };
             }
 
-            // Fallback to market data
-            $regionId = $this->settingsService->getSetting('pricing.default_region_id', 10000002);
-            $priceType = $this->settingsService->getSetting('pricing.price_type', 'sell');
-
-            $priceColumn = $priceType === 'buy' ? 'highest_buy_order' : 'lowest_sell_order';
-
+            // Fallback to SeAT's market_prices table (has adjusted_price, average_price)
             $marketData = DB::table('market_prices')
-                ->where('region_id', $regionId)
                 ->where('type_id', $typeId)
-                ->orderBy('updated_at', 'desc')
                 ->first();
 
-            if ($marketData && isset($marketData->$priceColumn)) {
-                return $marketData->$priceColumn ?? 0;
+            if ($marketData) {
+                return (float) ($marketData->adjusted_price ?? $marketData->average_price ?? 0);
             }
 
             return 0;
@@ -481,7 +481,7 @@ class TheftDetectionService
         foreach ($unresolvedIncidents as $incident) {
             try {
                 // Query for new mining activity after incident was created
-                $newMiningRecords = DB::table('corporation_industry_mining_observer')
+                $newMiningRecords = DB::table('corporation_industry_mining_observer_data')
                     ->where('character_id', $incident->character_id)
                     ->where('last_updated', '>', $incident->created_at)
                     ->whereIn('type_id', $moonOreTypeIds)
@@ -602,17 +602,18 @@ class TheftDetectionService
         }
 
         // Query ONLY these characters in mining observer data
+        // Use sell_price from mining_price_cache (cached_at for freshness check)
         $recentMining = DB::table('corporation_industry_mining_observer_data as mining')
             ->select(
                 'mining.character_id',
-                DB::raw('SUM(mining.quantity * COALESCE(prices.price, 0)) as total_value'),
+                DB::raw('SUM(mining.quantity * COALESCE(prices.sell_price, 0)) as total_value'),
                 DB::raw('SUM(mining.quantity) as total_quantity'),
                 DB::raw('MAX(mining.last_updated) as last_activity')
             )
             ->leftJoin('invTypes as types', 'mining.type_id', '=', 'types.typeID')
             ->leftJoin('mining_price_cache as prices', function($join) {
                 $join->on('mining.type_id', '=', 'prices.type_id')
-                     ->where('prices.updated_at', '>', DB::raw('NOW() - INTERVAL 7 DAY'));
+                     ->where('prices.cached_at', '>', DB::raw('NOW() - INTERVAL 7 DAY'));
             })
             ->whereIn('mining.character_id', $characterIds)
             ->where('mining.last_updated', '>=', $checkFrom)

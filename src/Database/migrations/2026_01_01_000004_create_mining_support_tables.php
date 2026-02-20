@@ -215,6 +215,19 @@ return new class extends Migration
             $table->index('type');
             $table->index('corporation_id');
         });
+
+        // Notification Log - tracks sent notifications for history/debugging
+        Schema::create('mining_notification_log', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('type', 50);
+            $table->json('recipients')->nullable();
+            $table->json('channels')->nullable();
+            $table->json('results')->nullable();
+            $table->timestamp('created_at')->nullable();
+
+            $table->index('type');
+            $table->index('created_at');
+        });
     }
 
     /**
@@ -222,6 +235,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('mining_notification_log');
         Schema::dropIfExists('webhook_configurations');
         Schema::dropIfExists('theft_incidents');
         Schema::dropIfExists('mining_ledger_daily_summaries');

@@ -8,12 +8,20 @@ use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
 use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxCode;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class ProcessWalletJournalListener implements ShouldQueue
 {
     use InteractsWithQueue;
+
+    protected SettingsManagerService $settingsService;
+
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
 
     /**
      * Handle the event.
@@ -24,7 +32,7 @@ class ProcessWalletJournalListener implements ShouldQueue
     public function handle(CharacterWalletJournalUpdated $event)
     {
         // Check if wallet verification feature is enabled
-        if (!config('mining-manager.features.wallet_verification', true)) {
+        if (!$this->settingsService->getSetting('features.verify_wallet_transactions', true)) {
             return;
         }
 
@@ -86,7 +94,7 @@ class ProcessWalletJournalListener implements ShouldQueue
                 }
 
                 // Auto-match if enabled in config
-                if (config('mining-manager.wallet.auto_match_payments', true)) {
+                if ($this->settingsService->getSetting('tax_payment.auto_match_payments', true)) {
                     // Update tax record
                     $tax->update([
                         'amount_paid' => $amount,
@@ -133,7 +141,7 @@ class ProcessWalletJournalListener implements ShouldQueue
             return null;
         }
 
-        $prefix = config('mining-manager.wallet.tax_code_prefix', 'TAX-');
+        $prefix = $this->settingsService->getSetting('tax_payment.tax_code_prefix', 'TAX-');
 
         // Look for tax code pattern (e.g., TAX-XXXXXX)
         $pattern = '/' . preg_quote($prefix, '/') . '([A-Z0-9]{6})/';

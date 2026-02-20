@@ -118,7 +118,7 @@ class NotificationService
      */
     public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining): array
     {
-        if (!$this->settings->get('notification_tax_reminders', true)) {
+        if (!$this->settings->getSetting('notification_tax_reminders', true)) {
             return ['skipped' => true];
         }
 
@@ -179,7 +179,7 @@ class NotificationService
      */
     public function sendEventCreated(MiningEvent $event): array
     {
-        if (!$this->settings->get('notification_event_updates', true)) {
+        if (!$this->settings->getSetting('notification_event_updates', true)) {
             return ['skipped' => true];
         }
 
@@ -207,7 +207,7 @@ class NotificationService
      */
     public function sendEventStarted(MiningEvent $event, array $participantIds = []): array
     {
-        if (!$this->settings->get('notification_event_updates', true)) {
+        if (!$this->settings->getSetting('notification_event_updates', true)) {
             return ['skipped' => true];
         }
 
@@ -240,7 +240,7 @@ class NotificationService
      */
     public function sendEventCompleted(MiningEvent $event, array $participantIds = []): array
     {
-        if (!$this->settings->get('notification_event_updates', true)) {
+        if (!$this->settings->getSetting('notification_event_updates', true)) {
             return ['skipped' => true];
         }
 
@@ -304,8 +304,8 @@ class NotificationService
      */
     public function sendBroadcast(string $type, array $data): array
     {
-        $corpId = $this->settings->get('corporation_id');
-        
+        $corpId = $this->settings->getSetting('general.corporation_id');
+
         if (!$corpId) {
             return ['error' => 'Corporation ID not configured'];
         }
@@ -402,7 +402,7 @@ class NotificationService
      */
     protected function sendViaSlack(string $type, array $recipients, array $data): array
     {
-        $webhookUrl = $this->settings->get('slack_webhook_url');
+        $webhookUrl = $this->settings->getSetting('slack_webhook_url');
         
         if (!$webhookUrl) {
             return ['error' => 'Slack webhook URL not configured'];
@@ -437,7 +437,7 @@ class NotificationService
      */
     protected function sendViaDiscord(string $type, array $recipients, array $data): array
     {
-        $webhookUrl = $this->settings->get('discord_webhook_url');
+        $webhookUrl = $this->settings->getSetting('discord_webhook_url');
         
         if (!$webhookUrl) {
             return ['error' => 'Discord webhook URL not configured'];
@@ -770,7 +770,7 @@ class NotificationService
      */
     protected function getCorpName(): string
     {
-        $corpId = $this->settings->get('corporation_id');
+        $corpId = $this->settings->getSetting('general.corporation_id');
         
         if (!$corpId) {
             return 'Corporation';
@@ -790,7 +790,7 @@ class NotificationService
      */
     protected function isEnabled(): bool
     {
-        return $this->settings->get('notifications_enabled', true);
+        return $this->settings->getSetting('notifications_enabled', true);
     }
 
     /**
@@ -800,7 +800,7 @@ class NotificationService
      */
     protected function getEnabledChannels(): array
     {
-        return $this->settings->get('notification_channels', [self::CHANNEL_ESI]);
+        return $this->settings->getSetting('notification_channels', [self::CHANNEL_ESI]);
     }
 
     /**
