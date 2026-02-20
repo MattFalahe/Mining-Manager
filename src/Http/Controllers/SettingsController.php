@@ -465,8 +465,8 @@ class SettingsController extends Controller
             'price_provider' => 'required|in:seat,fuzzwork,janice,custom',
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
-            'auto_refresh' => 'boolean',
-            'fallback_to_jita' => 'boolean',
+            'auto_refresh' => 'nullable|boolean',
+            'fallback_to_jita' => 'nullable|boolean',
             
             // Janice-specific settings
             'janice_api_key' => 'nullable|string|max:255',
@@ -611,18 +611,85 @@ class SettingsController extends Controller
      */
     public function updateFeatures(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            // Number inputs
+            'event_bonus_multiplier' => 'required|numeric|min:1|max:5',
+            'extraction_notification_hours' => 'required|integer|min:1|max:168',
+            'ledger_processing_interval' => 'required|integer|min:15|max:1440',
+            'ledger_retention_days' => 'required|integer|min:30|max:3650',
+            'tax_record_retention_days' => 'required|integer|min:90|max:3650',
+
+            // Checkboxes (nullable because unchecked = not sent)
+            'enable_tax_tracking' => 'nullable|boolean',
+            'enable_ledger_tracking' => 'nullable|boolean',
+            'enable_analytics' => 'nullable|boolean',
+            'enable_reports' => 'nullable|boolean',
+            'enable_events' => 'nullable|boolean',
+            'allow_event_creation' => 'nullable|boolean',
+            'auto_track_event_participation' => 'nullable|boolean',
+            'enable_moon_tracking' => 'nullable|boolean',
+            'track_moon_compositions' => 'nullable|boolean',
+            'calculate_moon_value' => 'nullable|boolean',
+            'notify_extraction_ready' => 'nullable|boolean',
+            'allow_public_stats' => 'nullable|boolean',
+            'allow_member_leaderboard' => 'nullable|boolean',
+            'show_character_names' => 'nullable|boolean',
+            'allow_export_data' => 'nullable|boolean',
+            'auto_process_ledger' => 'nullable|boolean',
+            'auto_calculate_taxes' => 'nullable|boolean',
+            'auto_generate_invoices' => 'nullable|boolean',
+            'verify_wallet_transactions' => 'nullable|boolean',
+            'auto_cleanup_old_data' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
         try {
+            $data = $validator->validated();
+
+            // Build features array: checkboxes use $request->has(), numbers use validated data
             $features = [
-                'mining_ledger' => $request->has('mining_ledger'),
-                'tax_calculation' => $request->has('tax_calculation'),
-                'tax_invoices' => $request->has('tax_invoices'),
-                'mining_events' => $request->has('mining_events'),
-                'moon_extractions' => $request->has('moon_extractions'),
-                'reports' => $request->has('reports'),
-                'analytics' => $request->has('analytics'),
-                'wallet_verification' => $request->has('wallet_verification'),
-                'notifications' => $request->has('notifications'),
-                'price_caching' => $request->has('price_caching'),
+                // Core features
+                'enable_tax_tracking' => $request->has('enable_tax_tracking'),
+                'enable_ledger_tracking' => $request->has('enable_ledger_tracking'),
+                'enable_analytics' => $request->has('enable_analytics'),
+                'enable_reports' => $request->has('enable_reports'),
+
+                // Events
+                'enable_events' => $request->has('enable_events'),
+                'allow_event_creation' => $request->has('allow_event_creation'),
+                'auto_track_event_participation' => $request->has('auto_track_event_participation'),
+                'event_bonus_multiplier' => $data['event_bonus_multiplier'],
+
+                // Moon mining
+                'enable_moon_tracking' => $request->has('enable_moon_tracking'),
+                'track_moon_compositions' => $request->has('track_moon_compositions'),
+                'calculate_moon_value' => $request->has('calculate_moon_value'),
+                'notify_extraction_ready' => $request->has('notify_extraction_ready'),
+                'extraction_notification_hours' => $data['extraction_notification_hours'],
+
+                // Permissions & access
+                'allow_public_stats' => $request->has('allow_public_stats'),
+                'allow_member_leaderboard' => $request->has('allow_member_leaderboard'),
+                'show_character_names' => $request->has('show_character_names'),
+                'allow_export_data' => $request->has('allow_export_data'),
+
+                // Automation
+                'auto_process_ledger' => $request->has('auto_process_ledger'),
+                'ledger_processing_interval' => $data['ledger_processing_interval'],
+                'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
+                'auto_generate_invoices' => $request->has('auto_generate_invoices'),
+                'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),
+
+                // Data retention
+                'ledger_retention_days' => $data['ledger_retention_days'],
+                'tax_record_retention_days' => $data['tax_record_retention_days'],
+                'auto_cleanup_old_data' => $request->has('auto_cleanup_old_data'),
             ];
 
             $this->settingsService->updateFeatureFlags($features);
@@ -631,6 +698,7 @@ class SettingsController extends Controller
                 ->with('success', 'Feature settings updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()
+                ->withInput()
                 ->with('error', 'Error updating feature settings: ' . $e->getMessage());
         }
     }

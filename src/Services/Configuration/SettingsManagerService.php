@@ -702,16 +702,42 @@ class SettingsManagerService
     public function getFeatureFlags(): array
     {
         return [
-            'mining_ledger' => $this->getSetting('features.mining_ledger', true),
-            'tax_calculation' => $this->getSetting('features.tax_calculation', true),
-            'tax_invoices' => $this->getSetting('features.tax_invoices', true),
-            'mining_events' => $this->getSetting('features.mining_events', true),
-            'moon_extractions' => $this->getSetting('features.moon_extractions', true),
-            'reports' => $this->getSetting('features.reports', true),
-            'analytics' => $this->getSetting('features.analytics', true),
-            'wallet_verification' => $this->getSetting('features.wallet_verification', true),
-            'notifications' => $this->getSetting('features.notifications', true),
-            'price_caching' => $this->getSetting('features.price_caching', true),
+            // Core features
+            'enable_tax_tracking' => (bool) $this->getSetting('features.enable_tax_tracking', true),
+            'enable_ledger_tracking' => (bool) $this->getSetting('features.enable_ledger_tracking', true),
+            'enable_analytics' => (bool) $this->getSetting('features.enable_analytics', true),
+            'enable_reports' => (bool) $this->getSetting('features.enable_reports', true),
+
+            // Events
+            'enable_events' => (bool) $this->getSetting('features.enable_events', true),
+            'allow_event_creation' => (bool) $this->getSetting('features.allow_event_creation', true),
+            'auto_track_event_participation' => (bool) $this->getSetting('features.auto_track_event_participation', true),
+            'event_bonus_multiplier' => (float) $this->getSetting('features.event_bonus_multiplier', 1.5),
+
+            // Moon mining
+            'enable_moon_tracking' => (bool) $this->getSetting('features.enable_moon_tracking', true),
+            'track_moon_compositions' => (bool) $this->getSetting('features.track_moon_compositions', true),
+            'calculate_moon_value' => (bool) $this->getSetting('features.calculate_moon_value', true),
+            'notify_extraction_ready' => (bool) $this->getSetting('features.notify_extraction_ready', true),
+            'extraction_notification_hours' => (int) $this->getSetting('features.extraction_notification_hours', 24),
+
+            // Permissions & access
+            'allow_public_stats' => (bool) $this->getSetting('features.allow_public_stats', false),
+            'allow_member_leaderboard' => (bool) $this->getSetting('features.allow_member_leaderboard', true),
+            'show_character_names' => (bool) $this->getSetting('features.show_character_names', true),
+            'allow_export_data' => (bool) $this->getSetting('features.allow_export_data', true),
+
+            // Automation
+            'auto_process_ledger' => (bool) $this->getSetting('features.auto_process_ledger', true),
+            'ledger_processing_interval' => (int) $this->getSetting('features.ledger_processing_interval', 60),
+            'auto_calculate_taxes' => (bool) $this->getSetting('features.auto_calculate_taxes', true),
+            'auto_generate_invoices' => (bool) $this->getSetting('features.auto_generate_invoices', true),
+            'verify_wallet_transactions' => (bool) $this->getSetting('features.verify_wallet_transactions', true),
+
+            // Data retention
+            'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),
+            'tax_record_retention_days' => (int) $this->getSetting('features.tax_record_retention_days', 730),
+            'auto_cleanup_old_data' => (bool) $this->getSetting('features.auto_cleanup_old_data', false),
         ];
     }
 
@@ -724,12 +750,13 @@ class SettingsManagerService
     public function updateFeatureFlags(array $features)
     {
         DB::beginTransaction();
-        
+
         try {
             foreach ($features as $key => $value) {
-                $this->updateSetting("features.{$key}", $value, 'boolean');
+                $type = is_bool($value) ? 'boolean' : (is_int($value) ? 'integer' : 'string');
+                $this->updateSetting("features.{$key}", $value, $type);
             }
-            
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
