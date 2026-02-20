@@ -20,7 +20,7 @@
         </li>
         @can('mining-manager.admin')
         <li class="{{ Request::is('*/reports/generate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.admin') }}">
+            <a href="{{ route('mining-manager.reports.generate') }}">
                 <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
             </a>
         </li>
