@@ -376,7 +376,7 @@
                                        title="View Details">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    @can('mining-manager.settings.edit')
+                                    @can('mining-manager.admin')
                                         @if($incident->isUnresolved())
                                         <button type="button"
                                                 class="btn btn-sm btn-warning"
@@ -398,7 +398,7 @@
                             </tr>
 
                             {{-- Investigate Modal --}}
-                            @can('mining-manager.settings.edit')
+                            @can('mining-manager.admin')
                             <div class="modal fade" id="investigateModal{{ $incident->id }}" tabindex="-1" role="dialog">
                                 <div class="modal-dialog" role="document">
                                     <div class="modal-content">

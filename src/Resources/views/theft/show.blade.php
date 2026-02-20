@@ -241,7 +241,7 @@
     @endif
 
     {{-- Actions --}}
-    @can('mining-manager.settings.edit')
+    @can('mining-manager.admin')
     @if($incident->isUnresolved())
     <div class="row">
         <div class="col-12">

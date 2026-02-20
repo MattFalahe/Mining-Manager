@@ -50,7 +50,7 @@
             <a href="{{ route('mining-manager.moon.index') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> {{ trans('mining-manager::moons.back_to_list') }}
             </a>
-            @can('mining-manager.moon.update')
+            @can('mining-manager.director')
             <form action="{{ route('mining-manager.moon.update', $extraction->id) }}" method="POST" style="display: inline;">
                 @csrf
                 <button type="submit" class="btn btn-primary">

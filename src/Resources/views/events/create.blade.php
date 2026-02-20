@@ -23,7 +23,7 @@
                 <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
             </a>
         </li>
-        @can('mining-manager.events.create')
+        @can('mining-manager.director')
         <li class="{{ Request::is('*/events/create') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.events.create') }}">
                 <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}

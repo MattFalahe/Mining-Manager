@@ -278,7 +278,7 @@
                                         <a href="{{ route('mining-manager.moon.show', $extraction->id) }}" class="btn btn-sm btn-info">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.details') }}
                                         </a>
-                                        @can('mining-manager.moon.update')
+                                        @can('mining-manager.director')
                                         <form action="{{ route('mining-manager.moon.update', $extraction->id) }}" method="POST" style="display: inline;">
                                             @csrf
                                             <button type="submit" class="btn btn-sm btn-primary">

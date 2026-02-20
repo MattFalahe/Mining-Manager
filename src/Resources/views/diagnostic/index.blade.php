@@ -275,7 +275,7 @@
                                 @csrf
                                 <div class="form-group">
                                     <label>Characters per Corporation</label>
-                                    <input type="number" name="count_per_corp" class="form-control" value="5" min="1" max="20">
+                                    <input type="number" name="characters_per_corp" class="form-control" value="5" min="1" max="20">
                                     <small class="form-text text-muted">Creates miners with IDs starting from 91000001</small>
                                 </div>
                                 <button type="submit" class="btn btn btn-mm-primary">

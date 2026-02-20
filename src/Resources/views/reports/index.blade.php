@@ -94,9 +94,9 @@
                 <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
             </a>
         </li>
-        @can('mining-manager.reports.generate')
+        @can('mining-manager.admin')
         <li class="{{ Request::is('*/reports/generate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.generate') }}">
+            <a href="{{ route('mining-manager.admin') }}">
                 <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
             </a>
         </li>
@@ -160,7 +160,7 @@
                         <div class="col-md-6">
                             <h5 class="mb-3">{{ trans('mining-manager::reports.quick_actions') }}</h5>
                             <div class="btn-group-vertical w-100">
-                                <a href="{{ route('mining-manager.reports.generate') }}" class="btn btn-success quick-action-btn">
+                                <a href="{{ route('mining-manager.admin') }}" class="btn btn-success quick-action-btn">
                                     <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::reports.generate_new_report') }}
                                 </a>
                                 <a href="{{ route('mining-manager.reports.scheduled') }}" class="btn btn-info quick-action-btn">
@@ -330,7 +330,7 @@
                         <i class="fas fa-file-alt fa-5x text-muted mb-3"></i>
                         <h4>{{ trans('mining-manager::reports.no_reports_found') }}</h4>
                         <p class="text-muted">{{ trans('mining-manager::reports.no_reports_description') }}</p>
-                        <a href="{{ route('mining-manager.reports.generate') }}" class="btn btn-primary btn-lg">
+                        <a href="{{ route('mining-manager.admin') }}" class="btn btn-primary btn-lg">
                             <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::reports.generate_first_report') }}
                         </a>
                     </div>

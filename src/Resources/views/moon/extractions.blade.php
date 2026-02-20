@@ -233,7 +233,7 @@
                                                title="{{ trans('mining-manager::moons.view_details') }}">
                                                 <i class="fas fa-eye"></i>
                                             </a>
-                                            @can('mining-manager.moon.update')
+                                            @can('mining-manager.director')
                                             <form action="{{ route('mining-manager.moon.update', $extraction->id) }}" 
                                                   method="POST" 
                                                   style="display: inline;">

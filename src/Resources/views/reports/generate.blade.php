@@ -18,9 +18,9 @@
                 <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
             </a>
         </li>
-        @can('mining-manager.reports.generate')
+        @can('mining-manager.admin')
         <li class="{{ Request::is('*/reports/generate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.generate') }}">
+            <a href="{{ route('mining-manager.admin') }}">
                 <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
             </a>
         </li>
