@@ -288,13 +288,13 @@
                                     </div>
                                 </div>
 
-                                {{-- Mining Volume by Group --}}
+                                {{-- Mining Value by Group (Doughnut) --}}
                                 <div class="col-lg-6">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
                                                 <i class="fas fa-chart-pie"></i>
-                                                {{ trans('mining-manager::dashboard.mining_volume_by_group') }}
+                                                {{ trans('mining-manager::dashboard.mining_by_group') }}
                                             </h3>
                                         </div>
                                         <div class="card-body">
@@ -304,9 +304,25 @@
                                 </div>
                             </div>
 
-                            {{-- Personal Income Chart --}}
+                            {{-- Mining by Type + Income --}}
                             <div class="row">
-                                <div class="col-12">
+                                {{-- Mining by Ore Type (Top 10) --}}
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-gem"></i>
+                                                {{ trans('mining-manager::dashboard.mining_by_type') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="personalByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Personal Income Chart --}}
+                                <div class="col-lg-6">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
@@ -579,6 +595,39 @@
                                 </div>
                             </div>
 
+                            {{-- Corporation Mining by Group & Type --}}
+                            <div class="row">
+                                {{-- Corp Mining by Group (Doughnut) --}}
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-chart-pie"></i>
+                                                {{ trans('mining-manager::dashboard.mining_by_group') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="corpByGroupChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Corp Mining by Type (Top 10) --}}
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-gem"></i>
+                                                {{ trans('mining-manager::dashboard.mining_by_type') }}
+                                            </h3>
+                                        </div>
+                                        <div class="card-body">
+                                            <canvas id="corpByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {{-- Tax Collection Charts --}}
                             <div class="row">
                                 <div class="col-lg-6">
@@ -733,21 +782,40 @@ $(document).ready(function() {
         }
     });
 
-    // Personal Volume by Group Chart
+    // ISK formatting helper
+    function formatISK(value) {
+        if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+        if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+        if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+        return value.toFixed(0);
+    }
+
+    // Group color mapping
+    var groupColors = {
+        'Moon Ore': 'rgba(255, 206, 86, 0.8)',
+        'Regular Ore': 'rgba(54, 162, 235, 0.8)',
+        'Ice': 'rgba(75, 192, 192, 0.8)',
+        'Gas': 'rgba(153, 102, 255, 0.8)',
+        'Abyssal': 'rgba(255, 99, 132, 0.8)'
+    };
+
+    // Personal Mining by Group (Doughnut - ISK values)
     var personalVolumeCtx = document.getElementById('personalVolumeChart').getContext('2d');
+    var personalGroupLabels = {!! json_encode($personalMiningVolumeByGroupChart['labels']) !!};
+    var personalGroupData = {!! json_encode($personalMiningVolumeByGroupChart['data']) !!};
+    var personalGroupColors = personalGroupLabels.map(function(label) {
+        return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
+    });
+
     new Chart(personalVolumeCtx, {
-        type: 'pie',
+        type: 'doughnut',
         data: {
-            labels: {!! json_encode($personalMiningVolumeByGroupChart['labels']) !!},
+            labels: personalGroupLabels,
             datasets: [{
-                data: {!! json_encode($personalMiningVolumeByGroupChart['data']) !!},
-                backgroundColor: [
-                    'rgba(255, 99, 132, 0.8)',
-                    'rgba(54, 162, 235, 0.8)',
-                    'rgba(255, 206, 86, 0.8)',
-                    'rgba(75, 192, 192, 0.8)',
-                    'rgba(153, 102, 255, 0.8)'
-                ]
+                data: personalGroupData,
+                backgroundColor: personalGroupColors,
+                borderColor: '#1a1d24',
+                borderWidth: 2
             }]
         },
         options: {
@@ -757,6 +825,59 @@ $(document).ready(function() {
                 legend: {
                     labels: { color: '#c2c7d0' },
                     position: 'right'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                            var pct = ((ctx.raw / total) * 100).toFixed(1);
+                            return ctx.label + ': ' + formatISK(ctx.raw) + ' ISK (' + pct + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Personal Mining by Type (Horizontal Bar - Top 10)
+    var personalByTypeCtx = document.getElementById('personalByTypeChart').getContext('2d');
+    new Chart(personalByTypeCtx, {
+        type: 'bar',
+        data: {
+            labels: {!! json_encode($personalMiningByTypeChart['labels']) !!},
+            datasets: [{
+                label: 'Value (ISK)',
+                data: {!! json_encode($personalMiningByTypeChart['data']) !!},
+                backgroundColor: {!! json_encode($personalMiningByTypeChart['colors']) !!},
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return formatISK(ctx.raw) + ' ISK';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#c2c7d0',
+                        callback: function(value) { return formatISK(value); }
+                    },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                    ticks: { color: '#c2c7d0', font: { size: 11 } },
+                    grid: { display: false }
                 }
             }
         }
@@ -807,6 +928,90 @@ $(document).ready(function() {
                     stacked: false,
                     ticks: { color: '#c2c7d0' },
                     grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+
+    // Corporation Mining by Group (Doughnut)
+    var corpByGroupCtx = document.getElementById('corpByGroupChart').getContext('2d');
+    var corpGroupLabels = {!! json_encode($corpMiningByGroupChart['labels']) !!};
+    var corpGroupData = {!! json_encode($corpMiningByGroupChart['data']) !!};
+    var corpGroupColors = corpGroupLabels.map(function(label) {
+        return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
+    });
+
+    new Chart(corpByGroupCtx, {
+        type: 'doughnut',
+        data: {
+            labels: corpGroupLabels,
+            datasets: [{
+                data: corpGroupData,
+                backgroundColor: corpGroupColors,
+                borderColor: '#1a1d24',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#c2c7d0' },
+                    position: 'right'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                            var pct = ((ctx.raw / total) * 100).toFixed(1);
+                            return ctx.label + ': ' + formatISK(ctx.raw) + ' ISK (' + pct + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Corporation Mining by Type (Horizontal Bar - Top 10)
+    var corpByTypeCtx = document.getElementById('corpByTypeChart').getContext('2d');
+    new Chart(corpByTypeCtx, {
+        type: 'bar',
+        data: {
+            labels: {!! json_encode($corpMiningByTypeChart['labels']) !!},
+            datasets: [{
+                label: 'Value (ISK)',
+                data: {!! json_encode($corpMiningByTypeChart['data']) !!},
+                backgroundColor: {!! json_encode($corpMiningByTypeChart['colors']) !!},
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return formatISK(ctx.raw) + ' ISK';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#c2c7d0',
+                        callback: function(value) { return formatISK(value); }
+                    },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                y: {
+                    ticks: { color: '#c2c7d0', font: { size: 11 } },
+                    grid: { display: false }
                 }
             }
         }

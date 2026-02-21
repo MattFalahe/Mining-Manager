@@ -36,6 +36,7 @@ return new class extends Migration
 
             // Ore classification
             $table->string('ore_type')->nullable();
+            $table->string('ore_category', 20)->nullable()->comment('ore, moon_r4-r64, ice, gas, abyssal');
             $table->unsignedBigInteger('corporation_id')->nullable();
             $table->boolean('is_taxable')->default(true);
             $table->boolean('is_moon_ore')->default(false);
@@ -47,8 +48,9 @@ return new class extends Migration
             $table->timestamps();
 
             // Unique constraint to prevent duplicate entries
+            // observer_id separates personal ESI records (NULL) from observer records (structure ID)
             $table->unique(
-                ['character_id', 'date', 'type_id', 'observer_id'],
+                ['character_id', 'date', 'type_id', 'solar_system_id', 'observer_id'],
                 'unique_mining_entry'
             );
 
@@ -70,6 +72,7 @@ return new class extends Migration
             $table->index('total_value', 'idx_mining_ledger_total_value');
             $table->index('ore_type', 'idx_mining_ledger_ore_type');
             $table->index('is_taxable');
+            $table->index('ore_category', 'idx_mining_ledger_ore_category');
             $table->index('is_moon_ore', 'idx_mining_ledger_is_moon_ore');
             $table->index('is_ice', 'idx_mining_ledger_is_ice');
             $table->index('is_gas', 'idx_mining_ledger_is_gas');

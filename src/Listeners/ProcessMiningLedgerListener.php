@@ -56,11 +56,13 @@ class ProcessMiningLedgerListener implements ShouldQueue
             $updated = 0;
 
             foreach ($ledgerEntries as $entry) {
-                // Check if already processed
+                // Check if already processed - matches DB unique constraint
+                // (character_id, date, type_id, observer_id)
+                // Personal ESI mining has observer_id = NULL
                 $existing = MiningLedger::where('character_id', $entry->character_id)
                     ->where('date', $entry->date)
                     ->where('type_id', $entry->type_id)
-                    ->where('solar_system_id', $entry->solar_system_id)
+                    ->whereNull('observer_id')
                     ->first();
 
                 if ($existing) {
@@ -71,14 +73,20 @@ class ProcessMiningLedgerListener implements ShouldQueue
                             'processed_at' => Carbon::now(),
                         ]);
                         $updated++;
-                        
+
                         Log::debug("Mining Manager: Updated ledger entry for character {$characterId}, type {$entry->type_id}, quantity changed from {$existing->quantity} to {$entry->quantity}");
                     }
+                } elseif ($this->hasObserverRecord($entry)) {
+                    // Cross-source dedup: observer data already has this mining recorded
+                    // Skip creating a duplicate personal record
+                    Log::debug("Mining Manager: Skipping character {$characterId}, type {$entry->type_id} - already recorded via observer data");
                 } else {
                     // Classify ore type
                     $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
                     $isIce = TypeIdRegistry::isIce($entry->type_id);
                     $isGas = TypeIdRegistry::isGas($entry->type_id);
+                    $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
+                    $oreCategory = $this->classifyOreCategory($entry->type_id);
 
                     // Create new entry
                     MiningLedger::create([
@@ -90,6 +98,8 @@ class ProcessMiningLedgerListener implements ShouldQueue
                         'is_moon_ore' => $isMoonOre,
                         'is_ice' => $isIce,
                         'is_gas' => $isGas,
+                        'is_abyssal' => $isAbyssal,
+                        'ore_category' => $oreCategory,
                         'processed_at' => Carbon::now(),
                     ]);
                     $processed++;
@@ -302,6 +312,63 @@ class ProcessMiningLedgerListener implements ShouldQueue
         } catch (\Exception $e) {
             Log::error("Mining Manager: Error checking for jackpot ores: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Classify ore into a category string for statistics.
+     *
+     * @param int $typeId
+     * @return string
+     */
+    private function classifyOreCategory(int $typeId): string
+    {
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            // Get specific rarity
+            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
+            return $rarity ? 'moon_' . $rarity : 'moon';
+        }
+
+        if (TypeIdRegistry::isIce($typeId)) {
+            return 'ice';
+        }
+
+        if (TypeIdRegistry::isGas($typeId)) {
+            return 'gas';
+        }
+
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return 'abyssal';
+        }
+
+        if (TypeIdRegistry::isDeepSpaceSurveyOre($typeId)) {
+            return 'ore';
+        }
+
+        if (TypeIdRegistry::isOreProspectingArrayOre($typeId)) {
+            return 'ore';
+        }
+
+        if (TypeIdRegistry::isRegularOre($typeId)) {
+            return 'ore';
+        }
+
+        return 'ore';
+    }
+
+    /**
+     * Check if this mining entry already exists from observer data (cross-source dedup).
+     * Prevents counting the same mining twice when both listener and command run.
+     *
+     * @param object $entry
+     * @return bool True if observer record already exists
+     */
+    private function hasObserverRecord($entry): bool
+    {
+        return MiningLedger::where('character_id', $entry->character_id)
+            ->whereDate('date', $entry->date)
+            ->where('type_id', $entry->type_id)
+            ->whereNotNull('observer_id')
+            ->exists();
     }
 
     /**

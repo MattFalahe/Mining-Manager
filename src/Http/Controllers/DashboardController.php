@@ -98,6 +98,7 @@ class DashboardController extends Controller
             // === CHARTS DATA ===
             $miningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
             $miningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
+            $miningByTypeChart = $this->getMiningByType($characterIds, $last12MonthsStart);
             $miningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
 
             return [
@@ -109,6 +110,7 @@ class DashboardController extends Controller
                 'userRankMoonOre' => $userRankMoonOre,
                 'miningPerformanceChart' => $miningPerformanceChart,
                 'miningVolumeByGroupChart' => $miningVolumeByGroupChart,
+                'miningByTypeChart' => $miningByTypeChart,
                 'miningIncomeChart' => $miningIncomeChart,
             ];
         });
@@ -205,6 +207,7 @@ class DashboardController extends Controller
             // Personal charts
             $personalMiningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
             $personalMiningVolumeByGroupChart = $this->getMiningVolumeByGroup($characterIds, $last12MonthsStart);
+            $personalMiningByTypeChart = $this->getMiningByType($characterIds, $last12MonthsStart);
             $personalMiningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
 
             // === CORPORATION STATISTICS ===
@@ -223,6 +226,8 @@ class DashboardController extends Controller
             // Corporation charts
             $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
             $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
+            $corpMiningByGroupChart = $this->getCorpMiningByGroup($corporationId, $last12MonthsStart);
+            $corpMiningByTypeChart = $this->getCorpMiningByType($corporationId, $last12MonthsStart);
             $miningTaxChart = $this->getMiningTaxLast12Months($corporationId);
             $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
 
@@ -234,6 +239,7 @@ class DashboardController extends Controller
                 'userRankMoonOre' => $userRankMoonOre,
                 'personalMiningPerformanceChart' => $personalMiningPerformanceChart,
                 'personalMiningVolumeByGroupChart' => $personalMiningVolumeByGroupChart,
+                'personalMiningByTypeChart' => $personalMiningByTypeChart,
                 'personalMiningIncomeChart' => $personalMiningIncomeChart,
                 // Corporation stats
                 'corpCurrentMonthStats' => $corpCurrentMonthStats,
@@ -246,6 +252,8 @@ class DashboardController extends Controller
                 'topMinersLastMonthMoonOre' => $topMinersLastMonthMoonOre,
                 'corpMiningPerformanceChart' => $corpMiningPerformanceChart,
                 'moonMiningPerformanceChart' => $moonMiningPerformanceChart,
+                'corpMiningByGroupChart' => $corpMiningByGroupChart,
+                'corpMiningByTypeChart' => $corpMiningByTypeChart,
                 'miningTaxChart' => $miningTaxChart,
                 'eventTaxChart' => $eventTaxChart,
             ];
@@ -717,7 +725,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get mining volume by group chart
+     * Get mining value by group chart (ISK value per ore group)
      */
     private function getMiningVolumeByGroup($characterIds, $startDate)
     {
@@ -727,17 +735,18 @@ class DashboardController extends Controller
             ->get();
 
         $groups = [
+            'Moon Ore' => [],
+            'Regular Ore' => [],
             'Ice' => [],
-            'Moon' => [],
-            'Ore' => [],
             'Gas' => [],
             'Abyssal' => []
         ];
 
         foreach ($miningData as $entry) {
             $group = $this->getOreGroup($entry->type_id);
-            if (isset($groups[$group])) {
-                $groups[$group][] = $entry;
+            $groupLabel = $group === 'Moon' ? 'Moon Ore' : ($group === 'Ore' ? 'Regular Ore' : $group);
+            if (isset($groups[$groupLabel])) {
+                $groups[$groupLabel][] = $entry;
             }
         }
 
@@ -747,7 +756,7 @@ class DashboardController extends Controller
         foreach ($groups as $groupName => $entries) {
             if (count($entries) > 0) {
                 $labels[] = $groupName;
-                $data[] = collect($entries)->sum('quantity');
+                $data[] = $this->calculateTotalValue(collect($entries));
             }
         }
 
@@ -755,6 +764,94 @@ class DashboardController extends Controller
             'labels' => $labels,
             'data' => $data,
         ];
+    }
+
+    /**
+     * Get mining by specific ore type chart (top N ores by ISK value)
+     */
+    private function getMiningByType($characterIds, $startDate, $limit = 10)
+    {
+        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $startDate)
+            ->whereNotNull('processed_at')
+            ->get();
+
+        // Group by type_id and calculate value per type
+        $byType = [];
+        $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+
+        foreach ($miningData as $entry) {
+            $typeId = $entry->type_id;
+            if (!isset($byType[$typeId])) {
+                // Get ore name from invTypes table
+                $typeName = DB::table('invTypes')
+                    ->where('typeID', $typeId)
+                    ->value('typeName') ?? "Type {$typeId}";
+
+                $byType[$typeId] = [
+                    'name' => $typeName,
+                    'quantity' => 0,
+                    'value' => 0,
+                    'group' => $this->getOreGroup($typeId),
+                ];
+            }
+
+            $byType[$typeId]['quantity'] += $entry->quantity;
+            $values = $valuationService->calculateOreValue($typeId, $entry->quantity);
+            $byType[$typeId]['value'] += $values['total_value'];
+        }
+
+        // Sort by value descending and take top N
+        usort($byType, function($a, $b) {
+            return $b['value'] <=> $a['value'];
+        });
+
+        $topTypes = array_slice($byType, 0, $limit);
+
+        $labels = [];
+        $data = [];
+        $colors = [];
+
+        // Color map for ore groups
+        $groupColors = [
+            'Moon' => 'rgba(255, 206, 86, 0.8)',
+            'Ore' => 'rgba(54, 162, 235, 0.8)',
+            'Ice' => 'rgba(75, 192, 192, 0.8)',
+            'Gas' => 'rgba(153, 102, 255, 0.8)',
+            'Abyssal' => 'rgba(255, 99, 132, 0.8)',
+        ];
+
+        foreach ($topTypes as $type) {
+            $labels[] = $type['name'];
+            $data[] = $type['value'];
+            $colors[] = $groupColors[$type['group']] ?? 'rgba(201, 203, 207, 0.8)';
+        }
+
+        return [
+            'labels' => $labels,
+            'data' => $data,
+            'colors' => $colors,
+        ];
+    }
+
+    /**
+     * Get corporation mining value by group chart
+     */
+    private function getCorpMiningByGroup($corporationId, $startDate)
+    {
+        $characterIds = $this->getCorporationCharacterIds($corporationId);
+
+        return $this->getMiningVolumeByGroup($characterIds, $startDate);
+    }
+
+    /**
+     * Get corporation mining by specific ore type chart
+     */
+    private function getCorpMiningByType($corporationId, $startDate, $limit = 10)
+    {
+        $characterIds = $this->getCorporationCharacterIds($corporationId);
+
+        return $this->getMiningByType($characterIds, $startDate, $limit);
     }
 
     /**

@@ -51,6 +51,8 @@ return [
     'no_ranking_data' => 'No ranking data available',
     'my_mining_performance' => 'My Mining Performance',
     'mining_volume_by_group' => 'Mining Volume by Group',
+    'mining_by_group' => 'Mining by Group',
+    'mining_by_type' => 'Top Ores Mined',
     'all_ore_value' => 'All Ore Value',
     'moon_ore_value' => 'Moon Ore Value',
     'tax_amount' => 'Tax Amount',

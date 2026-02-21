@@ -360,13 +360,13 @@
 
     {{-- CHARTS ROW 2 --}}
     <div class="row">
-        {{-- Mining Volume by Group --}}
+        {{-- Mining by Group (Doughnut - ISK) --}}
         <div class="col-lg-6">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-chart-pie"></i>
-                        {{ trans('mining-manager::dashboard.mining_volume_per_group') }}
+                        {{ trans('mining-manager::dashboard.mining_by_group') }}
                     </h3>
                 </div>
                 <div class="card-body">
@@ -377,8 +377,28 @@
             </div>
         </div>
 
-        {{-- Mining Income Chart --}}
+        {{-- Mining by Type (Top 10 Ores) --}}
         <div class="col-lg-6">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-gem"></i>
+                        {{ trans('mining-manager::dashboard.mining_by_type') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="position: relative; height: 300px;">
+                        <canvas id="miningByTypeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- CHARTS ROW 3 --}}
+    <div class="row">
+        {{-- Mining Income Chart --}}
+        <div class="col-lg-12">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
@@ -404,10 +424,28 @@
 Chart.defaults.color = '#fff';
 Chart.defaults.borderColor = '#444';
 
+// ISK formatting helper
+function formatISK(value) {
+    if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+    if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+    if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+    return value.toFixed(0);
+}
+
+// Group color mapping
+var groupColors = {
+    'Moon Ore': 'rgba(255, 206, 86, 0.8)',
+    'Regular Ore': 'rgba(54, 162, 235, 0.8)',
+    'Ice': 'rgba(75, 192, 192, 0.8)',
+    'Gas': 'rgba(153, 102, 255, 0.8)',
+    'Abyssal': 'rgba(255, 99, 132, 0.8)'
+};
+
 // Chart data from backend
 const chartData = {
     miningPerformance: @json($miningPerformanceChart),
     miningVolume: @json($miningVolumeByGroupChart),
+    miningByType: @json($miningByTypeChart),
     miningIncome: @json($miningIncomeChart)
 };
 
@@ -454,7 +492,11 @@ const miningPerformanceChart = new Chart(miningPerformanceCtx, {
     }
 });
 
-// Mining Volume by Group Chart
+// Mining by Group Chart (Doughnut - ISK values)
+var miningVolumeColors = chartData.miningVolume.labels.map(function(label) {
+    return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
+});
+
 const miningVolumeCtx = document.getElementById('miningVolumeChart').getContext('2d');
 const miningVolumeChart = new Chart(miningVolumeCtx, {
     type: 'doughnut',
@@ -462,20 +504,8 @@ const miningVolumeChart = new Chart(miningVolumeCtx, {
         labels: chartData.miningVolume.labels,
         datasets: [{
             data: chartData.miningVolume.data,
-            backgroundColor: [
-                'rgba(0, 210, 255, 0.8)',    // Ice
-                'rgba(255, 0, 132, 0.8)',    // Moon
-                'rgba(161, 198, 60, 0.8)',   // Ore
-                'rgba(255, 159, 64, 0.8)',   // Gas
-                'rgba(255, 205, 86, 0.8)'    // Abyssal
-            ],
-            borderColor: [
-                'rgba(0, 210, 255, 1)',
-                'rgba(255, 0, 132, 1)',
-                'rgba(161, 198, 60, 1)',
-                'rgba(255, 159, 64, 1)',
-                'rgba(255, 205, 86, 1)'
-            ],
+            backgroundColor: miningVolumeColors,
+            borderColor: '#1a1d24',
             borderWidth: 2
         }]
     },
@@ -489,10 +519,54 @@ const miningVolumeChart = new Chart(miningVolumeCtx, {
             },
             tooltip: {
                 callbacks: {
-                    label: function(context) {
-                        return context.label + ': ' + context.parsed.toLocaleString() + ' units';
+                    label: function(ctx) {
+                        var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                        var pct = ((ctx.raw / total) * 100).toFixed(1);
+                        return ctx.label + ': ' + formatISK(ctx.raw) + ' ISK (' + pct + '%)';
                     }
                 }
+            }
+        }
+    }
+});
+
+// Mining by Type Chart (Horizontal Bar - Top 10)
+const miningByTypeCtx = document.getElementById('miningByTypeChart').getContext('2d');
+const miningByTypeChart = new Chart(miningByTypeCtx, {
+    type: 'bar',
+    data: {
+        labels: chartData.miningByType.labels,
+        datasets: [{
+            label: 'Value (ISK)',
+            data: chartData.miningByType.data,
+            backgroundColor: chartData.miningByType.colors,
+            borderWidth: 1
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) {
+                        return formatISK(ctx.raw) + ' ISK';
+                    }
+                }
+            }
+        },
+        scales: {
+            x: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) { return formatISK(value); }
+                }
+            },
+            y: {
+                ticks: { font: { size: 11 } },
+                grid: { display: false }
             }
         }
     }

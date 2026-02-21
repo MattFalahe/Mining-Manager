@@ -118,6 +118,8 @@ class ProcessMiningLedgerCommand extends Command
                     $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
                     $isIce = TypeIdRegistry::isIce($entry->type_id);
                     $isGas = TypeIdRegistry::isGas($entry->type_id);
+                    $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
+                    $oreCategory = $this->classifyOreCategory($entry->type_id);
 
                     // Prepare data
                     $data = [
@@ -138,6 +140,8 @@ class ProcessMiningLedgerCommand extends Command
                         'is_moon_ore' => $isMoonOre,
                         'is_ice' => $isIce,
                         'is_gas' => $isGas,
+                        'is_abyssal' => $isAbyssal,
+                        'ore_category' => $oreCategory,
                         'processed_at' => Carbon::now(),
                     ];
 
@@ -149,6 +153,19 @@ class ProcessMiningLedgerCommand extends Command
                             $skipped++;
                         }
                     } else {
+                        // Cross-source dedup: remove personal ESI record if it exists
+                        // Observer data is more authoritative (has observer_id, structure info)
+                        $personalDupe = MiningLedger::where('character_id', $entry->character_id)
+                            ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
+                            ->where('type_id', $entry->type_id)
+                            ->whereNull('observer_id')
+                            ->first();
+
+                        if ($personalDupe) {
+                            $personalDupe->delete();
+                            Log::debug("Mining Manager: Replaced personal ESI record with observer data for character {$entry->character_id}, type {$entry->type_id}");
+                        }
+
                         MiningLedger::create($data);
                         $processed++;
                     }
@@ -244,6 +261,34 @@ class ProcessMiningLedgerCommand extends Command
             $this->error($e->getTraceAsString());
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Classify ore into a category string for statistics.
+     *
+     * @param int $typeId
+     * @return string
+     */
+    private function classifyOreCategory(int $typeId): string
+    {
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
+            return $rarity ? 'moon_' . $rarity : 'moon';
+        }
+
+        if (TypeIdRegistry::isIce($typeId)) {
+            return 'ice';
+        }
+
+        if (TypeIdRegistry::isGas($typeId)) {
+            return 'gas';
+        }
+
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return 'abyssal';
+        }
+
+        return 'ore';
     }
 
     /**
