@@ -219,4 +219,13 @@ return [
 
     // Feature flags
     'feature_disabled' => 'This feature is currently disabled. An administrator can enable it in Settings.',
+
+    // Miner type breakdown
+    'miner_type_breakdown' => 'Miner Type Breakdown',
+    'corp_members' => 'Corp Members',
+    'guest_miners' => 'Guest Miners',
+    'corporation_member' => 'Corporation Member',
+    'guest_miner' => 'Guest Miner',
+    'isk_owed' => 'ISK Owed',
+    'isk_paid' => 'ISK Paid',
 ];

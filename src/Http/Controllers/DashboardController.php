@@ -897,13 +897,29 @@ class DashboardController extends Controller
                     ->sum('amount_paid');
             }
 
-            // Event bonus (placeholder - implement based on your event system)
-            $events = 0;
+            // Event bonus - calculate tax savings from events with negative tax modifiers
+            $eventBonusAmount = 0;
+            $characterEvents = MiningEvent::whereIn('status', ['completed', 'active'])
+                ->where(function($query) use ($month, $monthEnd) {
+                    $query->whereBetween('start_time', [$month, $monthEnd])
+                        ->orWhereBetween('end_time', [$month, $monthEnd]);
+                })
+                ->where('tax_modifier', '<', 0)
+                ->get();
+
+            foreach ($characterEvents as $event) {
+                if ($event->total_mined > 0) {
+                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
+                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
+                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
+                    $eventBonusAmount += $normalTax - $modifiedTax;
+                }
+            }
 
             $months[] = $monthKey;
             $refinedValue[] = $value;
             $taxPaid[] = $tax;
-            $eventBonus[] = $events;
+            $eventBonus[] = $eventBonusAmount;
         }
 
         return [

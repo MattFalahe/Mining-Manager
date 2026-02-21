@@ -7,6 +7,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 
 class SettingsController extends Controller
@@ -26,6 +27,40 @@ class SettingsController extends Controller
     public function __construct(SettingsManagerService $settingsService)
     {
         $this->settingsService = $settingsService;
+    }
+
+    /**
+     * Clear all mining manager settings caches after any settings update.
+     * Ensures changes take effect immediately instead of waiting for cache TTL.
+     */
+    private function clearSettingsCache(): void
+    {
+        try {
+            cache()->tags(['mining-manager'])->flush();
+        } catch (\Exception $e) {
+            // File/database cache driver doesn't support tags — clear individually
+            Log::debug('Mining Manager: Cache driver does not support tags, clearing settings cache prefix');
+        }
+
+        // Always clear the settings-level cache keys regardless of driver
+        $prefix = SettingsManagerService::CACHE_PREFIX;
+        $activeCorp = $this->settingsService->getActiveCorporation();
+
+        // Clear common setting group caches
+        $groups = [
+            'general', 'tax_rates', 'pricing', 'features', 'dashboard',
+            'tax_selector', 'exemptions', 'payment',
+            'price_provider', 'janice_api_key', 'janice_market', 'janice_price_method',
+        ];
+
+        foreach ($groups as $group) {
+            cache()->forget($prefix . 'global_' . $group);
+            if ($activeCorp) {
+                cache()->forget($prefix . $activeCorp . '_' . $group);
+            }
+        }
+
+        Log::debug('Mining Manager: Settings cache cleared');
     }
 
     /**
@@ -239,6 +274,7 @@ class SettingsController extends Controller
             $data['notify_events'] = $request->has('notify_events');
 
             $this->settingsService->updateGeneralSettings($data);
+            $this->clearSettingsCache();
 
             // Redirect back with corporation_id to maintain context
             $redirectUrl = route('mining-manager.settings.index');
@@ -358,6 +394,7 @@ class SettingsController extends Controller
 
             // Update all settings via service
             $this->settingsService->updateTaxRates($data);
+            $this->clearSettingsCache();
 
             // Redirect back with corporation_id to maintain context
             $redirectUrl = route('mining-manager.settings.index');
@@ -411,6 +448,7 @@ class SettingsController extends Controller
             ];
 
             $this->settingsService->updateTaxSelector($taxSelector);
+            $this->clearSettingsCache();
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'Tax selector updated successfully');
@@ -442,6 +480,7 @@ class SettingsController extends Controller
 
         try {
             $this->settingsService->updateExemptions($validator->validated());
+            $this->clearSettingsCache();
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'Exemption settings updated successfully');
@@ -513,13 +552,14 @@ class SettingsController extends Controller
                 'refining_efficiency' => $data['refining_efficiency'],
             ]);
 
-            // Clear price cache AND moon value cache when settings change
+            // Clear all settings + price caches
+            $this->clearSettingsCache();
             try {
                 cache()->tags(['mining-manager', 'prices'])->flush();
                 cache()->tags(['mining-manager', 'moon-values'])->flush();
             } catch (\Exception $cacheException) {
                 // File/database cache driver doesn't support tags - acceptable
-                \Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
+                Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
             }
 
             return redirect()->route('mining-manager.settings.index')
@@ -561,32 +601,24 @@ class SettingsController extends Controller
                 $this->settingsService->setActiveCorporation((int)$corporationId);
             }
 
-            // Store dashboard settings using Setting model
-            \MiningManager\Models\Setting::setValue(
+            // Store dashboard settings via settings service (respects corporation context)
+            $this->settingsService->updateSetting(
                 'dashboard_leaderboard_corporation_filter',
                 $data['dashboard_leaderboard_corporation_filter']
             );
 
             // Store corporation IDs as JSON
-            if ($data['dashboard_leaderboard_corporation_filter'] === 'specific') {
-                $corpIds = $data['dashboard_leaderboard_corporation_ids'] ?? [];
-                \MiningManager\Models\Setting::setValue(
-                    'dashboard_leaderboard_corporation_ids',
-                    json_encode($corpIds)
-                );
-            } else {
-                \MiningManager\Models\Setting::setValue(
-                    'dashboard_leaderboard_corporation_ids',
-                    json_encode([])
-                );
-            }
+            $corpIds = ($data['dashboard_leaderboard_corporation_filter'] === 'specific')
+                ? ($data['dashboard_leaderboard_corporation_ids'] ?? [])
+                : [];
+            $this->settingsService->updateSetting(
+                'dashboard_leaderboard_corporation_ids',
+                json_encode($corpIds),
+                'json'
+            );
 
-            // Clear dashboard cache
-            try {
-                cache()->tags(['mining-manager', 'dashboard'])->flush();
-            } catch (\Exception $cacheException) {
-                \Log::debug('Mining Manager: Cache driver does not support tags, skipping tag-based flush');
-            }
+            // Clear all settings caches
+            $this->clearSettingsCache();
 
             // Redirect back with corporation_id to maintain context
             $redirectUrl = route('mining-manager.settings.index');
@@ -693,6 +725,7 @@ class SettingsController extends Controller
             ];
 
             $this->settingsService->updateFeatureFlags($features);
+            $this->clearSettingsCache();
 
             return redirect()->route('mining-manager.settings.index')
                 ->with('success', 'Feature settings updated successfully');

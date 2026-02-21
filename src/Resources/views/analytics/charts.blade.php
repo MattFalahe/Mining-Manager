@@ -59,12 +59,12 @@
                 <div class="card-body">
                     <form method="GET" action="{{ route('mining-manager.analytics.charts') }}" class="form-inline">
                         <div class="form-group mr-3">
-                            <label class="mr-2">{{ trans('mining-manager::analytics.start_date') }}</label>
-                            <input type="date" name="start_date" class="form-control" value="{{ $startDate->format('Y-m-d') }}">
+                            <label class="mr-2" for="analytics_start_date">{{ trans('mining-manager::analytics.start_date') }}</label>
+                            <input type="date" name="start_date" id="analytics_start_date" class="form-control" value="{{ $startDate->format('Y-m-d') }}">
                         </div>
                         <div class="form-group mr-3">
-                            <label class="mr-2">{{ trans('mining-manager::analytics.end_date') }}</label>
-                            <input type="date" name="end_date" class="form-control" value="{{ $endDate->format('Y-m-d') }}">
+                            <label class="mr-2" for="analytics_end_date">{{ trans('mining-manager::analytics.end_date') }}</label>
+                            <input type="date" name="end_date" id="analytics_end_date" class="form-control" value="{{ $endDate->format('Y-m-d') }}">
                         </div>
                         <button type="submit" class="btn btn-primary mr-2">
                             <i class="fas fa-filter"></i> {{ trans('mining-manager::analytics.filter') }}
@@ -255,7 +255,23 @@ const colors = {
 
 let charts = {};
 
+/**
+ * Show a "no data" message on a chart canvas when data is empty.
+ */
+function showNoDataMessage(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    const msg = document.createElement('div');
+    msg.className = 'text-center text-muted py-4';
+    msg.innerHTML = '<i class="fas fa-chart-bar fa-2x mb-2"></i><br>{{ trans("mining-manager::analytics.no_data_available") }}';
+    parent.replaceChild(msg, canvas);
+}
+
 // Mining Trends Chart
+if (!miningTrendsData || miningTrendsData.length === 0) {
+    showNoDataMessage('miningTrendsChart');
+} else {
 charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
     type: 'line',
     data: {
@@ -280,8 +296,12 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
     },
     options: getLineChartOptions()
 });
+}
 
 // Ore Distribution Chart
+if (!oreDistributionData || oreDistributionData.length === 0) {
+    showNoDataMessage('oreDistributionChart');
+} else {
 charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart'), {
     type: 'doughnut',
     data: {
@@ -295,8 +315,12 @@ charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart
     },
     options: getDoughnutChartOptions()
 });
+}
 
 // Miner Activity Chart
+if (!minerActivityData || minerActivityData.length === 0) {
+    showNoDataMessage('minerActivityChart');
+} else {
 charts.minerActivity = new Chart(document.getElementById('minerActivityChart'), {
     type: 'bar',
     data: {
@@ -311,8 +335,12 @@ charts.minerActivity = new Chart(document.getElementById('minerActivityChart'), 
     },
     options: getBarChartOptions()
 });
+}
 
 // System Activity Chart
+if (!systemActivityData || systemActivityData.length === 0) {
+    showNoDataMessage('systemActivityChart');
+} else {
 charts.systemActivity = new Chart(document.getElementById('systemActivityChart'), {
     type: 'bar',
     data: {
@@ -327,6 +355,7 @@ charts.systemActivity = new Chart(document.getElementById('systemActivityChart')
     },
     options: getBarChartOptions()
 });
+}
 
 // Heatmap Chart (simplified as bar chart - true heatmap requires additional library)
 charts.heatmap = new Chart(document.getElementById('heatmapChart'), {

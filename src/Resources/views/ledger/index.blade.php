@@ -291,10 +291,10 @@
                                         @if(isset($entry->character_info))
                                             {{-- Show "Not Registered" badge for external characters --}}
                                             @if(!$entry->character_info['is_registered'])
-                                                <span class="badge badge-warning" 
-                                                      title="Character not registered in SeAT" 
+                                                <span class="badge badge-warning"
+                                                      title="{{ trans('mining-manager::ledger.not_registered') }}"
                                                       data-toggle="tooltip">
-                                                    <i class="fas fa-exclamation-triangle"></i> Not Registered
+                                                    <i class="fas fa-exclamation-triangle"></i> {{ trans('mining-manager::ledger.not_registered') }}
                                                 </span>
                                             @endif
                                             
@@ -309,7 +309,7 @@
                                             <br>
                                             <small class="text-muted">
                                                 <i class="fas fa-building"></i>
-                                                {{ $entry->character->corporation->name ?? 'Unknown Corporation' }}
+                                                {{ $entry->character->corporation->name ?? trans('mining-manager::ledger.unknown') }}
                                             </small>
                                         @endif
                                     </td>
@@ -317,7 +317,7 @@
                                         <img src="https://images.evetech.net/types/{{ $entry->type_id }}/icon?size=32" 
                                              class="img-circle" 
                                              style="width: 32px; height: 32px;">
-                                        {{ $entry->type_name ?? 'Unknown' }}
+                                        {{ $entry->type_name ?? trans('mining-manager::ledger.unknown') }}
                                         @if($entry->is_moon_ore)
                                             <span class="badge badge-secondary">
                                                 <i class="fas fa-moon"></i>
@@ -347,7 +347,7 @@
                                             <i class="fas fa-map-marker-alt"></i>
                                             <small>{{ $entry->solarSystem->name }}</small>
                                         @else
-                                            <small class="text-muted">Unknown System</small>
+                                            <small class="text-muted">{{ trans('mining-manager::ledger.unknown') }}</small>
                                         @endif
                                     </td>
                                     <td class="text-center">

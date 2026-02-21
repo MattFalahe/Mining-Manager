@@ -54,8 +54,32 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         
         $this->loadTranslationsFrom(__DIR__ . '/Resources/lang/', 'mining-manager');
         $this->loadViewsFrom(__DIR__ . '/Resources/views/', 'mining-manager');
-        
+
         $this->loadMigrationsFrom(__DIR__ . '/Database/migrations/');
+
+        // Register Blade directives for consistent formatting
+        \Illuminate\Support\Facades\Blade::directive('isk', function ($expression) {
+            return "<?php
+                \$__isk_val = (float)($expression);
+                if (\$__isk_val >= 1000000000) {
+                    echo number_format(\$__isk_val / 1000000000, 2) . 'B ISK';
+                } elseif (\$__isk_val >= 1000000) {
+                    echo number_format(\$__isk_val / 1000000, 2) . 'M ISK';
+                } else {
+                    echo number_format(\$__isk_val, 0) . ' ISK';
+                }
+            ?>";
+        });
+
+        // Standard date format: "Jan 15, 2026 14:30"
+        \Illuminate\Support\Facades\Blade::directive('miningDate', function ($expression) {
+            return "<?php echo ($expression) ? \Carbon\Carbon::parse($expression)->format('M d, Y H:i') : '-'; ?>";
+        });
+
+        // Short date format: "Jan 15, 2026"
+        \Illuminate\Support\Facades\Blade::directive('miningDateShort', function ($expression) {
+            return "<?php echo ($expression) ? \Carbon\Carbon::parse($expression)->format('M d, Y') : '-'; ?>";
+        });
 
         // Register event listeners
         $this->registerEventListeners();

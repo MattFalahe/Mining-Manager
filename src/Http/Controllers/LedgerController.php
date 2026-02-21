@@ -47,7 +47,19 @@ class LedgerController extends Controller
      */
     public function index(Request $request)
     {
-        // Get filter parameters
+        // Validate filter parameters
+        $request->validate([
+            'date_from' => 'nullable|date|date_format:Y-m-d',
+            'date_to' => 'nullable|date|date_format:Y-m-d',
+            'character_id' => 'nullable|integer',
+            'corporation_id' => 'nullable|integer',
+            'ore_type' => 'nullable|string|in:ore,moon,ice,gas',
+            'system' => 'nullable|string|max:100',
+            'sort_by' => 'nullable|string|in:date_desc,date_asc,value_desc,value_asc,quantity_desc',
+            'per_page' => 'nullable|integer|in:25,50,100,200',
+        ]);
+
+        // Get validated filter parameters
         $dateFrom = $request->get('date_from', now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', now()->format('Y-m-d'));
         $characterId = $request->get('character_id');

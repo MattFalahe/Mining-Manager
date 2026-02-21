@@ -94,7 +94,7 @@
                     <hr>
                     <div class="row mt-3">
                         <div class="col-12">
-                            <h5><i class="fas fa-users"></i> Miner Type Breakdown</h5>
+                            <h5><i class="fas fa-users"></i> {{ trans('mining-manager::taxes.miner_type_breakdown') }}</h5>
                         </div>
 
                         {{-- Corp Members --}}
@@ -102,7 +102,7 @@
                             <div class="card bg-dark">
                                 <div class="card-header">
                                     <h6 class="card-title mb-0">
-                                        <i class="fas fa-building text-primary"></i> Corp Members
+                                        <i class="fas fa-building text-primary"></i> {{ trans('mining-manager::taxes.corp_members') }}
                                     </h6>
                                 </div>
                                 <div class="card-body">
@@ -110,19 +110,19 @@
                                         <div class="col-4 text-center">
                                             <div class="text-warning">
                                                 <strong style="font-size: 1.5rem;">{{ number_format($summary['corp_members']['owed'], 0) }}</strong>
-                                                <br><small>ISK Owed</small>
+                                                <br><small>{{ trans('mining-manager::taxes.isk_owed') }}</small>
                                             </div>
                                         </div>
                                         <div class="col-4 text-center">
                                             <div class="text-info">
                                                 <strong style="font-size: 1.5rem;">{{ $summary['corp_members']['count'] }}</strong>
-                                                <br><small>Miners</small>
+                                                <br><small>{{ trans('mining-manager::taxes.active_miners') }}</small>
                                             </div>
                                         </div>
                                         <div class="col-4 text-center">
                                             <div class="text-success">
                                                 <strong style="font-size: 1.5rem;">{{ number_format($summary['corp_members']['collected'], 0) }}</strong>
-                                                <br><small>ISK Paid</small>
+                                                <br><small>{{ trans('mining-manager::taxes.isk_paid') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -135,7 +135,7 @@
                             <div class="card bg-dark">
                                 <div class="card-header">
                                     <h6 class="card-title mb-0">
-                                        <i class="fas fa-user-friends text-secondary"></i> Guest Miners
+                                        <i class="fas fa-user-friends text-secondary"></i> {{ trans('mining-manager::taxes.guest_miners') }}
                                     </h6>
                                 </div>
                                 <div class="card-body">
@@ -143,19 +143,19 @@
                                         <div class="col-4 text-center">
                                             <div class="text-warning">
                                                 <strong style="font-size: 1.5rem;">{{ number_format($summary['guest_miners']['owed'], 0) }}</strong>
-                                                <br><small>ISK Owed</small>
+                                                <br><small>{{ trans('mining-manager::taxes.isk_owed') }}</small>
                                             </div>
                                         </div>
                                         <div class="col-4 text-center">
                                             <div class="text-info">
                                                 <strong style="font-size: 1.5rem;">{{ $summary['guest_miners']['count'] }}</strong>
-                                                <br><small>Miners</small>
+                                                <br><small>{{ trans('mining-manager::taxes.active_miners') }}</small>
                                             </div>
                                         </div>
                                         <div class="col-4 text-center">
                                             <div class="text-success">
                                                 <strong style="font-size: 1.5rem;">{{ number_format($summary['guest_miners']['collected'], 0) }}</strong>
-                                                <br><small>ISK Paid</small>
+                                                <br><small>{{ trans('mining-manager::taxes.isk_paid') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -325,11 +325,11 @@
                                         </a>
                                         @if($moonOwnerCorpId)
                                             @if($tax->corporation_id == $moonOwnerCorpId)
-                                                <span class="badge badge-primary ml-1" data-toggle="tooltip" title="Corporation Member">
+                                                <span class="badge badge-primary ml-1" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.corporation_member') }}">
                                                     <i class="fas fa-building"></i>
                                                 </span>
                                             @else
-                                                <span class="badge badge-secondary ml-1" data-toggle="tooltip" title="Guest Miner">
+                                                <span class="badge badge-secondary ml-1" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.guest_miner') }}">
                                                     <i class="fas fa-user-friends"></i>
                                                 </span>
                                             @endif

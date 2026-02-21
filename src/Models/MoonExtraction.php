@@ -34,6 +34,10 @@ class MoonExtraction extends Model
         'notification_sent',
         'is_jackpot',
         'jackpot_detected_at',
+        'estimated_value_at_start',
+        'estimated_value_pre_arrival',
+        'value_last_updated',
+        'has_notification_data',
     ];
 
     /**
@@ -50,17 +54,17 @@ class MoonExtraction extends Model
         'notification_sent' => 'boolean',
         'is_jackpot' => 'boolean',
         'jackpot_detected_at' => 'datetime',
+        'estimated_value_at_start' => 'integer',
+        'estimated_value_pre_arrival' => 'integer',
+        'value_last_updated' => 'datetime',
+        'has_notification_data' => 'boolean',
     ];
 
     /**
-     * The accessors to append to the model's array/JSON form.
-     *
-     * @var array
+     * Accessors removed from $appends to prevent N+1 queries.
+     * Use getStructureNameAttribute() and getMoonNameAttribute() explicitly,
+     * or call loadDisplayNames() to batch-load names.
      */
-    protected $appends = [
-        'structure_name',
-        'moon_name',
-    ];
 
     /**
      * Get the corporation.
@@ -68,6 +72,73 @@ class MoonExtraction extends Model
     public function corporation()
     {
         return $this->belongsTo(CorporationInfo::class, 'corporation_id', 'corporation_id');
+    }
+
+    /**
+     * Batch-load display names for a collection of MoonExtraction models.
+     * Prevents N+1 by querying all names in bulk, then assigning to each model.
+     *
+     * @param \Illuminate\Support\Collection $extractions
+     * @return \Illuminate\Support\Collection The same collection with display names set
+     */
+    public static function loadDisplayNames($extractions)
+    {
+        if ($extractions->isEmpty()) {
+            return $extractions;
+        }
+
+        $structureIds = $extractions->pluck('structure_id')->unique()->filter()->values()->toArray();
+        $moonIds = $extractions->pluck('moon_id')->unique()->filter()->values()->toArray();
+
+        // Batch-load all names
+        $universeStructures = !empty($structureIds)
+            ? \DB::table('universe_structures')->whereIn('structure_id', $structureIds)->get()->keyBy('structure_id')
+            : collect();
+
+        $corpStructures = !empty($structureIds)
+            ? \DB::table('corporation_structures')->whereIn('structure_id', $structureIds)->get()->keyBy('structure_id')
+            : collect();
+
+        $moons = !empty($moonIds)
+            ? \DB::table('moons')->whereIn('moon_id', $moonIds)->get()->keyBy('moon_id')
+            : collect();
+
+        // Get type names for corp structures
+        $typeIds = $corpStructures->pluck('type_id')->unique()->filter()->values()->toArray();
+        $typeNames = !empty($typeIds)
+            ? \DB::table('invTypes')->whereIn('typeID', $typeIds)->pluck('typeName', 'typeID')->toArray()
+            : [];
+
+        // Assign pre-loaded names to each extraction
+        foreach ($extractions as $extraction) {
+            // Moon name
+            $moon = $moons->get($extraction->moon_id);
+            $moonName = $moon ? $moon->name : ($extraction->moon_id ? "Moon {$extraction->moon_id}" : 'Unknown Moon');
+            $extraction->setAttribute('moon_name', $moonName);
+
+            // Structure name
+            $structureName = "Structure {$extraction->structure_id}";
+            $us = $universeStructures->get($extraction->structure_id);
+            if ($us && !empty($us->name)) {
+                $structureName = $us->name;
+            } else {
+                $cs = $corpStructures->get($extraction->structure_id);
+                if ($cs) {
+                    if (isset($cs->name) && !empty($cs->name)) {
+                        $structureName = $cs->name;
+                    } elseif (isset($cs->type_id) && isset($typeNames[$cs->type_id])) {
+                        $structureName = $moonName !== 'Unknown Moon'
+                            ? "{$typeNames[$cs->type_id]} - {$moonName}"
+                            : "{$typeNames[$cs->type_id]} #{$extraction->structure_id}";
+                    }
+                } elseif ($moonName !== 'Unknown Moon') {
+                    $structureName = "Refinery at {$moonName}";
+                }
+            }
+            $extraction->setAttribute('structure_name', $structureName);
+        }
+
+        return $extractions;
     }
 
     /**

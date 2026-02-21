@@ -580,22 +580,22 @@ const miningIncomeChart = new Chart(miningIncomeCtx, {
         labels: chartData.miningIncome.labels,
         datasets: [
             {
-                label: chartData.miningIncome.datasets[0].label,
-                data: chartData.miningIncome.datasets[0].data,
+                label: '{{ trans("mining-manager::dashboard.refined_value") }}',
+                data: chartData.miningIncome.refined_value,
                 backgroundColor: 'rgba(0, 210, 255, 0.8)',
                 borderColor: 'rgba(0, 210, 255, 1)',
                 borderWidth: 1
             },
             {
-                label: chartData.miningIncome.datasets[1].label,
-                data: chartData.miningIncome.datasets[1].data,
+                label: '{{ trans("mining-manager::dashboard.tax_paid") }}',
+                data: chartData.miningIncome.tax_paid,
                 backgroundColor: 'rgba(255, 0, 132, 0.8)',
                 borderColor: 'rgba(255, 0, 132, 1)',
                 borderWidth: 1
             },
             {
-                label: chartData.miningIncome.datasets[2].label,
-                data: chartData.miningIncome.datasets[2].data,
+                label: '{{ trans("mining-manager::dashboard.event_bonus") }}',
+                data: chartData.miningIncome.event_bonus,
                 backgroundColor: 'rgba(161, 198, 60, 0.8)',
                 borderColor: 'rgba(161, 198, 60, 1)',
                 borderWidth: 1

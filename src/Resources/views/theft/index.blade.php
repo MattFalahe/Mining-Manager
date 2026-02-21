@@ -59,16 +59,15 @@
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
         <h4 class="alert-heading">
             <i class="fas fa-exclamation-triangle"></i>
-            ⚠️  ACTIVE THEFTS IN PROGRESS
+            {{ trans('mining-manager::ledger.active_miners') }} - {{ trans('mining-manager::taxes.overdue') }}
         </h4>
         <p>
-            <strong>{{ $activeTheftsCount }}</strong> character(s) continue mining with unpaid taxes!
-            These miners have been caught multiple times and require immediate attention.
+            <strong>{{ $activeTheftsCount }}</strong> {{ trans('mining-manager::taxes.all_unpaid_members') }}
         </p>
         <hr>
         <p class="mb-0">
             <a href="{{ route('mining-manager.theft.index', ['active_only' => 1]) }}" class="btn btn-danger">
-                <i class="fas fa-search"></i> View Active Thefts
+                <i class="fas fa-search"></i> {{ trans('mining-manager::taxes.view_details') }}
             </a>
         </p>
         <button type="button" class="close" data-dismiss="alert" aria-label="Close">

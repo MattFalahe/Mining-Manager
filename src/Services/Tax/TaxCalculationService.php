@@ -163,6 +163,16 @@ class TaxCalculationService
 
         Log::info("Mining Manager: Individual tax calculation complete. Calculated: {$calculated}, Total: " . number_format($totalTaxAmount, 2) . " ISK");
 
+        // Log a warning summary if there were errors so admins notice
+        if (!empty($errors)) {
+            Log::warning("Mining Manager: Tax calculation completed with " . count($errors) . " error(s)", [
+                'month' => $startDate->format('Y-m'),
+                'successful' => $calculated,
+                'failed' => count($errors),
+                'errors' => array_map(fn($e) => "Character {$e['character_id']}: {$e['error']}", $errors),
+            ]);
+        }
+
         return [
             'method' => 'individually',
             'count' => $calculated,
@@ -208,18 +218,30 @@ class TaxCalculationService
                 }
 
                 // Calculate combined tax for all characters in this group
+                // Skip per-character minimum tax — we apply minimum to the combined total
                 $combinedTaxAmount = 0;
                 $taxBreakdown = [];
 
                 foreach ($characterIds as $characterId) {
-                    $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate);
+                    $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate, true);
                     $combinedTaxAmount += $characterTax;
-                    
+
                     if ($characterTax > 0) {
                         $taxBreakdown[] = [
                             'character_id' => $characterId,
                             'tax_amount' => $characterTax,
                         ];
+                    }
+                }
+
+                // Apply minimum tax to the combined total (not per-character)
+                if ($combinedTaxAmount > 0) {
+                    $paymentSettings = $this->settingsService->getPaymentSettings();
+                    $minimumAmount = $paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000);
+
+                    if ($combinedTaxAmount < $minimumAmount) {
+                        Log::debug("Mining Manager: Adjusting accumulated tax for main character {$mainCharacterId} to minimum ({$combinedTaxAmount} -> {$minimumAmount})");
+                        $combinedTaxAmount = $minimumAmount;
                     }
                 }
 
@@ -271,6 +293,16 @@ class TaxCalculationService
         }
 
         Log::info("Mining Manager: Accumulated tax calculation complete. Calculated: {$calculated} main characters, Total: " . number_format($totalTaxAmount, 2) . " ISK");
+
+        // Log a warning summary if there were errors so admins notice
+        if (!empty($errors)) {
+            Log::warning("Mining Manager: Accumulated tax calculation completed with " . count($errors) . " error(s)", [
+                'month' => $startDate->format('Y-m'),
+                'successful' => $calculated,
+                'failed' => count($errors),
+                'errors' => array_map(fn($e) => "Character {$e['character_id']}: {$e['error']}", $errors),
+            ]);
+        }
 
         return [
             'method' => 'accumulated',
@@ -363,9 +395,10 @@ class TaxCalculationService
      * @param int $characterId
      * @param Carbon $startDate
      * @param Carbon $endDate
+     * @param bool $skipMinimum When true, skip minimum tax (used in accumulated mode where minimum applies to combined total)
      * @return float
      */
-    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate): float
+    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $skipMinimum = false): float
     {
         $miningData = MiningLedger::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
@@ -408,21 +441,24 @@ class TaxCalculationService
             $totalTax += $value * $taxRate;
         }
 
-        // Check exemption threshold (only if enabled)
+        // Check exemption threshold FIRST (before minimum tax)
+        // This prevents minimum tax from bumping exempt amounts above threshold
         $exemptions = $this->settingsService->getExemptions();
         if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
             Log::debug("Mining Manager: Character {$characterId} exempt from tax (tax below threshold: {$totalTax} < {$exemptions['threshold']})");
             return 0;
         }
 
-        // Apply minimum tax (only for individual characters, not when accumulating)
-        // Note: Minimum tax only applies if exemption check passes
-        $paymentSettings = $this->settingsService->getPaymentSettings();
-        $minimumAmount = $paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000);
+        // Apply minimum tax only in individual mode (not when accumulating)
+        // In accumulated mode, minimum tax is applied to the combined total instead
+        if (!$skipMinimum) {
+            $paymentSettings = $this->settingsService->getPaymentSettings();
+            $minimumAmount = $paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000);
 
-        if ($totalTax > 0 && $totalTax < $minimumAmount) {
-            Log::debug("Mining Manager: Adjusting tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
-            $totalTax = $minimumAmount;
+            if ($totalTax > 0 && $totalTax < $minimumAmount) {
+                Log::debug("Mining Manager: Adjusting tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
+                $totalTax = $minimumAmount;
+            }
         }
 
         return round($totalTax, 2);
@@ -824,17 +860,15 @@ class TaxCalculationService
      */
     private function checkIfCorpMoon(int $characterId, int $typeId, int $solarSystemId, string $date): bool
     {
-        // Format date to match the database timestamp format
-        $mDate = $date . " 00:00:00";
-        
         try {
             // Query the corporation mining observer data
             // This table is populated by SeAT from ESI API and ONLY contains
             // mining data from YOUR corporation's moon mining structures
+            // Use whereDate to match regardless of time portion in last_updated
             $result = DB::table('corporation_industry_mining_observer_data as d')
                 ->select('d.*')
                 ->join('universe_structures as u', 'd.observer_id', '=', 'u.structure_id')
-                ->where('d.last_updated', '=', $mDate)
+                ->whereDate('d.last_updated', '=', $date)
                 ->where('d.character_id', '=', $characterId)
                 ->where('d.type_id', '=', $typeId)
                 ->where('u.solar_system_id', '=', $solarSystemId)

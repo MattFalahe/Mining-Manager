@@ -3,8 +3,6 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
-use MiningManager\Models\MiningLedger;
-use MiningManager\Models\MiningTax;
 use MiningManager\Services\Tax\TaxCalculationService;
 use Carbon\Carbon;
 
@@ -55,76 +53,46 @@ class CalculateMonthlyTaxesCommand extends Command
         $this->info('Starting tax calculation...');
 
         // Determine which month to process
-        $month = $this->option('month') 
+        $month = $this->option('month')
             ? Carbon::parse($this->option('month') . '-01')
             : Carbon::now()->subMonth();
 
-        $startDate = $month->copy()->startOfMonth();
-        $endDate = $month->copy()->endOfMonth();
+        $recalculate = (bool) $this->option('recalculate');
 
-        $this->info("Calculating taxes for period: {$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')}");
-
-        // Get mining activity for the period
-        $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at');
+        $this->info("Calculating taxes for period: {$month->copy()->startOfMonth()->format('Y-m-d')} to {$month->copy()->endOfMonth()->format('Y-m-d')}");
 
         if ($characterId = $this->option('character_id')) {
-            $query->where('character_id', $characterId);
             $this->info("Calculating for character ID: {$characterId}");
-        }
 
-        // Group by character
-        $miningByCharacter = $query->get()->groupBy('character_id');
-
-        $this->info("Found mining activity for {$miningByCharacter->count()} characters");
-
-        $calculated = 0;
-        $errors = 0;
-
-        foreach ($miningByCharacter as $characterId => $miningRecords) {
+            // For a single character, use recalculateTax directly
             try {
-                // Check if tax already exists
-                $existingTax = MiningTax::where('character_id', $characterId)
-                    ->where('month', $startDate->format('Y-m-01'))
-                    ->first();
-
-                if ($existingTax && !$this->option('recalculate')) {
-                    $this->line("Skipping character {$characterId} - tax already calculated");
-                    continue;
-                }
-
-                // Calculate tax using service
-                $taxAmount = $this->taxService->calculateMonthlyTaxes($characterId, $startDate, $endDate);
-
-                if ($existingTax) {
-                    $existingTax->update([
-                        'amount_owed' => $taxAmount,
-                        'calculated_at' => Carbon::now(),
-                    ]);
-                    $this->line("Recalculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
-                } else {
-                    MiningTax::create([
-                        'character_id' => $characterId,
-                        'month' => $startDate->format('Y-m-01'),
-                        'amount_owed' => $taxAmount,
-                        'amount_paid' => 0,
-                        'status' => 'unpaid',
-                        'calculated_at' => Carbon::now(),
-                    ]);
-                    $this->line("Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
-                }
-
-                $calculated++;
+                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $month);
+                $this->info("Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
             } catch (\Exception $e) {
                 $this->error("Error calculating tax for character {$characterId}: {$e->getMessage()}");
-                $errors++;
+                return Command::FAILURE;
             }
-        }
+        } else {
+            // Use the service's calculateMonthlyTaxes which handles
+            // individual vs accumulated mode, grouping, and all business logic
+            try {
+                $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate);
 
-        $this->info("Tax calculation complete!");
-        $this->info("Calculated: {$calculated} character taxes");
-        if ($errors > 0) {
-            $this->warn("Errors: {$errors}");
+                $this->info("Tax calculation complete!");
+                $this->info("Method: {$results['method']}");
+                $this->info("Calculated: {$results['count']} tax records");
+                $this->info("Total: " . number_format($results['total'], 2) . " ISK");
+
+                if (!empty($results['errors'])) {
+                    $this->warn("Errors: " . count($results['errors']));
+                    foreach ($results['errors'] as $error) {
+                        $this->error("  Character {$error['character_id']}: {$error['error']}");
+                    }
+                }
+            } catch (\Exception $e) {
+                $this->error("Tax calculation failed: {$e->getMessage()}");
+                return Command::FAILURE;
+            }
         }
 
         return Command::SUCCESS;

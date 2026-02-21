@@ -223,8 +223,12 @@ class MiningAnalyticsService
      */
     public function getDailyTrends(Carbon $startDate, Carbon $endDate)
     {
+        $cacheKey = "mining-analytics:daily-trends:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
         $pricing = $this->getPricingConfig();
 
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $pricing) {
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
             ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
                 $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
@@ -239,6 +243,7 @@ class MiningAnalyticsService
             ->groupBy('mining_ledger.date')
             ->orderBy('mining_ledger.date')
             ->get();
+        });
     }
 
     /**
@@ -250,8 +255,12 @@ class MiningAnalyticsService
      */
     public function getCharacterStatistics(Carbon $startDate, Carbon $endDate)
     {
+        $cacheKey = "mining-analytics:char-stats:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
         $pricing = $this->getPricingConfig();
 
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $pricing) {
         return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
             ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
             ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
@@ -270,6 +279,7 @@ class MiningAnalyticsService
             ->groupBy('mining_ledger.character_id', 'character_infos.name')
             ->orderByDesc('total_quantity')
             ->get();
+        });
     }
 
     /**
@@ -281,25 +291,30 @@ class MiningAnalyticsService
      */
     public function getOreStatistics(Carbon $startDate, Carbon $endDate)
     {
+        $cacheKey = "mining-analytics:ore-stats:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
         $pricing = $this->getPricingConfig();
 
-        return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
-                $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
-                    ->where('mining_price_cache.region_id', '=', $pricing['regionId']);
-            })
-            ->select(
-                'mining_ledger.type_id',
-                'invTypes.typeName as ore_name',
-                DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
-                DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$pricing['priceColumn']}, 0)) as total_value"),
-                DB::raw("AVG(mining_price_cache.{$pricing['priceColumn']}) as average_price"),
-                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
-            )
-            ->groupBy('mining_ledger.type_id', 'invTypes.typeName')
-            ->orderByDesc('total_quantity')
-            ->get();
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $pricing) {
+            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+                ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
+                    $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
+                        ->where('mining_price_cache.region_id', '=', $pricing['regionId']);
+                })
+                ->select(
+                    'mining_ledger.type_id',
+                    'invTypes.typeName as ore_name',
+                    DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$pricing['priceColumn']}, 0)) as total_value"),
+                    DB::raw("AVG(mining_price_cache.{$pricing['priceColumn']}) as average_price"),
+                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
+                )
+                ->groupBy('mining_ledger.type_id', 'invTypes.typeName')
+                ->orderByDesc('total_quantity')
+                ->get();
+        });
     }
 
     /**
@@ -311,20 +326,25 @@ class MiningAnalyticsService
      */
     public function getSystemStatistics(Carbon $startDate, Carbon $endDate)
     {
-        return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id')
-            ->select(
-                'mining_ledger.solar_system_id',
-                'solar_systems.name as system_name',
-                'solar_systems.security as security_status',
-                DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
-                DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
-                DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
-                DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
-            )
-            ->groupBy('mining_ledger.solar_system_id', 'solar_systems.name', 'solar_systems.security')
-            ->orderByDesc('total_quantity')
-            ->get();
+        $cacheKey = "mining-analytics:system-stats:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
+            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id')
+                ->select(
+                    'mining_ledger.solar_system_id',
+                    'solar_systems.name as system_name',
+                    'solar_systems.security as security_status',
+                    DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
+                    DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
+                    DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
+                )
+                ->groupBy('mining_ledger.solar_system_id', 'solar_systems.name', 'solar_systems.security')
+                ->orderByDesc('total_quantity')
+                ->get();
+        });
     }
 
     /**

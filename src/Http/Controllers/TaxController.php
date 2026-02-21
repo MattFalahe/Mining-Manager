@@ -545,7 +545,18 @@ class TaxController extends Controller
             }
 
             // Calculate taxes (corporation context already set)
-            $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate, $characterId);
+            // If a specific character is requested, use recalculateTax instead
+            if ($characterId) {
+                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $month);
+                $results = [
+                    'method' => 'individual',
+                    'count' => $taxAmount > 0 ? 1 : 0,
+                    'total' => $taxAmount,
+                    'errors' => [],
+                ];
+            } else {
+                $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate);
+            }
 
             return response()->json([
                 'status' => 'success',

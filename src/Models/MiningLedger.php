@@ -3,6 +3,7 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\InvType;
 use Seat\Eveapi\Models\Sde\SolarSystem;
@@ -10,10 +11,10 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Mining Ledger Model for SeAT v5.x - FIXED VERSION
- * 
+ *
  * Stores processed mining data from ESI.
  * Uses SeAT's Sde models (InvType, SolarSystem) for reference data.
- * 
+ *
  * FIXES:
  * - Enhanced error handling for relationships
  * - Multiple fallback methods for attribute accessors
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Log;
  */
 class MiningLedger extends Model
 {
+    use SoftDeletes;
+
     /**
      * The table associated with the model.
      *
