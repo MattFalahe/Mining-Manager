@@ -3,6 +3,7 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Seat\Eveapi\Models\Sde\InvType;
 
 class MiningPriceCache extends Model
@@ -44,10 +45,20 @@ class MiningPriceCache extends Model
 
     /**
      * Get the item type.
+     * Auto-detect primary key to handle different SeAT versions.
      */
     public function type()
     {
-        return $this->belongsTo(InvType::class, 'type_id', 'typeID');
+        try {
+            $typeModel = app(InvType::class);
+            $primaryKey = $typeModel->getKeyName();
+            return $this->belongsTo(InvType::class, 'type_id', $primaryKey);
+        } catch (\Exception $e) {
+            Log::debug('MiningPriceCache: Failed to detect InvType primary key, using default', [
+                'error' => $e->getMessage()
+            ]);
+            return $this->belongsTo(InvType::class, 'type_id', 'typeID');
+        }
     }
 
     /**

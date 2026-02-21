@@ -3,6 +3,7 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\InvType;
 use Seat\Eveapi\Models\Universe\UniverseStructure;
@@ -54,10 +55,20 @@ class CorporationObserverMining extends Model
     
     /**
      * Get the ore type that was mined.
+     * Auto-detect primary key to handle different SeAT versions.
      */
     public function type()
     {
-        return $this->belongsTo(InvType::class, 'type_id', 'typeID');
+        try {
+            $typeModel = app(InvType::class);
+            $primaryKey = $typeModel->getKeyName();
+            return $this->belongsTo(InvType::class, 'type_id', $primaryKey);
+        } catch (\Exception $e) {
+            Log::debug('CorporationObserverMining: Failed to detect InvType primary key, using default', [
+                'error' => $e->getMessage()
+            ]);
+            return $this->belongsTo(InvType::class, 'type_id', 'typeID');
+        }
     }
     
     /**

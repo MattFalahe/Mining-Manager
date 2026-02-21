@@ -78,6 +78,9 @@ class MoonController extends Controller
 
         $extractions = $query->orderBy('chunk_arrival_time', 'desc')->paginate(20);
 
+        // Batch-load structure and moon names to prevent N+1 queries
+        MoonExtraction::loadDisplayNames($extractions->getCollection());
+
         // Calculate values for each extraction (respects current refined value setting)
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
@@ -91,6 +94,9 @@ class MoonController extends Controller
             ->where('chunk_arrival_time', '<=', Carbon::now()->addDays(7))
             ->orderBy('chunk_arrival_time')
             ->get();
+
+        // Batch-load display names for upcoming extractions
+        MoonExtraction::loadDisplayNames($upcoming);
 
         // Calculate values for upcoming extractions too
         foreach ($upcoming as $extraction) {
@@ -196,6 +202,9 @@ class MoonController extends Controller
             ->orderBy('chunk_arrival_time')
             ->get();
 
+        // Batch-load display names to prevent N+1 queries
+        MoonExtraction::loadDisplayNames($extractions);
+
         // Calculate values for each extraction
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
@@ -220,13 +229,9 @@ class MoonController extends Controller
             $calendar[$day][] = $extraction;
         }
 
-        // Add history extractions to calendar (convert to similar format)
+        // Convert history extractions to pseudo MoonExtraction objects for display
+        $pseudoExtractions = collect();
         foreach ($historyExtractions as $history) {
-            $day = $history->chunk_arrival_time->format('Y-m-d');
-            if (!isset($calendar[$day])) {
-                $calendar[$day] = [];
-            }
-            // Create a pseudo-extraction object for display
             $historyExtraction = new MoonExtraction();
             $historyExtraction->id = $history->id;
             $historyExtraction->structure_id = $history->structure_id;
@@ -240,7 +245,19 @@ class MoonController extends Controller
             $historyExtraction->estimated_value = $history->final_estimated_value;
             $historyExtraction->calculated_value = $history->final_estimated_value;
             $historyExtraction->is_jackpot = $history->is_jackpot;
-            $historyExtraction->is_archived = true; // Flag to indicate this is archived
+            $historyExtraction->is_archived = true;
+            $pseudoExtractions->push($historyExtraction);
+        }
+
+        // Batch-load display names for history pseudo-objects
+        MoonExtraction::loadDisplayNames($pseudoExtractions);
+
+        // Add history extractions to calendar
+        foreach ($pseudoExtractions as $historyExtraction) {
+            $day = $historyExtraction->chunk_arrival_time->format('Y-m-d');
+            if (!isset($calendar[$day])) {
+                $calendar[$day] = [];
+            }
             $calendar[$day][] = $historyExtraction;
         }
 
@@ -260,6 +277,9 @@ class MoonController extends Controller
             ->orderBy('extraction_start_time', 'desc')
             ->limit(50)
             ->get();
+
+        // Batch-load display names to prevent N+1 queries
+        MoonExtraction::loadDisplayNames($extractions);
 
         // Calculate values
         foreach ($extractions as $extraction) {
@@ -374,6 +394,9 @@ class MoonController extends Controller
             ->orderBy('extraction_start_time', 'desc')
             ->paginate(20);
 
+        // Batch-load display names to prevent N+1 queries
+        MoonExtraction::loadDisplayNames($extractions->getCollection());
+
         // Calculate values for each extraction
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
@@ -406,6 +429,9 @@ class MoonController extends Controller
         }
 
         $activeExtractions = $query->orderBy('chunk_arrival_time')->get();
+
+        // Batch-load display names to prevent N+1 queries
+        MoonExtraction::loadDisplayNames($activeExtractions);
 
         // Calculate values and times for each extraction
         foreach ($activeExtractions as $extraction) {
