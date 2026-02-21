@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\CorporationObserverMining;
@@ -155,9 +156,13 @@ class ProcessMiningLedgerCommand extends Command
                     } else {
                         // Cross-source dedup: remove personal ESI record if it exists
                         // Observer data is more authoritative (has observer_id, structure info)
+                        // Only applies to corporation moon mining (same ore mined at same structure/system)
                         $personalDupe = MiningLedger::where('character_id', $entry->character_id)
                             ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
                             ->where('type_id', $entry->type_id)
+                            ->when($solarSystemId, function ($q) use ($solarSystemId) {
+                                $q->where('solar_system_id', $solarSystemId);
+                            })
                             ->whereNull('observer_id')
                             ->first();
 

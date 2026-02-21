@@ -14,6 +14,7 @@ use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Moon\MoonOreHelper;
 use MiningManager\Services\Notification\WebhookService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -38,11 +39,20 @@ class ProcessMiningLedgerListener implements ShouldQueue
 
         Log::debug("Mining Manager: Processing mining ledger for character {$characterId}");
 
+        // Acquire a per-character lock to prevent race conditions between
+        // the listener (personal ESI) and command (observer data) processing simultaneously
+        $lock = Cache::lock("mining-ledger-processing-{$characterId}", 120); // 2-minute timeout
+
+        if (!$lock->get()) {
+            Log::debug("Mining Manager: Character {$characterId} ledger is already being processed, skipping");
+            return;
+        }
+
         try {
             // Get mining ledger entries for this character
             // Process entries from the last 30 days
             $cutoffDate = Carbon::now()->subDays(30);
-            
+
             $ledgerEntries = CharacterMining::where('character_id', $characterId)
                 ->where('date', '>=', $cutoffDate)
                 ->get();
@@ -57,11 +67,12 @@ class ProcessMiningLedgerListener implements ShouldQueue
 
             foreach ($ledgerEntries as $entry) {
                 // Check if already processed - matches DB unique constraint
-                // (character_id, date, type_id, observer_id)
+                // (character_id, date, type_id, solar_system_id, observer_id)
                 // Personal ESI mining has observer_id = NULL
                 $existing = MiningLedger::where('character_id', $entry->character_id)
                     ->where('date', $entry->date)
                     ->where('type_id', $entry->type_id)
+                    ->where('solar_system_id', $entry->solar_system_id)
                     ->whereNull('observer_id')
                     ->first();
 
@@ -78,7 +89,7 @@ class ProcessMiningLedgerListener implements ShouldQueue
                     }
                 } elseif ($this->hasObserverRecord($entry)) {
                     // Cross-source dedup: observer data already has this mining recorded
-                    // Skip creating a duplicate personal record
+                    // Only applies to corp moon ore - personal ESI record is skipped
                     Log::debug("Mining Manager: Skipping character {$characterId}, type {$entry->type_id} - already recorded via observer data");
                 } else {
                     // Classify ore type
@@ -122,6 +133,8 @@ class ProcessMiningLedgerListener implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error("Mining Manager: Error processing mining ledger for character {$characterId}: " . $e->getMessage());
+        } finally {
+            $lock->release();
         }
     }
 
@@ -367,6 +380,7 @@ class ProcessMiningLedgerListener implements ShouldQueue
         return MiningLedger::where('character_id', $entry->character_id)
             ->whereDate('date', $entry->date)
             ->where('type_id', $entry->type_id)
+            ->where('solar_system_id', $entry->solar_system_id)
             ->whereNotNull('observer_id')
             ->exists();
     }

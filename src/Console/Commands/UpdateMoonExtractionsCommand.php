@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Database\QueryException;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
@@ -114,19 +115,29 @@ class UpdateMoonExtractionsCommand extends Command
                         $this->line("  Updated extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
                         $updated++;
                     } else {
-                        // Create new record
-                        MoonExtraction::create([
-                            'structure_id' => $structure->structure_id,
-                            'corporation_id' => $structure->corporation_id,
-                            'moon_id' => $extraction['moon_id'] ?? null,
-                            'extraction_start_time' => $extraction['extraction_start_time'],
-                            'chunk_arrival_time' => $extraction['chunk_arrival_time'],
-                            'natural_decay_time' => $extraction['natural_decay_time'],
-                            'status' => $this->determineStatus($extraction),
-                            'ore_composition' => $extraction['ore_composition'] ?? null,
-                        ]);
-                        $this->line("  Created new extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
-                        $created++;
+                        // Create new record - wrapped in try/catch for race condition
+                        // protection against the unique constraint on (structure_id, extraction_start_time)
+                        try {
+                            MoonExtraction::create([
+                                'structure_id' => $structure->structure_id,
+                                'corporation_id' => $structure->corporation_id,
+                                'moon_id' => $extraction['moon_id'] ?? null,
+                                'extraction_start_time' => $extraction['extraction_start_time'],
+                                'chunk_arrival_time' => $extraction['chunk_arrival_time'],
+                                'natural_decay_time' => $extraction['natural_decay_time'],
+                                'status' => $this->determineStatus($extraction),
+                                'ore_composition' => $extraction['ore_composition'] ?? null,
+                            ]);
+                            $this->line("  Created new extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
+                            $created++;
+                        } catch (QueryException $e) {
+                            // Unique constraint violation - another process created it first
+                            if (str_contains($e->getMessage(), 'Duplicate entry') || $e->getCode() === '23000') {
+                                $this->line("  Skipped duplicate extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
+                            } else {
+                                throw $e; // Re-throw non-duplicate errors
+                            }
+                        }
                     }
                 }
 
