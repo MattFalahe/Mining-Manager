@@ -205,7 +205,7 @@
                                         @endif
                                     </td>
                                     <td class="text-right">{{ number_format($entry->quantity, 2) }} m³</td>
-                                    <td class="text-right">{{ number_format($entry->price_per_unit, 2) }} ISK</td>
+                                    <td class="text-right">{{ number_format($entry->unit_price ?? 0, 2) }} ISK</td>
                                     <td class="text-right"><strong>{{ number_format($entry->total_value, 2) }} ISK</strong></td>
                                 </tr>
                             @empty

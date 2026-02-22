@@ -77,10 +77,15 @@ class ProcessMiningLedgerListener implements ShouldQueue
                     ->first();
 
                 if ($existing) {
-                    // Update if quantity changed
+                    // Update if quantity changed - recalculate values with new quantity
                     if ($existing->quantity != $entry->quantity) {
+                        $values = $this->calculateEntryValues($entry->type_id, $entry->quantity);
                         $existing->update([
                             'quantity' => $entry->quantity,
+                            'unit_price' => $values['unit_price'],
+                            'ore_value' => $values['ore_value'],
+                            'mineral_value' => $values['mineral_value'],
+                            'total_value' => $values['total_value'],
                             'processed_at' => Carbon::now(),
                         ]);
                         $updated++;
@@ -99,13 +104,20 @@ class ProcessMiningLedgerListener implements ShouldQueue
                     $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                    // Create new entry
+                    // Calculate ore values using OreValuationService (daily session pricing)
+                    $values = $this->calculateEntryValues($entry->type_id, $entry->quantity);
+
+                    // Create new entry with calculated values
                     MiningLedger::create([
                         'character_id' => $entry->character_id,
                         'date' => $entry->date,
                         'type_id' => $entry->type_id,
                         'quantity' => $entry->quantity,
                         'solar_system_id' => $entry->solar_system_id,
+                        'unit_price' => $values['unit_price'],
+                        'ore_value' => $values['ore_value'],
+                        'mineral_value' => $values['mineral_value'],
+                        'total_value' => $values['total_value'],
                         'is_moon_ore' => $isMoonOre,
                         'is_ice' => $isIce,
                         'is_gas' => $isGas,
@@ -115,7 +127,7 @@ class ProcessMiningLedgerListener implements ShouldQueue
                     ]);
                     $processed++;
 
-                    Log::debug("Mining Manager: Created new ledger entry for character {$characterId}, type {$entry->type_id}, quantity {$entry->quantity}");
+                    Log::debug("Mining Manager: Created new ledger entry for character {$characterId}, type {$entry->type_id}, quantity {$entry->quantity}, value {$values['total_value']}");
                 }
             }
 
@@ -366,6 +378,37 @@ class ProcessMiningLedgerListener implements ShouldQueue
         }
 
         return 'ore';
+    }
+
+    /**
+     * Calculate ore values for a ledger entry using OreValuationService.
+     * This implements "daily session pricing" — ore is priced at the day's market rate.
+     *
+     * @param int $typeId
+     * @param int $quantity
+     * @return array ['unit_price' => float, 'ore_value' => float, 'mineral_value' => float, 'total_value' => float]
+     */
+    private function calculateEntryValues(int $typeId, int $quantity): array
+    {
+        try {
+            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+            $values = $valuationService->calculateOreValue($typeId, $quantity);
+
+            return [
+                'unit_price' => $values['unit_price'] ?? 0,
+                'ore_value' => $values['ore_value'] ?? 0,
+                'mineral_value' => $values['mineral_value'] ?? 0,
+                'total_value' => $values['total_value'] ?? 0,
+            ];
+        } catch (\Exception $e) {
+            Log::warning("Mining Manager: Failed to calculate values for type_id {$typeId}: {$e->getMessage()}");
+            return [
+                'unit_price' => 0,
+                'ore_value' => 0,
+                'mineral_value' => 0,
+                'total_value' => 0,
+            ];
+        }
     }
 
     /**

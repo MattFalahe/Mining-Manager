@@ -400,9 +400,29 @@ class TaxCalculationService
      */
     private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $skipMinimum = false): float
     {
+        // Fetch mining data with cross-source dedup for corp moon ore:
+        // If both a personal ESI record (observer_id IS NULL) and an observer record
+        // (observer_id IS NOT NULL) exist for the same character+date+type_id,
+        // exclude the personal ESI record to prevent double-counting.
         $miningData = MiningLedger::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
             ->whereNotNull('processed_at')
+            ->where(function ($query) use ($characterId, $startDate, $endDate) {
+                $query->whereNotNull('observer_id')  // Always include observer records
+                    ->orWhere(function ($q) use ($characterId, $startDate, $endDate) {
+                        // Include personal ESI records only if no observer record exists
+                        $q->whereNull('observer_id')
+                          ->whereNotExists(function ($sub) use ($characterId, $startDate, $endDate) {
+                              $sub->select(DB::raw(1))
+                                  ->from('mining_ledger as ml2')
+                                  ->whereColumn('ml2.character_id', 'mining_ledger.character_id')
+                                  ->whereColumn('ml2.date', 'mining_ledger.date')
+                                  ->whereColumn('ml2.type_id', 'mining_ledger.type_id')
+                                  ->whereNotNull('ml2.observer_id')
+                                  ->whereNull('ml2.deleted_at');
+                          });
+                    });
+            })
             ->get();
 
         if ($miningData->isEmpty()) {
@@ -538,18 +558,26 @@ class TaxCalculationService
     }
 
     /**
-     * Calculate value of a single ore entry.
-     * Now uses OreValuationService for consistency across the application.
+     * Get the value of a single ore entry.
+     *
+     * Uses the stored total_value from the ledger entry (daily session pricing).
+     * This implements "1 day = 1 session" — ore was priced at the day's market rate
+     * when processed. If total_value is 0 (unpriced entry), falls back to
+     * OreValuationService for on-demand calculation.
      *
      * @param object $entry Mining ledger entry
      * @return float
      */
     private function calculateOreValue($entry): float
     {
-        try {
-            // Use OreValuationService for consistent valuation logic
-            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
+        // Use stored daily session value if available (preferred — prices locked at mining date)
+        if (isset($entry->total_value) && $entry->total_value > 0) {
+            return (float) $entry->total_value;
+        }
 
+        // Fallback: calculate on-the-fly for entries that haven't been priced yet
+        try {
+            $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
             $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
 
             return $values['total_value'];

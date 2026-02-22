@@ -9,6 +9,7 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Notification\WebhookService;
 use MiningManager\Http\Controllers\DashboardController;
@@ -74,9 +75,6 @@ class ProcessMiningLedgerCommand extends Command
         $this->info("📊 Found {$observerEntries->count()} observer mining entries");
         $this->line('');
 
-        // Get pricing service
-        $priceService = app(PriceProviderService::class);
-
         $processed = 0;
         $updated = 0;
         $skipped = 0;
@@ -102,18 +100,22 @@ class ProcessMiningLedgerCommand extends Command
                         ->where('observer_id', $entry->observer_id)
                         ->first();
 
-                    // Get price for the ore
-                    $price = $priceService->getPrice($entry->type_id);
-                    
-                    // Calculate values
-                    $oreValue = $entry->quantity * $price;
-                    
-                    // Use default tax rate (can be overridden per character/type in future)
-                    $taxRate = $defaultTaxRate;
-                    $taxAmount = $oreValue * ($taxRate / 100);
-
                     // Get structure's solar system
                     $solarSystemId = $entry->structure->solar_system_id ?? null;
+
+                    // Calculate ore values using OreValuationService (daily session pricing)
+                    // This uses the configured valuation method (raw ore price or mineral price)
+                    $valuationService = app(OreValuationService::class);
+                    $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+
+                    $unitPrice = $values['unit_price'] ?? 0;
+                    $oreValue = $values['ore_value'] ?? 0;
+                    $mineralValue = $values['mineral_value'] ?? 0;
+                    $totalValue = $values['total_value'] ?? 0;
+
+                    // Use default tax rate (can be overridden per character/type in future)
+                    $taxRate = $defaultTaxRate;
+                    $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Classify ore type
                     $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
@@ -130,9 +132,10 @@ class ProcessMiningLedgerCommand extends Command
                         'quantity' => $entry->quantity,
                         'solar_system_id' => $solarSystemId,
                         'observer_id' => $entry->observer_id,
-                        'unit_price' => $price,
+                        'unit_price' => $unitPrice,
                         'ore_value' => $oreValue,
-                        'total_value' => $oreValue,
+                        'mineral_value' => $mineralValue,
+                        'total_value' => $totalValue,
                         'tax_rate' => $taxRate,
                         'tax_amount' => $taxAmount,
                         'ore_type' => $entry->type->typeName ?? null,
@@ -210,8 +213,10 @@ class ProcessMiningLedgerCommand extends Command
                 $uniqueMiners = $observerEntries->unique('character_id')->count();
                 $uniqueStructures = $observerEntries->unique('observer_id')->count();
                 $totalQuantity = $observerEntries->sum('quantity');
-                $totalValue = $observerEntries->sum(function($entry) use ($priceService) {
-                    return $entry->quantity * $priceService->getPrice($entry->type_id);
+                $valuationSvc = app(OreValuationService::class);
+                $totalValue = $observerEntries->sum(function($entry) use ($valuationSvc) {
+                    $vals = $valuationSvc->calculateOreValue($entry->type_id, $entry->quantity);
+                    return $vals['total_value'] ?? 0;
                 });
                 $totalTaxes = $totalValue * ($defaultTaxRate / 100);
                 

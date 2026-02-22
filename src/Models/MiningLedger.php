@@ -59,6 +59,7 @@ class MiningLedger extends Model
         'is_ice',
         'is_gas',
         'is_abyssal',
+        'ore_category',
     ];
 
     /**

@@ -113,8 +113,35 @@ class OreValuationService
             // Apply price modifier to refined value
             $modifiedRefinedValue = $refinedValue * (1 + ($priceModifier / 100));
 
-            $result['mineral_value'] = $modifiedRefinedValue;
-            $result['total_value'] = $modifiedRefinedValue;
+            // Sanity check: if refined value per unit exceeds 10M ISK, something is wrong
+            // (no single ore unit in EVE is worth more than ~1M ISK refined)
+            // Fall back to raw ore price in that case
+            $perUnitRefined = $quantity > 0 ? ($modifiedRefinedValue / $quantity) : 0;
+            $maxReasonablePerUnit = 10000000; // 10M ISK sanity cap
+
+            if ($perUnitRefined > $maxReasonablePerUnit && $modifiedOreValue > 0) {
+                Log::warning("OreValuationService: Refined value for type_id {$typeId} is suspiciously high ({$perUnitRefined} ISK/unit), falling back to raw ore price", [
+                    'type_id' => $typeId,
+                    'quantity' => $quantity,
+                    'refined_value' => $modifiedRefinedValue,
+                    'ore_value' => $modifiedOreValue,
+                    'per_unit_refined' => $perUnitRefined,
+                ]);
+                // Use raw ore value instead — don't trust the mineral calculation
+                $result['mineral_value'] = $modifiedRefinedValue; // Store for debugging
+                $result['total_value'] = $modifiedOreValue;
+            } elseif ($perUnitRefined > $maxReasonablePerUnit) {
+                Log::warning("OreValuationService: Refined value for type_id {$typeId} is suspiciously high ({$perUnitRefined} ISK/unit) and no raw ore price available — setting to 0", [
+                    'type_id' => $typeId,
+                    'quantity' => $quantity,
+                    'refined_value' => $modifiedRefinedValue,
+                ]);
+                $result['mineral_value'] = 0;
+                $result['total_value'] = 0;
+            } else {
+                $result['mineral_value'] = $modifiedRefinedValue;
+                $result['total_value'] = $modifiedRefinedValue;
+            }
         }
 
         return $result;
