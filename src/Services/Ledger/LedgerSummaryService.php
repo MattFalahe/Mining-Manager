@@ -5,13 +5,32 @@ namespace MiningManager\Services\Ledger;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerMonthlySummary;
 use MiningManager\Models\MiningLedgerDailySummary;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\TypeIdRegistry;
 use Seat\Eveapi\Models\Sde\SolarSystem;
+use Seat\Eveapi\Models\Character\CharacterInfo;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class LedgerSummaryService
 {
+    /**
+     * Settings manager for tax rate lookups.
+     *
+     * @var SettingsManagerService
+     */
+    protected SettingsManagerService $settingsService;
+
+    /**
+     * Constructor.
+     *
+     * @param SettingsManagerService $settingsService
+     */
+    public function __construct(SettingsManagerService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
     /**
      * Generate monthly summary for a specific character and month
      *
@@ -92,7 +111,16 @@ class LedgerSummaryService
     }
 
     /**
-     * Generate daily summary for a specific character and date
+     * Generate daily summary for a specific character and date.
+     *
+     * Builds a rich ore breakdown with per-ore estimated tax calculations
+     * and stores it in the ore_types JSON column. This enables live tax
+     * tracking — players can see what they mined, what it was worth at
+     * the day's market price, and how much tax they'll owe for that day.
+     *
+     * Note: The estimated tax uses simplified taxability checks (skips
+     * the per-entry corp moon observer cross-reference for performance).
+     * TaxCalculationService remains the authoritative tax at month-end.
      *
      * @param int $characterId
      * @param string $date YYYY-MM-DD format
@@ -102,47 +130,120 @@ class LedgerSummaryService
     {
         $dateCarbon = Carbon::parse($date);
 
-        // Aggregate data from mining_ledger
-        $summary = MiningLedger::where('character_id', $characterId)
+        // Check if there's any mining data for this character/date
+        $hasData = MiningLedger::where('character_id', $characterId)
             ->whereDate('date', $dateCarbon)
-            ->selectRaw('
-                character_id,
-                corporation_id,
-                SUM(quantity) as total_quantity,
-                SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax,
-                SUM(CASE WHEN ore_type = "moon_ore" THEN total_value ELSE 0 END) as moon_ore_value,
-                SUM(CASE WHEN ore_type = "ore" THEN total_value ELSE 0 END) as regular_ore_value,
-                SUM(CASE WHEN ore_type = "ice" THEN total_value ELSE 0 END) as ice_value,
-                SUM(CASE WHEN ore_type = "gas" THEN total_value ELSE 0 END) as gas_value
-            ')
-            ->groupBy('character_id', 'corporation_id')
-            ->first();
+            ->exists();
 
-        if (!$summary) {
-            // No mining data for this character/date
-            return MiningLedgerDailySummary::create([
-                'character_id' => $characterId,
-                'date' => $dateCarbon,
-                'corporation_id' => null,
-                'total_quantity' => 0,
-                'total_value' => 0,
-                'total_tax' => 0,
-                'moon_ore_value' => 0,
-                'regular_ore_value' => 0,
-                'ice_value' => 0,
-                'gas_value' => 0,
-                'ore_types' => [],
-                'is_finalized' => true,
-            ]);
+        if (!$hasData) {
+            // No mining data — create/update empty summary
+            return MiningLedgerDailySummary::updateOrCreate(
+                [
+                    'character_id' => $characterId,
+                    'date' => $dateCarbon,
+                ],
+                [
+                    'corporation_id' => null,
+                    'total_quantity' => 0,
+                    'total_value' => 0,
+                    'total_tax' => 0,
+                    'moon_ore_value' => 0,
+                    'regular_ore_value' => 0,
+                    'ice_value' => 0,
+                    'gas_value' => 0,
+                    'ore_types' => [],
+                    'is_finalized' => !$dateCarbon->isSameMonth(now()),
+                ]
+            );
         }
 
-        // Get unique ore types for the day
-        $oreTypes = MiningLedger::where('character_id', $characterId)
+        // Get the character's corporation ID for tax rate determination
+        $character = CharacterInfo::find($characterId);
+        $characterCorpId = $character ? $character->corporation_id : null;
+
+        // Get corporation_id from ledger data
+        $corporationId = MiningLedger::where('character_id', $characterId)
             ->whereDate('date', $dateCarbon)
-            ->distinct()
-            ->pluck('ore_type')
-            ->toArray();
+            ->whereNotNull('corporation_id')
+            ->value('corporation_id');
+
+        // Aggregate per ore type for the day
+        $oreEntries = MiningLedger::where('character_id', $characterId)
+            ->whereDate('date', $dateCarbon)
+            ->selectRaw('
+                type_id,
+                ore_type,
+                SUM(quantity) as total_quantity,
+                SUM(total_value) as total_value
+            ')
+            ->groupBy('type_id', 'ore_type')
+            ->get();
+
+        // Build rich ore breakdown with estimated tax
+        $oreBreakdown = [];
+        $totalQuantity = 0;
+        $totalValue = 0;
+        $totalTax = 0;
+        $moonOreValue = 0;
+        $regularOreValue = 0;
+        $iceValue = 0;
+        $gasValue = 0;
+
+        foreach ($oreEntries as $entry) {
+            $typeId = $entry->type_id;
+            $quantity = $entry->total_quantity;
+            $value = $entry->total_value;
+            $unitPrice = $quantity > 0 ? ($value / $quantity) : 0;
+
+            // Determine ore category and name
+            $oreName = $this->getOreName($typeId);
+            $category = $this->getOreCategory($typeId);
+            $moonRarity = TypeIdRegistry::isMoonOre($typeId)
+                ? TypeIdRegistry::getMoonOreRarity($typeId)
+                : null;
+
+            // Calculate estimated tax for this ore type
+            $isTaxable = $this->shouldTaxType($typeId);
+            $taxRate = $this->getTaxRateForType($typeId, $characterCorpId);
+            $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
+
+            $oreBreakdown[] = [
+                'type_id' => $typeId,
+                'ore_name' => $oreName,
+                'category' => $category,
+                'moon_rarity' => $moonRarity,
+                'quantity' => (float) $quantity,
+                'unit_price' => round($unitPrice, 2),
+                'total_value' => round((float) $value, 2),
+                'tax_rate' => $taxRate,
+                'is_taxable' => $isTaxable,
+                'estimated_tax' => round($estimatedTax, 2),
+            ];
+
+            // Accumulate totals
+            $totalQuantity += $quantity;
+            $totalValue += $value;
+            $totalTax += $estimatedTax;
+
+            // Category breakdown
+            switch ($entry->ore_type) {
+                case 'moon_ore':
+                    $moonOreValue += $value;
+                    break;
+                case 'ice':
+                    $iceValue += $value;
+                    break;
+                case 'gas':
+                    $gasValue += $value;
+                    break;
+                default:
+                    $regularOreValue += $value;
+                    break;
+            }
+        }
+
+        // Current month = not finalized (still in progress)
+        $isFinalized = !$dateCarbon->isSameMonth(now());
 
         // Create or update daily summary
         return MiningLedgerDailySummary::updateOrCreate(
@@ -151,18 +252,121 @@ class LedgerSummaryService
                 'date' => $dateCarbon,
             ],
             [
-                'corporation_id' => $summary->corporation_id,
-                'total_quantity' => $summary->total_quantity,
-                'total_value' => $summary->total_value,
-                'total_tax' => $summary->total_tax,
-                'moon_ore_value' => $summary->moon_ore_value,
-                'regular_ore_value' => $summary->regular_ore_value,
-                'ice_value' => $summary->ice_value,
-                'gas_value' => $summary->gas_value,
-                'ore_types' => $oreTypes,
-                'is_finalized' => true,
+                'corporation_id' => $corporationId,
+                'total_quantity' => $totalQuantity,
+                'total_value' => $totalValue,
+                'total_tax' => round($totalTax, 2),
+                'moon_ore_value' => $moonOreValue,
+                'regular_ore_value' => $regularOreValue,
+                'ice_value' => $iceValue,
+                'gas_value' => $gasValue,
+                'ore_types' => $oreBreakdown,
+                'is_finalized' => $isFinalized,
             ]
         );
+    }
+
+    /**
+     * Get tax rate for a specific ore type.
+     * Respects per-rarity moon ore rates and guest miner multiplier.
+     *
+     * @param int $typeId
+     * @param int|null $characterCorpId
+     * @return float Tax rate as percentage (0-100)
+     */
+    private function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
+    {
+        $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
+
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
+            if ($rarity) {
+                $rarityKey = strtolower($rarity);
+                return (float) ($taxRates['moon_ore'][$rarityKey] ?? $taxRates['moon_ore']['r4'] ?? 5.0);
+            }
+            return (float) ($taxRates['moon_ore']['r4'] ?? 5.0);
+        }
+
+        if (TypeIdRegistry::isIce($typeId)) {
+            return (float) ($taxRates['ice'] ?? 10.0);
+        }
+
+        if (TypeIdRegistry::isGas($typeId)) {
+            return (float) ($taxRates['gas'] ?? 10.0);
+        }
+
+        return (float) ($taxRates['ore'] ?? 10.0);
+    }
+
+    /**
+     * Check if an ore type should be taxed based on settings.
+     *
+     * Uses simplified taxability check for daily estimates — skips the
+     * per-entry corp moon observer cross-reference (only_corp_moon_ore).
+     * TaxCalculationService handles the authoritative check at month-end.
+     *
+     * @param int $typeId
+     * @return bool
+     */
+    private function shouldTaxType(int $typeId): bool
+    {
+        $taxSelector = $this->settingsService->getTaxSelector();
+
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            if (!empty($taxSelector['no_moon_ore'])) {
+                return false;
+            }
+            return $taxSelector['all_moon_ore'] ?? true;
+        }
+
+        if (TypeIdRegistry::isIce($typeId)) {
+            return $taxSelector['ice'] ?? true;
+        }
+
+        if (TypeIdRegistry::isGas($typeId)) {
+            return $taxSelector['gas'] ?? true;
+        }
+
+        return $taxSelector['ore'] ?? true;
+    }
+
+    /**
+     * Get ore name from invTypes table.
+     *
+     * @param int $typeId
+     * @return string
+     */
+    private function getOreName(int $typeId): string
+    {
+        try {
+            $name = DB::table('invTypes')
+                ->where('typeID', $typeId)
+                ->value('typeName');
+
+            return $name ?: "Unknown Ore ({$typeId})";
+        } catch (\Exception $e) {
+            return "Type {$typeId}";
+        }
+    }
+
+    /**
+     * Get ore category string for a type ID.
+     *
+     * @param int $typeId
+     * @return string
+     */
+    private function getOreCategory(int $typeId): string
+    {
+        if (TypeIdRegistry::isMoonOre($typeId)) {
+            return 'moon_ore';
+        }
+        if (TypeIdRegistry::isIce($typeId)) {
+            return 'ice';
+        }
+        if (TypeIdRegistry::isGas($typeId)) {
+            return 'gas';
+        }
+        return 'ore';
     }
 
     /**
@@ -293,7 +497,11 @@ class LedgerSummaryService
     }
 
     /**
-     * Get daily summaries for a character in a specific month
+     * Get daily summaries for a character in a specific month.
+     *
+     * For the current month, reads stored summaries (which contain rich
+     * ore breakdown with estimated taxes from the daily update command).
+     * Falls back to live SQL aggregation only if no summaries exist yet.
      *
      * @param int $characterId
      * @param string $month YYYY-MM format
@@ -304,24 +512,32 @@ class LedgerSummaryService
         $monthDate = Carbon::parse($month)->startOfMonth();
         $isCurrentMonth = $monthDate->isSameMonth(now());
 
-        // If it's the current month, always calculate live
-        if ($isCurrentMonth) {
-            return $this->calculateLiveDailySummaries($characterId, $month);
+        if (!$isCurrentMonth) {
+            // Past months: prefer finalized summaries
+            $summaries = MiningLedgerDailySummary::forCharacter($characterId)
+                ->forMonth($monthDate)
+                ->finalized()
+                ->orderBy('date')
+                ->get();
+
+            if ($summaries->isNotEmpty()) {
+                return $summaries;
+            }
+        } else {
+            // Current month: use stored summaries (may be non-finalized)
+            // These contain rich ore_types JSON with estimated taxes
+            $summaries = MiningLedgerDailySummary::forCharacter($characterId)
+                ->forMonth($monthDate)
+                ->orderBy('date')
+                ->get();
+
+            if ($summaries->isNotEmpty()) {
+                return $summaries;
+            }
         }
 
-        // For past months, try to get finalized summaries first
-        $summaries = MiningLedgerDailySummary::forCharacter($characterId)
-            ->forMonth($monthDate)
-            ->finalized()
-            ->orderBy('date')
-            ->get();
-
-        // If no finalized summaries exist, calculate live
-        if ($summaries->isEmpty()) {
-            return $this->calculateLiveDailySummaries($characterId, $month);
-        }
-
-        return $summaries;
+        // Fallback: no stored summaries yet, calculate live from raw ledger
+        return $this->calculateLiveDailySummaries($characterId, $month);
     }
 
     /**

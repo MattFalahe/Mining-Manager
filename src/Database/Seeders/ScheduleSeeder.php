@@ -158,6 +158,27 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Update ledger prices - runs daily at 1 AM (after cache-prices at 0:30)
+            // Locks in daily session prices for today's mining entries
+            [
+                'command' => 'mining-manager:update-ledger-prices',
+                'expression' => '0 1 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Update daily summaries - runs daily at 2:30 AM
+            // (after cache-prices, update-ledger-prices, calculate-taxes)
+            // Rebuilds today and yesterday's summaries with estimated tax per ore type
+            [
+                'command' => 'mining-manager:update-daily-summaries',
+                'expression' => '30 2 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
             // Detect jackpots - runs daily at 6 AM
             // (Analyzes recent moon extractions to identify high-value jackpot ores)
             [

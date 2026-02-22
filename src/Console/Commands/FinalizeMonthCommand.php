@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
 
@@ -73,6 +74,16 @@ class FinalizeMonthCommand extends Command
 
         // Run finalization
         $stats = $this->summaryService->finalizeMonth($month);
+
+        // Mark all daily summaries for this month as finalized
+        $monthDate = Carbon::parse($month)->startOfMonth();
+        $finalizedCount = MiningLedgerDailySummary::forMonth($monthDate)
+            ->where('is_finalized', false)
+            ->update(['is_finalized' => true]);
+
+        if ($finalizedCount > 0) {
+            $this->info("Marked {$finalizedCount} daily summaries as finalized.");
+        }
 
         // Display results
         $this->info("Finalization complete!");

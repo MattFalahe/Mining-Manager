@@ -16,6 +16,7 @@ use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use Carbon\Carbon;
 
@@ -211,10 +212,19 @@ class LedgerController extends Controller
         $userCharacters = auth()->user()->characters->pluck('character_id');
 
         if ($userCharacters->isEmpty()) {
+            $emptyChartData = $this->getEmptyChartData();
             return view('mining-manager::ledger.my-mining', [
                 'ledgerEntries' => collect(),
                 'stats' => $this->getEmptyStats(),
-                'chartData' => $this->getEmptyChartData(),
+                'trendData' => ['labels' => [], 'values' => []],
+                'oreDistribution' => ['labels' => [], 'values' => []],
+                'monthlyComparison' => ['labels' => [], 'values' => []],
+                'recentActivity' => collect(),
+                'characterStats' => [],
+                'characters' => collect(),
+                'dateFrom' => now()->subMonth()->format('Y-m-d'),
+                'dateTo' => now()->format('Y-m-d'),
+                'characterId' => null,
                 'message' => trans('mining-manager::ledger.no_characters'),
             ]);
         }
@@ -247,8 +257,29 @@ class LedgerController extends Controller
         // Calculate personal statistics
         $stats = $this->calculatePersonalStats($userCharacters, $dateFrom, $dateTo, $characterId);
 
-        // Get chart data for visualizations
-        $chartData = $this->getPersonalChartData($userCharacters, $dateFrom, $dateTo, $characterId);
+        // Get chart data — map to variable names the view expects
+        $rawChartData = $this->getPersonalChartData($userCharacters, $dateFrom, $dateTo, $characterId);
+        $trendData = [
+            'labels' => $rawChartData['daily']['labels'],
+            'values' => $rawChartData['daily']['data'],
+        ];
+        $oreDistribution = [
+            'labels' => $rawChartData['topOres']['labels'],
+            'values' => $rawChartData['topOres']['data'],
+        ];
+        $monthlyComparison = $this->getMonthlyComparisonData($userCharacters, $characterId);
+
+        // Get recent activity for the table
+        $recentActivity = MiningLedger::with(['character', 'solarSystem', 'type'])
+            ->whereIn('character_id', $userCharacters)
+            ->whereBetween('date', [$dateFrom, $dateTo])
+            ->when($characterId && $userCharacters->contains($characterId), fn($q) => $q->where('character_id', $characterId))
+            ->orderBy('date', 'desc')
+            ->limit(20)
+            ->get();
+
+        // Per-character breakdown
+        $characterStats = $this->getCharacterBreakdown($userCharacters, $dateFrom, $dateTo);
 
         // Get user's characters for filter - enrich with info
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($userCharacters->toArray());
@@ -257,7 +288,11 @@ class LedgerController extends Controller
         return view('mining-manager::ledger.my-mining', compact(
             'ledgerEntries',
             'stats',
-            'chartData',
+            'trendData',
+            'oreDistribution',
+            'monthlyComparison',
+            'recentActivity',
+            'characterStats',
             'characters',
             'dateFrom',
             'dateTo',
@@ -304,28 +339,61 @@ class LedgerController extends Controller
      */
     protected function calculatePersonalStats($characterIds, $startDate, $endDate, $specificCharacterId = null)
     {
-        $query = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate]);
+        // Closure to build a fresh base query (avoids consuming the builder)
+        $baseQuery = fn() => MiningLedger::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
-        if ($specificCharacterId) {
-            $query->where('character_id', $specificCharacterId);
-        }
+        // Single aggregation query for numeric totals
+        $agg = ($baseQuery())->selectRaw('
+            SUM(quantity) as total_quantity,
+            SUM(total_value) as total_value,
+            COUNT(DISTINCT DATE(date)) as active_days
+        ')->first();
 
-        // Calculate tax status
-        $totalTaxAmount = $query->sum('tax_amount');
+        $totalQuantity = (float) ($agg->total_quantity ?? 0);
+        $totalValue = (float) ($agg->total_value ?? 0);
+        $activeDays = (int) ($agg->active_days ?? 0);
+
+        // Session count = distinct character+date pairs
+        $totalSessions = (int) (($baseQuery())
+            ->selectRaw('COUNT(DISTINCT CONCAT(character_id, "_", DATE(date))) as sessions')
+            ->value('sessions') ?? 0);
+
+        // Best single day by value
+        $bestDayValue = (float) (($baseQuery())
+            ->selectRaw('SUM(total_value) as day_total')
+            ->groupBy(DB::raw('DATE(date)'))
+            ->orderByDesc('day_total')
+            ->value('day_total') ?? 0);
+
+        // Tax paid from mining_taxes
         $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
             ->whereBetween('month', [$startDate, $endDate])
             ->where('status', 'paid')
             ->sum('amount_paid');
 
+        // Estimated tax from daily summaries (current month)
+        $estimatedTaxThisMonth = $this->getEstimatedTaxFromDailySummaries(
+            $characterIds,
+            now()->format('Y-m'),
+            $specificCharacterId
+        );
+
         return [
-            'total_quantity' => $query->sum('quantity'),
-            'total_value' => $query->sum('total_value'),
-            'total_tax_owed' => $totalTaxAmount,
+            'total_quantity' => $totalQuantity,
+            'total_value' => $totalValue,
+            'total_sessions' => $totalSessions,
+            'active_days' => $activeDays,
+            'best_day_value' => $bestDayValue,
+            'daily_average' => $activeDays > 0 ? round($totalValue / $activeDays, 0) : 0,
+            'estimated_tax_this_month' => $estimatedTaxThisMonth,
+            'total_tax_owed' => $estimatedTaxThisMonth,
             'total_tax_paid' => $paidTaxAmount,
-            'tax_outstanding' => max(0, $totalTaxAmount - $paidTaxAmount),
-            'mining_days' => $query->distinct('date')->count('date'),
+            'tax_outstanding' => max(0, $estimatedTaxThisMonth - $paidTaxAmount),
+            'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
+            'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
         ];
     }
 
@@ -449,6 +517,11 @@ class LedgerController extends Controller
         return [
             'total_quantity' => 0,
             'total_value' => 0,
+            'total_sessions' => 0,
+            'active_days' => 0,
+            'best_day_value' => 0,
+            'daily_average' => 0,
+            'estimated_tax_this_month' => 0,
             'total_tax_owed' => 0,
             'total_tax_paid' => 0,
             'tax_outstanding' => 0,
@@ -457,7 +530,121 @@ class LedgerController extends Controller
                 'name' => trans('mining-manager::ledger.no_data'),
                 'value' => 0,
             ],
+            'corp_rank' => null,
         ];
+    }
+
+    /**
+     * Get estimated tax from daily summaries for a month.
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @param string $month YYYY-MM format
+     * @param int|null $specificCharacterId
+     * @return float
+     */
+    protected function getEstimatedTaxFromDailySummaries($characterIds, string $month, ?int $specificCharacterId = null): float
+    {
+        $monthDate = Carbon::parse($month)->startOfMonth();
+
+        return (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->forMonth($monthDate)
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->sum('total_tax');
+    }
+
+    /**
+     * Calculate the player's rank among all miners for the period.
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @param string $startDate
+     * @param string $endDate
+     * @return int|null
+     */
+    protected function calculateCorpRank($characterIds, string $startDate, string $endDate): ?int
+    {
+        $myTotal = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->sum('total_value');
+
+        if ($myTotal <= 0) {
+            return null;
+        }
+
+        // Count distinct characters with a higher total value
+        $higherCount = DB::table('mining_ledger')
+            ->whereBetween('date', [$startDate, $endDate])
+            ->select('character_id', DB::raw('SUM(total_value) as char_total'))
+            ->groupBy('character_id')
+            ->havingRaw('SUM(total_value) > ?', [$myTotal])
+            ->get()
+            ->count();
+
+        return $higherCount + 1;
+    }
+
+    /**
+     * Get monthly comparison data (last 6 months of totals).
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @param int|null $specificCharacterId
+     * @return array
+     */
+    protected function getMonthlyComparisonData($characterIds, ?int $specificCharacterId = null): array
+    {
+        $labels = [];
+        $values = [];
+
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $start = $month->copy()->startOfMonth();
+            $end = $month->copy()->endOfMonth();
+
+            $total = MiningLedger::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$start, $end])
+                ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+                ->sum('total_value');
+
+            $labels[] = $month->format('M Y');
+            $values[] = (float) $total;
+        }
+
+        return ['labels' => $labels, 'values' => $values];
+    }
+
+    /**
+     * Get per-character breakdown for the stats table.
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @param string $startDate
+     * @param string $endDate
+     * @return array
+     */
+    protected function getCharacterBreakdown($characterIds, string $startDate, string $endDate): array
+    {
+        $entries = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('
+                character_id,
+                SUM(total_value) as total_value,
+                SUM(quantity) as quantity,
+                COUNT(DISTINCT DATE(date)) as sessions
+            ')
+            ->groupBy('character_id')
+            ->get();
+
+        $grandTotal = $entries->sum('total_value');
+
+        return $entries->map(function ($entry) use ($grandTotal) {
+            $charInfo = CharacterInfo::find($entry->character_id);
+            return [
+                'character_id' => $entry->character_id,
+                'name' => $charInfo ? $charInfo->name : "Character {$entry->character_id}",
+                'total_value' => (float) $entry->total_value,
+                'quantity' => (float) $entry->quantity,
+                'sessions' => (int) $entry->sessions,
+                'percentage' => $grandTotal > 0 ? ($entry->total_value / $grandTotal) * 100 : 0,
+            ];
+        })->sortByDesc('total_value')->values()->toArray();
     }
 
     /**
@@ -992,6 +1179,8 @@ class LedgerController extends Controller
                     'regular_ore_value' => number_format($summary->regular_ore_value, 2),
                     'ice_value' => number_format($summary->ice_value, 2),
                     'gas_value' => number_format($summary->gas_value, 2),
+                    'is_finalized' => $summary->is_finalized ?? false,
+                    'ore_breakdown' => $summary->ore_types ?? [],
                     'systems' => $systems,
                 ];
             });

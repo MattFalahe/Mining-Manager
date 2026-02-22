@@ -139,6 +139,73 @@
                             </div>
                         </div>
                     </div>
+
+                    {{-- TAX STATUS ROW --}}
+                    <div class="row mt-3">
+                        {{-- Estimated Tax This Month --}}
+                        <div class="col-lg-3 col-md-6">
+                            <div class="small-box bg-gradient-danger">
+                                <div class="inner">
+                                    <h3>{{ number_format($stats['estimated_tax_this_month'] ?? 0, 0) }}</h3>
+                                    <p>{{ trans('mining-manager::ledger.estimated_tax_this_month') }} (ISK)</p>
+                                </div>
+                                <div class="icon">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Tax Already Paid --}}
+                        <div class="col-lg-3 col-md-6">
+                            <div class="small-box bg-gradient-success">
+                                <div class="inner">
+                                    <h3>{{ number_format($stats['total_tax_paid'] ?? 0, 0) }}</h3>
+                                    <p>{{ trans('mining-manager::ledger.tax_paid') }} (ISK)</p>
+                                </div>
+                                <div class="icon">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Outstanding Balance --}}
+                        <div class="col-lg-3 col-md-6">
+                            <div class="small-box {{ ($stats['tax_outstanding'] ?? 0) > 0 ? 'bg-gradient-warning' : 'bg-gradient-success' }}">
+                                <div class="inner">
+                                    <h3>{{ number_format($stats['tax_outstanding'] ?? 0, 0) }}</h3>
+                                    <p>{{ trans('mining-manager::ledger.tax_outstanding') }} (ISK)</p>
+                                </div>
+                                <div class="icon">
+                                    <i class="fas fa-balance-scale"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Sessions This Month --}}
+                        <div class="col-lg-3 col-md-6">
+                            <div class="small-box bg-gradient-info">
+                                <div class="inner">
+                                    <h3>{{ $stats['total_sessions'] ?? 0 }}</h3>
+                                    <p>{{ trans('mining-manager::ledger.mining_sessions_this_month') }}</p>
+                                </div>
+                                <div class="icon">
+                                    <i class="fas fa-calendar-day"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- TAX TRANSPARENCY NOTICE --}}
+                    @if(($stats['estimated_tax_this_month'] ?? 0) > 0)
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            <div class="callout callout-info">
+                                <h5><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.about_estimated_tax') }}</h5>
+                                <p class="mb-0">{{ trans('mining-manager::ledger.estimated_tax_notice') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>

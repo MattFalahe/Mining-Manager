@@ -255,4 +255,10 @@ return [
     'finalized' => 'Finalized',
     'live' => 'Live',
     'not_registered' => 'Not Registered in SeAT',
+
+    // Daily Session Tax Tracking
+    'estimated_tax_this_month' => 'Estimated Tax This Month',
+    'mining_sessions_this_month' => 'Sessions This Month',
+    'about_estimated_tax' => 'About Your Estimated Tax',
+    'estimated_tax_notice' => 'This estimate is calculated daily using the market price at the time of mining. Final tax is calculated at month end using the same per-day pricing. The estimate may differ slightly from the final amount.',
 ];
