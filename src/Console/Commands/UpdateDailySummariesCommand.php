@@ -23,6 +23,7 @@ class UpdateDailySummariesCommand extends Command
 {
     protected $signature = 'mining-manager:update-daily-summaries
                             {--days=2 : Number of days back to rebuild (default: today + yesterday)}
+                            {--date= : Rebuild a specific date (YYYY-MM-DD format)}
                             {--month= : Rebuild an entire month (YYYY-MM format)}
                             {--character_id= : Only process specific character}';
 
@@ -35,11 +36,23 @@ class UpdateDailySummariesCommand extends Command
         $this->line('');
 
         $days = (int) $this->option('days');
+        $date = $this->option('date');
         $month = $this->option('month');
         $characterId = $this->option('character_id');
 
         // Determine date range
-        if ($month) {
+        if ($date) {
+            // Single specific date
+            try {
+                $startDate = Carbon::parse($date)->startOfDay();
+                $endDate = $startDate->copy();
+            } catch (\Exception $e) {
+                $this->error("Invalid date format. Use YYYY-MM-DD (e.g. 2026-02-15)");
+                return Command::FAILURE;
+            }
+
+            $this->info("Mode: Rebuilding single date {$date}");
+        } elseif ($month) {
             try {
                 $monthDate = Carbon::parse($month . '-01');
             } catch (\Exception $e) {
