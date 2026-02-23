@@ -320,6 +320,13 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        // Director - create (MUST be before /{id} wildcard to avoid route collision)
+        Route::get('/create', [
+            'as' => 'mining-manager.events.create',
+            'uses' => 'EventController@create',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/{id}', [
             'as' => 'mining-manager.events.show',
             'uses' => 'EventController@show',
@@ -338,12 +345,7 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Director - create, edit, start/complete
-        Route::get('/create', [
-            'as' => 'mining-manager.events.create',
-            'uses' => 'EventController@create',
-            'middleware' => 'can:mining-manager.director',
-        ]);
+        // Director - edit, start/complete
 
         Route::post('/', [
             'as' => 'mining-manager.events.store',

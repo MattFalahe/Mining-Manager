@@ -3,7 +3,6 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 /**
  * MoonExtractionHistory Model
@@ -36,7 +35,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
  */
 class MoonExtractionHistory extends Model
 {
-    use HasFactory;
 
     /**
      * The table associated with the model.
@@ -87,6 +85,10 @@ class MoonExtractionHistory extends Model
         'is_jackpot' => 'boolean',
         'total_miners' => 'integer',
         'completion_percentage' => 'decimal:2',
+        'estimated_value_at_start' => 'float',
+        'estimated_value_at_arrival' => 'float',
+        'final_estimated_value' => 'float',
+        'actual_mined_value' => 'float',
     ];
 
     /**

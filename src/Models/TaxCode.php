@@ -92,12 +92,14 @@ class TaxCode extends Model
      */
     public function scopeExpired($query)
     {
-        return $query->where('status', 'expired')
-            ->orWhere(function ($q) {
-                $q->where('status', 'active')
-                    ->whereNotNull('expires_at')
-                    ->where('expires_at', '<=', now());
-            });
+        return $query->where(function ($outer) {
+            $outer->where('status', 'expired')
+                ->orWhere(function ($q) {
+                    $q->where('status', 'active')
+                        ->whereNotNull('expires_at')
+                        ->where('expires_at', '<=', now());
+                });
+        });
     }
 
     /**

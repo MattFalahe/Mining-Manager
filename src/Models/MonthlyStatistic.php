@@ -111,10 +111,25 @@ class MonthlyStatistic extends Model
 
     /**
      * Scope to get statistics for a specific month/year.
+     *
+     * Accepts either a single date (Carbon/string) or separate year+month.
+     * Single date usage: MonthlyStatistic::forMonth('2026-01') or forMonth(Carbon::now())
+     * Legacy usage: MonthlyStatistic::forMonth(2026, 1)
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param mixed $yearOrDate  Year (int) or date string/Carbon
+     * @param int|null $month    Month number (only if first param is year)
      */
-    public function scopeForMonth($query, $year, $month)
+    public function scopeForMonth($query, $yearOrDate, $month = null)
     {
-        return $query->where('year', $year)->where('month', $month);
+        if ($month !== null) {
+            // Legacy: separate year and month params
+            return $query->where('year', $yearOrDate)->where('month', $month);
+        }
+
+        // Single date param: parse year and month from it
+        $date = \Carbon\Carbon::parse($yearOrDate);
+        return $query->where('year', $date->year)->where('month', $date->month);
     }
 
     /**
@@ -151,12 +166,14 @@ class MonthlyStatistic extends Model
 
     /**
      * Check if a statistic exists for the given parameters.
+     *
+     * Note: Unique constraint is on [user_id, character_id, year, month].
+     * corporation_id is stored but not part of the unique key.
      */
     public static function existsFor($userId, $characterId, $corporationId, $year, $month)
     {
         return self::where('user_id', $userId)
             ->where('character_id', $characterId)
-            ->where('corporation_id', $corporationId)
             ->where('year', $year)
             ->where('month', $month)
             ->exists();
@@ -164,6 +181,9 @@ class MonthlyStatistic extends Model
 
     /**
      * Get or create a statistic record.
+     *
+     * Uses only the unique key columns [user_id, character_id, year, month]
+     * for the firstOrCreate lookup. corporation_id is set in the defaults.
      */
     public static function getOrCreateFor($userId, $characterId, $corporationId, $year, $month)
     {
@@ -171,11 +191,11 @@ class MonthlyStatistic extends Model
             [
                 'user_id' => $userId,
                 'character_id' => $characterId,
-                'corporation_id' => $corporationId,
                 'year' => $year,
                 'month' => $month,
             ],
             [
+                'corporation_id' => $corporationId,
                 'month_start' => date('Y-m-01', strtotime("$year-$month-01")),
                 'month_end' => date('Y-m-t', strtotime("$year-$month-01")),
                 'is_closed' => false,

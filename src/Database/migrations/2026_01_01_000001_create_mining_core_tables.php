@@ -10,6 +10,10 @@ return new class extends Migration
      * Run the migrations.
      *
      * Creates core mining tables: ledger, taxes, tax codes, invoices, price cache, settings.
+     *
+     * TABLE NAME COLLISION WARNING:
+     * 'tax_invoices' is a generic name that may conflict with other SeAT plugins.
+     * Kept for backwards compatibility — prefix with 'mining_' in a future major version if needed.
      */
     public function up(): void
     {

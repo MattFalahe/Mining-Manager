@@ -236,15 +236,30 @@ class MiningEvent extends Model
     /**
      * Check if a user is participating in this event.
      *
+     * Resolves the user's character IDs and checks if any of them
+     * are in the participants list. In SeAT, User.id != character_id.
+     *
      * @param \Seat\Web\Models\User|int $user
      * @return bool
      */
     public function isParticipating($user)
     {
-        $userId = is_object($user) ? $user->id : $user;
+        if (is_object($user)) {
+            // Get all character IDs belonging to this user
+            $characterIds = $user->characters->pluck('character_id')->toArray();
 
+            if (empty($characterIds)) {
+                return false;
+            }
+
+            return $this->participants()
+                ->whereIn('character_id', $characterIds)
+                ->exists();
+        }
+
+        // If an integer was passed, treat it as a character_id directly
         return $this->participants()
-            ->where('character_id', $userId)
+            ->where('character_id', $user)
             ->exists();
     }
 

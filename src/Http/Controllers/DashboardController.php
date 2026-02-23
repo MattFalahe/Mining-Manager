@@ -933,6 +933,7 @@ class DashboardController extends Controller
     /**
      * Get corporation mining performance chart
      * Shows sum of ALL mining (all ore types) by corporation characters
+     * FIXED: Uses SQL SUM aggregate instead of loading all entries into PHP memory
      */
     private function getCorpMiningPerformanceLast12Months($corporationId)
     {
@@ -949,16 +950,14 @@ class DashboardController extends Controller
                 $monthEnd = Carbon::now();
             }
 
+            // Use SQL SUM instead of loading all entries into memory
             $totalValue = MiningLedger::whereIn('character_id', $characterIds)
                 ->whereBetween('date', [$month, $monthEnd])
                 ->whereNotNull('processed_at')
-                ->get()
-                ->sum(function($entry) {
-                    return $this->calculateEntryValue($entry);
-                });
+                ->sum('total_value');
 
             $months[] = $month->format('Y-m');
-            $data[] = $totalValue;
+            $data[] = (float) $totalValue;
         }
 
         return [
@@ -1013,15 +1012,13 @@ class DashboardController extends Controller
                 }
             } else {
                 // Fallback: if no moon owner configured, use mining_ledger data for corp characters
+                // FIXED: Uses SQL SUM instead of loading all entries into PHP memory
                 $characterIds = $this->getCorporationCharacterIds($corporationId);
-                $totalValue = MiningLedger::whereIn('character_id', $characterIds)
+                $totalValue = (float) MiningLedger::whereIn('character_id', $characterIds)
                     ->whereIn('type_id', $moonOreTypeIds)
                     ->whereBetween('date', [$month, $monthEnd])
                     ->whereNotNull('processed_at')
-                    ->get()
-                    ->sum(function($entry) {
-                        return $this->calculateEntryValue($entry);
-                    });
+                    ->sum('total_value');
             }
 
             $months[] = $month->format('Y-m');

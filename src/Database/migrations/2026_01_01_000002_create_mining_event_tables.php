@@ -10,6 +10,10 @@ return new class extends Migration
      * Run the migrations.
      *
      * Creates event tables: mining events and event participants.
+     *
+     * TABLE NAME COLLISION WARNING:
+     * 'event_participants' is a generic name that may conflict with other SeAT plugins.
+     * Kept for backwards compatibility — prefix with 'mining_' in a future major version if needed.
      */
     public function up(): void
     {

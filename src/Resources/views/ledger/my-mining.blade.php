@@ -12,7 +12,7 @@
 {{-- TAB NAVIGATION --}}
 <div class="nav-tabs-custom">
     <ul class="nav nav-tabs">
-        <li class="{{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? '' : '' }}">
+        <li class="{{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? 'active' : '' }}">
             <a href="{{ route('mining-manager.ledger.index') }}">
                 <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.mining_summary') }}
             </a>
@@ -37,11 +37,12 @@
                         {{ trans('mining-manager::ledger.your_mining_summary') }}
                     </h3>
                     <div class="card-tools">
+                        @php $activePeriod = request('period', 'month'); @endphp
                         <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-primary" onclick="changePeriod('week')">{{ trans('mining-manager::ledger.week') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary active" onclick="changePeriod('month')">{{ trans('mining-manager::ledger.month') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary" onclick="changePeriod('year')">{{ trans('mining-manager::ledger.year') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary" onclick="changePeriod('all')">{{ trans('mining-manager::ledger.all_time') }}</button>
+                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'week' ? 'active' : '' }}" onclick="changePeriod('week')">{{ trans('mining-manager::ledger.week') }}</button>
+                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'month' ? 'active' : '' }}" onclick="changePeriod('month')">{{ trans('mining-manager::ledger.month') }}</button>
+                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'year' ? 'active' : '' }}" onclick="changePeriod('year')">{{ trans('mining-manager::ledger.year') }}</button>
+                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'all' ? 'active' : '' }}" onclick="changePeriod('all')">{{ trans('mining-manager::ledger.all_time') }}</button>
                         </div>
                     </div>
                 </div>
@@ -305,7 +306,7 @@
                         {{ trans('mining-manager::ledger.recent_activity') }}
                     </h3>
                     <div class="card-tools">
-                        <a href="{{ route('mining-manager.ledger.index', ['character_id' => auth()->user()->id]) }}" class="btn btn-sm btn-info">
+                        <a href="{{ route('mining-manager.ledger.index', ['character_id' => auth()->user()->main_character_id]) }}" class="btn btn-sm btn-info">
                             <i class="fas fa-list"></i> {{ trans('mining-manager::ledger.view_all') }}
                         </a>
                         <button type="button" class="btn btn-sm btn-primary" onclick="window.print()">
@@ -344,7 +345,7 @@
                                     <td>
                                         <img src="https://images.evetech.net/types/{{ $activity->type_id }}/icon?size=32" 
                                              style="width: 32px; height: 32px;">
-                                        {{ $activity->type_name ?? 'Unknown' }}
+                                        {{ $activity->type->typeName ?? 'Unknown' }}
                                         @if($activity->is_moon_ore)
                                             <span class="badge badge-secondary">
                                                 <i class="fas fa-moon"></i>
@@ -356,7 +357,7 @@
                                         <strong>{{ number_format($activity->total_value, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
-                                    <td><small>{{ $activity->solar_system_name ?? 'Unknown' }}</small></td>
+                                    <td><small>{{ $activity->solarSystem->name ?? 'Unknown' }}</small></td>
                                 </tr>
                                 @empty
                                 <tr>
@@ -374,41 +375,9 @@
         </div>
     </div>
 
-    {{-- MILESTONES & ACHIEVEMENTS --}}
+    {{-- MONTHLY COMPARISON --}}
     <div class="row">
-        <div class="col-md-6">
-            <div class="card card-dark">
-                <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="fas fa-trophy"></i>
-                        {{ trans('mining-manager::ledger.milestones') }}
-                    </h3>
-                </div>
-                <div class="card-body">
-                    <ul class="list-group list-group-flush">
-                        @foreach($milestones ?? [] as $milestone)
-                        <li class="list-group-item bg-dark d-flex justify-content-between align-items-center">
-                            <span>
-                                <i class="fas fa-{{ $milestone['icon'] }} text-{{ $milestone['color'] }}"></i>
-                                {{ $milestone['title'] }}
-                            </span>
-                            @if($milestone['achieved'])
-                                <span class="badge badge-success">
-                                    <i class="fas fa-check"></i> {{ trans('mining-manager::ledger.achieved') }}
-                                </span>
-                            @else
-                                <span class="badge badge-secondary">
-                                    {{ $milestone['progress'] }}%
-                                </span>
-                            @endif
-                        </li>
-                        @endforeach
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
+        <div class="col-12">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
@@ -430,9 +399,13 @@
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/chart.min.js') }}"></script>
 <script>
-// Change period function
+// Change period function (preserves character filter if set)
 function changePeriod(period) {
-    window.location.href = '{{ route("mining-manager.ledger.my-mining") }}?period=' + period;
+    var url = '{{ route("mining-manager.ledger.my-mining") }}?period=' + period;
+    @if(request('character_id'))
+    url += '&character_id={{ request('character_id') }}';
+    @endif
+    window.location.href = url;
 }
 
 // Export personal data

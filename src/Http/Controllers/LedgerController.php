@@ -229,10 +229,30 @@ class LedgerController extends Controller
             ]);
         }
 
-        // Get date range
-        $dateFrom = $request->get('date_from', now()->subMonth()->format('Y-m-d'));
+        // Get date range — support period shortcuts (week, month, year, all)
+        $period = $request->get('period', 'month');
+        $dateFrom = $request->get('date_from');
         $dateTo = $request->get('date_to', now()->format('Y-m-d'));
         $characterId = $request->get('character_id');
+
+        // If no explicit date_from, calculate from period
+        if (!$dateFrom) {
+            switch ($period) {
+                case 'week':
+                    $dateFrom = now()->subWeek()->format('Y-m-d');
+                    break;
+                case 'year':
+                    $dateFrom = now()->subYear()->format('Y-m-d');
+                    break;
+                case 'all':
+                    $dateFrom = '2003-01-01'; // EVE Online launch date
+                    break;
+                case 'month':
+                default:
+                    $dateFrom = now()->subMonth()->format('Y-m-d');
+                    break;
+            }
+        }
 
         // Build query for user's characters with eager loading
         $query = MiningLedger::with(['character', 'solarSystem', 'type'])
@@ -408,22 +428,20 @@ class LedgerController extends Controller
      */
     protected function getPersonalChartData($characterIds, $startDate, $endDate, $specificCharacterId = null)
     {
-        $query = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate]);
-
-        if ($specificCharacterId) {
-            $query->where('character_id', $specificCharacterId);
-        }
+        // Use a closure to build a fresh query each time (avoids consumed builder bug)
+        $baseQuery = fn() => MiningLedger::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
         // Daily mining value
-        $dailyData = $query
+        $dailyData = ($baseQuery())
             ->select(DB::raw('DATE(date) as date'), DB::raw('SUM(total_value) as value'))
             ->groupBy('date')
             ->orderBy('date')
             ->get();
 
-        // Top ores by value
-        $topOres = $query
+        // Top ores by value (uses a fresh query builder)
+        $topOres = ($baseQuery())
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->select('invTypes.typeName as name', DB::raw('SUM(total_value) as value'))
             ->groupBy('invTypes.typeName')

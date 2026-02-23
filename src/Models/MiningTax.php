@@ -35,6 +35,7 @@ class MiningTax extends Model
         'reminder_count',
         'transaction_id',
         'notes',
+        'due_date',
     ];
 
     /**
@@ -44,6 +45,7 @@ class MiningTax extends Model
      */
     protected $casts = [
         'month' => 'date',
+        'due_date' => 'date',
         'amount_owed' => 'decimal:2',
         'amount_paid' => 'decimal:2',
         'calculated_at' => 'datetime',
