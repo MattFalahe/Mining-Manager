@@ -574,6 +574,10 @@ class LedgerSummaryService
     /**
      * Get enhanced monthly summaries with ore types and systems
      *
+     * PERFORMANCE: Uses batch queries instead of per-character N+1 queries.
+     * Previously ran 2+ queries per character (200+ queries for 50 miners).
+     * Now uses 2 batch queries + 1 system name lookup regardless of miner count.
+     *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
@@ -585,34 +589,61 @@ class LedgerSummaryService
         // Get base summaries
         $summaries = $this->getMonthlySummaries($month, $corporationId);
 
-        // Enhance each summary with ore types and systems
-        $summaries = $summaries->map(function ($summary) use ($monthDate) {
-            // Get ore types for this character
-            $oreTypes = MiningLedger::where('character_id', $summary->character_id)
-                ->whereYear('date', $monthDate->year)
-                ->whereMonth('date', $monthDate->month)
-                ->select('type_id', 'ore_type')
-                ->distinct()
-                ->get()
-                ->pluck('type_id')
-                ->toArray();
+        if ($summaries->isEmpty()) {
+            return $summaries;
+        }
 
-            // Get system information with names
-            $systemData = MiningLedger::where('character_id', $summary->character_id)
-                ->whereYear('date', $monthDate->year)
-                ->whereMonth('date', $monthDate->month)
-                ->select('solar_system_id', DB::raw('SUM(total_value) as system_value'))
-                ->groupBy('solar_system_id')
-                ->orderByDesc('system_value')
-                ->get();
+        // Collect all character IDs once
+        $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
-            // Manually load system names
-            $systems = $systemData->map(function($item) {
-                $item->solarSystem = SolarSystem::find($item->solar_system_id);
+        // --- BATCH QUERY 1: Get all ore type_ids for all characters in one query ---
+        $allOreTypes = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->select('character_id', 'type_id')
+            ->distinct()
+            ->get()
+            ->groupBy('character_id')
+            ->map(fn($group) => $group->pluck('type_id')->toArray());
+
+        // --- BATCH QUERY 2: Get all system data for all characters in one query ---
+        $allSystemData = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->select('character_id', 'solar_system_id', DB::raw('SUM(total_value) as system_value'))
+            ->groupBy('character_id', 'solar_system_id')
+            ->get()
+            ->groupBy('character_id');
+
+        // --- BATCH QUERY 3: Load all unique solar system names in one query ---
+        $allSystemIds = $allSystemData->flatten()->pluck('solar_system_id')->unique()->filter()->toArray();
+        $solarSystems = [];
+        if (!empty($allSystemIds)) {
+            try {
+                $pk = \MiningManager\Models\MiningLedger::getSolarSystemPrimaryKey();
+                $solarSystems = SolarSystem::whereIn($pk, $allSystemIds)->get()->keyBy($pk);
+            } catch (\Exception $e) {
+                Log::debug('LedgerSummaryService: Failed to batch load solar systems', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Enrich each summary from the pre-loaded batch data (no extra queries)
+        $summaries = $summaries->map(function ($summary) use ($allOreTypes, $allSystemData, $solarSystems) {
+            $charId = $summary->character_id;
+
+            // Ore types from batch
+            $summary->ore_type_ids = $allOreTypes->get($charId, []);
+
+            // System data from batch with pre-loaded names
+            $systemData = $allSystemData->get($charId, collect())->sortByDesc('system_value')->values();
+
+            $systems = $systemData->map(function ($item) use ($solarSystems) {
+                $item->solarSystem = $solarSystems->get($item->solar_system_id);
                 return $item;
             });
 
-            $summary->ore_type_ids = $oreTypes;
             $summary->systems = $systems;
             $summary->primary_system = $systems->first();
             $summary->system_count = $systems->count();

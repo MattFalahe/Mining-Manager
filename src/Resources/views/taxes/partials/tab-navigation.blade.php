@@ -1,38 +1,40 @@
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/tax') && !Request::is('*/tax/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.index') }}">
-                <i class="fas fa-chart-pie"></i> {{ trans('mining-manager::menu.tax_overview') }}
-            </a>
-        </li>
-        @if(($features['tax_tracking'] ?? true) && auth()->user()?->can('mining-manager.admin'))
-        <li class="{{ Request::is('*/tax/calculate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.calculate') }}">
-                <i class="fas fa-calculator"></i> {{ trans('mining-manager::menu.calculate_taxes') }}
-            </a>
-        </li>
-        @endif
-        <li class="{{ Request::is('*/tax/my-taxes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.my-taxes') }}">
-                <i class="fas fa-receipt"></i> {{ trans('mining-manager::menu.my_taxes') }}
-            </a>
-        </li>
-        @if($features['tax_codes'] ?? true)
-        <li class="{{ Request::is('*/tax/codes') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.codes') }}">
-                <i class="fas fa-barcode"></i> {{ trans('mining-manager::menu.tax_codes') }}
-            </a>
-        </li>
-        @endif
-        @if($features['wallet_verification'] ?? true)
-        <li class="{{ Request::is('*/tax/wallet') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.taxes.wallet') }}">
-                <i class="fas fa-wallet"></i> {{ trans('mining-manager::menu.wallet_verification') }}
-            </a>
-        </li>
-        @endif
-    </ul>
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax') && !Request::is('*/tax/*') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.index') }}">
+                    <i class="fas fa-chart-pie"></i> {{ trans('mining-manager::menu.tax_overview') }}
+                </a>
+            </li>
+            @if(($features['tax_tracking'] ?? true) && auth()->user()?->can('mining-manager.admin'))
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax/calculate') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.calculate') }}">
+                    <i class="fas fa-calculator"></i> {{ trans('mining-manager::menu.calculate_taxes') }}
+                </a>
+            </li>
+            @endif
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax/my-taxes') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.my-taxes') }}">
+                    <i class="fas fa-receipt"></i> {{ trans('mining-manager::menu.my_taxes') }}
+                </a>
+            </li>
+            @if($features['tax_codes'] ?? true)
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax/codes') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.codes') }}">
+                    <i class="fas fa-barcode"></i> {{ trans('mining-manager::menu.tax_codes') }}
+                </a>
+            </li>
+            @endif
+            @if($features['wallet_verification'] ?? true)
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax/wallet') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.wallet') }}">
+                    <i class="fas fa-wallet"></i> {{ trans('mining-manager::menu.wallet_verification') }}
+                </a>
+            </li>
+            @endif
+        </ul>
+    </div>
 
     {{-- Scope context banner --}}
     @if($isAdmin ?? false)
@@ -68,4 +70,4 @@
         </div>
     @endif
 
-    <div class="tab-content">
+    <div class="card-body">

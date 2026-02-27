@@ -85,37 +85,39 @@
 <div class="mining-manager-wrapper events-calendar-page">
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/events') && !Request::is('*/events/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.events.index') }}">
-                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_events') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/events/active') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.events.active') }}">
-                <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
-            </a>
-        </li>
-        @can('mining-manager.director')
-        <li class="{{ Request::is('*/events/create') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.events.create') }}">
-                <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
-            </a>
-        </li>
-        @endcan
-        <li class="{{ Request::is('*/events/calendar') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.events.calendar') }}">
-                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/events/my-events') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.events.my-events') }}">
-                <i class="fas fa-user-check"></i> {{ trans('mining-manager::menu.my_events') }}
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/events') && !Request::is('*/events/*') ? 'active' : '' }}" href="{{ route('mining-manager.events.index') }}">
+                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_events') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/events/active') ? 'active' : '' }}" href="{{ route('mining-manager.events.active') }}">
+                    <i class="fas fa-play-circle"></i> {{ trans('mining-manager::menu.active_events') }}
+                </a>
+            </li>
+            @can('mining-manager.director')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/events/create') ? 'active' : '' }}" href="{{ route('mining-manager.events.create') }}">
+                    <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.create_event') }}
+                </a>
+            </li>
+            @endcan
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/events/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.events.calendar') }}">
+                    <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.event_calendar') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/events/my-events') ? 'active' : '' }}" href="{{ route('mining-manager.events.my-events') }}">
+                    <i class="fas fa-user-check"></i> {{ trans('mining-manager::menu.my_events') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
 
 <div class="event-calendar">
@@ -327,8 +329,8 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 @endpush
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection

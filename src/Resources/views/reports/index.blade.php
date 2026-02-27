@@ -87,32 +87,34 @@
 <div class="mining-manager-wrapper reports-page">
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/reports') && !Request::is('*/reports/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.index') }}">
-                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
-            </a>
-        </li>
-        @can('mining-manager.admin')
-        <li class="{{ Request::is('*/reports/generate') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.generate') }}">
-                <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/reports/scheduled') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.scheduled') }}">
-                <i class="fas fa-clock"></i> {{ trans('mining-manager::menu.scheduled_reports') }}
-            </a>
-        </li>
-        @endcan
-        <li class="{{ Request::is('*/reports/export') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.reports.export') }}">
-                <i class="fas fa-download"></i> {{ trans('mining-manager::menu.export_data') }}
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports') && !Request::is('*/reports/*') ? 'active' : '' }}" href="{{ route('mining-manager.reports.index') }}">
+                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.view_reports') }}
+                </a>
+            </li>
+            @can('mining-manager.admin')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/generate') ? 'active' : '' }}" href="{{ route('mining-manager.reports.generate') }}">
+                    <i class="fas fa-plus-circle"></i> {{ trans('mining-manager::menu.generate_report') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/scheduled') ? 'active' : '' }}" href="{{ route('mining-manager.reports.scheduled') }}">
+                    <i class="fas fa-clock"></i> {{ trans('mining-manager::menu.scheduled_reports') }}
+                </a>
+            </li>
+            @endcan
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/reports/export') ? 'active' : '' }}" href="{{ route('mining-manager.reports.export') }}">
+                    <i class="fas fa-download"></i> {{ trans('mining-manager::menu.export_data') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
 <div class="reports-index">
     
@@ -458,8 +460,8 @@ $(document).ready(function() {
 </script>
 @endpush
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection

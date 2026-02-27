@@ -142,55 +142,57 @@
     @endif
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="active">
-            <a href="#test-data" data-toggle="tab">
-                <i class="fas fa-database"></i> Test Data Generation
-            </a>
-        </li>
-        <li>
-            <a href="#webhook-testing" data-toggle="tab">
-                <i class="fas fa-satellite-dish"></i> Webhook Testing
-            </a>
-        </li>
-        <li>
-            <a href="#price-provider" data-toggle="tab">
-                <i class="fas fa-dollar-sign"></i> Price Provider Testing
-            </a>
-        </li>
-        <li>
-            <a href="#cache-health" data-toggle="tab" onclick="loadCacheHealth()">
-                <i class="fas fa-heartbeat"></i> Price Cache Health
-            </a>
-        </li>
-        <li>
-            <a href="#system-validation" data-toggle="tab">
-                <i class="fas fa-check-circle"></i> System Validation
-            </a>
-        </li>
-        <li>
-            <a href="#settings-health" data-toggle="tab">
-                <i class="fas fa-cogs"></i> Settings Health
-            </a>
-        </li>
-        <li>
-            <a href="#tax-trace" data-toggle="tab">
-                <i class="fas fa-calculator"></i> Tax Trace
-            </a>
-        </li>
-        <li>
-            <a href="#data-integrity" data-toggle="tab">
-                <i class="fas fa-shield-alt"></i> Data Integrity
-            </a>
-        </li>
-        <li>
-            <a href="#valuation-test" data-toggle="tab">
-                <i class="fas fa-search-dollar"></i> Valuation Test
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" href="#test-data" data-toggle="tab">
+                    <i class="fas fa-database"></i> Test Data Generation
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#webhook-testing" data-toggle="tab">
+                    <i class="fas fa-satellite-dish"></i> Webhook Testing
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#price-provider" data-toggle="tab">
+                    <i class="fas fa-dollar-sign"></i> Price Provider Testing
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#cache-health" data-toggle="tab" onclick="loadCacheHealth()">
+                    <i class="fas fa-heartbeat"></i> Price Cache Health
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#system-validation" data-toggle="tab">
+                    <i class="fas fa-check-circle"></i> System Validation
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#settings-health" data-toggle="tab">
+                    <i class="fas fa-cogs"></i> Settings Health
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#tax-trace" data-toggle="tab">
+                    <i class="fas fa-calculator"></i> Tax Trace
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#data-integrity" data-toggle="tab">
+                    <i class="fas fa-shield-alt"></i> Data Integrity
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#valuation-test" data-toggle="tab">
+                    <i class="fas fa-search-dollar"></i> Valuation Test
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
         <!-- Test Data Generation Tab -->
         <div class="tab-pane active" id="test-data">
@@ -910,8 +912,8 @@
             </div>
         </div>
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 

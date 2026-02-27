@@ -142,8 +142,8 @@ function generateCodes() {
 </script>
 @endpush
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection

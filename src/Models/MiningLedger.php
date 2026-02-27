@@ -94,226 +94,186 @@ class MiningLedger extends Model
     }
 
     /**
+     * Cached primary key name for InvType model.
+     * Detected once per request to avoid repeated reflection.
+     *
+     * @var string|null
+     */
+    protected static ?string $invTypePrimaryKey = null;
+
+    /**
+     * Cached primary key name for SolarSystem model.
+     * Detected once per request to avoid repeated reflection.
+     *
+     * @var string|null
+     */
+    protected static ?string $solarSystemPrimaryKey = null;
+
+    /**
+     * Detect and cache the InvType primary key name.
+     *
+     * @return string
+     */
+    protected static function getInvTypePrimaryKey(): string
+    {
+        if (static::$invTypePrimaryKey === null) {
+            try {
+                static::$invTypePrimaryKey = app(InvType::class)->getKeyName();
+            } catch (\Exception $e) {
+                static::$invTypePrimaryKey = 'typeID';
+            }
+        }
+
+        return static::$invTypePrimaryKey;
+    }
+
+    /**
+     * Detect and cache the SolarSystem primary key name.
+     *
+     * @return string
+     */
+    public static function getSolarSystemPrimaryKey(): string
+    {
+        if (static::$solarSystemPrimaryKey === null) {
+            try {
+                static::$solarSystemPrimaryKey = app(SolarSystem::class)->getKeyName();
+            } catch (\Exception $e) {
+                static::$solarSystemPrimaryKey = 'system_id';
+            }
+        }
+
+        return static::$solarSystemPrimaryKey;
+    }
+
+    /**
      * Get the ore type information.
-     * FIXED: Auto-detect primary key and handle errors
+     * Uses cached primary key detection (resolved once per request).
      */
     public function type()
     {
-        try {
-            // Try to get an instance to detect the primary key
-            $typeModel = app(InvType::class);
-            $primaryKey = $typeModel->getKeyName();
-            
-            return $this->belongsTo(InvType::class, 'type_id', $primaryKey);
-        } catch (\Exception $e) {
-            Log::debug('MiningLedger: Failed to detect InvType primary key, using default', [
-                'error' => $e->getMessage()
-            ]);
-            // Fallback to common primary key names
-            return $this->belongsTo(InvType::class, 'type_id', 'typeID');
-        }
+        return $this->belongsTo(InvType::class, 'type_id', static::getInvTypePrimaryKey());
     }
 
     /**
      * Get the solar system where mining occurred.
-     * FIXED: Auto-detect primary key and handle errors
+     * Uses cached primary key detection (resolved once per request).
      */
     public function solarSystem()
     {
-        try {
-            // Try to get an instance to detect the primary key
-            $systemModel = app(SolarSystem::class);
-            $primaryKey = $systemModel->getKeyName();
-            
-            return $this->belongsTo(SolarSystem::class, 'solar_system_id', $primaryKey);
-        } catch (\Exception $e) {
-            Log::debug('MiningLedger: Failed to detect SolarSystem primary key, using default', [
-                'error' => $e->getMessage()
-            ]);
-            // Fallback: 'system_id' is most common in SeAT v5
-            return $this->belongsTo(SolarSystem::class, 'solar_system_id', 'system_id');
-        }
+        return $this->belongsTo(SolarSystem::class, 'solar_system_id', static::getSolarSystemPrimaryKey());
     }
 
     /**
      * Get the ore type name.
-     * FIXED: Multiple fallback methods with proper error handling
-     * 
+     *
+     * PERFORMANCE: Only reads from the eager-loaded relationship.
+     * Always use ->with('type') when querying MiningLedger collections.
+     * Falls back to a single DB query only if the relationship is not loaded.
+     *
      * @return string
      */
     public function getTypeNameAttribute()
     {
-        // Method 1: Try loaded relationship
         try {
-            if ($this->relationLoaded('type') && $this->type) {
-                // Try multiple possible property names
-                $name = $this->type->typeName 
-                    ?? $this->type->name 
-                    ?? $this->type->type_name
-                    ?? null;
-                
+            // Use eager-loaded relationship (no extra query when with('type') is used)
+            $type = $this->relationLoaded('type') ? $this->getRelation('type') : null;
+
+            if ($type) {
+                $name = $type->typeName ?? $type->name ?? $type->type_name ?? null;
                 if ($name && $name !== 'Unknown') {
                     return $name;
                 }
             }
-        } catch (\Exception $e) {
-            Log::debug('MiningLedger: Error accessing type relationship', [
-                'ledger_id' => $this->id,
-                'type_id' => $this->type_id,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        // Method 2: Try to load the relationship
-        if ($this->type_id) {
-            try {
-                $type = InvType::find($this->type_id);
+
+            // Fallback: relationship not eager-loaded — single query via relationship
+            if ($this->type_id && !$this->relationLoaded('type')) {
+                $type = $this->type;
                 if ($type) {
-                    $name = $type->typeName 
-                        ?? $type->name 
-                        ?? $type->type_name 
-                        ?? null;
-                    
+                    $name = $type->typeName ?? $type->name ?? $type->type_name ?? null;
                     if ($name && $name !== 'Unknown') {
                         return $name;
                     }
                 }
-            } catch (\Exception $e) {
-                Log::debug('MiningLedger: Failed to load type directly', [
-                    'ledger_id' => $this->id,
-                    'type_id' => $this->type_id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-        
-        // Method 3: Try direct database query as last resort
-        try {
-            $typeName = \DB::table('invTypes')
-                ->where('typeID', $this->type_id)
-                ->value('typeName');
-            
-            if ($typeName) {
-                return $typeName;
             }
         } catch (\Exception $e) {
-            Log::debug('MiningLedger: Failed to query invTypes table', [
-                'ledger_id' => $this->id,
+            Log::debug('MiningLedger: Error resolving type name', [
                 'type_id' => $this->type_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
-        
+
         return 'Unknown';
     }
 
     /**
      * Get the solar system name.
-     * FIXED: Multiple fallback methods with proper error handling
-     * 
+     *
+     * PERFORMANCE: Only reads from the eager-loaded relationship.
+     * Always use ->with('solarSystem') when querying MiningLedger collections.
+     * Falls back to a single DB query only if the relationship is not loaded.
+     *
      * @return string
      */
     public function getSystemNameAttribute()
     {
-        // Method 1: Try loaded relationship
         try {
-            if ($this->relationLoaded('solarSystem') && $this->solarSystem) {
-                // Try multiple possible property names
-                $name = $this->solarSystem->solarSystemName 
-                    ?? $this->solarSystem->name 
-                    ?? $this->solarSystem->system_name 
-                    ?? $this->solarSystem->itemName
-                    ?? null;
-                
+            // Use eager-loaded relationship (no extra query when with('solarSystem') is used)
+            $system = $this->relationLoaded('solarSystem') ? $this->getRelation('solarSystem') : null;
+
+            if ($system) {
+                $name = $system->solarSystemName ?? $system->name ?? $system->system_name ?? $system->itemName ?? null;
                 if ($name && $name !== 'Unknown') {
                     return $name;
                 }
             }
-        } catch (\Exception $e) {
-            Log::debug('MiningLedger: Error accessing solarSystem relationship', [
-                'ledger_id' => $this->id,
-                'solar_system_id' => $this->solar_system_id,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        // Method 2: Try to load the relationship
-        if ($this->solar_system_id) {
-            try {
-                $system = SolarSystem::find($this->solar_system_id);
+
+            // Fallback: relationship not eager-loaded — single query via relationship
+            if ($this->solar_system_id && !$this->relationLoaded('solarSystem')) {
+                $system = $this->solarSystem;
                 if ($system) {
-                    $name = $system->solarSystemName 
-                        ?? $system->name 
-                        ?? $system->system_name 
-                        ?? $system->itemName
-                        ?? null;
-                    
+                    $name = $system->solarSystemName ?? $system->name ?? $system->system_name ?? $system->itemName ?? null;
                     if ($name && $name !== 'Unknown') {
                         return $name;
                     }
                 }
-            } catch (\Exception $e) {
-                Log::debug('MiningLedger: Failed to load solarSystem directly', [
-                    'ledger_id' => $this->id,
-                    'solar_system_id' => $this->solar_system_id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-        
-        // Method 3: Try direct database query - use solar_systems table (SeAT v5)
-        try {
-            // Use solar_systems table (SeAT v5 standard)
-            $systemName = \DB::table('solar_systems')
-                ->where('system_id', $this->solar_system_id)
-                ->value('name');
-
-            if ($systemName) {
-                return $systemName;
             }
         } catch (\Exception $e) {
-            Log::debug('MiningLedger: Failed to query solar systems table', [
-                'ledger_id' => $this->id,
+            Log::debug('MiningLedger: Error resolving system name', [
                 'solar_system_id' => $this->solar_system_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
-        
+
         return 'Unknown';
     }
 
     /**
      * Get the security status of the solar system.
-     * FIXED: Enhanced error handling
-     * 
+     *
+     * PERFORMANCE: Only reads from the eager-loaded relationship.
+     *
      * @return float|null
      */
     public function getSecurityStatusAttribute()
     {
         try {
-            if ($this->relationLoaded('solarSystem') && $this->solarSystem) {
-                $security = $this->solarSystem->security 
-                    ?? $this->solarSystem->security_status 
-                    ?? null;
-                return $security !== null ? round($security, 1) : null;
+            $system = $this->relationLoaded('solarSystem') ? $this->getRelation('solarSystem') : null;
+
+            if (!$system && $this->solar_system_id && !$this->relationLoaded('solarSystem')) {
+                $system = $this->solarSystem;
             }
-            
-            // Try to load it if not loaded
-            if ($this->solar_system_id) {
-                $system = SolarSystem::find($this->solar_system_id);
-                if ($system) {
-                    $security = $system->security ?? $system->security_status ?? null;
-                    return $security !== null ? round($security, 1) : null;
-                }
+
+            if ($system) {
+                $security = $system->security ?? $system->security_status ?? null;
+                return $security !== null ? round($security, 1) : null;
             }
         } catch (\Exception $e) {
             Log::debug('MiningLedger: Failed to get security status', [
-                'ledger_id' => $this->id,
                 'solar_system_id' => $this->solar_system_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
-        
+
         return null;
     }
 

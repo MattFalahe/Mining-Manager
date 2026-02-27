@@ -10,20 +10,22 @@
 @section('full')
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.ledger.index') }}">
-                <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.mining_summary') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/ledger/my-mining') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.ledger.my-mining') }}">
-                <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ (Request::is('*/ledger') && !Request::is('*/ledger/*')) || Request::is('*/ledger/summary') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.index') }}">
+                    <i class="fas fa-layer-group"></i> {{ trans('mining-manager::ledger.mining_summary') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/ledger/my-mining') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.my-mining') }}">
+                    <i class="fas fa-user"></i> {{ trans('mining-manager::menu.my_mining') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
 <div class="mining-manager-wrapper my-mining">
     
@@ -565,7 +567,7 @@ window.onafterprint = function() {
 </script>
 @endpush
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 @endsection

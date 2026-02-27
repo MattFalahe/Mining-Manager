@@ -11,35 +11,37 @@
 <div class="mining-manager-wrapper moon-compositions-page">
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.moon.index') }}">
-                <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/moon/active') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.moon.active') }}">
-                <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/moon/calendar') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.moon.calendar') }}">
-                <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/moon/compositions') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.moon.compositions') }}">
-                <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/moon/calculator') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.moon.calculator') }}">
-                <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}" href="{{ route('mining-manager.moon.index') }}">
+                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/active') ? 'active' : '' }}" href="{{ route('mining-manager.moon.active') }}">
+                    <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.moon.calendar') }}">
+                    <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/compositions') ? 'active' : '' }}" href="{{ route('mining-manager.moon.compositions') }}">
+                    <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/calculator') ? 'active' : '' }}" href="{{ route('mining-manager.moon.calculator') }}">
+                    <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
 
 <div class="moon-compositions">
@@ -352,8 +354,8 @@
 
 </div>
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection

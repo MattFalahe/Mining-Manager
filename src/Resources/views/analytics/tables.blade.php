@@ -33,30 +33,32 @@
 <div class="mining-manager-wrapper analytics-tables-page">
 
 {{-- TAB NAVIGATION --}}
-<div class="nav-tabs-custom">
-    <ul class="nav nav-tabs">
-        <li class="{{ Request::is('*/analytics') && !Request::is('*/analytics/*') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.analytics.index') }}">
-                <i class="fas fa-chart-area"></i> {{ trans('mining-manager::menu.analytics_overview') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/analytics/charts') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.analytics.charts') }}">
-                <i class="fas fa-chart-line"></i> {{ trans('mining-manager::menu.performance_charts') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/analytics/tables') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.analytics.tables') }}">
-                <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
-            </a>
-        </li>
-        <li class="{{ Request::is('*/analytics/compare') ? 'active' : '' }}">
-            <a href="{{ route('mining-manager.analytics.compare') }}">
-                <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
-            </a>
-        </li>
-    </ul>
-    <div class="tab-content">
+<div class="card card-dark card-tabs">
+    <div class="card-header p-0 pt-1">
+        <ul class="nav nav-tabs">
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics') && !Request::is('*/analytics/*') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.index') }}">
+                    <i class="fas fa-chart-area"></i> {{ trans('mining-manager::menu.analytics_overview') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/charts') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.charts') }}">
+                    <i class="fas fa-chart-line"></i> {{ trans('mining-manager::menu.performance_charts') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/tables') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.tables') }}">
+                    <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/compare') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.compare') }}">
+                    <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
 
 
 <div class="analytics-tables">
@@ -331,8 +333,8 @@ $('.quick-filter').on('click', function() {
 </script>
 @endpush
 
-    </div>{{-- /.tab-content --}}
-</div>{{-- /.nav-tabs-custom --}}
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
 @endsection
