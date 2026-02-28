@@ -361,8 +361,8 @@
                                             </div>
                                             <div class="card-body">
                                                 <div class="row">
-                                                    <div class="col-md-3 col-sm-6">
-                                                        <div class="info-box bg-gradient-dark">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-success">
                                                             <span class="info-box-icon"><i class="fas fa-gem"></i></span>
                                                             <div class="info-box-content">
                                                                 <span class="info-box-text">All Ore Value</span>
@@ -370,8 +370,8 @@
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-md-3 col-sm-6">
-                                                        <div class="info-box bg-gradient-dark">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-warning">
                                                             <span class="info-box-icon"><i class="fas fa-moon"></i></span>
                                                             <div class="info-box-content">
                                                                 <span class="info-box-text">Moon Ore Value</span>
@@ -379,8 +379,8 @@
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-md-3 col-sm-6">
-                                                        <div class="info-box bg-gradient-dark">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-info">
                                                             <span class="info-box-icon"><i class="fas fa-users"></i></span>
                                                             <div class="info-box-content">
                                                                 <span class="info-box-text">Active Miners</span>
@@ -388,8 +388,8 @@
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div class="col-md-3 col-sm-6">
-                                                        <div class="info-box bg-gradient-dark">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="info-box bg-gradient-danger">
                                                             <span class="info-box-icon"><i class="fas fa-coins"></i></span>
                                                             <div class="info-box-content">
                                                                 <span class="info-box-text">Tax Collected</span>
@@ -403,37 +403,155 @@
                                     </div>
                                 </div>
 
-                                {{-- CORPORATION CHARTS --}}
+                                {{-- LAST 12 MONTHS CORPORATION STATISTICS --}}
                                 <div class="row">
-                                    <div class="col-lg-6">
+                                    <div class="col-12">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-chart-line"></i> Mining Performance (12 Months)</h3>
+                                                <h3 class="card-title">
+                                                    <i class="fas fa-chart-area"></i>
+                                                    {{ trans('mining-manager::dashboard.last_12_months_stats') }}
+                                                </h3>
                                             </div>
-                                            <div class="card-body" style="height: 300px;">
-                                                <canvas id="corpMiningPerformanceChart"></canvas>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <div class="card card-dark">
-                                            <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-moon"></i> Moon Mining (12 Months)</h3>
-                                            </div>
-                                            <div class="card-body" style="height: 300px;">
-                                                <canvas id="corpMoonMiningChart"></canvas>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="small-box bg-primary">
+                                                            <div class="inner">
+                                                                <h3 id="corp-12m-all-ore-value">--</h3>
+                                                                <p>All Ore Value ISK</p>
+                                                            </div>
+                                                            <div class="icon"><i class="fas fa-gem"></i></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="small-box bg-success">
+                                                            <div class="inner">
+                                                                <h3 id="corp-12m-moon-ore-value">--</h3>
+                                                                <p>Moon Ore Value ISK</p>
+                                                            </div>
+                                                            <div class="icon"><i class="fas fa-moon"></i></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="small-box bg-info">
+                                                            <div class="inner">
+                                                                <h3 id="corp-12m-tax-collected">--</h3>
+                                                                <p>Tax Collected ISK</p>
+                                                            </div>
+                                                            <div class="icon"><i class="fas fa-coins"></i></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="small-box bg-warning">
+                                                            <div class="inner">
+                                                                <h3 id="corp-12m-active-miners">--</h3>
+                                                                <p>Active Miners</p>
+                                                            </div>
+                                                            <div class="icon"><i class="fas fa-users"></i></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+
+                                {{-- TOP MINERS --}}
                                 <div class="row">
                                     <div class="col-lg-6">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-coins"></i> Tax Revenue (12 Months)</h3>
+                                                <h3 class="card-title"><i class="fas fa-trophy"></i> Top Miners - All Ore</h3>
                                             </div>
-                                            <div class="card-body" style="height: 300px;">
-                                                <canvas id="corpTaxChart"></canvas>
+                                            <div class="card-body p-0">
+                                                <table class="table table-sm table-striped">
+                                                    <thead>
+                                                        <tr><th>#</th><th>Miner</th><th>Corporation</th><th>Value (ISK)</th></tr>
+                                                    </thead>
+                                                    <tbody id="corp-top-miners-all-ore">
+                                                        <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-moon"></i> Top Miners - Moon Ore</h3>
+                                            </div>
+                                            <div class="card-body p-0">
+                                                <table class="table table-sm table-striped">
+                                                    <thead>
+                                                        <tr><th>#</th><th>Miner</th><th>Corporation</th><th>Value (ISK)</th></tr>
+                                                    </thead>
+                                                    <tbody id="corp-top-miners-moon-ore">
+                                                        <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- CORPORATION CHARTS ROW 1: Performance + Moon Mining --}}
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-chart-line"></i> Corporation Mining Performance (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <canvas id="corpMiningPerformanceChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-moon"></i> Moon Mining Performance (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <canvas id="corpMoonMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- CORPORATION CHARTS ROW 2: Mining by Group + Top Ores --}}
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-chart-pie"></i> Mining by Group</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <canvas id="corpMiningByGroupChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-gem"></i> Top Ores Mined</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <canvas id="corpMiningByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- CORPORATION CHARTS ROW 3: Tax + Event Tax --}}
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-coins"></i> Mining Tax (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <canvas id="corpTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                             </div>
                                         </div>
                                     </div>
@@ -442,8 +560,8 @@
                                             <div class="card-header">
                                                 <h3 class="card-title"><i class="fas fa-calendar-check"></i> Event Tax (12 Months)</h3>
                                             </div>
-                                            <div class="card-body" style="height: 300px;">
-                                                <canvas id="corpEventTaxChart"></canvas>
+                                            <div class="card-body">
+                                                <canvas id="corpEventTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                             </div>
                                         </div>
                                     </div>
@@ -663,13 +781,25 @@ $('#corporation-tab').on('shown.bs.tab', function() {
 
     $.get('{{ $corpTabUrl }}')
         .done(function(data) {
-            // Fill in stats
-            $('#corp-all-ore-value').text(formatISK(data.corpCurrentMonthStats.total_value || 0) + ' ISK');
-            $('#corp-moon-ore-value').text(formatISK(data.corpCurrentMonthStats.moon_ore_value || 0) + ' ISK');
-            $('#corp-active-miners').text(data.corpCurrentMonthStats.active_miners || 0);
-            $('#corp-tax-collected').text(formatISK(data.corpCurrentMonthStats.tax_collected || 0) + ' ISK');
+            // === CURRENT MONTH STATS ===
+            var cm = data.corpCurrentMonthStats || {};
+            $('#corp-all-ore-value').text(formatISK(cm.all_ore_value || 0) + ' ISK');
+            $('#corp-moon-ore-value').text(formatISK(cm.moon_ore_value || 0) + ' ISK');
+            $('#corp-active-miners').text(cm.active_miners || 0);
+            $('#corp-tax-collected').text(formatISK(cm.tax_collected || 0) + ' ISK');
 
-            // Initialize charts
+            // === LAST 12 MONTHS STATS ===
+            var l12 = data.corpLast12MonthsStats || {};
+            $('#corp-12m-all-ore-value').text(formatISK(l12.all_ore_value || 0));
+            $('#corp-12m-moon-ore-value').text(formatISK(l12.moon_ore_value || 0));
+            $('#corp-12m-tax-collected').text(formatISK(l12.tax_collected || 0));
+            $('#corp-12m-active-miners').text(l12.active_miners || 0);
+
+            // === TOP MINERS TABLES ===
+            populateTopMinersTable('#corp-top-miners-all-ore', data.topMinersOverallAllOre || []);
+            populateTopMinersTable('#corp-top-miners-moon-ore', data.topMinersOverallMoonOre || []);
+
+            // === CHARTS ===
             initCorpCharts(data);
 
             // Show content, hide loading
@@ -685,6 +815,32 @@ $('#corporation-tab').on('shown.bs.tab', function() {
         });
 });
 
+function populateTopMinersTable(selector, miners) {
+    var $tbody = $(selector);
+    $tbody.empty();
+
+    if (!miners || miners.length === 0) {
+        $tbody.append('<tr><td colspan="4" class="text-center text-muted">No data available</td></tr>');
+        return;
+    }
+
+    for (var i = 0; i < miners.length; i++) {
+        var m = miners[i];
+        var name = m.character_name || 'Unknown';
+        if (m.alt_count > 0) {
+            name += ' <small class="text-muted">(+' + m.alt_count + ' alts)</small>';
+        }
+        $tbody.append(
+            '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td>' + name + '</td>' +
+            '<td>' + (m.corporation_name || '-') + '</td>' +
+            '<td>' + formatISK(m.total_value || 0) + ' ISK</td>' +
+            '</tr>'
+        );
+    }
+}
+
 function initCorpCharts(data) {
     var chartColors = {
         text: '#c2c7d0',
@@ -692,82 +848,178 @@ function initCorpCharts(data) {
     };
 
     var defaultScales = {
-        y: { beginAtZero: true, ticks: { color: chartColors.text }, grid: { color: chartColors.grid } },
+        y: {
+            beginAtZero: true,
+            ticks: { color: chartColors.text, callback: function(v) { return formatISK(v); } },
+            grid: { color: chartColors.grid }
+        },
         x: { ticks: { color: chartColors.text }, grid: { color: chartColors.grid } }
     };
 
     var defaultLegend = { labels: { color: chartColors.text } };
 
-    // Corp Mining Performance
+    var groupColors = {
+        'Moon Ore': 'rgba(255, 206, 86, 0.8)',
+        'Regular Ore': 'rgba(54, 162, 235, 0.8)',
+        'Ice': 'rgba(75, 192, 192, 0.8)',
+        'Gas': 'rgba(153, 102, 255, 0.8)',
+        'Abyssal': 'rgba(255, 99, 132, 0.8)'
+    };
+
+    // 1) Corp Mining Performance (bar chart)
     if (data.corpMiningPerformanceChart) {
         new Chart(document.getElementById('corpMiningPerformanceChart'), {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: data.corpMiningPerformanceChart.labels,
                 datasets: [{
                     label: 'All Ore Value (ISK)',
                     data: data.corpMiningPerformanceChart.data,
                     borderColor: 'rgb(75, 192, 192)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                    tension: 0.1,
-                    fill: true
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderWidth: 1
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
         });
     }
 
-    // Moon Mining Performance
+    // 2) Moon Mining Performance (bar chart)
     if (data.moonMiningPerformanceChart) {
         new Chart(document.getElementById('corpMoonMiningChart'), {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: data.moonMiningPerformanceChart.labels,
                 datasets: [{
                     label: 'Moon Ore Value (ISK)',
                     data: data.moonMiningPerformanceChart.data,
                     borderColor: 'rgb(255, 205, 86)',
-                    backgroundColor: 'rgba(255, 205, 86, 0.2)',
-                    tension: 0.1,
-                    fill: true
+                    backgroundColor: 'rgba(255, 205, 86, 0.6)',
+                    borderWidth: 1
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
         });
     }
 
-    // Tax Revenue Chart
+    // 3) Mining by Group (Doughnut)
+    if (data.corpMiningByGroupChart && data.corpMiningByGroupChart.labels.length > 0) {
+        var groupLabels = data.corpMiningByGroupChart.labels;
+        var groupData = data.corpMiningByGroupChart.data;
+        var bgColors = groupLabels.map(function(label) {
+            return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
+        });
+
+        new Chart(document.getElementById('corpMiningByGroupChart'), {
+            type: 'doughnut',
+            data: {
+                labels: groupLabels,
+                datasets: [{
+                    data: groupData,
+                    backgroundColor: bgColors,
+                    borderColor: '#1a1d24',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: chartColors.text }, position: 'right' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                var pct = ((ctx.raw / total) * 100).toFixed(1);
+                                return ctx.label + ': ' + formatISK(ctx.raw) + ' ISK (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        $('#corpMiningByGroupChart').parent().append('<p class="text-center text-muted mt-3">No mining data available</p>');
+    }
+
+    // 4) Top Ores Mined (Horizontal Bar)
+    if (data.corpMiningByTypeChart && data.corpMiningByTypeChart.labels.length > 0) {
+        new Chart(document.getElementById('corpMiningByTypeChart'), {
+            type: 'bar',
+            data: {
+                labels: data.corpMiningByTypeChart.labels,
+                datasets: [{
+                    label: 'Value (ISK)',
+                    data: data.corpMiningByTypeChart.data,
+                    backgroundColor: data.corpMiningByTypeChart.colors || 'rgba(54, 162, 235, 0.8)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) { return formatISK(ctx.raw) + ' ISK'; }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: { color: chartColors.text, callback: function(v) { return formatISK(v); } },
+                        grid: { color: chartColors.grid }
+                    },
+                    y: {
+                        ticks: { color: chartColors.text, font: { size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    } else {
+        $('#corpMiningByTypeChart').parent().append('<p class="text-center text-muted mt-3">No mining data available</p>');
+    }
+
+    // 5) Tax Revenue Chart (dual-dataset: Collected vs Owed)
     if (data.miningTaxChart) {
         new Chart(document.getElementById('corpTaxChart'), {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: data.miningTaxChart.labels,
                 datasets: [{
-                    label: 'Tax Revenue (ISK)',
-                    data: data.miningTaxChart.data,
-                    borderColor: 'rgb(54, 162, 235)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    tension: 0.1,
-                    fill: true
+                    label: 'Tax Collected (ISK)',
+                    data: data.miningTaxChart.collected,
+                    backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                    borderColor: 'rgb(75, 192, 192)',
+                    borderWidth: 1
+                }, {
+                    label: 'Tax Owed (ISK)',
+                    data: data.miningTaxChart.owed,
+                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                    borderColor: 'rgb(255, 99, 132)',
+                    borderWidth: 1
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
         });
     }
 
-    // Event Tax Chart
+    // 6) Event Tax Chart
     if (data.eventTaxChart) {
         new Chart(document.getElementById('corpEventTaxChart'), {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: data.eventTaxChart.labels,
                 datasets: [{
-                    label: 'Event Tax (ISK)',
+                    label: 'Event Tax Impact (ISK)',
                     data: data.eventTaxChart.data,
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)',
                     borderColor: 'rgb(153, 102, 255)',
-                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                    tension: 0.1,
-                    fill: true
+                    borderWidth: 1
                 }]
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
