@@ -168,12 +168,32 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Update daily summaries - runs daily at 2:30 AM
-            // (after cache-prices, update-ledger-prices, calculate-taxes)
-            // Rebuilds today and yesterday's summaries with estimated tax per ore type
+            // Update daily summaries (frequent) - runs every 30 min after process-ledger
+            // Fast path: only rebuilds today's summaries to stay current with ESI data
+            [
+                'command' => 'mining-manager:update-daily-summaries --today-only',
+                'expression' => '20,50 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Update daily summaries (safety net) - runs daily at 2:30 AM
+            // Rebuilds today + yesterday to catch any late ESI data
             [
                 'command' => 'mining-manager:update-daily-summaries',
                 'expression' => '30 2 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Update current month dashboard statistics - runs every 30 min
+            // Reads from pre-computed daily summaries (fast) and updates monthly_statistics
+            // Pipeline: :15/:45 process-ledger → :20/:50 daily summaries → :25/:55 monthly stats
+            [
+                'command' => 'mining-manager:calculate-monthly-stats --current-month',
+                'expression' => '25,55 * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,

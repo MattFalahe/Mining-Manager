@@ -3,6 +3,7 @@
 namespace MiningManager\Services\Analytics;
 
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MoonExtraction;
@@ -73,8 +74,12 @@ class DashboardMetricsService
      */
     private function getTodayMetrics(Carbon $date): array
     {
-        $mined = MiningLedger::whereDate('date', $date)->sum('quantity');
-        $miners = MiningLedger::whereDate('date', $date)->distinct('character_id')->count();
+        $stats = MiningLedgerDailySummary::whereDate('date', $date)
+            ->selectRaw('SUM(total_quantity) as mined, COUNT(DISTINCT character_id) as miners')
+            ->first();
+
+        $mined = $stats->mined ?? 0;
+        $miners = $stats->miners ?? 0;
 
         return [
             'mined' => $mined,
@@ -92,27 +97,13 @@ class DashboardMetricsService
      */
     private function getMonthMetrics(Carbon $startDate, Carbon $endDate): array
     {
-        $mined = MiningLedger::whereBetween('date', [$startDate, $endDate])->sum('quantity');
-        $miners = MiningLedger::whereBetween('date', [$startDate, $endDate])->distinct('character_id')->count();
-        
-        // Calculate value using settings service
-        $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $regionId = $generalSettings['default_region_id'] ?? 10000002;
-        $priceType = $pricingSettings['price_type'] ?? 'sell';
-        $priceColumn = match ($priceType) {
-            'buy' => 'buy_price',
-            'average' => 'average_price',
-            default => 'sell_price',
-        };
+        $stats = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('SUM(total_quantity) as mined, SUM(total_value) as value, COUNT(DISTINCT character_id) as miners')
+            ->first();
 
-        $value = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('mining_price_cache', function ($join) use ($regionId) {
-                $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
-                    ->where('mining_price_cache.region_id', '=', $regionId);
-            })
-            ->select(DB::raw("SUM(mining_ledger.quantity * mining_price_cache.{$priceColumn}) as total_value"))
-            ->value('total_value') ?? 0;
+        $mined = $stats->mined ?? 0;
+        $miners = $stats->miners ?? 0;
+        $value = $stats->value ?? 0;
 
         return [
             'mined' => $mined,
@@ -202,15 +193,16 @@ class DashboardMetricsService
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit) {
-            return MiningLedger::whereBetween('date', [$startDate, $endDate])
-                ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
+            return MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
+                ->join('character_infos', 'mining_ledger_daily_summaries.character_id', '=', 'character_infos.character_id')
                 ->select(
-                    'mining_ledger.character_id',
+                    'mining_ledger_daily_summaries.character_id',
                     'character_infos.name',
-                    DB::raw('SUM(mining_ledger.quantity) as total_quantity')
+                    DB::raw('SUM(total_value) as total_value'),
+                    DB::raw('SUM(total_quantity) as total_quantity')
                 )
-                ->groupBy('mining_ledger.character_id', 'character_infos.name')
-                ->orderByDesc('total_quantity')
+                ->groupBy('mining_ledger_daily_summaries.character_id', 'character_infos.name')
+                ->orderByDesc('total_value')
                 ->limit($limit)
                 ->get();
         });
@@ -229,12 +221,8 @@ class DashboardMetricsService
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            $dailyData = MiningLedger::whereBetween('date', [$startDate, $endDate])
-                ->select(
-                    'date',
-                    DB::raw('SUM(quantity) as total_quantity'),
-                    DB::raw('COUNT(DISTINCT character_id) as unique_miners')
-                )
+            $dailyData = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
+                ->selectRaw('date, SUM(total_value) as value, SUM(total_quantity) as total_quantity, COUNT(DISTINCT character_id) as unique_miners')
                 ->groupBy('date')
                 ->orderBy('date')
                 ->get();

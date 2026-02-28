@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MonthlyStatistic;
 use MiningManager\Http\Controllers\DashboardController;
@@ -15,9 +16,11 @@ use Illuminate\Support\Facades\Log;
 /**
  * Calculate and store monthly statistics for closed months
  *
- * This command pre-calculates dashboard statistics for closed months
- * and stores them in the monthly_statistics table. This eliminates
- * the need to recalculate historical data on every page load.
+ * This command pre-calculates dashboard statistics and stores them in
+ * the monthly_statistics table. For closed months this eliminates
+ * recalculating historical data on every page load. For the current
+ * month (--current-month), it reads from pre-computed daily summaries
+ * for fast aggregation aligned with the 30-minute ESI data cycle.
  */
 class CalculateMonthlyStatisticsCommand extends Command
 {
@@ -30,6 +33,7 @@ class CalculateMonthlyStatisticsCommand extends Command
                             {--month= : Month to calculate (YYYY-MM format, defaults to last month)}
                             {--user_id= : Calculate for specific user}
                             {--recalculate : Recalculate existing statistics}
+                            {--current-month : Calculate current month from daily summaries (fast, for frequent cron)}
                             {--all-history : Calculate all historical closed months}';
 
     /**
@@ -52,9 +56,14 @@ class CalculateMonthlyStatisticsCommand extends Command
             return $this->calculateAllHistory();
         }
 
-        $month = $this->option('month')
-            ? Carbon::createFromFormat('Y-m', $this->option('month'))
-            : Carbon::now()->subMonth();
+        // Current month mode: fast path using pre-computed daily summaries
+        if ($this->option('current-month')) {
+            $month = Carbon::now();
+        } elseif ($this->option('month')) {
+            $month = Carbon::createFromFormat('Y-m', $this->option('month'));
+        } else {
+            $month = Carbon::now()->subMonth();
+        }
 
         $userId = $this->option('user_id');
 
@@ -128,8 +137,11 @@ class CalculateMonthlyStatisticsCommand extends Command
             return 'skipped';
         }
 
-        // Check if already calculated (unless recalculate flag is set)
-        if (!$this->option('recalculate')) {
+        $isCurrentMonth = $this->option('current-month');
+
+        // Check if already calculated (unless recalculate or current-month flag is set)
+        // Current month always recalculates since data changes every 30 min
+        if (!$this->option('recalculate') && !$isCurrentMonth) {
             $exists = MonthlyStatistic::where('user_id', $user->id)
                 ->where('character_id', null)
                 ->where('corporation_id', null)
@@ -142,8 +154,10 @@ class CalculateMonthlyStatisticsCommand extends Command
             }
         }
 
-        // Calculate statistics from mining ledger
-        $stats = $this->calculateStats($characterIds, $monthStart, $monthEnd);
+        // Calculate statistics — use fast daily summary path for current month
+        $stats = $isCurrentMonth
+            ? $this->calculateStatsFromDailySummaries($characterIds, $monthStart, $monthEnd)
+            : $this->calculateStats($characterIds, $monthStart, $monthEnd);
 
         // Only store if there's actual mining activity
         if ($stats['total_value'] == 0 && $stats['total_quantity'] == 0) {
@@ -280,6 +294,101 @@ class CalculateMonthlyStatisticsCommand extends Command
             'value_breakdown_chart_data' => [
                 'ore' => $totals->ore_value ?? 0,
                 'mineral' => $totals->mineral_value ?? 0,
+            ],
+            'top_miners' => [],
+            'top_systems' => $topSystems,
+        ];
+    }
+
+    /**
+     * Fast path: Calculate statistics from pre-computed daily summaries.
+     *
+     * Used for current month updates every 30 minutes. Instead of querying
+     * the raw mining_ledger table (thousands of rows), this reads from
+     * mining_ledger_daily_summaries (one row per character per day).
+     */
+    protected function calculateStatsFromDailySummaries(array $characterIds, Carbon $monthStart, Carbon $monthEnd)
+    {
+        // Totals from daily summaries — single aggregate query
+        $totals = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$monthStart, $monthEnd])
+            ->selectRaw('
+                SUM(total_quantity) as total_quantity,
+                SUM(total_value) as total_value,
+                SUM(moon_ore_value) as moon_ore_value,
+                SUM(regular_ore_value) as regular_ore_value,
+                SUM(ice_value) as ice_value,
+                SUM(gas_value) as gas_value,
+                SUM(total_tax) as total_tax,
+                COUNT(DISTINCT date) as mining_days
+            ')
+            ->first();
+
+        // Tax statistics (still from mining_taxes — not in daily summaries)
+        $taxes = MiningTax::whereIn('character_id', $characterIds)
+            ->where('month', $monthStart)
+            ->selectRaw('
+                SUM(amount_owed) as tax_owed,
+                SUM(CASE WHEN status = "paid" THEN amount_owed ELSE 0 END) as tax_paid,
+                SUM(CASE WHEN status = "pending" THEN amount_owed ELSE 0 END) as tax_pending,
+                SUM(CASE WHEN status = "overdue" THEN amount_owed ELSE 0 END) as tax_overdue
+            ')
+            ->first();
+
+        // Daily chart data from daily summaries — one row per day already
+        $dailyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$monthStart, $monthEnd])
+            ->selectRaw('date as day, SUM(total_value) as value')
+            ->groupBy('day')
+            ->orderBy('day')
+            ->get()
+            ->pluck('value', 'day')
+            ->toArray();
+
+        $totalValue = $totals->total_value ?? 0;
+        $moonOreValue = $totals->moon_ore_value ?? 0;
+        $iceValue = $totals->ice_value ?? 0;
+        $gasValue = $totals->gas_value ?? 0;
+        $regularOreValue = $totals->regular_ore_value ?? 0;
+
+        // Ore type chart data
+        $oreTypeData = [
+            'moon_ore' => $moonOreValue,
+            'ice' => $iceValue,
+            'gas' => $gasValue,
+            'regular' => $regularOreValue,
+        ];
+
+        // Top systems from daily summaries — not directly available, use raw table with GROUP BY
+        $topSystems = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$monthStart, $monthEnd])
+            ->whereNotNull('processed_at')
+            ->selectRaw('solar_system_id, SUM(total_value) as value')
+            ->groupBy('solar_system_id')
+            ->orderByDesc('value')
+            ->limit(5)
+            ->get()
+            ->toArray();
+
+        return [
+            'total_quantity' => $totals->total_quantity ?? 0,
+            'total_value' => $totalValue,
+            'ore_value' => $totalValue, // ore_value approximated as total_value for current month
+            'mineral_value' => 0, // mineral reprocessing value not tracked in daily summaries
+            'tax_owed' => $taxes->tax_owed ?? 0,
+            'tax_paid' => $taxes->tax_paid ?? 0,
+            'tax_pending' => $taxes->tax_pending ?? 0,
+            'tax_overdue' => $taxes->tax_overdue ?? 0,
+            'moon_ore_value' => $moonOreValue,
+            'ice_value' => $iceValue,
+            'gas_value' => $gasValue,
+            'regular_ore_value' => $regularOreValue,
+            'mining_days' => $totals->mining_days ?? 0,
+            'daily_chart_data' => $dailyData,
+            'ore_type_chart_data' => $oreTypeData,
+            'value_breakdown_chart_data' => [
+                'ore' => $totalValue,
+                'mineral' => 0,
             ],
             'top_miners' => [],
             'top_systems' => $topSystems,

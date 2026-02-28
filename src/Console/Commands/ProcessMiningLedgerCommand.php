@@ -253,12 +253,11 @@ class ProcessMiningLedgerCommand extends Command
                 $this->checkForJackpotOres($observerEntries);
             }
 
-            // Clear dashboard cache after processing new ledger data
-            $this->info("\n🔄 Clearing dashboard cache to reflect new data...");
-            Cache::tags(['dashboard'])->flush();
-            // Alternative: Clear all mining-manager related caches
-            DashboardController::clearDashboardCache();
-            $this->info("✅ Dashboard cache cleared successfully!");
+            // Dashboard cache clearing is handled by the summary pipeline:
+            // :20/:50 update-daily-summaries → :25/:55 calculate-monthly-stats
+            // which runs after this command and clears relevant caches.
+            // No need to flush caches here — they will refresh via the pipeline.
+            $this->info("\n✅ Data processed. Dashboard will refresh via summary pipeline.");
 
             return Command::SUCCESS;
 

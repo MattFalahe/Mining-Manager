@@ -339,78 +339,62 @@
 
                         </div>
 
-                        {{-- CORPORATION STATS TAB --}}
+                        {{-- CORPORATION STATS TAB (loaded via AJAX) --}}
                         <div class="tab-pane fade" id="corporation" role="tabpanel" aria-labelledby="corporation-tab">
+                            <div id="corp-tab-loading" class="text-center py-5">
+                                <div class="spinner-border text-info" role="status" style="width: 3rem; height: 3rem;">
+                                    <span class="sr-only">Loading...</span>
+                                </div>
+                                <p class="text-muted mt-3">Loading corporation data...</p>
+                            </div>
+                            <div id="corp-tab-content" style="display: none;">
 
-                            {{-- CURRENT MONTH CORPORATION STATISTICS --}}
-                            <div class="row">
-                                <div class="col-12">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-calendar-alt"></i>
-                                                {{ trans('mining-manager::dashboard.corporation_stats') }} - {{ now()->format('F Y') }}
-                                            </h3>
-                                            <div class="card-tools">
-                                                <span class="badge badge-success">
-                                                    <i class="fas fa-sync-alt"></i> {{ trans('mining-manager::dashboard.live') }}
-                                                </span>
+                                {{-- CURRENT MONTH CORPORATION STATISTICS --}}
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title">
+                                                    <i class="fas fa-calendar-alt"></i>
+                                                    {{ trans('mining-manager::dashboard.corporation_stats') }} - {{ now()->format('F Y') }}
+                                                </h3>
                                             </div>
-                                        </div>
-                                        <div class="card-body">
-                                            <div class="row">
-                                                {{-- All Ore Value --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="info-box bg-gradient-primary">
-                                                        <span class="info-box-icon">
-                                                            <i class="fas fa-gem"></i>
-                                                        </span>
-                                                        <div class="info-box-content">
-                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.all_ore_value') }}</span>
-                                                            <span class="info-box-number">{{ number_format($corpCurrentMonthStats['all_ore_value'], 0) }}</span>
-                                                            <small>ISK ({{ number_format($corpCurrentMonthStats['all_ore_quantity'], 0) }} units)</small>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="info-box bg-gradient-dark">
+                                                            <span class="info-box-icon"><i class="fas fa-gem"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">All Ore Value</span>
+                                                                <span class="info-box-number" id="corp-all-ore-value">--</span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-
-                                                {{-- Moon Ore Value --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="info-box bg-gradient-secondary">
-                                                        <span class="info-box-icon">
-                                                            <i class="fas fa-moon"></i>
-                                                        </span>
-                                                        <div class="info-box-content">
-                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.moon_ore_value') }}</span>
-                                                            <span class="info-box-number">{{ number_format($corpCurrentMonthStats['moon_ore_value'], 0) }}</span>
-                                                            <small>ISK ({{ number_format($corpCurrentMonthStats['moon_ore_quantity'], 0) }} units)</small>
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="info-box bg-gradient-dark">
+                                                            <span class="info-box-icon"><i class="fas fa-moon"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Moon Ore Value</span>
+                                                                <span class="info-box-number" id="corp-moon-ore-value">--</span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-
-                                                {{-- Tax Collected --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="info-box bg-gradient-success">
-                                                        <span class="info-box-icon">
-                                                            <i class="fas fa-coins"></i>
-                                                        </span>
-                                                        <div class="info-box-content">
-                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.tax_collected') }}</span>
-                                                            <span class="info-box-number">{{ number_format($corpCurrentMonthStats['tax_collected'], 0) }}</span>
-                                                            <small>ISK / {{ number_format($corpCurrentMonthStats['tax_amount'], 0) }} owed</small>
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="info-box bg-gradient-dark">
+                                                            <span class="info-box-icon"><i class="fas fa-users"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Active Miners</span>
+                                                                <span class="info-box-number" id="corp-active-miners">--</span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-
-                                                {{-- Active Miners --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="info-box bg-gradient-warning">
-                                                        <span class="info-box-icon">
-                                                            <i class="fas fa-users"></i>
-                                                        </span>
-                                                        <div class="info-box-content">
-                                                            <span class="info-box-text">{{ trans('mining-manager::dashboard.active_miners') }}</span>
-                                                            <span class="info-box-number">{{ $corpCurrentMonthStats['active_miners'] }}</span>
-                                                            <small>{{ trans('mining-manager::dashboard.characters') }}</small>
+                                                    <div class="col-md-3 col-sm-6">
+                                                        <div class="info-box bg-gradient-dark">
+                                                            <span class="info-box-icon"><i class="fas fa-coins"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">Tax Collected</span>
+                                                                <span class="info-box-number" id="corp-tax-collected">--</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -418,247 +402,54 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {{-- LAST 12 MONTHS CORPORATION STATISTICS --}}
-                            <div class="row">
-                                <div class="col-12">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-chart-area"></i>
-                                                {{ trans('mining-manager::dashboard.last_12_months_stats') }}
-                                            </h3>
+                                {{-- CORPORATION CHARTS --}}
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-chart-line"></i> Mining Performance (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body" style="height: 300px;">
+                                                <canvas id="corpMiningPerformanceChart"></canvas>
+                                            </div>
                                         </div>
-                                        <div class="card-body">
-                                            <div class="row">
-                                                {{-- All Ore Total Value --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-info">
-                                                        <div class="inner">
-                                                            <h3>{{ number_format($corpLast12MonthsStats['all_ore_total_value'], 0) }}</h3>
-                                                            <p>{{ trans('mining-manager::dashboard.all_ore_total_value') }}</p>
-                                                        </div>
-                                                        <div class="icon">
-                                                            <i class="fas fa-gem"></i>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {{-- Moon Ore Total Value --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-primary">
-                                                        <div class="inner">
-                                                            <h3>{{ number_format($corpLast12MonthsStats['moon_ore_total_value'], 0) }}</h3>
-                                                            <p>{{ trans('mining-manager::dashboard.moon_ore_total_value') }}</p>
-                                                        </div>
-                                                        <div class="icon">
-                                                            <i class="fas fa-moon"></i>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {{-- Total Tax Collected --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-success">
-                                                        <div class="inner">
-                                                            <h3>{{ number_format($corpLast12MonthsStats['tax_collected'], 0) }}</h3>
-                                                            <p>{{ trans('mining-manager::dashboard.total_tax_collected') }}</p>
-                                                        </div>
-                                                        <div class="icon">
-                                                            <i class="fas fa-coins"></i>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {{-- Active Miners --}}
-                                                <div class="col-lg-3 col-md-6">
-                                                    <div class="small-box bg-warning">
-                                                        <div class="inner">
-                                                            <h3>{{ $corpLast12MonthsStats['active_miners'] }}</h3>
-                                                            <p>{{ trans('mining-manager::dashboard.total_active_miners') }}</p>
-                                                        </div>
-                                                        <div class="icon">
-                                                            <i class="fas fa-users"></i>
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-moon"></i> Moon Mining (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body" style="height: 300px;">
+                                                <canvas id="corpMoonMiningChart"></canvas>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-coins"></i> Tax Revenue (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body" style="height: 300px;">
+                                                <canvas id="corpTaxChart"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-calendar-check"></i> Event Tax (12 Months)</h3>
+                                            </div>
+                                            <div class="card-body" style="height: 300px;">
+                                                <canvas id="corpEventTaxChart"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
-
-                            {{-- CORPORATION TOP MINERS --}}
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-trophy"></i>
-                                                {{ trans('mining-manager::dashboard.top_miners_all_ore') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body p-0">
-                                            <table class="table table-striped table-sm">
-                                                <thead>
-                                                    <tr>
-                                                        <th>#</th>
-                                                        <th>{{ trans('mining-manager::dashboard.character') }}</th>
-                                                        <th class="text-right">{{ trans('mining-manager::dashboard.value') }}</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach($topMinersOverallAllOre as $index => $miner)
-                                                    <tr>
-                                                        <td>{{ $index + 1 }}</td>
-                                                        <td>
-                                                            {{ $miner['character_name'] }}
-                                                            @if($miner['alt_count'] > 0)
-                                                                <span class="badge badge-info">+{{ $miner['alt_count'] }} alts</span>
-                                                            @endif
-                                                        </td>
-                                                        <td class="text-right">{{ number_format($miner['total_value'], 0) }} ISK</td>
-                                                    </tr>
-                                                    @endforeach
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-md-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-moon"></i>
-                                                {{ trans('mining-manager::dashboard.top_miners_moon_ore') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body p-0">
-                                            <table class="table table-striped table-sm">
-                                                <thead>
-                                                    <tr>
-                                                        <th>#</th>
-                                                        <th>{{ trans('mining-manager::dashboard.character') }}</th>
-                                                        <th class="text-right">{{ trans('mining-manager::dashboard.value') }}</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach($topMinersOverallMoonOre as $index => $miner)
-                                                    <tr>
-                                                        <td>{{ $index + 1 }}</td>
-                                                        <td>
-                                                            {{ $miner['character_name'] }}
-                                                            @if($miner['alt_count'] > 0)
-                                                                <span class="badge badge-info">+{{ $miner['alt_count'] }} alts</span>
-                                                            @endif
-                                                        </td>
-                                                        <td class="text-right">{{ number_format($miner['total_value'], 0) }} ISK</td>
-                                                    </tr>
-                                                    @endforeach
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {{-- CORPORATION CHARTS --}}
-                            <div class="row">
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-chart-line"></i>
-                                                {{ trans('mining-manager::dashboard.corp_mining_performance') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="corpMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-moon"></i>
-                                                {{ trans('mining-manager::dashboard.moon_mining_performance') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="moonMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {{-- Corporation Mining by Group & Type --}}
-                            <div class="row">
-                                {{-- Corp Mining by Group (Doughnut) --}}
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-chart-pie"></i>
-                                                {{ trans('mining-manager::dashboard.mining_by_group') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="corpByGroupChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {{-- Corp Mining by Type (Top 10) --}}
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-gem"></i>
-                                                {{ trans('mining-manager::dashboard.mining_by_type') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="corpByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {{-- Tax Collection Charts --}}
-                            <div class="row">
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-file-invoice-dollar"></i>
-                                                {{ trans('mining-manager::dashboard.mining_tax_last_12_months') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="miningTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-lg-6">
-                                    <div class="card card-dark">
-                                        <div class="card-header">
-                                            <h3 class="card-title">
-                                                <i class="fas fa-calendar-alt"></i>
-                                                {{ trans('mining-manager::dashboard.event_tax_last_12_months') }}
-                                            </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            <canvas id="eventTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
                         </div>
 
                     </div>
@@ -673,6 +464,14 @@
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/chart.min.js') }}"></script>
 <script>
+// ISK formatting helper (global scope for AJAX lazy-load access)
+function formatISK(value) {
+    if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+    if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+    if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+    return value.toFixed(0);
+}
+
 $(document).ready(function() {
     // Personal Mining Chart
     var personalCtx = document.getElementById('personalMiningChart').getContext('2d');
@@ -709,86 +508,6 @@ $(document).ready(function() {
             }
         }
     });
-
-    // Corporation Mining Chart
-    var corpCtx = document.getElementById('corpMiningChart').getContext('2d');
-    new Chart(corpCtx, {
-        type: 'bar',
-        data: {
-            labels: {!! json_encode($corpMiningPerformanceChart['labels']) !!},
-            datasets: [{
-                label: 'Corporation Mining Value (ISK)',
-                data: {!! json_encode($corpMiningPerformanceChart['data']) !!},
-                borderColor: 'rgb(54, 162, 235)',
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: { color: '#c2c7d0' }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                },
-                x: {
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                }
-            }
-        }
-    });
-
-    // Moon Mining Chart
-    var moonCtx = document.getElementById('moonMiningChart').getContext('2d');
-    new Chart(moonCtx, {
-        type: 'bar',
-        data: {
-            labels: {!! json_encode($moonMiningPerformanceChart['labels']) !!},
-            datasets: [{
-                label: 'Moon Mining Value (ISK)',
-                data: {!! json_encode($moonMiningPerformanceChart['data']) !!},
-                borderColor: 'rgb(255, 206, 86)',
-                backgroundColor: 'rgba(255, 206, 86, 0.2)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: { color: '#c2c7d0' }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                },
-                x: {
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                }
-            }
-        }
-    });
-
-    // ISK formatting helper
-    function formatISK(value) {
-        if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
-        if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
-        if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
-        return value.toFixed(0);
-    }
 
     // Group color mapping
     var groupColors = {
@@ -933,168 +652,127 @@ $(document).ready(function() {
         }
     });
 
-    // Corporation Mining by Group (Doughnut)
-    var corpByGroupCtx = document.getElementById('corpByGroupChart').getContext('2d');
-    var corpGroupLabels = {!! json_encode($corpMiningByGroupChart['labels']) !!};
-    var corpGroupData = {!! json_encode($corpMiningByGroupChart['data']) !!};
-    var corpGroupColors = corpGroupLabels.map(function(label) {
-        return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
-    });
+});
 
-    new Chart(corpByGroupCtx, {
-        type: 'doughnut',
-        data: {
-            labels: corpGroupLabels,
-            datasets: [{
-                data: corpGroupData,
-                backgroundColor: corpGroupColors,
-                borderColor: '#1a1d24',
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: { color: '#c2c7d0' },
-                    position: 'right'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
-                            var pct = ((ctx.raw / total) * 100).toFixed(1);
-                            return ctx.label + ': ' + formatISK(ctx.raw) + ' ISK (' + pct + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
+// Corporation tab lazy loading
+var corpTabLoaded = false;
 
-    // Corporation Mining by Type (Horizontal Bar - Top 10)
-    var corpByTypeCtx = document.getElementById('corpByTypeChart').getContext('2d');
-    new Chart(corpByTypeCtx, {
-        type: 'bar',
-        data: {
-            labels: {!! json_encode($corpMiningByTypeChart['labels']) !!},
-            datasets: [{
-                label: 'Value (ISK)',
-                data: {!! json_encode($corpMiningByTypeChart['data']) !!},
-                backgroundColor: {!! json_encode($corpMiningByTypeChart['colors']) !!},
-                borderWidth: 1
-            }]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            return formatISK(ctx.raw) + ' ISK';
-                        }
-                    }
-                }
+$('#corporation-tab').on('shown.bs.tab', function() {
+    if (corpTabLoaded) return;
+    corpTabLoaded = true;
+
+    $.get('{{ $corpTabUrl }}')
+        .done(function(data) {
+            // Fill in stats
+            $('#corp-all-ore-value').text(formatISK(data.corpCurrentMonthStats.total_value || 0) + ' ISK');
+            $('#corp-moon-ore-value').text(formatISK(data.corpCurrentMonthStats.moon_ore_value || 0) + ' ISK');
+            $('#corp-active-miners').text(data.corpCurrentMonthStats.active_miners || 0);
+            $('#corp-tax-collected').text(formatISK(data.corpCurrentMonthStats.tax_collected || 0) + ' ISK');
+
+            // Initialize charts
+            initCorpCharts(data);
+
+            // Show content, hide loading
+            $('#corp-tab-loading').hide();
+            $('#corp-tab-content').show();
+        })
+        .fail(function() {
+            $('#corp-tab-loading').html(
+                '<div class="alert alert-danger">' +
+                '<i class="fas fa-exclamation-triangle"></i> Failed to load corporation data. ' +
+                '<a href="#" onclick="location.reload()">Reload page</a></div>'
+            );
+        });
+});
+
+function initCorpCharts(data) {
+    var chartColors = {
+        text: '#c2c7d0',
+        grid: 'rgba(255, 255, 255, 0.1)'
+    };
+
+    var defaultScales = {
+        y: { beginAtZero: true, ticks: { color: chartColors.text }, grid: { color: chartColors.grid } },
+        x: { ticks: { color: chartColors.text }, grid: { color: chartColors.grid } }
+    };
+
+    var defaultLegend = { labels: { color: chartColors.text } };
+
+    // Corp Mining Performance
+    if (data.corpMiningPerformanceChart) {
+        new Chart(document.getElementById('corpMiningPerformanceChart'), {
+            type: 'line',
+            data: {
+                labels: data.corpMiningPerformanceChart.labels,
+                datasets: [{
+                    label: 'All Ore Value (ISK)',
+                    data: data.corpMiningPerformanceChart.data,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
             },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: '#c2c7d0',
-                        callback: function(value) { return formatISK(value); }
-                    },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                },
-                y: {
-                    ticks: { color: '#c2c7d0', font: { size: 11 } },
-                    grid: { display: false }
-                }
-            }
-        }
-    });
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
+        });
+    }
 
-    // Mining Tax Chart
-    var miningTaxCtx = document.getElementById('miningTaxChart').getContext('2d');
-    new Chart(miningTaxCtx, {
-        type: 'bar',
-        data: {
-            labels: {!! json_encode($miningTaxChart['labels']) !!},
-            datasets: [{
-                label: 'Tax Collected',
-                data: {!! json_encode($miningTaxChart['collected']) !!},
-                backgroundColor: 'rgba(75, 192, 192, 0.8)',
-                borderColor: 'rgb(75, 192, 192)',
-                borderWidth: 1
-            }, {
-                label: 'Tax Owed',
-                data: {!! json_encode($miningTaxChart['owed']) !!},
-                backgroundColor: 'rgba(255, 206, 86, 0.8)',
-                borderColor: 'rgb(255, 206, 86)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: { color: '#c2c7d0' }
-                }
+    // Moon Mining Performance
+    if (data.moonMiningPerformanceChart) {
+        new Chart(document.getElementById('corpMoonMiningChart'), {
+            type: 'line',
+            data: {
+                labels: data.moonMiningPerformanceChart.labels,
+                datasets: [{
+                    label: 'Moon Ore Value (ISK)',
+                    data: data.moonMiningPerformanceChart.data,
+                    borderColor: 'rgb(255, 205, 86)',
+                    backgroundColor: 'rgba(255, 205, 86, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                },
-                x: {
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                }
-            }
-        }
-    });
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
+        });
+    }
+
+    // Tax Revenue Chart
+    if (data.miningTaxChart) {
+        new Chart(document.getElementById('corpTaxChart'), {
+            type: 'line',
+            data: {
+                labels: data.miningTaxChart.labels,
+                datasets: [{
+                    label: 'Tax Revenue (ISK)',
+                    data: data.miningTaxChart.data,
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
+        });
+    }
 
     // Event Tax Chart
-    var eventTaxCtx = document.getElementById('eventTaxChart').getContext('2d');
-    new Chart(eventTaxCtx, {
-        type: 'bar',
-        data: {
-            labels: {!! json_encode($eventTaxChart['labels']) !!},
-            datasets: [{
-                label: 'Event Tax (ISK)',
-                data: {!! json_encode($eventTaxChart['data']) !!},
-                borderColor: 'rgb(153, 102, 255)',
-                backgroundColor: 'rgba(153, 102, 255, 0.2)',
-                tension: 0.1,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    labels: { color: '#c2c7d0' }
-                }
+    if (data.eventTaxChart) {
+        new Chart(document.getElementById('corpEventTaxChart'), {
+            type: 'line',
+            data: {
+                labels: data.eventTaxChart.labels,
+                datasets: [{
+                    label: 'Event Tax (ISK)',
+                    data: data.eventTaxChart.data,
+                    borderColor: 'rgb(153, 102, 255)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                },
-                x: {
-                    ticks: { color: '#c2c7d0' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                }
-            }
-        }
-    });
-});
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: defaultLegend }, scales: defaultScales }
+        });
+    }
+}
 </script>
 @endpush

@@ -16,6 +16,7 @@ use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MonthlyStatistic;
+use MiningManager\Models\MiningLedgerDailySummary;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Carbon\Carbon;
 
@@ -77,8 +78,8 @@ class DashboardController extends Controller
         // Cache key based on user ID and current month
         $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
-        // Cache dashboard data for 15 minutes (900 seconds)
-        $dashboardData = Cache::remember($cacheKey, 900, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        // Cache dashboard data for 30 minutes (1800 seconds)
+        $dashboardData = Cache::remember($cacheKey, 1800, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === CURRENT MONTH STATISTICS ===
             $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
 
@@ -191,8 +192,11 @@ class DashboardController extends Controller
         // Cache key based on user ID, corporation ID and current month
         $cacheKey = 'dashboard.director.' . $user->id . '.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
 
-        // Cache dashboard data for 15 minutes (900 seconds)
-        $dashboardData = Cache::remember($cacheKey, 900, function () use ($characterIds, $corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        // Only compute Personal tab data server-side.
+        // Corporation tab data is loaded via AJAX when user clicks the tab.
+        $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m');
+
+        $dashboardData = Cache::remember($personalCacheKey, 1800, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === PERSONAL STATISTICS (Director's own mining) ===
             $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
             $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
@@ -210,11 +214,46 @@ class DashboardController extends Controller
             $personalMiningByTypeChart = $this->getMiningByType($characterIds, $last12MonthsStart);
             $personalMiningIncomeChart = $this->getMiningIncomeLast12Months($characterIds);
 
-            // === CORPORATION STATISTICS ===
+            return [
+                'personalCurrentMonthStats' => $personalCurrentMonthStats,
+                'personalLast12MonthsStats' => $personalLast12MonthsStats,
+                'topMinersAllOre' => $topMinersAllOre,
+                'topMinersMoonOre' => $topMinersMoonOre,
+                'userRankAllOre' => $userRankAllOre,
+                'userRankMoonOre' => $userRankMoonOre,
+                'personalMiningPerformanceChart' => $personalMiningPerformanceChart,
+                'personalMiningVolumeByGroupChart' => $personalMiningVolumeByGroupChart,
+                'personalMiningByTypeChart' => $personalMiningByTypeChart,
+                'personalMiningIncomeChart' => $personalMiningIncomeChart,
+            ];
+        });
+
+        // Pass corporation tab AJAX URL to view
+        $dashboardData['corpTabUrl'] = route('mining-manager.dashboard.tab.corporation');
+
+        return view('mining-manager::dashboard.combined-director', $dashboardData);
+    }
+
+    /**
+     * AJAX endpoint: Corporation tab data for the combined director dashboard.
+     *
+     * Loaded lazily when the director clicks the Corporation tab,
+     * so the page shell renders instantly with only personal data.
+     */
+    public function getCorporationTabData()
+    {
+        $corporationId = $this->getUserCorporationId();
+
+        $currentMonthStart = Carbon::now()->startOfMonth();
+        $currentMonthEnd = Carbon::now();
+        $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
+
+        $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
+
+        $data = Cache::remember($cacheKey, 1800, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
-            // Corporation top miners
             $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
             $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
@@ -223,7 +262,6 @@ class DashboardController extends Controller
             $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
             $topMinersLastMonthMoonOre = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
 
-            // Corporation charts
             $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
             $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
             $corpMiningByGroupChart = $this->getCorpMiningByGroup($corporationId, $last12MonthsStart);
@@ -232,20 +270,8 @@ class DashboardController extends Controller
             $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
 
             return [
-                // Personal stats
-                'personalCurrentMonthStats' => $personalCurrentMonthStats,
-                'personalLast12MonthsStats' => $personalLast12MonthsStats,
-                'userRankAllOre' => $userRankAllOre,
-                'userRankMoonOre' => $userRankMoonOre,
-                'personalMiningPerformanceChart' => $personalMiningPerformanceChart,
-                'personalMiningVolumeByGroupChart' => $personalMiningVolumeByGroupChart,
-                'personalMiningByTypeChart' => $personalMiningByTypeChart,
-                'personalMiningIncomeChart' => $personalMiningIncomeChart,
-                // Corporation stats
                 'corpCurrentMonthStats' => $corpCurrentMonthStats,
                 'corpLast12MonthsStats' => $corpLast12MonthsStats,
-                'topMinersAllOre' => $topMinersAllOre,
-                'topMinersMoonOre' => $topMinersMoonOre,
                 'topMinersOverallAllOre' => $topMinersOverallAllOre,
                 'topMinersOverallMoonOre' => $topMinersOverallMoonOre,
                 'topMinersLastMonthAllOre' => $topMinersLastMonthAllOre,
@@ -259,7 +285,7 @@ class DashboardController extends Controller
             ];
         });
 
-        return view('mining-manager::dashboard.combined-director', $dashboardData);
+        return response()->json($data);
     }
 
     /**
@@ -340,25 +366,26 @@ class DashboardController extends Controller
      */
     private function getMemberCurrentMonthStats($characterIds, $startDate, $endDate)
     {
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
-            ->get();
+            ->selectRaw('
+                SUM(total_quantity) as total_quantity,
+                SUM(total_value) as total_value,
+                SUM(total_tax) as tax_isk,
+                COUNT(DISTINCT date) as mining_days
+            ')
+            ->first();
 
-        $totalQuantity = $miningData->sum('quantity');
-        $totalVolume = $this->calculateTotalVolume($miningData);
-        $totalValue = $this->calculateTotalValue($miningData);
-        
-        // Calculate tax
-        $taxAmount = $this->calculateTaxForPeriod($characterIds, $startDate, $endDate);
+        $totalQuantity = $stats->total_quantity ?? 0;
+        $totalValue = $stats->total_value ?? 0;
 
         return [
             'total_quantity' => $totalQuantity,
-            'total_volume' => $totalVolume,
+            'total_volume' => $totalQuantity * 0.1,
             'total_value' => $totalValue,
             'total_isk' => $totalValue,
-            'tax_isk' => $taxAmount,
-            'mining_days' => $miningData->pluck('date')->unique()->count(),
+            'tax_isk' => $stats->tax_isk ?? 0,
+            'mining_days' => $stats->mining_days ?? 0,
         ];
     }
 
@@ -384,13 +411,13 @@ class DashboardController extends Controller
             $currentMonthStart = Carbon::now()->startOfMonth();
             $currentMonthEnd = Carbon::now();
 
-            $currentMonthData = MiningLedger::whereIn('character_id', $characterIds)
+            $currentMonthSummary = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                 ->whereBetween('date', [$currentMonthStart, $currentMonthEnd])
-                ->whereNotNull('processed_at')
-                ->get();
+                ->selectRaw('SUM(total_quantity) as total_quantity, SUM(total_value) as total_value')
+                ->first();
 
-            $currentMonthQuantity = $currentMonthData->sum('quantity');
-            $currentMonthValue = $this->calculateTotalValue($currentMonthData);
+            $currentMonthQuantity = $currentMonthSummary->total_quantity ?? 0;
+            $currentMonthValue = $currentMonthSummary->total_value ?? 0;
 
             $totalQuantity += $currentMonthQuantity;
             $totalValue += $currentMonthValue;
@@ -406,15 +433,18 @@ class DashboardController extends Controller
             ];
         }
 
-        // Fallback: No stored stats, calculate from raw data (slower)
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        // Fallback: Use daily summaries for all months (fast aggregate)
+        $summaryData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $startDate)
-            ->whereNotNull('processed_at')
-            ->get();
+            ->selectRaw('
+                SUM(total_quantity) as total_quantity,
+                SUM(total_value) as total_value
+            ')
+            ->first();
 
-        $totalQuantity = $miningData->sum('quantity');
-        $totalVolume = $this->calculateTotalVolume($miningData);
-        $totalValue = $this->calculateTotalValue($miningData);
+        $totalQuantity = $summaryData->total_quantity ?? 0;
+        $totalValue = $summaryData->total_value ?? 0;
+        $totalVolume = $totalQuantity * 0.1;
 
         // Calculate average per month
         $avgPerMonth = $totalValue / 12;
@@ -434,20 +464,20 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
-            ->get();
+            ->selectRaw('
+                SUM(total_value) as all_ore_value,
+                SUM(total_quantity) as all_ore_quantity,
+                SUM(moon_ore_value) as moon_ore_value,
+                COUNT(DISTINCT character_id) as active_miners
+            ')
+            ->first();
 
-        // Separate corp moon ore from all ore
-        $moonOreData = $miningData->filter(function($entry) {
-            return $this->isMoonOre($entry->type_id);
-        });
+        $allOreValue = $stats->all_ore_value ?? 0;
+        $moonOreValue = $stats->moon_ore_value ?? 0;
 
-        $allOreValue = $this->calculateTotalValue($miningData);
-        $moonOreValue = $this->calculateTotalValue($moonOreData);
-
-        // Calculate taxes
+        // Tax stats still from MiningTax table
         $taxAmount = MiningTax::whereIn('character_id', $characterIds)
             ->where('month', $startDate->format('Y-m-01'))
             ->sum('amount_owed');
@@ -459,12 +489,12 @@ class DashboardController extends Controller
 
         return [
             'all_ore_value' => $allOreValue,
-            'all_ore_quantity' => $miningData->sum('quantity'),
+            'all_ore_quantity' => $stats->all_ore_quantity ?? 0,
             'moon_ore_value' => $moonOreValue,
-            'moon_ore_quantity' => $moonOreData->sum('quantity'),
+            'moon_ore_quantity' => 0, // Not tracked separately in daily summaries
             'tax_amount' => $taxAmount,
             'tax_collected' => $taxCollected,
-            'active_miners' => $miningData->pluck('character_id')->unique()->count(),
+            'active_miners' => $stats->active_miners ?? 0,
         ];
     }
 
@@ -475,14 +505,18 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        $stats = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $startDate)
-            ->whereNotNull('processed_at')
-            ->get();
+            ->selectRaw('
+                SUM(total_value) as all_ore_value,
+                SUM(total_quantity) as all_ore_quantity,
+                SUM(moon_ore_value) as moon_ore_value,
+                COUNT(DISTINCT character_id) as active_miners
+            ')
+            ->first();
 
-        $moonOreData = $miningData->filter(function($entry) {
-            return $this->isMoonOre($entry->type_id);
-        });
+        $allOreValue = $stats->all_ore_value ?? 0;
+        $moonOreValue = $stats->moon_ore_value ?? 0;
 
         $endDate = Carbon::now();
         $taxCollected = MiningTax::whereIn('character_id', $characterIds)
@@ -491,14 +525,14 @@ class DashboardController extends Controller
             ->sum('amount_paid');
 
         return [
-            'all_ore_value' => $this->calculateTotalValue($miningData),
-            'all_ore_total_value' => $this->calculateTotalValue($miningData),
-            'all_ore_quantity' => $miningData->sum('quantity'),
-            'moon_ore_value' => $this->calculateTotalValue($moonOreData),
-            'moon_ore_total_value' => $this->calculateTotalValue($moonOreData),
-            'moon_ore_quantity' => $moonOreData->sum('quantity'),
+            'all_ore_value' => $allOreValue,
+            'all_ore_total_value' => $allOreValue,
+            'all_ore_quantity' => $stats->all_ore_quantity ?? 0,
+            'moon_ore_value' => $moonOreValue,
+            'moon_ore_total_value' => $moonOreValue,
+            'moon_ore_quantity' => 0, // Not tracked separately in daily summaries
             'tax_collected' => $taxCollected,
-            'active_miners' => $miningData->pluck('character_id')->unique()->count(),
+            'active_miners' => $stats->active_miners ?? 0,
         ];
     }
 
@@ -708,9 +742,8 @@ class DashboardController extends Controller
                 $totalValue = $storedStats[$monthKey]->total_value;
             } else {
                 // Calculate live for current month or if no stored stats
-                $totalValue = MiningLedger::whereIn('character_id', $characterIds)
+                $totalValue = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                     ->whereBetween('date', [$month, $monthEnd])
-                    ->whereNotNull('processed_at')
                     ->sum('total_value');
             }
 
@@ -729,34 +762,30 @@ class DashboardController extends Controller
      */
     private function getMiningVolumeByGroup($characterIds, $startDate)
     {
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        $breakdown = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $startDate)
-            ->whereNotNull('processed_at')
-            ->get();
+            ->selectRaw('
+                SUM(moon_ore_value) as moon,
+                SUM(regular_ore_value) as regular,
+                SUM(ice_value) as ice,
+                SUM(gas_value) as gas
+            ')
+            ->first();
 
         $groups = [
-            'Moon Ore' => [],
-            'Regular Ore' => [],
-            'Ice' => [],
-            'Gas' => [],
-            'Abyssal' => []
+            'Moon Ore' => $breakdown->moon ?? 0,
+            'Regular Ore' => $breakdown->regular ?? 0,
+            'Ice' => $breakdown->ice ?? 0,
+            'Gas' => $breakdown->gas ?? 0,
         ];
-
-        foreach ($miningData as $entry) {
-            $group = $this->getOreGroup($entry->type_id);
-            $groupLabel = $group === 'Moon' ? 'Moon Ore' : ($group === 'Ore' ? 'Regular Ore' : $group);
-            if (isset($groups[$groupLabel])) {
-                $groups[$groupLabel][] = $entry;
-            }
-        }
 
         $labels = [];
         $data = [];
 
-        foreach ($groups as $groupName => $entries) {
-            if (count($entries) > 0) {
+        foreach ($groups as $groupName => $value) {
+            if ($value > 0) {
                 $labels[] = $groupName;
-                $data[] = $this->calculateTotalValue(collect($entries));
+                $data[] = $value;
             }
         }
 
@@ -885,9 +914,8 @@ class DashboardController extends Controller
                 $tax = $storedStats[$monthKey]->tax_paid;
             } else {
                 // Calculate live for current month or if no stored stats
-                $value = MiningLedger::whereIn('character_id', $characterIds)
+                $value = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                     ->whereBetween('date', [$month, $monthEnd])
-                    ->whereNotNull('processed_at')
                     ->sum('total_value');
 
                 // Tax paid
@@ -939,25 +967,23 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
+        // Single query for all 12 months instead of 12 separate queries
+        $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
+            ->selectRaw("DATE_FORMAT(date, '%Y-%m') as month_key, SUM(total_value) as total_value")
+            ->groupBy('month_key')
+            ->get()
+            ->keyBy('month_key');
+
         $months = [];
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
-            $monthEnd = $month->copy()->endOfMonth();
+            $monthKey = $month->format('Y-m');
 
-            if ($i === 0) {
-                $monthEnd = Carbon::now();
-            }
-
-            // Use SQL SUM instead of loading all entries into memory
-            $totalValue = MiningLedger::whereIn('character_id', $characterIds)
-                ->whereBetween('date', [$month, $monthEnd])
-                ->whereNotNull('processed_at')
-                ->sum('total_value');
-
-            $months[] = $month->format('Y-m');
-            $data[] = (float) $totalValue;
+            $months[] = $monthKey;
+            $data[] = (float) ($monthlyData->get($monthKey)->total_value ?? 0);
         }
 
         return [
@@ -1055,13 +1081,12 @@ class DashboardController extends Controller
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
 
-            // For current month, if no tax records exist yet, estimate from mining ledger
+            // For current month, if no tax records exist yet, estimate from daily summaries
             if ($i === 0 && $owedAmount == 0) {
                 $monthEnd = Carbon::now();
-                $currentMonthMining = MiningLedger::whereIn('character_id', $characterIds)
+                $currentMonthMining = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                     ->whereBetween('date', [$month, $monthEnd])
-                    ->whereNotNull('processed_at')
-                    ->sum('tax_amount');
+                    ->sum('total_tax');
 
                 if ($currentMonthMining > 0) {
                     $owedAmount = $currentMonthMining;
@@ -1655,9 +1680,10 @@ class DashboardController extends Controller
      */
     public static function clearDashboardCache($userId = null, $corporationId = null)
     {
+        $currentMonth = Carbon::now()->startOfMonth()->format('Y-m');
+
         if ($userId) {
             // Clear member dashboard cache for specific user
-            $currentMonth = Carbon::now()->startOfMonth()->format('Y-m');
             Cache::forget('dashboard.member.' . $userId . '.' . $currentMonth);
 
             // Clear director dashboard cache if corporation ID provided
@@ -1665,8 +1691,23 @@ class DashboardController extends Controller
                 Cache::forget('dashboard.director.' . $userId . '.' . $corporationId . '.' . $currentMonth);
             }
         } else {
-            // Clear all dashboard caches (nuclear option - use sparingly)
-            Cache::flush();
+            // Clear dashboard caches for all users with active sessions
+            // Instead of Cache::flush() which nukes ALL application caches,
+            // clear known dashboard keys for users who have mining data this month.
+            try {
+                $userIds = \Seat\Web\Models\User::pluck('id');
+                foreach ($userIds as $uid) {
+                    Cache::forget('dashboard.member.' . $uid . '.' . $currentMonth);
+                    // Director caches use corporation_id in key — clear common patterns
+                    // These will naturally expire via TTL if not explicitly cleared
+                }
+            } catch (\Exception $e) {
+                // If user lookup fails, caches will expire via 30-min TTL
+                Log::warning('Mining Manager: Could not clear dashboard caches: ' . $e->getMessage());
+            }
+
+            // Clear DashboardMetricsService caches
+            Cache::forget('mining-manager:dashboard:summary-metrics');
         }
     }
 }

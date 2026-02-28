@@ -25,6 +25,7 @@ class UpdateDailySummariesCommand extends Command
                             {--days=2 : Number of days back to rebuild (default: today + yesterday)}
                             {--date= : Rebuild a specific date (YYYY-MM-DD format)}
                             {--month= : Rebuild an entire month (YYYY-MM format)}
+                            {--today-only : Only rebuild today (fast mode for frequent cron runs)}
                             {--character_id= : Only process specific character}';
 
     protected $description = 'Update daily mining ledger summaries with estimated tax calculations';
@@ -41,7 +42,12 @@ class UpdateDailySummariesCommand extends Command
         $characterId = $this->option('character_id');
 
         // Determine date range
-        if ($date) {
+        if ($this->option('today-only')) {
+            // Fast mode: only rebuild today (used by frequent cron runs after process-ledger)
+            $startDate = Carbon::today();
+            $endDate = Carbon::today();
+            $this->info("Mode: Today only ({$startDate->format('Y-m-d')})");
+        } elseif ($date) {
             // Single specific date
             try {
                 $startDate = Carbon::parse($date)->startOfDay();

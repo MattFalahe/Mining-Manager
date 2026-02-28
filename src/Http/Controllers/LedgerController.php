@@ -151,11 +151,30 @@ class LedgerController extends Controller
             ->with('type')
             ->first();
         
+        // Aggregate total_value and active_miners from pre-computed daily summaries
+        $summaryAgg = MiningLedgerDailySummary::whereBetween('date', [$dateFrom, $dateTo]);
+
+        // Apply same filters as main query
+        if ($request->filled('character_id')) {
+            $summaryAgg->where('character_id', $request->input('character_id'));
+        }
+        if ($request->filled('corporation_id')) {
+            $corpCharIds = DB::table('character_affiliations')
+                ->where('corporation_id', $request->input('corporation_id'))
+                ->pluck('character_id');
+            $summaryAgg->whereIn('character_id', $corpCharIds);
+        }
+
+        $summaryStats = $summaryAgg->selectRaw('
+            SUM(total_quantity) as total_quantity,
+            SUM(total_value) as total_value,
+            COUNT(DISTINCT character_id) as active_miners
+        ')->first();
+
         $summary = [
             'total_entries' => MiningLedger::whereBetween('date', [$dateFrom, $dateTo])->count(),
-            'total_value' => MiningLedger::whereBetween('date', [$dateFrom, $dateTo])->sum('total_value'),
-            'active_miners' => MiningLedger::whereBetween('date', [$dateFrom, $dateTo])
-                ->distinct('character_id')->count('character_id'),
+            'total_value' => (float) ($summaryStats->total_value ?? 0),
+            'active_miners' => (int) ($summaryStats->active_miners ?? 0),
             'top_ore_type' => $topOre ? ($topOre->type->typeName ?? 'N/A') : 'N/A',
         ];
 
@@ -331,21 +350,24 @@ class LedgerController extends Controller
      */
     protected function calculateLedgerStats($startDate, $endDate, $characterId = null)
     {
-        $query = MiningLedger::whereBetween('date', [$startDate, $endDate]);
+        $agg = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
+            ->when($characterId, fn($q) => $q->where('character_id', $characterId))
+            ->selectRaw('
+                SUM(total_quantity) as total_quantity,
+                SUM(total_value) as total_value,
+                SUM(total_tax) as total_tax,
+                COUNT(DISTINCT character_id) as unique_miners,
+                COUNT(DISTINCT date) as mining_days
+            ')
+            ->first();
 
-        if ($characterId) {
-            $query->where('character_id', $characterId);
-        }
-
-        $stats = [
-            'total_quantity' => $query->sum('quantity'),
-            'total_value' => $query->sum('total_value'),
-            'total_tax' => $query->sum('tax_amount'),
-            'unique_miners' => $query->distinct('character_id')->count('character_id'),
-            'mining_days' => $query->distinct('date')->count('date'),
+        return [
+            'total_quantity' => (float) ($agg->total_quantity ?? 0),
+            'total_value' => (float) ($agg->total_value ?? 0),
+            'total_tax' => (float) ($agg->total_tax ?? 0),
+            'unique_miners' => (int) ($agg->unique_miners ?? 0),
+            'mining_days' => (int) ($agg->mining_days ?? 0),
         ];
-
-        return $stats;
     }
 
     /**
@@ -359,33 +381,36 @@ class LedgerController extends Controller
      */
     protected function calculatePersonalStats($characterIds, $startDate, $endDate, $specificCharacterId = null)
     {
-        // Closure to build a fresh base query (avoids consuming the builder)
+        // Closure to build a fresh base query on raw table (for queries needing per-row data)
         $baseQuery = fn() => MiningLedger::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
-        // Single aggregation query for numeric totals
-        $agg = ($baseQuery())->selectRaw('
-            SUM(quantity) as total_quantity,
-            SUM(total_value) as total_value,
-            COUNT(DISTINCT DATE(date)) as active_days
-        ')->first();
+        // Single aggregation from pre-computed daily summaries
+        $agg = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->selectRaw('
+                SUM(total_quantity) as total_quantity,
+                SUM(total_value) as total_value,
+                SUM(total_tax) as total_tax,
+                COUNT(DISTINCT date) as active_days,
+                MAX(total_value) as best_day_value
+            ')
+            ->first();
 
         $totalQuantity = (float) ($agg->total_quantity ?? 0);
         $totalValue = (float) ($agg->total_value ?? 0);
         $activeDays = (int) ($agg->active_days ?? 0);
 
-        // Session count = distinct character+date pairs
-        $totalSessions = (int) (($baseQuery())
-            ->selectRaw('COUNT(DISTINCT CONCAT(character_id, "_", DATE(date))) as sessions')
-            ->value('sessions') ?? 0);
+        // Session count = distinct character+date pairs (from daily summaries, each row is a character+date pair)
+        $totalSessions = (int) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->count();
 
-        // Best single day by value
-        $bestDayValue = (float) (($baseQuery())
-            ->selectRaw('SUM(total_value) as day_total')
-            ->groupBy(DB::raw('DATE(date)'))
-            ->orderByDesc('day_total')
-            ->value('day_total') ?? 0);
+        // Best single day by value (from daily summaries)
+        $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
         // Tax paid from mining_taxes
         $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
@@ -433,9 +458,11 @@ class LedgerController extends Controller
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
-        // Daily mining value
-        $dailyData = ($baseQuery())
-            ->select(DB::raw('DATE(date) as date'), DB::raw('SUM(total_value) as value'))
+        // Daily mining value from pre-computed daily summaries
+        $dailyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->selectRaw('date, SUM(total_value) as value')
             ->groupBy('date')
             ->orderBy('date')
             ->get();
@@ -580,7 +607,7 @@ class LedgerController extends Controller
      */
     protected function calculateCorpRank($characterIds, string $startDate, string $endDate): ?int
     {
-        $myTotal = MiningLedger::whereIn('character_id', $characterIds)
+        $myTotal = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
             ->sum('total_value');
 
@@ -588,9 +615,8 @@ class LedgerController extends Controller
             return null;
         }
 
-        // Count distinct characters with a higher total value
-        $higherCount = DB::table('mining_ledger')
-            ->whereBetween('date', [$startDate, $endDate])
+        // Count distinct characters with a higher total value using daily summaries
+        $higherCount = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
             ->select('character_id', DB::raw('SUM(total_value) as char_total'))
             ->groupBy('character_id')
             ->havingRaw('SUM(total_value) > ?', [$myTotal])
@@ -612,18 +638,23 @@ class LedgerController extends Controller
         $labels = [];
         $values = [];
 
+        // Single batch query from daily summaries for all 6 months
+        $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
+        $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $sixMonthsAgo)
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->selectRaw("DATE_FORMAT(date, '%Y-%m') as month_key, SUM(total_value) as total")
+            ->groupBy('month_key')
+            ->get()
+            ->keyBy('month_key');
+
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
-            $start = $month->copy()->startOfMonth();
-            $end = $month->copy()->endOfMonth();
-
-            $total = MiningLedger::whereIn('character_id', $characterIds)
-                ->whereBetween('date', [$start, $end])
-                ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-                ->sum('total_value');
+            $monthKey = $month->format('Y-m');
+            $value = $monthlyData->get($monthKey)->total ?? 0;
 
             $labels[] = $month->format('M Y');
-            $values[] = (float) $total;
+            $values[] = (float) $value;
         }
 
         return ['labels' => $labels, 'values' => $values];
@@ -639,13 +670,13 @@ class LedgerController extends Controller
      */
     protected function getCharacterBreakdown($characterIds, string $startDate, string $endDate): array
     {
-        $entries = MiningLedger::whereIn('character_id', $characterIds)
+        $entries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
             ->selectRaw('
                 character_id,
                 SUM(total_value) as total_value,
-                SUM(quantity) as quantity,
-                COUNT(DISTINCT DATE(date)) as sessions
+                SUM(total_quantity) as quantity,
+                COUNT(DISTINCT date) as sessions
             ')
             ->groupBy('character_id')
             ->get();
