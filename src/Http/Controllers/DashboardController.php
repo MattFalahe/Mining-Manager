@@ -1214,22 +1214,23 @@ class DashboardController extends Controller
             ]);
         }
         
-        // Method 3: Direct database query (most reliable fallback)
+        // Method 3: Direct database query via refresh_tokens (SeAT v5 stores
+        // the user↔character link in refresh_tokens, NOT character_infos)
         try {
-            $characterIds = DB::table('character_infos')
+            $characterIds = DB::table('refresh_tokens')
                 ->where('user_id', $user->id)
                 ->pluck('character_id')
                 ->toArray();
-            
+
             if (!empty($characterIds)) {
-                \Log::debug('getUserCharacterIds: Found via direct table query', [
+                \Log::debug('getUserCharacterIds: Found via refresh_tokens table query', [
                     'user_id' => $user->id,
                     'count' => count($characterIds)
                 ]);
                 return $characterIds;
             }
         } catch (\Exception $e) {
-            \Log::error('getUserCharacterIds: Failed to get user characters from database', [
+            \Log::error('getUserCharacterIds: Failed to get user characters from refresh_tokens', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage()
             ]);
@@ -1369,7 +1370,12 @@ class DashboardController extends Controller
     }
 
     /**
-     * FIXED: Get all characters for a corporation with multiple fallback methods
+     * Get all characters for a corporation from multiple sources.
+     *
+     * Corporation mining data comes from ESI mining observers, which record
+     * mining activity for ALL pilots at corp structures — including unregistered
+     * pilots who aren't in character_affiliations. We merge results from every
+     * available source so the corp charts include everyone.
      */
     private function getCorporationCharacterIds($corporationId)
     {
@@ -1377,106 +1383,119 @@ class DashboardController extends Controller
             \Log::warning('getCorporationCharacterIds: No corporation ID provided');
             return [];
         }
-        
-        // Method 1: Try affiliation relationship (preferred method)
-        try {
-            $ids = CharacterInfo::whereHas('affiliation', function($query) use ($corporationId) {
-                $query->where('corporation_id', $corporationId);
-            })->pluck('character_id')->toArray();
-            
-            if (!empty($ids)) {
-                \Log::debug('getCorporationCharacterIds: Found via affiliation relationship', [
-                    'corporation_id' => $corporationId,
-                    'count' => count($ids)
-                ]);
-                return $ids;
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: Failed to query via affiliation relationship', [
-                'corporation_id' => $corporationId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        // Method 2: Direct query on character_affiliations table
+
+        $allIds = [];
+
+        // Source 1: character_affiliations (registered members known to SeAT)
         try {
             $ids = DB::table('character_affiliations')
                 ->where('corporation_id', $corporationId)
                 ->pluck('character_id')
                 ->toArray();
-            
+
             if (!empty($ids)) {
-                \Log::debug('getCorporationCharacterIds: Found via direct table query', [
+                $allIds = array_merge($allIds, $ids);
+                \Log::debug('getCorporationCharacterIds: Found via character_affiliations', [
                     'corporation_id' => $corporationId,
-                    'count' => count($ids)
+                    'count' => count($ids),
                 ]);
-                return $ids;
             }
         } catch (\Exception $e) {
-            \Log::error('getCorporationCharacterIds: Failed to query affiliations table', [
-                'corporation_id' => $corporationId,
-                'error' => $e->getMessage()
+            \Log::warning('getCorporationCharacterIds: character_affiliations query failed', [
+                'error' => $e->getMessage(),
             ]);
         }
-        
-        // Method 3: Try direct corporation_id field on character_infos (legacy support)
+
+        // Source 2: mining_ledger rows tagged with this corporation_id
+        // Catches unregistered corp members whose data arrived via corp observers
         try {
-            $ids = DB::table('character_infos')
+            $ids = DB::table('mining_ledger')
                 ->where('corporation_id', $corporationId)
+                ->distinct()
                 ->pluck('character_id')
                 ->toArray();
-            
+
             if (!empty($ids)) {
-                \Log::debug('getCorporationCharacterIds: Found via character_infos table', [
+                $allIds = array_merge($allIds, $ids);
+                \Log::debug('getCorporationCharacterIds: Found via mining_ledger corporation_id', [
                     'corporation_id' => $corporationId,
-                    'count' => count($ids)
+                    'count' => count($ids),
                 ]);
-                return $ids;
             }
         } catch (\Exception $e) {
-            \Log::error('getCorporationCharacterIds: Failed to query character_infos table', [
-                'corporation_id' => $corporationId,
-                'error' => $e->getMessage()
+            \Log::warning('getCorporationCharacterIds: mining_ledger query failed', [
+                'error' => $e->getMessage(),
             ]);
         }
-        
-        \Log::warning('getCorporationCharacterIds: No characters found for corporation', [
-            'corporation_id' => $corporationId
-        ]);
-        
-        return [];
+
+        // Source 3: corporation mining observer data (ESI observer endpoint)
+        // This is the authoritative source for "who mined at our structures"
+        try {
+            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            $observerCorpId = $moonOwnerCorpId ?: $corporationId;
+
+            $ids = DB::table('corporation_industry_mining_observer_data as d')
+                ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
+                ->where('o.corporation_id', $observerCorpId)
+                ->distinct()
+                ->pluck('d.character_id')
+                ->toArray();
+
+            if (!empty($ids)) {
+                $allIds = array_merge($allIds, $ids);
+                \Log::debug('getCorporationCharacterIds: Found via mining observer data', [
+                    'observer_corp_id' => $observerCorpId,
+                    'count' => count($ids),
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::warning('getCorporationCharacterIds: mining observer query failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $uniqueIds = array_values(array_unique($allIds));
+
+        if (empty($uniqueIds)) {
+            \Log::warning('getCorporationCharacterIds: No characters found for corporation', [
+                'corporation_id' => $corporationId,
+            ]);
+        } else {
+            \Log::debug('getCorporationCharacterIds: Total unique characters', [
+                'corporation_id' => $corporationId,
+                'count' => count($uniqueIds),
+            ]);
+        }
+
+        return $uniqueIds;
     }
 
     /**
      * FIXED: Get main character ID for a character (for ranking purposes)
+     * SeAT v5 stores user↔character mapping in refresh_tokens, not on character_infos.
      */
     private function getMainCharacterIdForCharacter($characterId)
     {
         try {
-            $character = CharacterInfo::find($characterId);
-            if (!$character) {
-                \Log::debug('getMainCharacterIdForCharacter: Character not found', [
-                    'character_id' => $characterId
-                ]);
-                return $characterId;
-            }
-            
-            // Try to get user_id
-            $userId = $character->user_id;
+            // In SeAT v5, look up the owning user via refresh_tokens
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
             if (!$userId) {
-                \Log::debug('getMainCharacterIdForCharacter: No user_id on character', [
+                \Log::debug('getMainCharacterIdForCharacter: No user found in refresh_tokens', [
                     'character_id' => $characterId
                 ]);
                 return $characterId;
             }
-            
+
             // Try to get main_character_id from users table
             $mainCharId = DB::table('users')
                 ->where('id', $userId)
                 ->value('main_character_id');
-            
+
             // Return the main character ID if found, otherwise return the original character ID
-            return $mainCharId ?? $characterId;
+            return ($mainCharId && $mainCharId > 0) ? $mainCharId : $characterId;
         } catch (\Exception $e) {
             \Log::error('Error getting main character ID', [
                 'character_id' => $characterId,

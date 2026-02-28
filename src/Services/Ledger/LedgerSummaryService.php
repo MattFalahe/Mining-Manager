@@ -42,10 +42,11 @@ class LedgerSummaryService
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
-        // Aggregate data from mining_ledger
+        // Aggregate data from mining_ledger (only processed entries with calculated values)
         $summary = MiningLedger::where('character_id', $characterId)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
+            ->whereNotNull('processed_at')
             ->selectRaw('
                 character_id,
                 corporation_id,
@@ -79,10 +80,11 @@ class LedgerSummaryService
             ]);
         }
 
-        // Get ore breakdown
+        // Get ore breakdown (only processed entries)
         $oreBreakdown = MiningLedger::where('character_id', $characterId)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
+            ->whereNotNull('processed_at')
             ->selectRaw('ore_type, type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value')
             ->groupBy('ore_type', 'type_id')
             ->get()
@@ -130,13 +132,16 @@ class LedgerSummaryService
     {
         $dateCarbon = Carbon::parse($date);
 
-        // Check if there's any mining data for this character/date
-        $hasData = MiningLedger::where('character_id', $characterId)
+        // Only aggregate entries that have been processed (have prices calculated).
+        // Unprocessed entries have total_value = 0 and would produce zero-value summaries.
+        $baseQuery = MiningLedger::where('character_id', $characterId)
             ->whereDate('date', $dateCarbon)
-            ->exists();
+            ->whereNotNull('processed_at');
+
+        $hasData = (clone $baseQuery)->exists();
 
         if (!$hasData) {
-            // No mining data — create/update empty summary
+            // No processed mining data — create/update empty summary
             return MiningLedgerDailySummary::updateOrCreate(
                 [
                     'character_id' => $characterId,
@@ -162,14 +167,12 @@ class LedgerSummaryService
         $characterCorpId = $character ? $character->corporation_id : null;
 
         // Get corporation_id from ledger data
-        $corporationId = MiningLedger::where('character_id', $characterId)
-            ->whereDate('date', $dateCarbon)
+        $corporationId = (clone $baseQuery)
             ->whereNotNull('corporation_id')
             ->value('corporation_id');
 
-        // Aggregate per ore type for the day
-        $oreEntries = MiningLedger::where('character_id', $characterId)
-            ->whereDate('date', $dateCarbon)
+        // Aggregate per ore type for the day (only processed entries)
+        $oreEntries = (clone $baseQuery)
             ->selectRaw('
                 type_id,
                 ore_type,
