@@ -584,6 +584,7 @@
 <script>
 // ISK formatting helper (global scope for AJAX lazy-load access)
 function formatISK(value) {
+    value = parseFloat(value) || 0;
     if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
     if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
     if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
@@ -866,6 +867,9 @@ function initCorpCharts(data) {
         'Abyssal': 'rgba(255, 99, 132, 0.8)'
     };
 
+    // Helper: ensure all array values are floats (JSON may deliver strings from PHP decimal casts)
+    function toFloats(arr) { return (arr || []).map(function(v) { return parseFloat(v) || 0; }); }
+
     // 1) Corp Mining Performance (bar chart)
     if (data.corpMiningPerformanceChart) {
         new Chart(document.getElementById('corpMiningPerformanceChart'), {
@@ -874,7 +878,7 @@ function initCorpCharts(data) {
                 labels: data.corpMiningPerformanceChart.labels,
                 datasets: [{
                     label: 'All Ore Value (ISK)',
-                    data: data.corpMiningPerformanceChart.data,
+                    data: toFloats(data.corpMiningPerformanceChart.data),
                     borderColor: 'rgb(75, 192, 192)',
                     backgroundColor: 'rgba(75, 192, 192, 0.6)',
                     borderWidth: 1
@@ -892,7 +896,7 @@ function initCorpCharts(data) {
                 labels: data.moonMiningPerformanceChart.labels,
                 datasets: [{
                     label: 'Moon Ore Value (ISK)',
-                    data: data.moonMiningPerformanceChart.data,
+                    data: toFloats(data.moonMiningPerformanceChart.data),
                     borderColor: 'rgb(255, 205, 86)',
                     backgroundColor: 'rgba(255, 205, 86, 0.6)',
                     borderWidth: 1
@@ -905,7 +909,7 @@ function initCorpCharts(data) {
     // 3) Mining by Group (Doughnut)
     if (data.corpMiningByGroupChart && data.corpMiningByGroupChart.labels.length > 0) {
         var groupLabels = data.corpMiningByGroupChart.labels;
-        var groupData = data.corpMiningByGroupChart.data;
+        var groupData = toFloats(data.corpMiningByGroupChart.data);
         var bgColors = groupLabels.map(function(label) {
             return groupColors[label] || 'rgba(201, 203, 207, 0.8)';
         });
@@ -950,7 +954,7 @@ function initCorpCharts(data) {
                 labels: data.corpMiningByTypeChart.labels,
                 datasets: [{
                     label: 'Value (ISK)',
-                    data: data.corpMiningByTypeChart.data,
+                    data: toFloats(data.corpMiningByTypeChart.data),
                     backgroundColor: data.corpMiningByTypeChart.colors || 'rgba(54, 162, 235, 0.8)',
                     borderWidth: 1
                 }]
@@ -992,13 +996,13 @@ function initCorpCharts(data) {
                 labels: data.miningTaxChart.labels,
                 datasets: [{
                     label: 'Tax Collected (ISK)',
-                    data: data.miningTaxChart.collected,
+                    data: toFloats(data.miningTaxChart.collected),
                     backgroundColor: 'rgba(75, 192, 192, 0.8)',
                     borderColor: 'rgb(75, 192, 192)',
                     borderWidth: 1
                 }, {
                     label: 'Tax Owed (ISK)',
-                    data: data.miningTaxChart.owed,
+                    data: toFloats(data.miningTaxChart.owed),
                     backgroundColor: 'rgba(255, 99, 132, 0.8)',
                     borderColor: 'rgb(255, 99, 132)',
                     borderWidth: 1
@@ -1016,7 +1020,7 @@ function initCorpCharts(data) {
                 labels: data.eventTaxChart.labels,
                 datasets: [{
                     label: 'Event Tax Impact (ISK)',
-                    data: data.eventTaxChart.data,
+                    data: toFloats(data.eventTaxChart.data),
                     backgroundColor: 'rgba(153, 102, 255, 0.6)',
                     borderColor: 'rgb(153, 102, 255)',
                     borderWidth: 1
