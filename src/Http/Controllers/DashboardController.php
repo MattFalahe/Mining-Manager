@@ -230,6 +230,7 @@ class DashboardController extends Controller
 
         // Pass corporation tab AJAX URL to view
         $dashboardData['corpTabUrl'] = route('mining-manager.dashboard.tab.corporation');
+        $dashboardData['guestTabUrl'] = route('mining-manager.dashboard.tab.guest-miners');
 
         return view('mining-manager::dashboard.combined-director', $dashboardData);
     }
@@ -286,6 +287,137 @@ class DashboardController extends Controller
         });
 
         return response()->json($data);
+    }
+
+    /**
+     * AJAX endpoint for the Guest Miners tab.
+     * Returns miners who used corp structures but are confirmed to be in other corporations.
+     */
+    public function getGuestMinersTabData()
+    {
+        $corporationId = $this->getUserCorporationId();
+
+        $cacheKey = 'dashboard.guest-tab.' . $corporationId . '.' . Carbon::now()->format('Y-m');
+
+        $data = Cache::remember($cacheKey, 1800, function () use ($corporationId) {
+            $guestIds = $this->getGuestMinerCharacterIds($corporationId);
+
+            if (empty($guestIds)) {
+                return [
+                    'guestMiners' => [],
+                    'totalValue' => 0,
+                    'totalMoonOreValue' => 0,
+                    'guestCount' => 0,
+                ];
+            }
+
+            // Get aggregated mining data per guest from daily summaries
+            $minerStats = MiningLedgerDailySummary::whereIn('character_id', $guestIds)
+                ->selectRaw('
+                    character_id,
+                    SUM(total_value) as total_value,
+                    SUM(moon_ore_value) as moon_ore_value,
+                    SUM(total_quantity) as total_quantity,
+                    SUM(total_tax) as total_tax,
+                    MIN(date) as first_seen,
+                    MAX(date) as last_seen,
+                    COUNT(DISTINCT date) as active_days
+                ')
+                ->groupBy('character_id')
+                ->orderByDesc(DB::raw('SUM(total_value)'))
+                ->get();
+
+            // Resolve character names/corporations in batch
+            $charIds = $minerStats->pluck('character_id')->toArray();
+            $charInfo = $this->characterInfoService->getBatchCharacterInfo($charIds);
+
+            $guestMiners = [];
+            $totalValue = 0;
+            $totalMoonOreValue = 0;
+
+            foreach ($minerStats as $stat) {
+                $info = $charInfo[$stat->character_id] ?? null;
+                $guestMiners[] = [
+                    'character_id' => $stat->character_id,
+                    'character_name' => $info['name'] ?? "Character {$stat->character_id}",
+                    'corporation_name' => $info['corporation_name'] ?? 'Unknown',
+                    'total_value' => (float) $stat->total_value,
+                    'moon_ore_value' => (float) $stat->moon_ore_value,
+                    'total_quantity' => (float) $stat->total_quantity,
+                    'total_tax' => (float) $stat->total_tax,
+                    'first_seen' => $stat->first_seen,
+                    'last_seen' => $stat->last_seen,
+                    'active_days' => $stat->active_days,
+                    'is_registered' => $info['is_registered'] ?? false,
+                ];
+                $totalValue += (float) $stat->total_value;
+                $totalMoonOreValue += (float) $stat->moon_ore_value;
+            }
+
+            return [
+                'guestMiners' => $guestMiners,
+                'totalValue' => $totalValue,
+                'totalMoonOreValue' => $totalMoonOreValue,
+                'guestCount' => count($guestMiners),
+            ];
+        });
+
+        return response()->json($data);
+    }
+
+    /**
+     * Get character IDs of guest miners: people who mined at corp structures
+     * but are confirmed to be in a DIFFERENT corporation.
+     */
+    private function getGuestMinerCharacterIds($corporationId)
+    {
+        if (!$corporationId) {
+            return [];
+        }
+
+        // Gather all characters who mined at corp structures (Sources 2 + 3)
+        $allMinerIds = [];
+
+        try {
+            $ids = DB::table('mining_ledger')
+                ->where('corporation_id', $corporationId)
+                ->distinct()
+                ->pluck('character_id')
+                ->toArray();
+            $allMinerIds = array_merge($allMinerIds, $ids);
+        } catch (\Exception $e) {}
+
+        try {
+            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            $observerCorpId = $moonOwnerCorpId ?: $corporationId;
+
+            $ids = DB::table('corporation_industry_mining_observer_data as d')
+                ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
+                ->where('o.corporation_id', $observerCorpId)
+                ->distinct()
+                ->pluck('d.character_id')
+                ->toArray();
+            $allMinerIds = array_merge($allMinerIds, $ids);
+        } catch (\Exception $e) {}
+
+        $allMinerIds = array_values(array_unique($allMinerIds));
+
+        if (empty($allMinerIds)) {
+            return [];
+        }
+
+        // Keep ONLY characters confirmed to be in a different corporation
+        try {
+            $guestIds = DB::table('character_affiliations')
+                ->whereIn('character_id', $allMinerIds)
+                ->where('corporation_id', '!=', $corporationId)
+                ->pluck('character_id')
+                ->toArray();
+
+            return array_values(array_unique($guestIds));
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     /**
@@ -1346,6 +1478,22 @@ class DashboardController extends Controller
      * pilots who aren't in character_affiliations. We merge results from every
      * available source so the corp charts include everyone.
      */
+    /**
+     * Get character IDs belonging to a corporation.
+     *
+     * Gathers candidates from 3 sources then filters out characters confirmed
+     * to be in a different corporation (via character_affiliations).
+     *
+     * Sources:
+     *  1. character_affiliations — confirmed corp members registered in SeAT
+     *  2. mining_ledger rows tagged with this corporation_id
+     *  3. corporation mining observer data (anyone who mined at corp structures)
+     *
+     * Sources 2 & 3 include non-corp miners at your structures. To keep only
+     * corp members, we exclude characters who have an affiliation entry for a
+     * DIFFERENT corporation. Characters with no affiliation data are kept
+     * (likely unregistered corp members).
+     */
     private function getCorporationCharacterIds($corporationId)
     {
         if (!$corporationId) {
@@ -1355,7 +1503,7 @@ class DashboardController extends Controller
 
         $allIds = [];
 
-        // Source 1: character_affiliations (registered members known to SeAT)
+        // Source 1: character_affiliations (confirmed corp members)
         try {
             $ids = DB::table('character_affiliations')
                 ->where('corporation_id', $corporationId)
@@ -1364,10 +1512,6 @@ class DashboardController extends Controller
 
             if (!empty($ids)) {
                 $allIds = array_merge($allIds, $ids);
-                \Log::debug('getCorporationCharacterIds: Found via character_affiliations', [
-                    'corporation_id' => $corporationId,
-                    'count' => count($ids),
-                ]);
             }
         } catch (\Exception $e) {
             \Log::warning('getCorporationCharacterIds: character_affiliations query failed', [
@@ -1376,7 +1520,6 @@ class DashboardController extends Controller
         }
 
         // Source 2: mining_ledger rows tagged with this corporation_id
-        // Catches unregistered corp members whose data arrived via corp observers
         try {
             $ids = DB::table('mining_ledger')
                 ->where('corporation_id', $corporationId)
@@ -1386,10 +1529,6 @@ class DashboardController extends Controller
 
             if (!empty($ids)) {
                 $allIds = array_merge($allIds, $ids);
-                \Log::debug('getCorporationCharacterIds: Found via mining_ledger corporation_id', [
-                    'corporation_id' => $corporationId,
-                    'count' => count($ids),
-                ]);
             }
         } catch (\Exception $e) {
             \Log::warning('getCorporationCharacterIds: mining_ledger query failed', [
@@ -1397,8 +1536,7 @@ class DashboardController extends Controller
             ]);
         }
 
-        // Source 3: corporation mining observer data (ESI observer endpoint)
-        // This is the authoritative source for "who mined at our structures"
+        // Source 3: corporation mining observer data
         try {
             $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
             $observerCorpId = $moonOwnerCorpId ?: $corporationId;
@@ -1412,10 +1550,6 @@ class DashboardController extends Controller
 
             if (!empty($ids)) {
                 $allIds = array_merge($allIds, $ids);
-                \Log::debug('getCorporationCharacterIds: Found via mining observer data', [
-                    'observer_corp_id' => $observerCorpId,
-                    'count' => count($ids),
-                ]);
             }
         } catch (\Exception $e) {
             \Log::warning('getCorporationCharacterIds: mining observer query failed', [
@@ -1425,16 +1559,33 @@ class DashboardController extends Controller
 
         $uniqueIds = array_values(array_unique($allIds));
 
-        if (empty($uniqueIds)) {
-            \Log::warning('getCorporationCharacterIds: No characters found for corporation', [
-                'corporation_id' => $corporationId,
-            ]);
-        } else {
-            \Log::debug('getCorporationCharacterIds: Total unique characters', [
-                'corporation_id' => $corporationId,
-                'count' => count($uniqueIds),
-            ]);
+        // Filter: exclude characters confirmed to be in a DIFFERENT corporation.
+        // Characters with NO affiliation entry are kept (unregistered corp members).
+        if (!empty($uniqueIds)) {
+            try {
+                $nonCorpIds = DB::table('character_affiliations')
+                    ->whereIn('character_id', $uniqueIds)
+                    ->where('corporation_id', '!=', $corporationId)
+                    ->pluck('character_id')
+                    ->toArray();
+
+                if (!empty($nonCorpIds)) {
+                    $uniqueIds = array_values(array_diff($uniqueIds, $nonCorpIds));
+                    \Log::debug('getCorporationCharacterIds: Excluded non-corp members', [
+                        'excluded_count' => count($nonCorpIds),
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::warning('getCorporationCharacterIds: Non-corp filter failed', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
+
+        \Log::debug('getCorporationCharacterIds: Final count', [
+            'corporation_id' => $corporationId,
+            'count' => count($uniqueIds),
+        ]);
 
         return $uniqueIds;
     }

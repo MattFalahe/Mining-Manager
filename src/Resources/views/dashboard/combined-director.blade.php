@@ -67,6 +67,12 @@
                                 <span class="badge corporation-badge ml-2">Corporation</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="guest-miners-tab" data-toggle="pill" href="#guest-miners" role="tab" aria-controls="guest-miners" aria-selected="false">
+                                <i class="fas fa-user-friends"></i> Guest Miners
+                                <span class="badge badge-secondary ml-2">Guests</span>
+                            </a>
+                        </li>
                     </ul>
                 </div>
                 <div class="card-body">
@@ -570,6 +576,103 @@
                             </div>
                         </div>
 
+                        {{-- GUEST MINERS TAB (loaded via AJAX) --}}
+                        <div class="tab-pane fade" id="guest-miners" role="tabpanel" aria-labelledby="guest-miners-tab">
+                            <div id="guest-tab-loading" class="text-center py-5">
+                                <div class="spinner-border text-info" role="status" style="width: 3rem; height: 3rem;">
+                                    <span class="sr-only">Loading...</span>
+                                </div>
+                                <p class="text-muted mt-3">Loading guest miner data...</p>
+                            </div>
+                            <div id="guest-tab-content" style="display: none;">
+
+                                {{-- GUEST MINER SUMMARY --}}
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title">
+                                                    <i class="fas fa-user-friends"></i>
+                                                    Guest Miners — Non-Corp Pilots at Your Structures
+                                                </h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="row">
+                                                    <div class="col-md-3">
+                                                        <div class="info-box bg-gradient-info">
+                                                            <span class="info-box-icon"><i class="fas fa-users"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">GUEST MINERS</span>
+                                                                <span class="info-box-number" id="guest-count">0</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <div class="info-box bg-gradient-success">
+                                                            <span class="info-box-icon"><i class="fas fa-gem"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">TOTAL MINED</span>
+                                                                <span class="info-box-number" id="guest-total-value">0 ISK</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <div class="info-box bg-gradient-warning">
+                                                            <span class="info-box-icon"><i class="fas fa-moon"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">MOON ORE VALUE</span>
+                                                                <span class="info-box-number" id="guest-moon-value">0 ISK</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-3">
+                                                        <div class="info-box bg-gradient-secondary">
+                                                            <span class="info-box-icon"><i class="fas fa-info-circle"></i></span>
+                                                            <div class="info-box-content">
+                                                                <span class="info-box-text">STATUS</span>
+                                                                <span class="info-box-number" style="font-size: 0.9rem;">Not Registered</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- GUEST MINERS TABLE --}}
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card card-dark">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-list"></i> Guest Miners</h3>
+                                            </div>
+                                            <div class="card-body table-responsive p-0">
+                                                <table class="table table-hover table-striped">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>#</th>
+                                                            <th>Miner</th>
+                                                            <th>Corporation</th>
+                                                            <th>Total Mined (ISK)</th>
+                                                            <th>Moon Ore (ISK)</th>
+                                                            <th>Est. Tax (ISK)</th>
+                                                            <th>Active Days</th>
+                                                            <th>Last Seen</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="guest-miners-table">
+                                                        <tr><td colspan="8" class="text-center text-muted">No data</td></tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -1030,5 +1133,60 @@ function initCorpCharts(data) {
         });
     }
 }
+
+// Guest Miners tab lazy loading
+var guestTabLoaded = false;
+
+$('#guest-miners-tab').on('shown.bs.tab', function() {
+    if (guestTabLoaded) return;
+    guestTabLoaded = true;
+
+    $.get('{{ $guestTabUrl }}')
+        .done(function(data) {
+            // Summary stats
+            $('#guest-count').text(data.guestCount || 0);
+            $('#guest-total-value').text(formatISK(data.totalValue || 0) + ' ISK');
+            $('#guest-moon-value').text(formatISK(data.totalMoonOreValue || 0) + ' ISK');
+
+            // Populate table
+            var $tbody = $('#guest-miners-table');
+            $tbody.empty();
+
+            var miners = data.guestMiners || [];
+            if (miners.length === 0) {
+                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No guest miners found</td></tr>');
+            } else {
+                for (var i = 0; i < miners.length; i++) {
+                    var m = miners[i];
+                    var regBadge = m.is_registered
+                        ? '<span class="badge badge-success">Registered</span>'
+                        : '<span class="badge badge-secondary">Unregistered</span>';
+                    $tbody.append(
+                        '<tr>' +
+                        '<td>' + (i + 1) + '</td>' +
+                        '<td>' + (m.character_name || 'Unknown') + ' ' + regBadge + '</td>' +
+                        '<td>' + (m.corporation_name || 'Unknown') + '</td>' +
+                        '<td>' + formatISK(m.total_value || 0) + ' ISK</td>' +
+                        '<td>' + formatISK(m.moon_ore_value || 0) + ' ISK</td>' +
+                        '<td>' + formatISK(m.total_tax || 0) + ' ISK</td>' +
+                        '<td>' + (m.active_days || 0) + '</td>' +
+                        '<td>' + (m.last_seen || '-') + '</td>' +
+                        '</tr>'
+                    );
+                }
+            }
+
+            // Show content, hide loading
+            $('#guest-tab-loading').hide();
+            $('#guest-tab-content').show();
+        })
+        .fail(function() {
+            $('#guest-tab-loading').html(
+                '<div class="alert alert-danger">' +
+                '<i class="fas fa-exclamation-triangle"></i> Failed to load guest miner data. ' +
+                '<a href="#" onclick="location.reload()">Reload page</a></div>'
+            );
+        });
+});
 </script>
 @endpush

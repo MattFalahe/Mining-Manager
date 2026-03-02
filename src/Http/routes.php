@@ -55,6 +55,12 @@ Route::group([
             'uses' => 'DashboardController@getCorporationTabData',
             'middleware' => 'can:mining-manager.director',
         ]);
+
+        Route::get('/tab/guest-miners', [
+            'as' => 'mining-manager.dashboard.tab.guest-miners',
+            'uses' => 'DashboardController@getGuestMinersTabData',
+            'middleware' => 'can:mining-manager.director',
+        ]);
     });
 
     // Mining Ledger Routes
