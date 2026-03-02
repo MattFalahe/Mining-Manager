@@ -41,22 +41,12 @@ class ProcessMiningLedgerCommand extends Command
         $recalculate = $this->option('recalculate');
         $cutoffDate = Carbon::now()->subDays($days);
 
-        // Use corporation settings for tax rates (not hardcoded)
+        // Use corporation settings for tax rates (per structure-owner corporation)
         $settingsService = app(SettingsManagerService::class);
+        $this->info("💰 Tax rates: per structure-owner corporation from settings (multi-corp support)");
 
-        // Auto-detect corporation context from moon_owner_corporation_id
-        $moonOwnerCorpId = $settingsService->getSetting('general.moon_owner_corporation_id');
-        if ($moonOwnerCorpId) {
-            $settingsService->setActiveCorporation((int) $moonOwnerCorpId);
-            $this->info("💰 Using tax rates from corporation settings (Corp ID: {$moonOwnerCorpId})");
-        } else {
-            $this->info("💰 No corporation configured — using 0% tax (statistics only)");
-        }
-
-        $taxSelector = $settingsService->getTaxSelector();
-
-        // Build query for observer data
-        $query = CorporationObserverMining::with(['character', 'type', 'structure'])
+        // Build query for observer data (eager-load observer for corporation_id resolution)
+        $query = CorporationObserverMining::with(['character', 'type', 'structure', 'observer'])
             ->where('last_updated', '>=', $cutoffDate);
 
         if ($observerId) {
@@ -91,9 +81,9 @@ class ProcessMiningLedgerCommand extends Command
         $skipped = 0;
         $errors = 0;
 
-        // Group by structure for progress
-        $byStructure = $observerEntries->groupBy('observer_id');
-        $this->info("🏗️  Processing {$byStructure->count()} structures");
+        // Group by observer (structure) — each observer belongs to one corporation
+        $byObserver = $observerEntries->groupBy('observer_id');
+        $this->info("🏗️  Processing {$byObserver->count()} structures");
         $this->line('');
 
         $progressBar = $this->output->createProgressBar($observerEntries->count());
@@ -102,7 +92,20 @@ class ProcessMiningLedgerCommand extends Command
         DB::beginTransaction();
 
         try {
-            foreach ($observerEntries as $entry) {
+            // Process entries grouped by observer — switch corp context once per observer
+            foreach ($byObserver as $obsId => $entries) {
+                // Resolve structure owner corporation from observer relationship
+                $structureCorpId = $entries->first()->corporation_id; // via getCorporationIdAttribute accessor
+
+                // Switch settings context to this structure owner's corporation
+                if ($structureCorpId) {
+                    $settingsService->setActiveCorporation((int) $structureCorpId);
+                } else {
+                    $settingsService->setActiveCorporation(null);
+                }
+                $taxSelector = $settingsService->getTaxSelector();
+
+                foreach ($entries as $entry) {
                 try {
                     // Check if already processed
                     $existing = MiningLedger::where('character_id', $entry->character_id)
@@ -115,7 +118,6 @@ class ProcessMiningLedgerCommand extends Command
                     $solarSystemId = $entry->structure->solar_system_id ?? null;
 
                     // Calculate ore values using OreValuationService (daily session pricing)
-                    // This uses the configured valuation method (raw ore price or mineral price)
                     $valuationService = app(OreValuationService::class);
                     $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
 
@@ -131,8 +133,8 @@ class ProcessMiningLedgerCommand extends Command
                     $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                    // Get tax rate from corporation settings (per ore type)
-                    $taxRate = $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $taxSelector, $moonOwnerCorpId);
+                    // Get tax rate from this structure owner's corporation settings
+                    $taxRate = $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $taxSelector, $structureCorpId);
                     $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Prepare data
@@ -150,7 +152,7 @@ class ProcessMiningLedgerCommand extends Command
                         'tax_rate' => $taxRate,
                         'tax_amount' => $taxAmount,
                         'ore_type' => $oreCategory,
-                        'corporation_id' => $entry->corporation_id,
+                        'corporation_id' => $structureCorpId,
                         'is_taxable' => true,
                         'is_moon_ore' => $isMoonOre,
                         'is_ice' => $isIce,
@@ -169,8 +171,6 @@ class ProcessMiningLedgerCommand extends Command
                         }
                     } else {
                         // Cross-source dedup: remove personal ESI record if it exists
-                        // Observer data is more authoritative (has observer_id, structure info)
-                        // Only applies to corporation moon mining (same ore mined at same structure/system)
                         $personalDupe = MiningLedger::where('character_id', $entry->character_id)
                             ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
                             ->where('type_id', $entry->type_id)
@@ -196,7 +196,8 @@ class ProcessMiningLedgerCommand extends Command
                     $errors++;
                     $progressBar->advance();
                 }
-            }
+                } // end inner foreach (entries per observer)
+            } // end outer foreach (observers)
 
             DB::commit();
             $progressBar->finish();
@@ -298,7 +299,7 @@ class ProcessMiningLedgerCommand extends Command
      * @param bool $isGas
      * @param bool $isAbyssal
      * @param array $taxSelector
-     * @param int|null $moonOwnerCorpId
+     * @param int|null $structureCorpId
      * @return float Tax rate percentage (0-100)
      */
     private function getTaxRateFromSettings(
@@ -309,10 +310,10 @@ class ProcessMiningLedgerCommand extends Command
         bool $isGas,
         bool $isAbyssal,
         array $taxSelector,
-        ?int $moonOwnerCorpId
+        ?int $structureCorpId
     ): float {
-        // No corporation configured → 0% tax (statistics only)
-        if (!$moonOwnerCorpId) {
+        // No corporation resolved for this structure → 0% tax (statistics only)
+        if (!$structureCorpId) {
             return 0.0;
         }
 

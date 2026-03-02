@@ -171,15 +171,17 @@ class LedgerSummaryService
             ->whereNotNull('corporation_id')
             ->value('corporation_id');
 
-        // Aggregate per ore type for the day (only processed entries)
+        // Aggregate per ore type AND corporation for the day (only processed entries)
+        // Group by corporation_id so entries from different structure owners get correct tax rates
         $oreEntries = (clone $baseQuery)
             ->selectRaw('
                 type_id,
                 ore_type,
+                corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value
             ')
-            ->groupBy('type_id', 'ore_type')
+            ->groupBy('type_id', 'ore_type', 'corporation_id')
             ->get();
 
         // Build rich ore breakdown with estimated tax
@@ -191,9 +193,6 @@ class LedgerSummaryService
         $regularOreValue = 0;
         $iceValue = 0;
         $gasValue = 0;
-
-        // Check once if a corporation is configured (enables tax calculation)
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
 
         foreach ($oreEntries as $entry) {
             $typeId = $entry->type_id;
@@ -208,9 +207,14 @@ class LedgerSummaryService
                 ? TypeIdRegistry::getMoonOreRarity($typeId)
                 : null;
 
-            // Calculate estimated tax for this ore type
-            // Only calculate tax if a corporation is configured; otherwise 0% (statistics only)
-            $isTaxable = $moonOwnerCorpId ? $this->shouldTaxType($typeId) : false;
+            // Switch corporation context per-entry for correct tax rates
+            $entryCorporationId = $entry->corporation_id;
+            if ($entryCorporationId) {
+                $this->settingsService->setActiveCorporation((int) $entryCorporationId);
+            }
+
+            // Calculate estimated tax — only if a corporation owns this entry
+            $isTaxable = $entryCorporationId ? $this->shouldTaxType($typeId) : false;
             $taxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
             $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
 

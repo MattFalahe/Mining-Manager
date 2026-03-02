@@ -147,6 +147,18 @@ class CorporationObserverMining extends Model
     }
     
     /**
+     * Get the structure owner's corporation ID via the observer.
+     * The SeAT observer_data table does not have corporation_id directly —
+     * it must be resolved from the observer (corporation_industry_mining_observers).
+     *
+     * @return int|null
+     */
+    public function getCorporationIdAttribute(): ?int
+    {
+        return $this->observer?->corporation_id;
+    }
+
+    /**
      * Check if character is registered in SeAT.
      */
     public function isCharacterRegistered()

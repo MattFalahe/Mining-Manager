@@ -66,14 +66,13 @@ class TaxCalculationService
      */
     public function calculateMonthlyTaxes(Carbon $month, bool $recalculate = false): array
     {
-        // Ensure corporation context is set (use moon_owner_corporation_id if not explicitly set)
+        // Check if any corporation is configured for tax calculation
         if ($this->settingsService->getActiveCorporation() === null) {
             $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-            if ($moonOwnerCorpId) {
-                $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
-                Log::debug("Mining Manager: Auto-set corporation context to moon owner: {$moonOwnerCorpId}");
-            } else {
-                // No corporation configured → 0% tax, statistics only mode
+            $configuredCorps = $this->settingsService->getAllCorporations();
+
+            if (!$moonOwnerCorpId && $configuredCorps->isEmpty()) {
+                // No corporation configured at all → statistics only mode
                 Log::info("Mining Manager: No corporation configured — skipping tax calculation (statistics only)");
                 return [
                     'method' => 'none',
@@ -82,6 +81,12 @@ class TaxCalculationService
                     'errors' => [],
                     'message' => 'No corporation configured. Set moon_owner_corporation_id in General settings to enable tax calculation.',
                 ];
+            }
+
+            // Set initial context (will be overridden per-entry in calculateCharacterTax)
+            if ($moonOwnerCorpId) {
+                $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
+                Log::debug("Mining Manager: Initial corporation context set to moon owner: {$moonOwnerCorpId}");
             }
         }
         $startDate = $month->copy()->startOfMonth();
@@ -451,14 +456,27 @@ class TaxCalculationService
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
-            // Skip if this ore type should not be taxed
+            // Switch corporation context to the structure owner for THIS entry
+            // so shouldTaxOre() and getTaxRateForOre() read the correct corp's settings
+            $entryCorpId = $entry->corporation_id;
+            if (!$entryCorpId && $entry->observer_id) {
+                // Fallback for old entries with NULL corporation_id
+                $entryCorpId = DB::table('corporation_industry_mining_observers')
+                    ->where('observer_id', $entry->observer_id)
+                    ->value('corporation_id');
+            }
+            if ($entryCorpId) {
+                $this->settingsService->setActiveCorporation((int) $entryCorpId);
+            }
+
+            // Skip if this ore type should not be taxed (reads correct corp's tax_selector)
             if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
                 continue;
             }
 
             $value = $this->calculateOreValue($entry);
 
-            // Get base tax rate and apply event modifier if applicable
+            // Get base tax rate (reads correct corp's tax_rates) and apply event modifier
             $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
             $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
 
@@ -1004,6 +1022,17 @@ class TaxCalculationService
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
+            // Switch corporation context per-entry for correct tax rates
+            $entryCorpId = $entry->corporation_id;
+            if (!$entryCorpId && $entry->observer_id) {
+                $entryCorpId = DB::table('corporation_industry_mining_observers')
+                    ->where('observer_id', $entry->observer_id)
+                    ->value('corporation_id');
+            }
+            if ($entryCorpId) {
+                $this->settingsService->setActiveCorporation((int) $entryCorpId);
+            }
+
             if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
                 continue;
             }

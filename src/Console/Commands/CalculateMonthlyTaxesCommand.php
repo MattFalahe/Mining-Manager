@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 
 class CalculateMonthlyTaxesCommand extends Command
@@ -16,6 +17,7 @@ class CalculateMonthlyTaxesCommand extends Command
     protected $signature = 'mining-manager:calculate-taxes
                             {--month= : Month to calculate (YYYY-MM format)}
                             {--character_id= : Calculate for specific character}
+                            {--corporation_id= : Calculate for specific structure-owner corporation}
                             {--recalculate : Recalculate existing tax records}';
 
     /**
@@ -33,14 +35,23 @@ class CalculateMonthlyTaxesCommand extends Command
     protected $taxService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
      * Create a new command instance.
      *
      * @param TaxCalculationService $taxService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(TaxCalculationService $taxService)
+    public function __construct(TaxCalculationService $taxService, SettingsManagerService $settingsService)
     {
         parent::__construct();
         $this->taxService = $taxService;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -58,6 +69,12 @@ class CalculateMonthlyTaxesCommand extends Command
             : Carbon::now()->subMonth();
 
         $recalculate = (bool) $this->option('recalculate');
+
+        // If a specific corporation is provided, set it as active context
+        if ($corporationId = $this->option('corporation_id')) {
+            $this->settingsService->setActiveCorporation((int) $corporationId);
+            $this->info("Using corporation context: {$corporationId}");
+        }
 
         $this->info("Calculating taxes for period: {$month->copy()->startOfMonth()->format('Y-m-d')} to {$month->copy()->endOfMonth()->format('Y-m-d')}");
 
