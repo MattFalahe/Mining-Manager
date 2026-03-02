@@ -192,6 +192,9 @@ class LedgerSummaryService
         $iceValue = 0;
         $gasValue = 0;
 
+        // Check once if a corporation is configured (enables tax calculation)
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
         foreach ($oreEntries as $entry) {
             $typeId = $entry->type_id;
             $quantity = $entry->total_quantity;
@@ -206,8 +209,9 @@ class LedgerSummaryService
                 : null;
 
             // Calculate estimated tax for this ore type
-            $isTaxable = $this->shouldTaxType($typeId);
-            $taxRate = $this->getTaxRateForType($typeId, $characterCorpId);
+            // Only calculate tax if a corporation is configured; otherwise 0% (statistics only)
+            $isTaxable = $moonOwnerCorpId ? $this->shouldTaxType($typeId) : false;
+            $taxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
             $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
 
             $oreBreakdown[] = [

@@ -72,6 +72,16 @@ class TaxCalculationService
             if ($moonOwnerCorpId) {
                 $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
                 Log::debug("Mining Manager: Auto-set corporation context to moon owner: {$moonOwnerCorpId}");
+            } else {
+                // No corporation configured → 0% tax, statistics only mode
+                Log::info("Mining Manager: No corporation configured — skipping tax calculation (statistics only)");
+                return [
+                    'method' => 'none',
+                    'count' => 0,
+                    'total' => 0,
+                    'errors' => [],
+                    'message' => 'No corporation configured. Set moon_owner_corporation_id in General settings to enable tax calculation.',
+                ];
             }
         }
         $startDate = $month->copy()->startOfMonth();

@@ -10,6 +10,7 @@ use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\OreValuationService;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Notification\WebhookService;
 use MiningManager\Http\Controllers\DashboardController;
@@ -22,7 +23,6 @@ class ProcessMiningLedgerCommand extends Command
                             {--observer_id= : Process specific observer/structure}
                             {--character_id= : Process specific character ID}
                             {--days=30 : Number of days to process}
-                            {--tax_rate=15 : Default tax rate percentage}
                             {--recalculate : Recalculate prices and taxes for existing entries}';
 
     protected $description = 'Process corporation observer mining data for COMPLETE moon mining tracking';
@@ -38,11 +38,22 @@ class ProcessMiningLedgerCommand extends Command
         $observerId = $this->option('observer_id');
         $characterId = $this->option('character_id');
         $days = $this->option('days');
-        $defaultTaxRate = $this->option('tax_rate');
         $recalculate = $this->option('recalculate');
         $cutoffDate = Carbon::now()->subDays($days);
 
-        $this->info("💰 Using default tax rate: {$defaultTaxRate}%");
+        // Use corporation settings for tax rates (not hardcoded)
+        $settingsService = app(SettingsManagerService::class);
+
+        // Auto-detect corporation context from moon_owner_corporation_id
+        $moonOwnerCorpId = $settingsService->getSetting('general.moon_owner_corporation_id');
+        if ($moonOwnerCorpId) {
+            $settingsService->setActiveCorporation((int) $moonOwnerCorpId);
+            $this->info("💰 Using tax rates from corporation settings (Corp ID: {$moonOwnerCorpId})");
+        } else {
+            $this->info("💰 No corporation configured — using 0% tax (statistics only)");
+        }
+
+        $taxSelector = $settingsService->getTaxSelector();
 
         // Build query for observer data
         $query = CorporationObserverMining::with(['character', 'type', 'structure'])
@@ -113,16 +124,16 @@ class ProcessMiningLedgerCommand extends Command
                     $mineralValue = $values['mineral_value'] ?? 0;
                     $totalValue = $values['total_value'] ?? 0;
 
-                    // Use default tax rate (can be overridden per character/type in future)
-                    $taxRate = $defaultTaxRate;
-                    $taxAmount = $totalValue * ($taxRate / 100);
-
-                    // Classify ore type
+                    // Classify ore type (must be before tax rate lookup)
                     $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
                     $isIce = TypeIdRegistry::isIce($entry->type_id);
                     $isGas = TypeIdRegistry::isGas($entry->type_id);
                     $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
+
+                    // Get tax rate from corporation settings (per ore type)
+                    $taxRate = $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $taxSelector, $moonOwnerCorpId);
+                    $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Prepare data
                     $data = [
@@ -218,13 +229,17 @@ class ProcessMiningLedgerCommand extends Command
                     $vals = $valuationSvc->calculateOreValue($entry->type_id, $entry->quantity);
                     return $vals['total_value'] ?? 0;
                 });
-                $totalTaxes = $totalValue * ($defaultTaxRate / 100);
-                
+                // Sum actual per-entry tax amounts from database instead of using a flat rate
+                $totalTaxes = MiningLedger::where('character_id', '>', 0)
+                    ->whereIn('character_id', $observerEntries->pluck('character_id')->unique())
+                    ->where('date', '>=', $cutoffDate->toDateString())
+                    ->sum('tax_amount');
+
                 $this->line("   • Unique miners tracked: {$uniqueMiners} (including non-registered)");
                 $this->line("   • Structures: {$uniqueStructures}");
                 $this->line("   • Total quantity: " . number_format($totalQuantity) . " units");
                 $this->line("   • Estimated value: " . number_format($totalValue, 0) . " ISK");
-                $this->line("   • Total taxes ({$defaultTaxRate}%): " . number_format($totalTaxes, 0) . " ISK");
+                $this->line("   • Total est. taxes (per settings): " . number_format($totalTaxes, 0) . " ISK");
                 
                 // Show sample of miners
                 $this->line('');
@@ -270,6 +285,71 @@ class ProcessMiningLedgerCommand extends Command
             $this->error($e->getTraceAsString());
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Get tax rate for an ore type from corporation settings.
+     * Returns 0 if no corporation is configured or ore type is not taxable.
+     *
+     * @param SettingsManagerService $settingsService
+     * @param int $typeId
+     * @param bool $isMoonOre
+     * @param bool $isIce
+     * @param bool $isGas
+     * @param bool $isAbyssal
+     * @param array $taxSelector
+     * @param int|null $moonOwnerCorpId
+     * @return float Tax rate percentage (0-100)
+     */
+    private function getTaxRateFromSettings(
+        SettingsManagerService $settingsService,
+        int $typeId,
+        bool $isMoonOre,
+        bool $isIce,
+        bool $isGas,
+        bool $isAbyssal,
+        array $taxSelector,
+        ?int $moonOwnerCorpId
+    ): float {
+        // No corporation configured → 0% tax (statistics only)
+        if (!$moonOwnerCorpId) {
+            return 0.0;
+        }
+
+        // Get tax rates from settings (respects active corporation context)
+        $taxRates = $settingsService->getTaxRates();
+
+        // Check taxability via tax selector
+        if ($isMoonOre) {
+            if (!empty($taxSelector['no_moon_ore'])) {
+                return 0.0;
+            }
+            if (empty($taxSelector['all_moon_ore']) && empty($taxSelector['only_corp_moon_ore'])) {
+                return 0.0;
+            }
+            // Get rarity-specific rate
+            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
+            if ($rarity) {
+                $rarityKey = strtolower($rarity);
+                return (float) ($taxRates['moon_ore'][$rarityKey] ?? $taxRates['moon_ore']['r4'] ?? 5.0);
+            }
+            return (float) ($taxRates['moon_ore']['r4'] ?? 5.0);
+        }
+
+        if ($isIce) {
+            return ($taxSelector['ice'] ?? true) ? (float) ($taxRates['ice'] ?? 10.0) : 0.0;
+        }
+
+        if ($isGas) {
+            return ($taxSelector['gas'] ?? false) ? (float) ($taxRates['gas'] ?? 10.0) : 0.0;
+        }
+
+        if ($isAbyssal) {
+            return ($taxSelector['abyssal_ore'] ?? false) ? (float) ($taxRates['abyssal_ore'] ?? 15.0) : 0.0;
+        }
+
+        // Regular ore
+        return ($taxSelector['ore'] ?? true) ? (float) ($taxRates['ore'] ?? 10.0) : 0.0;
     }
 
     /**

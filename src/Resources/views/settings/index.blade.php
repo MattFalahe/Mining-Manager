@@ -189,10 +189,24 @@
                                 unset($taxRatesFlattened['moon_ore']);
                             }
 
+                            // Remap tax_selector keys to match form field names
+                            // getTaxSelector() returns 'ore','ice','gas','abyssal_ore'
+                            // but the form uses 'tax_regular_ore','tax_ice','tax_gas','tax_abyssal_ore'
+                            $taxSelectorMapped = [
+                                'tax_regular_ore' => $settings['tax_selector']['ore'] ?? true,
+                                'tax_ice' => $settings['tax_selector']['ice'] ?? true,
+                                'tax_gas' => $settings['tax_selector']['gas'] ?? false,
+                                'tax_abyssal_ore' => $settings['tax_selector']['abyssal_ore'] ?? false,
+                                // Moon ore flags keep their original names (template uses these directly)
+                                'all_moon_ore' => $settings['tax_selector']['all_moon_ore'] ?? true,
+                                'only_corp_moon_ore' => $settings['tax_selector']['only_corp_moon_ore'] ?? false,
+                                'no_moon_ore' => $settings['tax_selector']['no_moon_ore'] ?? false,
+                            ];
+
                             // Merge all tax-related settings
                             $taxSettings = array_merge(
                                 $taxRatesFlattened,
-                                $settings['tax_selector'],
+                                $taxSelectorMapped,
                                 $settings['exemptions']
                             );
                         @endphp
