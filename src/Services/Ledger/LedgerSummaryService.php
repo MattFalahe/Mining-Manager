@@ -53,10 +53,10 @@ class LedgerSummaryService
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(tax_amount) as total_tax,
-                SUM(CASE WHEN ore_type = "moon_ore" THEN total_value ELSE 0 END) as moon_ore_value,
-                SUM(CASE WHEN ore_type = "ore" THEN total_value ELSE 0 END) as regular_ore_value,
-                SUM(CASE WHEN ore_type = "ice" THEN total_value ELSE 0 END) as ice_value,
-                SUM(CASE WHEN ore_type = "gas" THEN total_value ELSE 0 END) as gas_value
+                SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
+                SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
+                SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
+                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
             ->groupBy('character_id', 'corporation_id')
             ->first();
@@ -228,8 +228,9 @@ class LedgerSummaryService
             $totalValue += $value;
             $totalTax += $estimatedTax;
 
-            // Category breakdown
-            switch ($entry->ore_type) {
+            // Category breakdown (use TypeIdRegistry via getOreCategory, not ore_type column)
+            $entryCategory = $this->getOreCategory($typeId);
+            switch ($entryCategory) {
                 case 'moon_ore':
                     $moonOreValue += $value;
                     break;
@@ -489,10 +490,10 @@ class LedgerSummaryService
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(tax_amount) as total_tax,
-                SUM(CASE WHEN ore_type = "moon_ore" THEN total_value ELSE 0 END) as moon_ore_value,
-                SUM(CASE WHEN ore_type = "ore" THEN total_value ELSE 0 END) as regular_ore_value,
-                SUM(CASE WHEN ore_type = "ice" THEN total_value ELSE 0 END) as ice_value,
-                SUM(CASE WHEN ore_type = "gas" THEN total_value ELSE 0 END) as gas_value
+                SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
+                SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
+                SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
+                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
             ->groupBy('character_id', 'corporation_id')
             ->with('character')
@@ -564,10 +565,10 @@ class LedgerSummaryService
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(tax_amount) as total_tax,
-                SUM(CASE WHEN ore_type = "moon_ore" THEN total_value ELSE 0 END) as moon_ore_value,
-                SUM(CASE WHEN ore_type = "ore" THEN total_value ELSE 0 END) as regular_ore_value,
-                SUM(CASE WHEN ore_type = "ice" THEN total_value ELSE 0 END) as ice_value,
-                SUM(CASE WHEN ore_type = "gas" THEN total_value ELSE 0 END) as gas_value
+                SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
+                SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
+                SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
+                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
             ->groupBy(DB::raw('DATE(date)'), 'character_id', 'corporation_id')
             ->orderBy('date')

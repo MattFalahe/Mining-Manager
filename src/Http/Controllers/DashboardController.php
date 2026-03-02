@@ -994,61 +994,30 @@ class DashboardController extends Controller
 
     /**
      * Get corporation moon mining performance chart
-     * Uses corporation_industry_mining_observer_data which contains mining activity
-     * from the holding corporation's moon mining structures only.
-     * This is the authoritative data source for moon mining (same as tax calculation).
+     * Uses daily summaries (same source as Corp Mining chart) for consistency.
+     * Moon ore value is pre-computed in daily summaries via is_moon_ore boolean flag.
      */
     private function getCorpMoonMiningPerformanceLast12Months($corporationId)
     {
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
+        $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        // Get the moon owner corporation ID from settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        // Single query for all 12 months — same pattern as getCorpMiningPerformanceLast12Months
+        $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
+            ->selectRaw("DATE_FORMAT(date, '%Y-%m') as month_key, SUM(moon_ore_value) as total_value")
+            ->groupBy('month_key')
+            ->get()
+            ->keyBy('month_key');
 
         $months = [];
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->subMonths($i)->startOfMonth();
-            $monthEnd = $month->copy()->endOfMonth();
+            $monthKey = $month->format('Y-m');
 
-            if ($i === 0) {
-                $monthEnd = Carbon::now();
-            }
-
-            $totalValue = 0;
-
-            if ($moonOwnerCorpId) {
-                // Query observer data from the holding corporation's moon structures
-                // This table only contains mining from YOUR corp's refineries/observers
-                $observerData = DB::table('corporation_industry_mining_observer_data as d')
-                    ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
-                    ->where('o.corporation_id', $moonOwnerCorpId)
-                    ->whereIn('d.type_id', $moonOreTypeIds)
-                    ->whereBetween('d.last_updated', [$month, $monthEnd])
-                    ->select('d.type_id', DB::raw('SUM(d.quantity) as total_quantity'))
-                    ->groupBy('d.type_id')
-                    ->get();
-
-                // Calculate value using OreValuationService for each ore type
-                $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
-                foreach ($observerData as $ore) {
-                    $values = $valuationService->calculateOreValue($ore->type_id, $ore->total_quantity);
-                    $totalValue += $values['total_value'];
-                }
-            } else {
-                // Fallback: if no moon owner configured, use mining_ledger data for corp characters
-                // FIXED: Uses SQL SUM instead of loading all entries into PHP memory
-                $characterIds = $this->getCorporationCharacterIds($corporationId);
-                $totalValue = (float) MiningLedger::whereIn('character_id', $characterIds)
-                    ->whereIn('type_id', $moonOreTypeIds)
-                    ->whereBetween('date', [$month, $monthEnd])
-                    ->whereNotNull('processed_at')
-                    ->sum('total_value');
-            }
-
-            $months[] = $month->format('Y-m');
-            $data[] = $totalValue;
+            $months[] = $monthKey;
+            $data[] = (float) ($monthlyData->get($monthKey)->total_value ?? 0);
         }
 
         return [

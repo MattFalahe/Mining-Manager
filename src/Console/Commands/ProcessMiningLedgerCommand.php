@@ -138,7 +138,7 @@ class ProcessMiningLedgerCommand extends Command
                         'total_value' => $totalValue,
                         'tax_rate' => $taxRate,
                         'tax_amount' => $taxAmount,
-                        'ore_type' => $entry->type->typeName ?? null,
+                        'ore_type' => $oreCategory,
                         'corporation_id' => $entry->corporation_id,
                         'is_taxable' => true,
                         'is_moon_ore' => $isMoonOre,
