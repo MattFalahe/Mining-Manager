@@ -292,15 +292,23 @@ class DashboardController extends Controller
     /**
      * AJAX endpoint for the Guest Miners tab.
      * Returns miners who used corp structures but are confirmed to be in other corporations.
+     * Accepts optional ?month=YYYY-MM query parameter (defaults to current month).
      */
-    public function getGuestMinersTabData()
+    public function getGuestMinersTabData(Request $request)
     {
         $corporationId = $this->getUserCorporationId();
 
-        $cacheKey = 'dashboard.guest-tab.' . $corporationId . '.' . Carbon::now()->format('Y-m');
+        // Parse requested month (defaults to current month)
+        $monthInput = $request->input('month');
+        $monthDate = $monthInput
+            ? Carbon::parse($monthInput . '-01')->startOfMonth()
+            : Carbon::now()->startOfMonth();
+        $monthKey = $monthDate->format('Y-m');
 
-        $data = Cache::remember($cacheKey, 1800, function () use ($corporationId) {
-            $guestIds = $this->getGuestMinerCharacterIds($corporationId);
+        $cacheKey = 'dashboard.guest-tab.' . $corporationId . '.' . $monthKey;
+
+        $data = Cache::remember($cacheKey, 1800, function () use ($corporationId, $monthDate) {
+            $guestIds = $this->getGuestMinerCharacterIds($corporationId, $monthDate);
 
             if (empty($guestIds)) {
                 return [
@@ -311,8 +319,10 @@ class DashboardController extends Controller
                 ];
             }
 
-            // Get aggregated mining data per guest from daily summaries
+            // Get aggregated mining data per guest from daily summaries for the selected month
             $minerStats = MiningLedgerDailySummary::whereIn('character_id', $guestIds)
+                ->whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
                 ->selectRaw('
                     character_id,
                     SUM(total_value) as total_value,
@@ -362,6 +372,8 @@ class DashboardController extends Controller
             ];
         });
 
+        $data['month'] = $monthDate->format('Y-m');
+
         return response()->json($data);
     }
 
@@ -369,7 +381,7 @@ class DashboardController extends Controller
      * Get character IDs of guest miners: people who mined at corp structures
      * but are confirmed to be in a DIFFERENT corporation.
      */
-    private function getGuestMinerCharacterIds($corporationId)
+    private function getGuestMinerCharacterIds($corporationId, ?Carbon $monthDate = null)
     {
         if (!$corporationId) {
             return [];
@@ -379,9 +391,13 @@ class DashboardController extends Controller
         $allMinerIds = [];
 
         try {
-            $ids = DB::table('mining_ledger')
-                ->where('corporation_id', $corporationId)
-                ->distinct()
+            $query = DB::table('mining_ledger')
+                ->where('corporation_id', $corporationId);
+            if ($monthDate) {
+                $query->whereYear('date', $monthDate->year)
+                      ->whereMonth('date', $monthDate->month);
+            }
+            $ids = $query->distinct()
                 ->pluck('character_id')
                 ->toArray();
             $allMinerIds = array_merge($allMinerIds, $ids);
@@ -391,10 +407,14 @@ class DashboardController extends Controller
             $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
             $observerCorpId = $moonOwnerCorpId ?: $corporationId;
 
-            $ids = DB::table('corporation_industry_mining_observer_data as d')
+            $query = DB::table('corporation_industry_mining_observer_data as d')
                 ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
-                ->where('o.corporation_id', $observerCorpId)
-                ->distinct()
+                ->where('o.corporation_id', $observerCorpId);
+            if ($monthDate) {
+                $query->whereYear('d.last_updated', $monthDate->year)
+                      ->whereMonth('d.last_updated', $monthDate->month);
+            }
+            $ids = $query->distinct()
                 ->pluck('d.character_id')
                 ->toArray();
             $allMinerIds = array_merge($allMinerIds, $ids);

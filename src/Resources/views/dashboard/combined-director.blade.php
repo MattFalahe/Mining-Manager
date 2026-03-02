@@ -586,6 +586,26 @@
                             </div>
                             <div id="guest-tab-content" style="display: none;">
 
+                                {{-- MONTH SELECTOR --}}
+                                <div class="row mb-3">
+                                    <div class="col-12">
+                                        <div class="d-flex align-items-center">
+                                            <button class="btn btn-sm btn-outline-secondary mr-2" id="guest-month-prev" title="Previous month">
+                                                <i class="fas fa-chevron-left"></i>
+                                            </button>
+                                            <input type="month" class="form-control form-control-sm" id="guest-month-picker"
+                                                   value="{{ now()->format('Y-m') }}" max="{{ now()->format('Y-m') }}"
+                                                   style="width: 180px;">
+                                            <button class="btn btn-sm btn-outline-secondary ml-2" id="guest-month-next" title="Next month">
+                                                <i class="fas fa-chevron-right"></i>
+                                            </button>
+                                            <span class="ml-3 text-muted" id="guest-month-label" style="font-size: 1.1rem; font-weight: 600;">
+                                                {{ now()->format('F Y') }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {{-- GUEST MINER SUMMARY --}}
                                 <div class="row">
                                     <div class="col-12">
@@ -1134,14 +1154,16 @@ function initCorpCharts(data) {
     }
 }
 
-// Guest Miners tab lazy loading
-var guestTabLoaded = false;
+// Guest Miners tab — month-aware lazy loading
+var guestTabInitialized = false;
+var guestBaseUrl = '{{ $guestTabUrl }}';
 
-$('#guest-miners-tab').on('shown.bs.tab', function() {
-    if (guestTabLoaded) return;
-    guestTabLoaded = true;
+function loadGuestMinersData(month) {
+    // Show loading state
+    $('#guest-tab-loading').show();
+    $('#guest-tab-content').hide();
 
-    $.get('{{ $guestTabUrl }}')
+    $.get(guestBaseUrl, { month: month })
         .done(function(data) {
             // Summary stats
             $('#guest-count').text(data.guestCount || 0);
@@ -1154,7 +1176,7 @@ $('#guest-miners-tab').on('shown.bs.tab', function() {
 
             var miners = data.guestMiners || [];
             if (miners.length === 0) {
-                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No guest miners found</td></tr>');
+                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No guest miners found for this month</td></tr>');
             } else {
                 for (var i = 0; i < miners.length; i++) {
                     var m = miners[i];
@@ -1176,6 +1198,11 @@ $('#guest-miners-tab').on('shown.bs.tab', function() {
                 }
             }
 
+            // Update month label
+            var d = new Date(month + '-15');
+            var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            $('#guest-month-label').text(monthNames[d.getMonth()] + ' ' + d.getFullYear());
+
             // Show content, hide loading
             $('#guest-tab-loading').hide();
             $('#guest-tab-content').show();
@@ -1187,6 +1214,40 @@ $('#guest-miners-tab').on('shown.bs.tab', function() {
                 '<a href="#" onclick="location.reload()">Reload page</a></div>'
             );
         });
+}
+
+// Month picker navigation
+$('#guest-month-picker').on('change', function() {
+    loadGuestMinersData($(this).val());
+});
+
+$('#guest-month-prev').on('click', function() {
+    var picker = $('#guest-month-picker');
+    var current = new Date(picker.val() + '-15');
+    current.setMonth(current.getMonth() - 1);
+    var newVal = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0');
+    picker.val(newVal).trigger('change');
+});
+
+$('#guest-month-next').on('click', function() {
+    var picker = $('#guest-month-picker');
+    var current = new Date(picker.val() + '-15');
+    var now = new Date();
+    current.setMonth(current.getMonth() + 1);
+    // Don't go beyond current month
+    if (current.getFullYear() > now.getFullYear() ||
+        (current.getFullYear() === now.getFullYear() && current.getMonth() > now.getMonth())) {
+        return;
+    }
+    var newVal = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0');
+    picker.val(newVal).trigger('change');
+});
+
+// Lazy-load on first tab open
+$('#guest-miners-tab').on('shown.bs.tab', function() {
+    if (guestTabInitialized) return;
+    guestTabInitialized = true;
+    loadGuestMinersData($('#guest-month-picker').val());
 });
 </script>
 @endpush
