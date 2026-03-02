@@ -4,6 +4,7 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Seat\Eveapi\Models\Character\CharacterAffiliation;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\InvType;
 use Seat\Eveapi\Models\Sde\SolarSystem;
@@ -91,6 +92,14 @@ class MiningLedger extends Model
     public function character()
     {
         return $this->belongsTo(CharacterInfo::class, 'character_id', 'character_id');
+    }
+
+    /**
+     * Get the character affiliation (contains corporation_id and corporation_name).
+     */
+    public function affiliation()
+    {
+        return $this->belongsTo(CharacterAffiliation::class, 'character_id', 'character_id');
     }
 
     /**

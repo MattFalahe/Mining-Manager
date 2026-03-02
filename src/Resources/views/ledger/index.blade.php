@@ -311,7 +311,7 @@
                                             <br>
                                             <small class="text-muted">
                                                 <i class="fas fa-building"></i>
-                                                {{ $entry->character->corporation->name ?? trans('mining-manager::ledger.unknown') }}
+                                                {{ $entry->affiliation->corporation_name ?? trans('mining-manager::ledger.unknown') }}
                                             </small>
                                         @endif
                                     </td>

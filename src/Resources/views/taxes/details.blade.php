@@ -51,7 +51,7 @@
                              src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=128">
                     </div>
                     <h3 class="profile-username text-center">{{ $tax->character->name ?? 'Unknown' }}</h3>
-                    <p class="text-muted text-center">{{ $tax->character->corporation->name ?? 'Unknown' }}</p>
+                    <p class="text-muted text-center">{{ $tax->affiliation->corporation_name ?? 'Unknown' }}</p>
 
                     <ul class="list-group list-group-unbordered mb-3">
                         <li class="list-group-item bg-dark">

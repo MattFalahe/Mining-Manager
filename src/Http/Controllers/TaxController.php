@@ -179,7 +179,7 @@ class TaxController extends Controller
         $this->setCorporationContext($moonOwnerCorpId);
 
         // Build query - include affiliation for corporation_id lookup
-        $query = MiningTax::with(['character', 'character.corporation', 'affiliation', 'taxCodes', 'taxInvoices']);
+        $query = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -1381,7 +1381,7 @@ class TaxController extends Controller
      */
     public function details(Request $request, $taxId)
     {
-        $tax = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
+        $tax = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
         $isAdmin = $this->isAdmin();
         $isDirector = $this->isDirector();
         $viewAll = $this->isViewingAll();

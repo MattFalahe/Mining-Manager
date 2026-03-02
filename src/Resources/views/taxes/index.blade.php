@@ -336,7 +336,7 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{ $tax->character->corporation->name ?? 'Unknown' }}
+                                        {{ $tax->affiliation->corporation_name ?? 'Unknown' }}
                                         @if($moonOwnerCorpId && $tax->corporation_id == $moonOwnerCorpId)
                                             <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
                                         @endif

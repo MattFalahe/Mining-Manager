@@ -71,7 +71,7 @@ class LedgerController extends Controller
         $perPage = $request->get('per_page', 50);
 
         // Build query with eager loading
-        $query = MiningLedger::with(['character', 'solarSystem', 'type'])
+        $query = MiningLedger::with(['character', 'affiliation', 'solarSystem', 'type'])
             ->whereBetween('date', [$dateFrom, $dateTo]);
 
         // Apply filters
