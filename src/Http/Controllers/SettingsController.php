@@ -343,7 +343,7 @@ class SettingsController extends Controller
 
             // Tax Payment Method
             'tax_payment_method' => 'required|in:wallet',
-            'tax_wallet_division' => 'required|integer|min:1000|max:1006',
+            'tax_wallet_division' => 'required|integer|min:1000|max:1007',
 
             // Tax Code Settings
             'tax_code_prefix' => 'required|string|max:10',
