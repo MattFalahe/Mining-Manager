@@ -2061,7 +2061,8 @@ function loadSystemStatus() {
 
     $('#system-status-loading').html('<div class="text-center py-5"><div class="spinner-border text-info"></div><p class="text-muted mt-2">Loading system status...</p></div>');
 
-    fetch('{{ route("mining-manager.diagnostic.system-status") }}')
+    var ssUrl = new URL('{{ route("mining-manager.diagnostic.system-status") }}', window.location.origin).pathname;
+    fetch(ssUrl)
         .then(r => r.json())
         .then(data => {
             // Daily Summaries
