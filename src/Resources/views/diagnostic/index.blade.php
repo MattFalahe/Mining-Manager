@@ -198,6 +198,7 @@
         </ul>
     </div>
     <div class="card-body">
+      <div class="tab-content">
 
         <!-- Test Data Generation Tab -->
         <div class="tab-pane active" id="test-data">
@@ -956,6 +957,7 @@
             </div>
         </div>
 
+      </div>{{-- /.tab-content --}}
     </div>{{-- /.card-body --}}
 </div>{{-- /.card-tabs --}}
 
