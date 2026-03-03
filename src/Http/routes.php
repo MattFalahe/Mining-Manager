@@ -895,6 +895,12 @@ Route::group([
             'uses' => 'DiagnosticController@valuationTest',
             'middleware' => 'can:mining-manager.admin',
         ]);
+
+        Route::get('/system-status', [
+            'as' => 'mining-manager.diagnostic.system-status',
+            'uses' => 'DiagnosticController@systemStatus',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
     });
 
     // API Routes - Admin only

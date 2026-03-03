@@ -952,34 +952,64 @@ class DashboardController extends Controller
      */
     private function getMiningByType($characterIds, $startDate, $limit = 10)
     {
-        $miningData = MiningLedger::whereIn('character_id', $characterIds)
+        // Use pre-calculated daily summaries (ore_types JSON) instead of loading all raw records
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $startDate)
-            ->whereNotNull('processed_at')
+            ->whereNotNull('ore_types')
+            ->select('ore_types')
             ->get();
 
-        // Group by type_id and calculate value per type
+        // Aggregate per type_id from the ore_types JSON breakdown
         $byType = [];
-        $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
 
-        foreach ($miningData as $entry) {
-            $typeId = $entry->type_id;
-            if (!isset($byType[$typeId])) {
-                // Get ore name from invTypes table
-                $typeName = DB::table('invTypes')
-                    ->where('typeID', $typeId)
-                    ->value('typeName') ?? "Type {$typeId}";
+        foreach ($summaries as $summary) {
+            $oreTypes = is_array($summary->ore_types) ? $summary->ore_types : json_decode($summary->ore_types, true);
+            if (!is_array($oreTypes)) continue;
 
+            foreach ($oreTypes as $ore) {
+                $typeId = $ore['type_id'] ?? null;
+                if (!$typeId) continue;
+
+                if (!isset($byType[$typeId])) {
+                    $byType[$typeId] = [
+                        'name' => $ore['ore_name'] ?? "Type {$typeId}",
+                        'quantity' => 0,
+                        'value' => 0,
+                        'group' => $this->getOreGroupFromCategory($ore['category'] ?? null, $typeId),
+                    ];
+                }
+
+                $byType[$typeId]['quantity'] += (float) ($ore['quantity'] ?? 0);
+                $byType[$typeId]['value'] += (float) ($ore['total_value'] ?? 0);
+            }
+        }
+
+        // Fallback: if no daily summaries exist yet, use raw ledger with SQL aggregation
+        if (empty($byType)) {
+            $rawData = MiningLedger::whereIn('character_id', $characterIds)
+                ->where('date', '>=', $startDate)
+                ->whereNotNull('processed_at')
+                ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value')
+                ->groupBy('type_id')
+                ->orderByDesc(DB::raw('SUM(total_value)'))
+                ->limit($limit)
+                ->get();
+
+            // Batch-load ore names
+            $typeIds = $rawData->pluck('type_id')->toArray();
+            $typeNames = !empty($typeIds)
+                ? DB::table('invTypes')->whereIn('typeID', $typeIds)->pluck('typeName', 'typeID')->toArray()
+                : [];
+
+            foreach ($rawData as $entry) {
+                $typeId = $entry->type_id;
                 $byType[$typeId] = [
-                    'name' => $typeName,
-                    'quantity' => 0,
-                    'value' => 0,
+                    'name' => $typeNames[$typeId] ?? "Type {$typeId}",
+                    'quantity' => (float) $entry->total_quantity,
+                    'value' => (float) $entry->total_value,
                     'group' => $this->getOreGroup($typeId),
                 ];
             }
-
-            $byType[$typeId]['quantity'] += $entry->quantity;
-            $values = $valuationService->calculateOreValue($typeId, $entry->quantity);
-            $byType[$typeId]['value'] += $values['total_value'];
         }
 
         // Sort by value descending and take top N
@@ -1013,6 +1043,19 @@ class DashboardController extends Controller
             'data' => $data,
             'colors' => $colors,
         ];
+    }
+
+    /**
+     * Map ore_types JSON category to chart group name.
+     */
+    private function getOreGroupFromCategory(?string $category, int $typeId): string
+    {
+        switch ($category) {
+            case 'moon_ore': return 'Moon';
+            case 'ice': return 'Ice';
+            case 'gas': return 'Gas';
+            default: return $this->getOreGroup($typeId);
+        }
     }
 
     /**

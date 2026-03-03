@@ -12,7 +12,9 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\Setting;
+use Illuminate\Support\Facades\Schema;
 
 class DiagnosticController extends Controller
 {
@@ -1835,5 +1837,167 @@ class DiagnosticController extends Controller
                 ],
             ], 500);
         }
+    }
+
+    /**
+     * System Status diagnostic — daily summaries, multi-corp, scheduled jobs.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function systemStatus()
+    {
+        $results = [];
+
+        // ── 1. Daily Summary Status ──────────────────────────────────
+        try {
+            $summaryStats = [];
+            $summaryStats['total'] = DB::table('mining_ledger_daily_summaries')->count();
+            $summaryStats['today'] = DB::table('mining_ledger_daily_summaries')
+                ->whereDate('date', Carbon::today())->count();
+            $summaryStats['yesterday'] = DB::table('mining_ledger_daily_summaries')
+                ->whereDate('date', Carbon::yesterday())->count();
+
+            // Characters with mining data today but no daily summary
+            $minersToday = DB::table('mining_ledger')
+                ->whereDate('date', Carbon::today())
+                ->whereNotNull('processed_at')
+                ->distinct()->pluck('character_id')->toArray();
+            $summariesToday = DB::table('mining_ledger_daily_summaries')
+                ->whereDate('date', Carbon::today())
+                ->distinct()->pluck('character_id')->toArray();
+            $summaryStats['missing_today'] = count(array_diff($minersToday, $summariesToday));
+            $summaryStats['miners_today'] = count($minersToday);
+
+            // Latest summary timestamp
+            $latest = DB::table('mining_ledger_daily_summaries')
+                ->orderByDesc('updated_at')->value('updated_at');
+            $summaryStats['last_updated'] = $latest;
+            $summaryStats['last_updated_ago'] = $latest ? Carbon::parse($latest)->diffForHumans() : 'never';
+
+            // Finalized months count
+            $summaryStats['finalized_months'] = DB::table('mining_ledger_monthly_summaries')
+                ->where('is_finalized', true)->count();
+
+            $summaryStats['status'] = $summaryStats['missing_today'] === 0 ? 'healthy' : 'warning';
+            $results['daily_summaries'] = $summaryStats;
+        } catch (\Exception $e) {
+            $results['daily_summaries'] = ['status' => 'error', 'error' => $e->getMessage()];
+        }
+
+        // ── 2. Multi-Corporation Settings ────────────────────────────
+        try {
+            $corpStats = [];
+            $allCorps = $this->settingsService->getAllCorporations();
+            $corpStats['configured_corporations'] = $allCorps->count();
+
+            $moonOwner = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            $corpStats['moon_owner_corporation_id'] = $moonOwner;
+
+            // Check each configured corp has tax rates
+            $corpDetails = [];
+            foreach ($allCorps as $corp) {
+                $corpId = $corp->corporation_id;
+                $this->settingsService->setActiveCorporation((int) $corpId);
+                $taxRates = $this->settingsService->getTaxRatesForCorporation($corpId);
+                $taxSelector = $this->settingsService->getTaxSelector();
+
+                $corpDetails[] = [
+                    'corporation_id' => $corpId,
+                    'has_ore_rate' => isset($taxRates['ore']) && $taxRates['ore'] > 0,
+                    'has_moon_rates' => isset($taxRates['moon_ore']) && !empty($taxRates['moon_ore']),
+                    'ore_taxed' => $taxSelector['ore'] ?? true,
+                    'ice_taxed' => $taxSelector['ice'] ?? true,
+                    'gas_taxed' => $taxSelector['gas'] ?? false,
+                    'ore_rate' => $taxRates['ore'] ?? 0,
+                ];
+            }
+            // Reset to global context
+            $this->settingsService->setActiveCorporation(null);
+
+            $corpStats['corporation_details'] = $corpDetails;
+            $corpStats['status'] = $allCorps->count() > 0 || $moonOwner ? 'healthy' : 'warning';
+            $results['multi_corp'] = $corpStats;
+        } catch (\Exception $e) {
+            $results['multi_corp'] = ['status' => 'error', 'error' => $e->getMessage()];
+        }
+
+        // ── 3. Price Cache Freshness ─────────────────────────────────
+        try {
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+
+            $totalCached = MiningPriceCache::count();
+            $freshCount = MiningPriceCache::where('cached_at', '>=', now()->subMinutes($cacheDuration))->count();
+            $staleCount = $totalCached - $freshCount;
+
+            $results['price_cache'] = [
+                'total_cached' => $totalCached,
+                'fresh' => $freshCount,
+                'stale' => $staleCount,
+                'cache_duration_minutes' => $cacheDuration,
+                'status' => $staleCount === 0 && $totalCached > 0 ? 'healthy'
+                    : ($totalCached === 0 ? 'critical' : 'warning'),
+            ];
+        } catch (\Exception $e) {
+            $results['price_cache'] = ['status' => 'error', 'error' => $e->getMessage()];
+        }
+
+        // ── 4. Scheduled Jobs Last-Run ───────────────────────────────
+        try {
+            $jobChecks = [
+                'process-ledger' => ['table' => 'mining_ledger', 'column' => 'processed_at'],
+                'update-daily-summaries' => ['table' => 'mining_ledger_daily_summaries', 'column' => 'updated_at'],
+                'calculate-taxes' => ['table' => 'mining_taxes', 'column' => 'updated_at'],
+                'cache-prices' => ['table' => 'mining_price_cache', 'column' => 'cached_at'],
+            ];
+
+            $jobStatus = [];
+            foreach ($jobChecks as $jobName => $check) {
+                try {
+                    if (Schema::hasTable($check['table'])) {
+                        $lastRun = DB::table($check['table'])->max($check['column']);
+                        $jobStatus[$jobName] = [
+                            'last_activity' => $lastRun,
+                            'ago' => $lastRun ? Carbon::parse($lastRun)->diffForHumans() : 'never',
+                            'status' => $lastRun && Carbon::parse($lastRun)->isAfter(now()->subHours(25))
+                                ? 'healthy' : 'warning',
+                        ];
+                    } else {
+                        $jobStatus[$jobName] = ['status' => 'error', 'error' => "Table {$check['table']} missing"];
+                    }
+                } catch (\Exception $e) {
+                    $jobStatus[$jobName] = ['status' => 'error', 'error' => $e->getMessage()];
+                }
+            }
+
+            // Check failed_jobs table for any mining-manager failures
+            $failedJobs = 0;
+            if (Schema::hasTable('failed_jobs')) {
+                $failedJobs = DB::table('failed_jobs')
+                    ->where('payload', 'like', '%mining-manager%')
+                    ->where('failed_at', '>=', now()->subDays(7))
+                    ->count();
+            }
+            $jobStatus['failed_jobs_7d'] = $failedJobs;
+
+            $results['scheduled_jobs'] = $jobStatus;
+        } catch (\Exception $e) {
+            $results['scheduled_jobs'] = ['status' => 'error', 'error' => $e->getMessage()];
+        }
+
+        // ── 5. Data Counts Overview ──────────────────────────────────
+        try {
+            $results['data_counts'] = [
+                'mining_ledger' => DB::table('mining_ledger')->count(),
+                'mining_taxes' => DB::table('mining_taxes')->count(),
+                'daily_summaries' => DB::table('mining_ledger_daily_summaries')->count(),
+                'monthly_summaries' => DB::table('mining_ledger_monthly_summaries')->count(),
+                'price_cache' => MiningPriceCache::count(),
+            ];
+        } catch (\Exception $e) {
+            $results['data_counts'] = ['error' => $e->getMessage()];
+        }
+
+        return response()->json($results);
     }
 }

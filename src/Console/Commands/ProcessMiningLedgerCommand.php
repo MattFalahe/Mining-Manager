@@ -76,6 +76,23 @@ class ProcessMiningLedgerCommand extends Command
         $this->info("📊 Found {$observerEntries->count()} observer mining entries");
         $this->line('');
 
+        // Check price cache freshness before processing
+        try {
+            $priceService = app(PriceProviderService::class);
+            // Spot-check a common ore type (Veldspar = 1230) for cache freshness
+            $pricingSettings = $settingsService->getPricingSettings();
+            $regionId = (int) ($pricingSettings['default_region_id'] ?? 10000002);
+            if (!$priceService->isCacheFresh(1230, $regionId)) {
+                $this->warn('⚠️  Price cache is STALE — prices may be outdated. Run mining-manager:cache-prices first.');
+                Log::warning('Mining Manager: ProcessMiningLedgerCommand running with stale price cache');
+            } else {
+                $this->info('✅ Price cache is fresh');
+            }
+        } catch (\Exception $e) {
+            $this->warn('⚠️  Could not verify price cache freshness: ' . $e->getMessage());
+        }
+        $this->line('');
+
         $processed = 0;
         $updated = 0;
         $skipped = 0;

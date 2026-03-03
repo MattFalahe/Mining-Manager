@@ -190,6 +190,11 @@
                     <i class="fas fa-search-dollar"></i> Valuation Test
                 </a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#system-status" data-toggle="tab" onclick="loadSystemStatus()">
+                    <i class="fas fa-heartbeat"></i> System Status
+                </a>
+            </li>
         </ul>
     </div>
     <div class="card-body">
@@ -908,6 +913,45 @@
                             <div id="valuationResults" style="margin-top: 20px;"></div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Tab -->
+        <div class="tab-pane" id="system-status">
+            <div id="system-status-loading" class="text-center py-5">
+                <p class="text-muted"><i class="fas fa-heartbeat"></i> Click the tab to load system status...</p>
+            </div>
+            <div id="system-status-content" style="display: none;">
+
+                {{-- Daily Summaries --}}
+                <div class="card card-dark mb-3">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-calendar-day"></i> Daily Summary Status</h3></div>
+                    <div class="card-body" id="ss-daily-summaries"></div>
+                </div>
+
+                {{-- Multi-Corp Settings --}}
+                <div class="card card-dark mb-3">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-building"></i> Multi-Corporation Settings</h3></div>
+                    <div class="card-body" id="ss-multi-corp"></div>
+                </div>
+
+                {{-- Price Cache --}}
+                <div class="card card-dark mb-3">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-tags"></i> Price Cache Freshness</h3></div>
+                    <div class="card-body" id="ss-price-cache"></div>
+                </div>
+
+                {{-- Scheduled Jobs --}}
+                <div class="card card-dark mb-3">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-clock"></i> Scheduled Jobs Last Activity</h3></div>
+                    <div class="card-body" id="ss-jobs"></div>
+                </div>
+
+                {{-- Data Counts --}}
+                <div class="card card-dark mb-3">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-database"></i> Data Counts</h3></div>
+                    <div class="card-body" id="ss-data-counts"></div>
                 </div>
             </div>
         </div>
@@ -2005,6 +2049,104 @@ function validateTypeIds() {
             </div>
         `;
     });
+}
+
+// ── System Status Tab ──────────────────────────────
+var systemStatusLoaded = false;
+function loadSystemStatus() {
+    if (systemStatusLoaded) return;
+    systemStatusLoaded = true;
+
+    $('#system-status-loading').html('<div class="text-center py-5"><div class="spinner-border text-info"></div><p class="text-muted mt-2">Loading system status...</p></div>');
+
+    fetch('{{ route("mining-manager.diagnostic.system-status") }}')
+        .then(r => r.json())
+        .then(data => {
+            // Daily Summaries
+            var ds = data.daily_summaries || {};
+            var badge = ds.status === 'healthy' ? 'success' : (ds.status === 'warning' ? 'warning' : 'danger');
+            $('#ss-daily-summaries').html(
+                '<span class="badge badge-' + badge + ' mb-2">' + (ds.status || 'unknown').toUpperCase() + '</span>' +
+                '<table class="table table-sm table-dark">' +
+                '<tr><td>Total daily summaries</td><td><strong>' + (ds.total || 0) + '</strong></td></tr>' +
+                '<tr><td>Today\'s summaries</td><td>' + (ds.today || 0) + '</td></tr>' +
+                '<tr><td>Yesterday\'s summaries</td><td>' + (ds.yesterday || 0) + '</td></tr>' +
+                '<tr><td>Miners active today</td><td>' + (ds.miners_today || 0) + '</td></tr>' +
+                '<tr><td>Missing summaries (today)</td><td>' + (ds.missing_today > 0 ? '<span class="text-warning">' + ds.missing_today + '</span>' : '0') + '</td></tr>' +
+                '<tr><td>Last updated</td><td>' + (ds.last_updated_ago || 'never') + '</td></tr>' +
+                '<tr><td>Finalized months</td><td>' + (ds.finalized_months || 0) + '</td></tr>' +
+                '</table>'
+            );
+
+            // Multi-Corp
+            var mc = data.multi_corp || {};
+            var mcBadge = mc.status === 'healthy' ? 'success' : 'warning';
+            var corpHtml = '<span class="badge badge-' + mcBadge + ' mb-2">' + (mc.status || 'unknown').toUpperCase() + '</span>' +
+                '<table class="table table-sm table-dark">' +
+                '<tr><td>Configured corporations</td><td><strong>' + (mc.configured_corporations || 0) + '</strong></td></tr>' +
+                '<tr><td>Moon owner corp ID</td><td>' + (mc.moon_owner_corporation_id || '<span class="text-warning">Not set</span>') + '</td></tr>' +
+                '</table>';
+            if (mc.corporation_details && mc.corporation_details.length > 0) {
+                corpHtml += '<h6 class="mt-3">Per-Corporation Tax Config</h6><table class="table table-sm table-dark">' +
+                    '<thead><tr><th>Corp ID</th><th>Ore Rate</th><th>Moon Rates</th><th>Ore Taxed</th><th>Ice Taxed</th><th>Gas Taxed</th></tr></thead><tbody>';
+                mc.corporation_details.forEach(function(c) {
+                    corpHtml += '<tr><td>' + c.corporation_id + '</td>' +
+                        '<td>' + (c.ore_rate || 0) + '%</td>' +
+                        '<td>' + (c.has_moon_rates ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-danger"></i>') + '</td>' +
+                        '<td>' + (c.ore_taxed ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-muted"></i>') + '</td>' +
+                        '<td>' + (c.ice_taxed ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-muted"></i>') + '</td>' +
+                        '<td>' + (c.gas_taxed ? '<i class="fas fa-check text-success"></i>' : '<i class="fas fa-times text-muted"></i>') + '</td></tr>';
+                });
+                corpHtml += '</tbody></table>';
+            }
+            $('#ss-multi-corp').html(corpHtml);
+
+            // Price Cache
+            var pc = data.price_cache || {};
+            var pcBadge = pc.status === 'healthy' ? 'success' : (pc.status === 'critical' ? 'danger' : 'warning');
+            $('#ss-price-cache').html(
+                '<span class="badge badge-' + pcBadge + ' mb-2">' + (pc.status || 'unknown').toUpperCase() + '</span>' +
+                '<table class="table table-sm table-dark">' +
+                '<tr><td>Total cached prices</td><td><strong>' + (pc.total_cached || 0) + '</strong></td></tr>' +
+                '<tr><td>Fresh (within ' + (pc.cache_duration_minutes || 60) + ' min)</td><td class="text-success">' + (pc.fresh || 0) + '</td></tr>' +
+                '<tr><td>Stale</td><td class="' + (pc.stale > 0 ? 'text-warning' : '') + '">' + (pc.stale || 0) + '</td></tr>' +
+                '</table>'
+            );
+
+            // Scheduled Jobs
+            var jobs = data.scheduled_jobs || {};
+            var jobHtml = '<table class="table table-sm table-dark"><thead><tr><th>Job</th><th>Last Activity</th><th>Status</th></tr></thead><tbody>';
+            ['process-ledger', 'update-daily-summaries', 'calculate-taxes', 'cache-prices'].forEach(function(name) {
+                var j = jobs[name] || {};
+                var jBadge = j.status === 'healthy' ? 'success' : (j.status === 'error' ? 'danger' : 'warning');
+                jobHtml += '<tr><td>' + name + '</td><td>' + (j.ago || 'never') + '</td>' +
+                    '<td><span class="badge badge-' + jBadge + '">' + (j.status || 'unknown') + '</span></td></tr>';
+            });
+            var failed = jobs.failed_jobs_7d || 0;
+            jobHtml += '<tr><td>Failed jobs (7 days)</td><td colspan="2">' +
+                (failed > 0 ? '<span class="text-danger">' + failed + '</span>' : '<span class="text-success">0</span>') +
+                '</td></tr>';
+            jobHtml += '</tbody></table>';
+            $('#ss-jobs').html(jobHtml);
+
+            // Data Counts
+            var dc = data.data_counts || {};
+            $('#ss-data-counts').html(
+                '<table class="table table-sm table-dark">' +
+                '<tr><td>Mining ledger entries</td><td><strong>' + (dc.mining_ledger || 0).toLocaleString() + '</strong></td></tr>' +
+                '<tr><td>Tax records</td><td>' + (dc.mining_taxes || 0).toLocaleString() + '</td></tr>' +
+                '<tr><td>Daily summaries</td><td>' + (dc.daily_summaries || 0).toLocaleString() + '</td></tr>' +
+                '<tr><td>Monthly summaries</td><td>' + (dc.monthly_summaries || 0).toLocaleString() + '</td></tr>' +
+                '<tr><td>Price cache entries</td><td>' + (dc.price_cache || 0).toLocaleString() + '</td></tr>' +
+                '</table>'
+            );
+
+            $('#system-status-loading').hide();
+            $('#system-status-content').show();
+        })
+        .catch(function(err) {
+            $('#system-status-loading').html('<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Failed to load system status: ' + err.message + '</div>');
+        });
 }
 </script>
 @endpush
