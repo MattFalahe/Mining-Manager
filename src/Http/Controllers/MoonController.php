@@ -189,9 +189,24 @@ class MoonController extends Controller
 
         // Quick status sync for this month
         $now = Carbon::now();
+
+        // Detect auto-fractures before updating statuses
+        app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
+
+        // Mark expired based on calculated expiry:
+        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
+        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
         MoonExtraction::where('status', '!=', 'expired')
             ->where('status', '!=', 'fractured')
-            ->where('natural_decay_time', '<', $now)
+            ->where(function ($q) use ($now) {
+                $q->where(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', false)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
+                })->orWhere(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', true)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
+                });
+            })
             ->update(['status' => 'expired']);
 
         // Get extractions for the month (including expired/past)
@@ -245,6 +260,7 @@ class MoonController extends Controller
             $historyExtraction->estimated_value = $history->final_estimated_value;
             $historyExtraction->calculated_value = $history->final_estimated_value;
             $historyExtraction->is_jackpot = $history->is_jackpot;
+            $historyExtraction->auto_fractured = $history->auto_fractured ?? false;
             $historyExtraction->is_archived = true;
             $pseudoExtractions->push($historyExtraction);
         }

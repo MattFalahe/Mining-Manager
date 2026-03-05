@@ -67,6 +67,7 @@ class MoonExtractionHistory extends Model
         'completion_percentage',
         'is_jackpot',
         'jackpot_detected_at',
+        'auto_fractured',
         'notes',
     ];
 
@@ -83,6 +84,7 @@ class MoonExtractionHistory extends Model
         'jackpot_detected_at' => 'datetime',
         'ore_composition' => 'array',
         'is_jackpot' => 'boolean',
+        'auto_fractured' => 'boolean',
         'total_miners' => 'integer',
         'completion_percentage' => 'decimal:2',
         'estimated_value_at_start' => 'float',

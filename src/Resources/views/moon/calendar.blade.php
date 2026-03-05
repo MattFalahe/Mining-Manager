@@ -170,32 +170,40 @@
                             $effectiveStatus = $extraction->getEffectiveStatus();
                             $arrivalTime = $extraction->chunk_arrival_time;
                             $hoursSinceArrival = $now->diffInHours($arrivalTime, false) * -1;
-                            $hoursUntilUnstable = 48 - $hoursSinceArrival;
-                            $hoursUntilAutoFracture = 51 - $hoursSinceArrival;
+                            $readyHours = $extraction->getReadyDurationHours();
+                            $hoursUntilUnstable = $readyHours - $hoursSinceArrival;
+                            $hoursUntilExpired = ($readyHours + 2) - $hoursSinceArrival;
                         @endphp
                         <div class="mm-sidebar-item mm-status-{{ $effectiveStatus }}">
                             <div class="mm-structure-name">
-                                <i class="fas fa-moon {{ $effectiveStatus === 'unstable' ? 'text-danger' : 'text-success' }}"></i>
+                                <i class="fas fa-building {{ $effectiveStatus === 'unstable' ? 'text-danger' : 'text-success' }}"></i>
+                                {{ $extraction->structure_name ?? 'Unknown' }}
+                            </div>
+                            <div class="mm-extraction-time text-muted" style="font-size: 0.85em;">
+                                <i class="fas fa-moon"></i>
                                 {{ $extraction->moon_name ?? 'Unknown Moon' }}
                             </div>
                             <div class="mm-extraction-time">
                                 <i class="fas fa-clock"></i>
                                 {{ trans('mining-manager::moons.ready_since') }}: {{ $arrivalTime->format('M d, H:i') }} EVE
+                                @if($extraction->auto_fractured)
+                                    <span class="badge badge-sm badge-secondary" title="Auto-fractured: +3h ready window">AF</span>
+                                @endif
                             </div>
                             @if($effectiveStatus === 'ready')
                                 <div class="mm-countdown mm-countdown-warning" data-hours-until-unstable="{{ $hoursUntilUnstable }}">
                                     <i class="fas fa-exclamation-triangle text-warning"></i>
                                     <span class="countdown-text">
                                         {{ trans('mining-manager::moons.unstable_in') }}:
-                                        <strong>{{ floor($hoursUntilUnstable) }}h {{ round(($hoursUntilUnstable - floor($hoursUntilUnstable)) * 60) }}m</strong>
+                                        <strong>{{ floor(max(0, $hoursUntilUnstable)) }}h {{ round((max(0, $hoursUntilUnstable) - floor(max(0, $hoursUntilUnstable))) * 60) }}m</strong>
                                     </span>
                                 </div>
                             @else
-                                <div class="mm-countdown mm-countdown-danger" data-hours-until-fracture="{{ $hoursUntilAutoFracture }}">
+                                <div class="mm-countdown mm-countdown-danger" data-hours-until-fracture="{{ $hoursUntilExpired }}">
                                     <i class="fas fa-bomb text-danger"></i>
                                     <span class="countdown-text">
                                         {{ trans('mining-manager::moons.auto_fracture_in') }}:
-                                        <strong class="text-danger">{{ floor($hoursUntilAutoFracture) }}h {{ round(($hoursUntilAutoFracture - floor($hoursUntilAutoFracture)) * 60) }}m</strong>
+                                        <strong class="text-danger">{{ floor(max(0, $hoursUntilExpired)) }}h {{ round((max(0, $hoursUntilExpired) - floor(max(0, $hoursUntilExpired))) * 60) }}m</strong>
                                     </span>
                                 </div>
                             @endif
@@ -214,12 +222,12 @@
                 </div>
             </div>
 
-            {{-- THIS WEEK --}}
+            {{-- NEXT 7 DAYS --}}
             <div class="card card-info card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
-                        <i class="fas fa-calendar-week"></i>
-                        {{ trans('mining-manager::moons.this_week') }}
+                        <i class="fas fa-calendar-alt"></i>
+                        {{ trans('mining-manager::moons.next_7_days') }}
                     </h3>
                     <div class="card-tools">
                         @php
@@ -246,8 +254,8 @@
                         @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
                         <div class="mm-sidebar-item mm-status-{{ $effectiveStatus }}">
                             <div class="mm-structure-name">
-                                <i class="fas fa-moon text-info"></i>
-                                {{ $extraction->moon_name ?? 'Unknown Moon' }}
+                                <i class="fas fa-building text-info"></i>
+                                {{ $extraction->structure_name ?? 'Unknown' }}
                             </div>
                             <div class="mm-extraction-time">
                                 <i class="fas fa-calendar"></i>
@@ -265,7 +273,7 @@
                     @empty
                         <div class="text-center text-muted py-3">
                             <i class="fas fa-calendar-times fa-2x mb-2"></i>
-                            <p class="mb-0">{{ trans('mining-manager::moons.no_upcoming_week') }}</p>
+                            <p class="mb-0">{{ trans('mining-manager::moons.no_upcoming_next_7') }}</p>
                         </div>
                     @endforelse
                 </div>
@@ -367,17 +375,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 const decayTime = decayStr ? new Date(decayStr) : null;
                 const now = new Date();
                 const hoursSinceArrival = (now - arrivalTime) / (1000 * 60 * 60);
+                const autoFractured = extraction.auto_fractured || false;
+                const readyHours = autoFractured ? 51 : 48;
 
                 if (arrivalTime > now) {
                     effectiveStatus = 'extracting';
-                } else if (decayTime && now > decayTime) {
-                    effectiveStatus = 'expired';
-                } else if (hoursSinceArrival >= 48 && hoursSinceArrival < 51) {
-                    effectiveStatus = 'unstable';
-                } else if (hoursSinceArrival < 48) {
+                } else if (hoursSinceArrival < readyHours) {
                     effectiveStatus = 'ready';
+                } else if (hoursSinceArrival < readyHours + 2) {
+                    effectiveStatus = 'unstable';
                 } else {
-                    // Past 51h - should be expired
                     effectiveStatus = 'expired';
                 }
             }
@@ -403,7 +410,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     moon: extraction.moon_name || 'Unknown',
                     structure: extraction.structure_name || 'Unknown',
                     estimatedValue: extraction.calculated_value || extraction.estimated_value || 0,
-                    oreComposition: extraction.ore_composition
+                    oreComposition: extraction.ore_composition,
+                    autoFractured: autoFractured
                 }
             });
         });

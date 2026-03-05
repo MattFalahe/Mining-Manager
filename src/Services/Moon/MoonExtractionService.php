@@ -512,6 +512,42 @@ class MoonExtractionService
     }
 
     /**
+     * Detect auto-fractured extractions by scanning EVE notifications.
+     * When EVE auto-fractures a moon (no player fired the laser), a
+     * MoonminingAutoFracture notification is generated. This extends
+     * the ready window from 48h to 51h.
+     *
+     * @return int Number of auto-fractures detected
+     */
+    public function detectAutoFractures(): int
+    {
+        $readyExtractions = MoonExtraction::where('auto_fractured', false)
+            ->where('status', 'ready')
+            ->whereNotNull('chunk_arrival_time')
+            ->where('chunk_arrival_time', '<=', Carbon::now())
+            ->get();
+
+        $detected = 0;
+        foreach ($readyExtractions as $extraction) {
+            $notification = DB::table('character_notifications')
+                ->where('type', 'MoonminingAutomaticFracture')
+                ->where('text', 'LIKE', '%structureID: ' . $extraction->structure_id . '%')
+                ->where('timestamp', '>=', $extraction->chunk_arrival_time)
+                ->where('timestamp', '<=', Carbon::now())
+                ->first();
+
+            if ($notification) {
+                $extraction->auto_fractured = true;
+                $extraction->save();
+                $detected++;
+                Log::info("Mining Manager: Auto-fracture detected for extraction {$extraction->id} at structure {$extraction->structure_id}");
+            }
+        }
+
+        return $detected;
+    }
+
+    /**
      * Update extraction statuses based on current time.
      *
      * @return void
@@ -520,9 +556,23 @@ class MoonExtractionService
     {
         $now = Carbon::now();
 
-        // Mark as expired if past natural decay time
+        // Detect auto-fractures first (affects expiry timing)
+        $this->detectAutoFractures();
+
+        // Mark as expired based on calculated expiry:
+        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
+        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
         $expired = MoonExtraction::where('status', '!=', 'expired')
-            ->where('natural_decay_time', '<', $now)
+            ->where('status', '!=', 'fractured')
+            ->where(function ($q) use ($now) {
+                $q->where(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', false)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
+                })->orWhere(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', true)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
+                });
+            })
             ->update(['status' => 'expired']);
 
         if ($expired > 0) {
@@ -532,17 +582,21 @@ class MoonExtractionService
         // Mark as ready if chunk has arrived but not expired
         $readyExtractions = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
-            ->where('natural_decay_time', '>', $now)
             ->get();
 
-        if ($readyExtractions->isNotEmpty()) {
-            MoonExtraction::whereIn('id', $readyExtractions->pluck('id'))
+        // Filter to only those not yet expired
+        $readyIds = $readyExtractions->filter(function ($e) {
+            return !$e->isExpired();
+        })->pluck('id');
+
+        if ($readyIds->isNotEmpty()) {
+            MoonExtraction::whereIn('id', $readyIds)
                 ->update(['status' => 'ready']);
 
-            Log::info("Mining Manager: Marked {$readyExtractions->count()} extractions as ready");
+            Log::info("Mining Manager: Marked {$readyIds->count()} extractions as ready");
 
             // Send moon arrival notifications
-            foreach ($readyExtractions as $extraction) {
+            foreach ($readyExtractions->whereIn('id', $readyIds) as $extraction) {
                 $this->sendMoonArrivalNotification($extraction);
             }
         }

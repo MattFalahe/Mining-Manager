@@ -46,11 +46,19 @@ class ArchiveOldExtractionsCommand extends Command
             $this->warn("DRY RUN MODE - No changes will be made");
         }
 
-        // First, update status for extractions that have passed their natural decay time
+        // First, update status for extractions that have passed their expiry time
         $now = Carbon::now();
         $expiredCount = MoonExtraction::where('status', '!=', 'expired')
             ->where('status', '!=', 'fractured')
-            ->where('natural_decay_time', '<', $now)
+            ->where(function ($q) use ($now) {
+                $q->where(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', false)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
+                })->orWhere(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', true)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
+                });
+            })
             ->update(['status' => 'expired']);
 
         if ($expiredCount > 0) {
@@ -99,6 +107,7 @@ class ArchiveOldExtractionsCommand extends Command
                         'completion_percentage' => $actualMinedData['completion_percentage'],
                         'is_jackpot' => $extraction->is_jackpot,
                         'jackpot_detected_at' => $extraction->jackpot_detected_at,
+                        'auto_fractured' => $extraction->auto_fractured,
                     ]);
 
                     // Delete the original extraction

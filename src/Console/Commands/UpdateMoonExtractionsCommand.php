@@ -190,23 +190,45 @@ class UpdateMoonExtractionsCommand extends Command
     {
         $now = Carbon::now();
 
-        // Mark as expired if past natural decay time
+        // Detect auto-fractures first (affects expiry timing)
+        $extractionService = app(\MiningManager\Services\Moon\MoonExtractionService::class);
+        $autoFractured = $extractionService->detectAutoFractures();
+        if ($autoFractured > 0) {
+            $this->info("Detected {$autoFractured} auto-fractured extractions");
+        }
+
+        // Mark as expired based on calculated expiry:
+        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
+        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
         $expired = MoonExtraction::where('status', '!=', 'expired')
-            ->where('natural_decay_time', '<', $now)
+            ->where('status', '!=', 'fractured')
+            ->where(function ($q) use ($now) {
+                $q->where(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', false)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
+                })->orWhere(function ($q2) use ($now) {
+                    $q2->where('auto_fractured', true)
+                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
+                });
+            })
             ->update(['status' => 'expired']);
 
         if ($expired > 0) {
             $this->info("Marked {$expired} extractions as expired");
         }
 
-        // Mark as ready if chunk has arrived but not expired
+        // Mark as ready if chunk has arrived but not yet expired
         $ready = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
-            ->where('natural_decay_time', '>', $now)
-            ->update(['status' => 'ready']);
+            ->get()
+            ->filter(function ($e) {
+                return !$e->isExpired();
+            });
 
-        if ($ready > 0) {
-            $this->info("Marked {$ready} extractions as ready");
+        if ($ready->isNotEmpty()) {
+            MoonExtraction::whereIn('id', $ready->pluck('id'))
+                ->update(['status' => 'ready']);
+            $this->info("Marked {$ready->count()} extractions as ready");
         }
     }
 }
