@@ -530,10 +530,11 @@ class DashboardController extends Controller
 
         $totalQuantity = $stats->total_quantity ?? 0;
         $totalValue = $stats->total_value ?? 0;
+        $totalVolume = $this->calculateActualVolume($characterIds, $startDate, $endDate);
 
         return [
             'total_quantity' => $totalQuantity,
-            'total_volume' => $totalQuantity * 0.1,
+            'total_volume' => $totalVolume,
             'total_value' => $totalValue,
             'total_isk' => $totalValue,
             'tax_isk' => $stats->tax_isk ?? 0,
@@ -573,7 +574,7 @@ class DashboardController extends Controller
 
             $totalQuantity += $currentMonthQuantity;
             $totalValue += $currentMonthValue;
-            $totalVolume = $totalQuantity * 1000; // Approximate
+            $totalVolume = $this->calculateActualVolume($characterIds, $startDate, Carbon::now());
 
             $avgPerMonth = $totalValue / 12;
 
@@ -596,7 +597,7 @@ class DashboardController extends Controller
 
         $totalQuantity = $summaryData->total_quantity ?? 0;
         $totalValue = $summaryData->total_value ?? 0;
-        $totalVolume = $totalQuantity * 0.1;
+        $totalVolume = $this->calculateActualVolume($characterIds, $startDate, Carbon::now());
 
         // Calculate average per month
         $avgPerMonth = $totalValue / 12;
@@ -1698,10 +1699,32 @@ class DashboardController extends Controller
         return null;
     }
 
-    private function calculateTotalVolume($miningData)
+    /**
+     * Calculate actual mining volume (m³) from mining_ledger joined with invTypes.
+     * Each ore type has a different volume per unit, so a flat multiplier won't work.
+     */
+    private function calculateActualVolume($characterIds, $startDate, $endDate): float
     {
-        // Implement volume calculation based on type_id
-        return $miningData->sum('quantity') * 0.1; // Placeholder
+        if (empty($characterIds)) {
+            return 0;
+        }
+
+        try {
+            $volume = DB::table('mining_ledger')
+                ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+                ->whereIn('mining_ledger.character_id', $characterIds)
+                ->whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->whereNull('mining_ledger.deleted_at')
+                ->selectRaw('SUM(mining_ledger.quantity * invTypes.volume) as total_volume')
+                ->value('total_volume');
+
+            return (float) ($volume ?? 0);
+        } catch (\Exception $e) {
+            \Log::warning('calculateActualVolume: Failed to compute volume from invTypes', [
+                'error' => $e->getMessage(),
+            ]);
+            return 0;
+        }
     }
 
     /**
