@@ -49,7 +49,7 @@ class LedgerSummaryService
             ->whereNotNull('processed_at')
             ->selectRaw('
                 character_id,
-                corporation_id,
+                MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(tax_amount) as total_tax,
@@ -58,7 +58,7 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
                 SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
-            ->groupBy('character_id', 'corporation_id')
+            ->groupBy('character_id')
             ->first();
 
         if (!$summary) {
@@ -492,9 +492,12 @@ class LedgerSummaryService
             $query->where('corporation_id', $corporationId);
         }
 
+        // Group by character_id only — a character's total should be aggregated
+        // across all corporations they mined at. Use MAX(corporation_id) to pick
+        // the primary corporation for display purposes.
         return $query->selectRaw('
                 character_id,
-                corporation_id,
+                MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(tax_amount) as total_tax,
@@ -503,7 +506,7 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
                 SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
-            ->groupBy('character_id', 'corporation_id')
+            ->groupBy('character_id')
             ->with('character')
             ->get();
     }
