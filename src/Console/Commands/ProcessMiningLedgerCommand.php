@@ -288,11 +288,40 @@ class ProcessMiningLedgerCommand extends Command
                 $this->checkForJackpotOres($observerEntries);
             }
 
-            // Dashboard cache clearing is handled by the summary pipeline:
-            // :20/:50 update-daily-summaries → :25/:55 calculate-monthly-stats
-            // which runs after this command and clears relevant caches.
-            // No need to flush caches here — they will refresh via the pipeline.
-            $this->info("\n✅ Data processed. Dashboard will refresh via summary pipeline.");
+            // Auto-generate daily summaries for all dates that were touched
+            if ($processed > 0 || $updated > 0) {
+                $this->line('');
+                $this->info('📊 Updating daily summaries for processed dates...');
+
+                try {
+                    $summaryService = app(\MiningManager\Services\Ledger\LedgerSummaryService::class);
+
+                    // Collect distinct character+date pairs from processed entries
+                    $touchedPairs = $observerEntries->map(function ($entry) {
+                        return [
+                            'character_id' => $entry->character_id,
+                            'date' => Carbon::parse($entry->last_updated)->toDateString(),
+                        ];
+                    })->unique(function ($item) {
+                        return $item['character_id'] . '|' . $item['date'];
+                    });
+
+                    $summaryCount = 0;
+                    foreach ($touchedPairs as $pair) {
+                        $summaryService->generateDailySummary($pair['character_id'], $pair['date']);
+                        $summaryCount++;
+                    }
+
+                    $this->info("   Updated {$summaryCount} daily summaries.");
+                } catch (\Exception $e) {
+                    $this->warn("   ⚠️  Daily summary update failed: {$e->getMessage()}");
+                    Log::warning('Mining Manager: Auto daily summary update failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Clear dashboard cache so new data shows immediately
+            Cache::flush();
+            $this->info("\n✅ Processing complete. Dashboard cache cleared.");
 
             return Command::SUCCESS;
 
