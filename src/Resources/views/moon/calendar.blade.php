@@ -342,6 +342,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Determine effective status
             let effectiveStatus = extraction.status || 'extracting';
             const isArchived = extraction.is_archived || false;
+            const autoFractured = extraction.auto_fractured || false;
 
             if (extraction.chunk_arrival_time) {
                 // Parse datetime - Carbon serializes to ISO 8601 format
@@ -375,7 +376,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const decayTime = decayStr ? new Date(decayStr) : null;
                 const now = new Date();
                 const hoursSinceArrival = (now - arrivalTime) / (1000 * 60 * 60);
-                const autoFractured = extraction.auto_fractured || false;
                 const readyHours = autoFractured ? 51 : 48;
 
                 if (arrivalTime > now) {

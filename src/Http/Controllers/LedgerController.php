@@ -412,18 +412,23 @@ class LedgerController extends Controller
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
-        // Tax paid from mining_taxes
+        // Tax paid from mining_taxes (for selected date range)
         $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
             ->whereBetween('month', [$startDate, $endDate])
             ->where('status', 'paid')
             ->sum('amount_paid');
 
-        // Estimated tax from daily summaries (current month)
-        $estimatedTaxThisMonth = $this->getEstimatedTaxFromDailySummaries(
-            $characterIds,
-            now()->format('Y-m'),
-            $specificCharacterId
-        );
+        // Tax owed from mining_taxes (authoritative, for selected date range)
+        $taxOwed = (float) MiningTax::whereIn('character_id', $characterIds)
+            ->whereBetween('month', [$startDate, $endDate])
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+            ->sum('amount_owed');
+
+        // Estimated tax from daily summaries (for selected date range, as fallback)
+        $estimatedTax = (float) ($agg->total_tax ?? 0);
+
+        // Use authoritative tax_owed if available, otherwise fall back to estimated
+        $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
 
         return [
             'total_quantity' => $totalQuantity,
@@ -432,10 +437,10 @@ class LedgerController extends Controller
             'active_days' => $activeDays,
             'best_day_value' => $bestDayValue,
             'daily_average' => $activeDays > 0 ? round($totalValue / $activeDays, 0) : 0,
-            'estimated_tax_this_month' => $estimatedTaxThisMonth,
-            'total_tax_owed' => $estimatedTaxThisMonth,
+            'estimated_tax_this_month' => $estimatedTax,
+            'total_tax_owed' => $effectiveTaxOwed,
             'total_tax_paid' => $paidTaxAmount,
-            'tax_outstanding' => max(0, $estimatedTaxThisMonth - $paidTaxAmount),
+            'tax_outstanding' => max(0, $effectiveTaxOwed - $paidTaxAmount),
             'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
             'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
@@ -967,7 +972,7 @@ class LedgerController extends Controller
 
         // Group by main character if requested
         if ($groupByMain) {
-            $summaries = $this->summaryService->groupByMainCharacter($summaries);
+            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId);
         }
 
         // Enrich with character information (names, corporations for unregistered characters)

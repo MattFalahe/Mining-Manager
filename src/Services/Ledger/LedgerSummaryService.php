@@ -694,9 +694,9 @@ class LedgerSummaryService
      * @param \Illuminate\Support\Collection $summaries
      * @return \Illuminate\Support\Collection
      */
-    public function groupByMainCharacter($summaries)
+    public function groupByMainCharacter($summaries, ?int $corporationId = null)
     {
-        // Get all character IDs
+        // Get all character IDs from mining data
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
         // Get user IDs for these characters from refresh_tokens table (SeAT v5.x standard)
@@ -706,7 +706,35 @@ class LedgerSummaryService
             ->get()
             ->pluck('user_id', 'character_id');
 
-        // Get main character IDs for these users
+        // Also fetch ALL registered users for the corporation(s) so main accounts
+        // with zero mining still appear in the summary
+        $corpIds = $corporationId
+            ? [$corporationId]
+            : $summaries->pluck('corporation_id')->filter()->unique()->toArray();
+
+        if (!empty($corpIds)) {
+            // Find all character_ids affiliated with these corporations
+            $allCorpCharIds = DB::table('character_affiliations')
+                ->whereIn('corporation_id', $corpIds)
+                ->pluck('character_id')
+                ->toArray();
+
+            // Map them to user IDs via refresh_tokens
+            $allCorpUserMapping = DB::table('refresh_tokens')
+                ->whereIn('character_id', $allCorpCharIds)
+                ->select('character_id', 'user_id')
+                ->get()
+                ->pluck('user_id', 'character_id');
+
+            // Merge into characterUserMapping (mining chars take precedence)
+            foreach ($allCorpUserMapping as $charId => $userId) {
+                if (!$characterUserMapping->has($charId)) {
+                    $characterUserMapping[$charId] = $userId;
+                }
+            }
+        }
+
+        // Get main character IDs for all users
         $userIds = $characterUserMapping->values()->unique()->toArray();
         $mainCharacterMapping = DB::table('users')
             ->whereIn('id', $userIds)
@@ -731,10 +759,40 @@ class LedgerSummaryService
             $groupedByMain[$mainCharId]->push($summary);
         }
 
+        // Add main characters with zero mining (not yet in groupedByMain)
+        $allMainCharIds = collect($mainCharacterMapping->values())->unique();
+        foreach ($allMainCharIds as $mainCharId) {
+            if (!isset($groupedByMain[$mainCharId])) {
+                $groupedByMain[$mainCharId] = collect();
+            }
+        }
+
         // Build final grouped summaries
         $grouped = collect();
 
         foreach ($groupedByMain as $mainCharId => $userSummaries) {
+            if ($userSummaries->isEmpty()) {
+                // Main account with zero mining — create an empty summary object
+                $emptySummary = new \stdClass();
+                $emptySummary->character_id = $mainCharId;
+                $emptySummary->corporation_id = $corporationId;
+                $emptySummary->total_value = 0;
+                $emptySummary->total_tax = 0;
+                $emptySummary->total_quantity = 0;
+                $emptySummary->moon_ore_value = 0;
+                $emptySummary->regular_ore_value = 0;
+                $emptySummary->ice_value = 0;
+                $emptySummary->gas_value = 0;
+                $emptySummary->alt_characters = collect();
+                $emptySummary->alt_count = 0;
+                $emptySummary->ore_type_ids = [];
+                $emptySummary->systems = collect();
+                $emptySummary->primary_system = null;
+                $emptySummary->system_count = 0;
+                $grouped->push($emptySummary);
+                continue;
+            }
+
             // Find the main character's summary (or use first if main not in list)
             $mainSummary = $userSummaries->where('character_id', $mainCharId)->first()
                         ?? $userSummaries->first();
