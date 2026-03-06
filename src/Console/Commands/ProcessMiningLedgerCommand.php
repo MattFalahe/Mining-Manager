@@ -180,7 +180,9 @@ class ProcessMiningLedgerCommand extends Command
                     ];
 
                     if ($existing) {
-                        if ($recalculate) {
+                        // Observer data is CUMULATIVE — quantity grows as miners mine more.
+                        // Always update if quantity increased or if recalculating prices.
+                        if ($recalculate || $entry->quantity > $existing->quantity) {
                             $existing->update($data);
                             $updated++;
                         } else {

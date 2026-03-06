@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Schema;
  * Earlier versions of the process-ledger command did not populate this field.
  * This migration resolves it from the SeAT observer table via observer_id.
  */
-return new class extends Migration
+class BackfillMiningLedgerCorporationId extends Migration
 {
     public function up(): void
     {
@@ -45,4 +45,4 @@ return new class extends Migration
     {
         // Not reversible — we don't know which rows were originally NULL vs backfilled
     }
-};
+}

@@ -4,15 +4,63 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class CreateMiningEventAndMoonTables extends Migration
 {
     /**
      * Run the migrations.
      *
-     * Creates moon tables: active extractions and extraction history archive.
+     * Creates event tables (mining events, participants) and
+     * moon tables (active extractions, extraction history archive).
      */
     public function up(): void
     {
+        // Mining Events - scheduled mining operations with tax modifiers
+        Schema::create('mining_events', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->string('type', 50)->default('mining_op');
+            $table->timestamp('start_time');
+            $table->timestamp('end_time')->nullable();
+            $table->unsignedInteger('solar_system_id')->nullable();
+            $table->string('location_scope', 20)->default('any');
+            $table->string('status', 20)->default('planned');
+            $table->integer('participant_count')->default(0);
+            $table->integer('total_mined')->default(0);
+            $table->integer('tax_modifier')->default(0);
+            $table->unsignedBigInteger('corporation_id')->nullable();
+            $table->unsignedInteger('created_by')->nullable();
+            $table->timestamp('last_updated')->nullable();
+            $table->timestamps();
+
+            $table->index('corporation_id');
+            $table->index('status');
+            $table->index('start_time');
+            $table->index('created_by');
+        });
+
+        // Event Participants - tracks character participation in mining events
+        Schema::create('event_participants', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->unsignedBigInteger('event_id');
+            $table->unsignedBigInteger('character_id');
+            $table->integer('quantity_mined')->default(0);
+            $table->timestamp('joined_at')->nullable();
+            $table->timestamp('last_updated')->nullable();
+            $table->timestamps();
+
+            $table->index('event_id');
+            $table->index('character_id');
+
+            // Prevent duplicate event participation records
+            $table->unique(['event_id', 'character_id'], 'event_participants_event_char_unique');
+
+            $table->foreign('event_id')
+                ->references('id')
+                ->on('mining_events')
+                ->onDelete('cascade');
+        });
+
         // Moon Extractions - active and recent moon extraction operations
         Schema::create('moon_extractions', function (Blueprint $table) {
             $table->bigIncrements('id');
@@ -38,12 +86,21 @@ return new class extends Migration
                 ->comment('When value was last recalculated');
             $table->boolean('has_notification_data')->default(false)
                 ->comment('Whether actual volumes from notification were found');
+            $table->boolean('auto_fractured')->default(false);
 
             $table->timestamps();
 
             $table->index('structure_id');
             $table->index('corporation_id');
             $table->index('moon_id');
+            $table->index('status');
+            $table->index('chunk_arrival_time');
+
+            // Prevent duplicate extraction records for same structure + start time
+            $table->unique(
+                ['structure_id', 'extraction_start_time'],
+                'moon_extractions_structure_start_unique'
+            );
         });
 
         // Moon Extraction History - archived extraction records with mining results
@@ -71,6 +128,7 @@ return new class extends Migration
             $table->decimal('completion_percentage', 5, 2)->default(0);
             $table->boolean('is_jackpot')->default(false);
             $table->timestamp('jackpot_detected_at')->nullable();
+            $table->boolean('auto_fractured')->default(false);
             $table->text('notes')->nullable();
 
             $table->timestamps();
@@ -90,5 +148,7 @@ return new class extends Migration
     {
         Schema::dropIfExists('moon_extraction_history');
         Schema::dropIfExists('moon_extractions');
+        Schema::dropIfExists('event_participants');
+        Schema::dropIfExists('mining_events');
     }
-};
+}

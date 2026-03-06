@@ -4,22 +4,13 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class CreateMiningSupportTables extends Migration
 {
     /**
      * Run the migrations.
      *
-     * Creates support tables: reports, statistics, summaries, theft incidents, webhooks.
-     *
-     * TABLE NAME COLLISION WARNING:
-     * Several tables use generic names that may conflict with other SeAT plugins:
-     *   - monthly_statistics (generic name, could conflict with analytics plugins)
-     *   - theft_incidents (generic name)
-     *   - webhook_configurations (generic name, could conflict with notification plugins)
-     *
-     * These names are kept for backwards compatibility with existing installations.
-     * If collisions occur, the migration will fail with a "table already exists" error —
-     * resolve by prefixing tables with 'mining_' in a future major version.
+     * Creates support tables: reports, statistics, summaries, theft incidents,
+     * webhooks, and notification log.
      */
     public function up(): void
     {
@@ -253,4 +244,4 @@ return new class extends Migration
         Schema::dropIfExists('monthly_statistics');
         Schema::dropIfExists('mining_reports');
     }
-};
+}
