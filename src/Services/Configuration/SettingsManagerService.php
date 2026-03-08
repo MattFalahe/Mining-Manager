@@ -676,7 +676,6 @@ class SettingsManagerService
         return [
             // EVE Mail
             'evemail_enabled' => (bool) $this->getSetting('notifications.evemail_enabled', false),
-            'evemail_sender_mode' => $this->getSetting('notifications.evemail_sender_mode', 'character'),
             'evemail_sender_character_id' => $this->getSetting('notifications.evemail_sender_character_id', null),
             'evemail_sender_character_override' => $this->getSetting('notifications.evemail_sender_character_override', null),
             'evemail_types' => $this->getSetting('notifications.evemail_types', [

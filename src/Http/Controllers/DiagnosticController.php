@@ -108,16 +108,10 @@ class DiagnosticController extends Controller
             ->orderBy('character_infos.name')
             ->get();
 
-        // Get corporations for sender selection
-        $ntCorporations = DB::table('corporation_infos')
-            ->select('corporation_id', 'name')
-            ->orderBy('name')
-            ->get();
-
         // Get notification settings for default values
         $notificationSettings = $this->settingsService->getNotificationSettings();
 
-        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters', 'ntCorporations', 'notificationSettings'));
+        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters', 'notificationSettings'));
     }
 
     /**
@@ -2054,9 +2048,8 @@ class DiagnosticController extends Controller
         $customSlackUrl = $request->input('custom_slack_url');
 
         // Sender settings for EVE Mail
-        $senderMode = $request->input('sender_mode', 'settings'); // settings, character, corporation
+        $senderMode = $request->input('sender_mode', 'settings'); // settings or character
         $senderCharacterId = (int) $request->input('sender_character_id', 0);
-        $senderCorporationId = (int) $request->input('sender_corporation_id', 0);
 
         // Discord ping test override
         $testPing = (bool) $request->input('test_ping', false);
@@ -2114,7 +2107,7 @@ class DiagnosticController extends Controller
             try {
                 switch ($channel) {
                     case 'esi':
-                        $this->testEsiChannel($logs, $summary, $notificationType, $testData, $characterId, $notificationSettings, $senderMode, $senderCharacterId, $senderCorporationId);
+                        $this->testEsiChannel($logs, $summary, $notificationType, $testData, $characterId, $notificationSettings, $senderMode, $senderCharacterId);
                         break;
 
                     case 'discord':
@@ -2152,7 +2145,7 @@ class DiagnosticController extends Controller
     /**
      * Test EVE Mail (ESI) channel — dry run only
      */
-    protected function testEsiChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, array $settings, string $senderMode = 'settings', int $senderCharacterId = 0, int $senderCorporationId = 0): void
+    protected function testEsiChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, array $settings, string $senderMode = 'settings', int $senderCharacterId = 0): void
     {
         // Check if EVE mail is enabled
         if (!($settings['evemail_enabled'] ?? false)) {
@@ -2186,81 +2179,20 @@ class DiagnosticController extends Controller
                 }
                 break;
 
-            case 'corporation':
-                // Find a character from the specified corporation that has mail scope
-                $corpId = $senderCorporationId;
-                if ($corpId <= 0) {
-                    $this->addLog($logs, 'error', 'Sender mode is "Corporation" but no corporation selected.');
-                    $summary['failed']++;
-                    return;
-                }
-
-                $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
-                $this->addLog($logs, 'info', "Sender mode: Corporation — {$corpName} ({$corpId})");
-
-                // Find a character in this corporation with mail scope
-                $corpCharacter = DB::table('refresh_tokens')
-                    ->join('character_affiliations', 'refresh_tokens.character_id', '=', 'character_affiliations.character_id')
-                    ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
-                    ->where('character_affiliations.corporation_id', $corpId)
-                    ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
-                    ->select('refresh_tokens.character_id', 'character_infos.name')
-                    ->first();
-
-                if ($corpCharacter) {
-                    $senderId = $corpCharacter->character_id;
-                    $this->addLog($logs, 'ok', "Auto-selected corp character: {$corpCharacter->name} ({$corpCharacter->character_id})");
-                } else {
-                    $this->addLog($logs, 'error', "No character with mail scope found in corporation {$corpName}. Ensure a character from this corp has esi-mail.send_mail.v1 authorized.");
-                    $summary['failed']++;
-                    return;
-                }
-                break;
-
             default: // 'settings' - use configured sender from notification settings
                 $this->addLog($logs, 'info', 'Sender mode: From Settings');
-                $settingsMode = $settings['evemail_sender_mode'] ?? 'character';
 
-                if ($settingsMode === 'corporation') {
-                    $corpId = $this->settingsService->getGeneralSettings()['corporation_id'] ?? null;
-                    if ($corpId) {
-                        $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
-                        $this->addLog($logs, 'info', "Settings use Corporation mode — {$corpName} ({$corpId})");
+                $senderOverride = $settings['evemail_sender_character_override'] ?? null;
+                $senderDropdown = $settings['evemail_sender_character_id'] ?? null;
+                $senderId = $senderOverride ?: $senderDropdown;
 
-                        $corpCharacter = DB::table('refresh_tokens')
-                            ->join('character_affiliations', 'refresh_tokens.character_id', '=', 'character_affiliations.character_id')
-                            ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
-                            ->where('character_affiliations.corporation_id', $corpId)
-                            ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
-                            ->select('refresh_tokens.character_id', 'character_infos.name')
-                            ->first();
-
-                        if ($corpCharacter) {
-                            $senderId = $corpCharacter->character_id;
-                            $this->addLog($logs, 'ok', "Auto-selected corp character: {$corpCharacter->name} ({$corpCharacter->character_id})");
-                        } else {
-                            $this->addLog($logs, 'error', "No character with mail scope found in corporation {$corpName}");
-                            $summary['failed']++;
-                            return;
-                        }
-                    } else {
-                        $this->addLog($logs, 'error', 'Corporation mode set but no corporation configured in General Settings');
-                        $summary['failed']++;
-                        return;
-                    }
-                } else {
-                    $senderOverride = $settings['evemail_sender_character_override'] ?? null;
-                    $senderDropdown = $settings['evemail_sender_character_id'] ?? null;
-                    $senderId = $senderOverride ?: $senderDropdown;
-
-                    if (!$senderId) {
-                        $this->addLog($logs, 'error', 'No sender character configured. Set one in Settings > Notifications.');
-                        $summary['failed']++;
-                        return;
-                    }
-
-                    $this->addLog($logs, 'info', 'Using sender from settings' . ($senderOverride ? ' [manual override]' : ' [dropdown]'));
+                if (!$senderId) {
+                    $this->addLog($logs, 'error', 'No sender character configured. Set one in Settings > Notifications.');
+                    $summary['failed']++;
+                    return;
                 }
+
+                $this->addLog($logs, 'info', 'Using sender from settings' . ($senderOverride ? ' [manual override]' : ' [dropdown]'));
                 break;
         }
 

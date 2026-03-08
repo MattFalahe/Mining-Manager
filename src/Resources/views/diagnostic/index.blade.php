@@ -1115,12 +1115,6 @@
                                                     <i class="fas fa-user"></i> Character
                                                 </label>
                                             </div>
-                                            <div class="custom-control custom-radio">
-                                                <input type="radio" class="custom-control-input" id="ntSenderCorporation" name="ntSenderMode" value="corporation">
-                                                <label class="custom-control-label" for="ntSenderCorporation">
-                                                    <i class="fas fa-building"></i> Corporation
-                                                </label>
-                                            </div>
                                         </div>
                                         <div id="ntSenderSettingsInfo" class="small text-muted mb-1">
                                             Uses the sender configured in Settings &gt; Notifications.
@@ -1135,15 +1129,6 @@
                                                     </option>
                                                 @endforeach
                                             </select>
-                                        </div>
-                                        <div id="ntSenderCorpSelect" style="display:none;">
-                                            <select id="ntSenderCorporationId" class="form-control">
-                                                <option value="">-- Select Corporation --</option>
-                                                @foreach($ntCorporations as $corp)
-                                                    <option value="{{ $corp->corporation_id }}">{{ $corp->name }} ({{ $corp->corporation_id }})</option>
-                                                @endforeach
-                                            </select>
-                                            <small class="form-text text-muted">A character from this corp with mail scope will be auto-selected.</small>
                                         </div>
                                     </div>
                                 </div>
@@ -2544,7 +2529,6 @@ function runNotificationTest() {
     // Collect sender info
     const senderMode = document.querySelector('input[name="ntSenderMode"]:checked')?.value || 'settings';
     const senderCharacterId = parseInt(document.getElementById('ntSenderCharacterId')?.value) || 0;
-    const senderCorporationId = parseInt(document.getElementById('ntSenderCorporationId')?.value) || 0;
 
     // Collect test data
     const postData = {
@@ -2557,7 +2541,6 @@ function runNotificationTest() {
         custom_slack_url: customSlackUrl,
         sender_mode: senderMode,
         sender_character_id: senderCharacterId,
-        sender_corporation_id: senderCorporationId,
         test_ping: document.getElementById('ntTestPing')?.checked || false,
         test_amount: parseFloat(document.getElementById('ntAmount').value) || 5000000,
         test_due_date: document.getElementById('ntDueDate').value,
@@ -2710,12 +2693,11 @@ function updateNtSenderVisibility() {
     document.getElementById('ntSenderSection').style.display = esiChecked ? 'block' : 'none';
 }
 
-// Toggle sender sub-options (settings/character/corporation)
+// Toggle sender sub-options (settings/character)
 function updateNtSenderMode() {
     const mode = document.querySelector('input[name="ntSenderMode"]:checked')?.value || 'settings';
     document.getElementById('ntSenderSettingsInfo').style.display = mode === 'settings' ? 'block' : 'none';
     document.getElementById('ntSenderCharSelect').style.display = mode === 'character' ? 'block' : 'none';
-    document.getElementById('ntSenderCorpSelect').style.display = mode === 'corporation' ? 'block' : 'none';
 }
 
 // Initialize fields visibility
