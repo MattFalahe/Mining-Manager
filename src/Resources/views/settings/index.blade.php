@@ -236,8 +236,10 @@
                         @include('mining-manager::settings.tabs.notifications', [
                             'notificationSettings' => $settings['notifications'] ?? [],
                             'mailScopeCharacters' => $mailScopeCharacters ?? collect(),
+                            'allTokenCharacters' => $allTokenCharacters ?? collect(),
                             'seatConnectorAvailable' => $seatConnectorAvailable ?? false,
                             'webhooks' => $webhooks ?? collect(),
+                            'settings' => $settings ?? [],
                         ])
                     </div>
 

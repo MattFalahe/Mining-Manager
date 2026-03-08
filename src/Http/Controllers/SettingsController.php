@@ -113,6 +113,7 @@ class SettingsController extends Controller
 
         // Notification tab data
         $mailScopeCharacters = $this->settingsService->getMailScopeCharacters();
+        $allTokenCharacters = $this->settingsService->getAllTokenCharacters();
         $seatConnectorAvailable = Schema::hasTable('seat_connector_users');
 
         return view('mining-manager::settings.index', compact(
@@ -123,6 +124,7 @@ class SettingsController extends Controller
             'isFirstTimeSetup',
             'webhooks',
             'mailScopeCharacters',
+            'allTokenCharacters',
             'seatConnectorAvailable'
         ));
     }
@@ -298,6 +300,7 @@ class SettingsController extends Controller
         $validator = Validator::make($request->all(), [
             // EVE Mail
             'evemail_enabled' => 'nullable|boolean',
+            'evemail_sender_mode' => 'nullable|in:character,corporation',
             'evemail_sender_character_id' => 'nullable|integer',
             'evemail_sender_character_override' => 'nullable|integer',
 
@@ -323,6 +326,7 @@ class SettingsController extends Controller
 
             // EVE Mail
             $data['evemail_enabled'] = $request->has('evemail_enabled');
+            $data['evemail_sender_mode'] = $request->input('evemail_sender_mode', 'character');
             $data['evemail_sender_character_id'] = $request->input('evemail_sender_character_id');
             $data['evemail_sender_character_override'] = $request->input('evemail_sender_character_override');
 

@@ -100,11 +100,24 @@ class DiagnosticController extends Controller
 
         $seatCharacters = DB::table('character_infos')
             ->join('refresh_tokens', 'character_infos.character_id', '=', 'refresh_tokens.character_id')
-            ->select('character_infos.character_id', 'character_infos.name')
+            ->select(
+                'character_infos.character_id',
+                'character_infos.name',
+                DB::raw("CASE WHEN refresh_tokens.scopes LIKE '%esi-mail.send_mail.v1%' THEN 1 ELSE 0 END as has_mail_scope")
+            )
             ->orderBy('character_infos.name')
             ->get();
 
-        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters'));
+        // Get corporations for sender selection
+        $ntCorporations = DB::table('corporation_infos')
+            ->select('corporation_id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        // Get notification settings for default values
+        $notificationSettings = $this->settingsService->getNotificationSettings();
+
+        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters', 'ntCorporations', 'notificationSettings'));
     }
 
     /**
@@ -2040,6 +2053,14 @@ class DiagnosticController extends Controller
         $customWebhookUrl = $request->input('custom_webhook_url');
         $customSlackUrl = $request->input('custom_slack_url');
 
+        // Sender settings for EVE Mail
+        $senderMode = $request->input('sender_mode', 'settings'); // settings, character, corporation
+        $senderCharacterId = (int) $request->input('sender_character_id', 0);
+        $senderCorporationId = (int) $request->input('sender_corporation_id', 0);
+
+        // Discord ping test override
+        $testPing = (bool) $request->input('test_ping', false);
+
         if (empty($channels)) {
             $this->addLog($logs, 'error', 'No channels selected. Please select at least one channel.');
             return response()->json([
@@ -2093,11 +2114,11 @@ class DiagnosticController extends Controller
             try {
                 switch ($channel) {
                     case 'esi':
-                        $this->testEsiChannel($logs, $summary, $notificationType, $testData, $characterId, $notificationSettings);
+                        $this->testEsiChannel($logs, $summary, $notificationType, $testData, $characterId, $notificationSettings, $senderMode, $senderCharacterId, $senderCorporationId);
                         break;
 
                     case 'discord':
-                        $this->testDiscordChannel($logs, $summary, $notificationType, $testData, $characterId, $characterName, $webhookId, $customWebhookUrl, $notificationSettings);
+                        $this->testDiscordChannel($logs, $summary, $notificationType, $testData, $characterId, $characterName, $webhookId, $customWebhookUrl, $notificationSettings, $testPing);
                         break;
 
                     case 'slack':
@@ -2131,40 +2152,121 @@ class DiagnosticController extends Controller
     /**
      * Test EVE Mail (ESI) channel — dry run only
      */
-    protected function testEsiChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, array $settings): void
+    protected function testEsiChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, array $settings, string $senderMode = 'settings', int $senderCharacterId = 0, int $senderCorporationId = 0): void
     {
         // Check if EVE mail is enabled
         if (!($settings['evemail_enabled'] ?? false)) {
-            $this->addLog($logs, 'skip', 'EVE Mail is disabled in settings');
-            $summary['skipped']++;
-            return;
+            $this->addLog($logs, 'warn', 'EVE Mail is disabled in settings (testing anyway)');
+        } else {
+            $this->addLog($logs, 'ok', 'EVE Mail is enabled');
         }
-        $this->addLog($logs, 'ok', 'EVE Mail is enabled');
 
         // Check type filter
         $typeKey = str_replace('TYPE_', '', $type);
         $evemailTypes = $settings['evemail_types'] ?? [];
         if (!($evemailTypes[$typeKey] ?? true)) {
-            $this->addLog($logs, 'skip', "Notification type '{$type}' is disabled for EVE Mail");
-            $summary['skipped']++;
-            return;
+            $this->addLog($logs, 'warn', "Notification type '{$type}' is disabled for EVE Mail (testing anyway)");
+        } else {
+            $this->addLog($logs, 'ok', "Notification type '{$type}' is enabled for EVE Mail");
         }
-        $this->addLog($logs, 'ok', "Notification type '{$type}' is enabled for EVE Mail");
 
-        // Check sender character
-        $senderOverride = $settings['evemail_sender_character_override'] ?? null;
-        $senderDropdown = $settings['evemail_sender_character_id'] ?? null;
-        $senderId = $senderOverride ?: $senderDropdown;
+        // Resolve sender based on mode
+        $senderId = null;
 
-        if (!$senderId) {
-            $this->addLog($logs, 'error', 'No sender character configured. Set one in Settings > Notifications.');
-            $summary['failed']++;
-            return;
+        switch ($senderMode) {
+            case 'character':
+                // Use the character specified in the test form
+                if ($senderCharacterId > 0) {
+                    $senderId = $senderCharacterId;
+                    $this->addLog($logs, 'info', "Sender mode: Character (from test form)");
+                } else {
+                    $this->addLog($logs, 'error', 'Sender mode is "Character" but no character selected.');
+                    $summary['failed']++;
+                    return;
+                }
+                break;
+
+            case 'corporation':
+                // Find a character from the specified corporation that has mail scope
+                $corpId = $senderCorporationId;
+                if ($corpId <= 0) {
+                    $this->addLog($logs, 'error', 'Sender mode is "Corporation" but no corporation selected.');
+                    $summary['failed']++;
+                    return;
+                }
+
+                $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
+                $this->addLog($logs, 'info', "Sender mode: Corporation — {$corpName} ({$corpId})");
+
+                // Find a character in this corporation with mail scope
+                $corpCharacter = DB::table('refresh_tokens')
+                    ->join('character_affiliations', 'refresh_tokens.character_id', '=', 'character_affiliations.character_id')
+                    ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
+                    ->where('character_affiliations.corporation_id', $corpId)
+                    ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
+                    ->select('refresh_tokens.character_id', 'character_infos.name')
+                    ->first();
+
+                if ($corpCharacter) {
+                    $senderId = $corpCharacter->character_id;
+                    $this->addLog($logs, 'ok', "Auto-selected corp character: {$corpCharacter->name} ({$corpCharacter->character_id})");
+                } else {
+                    $this->addLog($logs, 'error', "No character with mail scope found in corporation {$corpName}. Ensure a character from this corp has esi-mail.send_mail.v1 authorized.");
+                    $summary['failed']++;
+                    return;
+                }
+                break;
+
+            default: // 'settings' - use configured sender from notification settings
+                $this->addLog($logs, 'info', 'Sender mode: From Settings');
+                $settingsMode = $settings['evemail_sender_mode'] ?? 'character';
+
+                if ($settingsMode === 'corporation') {
+                    $corpId = $this->settingsService->getGeneralSettings()['corporation_id'] ?? null;
+                    if ($corpId) {
+                        $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
+                        $this->addLog($logs, 'info', "Settings use Corporation mode — {$corpName} ({$corpId})");
+
+                        $corpCharacter = DB::table('refresh_tokens')
+                            ->join('character_affiliations', 'refresh_tokens.character_id', '=', 'character_affiliations.character_id')
+                            ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
+                            ->where('character_affiliations.corporation_id', $corpId)
+                            ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
+                            ->select('refresh_tokens.character_id', 'character_infos.name')
+                            ->first();
+
+                        if ($corpCharacter) {
+                            $senderId = $corpCharacter->character_id;
+                            $this->addLog($logs, 'ok', "Auto-selected corp character: {$corpCharacter->name} ({$corpCharacter->character_id})");
+                        } else {
+                            $this->addLog($logs, 'error', "No character with mail scope found in corporation {$corpName}");
+                            $summary['failed']++;
+                            return;
+                        }
+                    } else {
+                        $this->addLog($logs, 'error', 'Corporation mode set but no corporation configured in General Settings');
+                        $summary['failed']++;
+                        return;
+                    }
+                } else {
+                    $senderOverride = $settings['evemail_sender_character_override'] ?? null;
+                    $senderDropdown = $settings['evemail_sender_character_id'] ?? null;
+                    $senderId = $senderOverride ?: $senderDropdown;
+
+                    if (!$senderId) {
+                        $this->addLog($logs, 'error', 'No sender character configured. Set one in Settings > Notifications.');
+                        $summary['failed']++;
+                        return;
+                    }
+
+                    $this->addLog($logs, 'info', 'Using sender from settings' . ($senderOverride ? ' [manual override]' : ' [dropdown]'));
+                }
+                break;
         }
 
         $senderInfo = DB::table('character_infos')->where('character_id', $senderId)->first();
         $senderName = $senderInfo ? $senderInfo->name : "Unknown (ID: {$senderId})";
-        $this->addLog($logs, 'info', "Sender character: {$senderName} ({$senderId})" . ($senderOverride ? ' [manual override]' : ' [dropdown]'));
+        $this->addLog($logs, 'info', "Sender character: {$senderName} ({$senderId})");
 
         // Check token
         $token = DB::table('refresh_tokens')
@@ -2179,7 +2281,7 @@ class DiagnosticController extends Controller
 
         $hasMailScope = $token->scopes && str_contains($token->scopes, 'esi-mail.send_mail.v1');
         if (!$hasMailScope) {
-            $this->addLog($logs, 'error', 'Sender character does not have esi-mail.send_mail.v1 scope');
+            $this->addLog($logs, 'error', "Sender character {$senderName} does not have esi-mail.send_mail.v1 scope");
             $summary['failed']++;
             return;
         }
@@ -2219,7 +2321,7 @@ class DiagnosticController extends Controller
     /**
      * Test Discord channel — sends real webhook
      */
-    protected function testDiscordChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, string $characterName, $webhookId, $customWebhookUrl, array $settings): void
+    protected function testDiscordChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, string $characterName, $webhookId, $customWebhookUrl, array $settings, bool $testPing = false): void
     {
         // Resolve webhook URL
         $webhookUrl = null;
@@ -2285,13 +2387,37 @@ class DiagnosticController extends Controller
 
         // Check Discord pinging
         $pingingEnabled = $settings['discord_pinging_enabled'] ?? false;
-        if ($pingingEnabled) {
-            $this->addLog($logs, 'info', 'Discord pinging is enabled, checking seat-connector...');
+        $doPing = $testPing || $pingingEnabled;
+
+        if ($doPing) {
+            if ($testPing && !$pingingEnabled) {
+                $this->addLog($logs, 'info', 'Discord pinging is disabled in settings, but testing anyway (test override)');
+            } else {
+                $this->addLog($logs, 'info', 'Discord pinging is enabled, checking seat-connector...');
+            }
+
             if (Schema::hasTable('seat_connector_users')) {
                 try {
-                    $reflection2 = new \ReflectionMethod($notificationService, 'resolveDiscordUserId');
-                    $reflection2->setAccessible(true);
-                    $discordId = $reflection2->invoke($notificationService, $characterId);
+                    // Try to resolve via seat-connector
+                    $discordId = DB::table('seat_connector_users')
+                        ->where('connector_type', 'discord')
+                        ->where('character_id', $characterId)
+                        ->value('connector_id');
+
+                    if (!$discordId) {
+                        // Try via user_id lookup
+                        $userId = DB::table('refresh_tokens')
+                            ->where('character_id', $characterId)
+                            ->value('user_id');
+
+                        if ($userId) {
+                            $discordId = DB::table('seat_connector_users')
+                                ->where('connector_type', 'discord')
+                                ->where('user_id', $userId)
+                                ->value('connector_id');
+                        }
+                    }
+
                     if ($discordId) {
                         $this->addLog($logs, 'ok', "Resolved Discord user ID: {$discordId}");
                         $showAmount = $settings['discord_ping_show_amount'] ?? true;
@@ -2301,18 +2427,18 @@ class DiagnosticController extends Controller
                         } else {
                             $message['content'] = "{$mention} You have a pending tax notification.";
                         }
-                        $this->addLog($logs, 'info', 'Ping content added to message');
+                        $this->addLog($logs, 'ok', 'Ping content added to message');
                     } else {
-                        $this->addLog($logs, 'warn', "Could not resolve Discord user ID for character {$characterId}");
+                        $this->addLog($logs, 'warn', "Could not resolve Discord user ID for character {$characterId} — no seat-connector mapping found");
                     }
                 } catch (\Exception $e) {
                     $this->addLog($logs, 'warn', 'Pinging resolution failed: ' . $e->getMessage());
                 }
             } else {
-                $this->addLog($logs, 'skip', 'seat-connector not installed, pinging skipped');
+                $this->addLog($logs, 'skip', 'seat-connector not installed (seat_connector_users table not found), pinging skipped');
             }
         } else {
-            $this->addLog($logs, 'skip', 'Discord pinging is disabled');
+            $this->addLog($logs, 'skip', 'Discord pinging is disabled (enable in settings or check "Test Discord Ping")');
         }
 
         // Send to Discord

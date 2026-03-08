@@ -676,6 +676,7 @@ class SettingsManagerService
         return [
             // EVE Mail
             'evemail_enabled' => (bool) $this->getSetting('notifications.evemail_enabled', false),
+            'evemail_sender_mode' => $this->getSetting('notifications.evemail_sender_mode', 'character'),
             'evemail_sender_character_id' => $this->getSetting('notifications.evemail_sender_character_id', null),
             'evemail_sender_character_override' => $this->getSetting('notifications.evemail_sender_character_override', null),
             'evemail_types' => $this->getSetting('notifications.evemail_types', [
@@ -744,6 +745,25 @@ class SettingsManagerService
             ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
             ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
             ->select('refresh_tokens.character_id', 'character_infos.name')
+            ->orderBy('character_infos.name')
+            ->get();
+    }
+
+    /**
+     * Get all characters with refresh tokens (regardless of scopes).
+     * Includes a has_mail_scope flag to indicate if the character can send EVE mail.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public function getAllTokenCharacters(): \Illuminate\Support\Collection
+    {
+        return DB::table('refresh_tokens')
+            ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
+            ->select(
+                'refresh_tokens.character_id',
+                'character_infos.name',
+                DB::raw("CASE WHEN refresh_tokens.scopes LIKE '%esi-mail.send_mail.v1%' THEN 1 ELSE 0 END as has_mail_scope")
+            )
             ->orderBy('character_infos.name')
             ->get();
     }

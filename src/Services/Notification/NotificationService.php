@@ -995,8 +995,14 @@ class NotificationService
      */
     protected function getCorpName(): string
     {
-        $corpId = $this->settings->getSetting('general.corporation_id');
-        
+        // Use moon owner corporation (the structure-owning corp), not the tax context corporation
+        $corpId = $this->settings->getSetting('general.moon_owner_corporation_id');
+
+        if (!$corpId) {
+            // Fallback to main corporation_id if moon owner not set
+            $corpId = $this->settings->getSetting('general.corporation_id');
+        }
+
         if (!$corpId) {
             return 'Corporation';
         }

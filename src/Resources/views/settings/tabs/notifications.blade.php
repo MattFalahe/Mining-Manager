@@ -44,37 +44,103 @@
             </div>
 
             <div id="evemail-options" style="{{ old('evemail_enabled', $notificationSettings['evemail_enabled'] ?? false) ? '' : 'opacity: 0.5; pointer-events: none;' }}">
-                {{-- Sender Character --}}
-                <div class="row">
+                {{-- Sender Mode --}}
+                @php
+                    $senderMode = old('evemail_sender_mode', $notificationSettings['evemail_sender_mode'] ?? 'character');
+                @endphp
+                <label class="mb-2"><i class="fas fa-paper-plane"></i> Send As</label>
+                <div class="row mb-3">
                     <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="evemail_sender_character_id">
-                                <i class="fas fa-user"></i> Sender Character
+                        <div class="custom-control custom-radio">
+                            <input type="radio" class="custom-control-input" id="sender_mode_character"
+                                   name="evemail_sender_mode" value="character"
+                                   {{ $senderMode === 'character' ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="sender_mode_character">
+                                <i class="fas fa-user text-info"></i> <strong>Character</strong>
                             </label>
-                            <select class="form-control" id="evemail_sender_character_id" name="evemail_sender_character_id">
-                                <option value="">-- Select Character --</option>
-                                @foreach($mailScopeCharacters as $char)
-                                    <option value="{{ $char->character_id }}"
-                                        {{ old('evemail_sender_character_id', $notificationSettings['evemail_sender_character_id'] ?? '') == $char->character_id ? 'selected' : '' }}>
-                                        {{ $char->name }} ({{ $char->character_id }})
-                                    </option>
-                                @endforeach
-                            </select>
-                            <small class="form-text text-muted">Characters with the <code>esi-mail.send_mail.v1</code> scope.</small>
+                            <small class="form-text text-muted">Send EVE mail from a specific character.</small>
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="evemail_sender_character_override">
-                                <i class="fas fa-keyboard"></i> Manual Character ID Override
+                        <div class="custom-control custom-radio">
+                            <input type="radio" class="custom-control-input" id="sender_mode_corporation"
+                                   name="evemail_sender_mode" value="corporation"
+                                   {{ $senderMode === 'corporation' ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="sender_mode_corporation">
+                                <i class="fas fa-building text-warning"></i> <strong>Corporation</strong>
                             </label>
-                            <input type="number" class="form-control" id="evemail_sender_character_override"
-                                   name="evemail_sender_character_override"
-                                   value="{{ old('evemail_sender_character_override', $notificationSettings['evemail_sender_character_override'] ?? '') }}"
-                                   placeholder="Character ID">
-                            <small class="form-text text-muted">Overrides the dropdown selection if set.</small>
+                            <small class="form-text text-muted">Send on behalf of moon owner / holding corporation from General settings.</small>
                         </div>
                     </div>
+                </div>
+
+                {{-- Character Sender Options --}}
+                <div id="evemail-character-options" style="{{ $senderMode === 'character' ? '' : 'display: none;' }}">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="evemail_sender_character_id">
+                                    <i class="fas fa-user"></i> Sender Character
+                                </label>
+                                <select class="form-control" id="evemail_sender_character_id" name="evemail_sender_character_id">
+                                    <option value="">-- Select Character --</option>
+                                    @foreach($allTokenCharacters as $char)
+                                        <option value="{{ $char->character_id }}"
+                                            {{ old('evemail_sender_character_id', $notificationSettings['evemail_sender_character_id'] ?? '') == $char->character_id ? 'selected' : '' }}>
+                                            {{ $char->name }} ({{ $char->character_id }})
+                                            {{ $char->has_mail_scope ? '✓ mail scope' : '⚠ no mail scope' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <small class="form-text text-muted">
+                                    All characters with tokens. Characters marked <strong>✓ mail scope</strong> have <code>esi-mail.send_mail.v1</code> authorized.
+                                    @if($allTokenCharacters->where('has_mail_scope', 1)->count() === 0)
+                                        <br><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No characters have the mail scope. Re-authorize a character with ESI mail permissions in SeAT.</span>
+                                    @endif
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="evemail_sender_character_override">
+                                    <i class="fas fa-keyboard"></i> Manual Character ID Override
+                                </label>
+                                <input type="number" class="form-control" id="evemail_sender_character_override"
+                                       name="evemail_sender_character_override"
+                                       value="{{ old('evemail_sender_character_override', $notificationSettings['evemail_sender_character_override'] ?? '') }}"
+                                       placeholder="Character ID">
+                                <small class="form-text text-muted">Overrides the dropdown selection if set.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Corporation Sender Options --}}
+                <div id="evemail-corp-options" style="{{ $senderMode === 'corporation' ? '' : 'display: none;' }}">
+                    <div class="alert alert-info mb-3" style="border-left: 4px solid #17a2b8;">
+                        <i class="fas fa-building"></i>
+                        <strong>Corporation Mode:</strong> EVE mail will be sent using a character that belongs to the
+                        moon owner / holding corporation configured in General Settings.
+                        The character still needs the <code>esi-mail.send_mail.v1</code> scope — this mode auto-selects
+                        a character from that corporation.
+                    </div>
+                    @php
+                        $corpId = $settings['general']['moon_owner_corporation_id'] ?? ($settings['general']['corporation_id'] ?? null);
+                        $corpName = $corpId ? \Illuminate\Support\Facades\DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') : null;
+                    @endphp
+                    @if($corpId && $corpName)
+                        <div class="form-group">
+                            <label><i class="fas fa-building"></i> Sending Corporation</label>
+                            <input type="text" class="form-control" readonly
+                                   value="{{ $corpName }} ({{ $corpId }})">
+                            <small class="form-text text-muted">From General Settings. A character from this corporation with mail scope will be used.</small>
+                        </div>
+                    @else
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            No corporation set in General Settings. Please configure a corporation first.
+                        </div>
+                    @endif
                 </div>
 
                 {{-- Per-type Checkboxes --}}
@@ -353,6 +419,17 @@ $(document).ready(function() {
             'opacity': this.checked ? '1' : '0.5',
             'pointer-events': this.checked ? 'auto' : 'none'
         });
+    });
+
+    // Toggle sender mode (character vs corporation)
+    $('input[name="evemail_sender_mode"]').on('change', function() {
+        if (this.value === 'character') {
+            $('#evemail-character-options').show();
+            $('#evemail-corp-options').hide();
+        } else {
+            $('#evemail-character-options').hide();
+            $('#evemail-corp-options').show();
+        }
     });
 
     // Toggle Discord pinging options visibility

@@ -1071,10 +1071,10 @@
                                         </div>
                                     </div>
 
-                                    <!-- Character Selection -->
+                                    <!-- Target Character Selection -->
                                     <div class="form-group">
                                         <label>
-                                            <i class="fas fa-user"></i> Target Character
+                                            <i class="fas fa-user"></i> Target Character <small class="text-muted">(receives notification)</small>
                                             <button type="button" class="btn btn-xs btn-outline-info ml-2" onclick="toggleNtCharInput()">
                                                 <i class="fas fa-exchange-alt"></i> <span id="ntCharToggleText">Enter ID</span>
                                             </button>
@@ -1096,6 +1096,54 @@
                                                     <input type="text" id="ntCharacterName" class="form-control" placeholder="Character Name" value="Test Character">
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- EVE Mail Sender (shown when ESI channel is checked) -->
+                                    <div class="form-group" id="ntSenderSection" style="display:none;">
+                                        <label><i class="fas fa-paper-plane"></i> EVE Mail Sender <small class="text-muted">(sends the mail)</small></label>
+                                        <div class="d-flex mb-2" style="gap: 10px;">
+                                            <div class="custom-control custom-radio">
+                                                <input type="radio" class="custom-control-input" id="ntSenderSettings" name="ntSenderMode" value="settings" checked>
+                                                <label class="custom-control-label" for="ntSenderSettings">
+                                                    <i class="fas fa-cog"></i> From Settings
+                                                </label>
+                                            </div>
+                                            <div class="custom-control custom-radio">
+                                                <input type="radio" class="custom-control-input" id="ntSenderCharacter" name="ntSenderMode" value="character">
+                                                <label class="custom-control-label" for="ntSenderCharacter">
+                                                    <i class="fas fa-user"></i> Character
+                                                </label>
+                                            </div>
+                                            <div class="custom-control custom-radio">
+                                                <input type="radio" class="custom-control-input" id="ntSenderCorporation" name="ntSenderMode" value="corporation">
+                                                <label class="custom-control-label" for="ntSenderCorporation">
+                                                    <i class="fas fa-building"></i> Corporation
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div id="ntSenderSettingsInfo" class="small text-muted mb-1">
+                                            Uses the sender configured in Settings &gt; Notifications.
+                                        </div>
+                                        <div id="ntSenderCharSelect" style="display:none;">
+                                            <select id="ntSenderCharacterId" class="form-control">
+                                                <option value="">-- Select Sender Character --</option>
+                                                @foreach($seatCharacters as $char)
+                                                    <option value="{{ $char->character_id }}">
+                                                        {{ $char->name }} ({{ $char->character_id }})
+                                                        {{ $char->has_mail_scope ? '✓ mail' : '⚠ no mail scope' }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div id="ntSenderCorpSelect" style="display:none;">
+                                            <select id="ntSenderCorporationId" class="form-control">
+                                                <option value="">-- Select Corporation --</option>
+                                                @foreach($ntCorporations as $corp)
+                                                    <option value="{{ $corp->corporation_id }}">{{ $corp->name }} ({{ $corp->corporation_id }})</option>
+                                                @endforeach
+                                            </select>
+                                            <small class="form-text text-muted">A character from this corp with mail scope will be auto-selected.</small>
                                         </div>
                                     </div>
                                 </div>
@@ -1123,6 +1171,21 @@
                                         </div>
                                         <div id="ntWebhookManual" style="display:none;">
                                             <input type="url" id="ntCustomWebhookUrl" class="form-control" placeholder="https://discord.com/api/webhooks/...">
+                                        </div>
+                                    </div>
+
+                                    <!-- Discord Ping Test -->
+                                    <div class="form-group" id="ntPingSection">
+                                        <div class="custom-control custom-checkbox">
+                                            <input type="checkbox" class="custom-control-input" id="ntTestPing"
+                                                   {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? 'checked' : '' }}>
+                                            <label class="custom-control-label" for="ntTestPing">
+                                                <i class="fas fa-at text-info"></i> Test Discord Ping
+                                            </label>
+                                            <small class="form-text text-muted">
+                                                Mention target character in Discord (requires seat-connector).
+                                                {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? '(Currently enabled in settings)' : '(Currently disabled in settings — check to test anyway)' }}
+                                            </small>
                                         </div>
                                     </div>
 
@@ -2478,6 +2541,11 @@ function runNotificationTest() {
     const customSlackUrl = document.getElementById('ntCustomSlackUrl').value || null;
     const notificationType = document.getElementById('ntNotificationType').value;
 
+    // Collect sender info
+    const senderMode = document.querySelector('input[name="ntSenderMode"]:checked')?.value || 'settings';
+    const senderCharacterId = parseInt(document.getElementById('ntSenderCharacterId')?.value) || 0;
+    const senderCorporationId = parseInt(document.getElementById('ntSenderCorporationId')?.value) || 0;
+
     // Collect test data
     const postData = {
         notification_type: notificationType,
@@ -2487,6 +2555,10 @@ function runNotificationTest() {
         webhook_id: webhookId,
         custom_webhook_url: customWebhookUrl,
         custom_slack_url: customSlackUrl,
+        sender_mode: senderMode,
+        sender_character_id: senderCharacterId,
+        sender_corporation_id: senderCorporationId,
+        test_ping: document.getElementById('ntTestPing')?.checked || false,
         test_amount: parseFloat(document.getElementById('ntAmount').value) || 5000000,
         test_due_date: document.getElementById('ntDueDate').value,
         test_days_remaining: parseInt(document.getElementById('ntDaysRemaining').value) || 7,
@@ -2632,9 +2704,32 @@ function toggleNtWebhookInput() {
     }
 }
 
+// Toggle sender section visibility when ESI channel is checked/unchecked
+function updateNtSenderVisibility() {
+    const esiChecked = document.getElementById('ntChannelEsi').checked;
+    document.getElementById('ntSenderSection').style.display = esiChecked ? 'block' : 'none';
+}
+
+// Toggle sender sub-options (settings/character/corporation)
+function updateNtSenderMode() {
+    const mode = document.querySelector('input[name="ntSenderMode"]:checked')?.value || 'settings';
+    document.getElementById('ntSenderSettingsInfo').style.display = mode === 'settings' ? 'block' : 'none';
+    document.getElementById('ntSenderCharSelect').style.display = mode === 'character' ? 'block' : 'none';
+    document.getElementById('ntSenderCorpSelect').style.display = mode === 'corporation' ? 'block' : 'none';
+}
+
 // Initialize fields visibility
 $(document).ready(function() {
     updateNotifTestFields();
+    updateNtSenderVisibility();
+
+    // Bind ESI checkbox to show/hide sender section
+    document.getElementById('ntChannelEsi').addEventListener('change', updateNtSenderVisibility);
+
+    // Bind sender mode radios
+    document.querySelectorAll('input[name="ntSenderMode"]').forEach(function(radio) {
+        radio.addEventListener('change', updateNtSenderMode);
+    });
 });
 </script>
 @endpush

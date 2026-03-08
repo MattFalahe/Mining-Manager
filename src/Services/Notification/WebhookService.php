@@ -5,8 +5,10 @@ namespace MiningManager\Services\Notification;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Models\TheftIncident;
 use MiningManager\Models\MiningEvent;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 
 /**
@@ -164,7 +166,7 @@ class WebhookService
             'timestamp' => now()->toIso8601String(),
             'fields' => [],
             'footer' => [
-                'text' => 'Mining Manager - Theft Detection',
+                'text' => $this->getCorpName() . ' Mining Manager',
             ],
         ];
 
@@ -630,7 +632,7 @@ class WebhookService
             'color' => $color,
             'timestamp' => now()->toIso8601String(),
             'fields' => [],
-            'footer' => ['text' => 'Mining Manager - Moon Operations'],
+            'footer' => ['text' => $this->getCorpName() . ' Mining Manager'],
         ];
 
         if ($eventType === 'jackpot_detected') {
@@ -951,7 +953,7 @@ class WebhookService
             'color' => $color,
             'timestamp' => now()->toIso8601String(),
             'fields' => [],
-            'footer' => ['text' => 'Mining Manager - Events'],
+            'footer' => ['text' => $this->getCorpName() . ' Mining Manager'],
         ];
 
         // Event name
@@ -1251,7 +1253,7 @@ class WebhookService
             'color' => $color,
             'timestamp' => now()->toIso8601String(),
             'fields' => [],
-            'footer' => ['text' => 'Mining Manager - Tax Management'],
+            'footer' => ['text' => $this->getCorpName() . ' Mining Manager'],
         ];
 
         // Character name
@@ -1488,5 +1490,28 @@ class WebhookService
             'removed_paid' => '💰',
             default => '❓',
         };
+    }
+
+    /**
+     * Get the moon owner corporation name for notification footers.
+     *
+     * @return string
+     */
+    protected function getCorpName(): string
+    {
+        $settings = app(SettingsManagerService::class);
+
+        $corpId = $settings->getSetting('general.moon_owner_corporation_id');
+        if (!$corpId) {
+            $corpId = $settings->getSetting('general.corporation_id');
+        }
+
+        if (!$corpId) {
+            return 'Corporation';
+        }
+
+        return DB::table('corporation_infos')
+            ->where('corporation_id', $corpId)
+            ->value('name') ?? 'Corporation';
     }
 }
