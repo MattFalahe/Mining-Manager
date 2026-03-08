@@ -1121,6 +1121,287 @@ class WebhookService
     }
 
     // ============================================================================
+    // TAX NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * Send a tax-related notification to all configured webhooks
+     *
+     * @param string $eventType (tax_reminder, tax_invoice, tax_overdue)
+     * @param array $data Tax notification data
+     * @param int|null $corporationId
+     * @return array Results for each webhook
+     */
+    public function sendTaxNotification(string $eventType, array $data, ?int $corporationId = null): array
+    {
+        $webhooks = WebhookConfiguration::enabled()
+            ->forEvent($eventType)
+            ->where('type', 'discord')
+            ->get()
+            ->filter(function ($webhook) use ($corporationId) {
+                return $webhook->corporation_id === null || $webhook->corporation_id == $corporationId;
+            });
+
+        if ($webhooks->isEmpty()) {
+            Log::debug("WebhookService: No webhooks configured for tax event: {$eventType}");
+            return [];
+        }
+
+        $results = [];
+
+        foreach ($webhooks as $webhook) {
+            try {
+                $result = $this->sendTaxToWebhook($webhook, $eventType, $data);
+                $results[$webhook->id] = $result;
+
+                if ($result['success']) {
+                    $webhook->recordSuccess();
+                } else {
+                    $webhook->recordFailure($result['error'] ?? 'Unknown error');
+                }
+            } catch (\Exception $e) {
+                Log::error("WebhookService: Exception sending tax notification to webhook {$webhook->id}", [
+                    'error' => $e->getMessage(),
+                    'event_type' => $eventType,
+                ]);
+
+                $webhook->recordFailure($e->getMessage());
+                $results[$webhook->id] = [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Send tax notification to a specific webhook
+     *
+     * @param WebhookConfiguration $webhook
+     * @param string $eventType
+     * @param array $data
+     * @return array
+     */
+    protected function sendTaxToWebhook(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        switch ($webhook->type) {
+            case 'discord':
+                return $this->sendTaxToDiscord($webhook, $eventType, $data);
+
+            case 'slack':
+                return $this->sendTaxToSlack($webhook, $eventType, $data);
+
+            case 'custom':
+                return $this->sendTaxToCustom($webhook, $eventType, $data);
+
+            default:
+                return ['success' => false, 'error' => "Unknown webhook type: {$webhook->type}"];
+        }
+    }
+
+    /**
+     * Send tax notification to Discord
+     */
+    protected function sendTaxToDiscord(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $embed = $this->buildTaxDiscordEmbed($eventType, $data);
+
+        $payload = ['embeds' => [$embed]];
+
+        if ($webhook->discord_role_id) {
+            $payload['content'] = $webhook->getDiscordRoleMention();
+        }
+
+        if ($webhook->discord_username) {
+            $payload['username'] = $webhook->discord_username;
+        }
+
+        if ($webhook->discord_avatar_url) {
+            $payload['avatar_url'] = $webhook->discord_avatar_url;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+
+            if ($response->successful() || $response->status() === 204) {
+                return ['success' => true];
+            }
+
+            return [
+                'success' => false,
+                'error' => "Discord returned status {$response->status()}: {$response->body()}",
+            ];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Discord: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Build Discord embed for tax notifications
+     */
+    protected function buildTaxDiscordEmbed(string $eventType, array $data): array
+    {
+        $color = $this->getColorForEventType($eventType);
+        $title = $this->getTitleForEventType($eventType);
+
+        $embed = [
+            'title' => $title,
+            'color' => $color,
+            'timestamp' => now()->toIso8601String(),
+            'fields' => [],
+            'footer' => ['text' => 'Mining Manager - Tax Management'],
+        ];
+
+        // Character name
+        if (isset($data['character_name'])) {
+            $embed['fields'][] = [
+                'name' => '👤 Character',
+                'value' => $data['character_name'],
+                'inline' => true,
+            ];
+        }
+
+        // Amount
+        if (isset($data['formatted_amount'])) {
+            $embed['fields'][] = [
+                'name' => '💰 Amount',
+                'value' => $data['formatted_amount'],
+                'inline' => true,
+            ];
+        }
+
+        // Due date
+        if (isset($data['due_date'])) {
+            $embed['fields'][] = [
+                'name' => '📅 Due Date',
+                'value' => $data['due_date'],
+                'inline' => true,
+            ];
+        }
+
+        // Days remaining (for reminders)
+        if (isset($data['days_remaining'])) {
+            $embed['fields'][] = [
+                'name' => '⏳ Days Remaining',
+                'value' => (string) $data['days_remaining'],
+                'inline' => true,
+            ];
+        }
+
+        // Days overdue
+        if (isset($data['days_overdue'])) {
+            $embed['fields'][] = [
+                'name' => '⚠️ Days Overdue',
+                'value' => (string) $data['days_overdue'],
+                'inline' => true,
+            ];
+        }
+
+        // Description
+        $embed['description'] = match ($eventType) {
+            'tax_reminder' => 'A mining tax payment is coming due. Please ensure timely payment.',
+            'tax_invoice' => 'A new mining tax invoice has been generated.',
+            'tax_overdue' => 'A mining tax payment is past due. Please make payment immediately.',
+            default => '',
+        };
+
+        return $embed;
+    }
+
+    /**
+     * Send tax notification to Slack
+     */
+    protected function sendTaxToSlack(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $title = $this->getTitleForEventType($eventType);
+
+        $fields = [];
+
+        if (isset($data['character_name'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Character:*\n{$data['character_name']}"];
+        }
+        if (isset($data['formatted_amount'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Amount:*\n{$data['formatted_amount']}"];
+        }
+        if (isset($data['due_date'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Due Date:*\n{$data['due_date']}"];
+        }
+        if (isset($data['days_remaining'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Days Remaining:*\n{$data['days_remaining']}"];
+        }
+        if (isset($data['days_overdue'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Days Overdue:*\n{$data['days_overdue']}"];
+        }
+
+        $blocks = [
+            ['type' => 'header', 'text' => ['type' => 'plain_text', 'text' => $title]],
+        ];
+
+        if (!empty($fields)) {
+            $blocks[] = ['type' => 'section', 'fields' => $fields];
+        }
+
+        $payload = ['text' => $title, 'blocks' => $blocks];
+
+        if ($webhook->slack_channel) {
+            $payload['channel'] = $webhook->slack_channel;
+        }
+        if ($webhook->slack_username) {
+            $payload['username'] = $webhook->slack_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Slack returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Slack: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Send tax notification to custom webhook
+     */
+    protected function sendTaxToCustom(WebhookConfiguration $webhook, string $eventType, array $data): array
+    {
+        $payload = array_merge([
+            'event_type' => $eventType,
+            'timestamp' => now()->toIso8601String(),
+            'tax' => [
+                'character_id' => $data['character_id'] ?? null,
+                'character_name' => $data['character_name'] ?? null,
+                'amount' => $data['amount'] ?? null,
+                'formatted_amount' => $data['formatted_amount'] ?? null,
+                'due_date' => $data['due_date'] ?? null,
+                'days_remaining' => $data['days_remaining'] ?? null,
+                'days_overdue' => $data['days_overdue'] ?? null,
+            ],
+        ], $data);
+
+        $request = Http::timeout(10);
+
+        if ($webhook->custom_headers && is_array($webhook->custom_headers)) {
+            foreach ($webhook->custom_headers as $key => $value) {
+                $request = $request->withHeader($key, $value);
+            }
+        }
+
+        try {
+            $response = $request->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Custom webhook returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to custom webhook: {$e->getMessage()}"];
+        }
+    }
+
+    // ============================================================================
     // SHARED HELPERS
     // ============================================================================
 
@@ -1142,6 +1423,9 @@ class WebhookService
             'event_created' => 0x3498DB,        // Blue
             'event_started' => 0x2ECC71,        // Green
             'event_completed' => 0x9B59B6,      // Purple
+            'tax_reminder' => 0xF39C12,         // Amber
+            'tax_invoice' => 0x3498DB,          // Blue
+            'tax_overdue' => 0xE74C3C,          // Red
             default => 0xFFFF00,                // Yellow
         };
     }
@@ -1164,6 +1448,9 @@ class WebhookService
             'event_created' => '📅 New Mining Event',
             'event_started' => '🚀 Mining Event Started',
             'event_completed' => '🏁 Mining Event Completed',
+            'tax_reminder' => '⏰ Tax Payment Reminder',
+            'tax_invoice' => '📧 New Tax Invoice',
+            'tax_overdue' => '❌ Overdue Tax Payment',
             default => 'Mining Manager Alert',
         };
     }

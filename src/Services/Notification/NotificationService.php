@@ -85,6 +85,11 @@ class NotificationService
         $results = [];
 
         foreach ($channels as $channel) {
+            // Skip if this notification type is not enabled for this channel
+            if (!$this->isTypeEnabledForChannel($type, $channel)) {
+                continue;
+            }
+
             try {
                 $results[$channel] = match ($channel) {
                     self::CHANNEL_ESI => $this->sendViaESI($type, $recipients, $data),
@@ -118,10 +123,6 @@ class NotificationService
      */
     public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining): array
     {
-        if (!$this->settings->getSetting('notification_tax_reminders', true)) {
-            return ['skipped' => true];
-        }
-
         $data = [
             'amount' => $amount,
             'due_date' => $dueDate->format('Y-m-d'),
@@ -179,10 +180,6 @@ class NotificationService
      */
     public function sendEventCreated(MiningEvent $event): array
     {
-        if (!$this->settings->getSetting('notification_event_updates', true)) {
-            return ['skipped' => true];
-        }
-
         $data = [
             'event_id' => $event->id,
             'event_name' => $event->name,
@@ -207,10 +204,6 @@ class NotificationService
      */
     public function sendEventStarted(MiningEvent $event, array $participantIds = []): array
     {
-        if (!$this->settings->getSetting('notification_event_updates', true)) {
-            return ['skipped' => true];
-        }
-
         $data = [
             'event_id' => $event->id,
             'event_name' => $event->name,
@@ -240,10 +233,6 @@ class NotificationService
      */
     public function sendEventCompleted(MiningEvent $event, array $participantIds = []): array
     {
-        if (!$this->settings->getSetting('notification_event_updates', true)) {
-            return ['skipped' => true];
-        }
-
         $data = [
             'event_id' => $event->id,
             'event_name' => $event->name,
@@ -338,30 +327,39 @@ class NotificationService
             'failed' => []
         ];
 
+        // Get configured sender character
+        $senderId = $this->getSenderCharacterId();
+        if (!$senderId) {
+            Log::warning('ESI notifications: No sender character configured');
+            return ['error' => 'No sender character configured. Set one in Settings > Notifications.'];
+        }
+
+        $token = $this->getCharacterToken($senderId);
+        if (!$token) {
+            Log::error('ESI notifications: No valid token for sender', ['sender_id' => $senderId]);
+            return ['error' => 'Sender character has no valid mail token (esi-mail.send_mail.v1 scope required)'];
+        }
+
+        // Initialize Eseye client ONCE with the sender's token
+        try {
+            $esi = new Eseye(new EsiAuthentication([
+                'access_token' => $token->access_token,
+                'refresh_token' => $token->refresh_token,
+                'token_expires' => $token->expires_at,
+                'scopes' => explode(' ', $token->scopes)
+            ]));
+        } catch (Exception $e) {
+            Log::error('ESI notifications: Failed to initialize Eseye client', ['error' => $e->getMessage()]);
+            return ['error' => 'Failed to initialize ESI client: ' . $e->getMessage()];
+        }
+
+        $message = $this->formatMessageForESI($type, $data);
+
         foreach ($recipients as $characterId) {
             try {
-                $message = $this->formatMessageForESI($type, $data);
-                
-                // Get refresh token for the character
-                $token = $this->getCharacterToken($characterId);
-                
-                if (!$token) {
-                    $results['failed'][] = $characterId;
-                    continue;
-                }
-
-                // Initialize Eseye client
-                $config = Configuration::getInstance();
-                $esi = new Eseye(new EsiAuthentication([
-                    'access_token' => $token->access_token,
-                    'refresh_token' => $token->refresh_token,
-                    'token_expires' => $token->expires_at,
-                    'scopes' => explode(' ', $token->scopes)
-                ]));
-
-                // Send EVE mail
-                $response = $esi->invoke('post', '/characters/{character_id}/mail/', [
-                    'character_id' => $characterId
+                // Send FROM sender TO recipient
+                $esi->invoke('post', '/characters/{character_id}/mail/', [
+                    'character_id' => $senderId
                 ], [
                     'approved_cost' => 0,
                     'body' => $message['body'],
@@ -377,12 +375,14 @@ class NotificationService
                 $results['sent'][] = $characterId;
 
                 Log::info('ESI notification sent', [
-                    'character_id' => $characterId,
+                    'sender_id' => $senderId,
+                    'recipient_id' => $characterId,
                     'type' => $type
                 ]);
             } catch (Exception $e) {
                 Log::error('Failed to send ESI notification', [
-                    'character_id' => $characterId,
+                    'sender_id' => $senderId,
+                    'recipient_id' => $characterId,
                     'error' => $e->getMessage()
                 ]);
                 $results['failed'][] = $characterId;
@@ -390,6 +390,118 @@ class NotificationService
         }
 
         return $results;
+    }
+
+    /**
+     * Get the configured sender character ID for EVE mail
+     *
+     * @return int|null
+     */
+    protected function getSenderCharacterId(): ?int
+    {
+        // Manual override takes priority
+        $override = $this->settings->getSetting('notifications.evemail_sender_character_override');
+        if ($override) {
+            return (int) $override;
+        }
+
+        // Then dropdown selection
+        $selected = $this->settings->getSetting('notifications.evemail_sender_character_id');
+        if ($selected) {
+            return (int) $selected;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a character's Discord user ID via seat-connector
+     *
+     * @param int $characterId
+     * @return string|null Discord user ID or null
+     */
+    protected function resolveDiscordUserId(int $characterId): ?string
+    {
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('seat_connector_users')) {
+                return null;
+            }
+
+            // character_id -> refresh_tokens.user_id -> seat_connector_users
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if (!$userId) {
+                return null;
+            }
+
+            return DB::table('seat_connector_users')
+                ->where('user_id', $userId)
+                ->where('connector_type', 'discord')
+                ->value('connector_id');
+        } catch (Exception $e) {
+            Log::debug('Failed to resolve Discord user ID', [
+                'character_id' => $characterId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Check if a notification type is a tax-related type
+     *
+     * @param string $type
+     * @return bool
+     */
+    protected function isTaxNotificationType(string $type): bool
+    {
+        return in_array($type, [
+            self::TYPE_TAX_REMINDER,
+            self::TYPE_TAX_INVOICE,
+            self::TYPE_TAX_OVERDUE,
+        ]);
+    }
+
+    /**
+     * Check if a notification type is enabled for a specific channel
+     *
+     * @param string $type
+     * @param string $channel
+     * @return bool
+     */
+    protected function isTypeEnabledForChannel(string $type, string $channel): bool
+    {
+        $typeKey = match ($type) {
+            self::TYPE_TAX_REMINDER => 'tax_reminder',
+            self::TYPE_TAX_INVOICE => 'tax_invoice',
+            self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_EVENT_CREATED => 'event_created',
+            self::TYPE_EVENT_STARTED => 'event_started',
+            self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_MOON_READY => 'moon_ready',
+            self::TYPE_CUSTOM => 'custom',
+            default => null,
+        };
+
+        // Custom type always passes through
+        if ($typeKey === 'custom' || $typeKey === null) {
+            return true;
+        }
+
+        if ($channel === self::CHANNEL_ESI) {
+            $types = $this->settings->getSetting('notifications.evemail_types', []);
+            return $types[$typeKey] ?? true;
+        }
+
+        if ($channel === self::CHANNEL_SLACK) {
+            $types = $this->settings->getSetting('notifications.slack_types', []);
+            return $types[$typeKey] ?? true;
+        }
+
+        // Discord uses webhook-level toggles, always allow through here
+        return true;
     }
 
     /**
@@ -402,10 +514,10 @@ class NotificationService
      */
     protected function sendViaSlack(string $type, array $recipients, array $data): array
     {
-        $webhookUrl = $this->settings->getSetting('slack_webhook_url');
-        
+        $webhookUrl = $this->settings->getSetting('notifications.slack_webhook_url');
+
         if (!$webhookUrl) {
-            return ['error' => 'Slack webhook URL not configured'];
+            return ['error' => 'Slack webhook URL not configured. Set one in Settings > Notifications.'];
         }
 
         try {
@@ -430,6 +542,10 @@ class NotificationService
     /**
      * Send notification via Discord
      *
+     * Uses per-webhook configuration from webhook_configurations table.
+     * Each webhook has its own toggles for which notification types to send.
+     * Supports Discord user pinging for tax notifications via seat-connector.
+     *
      * @param string $type
      * @param array $recipients
      * @param array $data
@@ -437,29 +553,138 @@ class NotificationService
      */
     protected function sendViaDiscord(string $type, array $recipients, array $data): array
     {
-        $webhookUrl = $this->settings->getSetting('discord_webhook_url');
-        
-        if (!$webhookUrl) {
-            return ['error' => 'Discord webhook URL not configured'];
+        // Map notification type to webhook event column
+        $eventType = match ($type) {
+            self::TYPE_TAX_REMINDER => 'tax_reminder',
+            self::TYPE_TAX_INVOICE => 'tax_invoice',
+            self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_EVENT_CREATED => 'event_created',
+            self::TYPE_EVENT_STARTED => 'event_started',
+            self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_MOON_READY => 'moon_arrival',
+            default => null,
+        };
+
+        if (!$eventType) {
+            return ['error' => 'Unsupported notification type for Discord webhooks'];
         }
 
-        try {
-            $message = $this->formatMessageForDiscord($type, $data);
-            
-            $response = Http::post($webhookUrl, $message);
+        // Get webhooks that have this event type enabled
+        $webhooks = \MiningManager\Models\WebhookConfiguration::enabled()
+            ->forEvent($eventType)
+            ->where('type', 'discord')
+            ->get();
 
-            if ($response->successful()) {
-                Log::info('Discord notification sent', ['type' => $type]);
-                return ['success' => true, 'recipients' => count($recipients)];
+        if ($webhooks->isEmpty()) {
+            Log::debug("NotificationService: No Discord webhooks configured for event: {$eventType}");
+            return ['skipped' => true, 'reason' => 'No webhooks configured for this event type'];
+        }
+
+        $results = ['sent' => [], 'failed' => []];
+
+        foreach ($webhooks as $webhook) {
+            try {
+                $message = $this->formatMessageForDiscord($type, $data);
+
+                // Add Discord user pings for tax notifications
+                if ($this->isTaxNotificationType($type)) {
+                    $pingContent = $this->buildDiscordPingContent($type, $recipients, $data);
+                    if ($pingContent) {
+                        $message['content'] = $pingContent;
+                    }
+                }
+
+                // Add role mention if configured on webhook
+                if ($webhook->discord_role_id) {
+                    $roleMention = $webhook->getDiscordRoleMention();
+                    $message['content'] = ($message['content'] ?? '')
+                        ? $roleMention . ' ' . ($message['content'] ?? '')
+                        : $roleMention;
+                }
+
+                if ($webhook->discord_username) {
+                    $message['username'] = $webhook->discord_username;
+                }
+
+                if ($webhook->discord_avatar_url) {
+                    $message['avatar_url'] = $webhook->discord_avatar_url;
+                }
+
+                $response = Http::timeout(10)->post($webhook->webhook_url, $message);
+
+                if ($response->successful() || $response->status() === 204) {
+                    $webhook->recordSuccess();
+                    $results['sent'][] = $webhook->id;
+                    Log::info('Discord notification sent via webhook', [
+                        'webhook_id' => $webhook->id,
+                        'type' => $type,
+                    ]);
+                } else {
+                    $error = "Discord returned status {$response->status()}: {$response->body()}";
+                    $webhook->recordFailure($error);
+                    $results['failed'][] = ['webhook_id' => $webhook->id, 'error' => $error];
+                }
+            } catch (Exception $e) {
+                Log::error('Failed to send Discord notification via webhook', [
+                    'webhook_id' => $webhook->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $webhook->recordFailure($e->getMessage());
+                $results['failed'][] = ['webhook_id' => $webhook->id, 'error' => $e->getMessage()];
             }
-
-            return ['error' => 'Discord API error: ' . $response->status()];
-        } catch (Exception $e) {
-            Log::error('Failed to send Discord notification', [
-                'error' => $e->getMessage()
-            ]);
-            return ['error' => $e->getMessage()];
         }
+
+        return $results;
+    }
+
+    /**
+     * Build Discord ping content for tax notifications
+     *
+     * Resolves character IDs to Discord user IDs via seat-connector
+     * and builds mention strings based on settings.
+     *
+     * @param string $type
+     * @param array $recipients Character IDs
+     * @param array $data Notification data
+     * @return string|null
+     */
+    protected function buildDiscordPingContent(string $type, array $recipients, array $data): ?string
+    {
+        if (!(bool) $this->settings->getSetting('notifications.discord_pinging_enabled', false)) {
+            return null;
+        }
+
+        $mentions = [];
+        foreach ($recipients as $characterId) {
+            $discordId = $this->resolveDiscordUserId($characterId);
+            if ($discordId) {
+                $mentions[] = "<@{$discordId}>";
+            }
+        }
+
+        if (empty($mentions)) {
+            return null;
+        }
+
+        $mentionStr = implode(' ', $mentions);
+        $showAmount = (bool) $this->settings->getSetting('notifications.discord_ping_show_amount', true);
+
+        if ($showAmount && isset($data['formatted_amount'])) {
+            // Detailed ping with amount
+            $action = match ($type) {
+                self::TYPE_TAX_REMINDER => 'Tax payment reminder',
+                self::TYPE_TAX_INVOICE => 'New tax invoice',
+                self::TYPE_TAX_OVERDUE => 'Overdue tax payment',
+                default => 'Tax notification',
+            };
+            return "{$mentionStr} — {$action}: {$data['formatted_amount']}";
+        }
+
+        // General notice with optional tax page link
+        $taxPageUrl = $this->settings->getSetting('notifications.discord_ping_tax_page_url', '');
+        $linkText = $taxPageUrl ? " View your taxes: {$taxPageUrl}" : '';
+
+        return "{$mentionStr} You have a pending tax notification.{$linkText}";
     }
 
     /**
@@ -786,11 +1011,40 @@ class NotificationService
     /**
      * Check if notifications are enabled
      *
+     * At least one channel must be enabled for notifications to be active.
+     *
      * @return bool
      */
     protected function isEnabled(): bool
     {
-        return $this->settings->getSetting('notifications_enabled', true);
+        return (bool) $this->settings->getSetting('notifications.evemail_enabled', false)
+            || (bool) $this->settings->getSetting('notifications.slack_enabled', false)
+            || $this->hasEnabledDiscordWebhooks();
+    }
+
+    /**
+     * Check if any Discord webhooks are enabled for tax notifications
+     *
+     * @return bool
+     */
+    protected function hasEnabledDiscordWebhooks(): bool
+    {
+        try {
+            return \MiningManager\Models\WebhookConfiguration::enabled()
+                ->where('type', 'discord')
+                ->where(function ($q) {
+                    $q->where('notify_tax_reminder', true)
+                      ->orWhere('notify_tax_invoice', true)
+                      ->orWhere('notify_tax_overdue', true)
+                      ->orWhere('notify_event_created', true)
+                      ->orWhere('notify_event_started', true)
+                      ->orWhere('notify_event_completed', true)
+                      ->orWhere('notify_moon_arrival', true);
+                })
+                ->exists();
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
     /**
@@ -800,7 +1054,22 @@ class NotificationService
      */
     protected function getEnabledChannels(): array
     {
-        return $this->settings->getSetting('notification_channels', [self::CHANNEL_ESI]);
+        $channels = [];
+
+        if ((bool) $this->settings->getSetting('notifications.evemail_enabled', false)) {
+            $channels[] = self::CHANNEL_ESI;
+        }
+
+        if ((bool) $this->settings->getSetting('notifications.slack_enabled', false)) {
+            $channels[] = self::CHANNEL_SLACK;
+        }
+
+        // Discord uses per-webhook configuration, always include if any webhooks exist
+        if ($this->hasEnabledDiscordWebhooks()) {
+            $channels[] = self::CHANNEL_DISCORD;
+        }
+
+        return $channels;
     }
 
     /**
