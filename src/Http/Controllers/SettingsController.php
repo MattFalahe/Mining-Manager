@@ -8,6 +8,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 
 class SettingsController extends Controller
@@ -49,7 +50,7 @@ class SettingsController extends Controller
         // Clear common setting group caches
         $groups = [
             'general', 'tax_rates', 'pricing', 'features', 'dashboard',
-            'tax_selector', 'exemptions', 'payment',
+            'tax_selector', 'exemptions', 'payment', 'notifications',
             'price_provider', 'janice_api_key', 'janice_market', 'janice_price_method',
         ];
 
@@ -110,13 +111,19 @@ class SettingsController extends Controller
             return $query->forCorporation($corporationId);
         })->get();
 
+        // Notification tab data
+        $mailScopeCharacters = $this->settingsService->getMailScopeCharacters();
+        $seatConnectorAvailable = Schema::hasTable('seat_connector_users');
+
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
             'corporationId',
             'hasCustomSettings',
             'isFirstTimeSetup',
-            'webhooks'
+            'webhooks',
+            'mailScopeCharacters',
+            'seatConnectorAvailable'
         ));
     }
 
@@ -229,12 +236,6 @@ class SettingsController extends Controller
             'compact_mode' => 'nullable|boolean',
             'show_character_portraits' => 'nullable|boolean',
 
-            // Notification Settings
-            'enable_notifications' => 'nullable|boolean',
-            'notify_tax_due' => 'nullable|boolean',
-            'notify_moon_extractions' => 'nullable|boolean',
-            'notify_events' => 'nullable|boolean',
-
             // Payment Settings
             'payment_match_tolerance' => 'nullable|integer|min:0|max:10000',
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
@@ -268,11 +269,6 @@ class SettingsController extends Controller
             // Convert boolean checkboxes (unchecked = not sent)
             $data['compact_mode'] = $request->has('compact_mode');
             $data['show_character_portraits'] = $request->has('show_character_portraits');
-            $data['enable_notifications'] = $request->has('enable_notifications');
-            $data['notify_tax_due'] = $request->has('notify_tax_due');
-            $data['notify_moon_extractions'] = $request->has('notify_moon_extractions');
-            $data['notify_events'] = $request->has('notify_events');
-
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 
@@ -288,6 +284,81 @@ class SettingsController extends Controller
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Error updating settings: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update notification settings
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function updateNotifications(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            // EVE Mail
+            'evemail_enabled' => 'nullable|boolean',
+            'evemail_sender_character_id' => 'nullable|integer',
+            'evemail_sender_character_override' => 'nullable|integer',
+
+            // Slack
+            'slack_enabled' => 'nullable|boolean',
+            'slack_webhook_url' => 'nullable|url',
+
+            // Discord pinging
+            'discord_pinging_enabled' => 'nullable|boolean',
+            'discord_ping_show_amount' => 'nullable|boolean',
+            'discord_ping_tax_page_url' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
+        try {
+            $data = [];
+
+            // EVE Mail
+            $data['evemail_enabled'] = $request->has('evemail_enabled');
+            $data['evemail_sender_character_id'] = $request->input('evemail_sender_character_id');
+            $data['evemail_sender_character_override'] = $request->input('evemail_sender_character_override');
+
+            // Build EVE mail types array from individual checkboxes
+            $evemailTypes = [];
+            foreach (['tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
+                $evemailTypes[$type] = $request->has('evemail_type_' . $type);
+            }
+            $data['evemail_types'] = $evemailTypes;
+
+            // Slack
+            $data['slack_enabled'] = $request->has('slack_enabled');
+            $data['slack_webhook_url'] = $request->input('slack_webhook_url', '');
+
+            // Build Slack types array
+            $slackTypes = [];
+            foreach (['tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
+                $slackTypes[$type] = $request->has('slack_type_' . $type);
+            }
+            $data['slack_types'] = $slackTypes;
+
+            // Discord pinging
+            $data['discord_pinging_enabled'] = $request->has('discord_pinging_enabled');
+            $data['discord_ping_show_amount'] = $request->has('discord_ping_show_amount');
+            $data['discord_ping_tax_page_url'] = $request->input('discord_ping_tax_page_url', '');
+
+            $this->settingsService->updateNotificationSettings($data);
+            $this->clearSettingsCache();
+
+            return redirect()->route('mining-manager.settings.index')
+                ->with('success', 'Notification settings updated successfully')
+                ->withFragment('notifications');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error updating notification settings: ' . $e->getMessage());
         }
     }
 
@@ -970,6 +1041,9 @@ class SettingsController extends Controller
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',
+            'notify_tax_reminder' => 'nullable|boolean',
+            'notify_tax_invoice' => 'nullable|boolean',
+            'notify_tax_overdue' => 'nullable|boolean',
             'discord_role_id' => 'nullable|string|max:255',
             'discord_username' => 'nullable|string|max:255',
             'slack_channel' => 'nullable|string|max:255',
@@ -999,6 +1073,9 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->has('notify_event_created');
             $data['notify_event_started'] = $request->has('notify_event_started');
             $data['notify_event_completed'] = $request->has('notify_event_completed');
+            $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
+            $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
+            $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
 
             $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
 
@@ -1040,6 +1117,9 @@ class SettingsController extends Controller
                 'notify_event_created' => 'nullable|boolean',
                 'notify_event_started' => 'nullable|boolean',
                 'notify_event_completed' => 'nullable|boolean',
+                'notify_tax_reminder' => 'nullable|boolean',
+                'notify_tax_invoice' => 'nullable|boolean',
+                'notify_tax_overdue' => 'nullable|boolean',
                 'discord_role_id' => 'nullable|string|max:255',
                 'discord_username' => 'nullable|string|max:255',
                 'slack_channel' => 'nullable|string|max:255',
@@ -1067,6 +1147,9 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->has('notify_event_created');
             $data['notify_event_started'] = $request->has('notify_event_started');
             $data['notify_event_completed'] = $request->has('notify_event_completed');
+            $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
+            $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
+            $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
 
             $webhook->update($data);
 

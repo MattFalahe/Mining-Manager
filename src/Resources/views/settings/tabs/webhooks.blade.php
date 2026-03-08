@@ -164,6 +164,21 @@
                                                     <i class="fas fa-flag-checkered"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_tax_reminder)
+                                                <span class="badge badge-warning" title="Tax Reminder">
+                                                    <i class="fas fa-clock"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_tax_invoice)
+                                                <span class="badge badge-info" title="Tax Invoice">
+                                                    <i class="fas fa-file-invoice"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_tax_overdue)
+                                                <span class="badge badge-danger" title="Tax Overdue">
+                                                    <i class="fas fa-exclamation-circle"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -361,6 +376,31 @@
                             <label class="custom-control-label" for="notify-event-completed">
                                 <i class="fas fa-flag-checkered text-secondary"></i>
                                 Event Completed
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-2"><strong>Tax Notifications</strong></small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-reminder" name="notify_tax_reminder" value="1">
+                            <label class="custom-control-label" for="notify-tax-reminder">
+                                <i class="fas fa-clock text-warning"></i>
+                                Tax Reminder
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-invoice" name="notify_tax_invoice" value="1">
+                            <label class="custom-control-label" for="notify-tax-invoice">
+                                <i class="fas fa-file-invoice text-info"></i>
+                                Tax Invoice Created
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-overdue" name="notify_tax_overdue" value="1">
+                            <label class="custom-control-label" for="notify-tax-overdue">
+                                <i class="fas fa-exclamation-circle text-danger"></i>
+                                Tax Overdue
                             </label>
                         </div>
                     </div>

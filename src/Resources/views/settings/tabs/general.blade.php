@@ -315,84 +315,13 @@
         </div>
     </div>
 
-    {{-- Notification Settings --}}
+    {{-- Notification Settings (Moved) --}}
     <div class="card bg-dark mb-3">
-        <div class="card-header">
-            <h5 class="card-title mb-0">
-                <i class="fas fa-bell"></i>
-                {{ trans('mining-manager::settings.notification_settings') }}
-            </h5>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="custom-control custom-switch mb-3">
-                        <input type="checkbox"
-                               class="custom-control-input"
-                               id="enable_notifications"
-                               name="enable_notifications"
-                               value="1"
-                               {{ old('enable_notifications', $settings->enable_notifications ?? true) ? 'checked' : '' }}>
-                        <label class="custom-control-label" for="enable_notifications">
-                            <i class="fas fa-bell"></i>
-                            {{ trans('mining-manager::settings.enable_notifications') }}
-                        </label>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.enable_notifications_help') }}
-                        </small>
-                    </div>
-
-                    <div class="custom-control custom-switch mb-3">
-                        <input type="checkbox"
-                               class="custom-control-input"
-                               id="notify_tax_due"
-                               name="notify_tax_due"
-                               value="1"
-                               {{ old('notify_tax_due', $settings->notify_tax_due ?? true) ? 'checked' : '' }}>
-                        <label class="custom-control-label" for="notify_tax_due">
-                            <i class="fas fa-coins"></i>
-                            {{ trans('mining-manager::settings.notify_tax_due') }}
-                        </label>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.notify_tax_due_help') }}
-                        </small>
-                    </div>
-                </div>
-
-                <div class="col-md-6">
-                    <div class="custom-control custom-switch mb-3">
-                        <input type="checkbox"
-                               class="custom-control-input"
-                               id="notify_events"
-                               name="notify_events"
-                               value="1"
-                               {{ old('notify_events', $settings->notify_events ?? true) ? 'checked' : '' }}>
-                        <label class="custom-control-label" for="notify_events">
-                            <i class="fas fa-calendar-star"></i>
-                            {{ trans('mining-manager::settings.notify_events') }}
-                        </label>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.notify_events_help') }}
-                        </small>
-                    </div>
-
-                    <div class="custom-control custom-switch mb-3">
-                        <input type="checkbox"
-                               class="custom-control-input"
-                               id="notify_moon_extractions"
-                               name="notify_moon_extractions"
-                               value="1"
-                               {{ old('notify_moon_extractions', $settings->notify_moon_extractions ?? true) ? 'checked' : '' }}>
-                        <label class="custom-control-label" for="notify_moon_extractions">
-                            <i class="fas fa-moon"></i>
-                            {{ trans('mining-manager::settings.notify_moon_extractions') }}
-                        </label>
-                        <small class="form-text text-muted">
-                            {{ trans('mining-manager::settings.notify_moon_extractions_help') }}
-                        </small>
-                    </div>
-                </div>
-            </div>
+        <div class="card-body text-center text-muted py-4">
+            <i class="fas fa-bell fa-2x mb-2 d-block"></i>
+            <p class="mb-0">Notification settings have moved to the dedicated
+            <a href="#" onclick="$('.nav-link[data-tab=notifications]').click(); return false;">
+                <i class="fas fa-bell"></i> Notifications tab</a>.</p>
         </div>
     </div>
 

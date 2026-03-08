@@ -66,16 +66,9 @@ return [
     'payment_grace_period' => 'Payment Grace Period',
     'payment_grace_period_help' => 'Hours before a payment is considered late after the deadline. Default: 24 hours',
 
-    // Notification Settings
+    // Notification Settings (moved to dedicated Notifications tab)
     'notification_settings' => 'Notification Settings',
-    'enable_notifications' => 'Enable Notifications',
-    'enable_notifications_help' => 'Enable in-game EVE Mail notifications',
-    'notify_tax_due' => 'Tax Due Notifications',
-    'notify_tax_due_help' => 'Notify members when taxes are due',
-    'notify_events' => 'Event Notifications',
-    'notify_events_help' => 'Notify members about upcoming mining events',
-    'notify_moon_extractions' => 'Moon Extraction Notifications',
-    'notify_moon_extractions_help' => 'Notify members when moon extractions are ready',
+    'notifications' => 'Notifications',
     
     // Tax Rate Settings
     'tax_rate_settings' => 'Tax Rate Settings',

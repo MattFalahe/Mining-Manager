@@ -231,6 +231,16 @@
                         @include('mining-manager::settings.tabs.webhooks', ['webhooks' => $webhooks ?? collect()])
                     </div>
 
+                    {{-- Notifications Tab --}}
+                    <div id="notifications" class="settings-section">
+                        @include('mining-manager::settings.tabs.notifications', [
+                            'notificationSettings' => $settings['notifications'] ?? [],
+                            'mailScopeCharacters' => $mailScopeCharacters ?? collect(),
+                            'seatConnectorAvailable' => $seatConnectorAvailable ?? false,
+                            'webhooks' => $webhooks ?? collect(),
+                        ])
+                    </div>
+
                     {{-- Dashboard Settings Tab --}}
                     <div id="dashboard" class="settings-section">
                         @include('mining-manager::settings.tabs.dashboard', [

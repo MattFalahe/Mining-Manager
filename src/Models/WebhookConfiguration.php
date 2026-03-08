@@ -24,6 +24,9 @@ use Carbon\Carbon;
  * @property bool $notify_event_created
  * @property bool $notify_event_started
  * @property bool $notify_event_completed
+ * @property bool $notify_tax_reminder
+ * @property bool $notify_tax_invoice
+ * @property bool $notify_tax_overdue
  * @property string|null $discord_role_id
  * @property string|null $discord_username
  * @property string|null $slack_channel
@@ -67,6 +70,9 @@ class WebhookConfiguration extends Model
         'notify_event_created',
         'notify_event_started',
         'notify_event_completed',
+        'notify_tax_reminder',
+        'notify_tax_invoice',
+        'notify_tax_overdue',
         'discord_role_id',
         'discord_username',
         'slack_channel',
@@ -92,6 +98,9 @@ class WebhookConfiguration extends Model
         'notify_event_created' => 'boolean',
         'notify_event_started' => 'boolean',
         'notify_event_completed' => 'boolean',
+        'notify_tax_reminder' => 'boolean',
+        'notify_tax_invoice' => 'boolean',
+        'notify_tax_overdue' => 'boolean',
         'custom_headers' => 'array',
         'last_success_at' => 'datetime',
         'last_failure_at' => 'datetime',
@@ -165,6 +174,9 @@ class WebhookConfiguration extends Model
             'event_created' => 'notify_event_created',
             'event_started' => 'notify_event_started',
             'event_completed' => 'notify_event_completed',
+            'tax_reminder' => 'notify_tax_reminder',
+            'tax_invoice' => 'notify_tax_invoice',
+            'tax_overdue' => 'notify_tax_overdue',
         ];
 
         $column = $columnMap[$eventType] ?? null;
@@ -270,6 +282,9 @@ class WebhookConfiguration extends Model
             'event_created' => $this->notify_event_created,
             'event_started' => $this->notify_event_started,
             'event_completed' => $this->notify_event_completed,
+            'tax_reminder' => $this->notify_tax_reminder,
+            'tax_invoice' => $this->notify_tax_invoice,
+            'tax_overdue' => $this->notify_tax_overdue,
         ];
 
         return $eventMap[$eventType] ?? false;

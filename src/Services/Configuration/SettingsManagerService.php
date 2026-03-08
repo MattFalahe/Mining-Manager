@@ -153,11 +153,8 @@ class SettingsManagerService
             'compact_mode' => $this->getSetting('general.compact_mode', false),
             'show_character_portraits' => $this->getSetting('general.show_character_portraits', true),
             
-            // Notification Settings
-            'enable_notifications' => $this->getSetting('general.enable_notifications', true),
-            'notify_tax_due' => $this->getSetting('general.notify_tax_due', true),
-            'notify_moon_extractions' => $this->getSetting('general.notify_moon_extractions', true),
-            'notify_events' => $this->getSetting('general.notify_events', true),
+            // Notification settings have moved to the dedicated Notifications tab
+            // See getNotificationSettings() for the new per-channel configuration
         ];
     }
 
@@ -676,7 +673,79 @@ class SettingsManagerService
      */
     public function getNotificationSettings(): array
     {
-        return config('mining-manager.notifications', []);
+        return [
+            // EVE Mail
+            'evemail_enabled' => (bool) $this->getSetting('notifications.evemail_enabled', false),
+            'evemail_sender_character_id' => $this->getSetting('notifications.evemail_sender_character_id', null),
+            'evemail_sender_character_override' => $this->getSetting('notifications.evemail_sender_character_override', null),
+            'evemail_types' => $this->getSetting('notifications.evemail_types', [
+                'tax_reminder' => true,
+                'tax_invoice' => true,
+                'tax_overdue' => true,
+                'event_created' => true,
+                'event_started' => true,
+                'event_completed' => true,
+                'moon_ready' => true,
+            ]),
+
+            // Slack
+            'slack_enabled' => (bool) $this->getSetting('notifications.slack_enabled', false),
+            'slack_webhook_url' => $this->getSetting('notifications.slack_webhook_url', ''),
+            'slack_types' => $this->getSetting('notifications.slack_types', [
+                'tax_reminder' => true,
+                'tax_invoice' => true,
+                'tax_overdue' => true,
+                'event_created' => true,
+                'event_started' => true,
+                'event_completed' => true,
+                'moon_ready' => true,
+            ]),
+
+            // Discord pinging
+            'discord_pinging_enabled' => (bool) $this->getSetting('notifications.discord_pinging_enabled', false),
+            'discord_ping_show_amount' => (bool) $this->getSetting('notifications.discord_ping_show_amount', true),
+            'discord_ping_tax_page_url' => $this->getSetting('notifications.discord_ping_tax_page_url', ''),
+
+            // seat-connector availability (runtime)
+            'seat_connector_available' => \Illuminate\Support\Facades\Schema::hasTable('seat_connector_users'),
+        ];
+    }
+
+    /**
+     * Update notification settings
+     *
+     * @param array $settings
+     * @return void
+     */
+    public function updateNotificationSettings(array $settings): void
+    {
+        DB::beginTransaction();
+
+        try {
+            foreach ($settings as $key => $value) {
+                $this->updateSetting('notifications.' . $key, $value);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Get characters that have the esi-mail.send_mail.v1 scope
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public function getMailScopeCharacters(): \Illuminate\Support\Collection
+    {
+        return DB::table('refresh_tokens')
+            ->join('character_infos', 'refresh_tokens.character_id', '=', 'character_infos.character_id')
+            ->where('refresh_tokens.scopes', 'LIKE', '%esi-mail.send_mail.v1%')
+            ->select('refresh_tokens.character_id', 'character_infos.name')
+            ->orderBy('character_infos.name')
+            ->get();
     }
 
     /**
