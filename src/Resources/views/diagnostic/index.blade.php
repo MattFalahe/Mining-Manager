@@ -117,6 +117,53 @@
     padding: 2px 6px !important;
     border-radius: 3px !important;
 }
+
+/* Notification Testing Terminal */
+.mining-manager-wrapper.diagnostic-page .notification-terminal {
+    background: #0d1117 !important;
+    border: 1px solid #30363d !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+    font-family: 'Courier New', 'Consolas', 'Monaco', monospace !important;
+    font-size: 13px !important;
+    line-height: 1.7 !important;
+    max-height: 500px !important;
+    min-height: 120px !important;
+    overflow-y: auto !important;
+    color: #c9d1d9 !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-line {
+    padding: 1px 0 !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    animation: ntFadeIn 0.2s ease-in !important;
+}
+
+@keyframes ntFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-time {
+    color: #8b949e !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-level {
+    font-weight: bold !important;
+    display: inline-block !important;
+    min-width: 50px !important;
+}
+
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-info .log-level { color: #58a6ff !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-ok .log-level { color: #3fb950 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-ok { color: #3fb950 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-warn .log-level { color: #d29922 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-warn { color: #d29922 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-error .log-level { color: #f85149 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-error { color: #f85149 !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-skip .log-level { color: #8b949e !important; }
+.mining-manager-wrapper.diagnostic-page .notification-terminal .log-skip { color: #8b949e !important; }
 </style>
 @endpush
 
@@ -193,6 +240,11 @@
             <li class="nav-item">
                 <a class="nav-link" href="#system-status" data-toggle="tab" onclick="loadSystemStatus()">
                     <i class="fas fa-heartbeat"></i> System Status
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#notification-testing" data-toggle="tab">
+                    <i class="fas fa-bell"></i> Notification Testing
                 </a>
             </li>
         </ul>
@@ -953,6 +1005,229 @@
                 <div class="card card-dark mb-3">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-database"></i> Data Counts</h3></div>
                     <div class="card-body" id="ss-data-counts"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Testing Tab -->
+        <div class="tab-pane" id="notification-testing">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card card-dark">
+                        <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <h3 class="card-title">
+                                <i class="fas fa-bell"></i> Notification Testing & Diagnostics
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Test all notification types across all channels. EVE Mail runs as a dry-run (no ESI call), Discord and Slack send real messages.</p>
+
+                            <div class="row">
+                                <!-- Left Column: Configuration -->
+                                <div class="col-md-6">
+
+                                    <!-- Notification Type -->
+                                    <div class="form-group">
+                                        <label><i class="fas fa-tag"></i> Notification Type</label>
+                                        <select id="ntNotificationType" class="form-control" onchange="updateNotifTestFields()">
+                                            <optgroup label="Tax Notifications">
+                                                <option value="tax_reminder">⏰ Tax Payment Reminder</option>
+                                                <option value="tax_invoice">📧 Tax Invoice Created</option>
+                                                <option value="tax_overdue">❌ Tax Payment Overdue</option>
+                                            </optgroup>
+                                            <optgroup label="Event Notifications">
+                                                <option value="event_created">📅 Mining Event Created</option>
+                                                <option value="event_started">🚀 Mining Event Started</option>
+                                                <option value="event_completed">🏁 Mining Event Completed</option>
+                                            </optgroup>
+                                            <optgroup label="Moon Notifications">
+                                                <option value="moon_ready">🌙 Moon Extraction Ready</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+
+                                    <!-- Channels -->
+                                    <div class="form-group">
+                                        <label><i class="fas fa-broadcast-tower"></i> Channels</label>
+                                        <div class="d-flex flex-wrap" style="gap: 15px;">
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="ntChannelEsi" value="esi">
+                                                <label class="custom-control-label" for="ntChannelEsi">
+                                                    <i class="fas fa-envelope"></i> EVE Mail (dry run)
+                                                </label>
+                                            </div>
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="ntChannelDiscord" value="discord" checked>
+                                                <label class="custom-control-label" for="ntChannelDiscord">
+                                                    <i class="fab fa-discord"></i> Discord
+                                                </label>
+                                            </div>
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="ntChannelSlack" value="slack">
+                                                <label class="custom-control-label" for="ntChannelSlack">
+                                                    <i class="fab fa-slack"></i> Slack
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Character Selection -->
+                                    <div class="form-group">
+                                        <label>
+                                            <i class="fas fa-user"></i> Target Character
+                                            <button type="button" class="btn btn-xs btn-outline-info ml-2" onclick="toggleNtCharInput()">
+                                                <i class="fas fa-exchange-alt"></i> <span id="ntCharToggleText">Enter ID</span>
+                                            </button>
+                                        </label>
+                                        <div id="ntCharDropdown">
+                                            <select id="ntCharacterSelect" class="form-control">
+                                                <option value="">-- Select Character --</option>
+                                                @foreach($seatCharacters as $char)
+                                                    <option value="{{ $char->character_id }}">{{ $char->name }} ({{ $char->character_id }})</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div id="ntCharManual" style="display:none;">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <input type="number" id="ntCharacterId" class="form-control" placeholder="Character ID">
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <input type="text" id="ntCharacterName" class="form-control" placeholder="Character Name" value="Test Character">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Right Column: Webhook & Test Data -->
+                                <div class="col-md-6">
+
+                                    <!-- Webhook Selection (Discord) -->
+                                    <div class="form-group">
+                                        <label>
+                                            <i class="fab fa-discord"></i> Discord Webhook
+                                            <button type="button" class="btn btn-xs btn-outline-info ml-2" onclick="toggleNtWebhookInput()">
+                                                <i class="fas fa-exchange-alt"></i> <span id="ntWebhookToggleText">Custom URL</span>
+                                            </button>
+                                        </label>
+                                        <div id="ntWebhookDropdown">
+                                            <select id="ntWebhookSelect" class="form-control">
+                                                <option value="">-- Auto-select (first enabled) --</option>
+                                                @foreach($webhooks->where('type', 'discord') as $wh)
+                                                    <option value="{{ $wh->id }}">
+                                                        {{ $wh->name }} {{ $wh->is_enabled ? '(Enabled)' : '(Disabled)' }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div id="ntWebhookManual" style="display:none;">
+                                            <input type="url" id="ntCustomWebhookUrl" class="form-control" placeholder="https://discord.com/api/webhooks/...">
+                                        </div>
+                                    </div>
+
+                                    <!-- Slack URL Override -->
+                                    <div class="form-group">
+                                        <label><i class="fab fa-slack"></i> Slack Webhook URL (optional override)</label>
+                                        <input type="url" id="ntCustomSlackUrl" class="form-control" placeholder="Leave empty to use configured URL">
+                                    </div>
+
+                                    <!-- Test Data -->
+                                    <div class="card bg-secondary" id="ntTestDataCard">
+                                        <div class="card-header py-2">
+                                            <h6 class="card-title mb-0"><i class="fas fa-edit"></i> Test Data</h6>
+                                        </div>
+                                        <div class="card-body py-2">
+                                            <!-- Tax fields -->
+                                            <div id="ntTaxFields">
+                                                <div class="form-group mb-2">
+                                                    <label class="small mb-1">Amount (ISK)</label>
+                                                    <input type="number" id="ntAmount" class="form-control form-control-sm" value="5000000" min="0" step="100000">
+                                                </div>
+                                                <div class="form-group mb-2">
+                                                    <label class="small mb-1">Due Date</label>
+                                                    <input type="date" id="ntDueDate" class="form-control form-control-sm" value="{{ now()->addDays(7)->format('Y-m-d') }}">
+                                                </div>
+                                                <div class="form-group mb-2" id="ntDaysRemainingGroup">
+                                                    <label class="small mb-1">Days Remaining</label>
+                                                    <input type="number" id="ntDaysRemaining" class="form-control form-control-sm" value="7" min="0">
+                                                </div>
+                                                <div class="form-group mb-2" id="ntDaysOverdueGroup" style="display:none;">
+                                                    <label class="small mb-1">Days Overdue</label>
+                                                    <input type="number" id="ntDaysOverdue" class="form-control form-control-sm" value="3" min="0">
+                                                </div>
+                                            </div>
+                                            <!-- Event fields -->
+                                            <div id="ntEventFields" style="display:none;">
+                                                <div class="form-group mb-2">
+                                                    <label class="small mb-1">Event Name</label>
+                                                    <input type="text" id="ntEventName" class="form-control form-control-sm" value="Test Mining Event">
+                                                </div>
+                                                <div class="form-group mb-2">
+                                                    <label class="small mb-1">Location</label>
+                                                    <input type="text" id="ntLocation" class="form-control form-control-sm" value="Jita">
+                                                </div>
+                                            </div>
+                                            <!-- Moon fields -->
+                                            <div id="ntMoonFields" style="display:none;">
+                                                <div class="form-group mb-2">
+                                                    <label class="small mb-1">Structure ID</label>
+                                                    <input type="number" id="ntStructureId" class="form-control form-control-sm" value="1000000000001">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="mt-3 mb-3">
+                                <button type="button" class="btn btn-mm-primary" onclick="runNotificationTest()">
+                                    <i class="fas fa-play"></i> <span id="ntRunBtnText">Run Test</span>
+                                    <span id="ntRunSpinner" class="spinner-border spinner-border-sm ml-2" style="display:none;"></span>
+                                </button>
+                                <button type="button" class="btn btn-secondary ml-2" onclick="clearNotificationLog()">
+                                    <i class="fas fa-trash-alt"></i> Clear Log
+                                </button>
+                            </div>
+
+                            <!-- Terminal Log View -->
+                            <div class="notification-terminal" id="ntTerminal">
+                                <div class="log-line log-skip">[--:--:--.---] [INFO] Ready. Select options and click "Run Test" to begin.</div>
+                            </div>
+
+                            <!-- Summary Card -->
+                            <div id="ntSummary" class="mt-3" style="display:none;">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="stat-box">
+                                            <div class="stat-number" id="ntSumChannels">0</div>
+                                            <div class="stat-label">Channels Tested</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-box">
+                                            <div class="stat-number" id="ntSumSent" style="color: #3fb950 !important;">0</div>
+                                            <div class="stat-label">Sent</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-box">
+                                            <div class="stat-number" id="ntSumFailed" style="color: #f85149 !important;">0</div>
+                                            <div class="stat-label">Failed</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="stat-box">
+                                            <div class="stat-number" id="ntSumSkipped" style="color: #8b949e !important;">0</div>
+                                            <div class="stat-label">Skipped</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2151,6 +2426,216 @@ function loadSystemStatus() {
             $('#system-status-loading').html('<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Failed to load system status: ' + err.message + '</div>');
         });
 }
+
+// ============================================================================
+// NOTIFICATION TESTING
+// ============================================================================
+
+function runNotificationTest() {
+    const terminal = document.getElementById('ntTerminal');
+    const btnText = document.getElementById('ntRunBtnText');
+    const spinner = document.getElementById('ntRunSpinner');
+    const summary = document.getElementById('ntSummary');
+
+    // Collect channels
+    const channels = [];
+    if (document.getElementById('ntChannelEsi').checked) channels.push('esi');
+    if (document.getElementById('ntChannelDiscord').checked) channels.push('discord');
+    if (document.getElementById('ntChannelSlack').checked) channels.push('slack');
+
+    if (channels.length === 0) {
+        appendLogLine(getNow(), 'error', 'Please select at least one channel to test.');
+        return;
+    }
+
+    // Collect character
+    const charDropdownVisible = document.getElementById('ntCharDropdown').style.display !== 'none';
+    let characterId = 0;
+    let characterName = 'Test Character';
+
+    if (charDropdownVisible) {
+        const sel = document.getElementById('ntCharacterSelect');
+        characterId = parseInt(sel.value) || 0;
+        if (sel.selectedIndex > 0) {
+            characterName = sel.options[sel.selectedIndex].text.replace(/\s*\(\d+\)$/, '');
+        }
+    } else {
+        characterId = parseInt(document.getElementById('ntCharacterId').value) || 0;
+        characterName = document.getElementById('ntCharacterName').value || 'Test Character';
+    }
+
+    // Collect webhook
+    const whDropdownVisible = document.getElementById('ntWebhookDropdown').style.display !== 'none';
+    let webhookId = null;
+    let customWebhookUrl = null;
+
+    if (whDropdownVisible) {
+        webhookId = document.getElementById('ntWebhookSelect').value || null;
+    } else {
+        customWebhookUrl = document.getElementById('ntCustomWebhookUrl').value || null;
+    }
+
+    const customSlackUrl = document.getElementById('ntCustomSlackUrl').value || null;
+    const notificationType = document.getElementById('ntNotificationType').value;
+
+    // Collect test data
+    const postData = {
+        notification_type: notificationType,
+        channels: channels,
+        character_id: characterId,
+        character_name: characterName,
+        webhook_id: webhookId,
+        custom_webhook_url: customWebhookUrl,
+        custom_slack_url: customSlackUrl,
+        test_amount: parseFloat(document.getElementById('ntAmount').value) || 5000000,
+        test_due_date: document.getElementById('ntDueDate').value,
+        test_days_remaining: parseInt(document.getElementById('ntDaysRemaining').value) || 7,
+        test_days_overdue: parseInt(document.getElementById('ntDaysOverdue').value) || 3,
+        test_event_name: document.getElementById('ntEventName').value || 'Test Mining Event',
+        test_location: document.getElementById('ntLocation').value || 'Jita',
+        test_structure_id: parseInt(document.getElementById('ntStructureId').value) || 1000000000001,
+    };
+
+    // Clear terminal and start
+    terminal.innerHTML = '';
+    summary.style.display = 'none';
+    btnText.textContent = 'Running...';
+    spinner.style.display = 'inline-block';
+
+    appendLogLine(getNow(), 'info', 'Sending test request...');
+
+    const url = '{{ route("mining-manager.diagnostic.test-notification") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(postData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Run Test';
+        spinner.style.display = 'none';
+
+        // Clear and render all log lines
+        terminal.innerHTML = '';
+
+        if (data.logs && data.logs.length > 0) {
+            data.logs.forEach(function(log) {
+                appendLogLine(log.time, log.level, log.message);
+            });
+        }
+
+        // Show summary
+        if (data.summary) {
+            document.getElementById('ntSumChannels').textContent = data.summary.channels_tested || 0;
+            document.getElementById('ntSumSent').textContent = data.summary.sent || 0;
+            document.getElementById('ntSumFailed').textContent = data.summary.failed || 0;
+            document.getElementById('ntSumSkipped').textContent = data.summary.skipped || 0;
+            summary.style.display = 'block';
+        }
+    })
+    .catch(function(error) {
+        btnText.textContent = 'Run Test';
+        spinner.style.display = 'none';
+        appendLogLine(getNow(), 'error', 'Request failed: ' + error.message);
+    });
+}
+
+function appendLogLine(time, level, message) {
+    const terminal = document.getElementById('ntTerminal');
+    const line = document.createElement('div');
+
+    const levelClass = 'log-' + level;
+    const levelLabel = level.toUpperCase();
+
+    line.className = 'log-line ' + levelClass;
+    line.innerHTML = '<span class="log-time">[' + time + ']</span> <span class="log-level">[' + levelLabel + ']</span> ' + escapeHtml(message);
+
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+function clearNotificationLog() {
+    const terminal = document.getElementById('ntTerminal');
+    terminal.innerHTML = '<div class="log-line log-skip">[--:--:--.---] [INFO] Log cleared. Ready for next test.</div>';
+    document.getElementById('ntSummary').style.display = 'none';
+}
+
+function getNow() {
+    const d = new Date();
+    return d.toTimeString().substring(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+}
+
+function updateNotifTestFields() {
+    const type = document.getElementById('ntNotificationType').value;
+
+    document.getElementById('ntTaxFields').style.display = 'none';
+    document.getElementById('ntEventFields').style.display = 'none';
+    document.getElementById('ntMoonFields').style.display = 'none';
+    document.getElementById('ntDaysRemainingGroup').style.display = 'none';
+    document.getElementById('ntDaysOverdueGroup').style.display = 'none';
+
+    if (type === 'tax_reminder' || type === 'tax_invoice' || type === 'tax_overdue') {
+        document.getElementById('ntTaxFields').style.display = 'block';
+        if (type === 'tax_reminder') {
+            document.getElementById('ntDaysRemainingGroup').style.display = 'block';
+        } else if (type === 'tax_overdue') {
+            document.getElementById('ntDaysOverdueGroup').style.display = 'block';
+        }
+    } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed') {
+        document.getElementById('ntEventFields').style.display = 'block';
+    } else if (type === 'moon_ready') {
+        document.getElementById('ntMoonFields').style.display = 'block';
+    }
+}
+
+function toggleNtCharInput() {
+    const dropdown = document.getElementById('ntCharDropdown');
+    const manual = document.getElementById('ntCharManual');
+    const toggleText = document.getElementById('ntCharToggleText');
+
+    if (dropdown.style.display !== 'none') {
+        dropdown.style.display = 'none';
+        manual.style.display = 'block';
+        toggleText.textContent = 'Select from List';
+    } else {
+        dropdown.style.display = 'block';
+        manual.style.display = 'none';
+        toggleText.textContent = 'Enter ID';
+    }
+}
+
+function toggleNtWebhookInput() {
+    const dropdown = document.getElementById('ntWebhookDropdown');
+    const manual = document.getElementById('ntWebhookManual');
+    const toggleText = document.getElementById('ntWebhookToggleText');
+
+    if (dropdown.style.display !== 'none') {
+        dropdown.style.display = 'none';
+        manual.style.display = 'block';
+        toggleText.textContent = 'Select from List';
+    } else {
+        dropdown.style.display = 'block';
+        manual.style.display = 'none';
+        toggleText.textContent = 'Custom URL';
+    }
+}
+
+// Initialize fields visibility
+$(document).ready(function() {
+    updateNotifTestFields();
+});
 </script>
 @endpush
 

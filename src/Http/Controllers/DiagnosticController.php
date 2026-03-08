@@ -14,7 +14,10 @@ use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\Setting;
+use MiningManager\Models\WebhookConfiguration;
+use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Http;
 
 class DiagnosticController extends Controller
 {
@@ -92,7 +95,16 @@ class DiagnosticController extends Controller
                 ->count(),
         ];
 
-        return view('mining-manager::diagnostic.index', compact('testDataCounts'));
+        // For Notification Testing tab
+        $webhooks = WebhookConfiguration::select('id', 'name', 'type', 'is_enabled', 'webhook_url')->get();
+
+        $seatCharacters = DB::table('character_infos')
+            ->join('refresh_tokens', 'character_infos.character_id', '=', 'refresh_tokens.character_id')
+            ->select('character_infos.character_id', 'character_infos.name')
+            ->orderBy('character_infos.name')
+            ->get();
+
+        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters'));
     }
 
     /**
@@ -1999,5 +2011,468 @@ class DiagnosticController extends Controller
         }
 
         return response()->json($results);
+    }
+
+    // ========================================================================
+    // NOTIFICATION TESTING
+    // ========================================================================
+
+    /**
+     * Test notification pipeline with detailed step-by-step logging
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testNotification(Request $request)
+    {
+        $logs = [];
+        $summary = ['channels_tested' => 0, 'sent' => 0, 'failed' => 0, 'skipped' => 0];
+        $startTime = microtime(true);
+
+        $this->addLog($logs, 'info', '=== Notification Test Started ===');
+
+        // 1. Parse inputs
+        $notificationType = $request->input('notification_type', 'tax_reminder');
+        $channels = $request->input('channels', []);
+        $characterId = (int) $request->input('character_id', 0);
+        $characterName = $request->input('character_name', 'Test Character');
+        $webhookId = $request->input('webhook_id');
+        $customWebhookUrl = $request->input('custom_webhook_url');
+        $customSlackUrl = $request->input('custom_slack_url');
+
+        if (empty($channels)) {
+            $this->addLog($logs, 'error', 'No channels selected. Please select at least one channel.');
+            return response()->json([
+                'success' => false,
+                'logs' => $logs,
+                'summary' => $summary,
+            ]);
+        }
+
+        $typeLabels = [
+            'tax_reminder' => 'Tax Payment Reminder',
+            'tax_invoice' => 'Tax Invoice Created',
+            'tax_overdue' => 'Tax Payment Overdue',
+            'event_created' => 'Mining Event Created',
+            'event_started' => 'Mining Event Started',
+            'event_completed' => 'Mining Event Completed',
+            'moon_ready' => 'Moon Extraction Ready',
+        ];
+
+        $this->addLog($logs, 'info', 'Notification Type: ' . ($typeLabels[$notificationType] ?? $notificationType));
+        $this->addLog($logs, 'info', 'Channels: ' . implode(', ', array_map('strtoupper', $channels)));
+
+        // 2. Resolve character
+        if ($characterId > 0) {
+            $charInfo = DB::table('character_infos')->where('character_id', $characterId)->first();
+            if ($charInfo) {
+                $characterName = $charInfo->name;
+                $this->addLog($logs, 'ok', "Target character: {$characterName} ({$characterId})");
+            } else {
+                $this->addLog($logs, 'warn', "Character ID {$characterId} not found in database, using name: {$characterName}");
+            }
+        } else {
+            $characterId = 123456789;
+            $this->addLog($logs, 'info', "Using test character: {$characterName} ({$characterId})");
+        }
+
+        // 3. Build test data based on type
+        $testData = $this->buildTestNotificationData($request, $notificationType, $characterId, $characterName);
+        $this->addLog($logs, 'info', 'Test data prepared: ' . json_encode(array_intersect_key($testData, array_flip(['formatted_amount', 'due_date', 'event_name', 'structure_id']))));
+
+        // 4. Get notification settings
+        $notificationSettings = $this->settingsService->getNotificationSettings();
+        $this->addLog($logs, 'info', 'Loaded notification settings from database');
+
+        // 5. Process each channel
+        foreach ($channels as $channel) {
+            $this->addLog($logs, 'info', '');
+            $this->addLog($logs, 'info', "--- Testing " . strtoupper($channel) . " Channel ---");
+            $summary['channels_tested']++;
+
+            try {
+                switch ($channel) {
+                    case 'esi':
+                        $this->testEsiChannel($logs, $summary, $notificationType, $testData, $characterId, $notificationSettings);
+                        break;
+
+                    case 'discord':
+                        $this->testDiscordChannel($logs, $summary, $notificationType, $testData, $characterId, $characterName, $webhookId, $customWebhookUrl, $notificationSettings);
+                        break;
+
+                    case 'slack':
+                        $this->testSlackChannel($logs, $summary, $notificationType, $testData, $customSlackUrl, $notificationSettings);
+                        break;
+
+                    default:
+                        $this->addLog($logs, 'error', "Unknown channel: {$channel}");
+                        $summary['failed']++;
+                }
+            } catch (\Exception $e) {
+                $this->addLog($logs, 'error', "Exception in {$channel} channel: " . $e->getMessage());
+                $summary['failed']++;
+            }
+        }
+
+        // 6. Summary
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+        $this->addLog($logs, 'info', '');
+        $this->addLog($logs, 'info', "=== Test Complete ({$duration}ms) ===");
+        $this->addLog($logs, 'info', "Channels: {$summary['channels_tested']} | Sent: {$summary['sent']} | Failed: {$summary['failed']} | Skipped: {$summary['skipped']}");
+
+        return response()->json([
+            'success' => $summary['failed'] === 0,
+            'logs' => $logs,
+            'summary' => $summary,
+            'duration_ms' => $duration,
+        ]);
+    }
+
+    /**
+     * Test EVE Mail (ESI) channel — dry run only
+     */
+    protected function testEsiChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, array $settings): void
+    {
+        // Check if EVE mail is enabled
+        if (!($settings['evemail_enabled'] ?? false)) {
+            $this->addLog($logs, 'skip', 'EVE Mail is disabled in settings');
+            $summary['skipped']++;
+            return;
+        }
+        $this->addLog($logs, 'ok', 'EVE Mail is enabled');
+
+        // Check type filter
+        $typeKey = str_replace('TYPE_', '', $type);
+        $evemailTypes = $settings['evemail_types'] ?? [];
+        if (!($evemailTypes[$typeKey] ?? true)) {
+            $this->addLog($logs, 'skip', "Notification type '{$type}' is disabled for EVE Mail");
+            $summary['skipped']++;
+            return;
+        }
+        $this->addLog($logs, 'ok', "Notification type '{$type}' is enabled for EVE Mail");
+
+        // Check sender character
+        $senderOverride = $settings['evemail_sender_character_override'] ?? null;
+        $senderDropdown = $settings['evemail_sender_character_id'] ?? null;
+        $senderId = $senderOverride ?: $senderDropdown;
+
+        if (!$senderId) {
+            $this->addLog($logs, 'error', 'No sender character configured. Set one in Settings > Notifications.');
+            $summary['failed']++;
+            return;
+        }
+
+        $senderInfo = DB::table('character_infos')->where('character_id', $senderId)->first();
+        $senderName = $senderInfo ? $senderInfo->name : "Unknown (ID: {$senderId})";
+        $this->addLog($logs, 'info', "Sender character: {$senderName} ({$senderId})" . ($senderOverride ? ' [manual override]' : ' [dropdown]'));
+
+        // Check token
+        $token = DB::table('refresh_tokens')
+            ->where('character_id', $senderId)
+            ->first();
+
+        if (!$token) {
+            $this->addLog($logs, 'error', "No refresh token found for sender character {$senderId}");
+            $summary['failed']++;
+            return;
+        }
+
+        $hasMailScope = $token->scopes && str_contains($token->scopes, 'esi-mail.send_mail.v1');
+        if (!$hasMailScope) {
+            $this->addLog($logs, 'error', 'Sender character does not have esi-mail.send_mail.v1 scope');
+            $summary['failed']++;
+            return;
+        }
+        $this->addLog($logs, 'ok', 'Sender has valid token with mail scope');
+
+        // Format message
+        $notificationService = app(NotificationService::class);
+        $typeConst = match ($type) {
+            'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
+            'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
+            'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
+            'event_created' => NotificationService::TYPE_EVENT_CREATED,
+            'event_started' => NotificationService::TYPE_EVENT_STARTED,
+            'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+            'moon_ready' => NotificationService::TYPE_MOON_READY,
+            default => NotificationService::TYPE_CUSTOM,
+        };
+
+        try {
+            // Use reflection to call the protected formatMessageForESI
+            $reflection = new \ReflectionMethod($notificationService, 'formatMessageForESI');
+            $reflection->setAccessible(true);
+            $message = $reflection->invoke($notificationService, $typeConst, $data);
+
+            $this->addLog($logs, 'info', "Subject: {$message['subject']}");
+            $this->addLog($logs, 'info', 'Body length: ' . strlen($message['body']) . ' characters');
+            $this->addLog($logs, 'info', "Would send FROM {$senderName} TO character {$characterId}");
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'warn', 'Could not format ESI message: ' . $e->getMessage());
+        }
+
+        $this->addLog($logs, 'ok', 'EVE Mail test completed (DRY RUN — no ESI call made)');
+        $this->addLog($logs, 'info', 'To avoid ESI rate limits, mail was not actually sent. Pipeline validated successfully.');
+        $summary['sent']++;
+    }
+
+    /**
+     * Test Discord channel — sends real webhook
+     */
+    protected function testDiscordChannel(array &$logs, array &$summary, string $type, array $data, int $characterId, string $characterName, $webhookId, $customWebhookUrl, array $settings): void
+    {
+        // Resolve webhook URL
+        $webhookUrl = null;
+        $webhookName = 'Custom URL';
+
+        if ($customWebhookUrl) {
+            $webhookUrl = $customWebhookUrl;
+            $this->addLog($logs, 'info', 'Using custom webhook URL');
+        } elseif ($webhookId) {
+            $webhook = WebhookConfiguration::find($webhookId);
+            if (!$webhook) {
+                $this->addLog($logs, 'error', "Webhook ID {$webhookId} not found");
+                $summary['failed']++;
+                return;
+            }
+            $webhookUrl = $webhook->webhook_url;
+            $webhookName = $webhook->name;
+            $this->addLog($logs, 'ok', "Using webhook: {$webhookName} (ID: {$webhookId})");
+        } else {
+            // Try to find any enabled Discord webhook
+            $webhook = WebhookConfiguration::enabled()->where('type', 'discord')->first();
+            if ($webhook) {
+                $webhookUrl = $webhook->webhook_url;
+                $webhookName = $webhook->name;
+                $this->addLog($logs, 'info', "Auto-selected webhook: {$webhookName}");
+            } else {
+                $this->addLog($logs, 'error', 'No Discord webhook available. Select one or provide a custom URL.');
+                $summary['failed']++;
+                return;
+            }
+        }
+
+        // Format Discord embed
+        $notificationService = app(NotificationService::class);
+        $typeConst = match ($type) {
+            'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
+            'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
+            'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
+            'event_created' => NotificationService::TYPE_EVENT_CREATED,
+            'event_started' => NotificationService::TYPE_EVENT_STARTED,
+            'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+            'moon_ready' => NotificationService::TYPE_MOON_READY,
+            default => NotificationService::TYPE_CUSTOM,
+        };
+
+        try {
+            $reflection = new \ReflectionMethod($notificationService, 'formatMessageForDiscord');
+            $reflection->setAccessible(true);
+            $message = $reflection->invoke($notificationService, $typeConst, $data);
+            $this->addLog($logs, 'ok', 'Discord embed formatted: ' . ($message['embeds'][0]['title'] ?? 'N/A'));
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'warn', 'Could not format Discord embed: ' . $e->getMessage());
+            $message = [
+                'embeds' => [[
+                    'title' => 'Test Notification',
+                    'description' => 'Test notification from Mining Manager diagnostic tools.',
+                    'color' => 3447003,
+                    'timestamp' => now()->toIso8601String(),
+                    'footer' => ['text' => 'Mining Manager - Test'],
+                ]]
+            ];
+        }
+
+        // Check Discord pinging
+        $pingingEnabled = $settings['discord_pinging_enabled'] ?? false;
+        if ($pingingEnabled) {
+            $this->addLog($logs, 'info', 'Discord pinging is enabled, checking seat-connector...');
+            if (Schema::hasTable('seat_connector_users')) {
+                try {
+                    $reflection2 = new \ReflectionMethod($notificationService, 'resolveDiscordUserId');
+                    $reflection2->setAccessible(true);
+                    $discordId = $reflection2->invoke($notificationService, $characterId);
+                    if ($discordId) {
+                        $this->addLog($logs, 'ok', "Resolved Discord user ID: {$discordId}");
+                        $showAmount = $settings['discord_ping_show_amount'] ?? true;
+                        $mention = "<@{$discordId}>";
+                        if ($showAmount && isset($data['formatted_amount'])) {
+                            $message['content'] = "{$mention} — Test notification: {$data['formatted_amount']}";
+                        } else {
+                            $message['content'] = "{$mention} You have a pending tax notification.";
+                        }
+                        $this->addLog($logs, 'info', 'Ping content added to message');
+                    } else {
+                        $this->addLog($logs, 'warn', "Could not resolve Discord user ID for character {$characterId}");
+                    }
+                } catch (\Exception $e) {
+                    $this->addLog($logs, 'warn', 'Pinging resolution failed: ' . $e->getMessage());
+                }
+            } else {
+                $this->addLog($logs, 'skip', 'seat-connector not installed, pinging skipped');
+            }
+        } else {
+            $this->addLog($logs, 'skip', 'Discord pinging is disabled');
+        }
+
+        // Send to Discord
+        $this->addLog($logs, 'info', 'Sending to Discord webhook...');
+        try {
+            $response = Http::timeout(10)->post($webhookUrl, $message);
+
+            if ($response->successful() || $response->status() === 204) {
+                $this->addLog($logs, 'ok', "Discord webhook responded: HTTP {$response->status()} — Notification delivered!");
+                $summary['sent']++;
+            } else {
+                $this->addLog($logs, 'error', "Discord webhook returned HTTP {$response->status()}: {$response->body()}");
+                $summary['failed']++;
+            }
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'error', 'Discord request failed: ' . $e->getMessage());
+            $summary['failed']++;
+        }
+    }
+
+    /**
+     * Test Slack channel — sends real webhook
+     */
+    protected function testSlackChannel(array &$logs, array &$summary, string $type, array $data, $customSlackUrl, array $settings): void
+    {
+        // Resolve webhook URL
+        $webhookUrl = $customSlackUrl ?: ($settings['slack_webhook_url'] ?? '');
+
+        if (!$webhookUrl) {
+            $this->addLog($logs, 'error', 'No Slack webhook URL configured. Set one in Settings > Notifications or provide a custom URL.');
+            $summary['failed']++;
+            return;
+        }
+
+        if ($customSlackUrl) {
+            $this->addLog($logs, 'info', 'Using custom Slack webhook URL');
+        } else {
+            $this->addLog($logs, 'ok', 'Using configured Slack webhook URL');
+        }
+
+        // Check if Slack is enabled (skip check if using custom URL)
+        if (!$customSlackUrl && !($settings['slack_enabled'] ?? false)) {
+            $this->addLog($logs, 'warn', 'Slack is disabled in settings, but testing anyway with configured URL');
+        }
+
+        // Check type filter
+        $slackTypes = $settings['slack_types'] ?? [];
+        $typeKey = str_replace('TYPE_', '', $type);
+        if (!($slackTypes[$typeKey] ?? true)) {
+            $this->addLog($logs, 'warn', "Notification type '{$type}' is disabled for Slack, but sending test anyway");
+        }
+
+        // Format message
+        $notificationService = app(NotificationService::class);
+        $typeConst = match ($type) {
+            'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
+            'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
+            'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
+            'event_created' => NotificationService::TYPE_EVENT_CREATED,
+            'event_started' => NotificationService::TYPE_EVENT_STARTED,
+            'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
+            'moon_ready' => NotificationService::TYPE_MOON_READY,
+            default => NotificationService::TYPE_CUSTOM,
+        };
+
+        try {
+            $reflection = new \ReflectionMethod($notificationService, 'formatMessageForSlack');
+            $reflection->setAccessible(true);
+            $message = $reflection->invoke($notificationService, $typeConst, $data);
+            $this->addLog($logs, 'ok', 'Slack message formatted');
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'warn', 'Could not format Slack message: ' . $e->getMessage());
+            $message = ['text' => 'Test notification from Mining Manager diagnostic tools.'];
+        }
+
+        // Send to Slack
+        $this->addLog($logs, 'info', 'Sending to Slack webhook...');
+        try {
+            $response = Http::timeout(10)->post($webhookUrl, $message);
+
+            if ($response->successful()) {
+                $this->addLog($logs, 'ok', "Slack webhook responded: HTTP {$response->status()} — Notification delivered!");
+                $summary['sent']++;
+            } else {
+                $this->addLog($logs, 'error', "Slack webhook returned HTTP {$response->status()}: {$response->body()}");
+                $summary['failed']++;
+            }
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'error', 'Slack request failed: ' . $e->getMessage());
+            $summary['failed']++;
+        }
+    }
+
+    /**
+     * Build test notification data based on type
+     */
+    protected function buildTestNotificationData(Request $request, string $type, int $characterId, string $characterName): array
+    {
+        $amount = $request->input('test_amount', 5000000);
+        $dueDate = $request->input('test_due_date', now()->addDays(7)->format('Y-m-d'));
+        $daysRemaining = $request->input('test_days_remaining', 7);
+        $daysOverdue = $request->input('test_days_overdue', 3);
+
+        $base = [
+            'character_id' => $characterId,
+            'character_name' => $characterName,
+            'amount' => $amount,
+            'formatted_amount' => number_format($amount, 2) . ' ISK',
+            'due_date' => $dueDate,
+        ];
+
+        return match ($type) {
+            'tax_reminder' => array_merge($base, [
+                'days_remaining' => $daysRemaining,
+            ]),
+            'tax_invoice' => array_merge($base, [
+                'invoice_id' => 99999,
+            ]),
+            'tax_overdue' => array_merge($base, [
+                'days_overdue' => $daysOverdue,
+            ]),
+            'event_created', 'event_started' => [
+                'event_id' => 99999,
+                'event_name' => $request->input('test_event_name', 'Test Mining Event'),
+                'event_type' => $request->input('test_event_type', 'Mining Op'),
+                'event_type_key' => 'mining_op',
+                'start_date' => now()->format('Y-m-d H:i'),
+                'end_date' => now()->addHours(4)->format('Y-m-d H:i'),
+                'tax_modifier' => 1.0,
+                'tax_modifier_label' => 'Normal (100%)',
+                'location' => $request->input('test_location', 'Jita'),
+            ],
+            'event_completed' => [
+                'event_id' => 99999,
+                'event_name' => $request->input('test_event_name', 'Test Mining Event'),
+                'event_type' => $request->input('test_event_type', 'Mining Op'),
+                'total_mined' => $request->input('test_total_mined', 150000000),
+                'participants' => $request->input('test_participants', 12),
+                'tax_modifier' => 1.0,
+                'tax_modifier_label' => 'Normal (100%)',
+                'location' => $request->input('test_location', 'Jita'),
+            ],
+            'moon_ready' => [
+                'structure_id' => $request->input('test_structure_id', 1000000000001),
+                'ready_time' => now()->addHours(2)->format('Y-m-d H:i'),
+                'time_until_ready' => '2 hours from now',
+            ],
+            default => $base,
+        };
+    }
+
+    /**
+     * Add a timestamped log entry
+     */
+    protected function addLog(array &$logs, string $level, string $message): void
+    {
+        $logs[] = [
+            'time' => now()->format('H:i:s.v'),
+            'level' => $level,
+            'message' => $message,
+        ];
     }
 }

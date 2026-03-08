@@ -698,6 +698,12 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/notifications', [
+            'as' => 'mining-manager.settings.update-notifications',
+            'uses' => 'SettingsController@updateNotifications',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/reset', [
             'as' => 'mining-manager.settings.reset',
             'uses' => 'SettingsController@reset',
@@ -899,6 +905,12 @@ Route::group([
         Route::get('/system-status', [
             'as' => 'mining-manager.diagnostic.system-status',
             'uses' => 'DiagnosticController@systemStatus',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/test-notification', [
+            'as' => 'mining-manager.diagnostic.test-notification',
+            'uses' => 'DiagnosticController@testNotification',
             'middleware' => 'can:mining-manager.admin',
         ]);
     });
