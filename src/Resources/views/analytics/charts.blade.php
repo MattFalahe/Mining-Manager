@@ -280,7 +280,7 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
         labels: miningTrendsData.map(d => d.date),
         datasets: [{
             label: '{{ trans("mining-manager::analytics.volume") }}',
-            data: miningTrendsData.map(d => d.volume),
+            data: miningTrendsData.map(d => d.total_quantity),
             borderColor: colors.primary[0],
             backgroundColor: 'rgba(102, 126, 234, 0.1)',
             borderWidth: 2,
@@ -288,7 +288,7 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
             tension: 0.4
         }, {
             label: '{{ trans("mining-manager::analytics.value") }}',
-            data: miningTrendsData.map(d => d.value / 1000000),
+            data: miningTrendsData.map(d => d.total_value / 1000000),
             borderColor: colors.primary[1],
             backgroundColor: 'rgba(118, 75, 162, 0.1)',
             borderWidth: 2,
@@ -301,15 +301,15 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
 }
 
 // Ore Distribution Chart
-if (!oreDistributionData || oreDistributionData.length === 0) {
+if (!oreDistributionData || !oreDistributionData.labels || oreDistributionData.labels.length === 0) {
     showNoDataMessage('oreDistributionChart');
 } else {
 charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart'), {
     type: 'doughnut',
     data: {
-        labels: oreDistributionData.map(d => d.ore_name),
+        labels: oreDistributionData.labels,
         datasets: [{
-            data: oreDistributionData.map(d => d.total_value),
+            data: oreDistributionData.values,
             backgroundColor: colors.primary,
             borderColor: '#343a40',
             borderWidth: 2
@@ -320,16 +320,16 @@ charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart
 }
 
 // Miner Activity Chart
-if (!minerActivityData || minerActivityData.length === 0) {
+if (!minerActivityData || !minerActivityData.labels || minerActivityData.labels.length === 0) {
     showNoDataMessage('minerActivityChart');
 } else {
 charts.minerActivity = new Chart(document.getElementById('minerActivityChart'), {
     type: 'bar',
     data: {
-        labels: minerActivityData.map(d => d.character_name),
+        labels: minerActivityData.labels,
         datasets: [{
             label: '{{ trans("mining-manager::analytics.value") }} (M ISK)',
-            data: minerActivityData.map(d => d.total_value / 1000000),
+            data: minerActivityData.values.map(v => v / 1000000),
             backgroundColor: colors.primary[3],
             borderColor: colors.primary[3],
             borderWidth: 1
@@ -340,16 +340,16 @@ charts.minerActivity = new Chart(document.getElementById('minerActivityChart'), 
 }
 
 // System Activity Chart
-if (!systemActivityData || systemActivityData.length === 0) {
+if (!systemActivityData || !systemActivityData.labels || systemActivityData.labels.length === 0) {
     showNoDataMessage('systemActivityChart');
 } else {
 charts.systemActivity = new Chart(document.getElementById('systemActivityChart'), {
     type: 'bar',
     data: {
-        labels: systemActivityData.map(d => d.system_name),
+        labels: systemActivityData.labels,
         datasets: [{
             label: '{{ trans("mining-manager::analytics.value") }} (M ISK)',
-            data: systemActivityData.map(d => d.total_value / 1000000),
+            data: systemActivityData.values.map(v => v / 1000000),
             backgroundColor: colors.primary[4],
             borderColor: colors.primary[4],
             borderWidth: 1

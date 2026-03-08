@@ -193,19 +193,25 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:system-breakdown:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            // Use eager loading with Sde\SolarSystem relationship (now works correctly with system_id)
+        $pricing = $this->getPricingConfig();
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $pricing) {
             $results = MiningLedger::with('solarSystem')
                 ->whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
+                    $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
+                        ->where('mining_price_cache.region_id', '=', $pricing['regionId']);
+                })
                 ->select(
                     'mining_ledger.solar_system_id',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$pricing['priceColumn']}, 0)) as total_value"),
                     DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
                 )
                 ->groupBy('mining_ledger.solar_system_id')
                 ->orderByDesc('total_quantity')
                 ->get();
-            
+
             // Add system names from the relationship
             return $results->map(function($item) {
                 $item->system_name = $item->system_name ?? 'Unknown';
@@ -274,7 +280,8 @@ class MiningAnalyticsService
                 DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$pricing['priceColumn']}, 0)) as total_value"),
                 DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active'),
                 DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
-                DB::raw('COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems')
+                DB::raw('COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems'),
+                DB::raw('MAX(mining_ledger.date) as last_activity')
             )
             ->groupBy('mining_ledger.character_id', 'character_infos.name')
             ->orderByDesc('total_quantity')
@@ -329,14 +336,21 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:system-stats:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
+        $pricing = $this->getPricingConfig();
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $pricing) {
             return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
                 ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id')
+                ->leftJoin('mining_price_cache', function ($join) use ($pricing) {
+                    $join->on('mining_ledger.type_id', '=', 'mining_price_cache.type_id')
+                        ->where('mining_price_cache.region_id', '=', $pricing['regionId']);
+                })
                 ->select(
                     'mining_ledger.solar_system_id',
                     'solar_systems.name as system_name',
                     'solar_systems.security as security_status',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw("SUM(mining_ledger.quantity * COALESCE(mining_price_cache.{$pricing['priceColumn']}, 0)) as total_value"),
                     DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners'),
                     DB::raw('COUNT(DISTINCT mining_ledger.type_id) as unique_ore_types'),
                     DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active')
@@ -463,10 +477,11 @@ class MiningAnalyticsService
     public function getSystemActivityData(Carbon $startDate, Carbon $endDate)
     {
         $systemBreakdown = $this->getSystemBreakdown($startDate, $endDate);
-        
+
         return [
             'labels' => $systemBreakdown->pluck('system_name')->toArray(),
             'data' => $systemBreakdown->pluck('total_quantity')->toArray(),
+            'values' => $systemBreakdown->pluck('total_value')->toArray(),
         ];
     }
 

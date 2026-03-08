@@ -403,12 +403,6 @@ class LedgerController extends Controller
         $totalValue = (float) ($agg->total_value ?? 0);
         $activeDays = (int) ($agg->active_days ?? 0);
 
-        // Session count = distinct character+date pairs (from daily summaries, each row is a character+date pair)
-        $totalSessions = (int) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate])
-            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->count();
-
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
@@ -424,8 +418,23 @@ class LedgerController extends Controller
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
             ->sum('amount_owed');
 
-        // Estimated tax from daily summaries (for selected date range, as fallback)
+        // Estimated tax: try daily summaries first, then raw ledger, then estimate from value
         $estimatedTax = (float) ($agg->total_tax ?? 0);
+
+        if ($estimatedTax <= 0) {
+            // Fallback: calculate from raw mining_ledger tax_amount
+            $estimatedTax = (float) MiningLedger::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$startDate, $endDate])
+                ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
+                ->sum('tax_amount');
+        }
+
+        if ($estimatedTax <= 0 && $totalValue > 0) {
+            // Last resort: estimate from total_value × configured default tax rate
+            $taxRates = $this->settingsService->getTaxRates();
+            $defaultRate = (float) ($taxRates['ore'] ?? 10.0);
+            $estimatedTax = $totalValue * ($defaultRate / 100);
+        }
 
         // Use authoritative tax_owed if available, otherwise fall back to estimated
         $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
@@ -433,7 +442,7 @@ class LedgerController extends Controller
         return [
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
-            'total_sessions' => $totalSessions,
+            'total_sessions' => $activeDays,
             'active_days' => $activeDays,
             'best_day_value' => $bestDayValue,
             'daily_average' => $activeDays > 0 ? round($totalValue / $activeDays, 0) : 0,
@@ -975,6 +984,23 @@ class LedgerController extends Controller
             $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId);
         }
 
+        // Filter to user's own characters for non-directors (members see only their own)
+        $isDirector = auth()->user()->can('mining-manager.director');
+        if (!$isDirector) {
+            $userCharacterIds = auth()->user()->characters->pluck('character_id')->toArray();
+            $summaries = $summaries->filter(function ($summary) use ($userCharacterIds) {
+                // Check main character
+                if (in_array($summary->character_id, $userCharacterIds)) {
+                    return true;
+                }
+                // Check alt characters (grouped view)
+                if (isset($summary->alt_characters) && $summary->alt_characters->isNotEmpty()) {
+                    return $summary->alt_characters->pluck('character_id')->intersect($userCharacterIds)->isNotEmpty();
+                }
+                return false;
+            })->values();
+        }
+
         // Enrich with character information (names, corporations for unregistered characters)
         $summaries = $this->enrichWithCharacterInfo($summaries, $this->characterInfoService);
 
@@ -1017,6 +1043,7 @@ class LedgerController extends Controller
             'groupByMain' => $groupByMain,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
+            'isDirector' => $isDirector,
         ]);
     }
 

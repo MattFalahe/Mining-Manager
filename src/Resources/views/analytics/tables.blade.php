@@ -135,19 +135,22 @@
                                         <img src="https://images.evetech.net/characters/{{ $miner->character_id }}/portrait?size=32" 
                                              class="img-circle" 
                                              style="width: 32px;">
-                                        {{ $miner->character_name }}
+                                        {{ $miner->name }}
                                     </td>
                                     <td>{{ $miner->corporation_name ?? 'N/A' }}</td>
-                                    <td data-order="{{ $miner->total_volume ?? 0 }}">{{ number_format($miner->total_volume ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $miner->total_quantity ?? 0 }}">{{ number_format($miner->total_quantity ?? 0, 0) }} m³</td>
                                     <td data-order="{{ $miner->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($miner->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>
-                                    <td>{{ $miner->session_count ?? 0 }}</td>
-                                    <td data-order="{{ ($miner->session_count ?? 0) > 0 ? (($miner->total_value ?? 0) / ($miner->session_count ?? 1)) : 0 }}">
-                                        {{ number_format(($miner->session_count ?? 0) > 0 ? (($miner->total_value ?? 0) / ($miner->session_count ?? 1)) / 1000000 : 0, 2) }}M ISK
+                                    <td>{{ $miner->days_active ?? 0 }}</td>
+                                    <td data-order="{{ ($miner->days_active ?? 0) > 0 ? (($miner->total_value ?? 0) / ($miner->days_active ?? 1)) : 0 }}">
+                                        {{ number_format(($miner->days_active ?? 0) > 0 ? (($miner->total_value ?? 0) / ($miner->days_active ?? 1)) / 1000000 : 0, 2) }}M ISK
                                     </td>
-                                    <td data-order="{{ $miner->last_activity ? $miner->last_activity->timestamp : 0 }}">
-                                        {{ $miner->last_activity ? $miner->last_activity->diffForHumans() : 'N/A' }}
+                                    @php
+                                        $lastActivity = $miner->last_activity ? \Carbon\Carbon::parse($miner->last_activity) : null;
+                                    @endphp
+                                    <td data-order="{{ $lastActivity ? $lastActivity->timestamp : 0 }}">
+                                        {{ $lastActivity ? $lastActivity->diffForHumans() : 'N/A' }}
                                     </td>
                                 </tr>
                                 @endforeach
@@ -199,7 +202,7 @@
                                         {{ $ore->ore_name }}
                                     </td>
                                     <td data-order="{{ $ore->total_quantity ?? 0 }}">{{ number_format($ore->total_quantity ?? 0, 0) }}</td>
-                                    <td data-order="{{ $ore->total_volume ?? 0 }}">{{ number_format($ore->total_volume ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $ore->total_quantity ?? 0 }}">{{ number_format($ore->total_quantity ?? 0, 0) }} m³</td>
                                     <td data-order="{{ $ore->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($ore->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>
@@ -273,7 +276,7 @@
                                             {{ number_format($security, 1) }}
                                         </span>
                                     </td>
-                                    <td data-order="{{ $system->total_volume ?? 0 }}">{{ number_format($system->total_volume ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $system->total_quantity ?? 0 }}">{{ number_format($system->total_quantity ?? 0, 0) }} m³</td>
                                     <td data-order="{{ $system->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($system->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>

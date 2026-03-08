@@ -225,9 +225,9 @@
                                         <img src="https://images.evetech.net/characters/{{ $miner->character_id }}/portrait?size=32" 
                                              class="img-circle" 
                                              style="width: 32px;">
-                                        {{ $miner->character_name }}
+                                        {{ $miner->name }}
                                     </td>
-                                    <td class="text-right">{{ number_format($miner->total_volume ?? 0, 0) }} m³</td>
+                                    <td class="text-right">{{ number_format($miner->total_quantity ?? 0, 0) }} m³</td>
                                     <td class="text-right text-success">{{ number_format(($miner->total_value ?? 0) / 1000000, 0) }}M ISK</td>
                                 </tr>
                                 @empty
@@ -288,9 +288,9 @@
                                 @forelse($analytics['system_breakdown'] ?? [] as $system)
                                 <tr>
                                     <td><i class="fas fa-globe"></i> {{ $system->system_name }}</td>
-                                    <td class="text-right">{{ number_format($system->total_volume ?? 0, 0) }} m³</td>
+                                    <td class="text-right">{{ number_format($system->total_quantity ?? 0, 0) }} m³</td>
                                     <td class="text-right text-success">{{ number_format(($system->total_value ?? 0) / 1000000, 0) }}M ISK</td>
-                                    <td class="text-right">{{ $system->miner_count ?? 0 }}</td>
+                                    <td class="text-right">{{ $system->unique_miners ?? 0 }}</td>
                                     <td>
                                         <div class="progress" style="height: 20px;">
                                             @php
@@ -333,7 +333,7 @@ new Chart(dailyTrendsCtx, {
         labels: dailyTrendsData.map(d => d.date),
         datasets: [{
             label: '{{ trans("mining-manager::analytics.volume") }}',
-            data: dailyTrendsData.map(d => d.volume),
+            data: dailyTrendsData.map(d => d.total_quantity),
             borderColor: '#667eea',
             backgroundColor: 'rgba(102, 126, 234, 0.1)',
             borderWidth: 2,
@@ -342,7 +342,7 @@ new Chart(dailyTrendsCtx, {
             yAxisID: 'y'
         }, {
             label: '{{ trans("mining-manager::analytics.value") }}',
-            data: dailyTrendsData.map(d => d.value / 1000000),
+            data: dailyTrendsData.map(d => d.total_value / 1000000),
             borderColor: '#f5576c',
             backgroundColor: 'rgba(245, 87, 108, 0.1)',
             borderWidth: 2,
