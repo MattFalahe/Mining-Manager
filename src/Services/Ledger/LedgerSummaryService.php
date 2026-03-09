@@ -796,47 +796,56 @@ class LedgerSummaryService
                 continue;
             }
 
-            // Find the main character's summary (or use first if main not in list)
-            $mainSummary = $userSummaries->where('character_id', $mainCharId)->first()
-                        ?? $userSummaries->first();
+            // Find the main character's own summary (they may or may not have mined)
+            $mainCharSummary = $userSummaries->where('character_id', $mainCharId)->first();
 
-            if ($mainSummary) {
-                // Get alt characters (all except the main)
-                $mainSummary->alt_characters = $userSummaries->where('character_id', '!=', $mainSummary->character_id)->values();
-                $mainSummary->alt_count = $mainSummary->alt_characters->count();
-
-                // Aggregate totals from all characters (main + alts)
-                $mainSummary->total_value = $userSummaries->sum('total_value');
-                $mainSummary->total_tax = $userSummaries->sum('total_tax');
-                $mainSummary->total_quantity = $userSummaries->sum('total_quantity');
-                $mainSummary->moon_ore_value = $userSummaries->sum('moon_ore_value');
-                $mainSummary->regular_ore_value = $userSummaries->sum('regular_ore_value');
-                $mainSummary->ice_value = $userSummaries->sum('ice_value');
-                $mainSummary->gas_value = $userSummaries->sum('gas_value');
-
-                // Merge ore types from all characters
-                if (isset($mainSummary->ore_type_ids)) {
-                    $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
-                    $mainSummary->ore_type_ids = $allOreTypes->toArray();
-                }
-
-                // Merge and re-aggregate systems from all characters
-                if (isset($mainSummary->systems)) {
-                    $allSystems = $userSummaries->pluck('systems')->flatten();
-                    // Merge and re-aggregate by system
-                    $systemsById = $allSystems->groupBy('solar_system_id')->map(function($group) {
-                        $first = $group->first();
-                        $first->system_value = $group->sum('system_value');
-                        return $first;
-                    })->sortByDesc('system_value')->values();
-
-                    $mainSummary->systems = $systemsById;
-                    $mainSummary->primary_system = $systemsById->first();
-                    $mainSummary->system_count = $systemsById->count();
-                }
-
-                $grouped->push($mainSummary);
+            if ($mainCharSummary) {
+                // Main character mined — use their summary as the base, alts are the rest
+                $mainSummary = $mainCharSummary;
+                $mainSummary->alt_characters = $userSummaries->where('character_id', '!=', $mainCharId)->values();
+            } else {
+                // Main character didn't mine — create a stub with their character_id
+                // so their name/portrait displays correctly. All miners are alts.
+                $mainSummary = new \stdClass();
+                $mainSummary->character_id = $mainCharId;
+                $mainSummary->corporation_id = $userSummaries->first()->corporation_id ?? $corporationId;
+                $mainSummary->alt_characters = $userSummaries->values();
+                $mainSummary->ore_type_ids = [];
+                $mainSummary->systems = collect();
+                $mainSummary->primary_system = null;
+                $mainSummary->system_count = 0;
             }
+
+            $mainSummary->alt_count = $mainSummary->alt_characters->count();
+
+            // Aggregate totals from all characters (main + alts)
+            $mainSummary->total_value = $userSummaries->sum('total_value');
+            $mainSummary->total_tax = $userSummaries->sum('total_tax');
+            $mainSummary->total_quantity = $userSummaries->sum('total_quantity');
+            $mainSummary->moon_ore_value = $userSummaries->sum('moon_ore_value');
+            $mainSummary->regular_ore_value = $userSummaries->sum('regular_ore_value');
+            $mainSummary->ice_value = $userSummaries->sum('ice_value');
+            $mainSummary->gas_value = $userSummaries->sum('gas_value');
+
+            // Merge ore types from all characters
+            $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
+            $mainSummary->ore_type_ids = $allOreTypes->toArray();
+
+            // Merge and re-aggregate systems from all characters
+            $allSystems = $userSummaries->pluck('systems')->filter()->flatten();
+            if ($allSystems->isNotEmpty()) {
+                $systemsById = $allSystems->groupBy('solar_system_id')->map(function($group) {
+                    $first = $group->first();
+                    $first->system_value = $group->sum('system_value');
+                    return $first;
+                })->sortByDesc('system_value')->values();
+
+                $mainSummary->systems = $systemsById;
+                $mainSummary->primary_system = $systemsById->first();
+                $mainSummary->system_count = $systemsById->count();
+            }
+
+            $grouped->push($mainSummary);
         }
 
         return $grouped->sortByDesc('total_value')->values();
