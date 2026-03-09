@@ -272,7 +272,9 @@ class AnalyticsController extends Controller
         $insights = [];
     
         // Value insight
-        $valueDiff = (($period1['total_value'] - $period2['total_value']) / $period2['total_value']) * 100;
+        $valueDiff = $period2['total_value'] > 0
+            ? (($period1['total_value'] - $period2['total_value']) / $period2['total_value']) * 100
+            : 0;
         if (abs($valueDiff) > 10) {
             $insights[] = [
                 'type' => $valueDiff > 0 ? 'success' : 'warning',
@@ -287,7 +289,9 @@ class AnalyticsController extends Controller
         }
     
         // Miner activity insight
-        $minerDiff = (($period1['unique_miners'] - $period2['unique_miners']) / $period2['unique_miners']) * 100;
+        $minerDiff = $period2['unique_miners'] > 0
+            ? (($period1['unique_miners'] - $period2['unique_miners']) / $period2['unique_miners']) * 100
+            : 0;
         if (abs($minerDiff) > 15) {
             $insights[] = [
                 'type' => 'info',
@@ -317,7 +321,7 @@ class AnalyticsController extends Controller
 
         // Get top miners by quantity
         $topByQuantity = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('character_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT date) as days_active')
+            ->selectRaw('character_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT date) as days_active')
             ->groupBy('character_id')
             ->orderByDesc('total_quantity')
             ->limit($limit)
@@ -336,7 +340,7 @@ class AnalyticsController extends Controller
 
         // Get top miners by value
         $topByValue = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('character_id, SUM(value) as total_value, SUM(quantity) as total_quantity, COUNT(DISTINCT date) as days_active')
+            ->selectRaw('character_id, SUM(total_value) as total_value, SUM(quantity) as total_quantity, COUNT(DISTINCT date) as days_active')
             ->groupBy('character_id')
             ->orderByDesc('total_value')
             ->limit($limit)
@@ -379,16 +383,16 @@ class AnalyticsController extends Controller
         // Get mining activity by system
         $systemStats = MiningLedger::whereBetween('date', [$startDate, $endDate])
             ->whereNotNull('solar_system_id')
-            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT character_id) as unique_miners, COUNT(DISTINCT date) as days_active')
+            ->selectRaw('solar_system_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as unique_miners, COUNT(DISTINCT date) as days_active')
             ->groupBy('solar_system_id')
             ->orderByDesc('total_value')
             ->limit($limit)
             ->get()
             ->map(function($stat) {
                 // Get system name from SeAT's database
-                $systemName = \DB::table('mapSolarSystems')
-                    ->where('solarSystemID', $stat->solar_system_id)
-                    ->value('solarSystemName');
+                $systemName = \DB::table('solar_systems')
+                    ->where('system_id', $stat->solar_system_id)
+                    ->value('name');
 
                 return [
                     'solar_system_id' => $stat->solar_system_id,
@@ -425,7 +429,7 @@ class AnalyticsController extends Controller
 
         // Get ore statistics
         $oreStats = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(value) as total_value, COUNT(DISTINCT character_id) as miners_count')
+            ->selectRaw('type_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value, COUNT(DISTINCT character_id) as miners_count')
             ->groupBy('type_id')
             ->orderByDesc('total_value')
             ->limit($limit)
@@ -583,5 +587,113 @@ class AnalyticsController extends Controller
         }
 
         return response()->json($data);
+    }
+
+    /**
+     * Get trend labels (date labels) for a period.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    private function getTrendLabels(Carbon $startDate, Carbon $endDate): array
+    {
+        $labels = [];
+        $current = $startDate->copy();
+
+        while ($current->lte($endDate)) {
+            $labels[] = $current->format('M d');
+            $current->addDay();
+        }
+
+        return $labels;
+    }
+
+    /**
+     * Get trend datasets for two periods for chart comparison.
+     *
+     * @param Carbon $p1Start
+     * @param Carbon $p1End
+     * @param Carbon $p2Start
+     * @param Carbon $p2End
+     * @return array
+     */
+    private function getTrendDatasets(Carbon $p1Start, Carbon $p1End, Carbon $p2Start, Carbon $p2End): array
+    {
+        $trends1 = $this->analyticsService->getDailyTrends($p1Start, $p1End);
+        $trends2 = $this->analyticsService->getDailyTrends($p2Start, $p2End);
+
+        return [
+            [
+                'label' => $p1Start->format('M d') . ' - ' . $p1End->format('M d'),
+                'data' => $trends1->pluck('total_value')->map(fn($v) => round($v / 1000000, 2))->toArray(),
+            ],
+            [
+                'label' => $p2Start->format('M d') . ' - ' . $p2End->format('M d'),
+                'data' => $trends2->pluck('total_value')->map(fn($v) => round($v / 1000000, 2))->toArray(),
+            ],
+        ];
+    }
+
+    /**
+     * Get detailed comparison between two periods as flat rows for the table view.
+     *
+     * @param array $period1Data
+     * @param array $period2Data
+     * @return array
+     */
+    private function getDetailedComparison(array $period1Data, array $period2Data): array
+    {
+        $rows = [];
+
+        // Compare top ores between periods
+        $ores1 = collect($period1Data['ore_breakdown'] ?? []);
+        $ores2 = collect($period2Data['ore_breakdown'] ?? []);
+
+        foreach ($ores1->take(5) as $ore) {
+            $match = $ores2->firstWhere('type_id', $ore->type_id);
+            $val1 = $ore->total_value ?? 0;
+            $val2 = $match->total_value ?? 0;
+            $diff = $val1 - $val2;
+            $pct = $val2 > 0 ? ($diff / $val2) * 100 : 0;
+
+            $rows[] = [
+                'metric' => ($ore->ore_name ?? 'Unknown') . ' (Value)',
+                'values' => [
+                    number_format($val1 / 1000000, 1) . 'M ISK',
+                    number_format($val2 / 1000000, 1) . 'M ISK',
+                ],
+                'difference' => ($diff >= 0 ? '+' : '') . number_format($diff / 1000000, 1) . 'M',
+                'diff_color' => $diff > 0 ? 'success' : ($diff < 0 ? 'danger' : 'muted'),
+                'change_percent' => number_format(abs($pct), 1) . '%',
+                'change_color' => $pct > 0 ? 'success' : ($pct < 0 ? 'danger' : 'secondary'),
+            ];
+        }
+
+        // Compare top systems between periods
+        $systems1 = collect($period1Data['system_breakdown'] ?? []);
+        $systems2 = collect($period2Data['system_breakdown'] ?? []);
+
+        foreach ($systems1->take(5) as $sys) {
+            $match = $systems2->firstWhere('solar_system_id', $sys->solar_system_id);
+            $val1 = $sys->total_value ?? 0;
+            $val2 = $match->total_value ?? 0;
+            $diff = $val1 - $val2;
+            $pct = $val2 > 0 ? ($diff / $val2) * 100 : 0;
+
+            $rows[] = [
+                'metric' => ($sys->system_name ?? 'Unknown') . ' (System)',
+                'values' => [
+                    number_format($val1 / 1000000, 1) . 'M ISK',
+                    number_format($val2 / 1000000, 1) . 'M ISK',
+                ],
+                'difference' => ($diff >= 0 ? '+' : '') . number_format($diff / 1000000, 1) . 'M',
+                'diff_color' => $diff > 0 ? 'success' : ($diff < 0 ? 'danger' : 'muted'),
+                'change_percent' => number_format(abs($pct), 1) . '%',
+                'change_color' => $pct > 0 ? 'success' : ($pct < 0 ? 'danger' : 'secondary'),
+            ];
+        }
+
+        return $rows;
     }
 }
