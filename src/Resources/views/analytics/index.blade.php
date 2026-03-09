@@ -124,9 +124,9 @@
             <div class="stat-card">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <p class="mb-1 opacity-75">{{ trans('mining-manager::analytics.total_volume') }}</p>
+                        <p class="mb-1 opacity-75">{{ trans('mining-manager::analytics.total_quantity') }}</p>
                         <h3>{{ number_format($analytics['total_volume'] ?? 0, 0) }}</h3>
-                        <small>m³</small>
+                        <small>{{ trans('mining-manager::analytics.units') }}</small>
                     </div>
                     <i class="fas fa-cube fa-3x opacity-50"></i>
                 </div>
@@ -209,7 +209,7 @@
                                 <tr>
                                     <th style="width: 60px;">{{ trans('mining-manager::analytics.rank') }}</th>
                                     <th>{{ trans('mining-manager::analytics.character') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::analytics.volume') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::analytics.value') }}</th>
                                 </tr>
                             </thead>
@@ -227,7 +227,7 @@
                                              style="width: 32px;">
                                         {{ $miner->name }}
                                     </td>
-                                    <td class="text-right">{{ number_format($miner->total_quantity ?? 0, 0) }} m³</td>
+                                    <td class="text-right">{{ number_format($miner->total_quantity ?? 0, 0) }}</td>
                                     <td class="text-right text-success">{{ number_format(($miner->total_value ?? 0) / 1000000, 0) }}M ISK</td>
                                 </tr>
                                 @empty
@@ -278,7 +278,7 @@
                             <thead>
                                 <tr>
                                     <th>{{ trans('mining-manager::analytics.system') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::analytics.volume') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::analytics.value') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::analytics.miners') }}</th>
                                     <th style="width: 40%;">{{ trans('mining-manager::analytics.activity') }}</th>
@@ -288,7 +288,7 @@
                                 @forelse($analytics['system_breakdown'] ?? [] as $system)
                                 <tr>
                                     <td><i class="fas fa-globe"></i> {{ $system->system_name }}</td>
-                                    <td class="text-right">{{ number_format($system->total_quantity ?? 0, 0) }} m³</td>
+                                    <td class="text-right">{{ number_format($system->total_quantity ?? 0, 0) }}</td>
                                     <td class="text-right text-success">{{ number_format(($system->total_value ?? 0) / 1000000, 0) }}M ISK</td>
                                     <td class="text-right">{{ $system->unique_miners ?? 0 }}</td>
                                     <td>
@@ -332,7 +332,7 @@ new Chart(dailyTrendsCtx, {
     data: {
         labels: dailyTrendsData.map(d => d.date),
         datasets: [{
-            label: '{{ trans("mining-manager::analytics.volume") }}',
+            label: '{{ trans("mining-manager::analytics.total_quantity") }}',
             data: dailyTrendsData.map(d => d.total_quantity),
             borderColor: '#667eea',
             backgroundColor: 'rgba(102, 126, 234, 0.1)',
@@ -369,7 +369,7 @@ new Chart(dailyTrendsCtx, {
                         if (label) label += ': ';
                         if (context.parsed.y !== null) {
                             if (context.datasetIndex === 0) {
-                                label += context.parsed.y.toLocaleString() + ' m³';
+                                label += context.parsed.y.toLocaleString() + ' units';
                             } else {
                                 label += context.parsed.y.toLocaleString() + 'M ISK';
                             }

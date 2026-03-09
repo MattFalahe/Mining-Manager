@@ -120,7 +120,7 @@
                                     <th>{{ trans('mining-manager::analytics.rank') }}</th>
                                     <th>{{ trans('mining-manager::analytics.character') }}</th>
                                     <th>{{ trans('mining-manager::analytics.corporation') }}</th>
-                                    <th>{{ trans('mining-manager::analytics.volume') }}</th>
+                                    <th>{{ trans('mining-manager::analytics.total_quantity') }}</th>
                                     <th>{{ trans('mining-manager::analytics.value') }}</th>
                                     <th>{{ trans('mining-manager::analytics.sessions') }}</th>
                                     <th>{{ trans('mining-manager::analytics.avg_session') }}</th>
@@ -138,7 +138,7 @@
                                         {{ $miner->name }}
                                     </td>
                                     <td>{{ $miner->corporation_name ?? 'N/A' }}</td>
-                                    <td data-order="{{ $miner->total_quantity ?? 0 }}">{{ number_format($miner->total_quantity ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $miner->total_quantity ?? 0 }}">{{ number_format($miner->total_quantity ?? 0, 0) }}</td>
                                     <td data-order="{{ $miner->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($miner->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>
@@ -184,7 +184,7 @@
                                 <tr>
                                     <th>{{ trans('mining-manager::analytics.ore_type') }}</th>
                                     <th>{{ trans('mining-manager::analytics.total_quantity') }}</th>
-                                    <th>{{ trans('mining-manager::analytics.total_volume') }}</th>
+                                    <th>{{ trans('mining-manager::analytics.total_quantity') }}</th>
                                     <th>{{ trans('mining-manager::analytics.total_value') }}</th>
                                     <th>{{ trans('mining-manager::analytics.avg_price') }}</th>
                                     <th>{{ trans('mining-manager::analytics.percentage') }}</th>
@@ -202,7 +202,7 @@
                                         {{ $ore->ore_name }}
                                     </td>
                                     <td data-order="{{ $ore->total_quantity ?? 0 }}">{{ number_format($ore->total_quantity ?? 0, 0) }}</td>
-                                    <td data-order="{{ $ore->total_quantity ?? 0 }}">{{ number_format($ore->total_quantity ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $ore->total_quantity ?? 0 }}">{{ number_format($ore->total_quantity ?? 0, 0) }}</td>
                                     <td data-order="{{ $ore->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($ore->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>
@@ -253,7 +253,7 @@
                                     <th>{{ trans('mining-manager::analytics.system') }}</th>
                                     <th>{{ trans('mining-manager::analytics.region') }}</th>
                                     <th>{{ trans('mining-manager::analytics.security') }}</th>
-                                    <th>{{ trans('mining-manager::analytics.total_volume') }}</th>
+                                    <th>{{ trans('mining-manager::analytics.total_quantity') }}</th>
                                     <th>{{ trans('mining-manager::analytics.total_value') }}</th>
                                     <th>{{ trans('mining-manager::analytics.unique_miners') }}</th>
                                     <th>{{ trans('mining-manager::analytics.avg_per_miner') }}</th>
@@ -276,7 +276,7 @@
                                             {{ number_format($security, 1) }}
                                         </span>
                                     </td>
-                                    <td data-order="{{ $system->total_quantity ?? 0 }}">{{ number_format($system->total_quantity ?? 0, 0) }} m³</td>
+                                    <td data-order="{{ $system->total_quantity ?? 0 }}">{{ number_format($system->total_quantity ?? 0, 0) }}</td>
                                     <td data-order="{{ $system->total_value ?? 0 }}">
                                         <span class="text-success">{{ number_format(($system->total_value ?? 0) / 1000000, 2) }}M ISK</span>
                                     </td>
