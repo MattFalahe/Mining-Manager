@@ -123,10 +123,10 @@ class AnalyticsController extends Controller
         if (!$request->has('comparison_type')) {
             return view('mining-manager::analytics.compare');
         }
-    
+
         $comparisonType = $request->input('comparison_type');
         $comparisonData = [];
-    
+
         switch ($comparisonType) {
             case 'periods':
                 $comparisonData = $this->comparePeriods($request);
@@ -141,8 +141,8 @@ class AnalyticsController extends Controller
                 $comparisonData = $this->compareOres($request);
                 break;
         }
-    
-        return view('mining-manager::analytics.compare', compact('comparisonData'));
+
+        return view('mining-manager::analytics.compare', compact('comparisonData', 'comparisonType'));
     }
     
     /**
@@ -157,17 +157,17 @@ class AnalyticsController extends Controller
         $period1End = Carbon::parse($request->input('period1_end'));
         $period2Start = Carbon::parse($request->input('period2_start'));
         $period2End = Carbon::parse($request->input('period2_end'));
-    
+
         // Get data for both periods
         $period1Data = $this->getPeriodData($period1Start, $period1End);
         $period2Data = $this->getPeriodData($period2Start, $period2End);
-    
-        // Calculate differences and percentages
+
+        // Calculate differences and percentages (change = P2 relative to P1)
         $metrics = $this->calculateMetricComparisons($period1Data, $period2Data);
-    
+
         // Determine which period performed better
         $topPerformerPeriod = $period1Data['total_value'] > $period2Data['total_value'] ? 1 : 2;
-    
+
         return [
             'labels' => [
                 $period1Start->format('M d') . ' - ' . $period1End->format('M d, Y'),
@@ -175,6 +175,7 @@ class AnalyticsController extends Controller
             ],
             'metrics' => $metrics,
             'volume_data' => [$period1Data['total_volume'], $period2Data['total_volume']],
+            'volume_m3_data' => [$period1Data['total_volume_m3'], $period2Data['total_volume_m3']],
             'value_data' => [$period1Data['total_value'], $period2Data['total_value']],
             'trend_labels' => $this->getTrendLabels($period1Start, $period1End),
             'trend_datasets' => $this->getTrendDatasets($period1Start, $period1End, $period2Start, $period2End),
@@ -197,6 +198,7 @@ class AnalyticsController extends Controller
     {
         return [
             'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate),
+            'total_volume_m3' => $this->analyticsService->getTotalVolumeM3($startDate, $endDate),
             'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate),
             'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate),
             'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate),
@@ -214,27 +216,41 @@ class AnalyticsController extends Controller
     private function calculateMetricComparisons($period1, $period2)
     {
         $metrics = [];
-    
-        // Volume comparison
-        $volumeDiff = $period1['total_volume'] - $period2['total_volume'];
-        $volumeChange = $period2['total_volume'] > 0 
-            ? (($volumeDiff / $period2['total_volume']) * 100) 
+
+        // Quantity comparison (units)
+        $qtyDiff = $period2['total_volume'] - $period1['total_volume'];
+        $qtyChange = $period1['total_volume'] > 0
+            ? (($qtyDiff / $period1['total_volume']) * 100)
             : 0;
-        
+
         $metrics[] = [
-            'label' => trans('mining-manager::analytics.total_volume'),
-            'value_1' => number_format($period1['total_volume'], 0) . ' m³',
-            'value_2' => number_format($period2['total_volume'], 0) . ' m³',
-            'change' => number_format(abs($volumeChange), 1) . '%',
-            'change_type' => $volumeChange > 0 ? 'positive' : ($volumeChange < 0 ? 'negative' : 'neutral'),
+            'label' => trans('mining-manager::analytics.total_quantity_units'),
+            'value_1' => number_format($period1['total_volume'], 0) . ' units',
+            'value_2' => number_format($period2['total_volume'], 0) . ' units',
+            'change' => number_format(abs($qtyChange), 1) . '%',
+            'change_type' => $qtyChange > 0 ? 'positive' : ($qtyChange < 0 ? 'negative' : 'neutral'),
         ];
-    
-        // Value comparison
-        $valueDiff = $period1['total_value'] - $period2['total_value'];
-        $valueChange = $period2['total_value'] > 0 
-            ? (($valueDiff / $period2['total_value']) * 100) 
+
+        // Volume comparison (m³)
+        $m3Diff = $period2['total_volume_m3'] - $period1['total_volume_m3'];
+        $m3Change = $period1['total_volume_m3'] > 0
+            ? (($m3Diff / $period1['total_volume_m3']) * 100)
             : 0;
-        
+
+        $metrics[] = [
+            'label' => trans('mining-manager::analytics.total_volume_m3'),
+            'value_1' => number_format($period1['total_volume_m3'], 0) . ' m³',
+            'value_2' => number_format($period2['total_volume_m3'], 0) . ' m³',
+            'change' => number_format(abs($m3Change), 1) . '%',
+            'change_type' => $m3Change > 0 ? 'positive' : ($m3Change < 0 ? 'negative' : 'neutral'),
+        ];
+
+        // Value comparison
+        $valueDiff = $period2['total_value'] - $period1['total_value'];
+        $valueChange = $period1['total_value'] > 0
+            ? (($valueDiff / $period1['total_value']) * 100)
+            : 0;
+
         $metrics[] = [
             'label' => trans('mining-manager::analytics.total_value'),
             'value_1' => number_format($period1['total_value'] / 1000000, 2) . 'M ISK',
@@ -242,13 +258,13 @@ class AnalyticsController extends Controller
             'change' => number_format(abs($valueChange), 1) . '%',
             'change_type' => $valueChange > 0 ? 'positive' : ($valueChange < 0 ? 'negative' : 'neutral'),
         ];
-    
+
         // Miners comparison
-        $minersDiff = $period1['unique_miners'] - $period2['unique_miners'];
-        $minersChange = $period2['unique_miners'] > 0 
-            ? (($minersDiff / $period2['unique_miners']) * 100) 
+        $minersDiff = $period2['unique_miners'] - $period1['unique_miners'];
+        $minersChange = $period1['unique_miners'] > 0
+            ? (($minersDiff / $period1['unique_miners']) * 100)
             : 0;
-        
+
         $metrics[] = [
             'label' => trans('mining-manager::analytics.unique_miners'),
             'value_1' => number_format($period1['unique_miners']),
@@ -256,7 +272,7 @@ class AnalyticsController extends Controller
             'change' => number_format(abs($minersChange), 1) . '%',
             'change_type' => $minersChange > 0 ? 'positive' : ($minersChange < 0 ? 'negative' : 'neutral'),
         ];
-    
+
         return $metrics;
     }
     
@@ -270,16 +286,16 @@ class AnalyticsController extends Controller
     private function generateInsights($period1, $period2)
     {
         $insights = [];
-    
-        // Value insight
-        $valueDiff = $period2['total_value'] > 0
-            ? (($period1['total_value'] - $period2['total_value']) / $period2['total_value']) * 100
+
+        // Value insight: change from P1 to P2
+        $valueDiff = $period1['total_value'] > 0
+            ? (($period2['total_value'] - $period1['total_value']) / $period1['total_value']) * 100
             : 0;
         if (abs($valueDiff) > 10) {
             $insights[] = [
                 'type' => $valueDiff > 0 ? 'success' : 'warning',
                 'icon' => $valueDiff > 0 ? 'arrow-up' : 'arrow-down',
-                'title' => $valueDiff > 0 
+                'title' => $valueDiff > 0
                     ? trans('mining-manager::analytics.significant_increase')
                     : trans('mining-manager::analytics.significant_decrease'),
                 'message' => trans('mining-manager::analytics.value_changed_by', [
@@ -287,10 +303,10 @@ class AnalyticsController extends Controller
                 ]),
             ];
         }
-    
-        // Miner activity insight
-        $minerDiff = $period2['unique_miners'] > 0
-            ? (($period1['unique_miners'] - $period2['unique_miners']) / $period2['unique_miners']) * 100
+
+        // Miner activity insight: change from P1 to P2
+        $minerDiff = $period1['unique_miners'] > 0
+            ? (($period2['unique_miners'] - $period1['unique_miners']) / $period1['unique_miners']) * 100
             : 0;
         if (abs($minerDiff) > 15) {
             $insights[] = [
@@ -302,7 +318,7 @@ class AnalyticsController extends Controller
                 ]),
             ];
         }
-    
+
         return $insights;
     }
     
@@ -311,11 +327,11 @@ class AnalyticsController extends Controller
      */
     private function compareMiners(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::parse($request->input('start_date'))
+        $startDate = $request->input('miner_start')
+            ? Carbon::parse($request->input('miner_start'))
             : Carbon::now()->subDays(30);
-        $endDate = $request->input('end_date')
-            ? Carbon::parse($request->input('end_date'))
+        $endDate = $request->input('miner_end')
+            ? Carbon::parse($request->input('miner_end'))
             : Carbon::now();
         $limit = $request->input('limit', 10);
 
@@ -372,11 +388,11 @@ class AnalyticsController extends Controller
      */
     private function compareSystems(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::parse($request->input('start_date'))
+        $startDate = $request->input('system_start')
+            ? Carbon::parse($request->input('system_start'))
             : Carbon::now()->subDays(30);
-        $endDate = $request->input('end_date')
-            ? Carbon::parse($request->input('end_date'))
+        $endDate = $request->input('system_end')
+            ? Carbon::parse($request->input('system_end'))
             : Carbon::now();
         $limit = $request->input('limit', 10);
 
@@ -419,11 +435,11 @@ class AnalyticsController extends Controller
      */
     private function compareOres(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::parse($request->input('start_date'))
+        $startDate = $request->input('ore_start')
+            ? Carbon::parse($request->input('ore_start'))
             : Carbon::now()->subDays(30);
-        $endDate = $request->input('end_date')
-            ? Carbon::parse($request->input('end_date'))
+        $endDate = $request->input('ore_end')
+            ? Carbon::parse($request->input('ore_end'))
             : Carbon::now();
         $limit = $request->input('limit', 15);
 
@@ -627,10 +643,24 @@ class AnalyticsController extends Controller
             [
                 'label' => $p1Start->format('M d') . ' - ' . $p1End->format('M d'),
                 'data' => $trends1->pluck('total_value')->map(fn($v) => round($v / 1000000, 2))->toArray(),
+                'borderColor' => 'rgba(78, 115, 223, 1)',
+                'backgroundColor' => 'rgba(78, 115, 223, 0.1)',
+                'borderWidth' => 2,
+                'pointRadius' => 3,
+                'pointBackgroundColor' => 'rgba(78, 115, 223, 1)',
+                'tension' => 0.4,
+                'fill' => true,
             ],
             [
                 'label' => $p2Start->format('M d') . ' - ' . $p2End->format('M d'),
                 'data' => $trends2->pluck('total_value')->map(fn($v) => round($v / 1000000, 2))->toArray(),
+                'borderColor' => 'rgba(28, 200, 138, 1)',
+                'backgroundColor' => 'rgba(28, 200, 138, 0.1)',
+                'borderWidth' => 2,
+                'pointRadius' => 3,
+                'pointBackgroundColor' => 'rgba(28, 200, 138, 1)',
+                'tension' => 0.4,
+                'fill' => true,
             ],
         ];
     }
@@ -646,19 +676,26 @@ class AnalyticsController extends Controller
     {
         $rows = [];
 
-        // Compare top ores between periods
+        // Compare top ores between periods (change = P2 - P1)
         $ores1 = collect($period1Data['ore_breakdown'] ?? []);
         $ores2 = collect($period2Data['ore_breakdown'] ?? []);
 
-        foreach ($ores1->take(5) as $ore) {
-            $match = $ores2->firstWhere('type_id', $ore->type_id);
-            $val1 = $ore->total_value ?? 0;
-            $val2 = $match->total_value ?? 0;
-            $diff = $val1 - $val2;
-            $pct = $val2 > 0 ? ($diff / $val2) * 100 : 0;
+        // Merge all ore type_ids from both periods
+        $allOreIds = $ores1->pluck('type_id')->merge($ores2->pluck('type_id'))->unique();
+
+        foreach ($allOreIds->take(8) as $typeId) {
+            $ore1 = $ores1->firstWhere('type_id', $typeId);
+            $ore2 = $ores2->firstWhere('type_id', $typeId);
+            $val1 = $ore1->total_value ?? 0;
+            $val2 = $ore2->total_value ?? 0;
+            $oreName = ($ore1->ore_name ?? null) ?: ($ore2->ore_name ?? 'Unknown');
+
+            // Change direction: P2 - P1 (positive = P2 is higher)
+            $diff = $val2 - $val1;
+            $pct = $val1 > 0 ? ($diff / $val1) * 100 : 0;
 
             $rows[] = [
-                'metric' => ($ore->ore_name ?? 'Unknown') . ' (Value)',
+                'metric' => $oreName . ' (Value)',
                 'values' => [
                     number_format($val1 / 1000000, 1) . 'M ISK',
                     number_format($val2 / 1000000, 1) . 'M ISK',
@@ -670,19 +707,25 @@ class AnalyticsController extends Controller
             ];
         }
 
-        // Compare top systems between periods
+        // Compare top systems between periods (change = P2 - P1)
         $systems1 = collect($period1Data['system_breakdown'] ?? []);
         $systems2 = collect($period2Data['system_breakdown'] ?? []);
 
-        foreach ($systems1->take(5) as $sys) {
-            $match = $systems2->firstWhere('solar_system_id', $sys->solar_system_id);
-            $val1 = $sys->total_value ?? 0;
-            $val2 = $match->total_value ?? 0;
-            $diff = $val1 - $val2;
-            $pct = $val2 > 0 ? ($diff / $val2) * 100 : 0;
+        $allSystemIds = $systems1->pluck('solar_system_id')->merge($systems2->pluck('solar_system_id'))->unique();
+
+        foreach ($allSystemIds->take(5) as $sysId) {
+            $sys1 = $systems1->firstWhere('solar_system_id', $sysId);
+            $sys2 = $systems2->firstWhere('solar_system_id', $sysId);
+            $val1 = $sys1->total_value ?? 0;
+            $val2 = $sys2->total_value ?? 0;
+            $sysName = ($sys1->system_name ?? null) ?: ($sys2->system_name ?? 'Unknown');
+
+            // Change direction: P2 - P1 (positive = P2 is higher)
+            $diff = $val2 - $val1;
+            $pct = $val1 > 0 ? ($diff / $val1) * 100 : 0;
 
             $rows[] = [
-                'metric' => ($sys->system_name ?? 'Unknown') . ' (System)',
+                'metric' => $sysName . ' (System)',
                 'values' => [
                     number_format($val1 / 1000000, 1) . 'M ISK',
                     number_format($val2 / 1000000, 1) . 'M ISK',

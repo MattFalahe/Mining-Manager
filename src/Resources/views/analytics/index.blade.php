@@ -330,7 +330,7 @@ const dailyTrendsData = @json($analytics['daily_trends'] ?? []);
 new Chart(dailyTrendsCtx, {
     type: 'line',
     data: {
-        labels: dailyTrendsData.map(d => d.date),
+        labels: dailyTrendsData.map(d => d.date ? d.date.substring(0, 10) : ''),
         datasets: [{
             label: '{{ trans("mining-manager::analytics.total_quantity") }}',
             data: dailyTrendsData.map(d => d.total_quantity),

@@ -17,7 +17,7 @@
     .period-1 { border-left-color: #4e73df !important; }
     .period-2 { border-left-color: #1cc88a !important; }
     .period-3 { border-left-color: #f6c23e !important; }
-    
+
     .metric-comparison {
         display: flex;
         justify-content: space-between;
@@ -27,48 +27,49 @@
         background: rgba(0,0,0,0.2);
         border-radius: 8px;
     }
-    
+
     .metric-label {
         font-weight: 600;
         color: #a0a0a0;
+        font-size: 0.85rem;
     }
-    
+
     .metric-value {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
         font-weight: bold;
     }
-    
+
     .change-indicator {
         padding: 5px 10px;
         border-radius: 5px;
         font-size: 0.9rem;
         font-weight: 600;
     }
-    
+
     .change-positive {
         background: rgba(28, 200, 138, 0.2);
         color: #1cc88a;
     }
-    
+
     .change-negative {
         background: rgba(231, 74, 59, 0.2);
         color: #e74a3b;
     }
-    
+
     .change-neutral {
         background: rgba(160, 160, 160, 0.2);
         color: #a0a0a0;
     }
-    
+
     .chart-container {
         height: 350px;
         position: relative;
     }
-    
+
     .comparison-selector {
         margin-bottom: 20px;
     }
-    
+
     .vs-divider {
         text-align: center;
         font-size: 1.5rem;
@@ -76,7 +77,7 @@
         color: #667eea;
         padding: 20px 0;
     }
-    
+
     .top-performer-badge {
         position: absolute;
         top: 10px;
@@ -88,14 +89,20 @@
         font-size: 0.85rem;
         font-weight: bold;
     }
-    
+
     .comparison-table th {
         background: rgba(102, 126, 234, 0.2) !important;
         font-weight: 600;
     }
-    
+
     .period-column {
         background: rgba(0,0,0,0.1);
+    }
+
+    .table-container {
+        background: #343a40;
+        border-radius: 8px;
+        padding: 15px;
     }
 </style>
 @endpush
@@ -133,7 +140,7 @@
 
 
 <div class="analytics-compare">
-    
+
     {{-- COMPARISON SELECTOR --}}
     <div class="row mb-3">
         <div class="col-12">
@@ -146,26 +153,26 @@
                 </div>
                 <div class="card-body">
                     <form method="GET" action="{{ route('mining-manager.analytics.compare') }}" id="comparisonForm">
-                        
+
                         {{-- Comparison Type --}}
                         <div class="row mb-3">
                             <div class="col-md-12">
                                 <label class="font-weight-bold">{{ trans('mining-manager::analytics.comparison_type') }}</label>
                                 <div class="btn-group btn-group-toggle d-block" data-toggle="buttons">
-                                    <label class="btn btn-outline-primary active">
-                                        <input type="radio" name="comparison_type" value="periods" checked> 
+                                    <label class="btn btn-outline-primary {{ (request('comparison_type', 'periods') === 'periods') ? 'active' : '' }}">
+                                        <input type="radio" name="comparison_type" value="periods" {{ (request('comparison_type', 'periods') === 'periods') ? 'checked' : '' }}>
                                         <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::analytics.compare_periods') }}
                                     </label>
-                                    <label class="btn btn-outline-success">
-                                        <input type="radio" name="comparison_type" value="miners"> 
+                                    <label class="btn btn-outline-success {{ (request('comparison_type') === 'miners') ? 'active' : '' }}">
+                                        <input type="radio" name="comparison_type" value="miners" {{ (request('comparison_type') === 'miners') ? 'checked' : '' }}>
                                         <i class="fas fa-users"></i> {{ trans('mining-manager::analytics.compare_miners') }}
                                     </label>
-                                    <label class="btn btn-outline-info">
-                                        <input type="radio" name="comparison_type" value="systems"> 
+                                    <label class="btn btn-outline-info {{ (request('comparison_type') === 'systems') ? 'active' : '' }}">
+                                        <input type="radio" name="comparison_type" value="systems" {{ (request('comparison_type') === 'systems') ? 'checked' : '' }}>
                                         <i class="fas fa-globe"></i> {{ trans('mining-manager::analytics.compare_systems') }}
                                     </label>
-                                    <label class="btn btn-outline-warning">
-                                        <input type="radio" name="comparison_type" value="ores"> 
+                                    <label class="btn btn-outline-warning {{ (request('comparison_type') === 'ores') ? 'active' : '' }}">
+                                        <input type="radio" name="comparison_type" value="ores" {{ (request('comparison_type') === 'ores') ? 'checked' : '' }}>
                                         <i class="fas fa-gem"></i> {{ trans('mining-manager::analytics.compare_ores') }}
                                     </label>
                                 </div>
@@ -173,7 +180,7 @@
                         </div>
 
                         {{-- Period Comparison Settings --}}
-                        <div id="periodSettings" class="comparison-settings">
+                        <div id="periodSettings" class="comparison-settings" style="{{ (request('comparison_type', 'periods') === 'periods') ? '' : 'display: none;' }}">
                             <div class="row">
                                 <div class="col-md-5">
                                     <div class="card period-1">
@@ -185,22 +192,22 @@
                                         <div class="card-body">
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.start_date') }}</label>
-                                                <input type="date" name="period1_start" class="form-control" 
+                                                <input type="date" name="period1_start" class="form-control"
                                                        value="{{ request('period1_start', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.end_date') }}</label>
-                                                <input type="date" name="period1_end" class="form-control" 
+                                                <input type="date" name="period1_end" class="form-control"
                                                        value="{{ request('period1_end', now()->format('Y-m-d')) }}">
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="col-md-2 d-flex align-items-center">
                                     <div class="vs-divider w-100">VS</div>
                                 </div>
-                                
+
                                 <div class="col-md-5">
                                     <div class="card period-2">
                                         <div class="card-header bg-success">
@@ -211,12 +218,12 @@
                                         <div class="card-body">
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.start_date') }}</label>
-                                                <input type="date" name="period2_start" class="form-control" 
+                                                <input type="date" name="period2_start" class="form-control"
                                                        value="{{ request('period2_start', now()->subDays(60)->format('Y-m-d')) }}">
                                             </div>
                                             <div class="form-group">
                                                 <label>{{ trans('mining-manager::analytics.end_date') }}</label>
-                                                <input type="date" name="period2_end" class="form-control" 
+                                                <input type="date" name="period2_end" class="form-control"
                                                        value="{{ request('period2_end', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
                                         </div>
@@ -226,29 +233,21 @@
                         </div>
 
                         {{-- Miner Comparison Settings --}}
-                        <div id="minerSettings" class="comparison-settings" style="display: none;">
+                        <div id="minerSettings" class="comparison-settings" style="{{ (request('comparison_type') === 'miners') ? '' : 'display: none;' }}">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>{{ trans('mining-manager::analytics.select_miners') }}</label>
-                                        <select name="miners[]" class="form-control select2" multiple>
-                                            {{-- Populated via AJAX --}}
-                                        </select>
-                                        <small class="form-text text-muted">
-                                            {{ trans('mining-manager::analytics.select_up_to_miners', ['count' => 5]) }}
-                                        </small>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <div class="form-group">
                                         <label>{{ trans('mining-manager::analytics.time_period') }}</label>
+                                        <p class="text-muted small mb-2">Shows top miners by quantity and value for the selected date range.</p>
                                         <div class="row">
-                                            <div class="col-6">
-                                                <input type="date" name="miner_start" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.start_date') }}</label>
+                                                <input type="date" name="miner_start" class="form-control"
                                                        value="{{ request('miner_start', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
-                                            <div class="col-6">
-                                                <input type="date" name="miner_end" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.end_date') }}</label>
+                                                <input type="date" name="miner_end" class="form-control"
                                                        value="{{ request('miner_end', now()->format('Y-m-d')) }}">
                                             </div>
                                         </div>
@@ -258,29 +257,21 @@
                         </div>
 
                         {{-- System Comparison Settings --}}
-                        <div id="systemSettings" class="comparison-settings" style="display: none;">
+                        <div id="systemSettings" class="comparison-settings" style="{{ (request('comparison_type') === 'systems') ? '' : 'display: none;' }}">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>{{ trans('mining-manager::analytics.select_systems') }}</label>
-                                        <select name="systems[]" class="form-control select2" multiple>
-                                            {{-- Populated via AJAX --}}
-                                        </select>
-                                        <small class="form-text text-muted">
-                                            {{ trans('mining-manager::analytics.select_up_to_systems', ['count' => 5]) }}
-                                        </small>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <div class="form-group">
                                         <label>{{ trans('mining-manager::analytics.time_period') }}</label>
+                                        <p class="text-muted small mb-2">Shows most productive solar systems for the selected date range.</p>
                                         <div class="row">
-                                            <div class="col-6">
-                                                <input type="date" name="system_start" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.start_date') }}</label>
+                                                <input type="date" name="system_start" class="form-control"
                                                        value="{{ request('system_start', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
-                                            <div class="col-6">
-                                                <input type="date" name="system_end" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.end_date') }}</label>
+                                                <input type="date" name="system_end" class="form-control"
                                                        value="{{ request('system_end', now()->format('Y-m-d')) }}">
                                             </div>
                                         </div>
@@ -290,29 +281,21 @@
                         </div>
 
                         {{-- Ore Comparison Settings --}}
-                        <div id="oreSettings" class="comparison-settings" style="display: none;">
+                        <div id="oreSettings" class="comparison-settings" style="{{ (request('comparison_type') === 'ores') ? '' : 'display: none;' }}">
                             <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>{{ trans('mining-manager::analytics.select_ores') }}</label>
-                                        <select name="ores[]" class="form-control select2" multiple>
-                                            {{-- Populated via AJAX --}}
-                                        </select>
-                                        <small class="form-text text-muted">
-                                            {{ trans('mining-manager::analytics.select_up_to_ores', ['count' => 5]) }}
-                                        </small>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
+                                <div class="col-md-12">
                                     <div class="form-group">
                                         <label>{{ trans('mining-manager::analytics.time_period') }}</label>
+                                        <p class="text-muted small mb-2">Shows most valuable and most mined ore types for the selected date range.</p>
                                         <div class="row">
-                                            <div class="col-6">
-                                                <input type="date" name="ore_start" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.start_date') }}</label>
+                                                <input type="date" name="ore_start" class="form-control"
                                                        value="{{ request('ore_start', now()->subDays(30)->format('Y-m-d')) }}">
                                             </div>
-                                            <div class="col-6">
-                                                <input type="date" name="ore_end" class="form-control" 
+                                            <div class="col-4">
+                                                <label>{{ trans('mining-manager::analytics.end_date') }}</label>
+                                                <input type="date" name="ore_end" class="form-control"
                                                        value="{{ request('ore_end', now()->format('Y-m-d')) }}">
                                             </div>
                                         </div>
@@ -321,7 +304,7 @@
                             </div>
                         </div>
 
-                        <div class="row">
+                        <div class="row mt-3">
                             <div class="col-12 text-right">
                                 <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::analytics.generate_comparison') }}
@@ -338,8 +321,13 @@
     </div>
 
     {{-- COMPARISON RESULTS --}}
-    @if(isset($comparisonData))
-    
+    @if(isset($comparisonData) && !empty($comparisonData))
+
+    {{-- ============================================================ --}}
+    {{-- PERIOD COMPARISON RESULTS                                     --}}
+    {{-- ============================================================ --}}
+    @if(($comparisonType ?? '') === 'periods')
+
     {{-- KEY METRICS COMPARISON --}}
     <div class="row">
         <div class="col-12">
@@ -353,28 +341,31 @@
                 <div class="card-body">
                     <div class="row">
                         @foreach($comparisonData['metrics'] ?? [] as $metric)
-                        <div class="col-md-4 mb-3">
-                            <div class="metric-comparison">
-                                <div>
-                                    <div class="metric-label">{{ $metric['label'] }}</div>
-                                    <div class="metric-value">{{ $metric['value_1'] }}</div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="metric-comparison flex-column text-center">
+                                <div class="metric-label mb-2">{{ $metric['label'] }}</div>
+                                <div class="d-flex justify-content-around w-100 mb-2">
+                                    <div>
+                                        <small class="text-primary">P1</small>
+                                        <div class="metric-value" style="font-size: 1.1rem;">{{ $metric['value_1'] }}</div>
+                                    </div>
+                                    <div class="align-self-center">
+                                        <i class="fas fa-arrows-alt-h text-muted"></i>
+                                    </div>
+                                    <div>
+                                        <small class="text-success">P2</small>
+                                        <div class="metric-value" style="font-size: 1.1rem;">{{ $metric['value_2'] }}</div>
+                                    </div>
                                 </div>
+                                @if(isset($metric['change']))
                                 <div>
-                                    <i class="fas fa-exchange-alt fa-2x text-muted"></i>
+                                    <span class="change-indicator change-{{ $metric['change_type'] }}">
+                                        <i class="fas fa-{{ $metric['change_type'] == 'positive' ? 'arrow-up' : ($metric['change_type'] == 'negative' ? 'arrow-down' : 'minus') }}"></i>
+                                        {{ $metric['change'] }}
+                                    </span>
                                 </div>
-                                <div>
-                                    <div class="metric-label">{{ $metric['label'] }}</div>
-                                    <div class="metric-value">{{ $metric['value_2'] }}</div>
-                                </div>
+                                @endif
                             </div>
-                            @if(isset($metric['change']))
-                            <div class="text-center mt-2">
-                                <span class="change-indicator change-{{ $metric['change_type'] }}">
-                                    <i class="fas fa-{{ $metric['change_type'] == 'positive' ? 'arrow-up' : ($metric['change_type'] == 'negative' ? 'arrow-down' : 'minus') }}"></i>
-                                    {{ $metric['change'] }}
-                                </span>
-                            </div>
-                            @endif
                         </div>
                         @endforeach
                     </div>
@@ -385,13 +376,13 @@
 
     {{-- COMPARISON CHARTS --}}
     <div class="row">
-        {{-- Volume Comparison Chart --}}
+        {{-- Quantity Comparison Chart --}}
         <div class="col-lg-6">
             <div class="card card-info card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-chart-bar"></i>
-                        {{ trans('mining-manager::analytics.volume_comparison') }}
+                        {{ trans('mining-manager::analytics.total_quantity_units') }}
                     </h3>
                 </div>
                 <div class="card-body">
@@ -494,7 +485,7 @@
     <div class="row">
         {{-- First Period Top Performers --}}
         <div class="col-md-6">
-            <div class="card card-primary card-outline comparison-card period-1">
+            <div class="card card-primary card-outline comparison-card period-1" style="position: relative;">
                 @if(($comparisonData['top_performer_period'] ?? 1) == 1)
                 <span class="top-performer-badge">
                     <i class="fas fa-trophy"></i> {{ trans('mining-manager::analytics.best_period') }}
@@ -520,12 +511,11 @@
                             <tr>
                                 <td>{{ $index + 1 }}</td>
                                 <td>
-                                    @if(isset($item['avatar']))
-                                    <img src="{{ $item['avatar'] }}" class="img-circle" style="width: 24px; height: 24px;">
-                                    @endif
+                                    <img src="https://images.evetech.net/characters/{{ $item['character_id'] }}/portrait?size=32"
+                                         class="img-circle" style="width: 24px; height: 24px;">
                                     {{ $item['name'] }}
                                 </td>
-                                <td class="text-right">{{ number_format($item['value'], 0) }} ISK</td>
+                                <td class="text-right text-success">{{ number_format(($item['total_value'] ?? 0) / 1000000, 2) }}M ISK</td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -536,7 +526,7 @@
 
         {{-- Second Period Top Performers --}}
         <div class="col-md-6">
-            <div class="card card-success card-outline comparison-card period-2">
+            <div class="card card-success card-outline comparison-card period-2" style="position: relative;">
                 @if(($comparisonData['top_performer_period'] ?? 1) == 2)
                 <span class="top-performer-badge">
                     <i class="fas fa-trophy"></i> {{ trans('mining-manager::analytics.best_period') }}
@@ -562,12 +552,11 @@
                             <tr>
                                 <td>{{ $index + 1 }}</td>
                                 <td>
-                                    @if(isset($item['avatar']))
-                                    <img src="{{ $item['avatar'] }}" class="img-circle" style="width: 24px; height: 24px;">
-                                    @endif
+                                    <img src="https://images.evetech.net/characters/{{ $item['character_id'] }}/portrait?size=32"
+                                         class="img-circle" style="width: 24px; height: 24px;">
                                     {{ $item['name'] }}
                                 </td>
-                                <td class="text-right">{{ number_format($item['value'], 0) }} ISK</td>
+                                <td class="text-right text-success">{{ number_format(($item['total_value'] ?? 0) / 1000000, 2) }}M ISK</td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -578,6 +567,7 @@
     </div>
 
     {{-- INSIGHTS --}}
+    @if(!empty($comparisonData['insights'] ?? []))
     <div class="row">
         <div class="col-12">
             <div class="card card-info card-outline">
@@ -605,9 +595,284 @@
             </div>
         </div>
     </div>
+    @endif
+
+    {{-- ============================================================ --}}
+    {{-- MINER COMPARISON RESULTS                                      --}}
+    {{-- ============================================================ --}}
+    @elseif(($comparisonType ?? '') === 'miners')
+
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                {{ trans('mining-manager::analytics.date_range') }}:
+                <strong>{{ $comparisonData['date_range']['start'] ?? '' }}</strong>
+                {{ trans('mining-manager::analytics.to') }}
+                <strong>{{ $comparisonData['date_range']['end'] ?? '' }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {{-- Top Miners by Quantity --}}
+        <div class="col-lg-6">
+            <div class="card card-success card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-sort-amount-down"></i>
+                        {{ trans('mining-manager::analytics.top_miners_by_quantity') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-dark table-striped table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{{ trans('mining-manager::analytics.character') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity_units') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_value') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.days_active') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.avg_per_day') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($comparisonData['by_quantity'] ?? [] as $index => $miner)
+                                <tr>
+                                    <td>{{ $index + 1 }}</td>
+                                    <td>
+                                        <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32"
+                                             class="img-circle" style="width: 24px;">
+                                        {{ $miner['character_name'] }}
+                                    </td>
+                                    <td class="text-right">{{ number_format($miner['total_quantity'], 0) }}</td>
+                                    <td class="text-right text-success">{{ number_format(($miner['total_value'] ?? 0) / 1000000, 2) }}M</td>
+                                    <td class="text-right">{{ $miner['days_active'] }}</td>
+                                    <td class="text-right">{{ number_format($miner['avg_per_day'], 0) }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Top Miners by Value --}}
+        <div class="col-lg-6">
+            <div class="card card-warning card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-coins"></i>
+                        {{ trans('mining-manager::analytics.top_miners_by_value') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-dark table-striped table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{{ trans('mining-manager::analytics.character') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_value') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity_units') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.days_active') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.avg_value_per_day') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($comparisonData['by_value'] ?? [] as $index => $miner)
+                                <tr>
+                                    <td>{{ $index + 1 }}</td>
+                                    <td>
+                                        <img src="https://images.evetech.net/characters/{{ $miner['character_id'] }}/portrait?size=32"
+                                             class="img-circle" style="width: 24px;">
+                                        {{ $miner['character_name'] }}
+                                    </td>
+                                    <td class="text-right text-success">{{ number_format(($miner['total_value'] ?? 0) / 1000000, 2) }}M</td>
+                                    <td class="text-right">{{ number_format($miner['total_quantity'], 0) }}</td>
+                                    <td class="text-right">{{ $miner['days_active'] }}</td>
+                                    <td class="text-right text-success">{{ number_format(($miner['avg_value_per_day'] ?? 0) / 1000000, 2) }}M</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ============================================================ --}}
+    {{-- SYSTEM COMPARISON RESULTS                                     --}}
+    {{-- ============================================================ --}}
+    @elseif(($comparisonType ?? '') === 'systems')
+
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                {{ trans('mining-manager::analytics.date_range') }}:
+                <strong>{{ $comparisonData['date_range']['start'] ?? '' }}</strong>
+                {{ trans('mining-manager::analytics.to') }}
+                <strong>{{ $comparisonData['date_range']['end'] ?? '' }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-info card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-globe"></i>
+                        {{ trans('mining-manager::analytics.system_comparison_results') }}
+                    </h3>
+                    <div class="card-tools">
+                        <span class="badge badge-info">{{ count($comparisonData['systems'] ?? []) }} {{ trans('mining-manager::analytics.systems') }}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-dark table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{{ trans('mining-manager::analytics.system') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_value') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity_units') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.unique_miners') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.days_active') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.avg_value_per_day') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($comparisonData['systems'] ?? [] as $index => $system)
+                                <tr>
+                                    <td>{{ $index + 1 }}</td>
+                                    <td>
+                                        <i class="fas fa-map-marker-alt text-warning"></i>
+                                        {{ $system['system_name'] }}
+                                    </td>
+                                    <td class="text-right text-success">{{ number_format(($system['total_value'] ?? 0) / 1000000, 2) }}M ISK</td>
+                                    <td class="text-right">{{ number_format($system['total_quantity'], 0) }}</td>
+                                    <td class="text-right">{{ $system['unique_miners'] }}</td>
+                                    <td class="text-right">{{ $system['days_active'] }}</td>
+                                    <td class="text-right text-success">{{ number_format(($system['avg_value_per_day'] ?? 0) / 1000000, 2) }}M</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ============================================================ --}}
+    {{-- ORE COMPARISON RESULTS                                        --}}
+    {{-- ============================================================ --}}
+    @elseif(($comparisonType ?? '') === 'ores')
+
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                {{ trans('mining-manager::analytics.date_range') }}:
+                <strong>{{ $comparisonData['date_range']['start'] ?? '' }}</strong>
+                {{ trans('mining-manager::analytics.to') }}
+                <strong>{{ $comparisonData['date_range']['end'] ?? '' }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {{-- Ores by Value --}}
+        <div class="col-lg-6">
+            <div class="card card-warning card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-coins"></i>
+                        {{ trans('mining-manager::analytics.ores_by_value') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-dark table-striped table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{{ trans('mining-manager::analytics.ore_type') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_value') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.quantity') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.unique_miners') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.avg_value_per_unit') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($comparisonData['by_value'] ?? [] as $index => $ore)
+                                <tr>
+                                    <td>{{ $index + 1 }}</td>
+                                    <td>
+                                        <i class="fas fa-gem text-info"></i>
+                                        {{ $ore['ore_name'] }}
+                                    </td>
+                                    <td class="text-right text-success">{{ number_format(($ore['total_value'] ?? 0) / 1000000, 2) }}M</td>
+                                    <td class="text-right">{{ number_format($ore['total_quantity'], 0) }}</td>
+                                    <td class="text-right">{{ $ore['miners_count'] }}</td>
+                                    <td class="text-right">{{ number_format($ore['avg_value_per_unit'] ?? 0, 0) }} ISK</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Ores by Quantity --}}
+        <div class="col-lg-6">
+            <div class="card card-success card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-sort-amount-down"></i>
+                        {{ trans('mining-manager::analytics.ores_by_quantity') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-dark table-striped table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{{ trans('mining-manager::analytics.ore_type') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::analytics.total_quantity_units') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($comparisonData['by_quantity'] ?? [] as $index => $ore)
+                                <tr>
+                                    <td>{{ $index + 1 }}</td>
+                                    <td>
+                                        <i class="fas fa-cube text-info"></i>
+                                        {{ $ore['ore_name'] }}
+                                    </td>
+                                    <td class="text-right">{{ number_format($ore['total_quantity'], 0) }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @endif
 
     @else
-    
+
     {{-- NO COMPARISON GENERATED YET --}}
     <div class="row">
         <div class="col-12">
@@ -641,7 +906,7 @@ $(document).ready(function() {
         const period = $(this).data('period');
         const endDate = new Date();
         const startDate = new Date();
-        
+
         switch(period) {
             case 'last_week':
                 startDate.setDate(startDate.getDate() - 7);
@@ -653,14 +918,14 @@ $(document).ready(function() {
                 startDate.setMonth(startDate.getMonth() - 3);
                 break;
         }
-        
+
         $('input[name$="_start"]').val(startDate.toISOString().split('T')[0]);
         $('input[name$="_end"]').val(endDate.toISOString().split('T')[0]);
     });
 
-    @if(isset($comparisonData))
-    
-    // Volume Comparison Chart
+    @if(isset($comparisonData) && ($comparisonType ?? '') === 'periods')
+
+    // Quantity Comparison Chart (units)
     const volumeCtx = document.getElementById('volumeComparisonChart');
     if (volumeCtx) {
         new Chart(volumeCtx, {
@@ -668,7 +933,7 @@ $(document).ready(function() {
             data: {
                 labels: @json($comparisonData['labels'] ?? []),
                 datasets: [{
-                    label: '{{ trans("mining-manager::analytics.total_volume") }}',
+                    label: '{{ trans("mining-manager::analytics.total_quantity_units") }}',
                     data: @json($comparisonData['volume_data'] ?? []),
                     backgroundColor: [
                         'rgba(78, 115, 223, 0.6)',
@@ -694,8 +959,8 @@ $(document).ready(function() {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return context.dataset.label + ': ' + 
-                                       Number(context.parsed.y).toLocaleString() + ' m³';
+                                return context.dataset.label + ': ' +
+                                       Number(context.parsed.y).toLocaleString() + ' units';
                             }
                         }
                     }
@@ -706,7 +971,7 @@ $(document).ready(function() {
                         ticks: {
                             color: '#a0a0a0',
                             callback: function(value) {
-                                return value.toLocaleString() + ' m³';
+                                return value.toLocaleString();
                             }
                         },
                         grid: { color: 'rgba(255, 255, 255, 0.1)' }
@@ -724,21 +989,23 @@ $(document).ready(function() {
     const valueCtx = document.getElementById('valueComparisonChart');
     if (valueCtx) {
         new Chart(valueCtx, {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: @json($comparisonData['labels'] ?? []),
                 datasets: [{
                     label: '{{ trans("mining-manager::analytics.total_value") }}',
                     data: @json($comparisonData['value_data'] ?? []),
-                    backgroundColor: 'rgba(28, 200, 138, 0.1)',
-                    borderColor: 'rgba(28, 200, 138, 1)',
-                    borderWidth: 3,
-                    pointRadius: 6,
-                    pointBackgroundColor: 'rgba(28, 200, 138, 1)',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    tension: 0.4,
-                    fill: true
+                    backgroundColor: [
+                        'rgba(28, 200, 138, 0.6)',
+                        'rgba(78, 115, 223, 0.6)',
+                        'rgba(246, 194, 62, 0.6)'
+                    ],
+                    borderColor: [
+                        'rgba(28, 200, 138, 1)',
+                        'rgba(78, 115, 223, 1)',
+                        'rgba(246, 194, 62, 1)'
+                    ],
+                    borderWidth: 2
                 }]
             },
             options: {
@@ -752,7 +1019,7 @@ $(document).ready(function() {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return context.dataset.label + ': ' + 
+                                return context.dataset.label + ': ' +
                                        (context.parsed.y / 1000000).toFixed(2) + 'M ISK';
                             }
                         }
@@ -764,7 +1031,8 @@ $(document).ready(function() {
                         ticks: {
                             color: '#a0a0a0',
                             callback: function(value) {
-                                return (value / 1000000).toFixed(0) + 'M ISK';
+                                if (value >= 1000000000) return (value / 1000000000).toFixed(1) + 'B';
+                                return (value / 1000000).toFixed(0) + 'M';
                             }
                         },
                         grid: { color: 'rgba(255, 255, 255, 0.1)' }
@@ -801,22 +1069,32 @@ $(document).ready(function() {
                     },
                     tooltip: {
                         mode: 'index',
-                        intersect: false
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + 'M ISK';
+                            }
+                        }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Value (M ISK)',
+                            color: '#a0a0a0'
+                        },
                         ticks: {
                             color: '#a0a0a0',
                             callback: function(value) {
-                                return (value / 1000000).toFixed(0) + 'M';
+                                return value.toFixed(0) + 'M';
                             }
                         },
                         grid: { color: 'rgba(255, 255, 255, 0.1)' }
                     },
                     x: {
-                        ticks: { 
+                        ticks: {
                             color: '#a0a0a0',
                             maxRotation: 45,
                             minRotation: 45
@@ -830,8 +1108,8 @@ $(document).ready(function() {
 
     // Export comparison data
     $('#exportComparison').on('click', function() {
-        window.location.href = '{{ route("mining-manager.analytics.export") }}?' + 
-                              $('#comparisonForm').serialize() + 
+        window.location.href = '{{ route("mining-manager.analytics.export") }}?' +
+                              $('#comparisonForm').serialize() +
                               '&format=csv&type=comparison';
     });
 

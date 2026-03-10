@@ -46,6 +46,27 @@ class MiningAnalyticsService
     }
 
     /**
+     * Get total volume in m³ mined in date range.
+     * Joins invTypes to get volume per unit and calculates SUM(quantity * volume).
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return float
+     */
+    public function getTotalVolumeM3(Carbon $startDate, Carbon $endDate): float
+    {
+        $cacheKey = "mining-analytics:total-volume-m3:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
+            return (float) MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+                ->selectRaw('COALESCE(SUM(mining_ledger.quantity * invTypes.volume), 0) as total_m3')
+                ->value('total_m3');
+        });
+    }
+
+    /**
      * Get total ISK value of ore mined in date range.
      * Uses pre-computed total_value from mining_ledger for consistency with dashboard.
      *

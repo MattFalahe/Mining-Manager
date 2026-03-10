@@ -277,7 +277,7 @@ if (!miningTrendsData || miningTrendsData.length === 0) {
 charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
     type: 'line',
     data: {
-        labels: miningTrendsData.map(d => d.date),
+        labels: miningTrendsData.map(d => d.date ? d.date.substring(0, 10) : ''),
         datasets: [{
             label: '{{ trans("mining-manager::analytics.volume") }}',
             data: miningTrendsData.map(d => d.total_quantity),

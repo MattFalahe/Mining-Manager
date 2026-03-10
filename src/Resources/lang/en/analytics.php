@@ -135,6 +135,25 @@ return [
     'insights' => 'Insights & Recommendations',
     'key_findings' => 'Key Findings',
     'recommendations' => 'Recommendations',
+    'significant_increase' => 'Significant Increase',
+    'significant_decrease' => 'Significant Decrease',
+    'value_changed_by' => 'Mining value changed by :percent% between the two periods.',
+    'miner_activity_change' => 'Miner Activity Change',
+    'miner_count_changed_by' => 'Active miner count changed by :percent% between the two periods.',
+
+    // Miner/System/Ore Comparison Results
+    'top_miners_by_quantity' => 'Top Miners by Quantity',
+    'top_miners_by_value' => 'Top Miners by Value',
+    'system_comparison_results' => 'System Mining Statistics',
+    'ore_comparison_results' => 'Ore Mining Statistics',
+    'ores_by_value' => 'Ore Types by Value',
+    'ores_by_quantity' => 'Ore Types by Quantity',
+    'days_active' => 'Days Active',
+    'avg_per_day' => 'Avg Per Day',
+    'avg_value_per_day' => 'Avg Value/Day',
+    'avg_value_per_unit' => 'Avg Value/Unit',
+    'total_quantity_units' => 'Total Quantity (units)',
+    'total_volume_m3' => 'Total Volume (m³)',
     
     // Status Messages
     'loading_data' => 'Loading analytics data...',
