@@ -338,8 +338,9 @@ class ReportController extends Controller
     {
         // For now, return empty collection until schedule management is fully implemented
         $schedules = collect();
+        $recentReports = collect();
 
-        return view('mining-manager::reports.scheduled', compact('schedules'));
+        return view('mining-manager::reports.scheduled', compact('schedules', 'recentReports'));
     }
 
     /**
