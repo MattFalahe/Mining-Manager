@@ -187,7 +187,7 @@ class MiningAnalyticsService
                     DB::raw('COUNT(DISTINCT mining_ledger.character_id) as unique_miners')
                 )
                 ->groupBy('mining_ledger.solar_system_id')
-                ->orderByDesc('total_quantity')
+                ->orderByDesc('total_value')
                 ->get();
 
             // Add system names from the relationship
