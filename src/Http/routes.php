@@ -511,6 +511,12 @@ Route::group([
            'middleware' => 'can:mining-manager.director',
        ]);
 
+        Route::get('/moons', [
+            'as' => 'mining-manager.analytics.moons',
+            'uses' => 'AnalyticsController@moons',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         // Admin - export
         Route::get('/export', [
             'as' => 'mining-manager.analytics.export',

@@ -5,6 +5,7 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\MiningAnalyticsService;
+use MiningManager\Services\Moon\MoonAnalyticsService;
 use MiningManager\Models\MiningLedger;
 use Carbon\Carbon;
 
@@ -493,6 +494,42 @@ class AnalyticsController extends Controller
                 'end' => $endDate->toDateString(),
             ],
         ];
+    }
+
+    /**
+     * Display moon analytics
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function moons(Request $request)
+    {
+        $moonService = app(MoonAnalyticsService::class);
+
+        $viewMode = $request->input('view_mode', 'monthly');
+        $month = $request->input('month')
+            ? Carbon::parse($request->input('month') . '-01')
+            : Carbon::now()->startOfMonth();
+
+        $extractionId = $request->input('extraction_id');
+
+        $data = [
+            'viewMode' => $viewMode,
+            'month' => $month,
+            'availableExtractions' => $moonService->getAvailableExtractions($month),
+        ];
+
+        if ($viewMode === 'extraction' && $extractionId) {
+            $data['extractionData'] = $moonService->getExtractionUtilization((int) $extractionId);
+            $data['selectedExtraction'] = $extractionId;
+        } else {
+            $data['summary'] = $moonService->getSummaryStats($month);
+            $data['utilization'] = $moonService->getMoonUtilization($month);
+            $data['popularity'] = $moonService->getMoonPopularity($month);
+            $data['orePopularity'] = $moonService->getOrePopularity($month);
+        }
+
+        return view('mining-manager::analytics.moons', $data);
     }
 
     /**

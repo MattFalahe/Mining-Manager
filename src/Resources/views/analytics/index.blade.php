@@ -77,6 +77,11 @@
                     <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
                 </a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
+                </a>
+            </li>
         </ul>
     </div>
     <div class="card-body">
