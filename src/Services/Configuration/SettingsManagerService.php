@@ -135,9 +135,6 @@ class SettingsManagerService
             'default_region_id' => $this->getSetting('general.default_region_id', config('mining-manager.general.default_region_id', 10000002)),
             'price_modifier' => $this->getSetting('general.price_modifier', config('mining-manager.general.price_modifier', 0.0)),
             
-            // Tax Calculation Method
-            'tax_calculation_method' => $this->getSetting('general.tax_calculation_method', config('mining-manager.general.tax_calculation_method', 'accumulated')),
-
             // Time Settings - Always UTC for consistency with EVE Online
             // These are hard-coded and not configurable to prevent issues with:
             // - Moon rental bills alignment

@@ -69,24 +69,9 @@
                     </div>
 
                     <div class="row">
-                        <!-- Tax Calculation Method -->
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="calculation_method">{{ trans('mining-manager::taxes.tax_calculation') }}</label>
-                                <select class="form-control" id="calculation_method" name="calculation_method" required>
-                                    <option value="accumulated" {{ $generalSettings['tax_calculation_method'] == 'accumulated' ? 'selected' : '' }}>
-                                        {{ trans('mining-manager::taxes.combined') }}
-                                    </option>
-                                    <option value="individually" {{ $generalSettings['tax_calculation_method'] == 'individually' ? 'selected' : '' }}>
-                                        {{ trans('mining-manager::taxes.individual') }}
-                                    </option>
-                                </select>
-                                <small class="form-text text-muted">
-                                    <i class="fas fa-info-circle"></i>
-                                    {{ trans('mining-manager::taxes.calculation_method_help') }}
-                                </small>
-                            </div>
-                        </div>
+                        {{-- Tax is always calculated per SeAT account (accumulated).
+                             Characters not registered in SeAT are taxed individually. --}}
+                        <input type="hidden" name="calculation_method" value="accumulated">
 
                         <!-- Calculation Data Source -->
                         <div class="col-md-4">

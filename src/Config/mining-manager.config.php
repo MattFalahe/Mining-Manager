@@ -26,10 +26,8 @@ return [
         // Market hub region ID (10000002 = The Forge/Jita)
         'default_region_id' => 10000002,
         
-        // Tax calculation method: 'accumulated' or 'individually'
-        // accumulated: Group alts under main character
-        // individually: Each character taxed separately
-        'tax_calculation_method' => 'accumulated',
+        // Tax is always calculated per SeAT account (accumulated).
+        // Characters not registered in SeAT are taxed individually.
     ],
 
     /*

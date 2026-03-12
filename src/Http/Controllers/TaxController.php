@@ -145,21 +145,15 @@ class TaxController extends Controller
     }
 
     /**
-     * Get character IDs relevant for tax queries (respects accumulated vs individual tax mode).
+     * Get character IDs relevant for tax queries.
+     * Always uses account-level tax — returns only the main character ID
+     * since taxes are consolidated under the main character.
      */
     private function getUserTaxCharacterIds(): array
     {
         $characterIds = $this->getUserCharacterIds();
-        $taxMethod = $this->settingsService->getSetting('tax_rates.tax_calculation_method',
-            $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated')
-        );
-
-        if ($taxMethod === 'accumulated' || $taxMethod === 'account') {
-            $mainId = auth()->user()->main_character_id;
-            return $mainId ? [$mainId] : $characterIds;
-        }
-
-        return $characterIds;
+        $mainId = auth()->user()->main_character_id;
+        return $mainId ? [$mainId] : $characterIds;
     }
 
     /**
@@ -227,6 +221,9 @@ class TaxController extends Controller
         $taxes = $query->orderBy('month', 'desc')
             ->orderBy('character_id')
             ->paginate(50);
+
+        // Enrich with character names and corporation names
+        $this->enrichPaginatorWithCharacterInfo($taxes, $this->characterInfoService);
 
         // Summary statistics - split by corp/guest if moon owner is configured
         // Helper to apply user scoping to summary queries
@@ -347,11 +344,6 @@ class TaxController extends Controller
         $currentYear = now()->year;
         $years = range($currentYear - 2, $currentYear);
 
-        // Get settings
-        $generalSettings = [
-            'tax_calculation_method' => $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated'),
-        ];
-
         $sourceSettings = [
             'source' => $this->settingsService->getSetting('general.data_source', 'archived'),
         ];
@@ -369,7 +361,6 @@ class TaxController extends Controller
         return view('mining-manager::taxes.calculate', compact(
             'corporations',
             'years',
-            'generalSettings',
             'sourceSettings',
             'paymentSettings',
             'liveTracking',
@@ -916,9 +907,8 @@ class TaxController extends Controller
         // Get all character IDs for this user
         $characterIds = $user->characters->pluck('character_id')->toArray();
 
-        // Determine tax calculation method
-        $taxCalculationMethod = $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated');
-        $taxMethod = ($taxCalculationMethod === 'accumulated') ? 'account' : 'character';
+        // Always use account-level tax
+        $taxMethod = 'account';
         $mainCharacterId = $user->main_character_id ?? ($characterIds[0] ?? null);
 
         // Get account characters info
@@ -1180,6 +1170,9 @@ class TaxController extends Controller
         $taxCodes = $query->orderBy('created_at', 'desc')
             ->paginate(50);
 
+        // Enrich with character names
+        $this->enrichPaginatorWithCharacterInfo($taxCodes, $this->characterInfoService);
+
         // Summary statistics (scoped unless viewing all)
         $summaryBase = TaxCode::query();
         if (!$viewAll && !empty($taxCharacterIds)) {
@@ -1382,6 +1375,10 @@ class TaxController extends Controller
     public function details(Request $request, $taxId)
     {
         $tax = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
+
+        // Enrich with character/corporation names
+        $this->enrichModelWithCharacterInfo($tax, $this->characterInfoService);
+
         $isAdmin = $this->isAdmin();
         $isDirector = $this->isDirector();
         $viewAll = $this->isViewingAll();
@@ -1394,8 +1391,8 @@ class TaxController extends Controller
             }
         }
 
-        // Get tax calculation method to determine if we should show alt breakdowns
-        $taxCalculationMethod = $this->settingsService->getSetting('general.tax_calculation_method', 'accumulated');
+        // Always use accumulated (per-account) mode
+        $taxCalculationMethod = 'accumulated';
 
         // Get mining breakdown for the tax's character and month
         $startDate = Carbon::parse($tax->month)->startOfMonth();
@@ -1450,26 +1447,6 @@ class TaxController extends Controller
                 } catch (\Exception $e) {
                     Log::debug("Mining Manager: Error getting breakdown for char {$charId}: " . $e->getMessage());
                 }
-            }
-        } else {
-            // Individual mode - just this character
-            try {
-                $breakdown = $this->taxService->getTaxBreakdown($tax->character_id, $startDate, $endDate);
-                foreach ($breakdown['breakdown'] ?? [] as $ore) {
-                    $miningBreakdown[] = [
-                        'type_name' => $ore['name'],
-                        'category' => $ore['category'],
-                        'rarity' => $ore['rarity'],
-                        'quantity' => $ore['quantity'],
-                        'total_value' => $ore['value'],
-                        'tax_rate' => $ore['effective_rate'],
-                        'tax_amount' => $ore['tax'],
-                        'event_modifier' => $ore['event_modifier'],
-                    ];
-                }
-                $miningTotal = $breakdown['total_value'] ?? 0;
-            } catch (\Exception $e) {
-                Log::debug("Mining Manager: Error getting breakdown for tax {$taxId}: " . $e->getMessage());
             }
         }
 

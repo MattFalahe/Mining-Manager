@@ -94,106 +94,10 @@ class TaxCalculationService
 
         Log::info("Mining Manager: Starting tax calculation for {$startDate->format('Y-m')}");
 
-        $generalSettings = $this->settingsService->getGeneralSettings();
-        $calculationMethod = $generalSettings['tax_calculation_method'];
-
-        if ($calculationMethod === 'accumulated') {
-            return $this->calculateAccumulatedTaxes($startDate, $endDate, $recalculate);
-        } else {
-            return $this->calculateIndividualTaxes($startDate, $endDate, $recalculate);
-        }
-    }
-
-    /**
-     * Calculate taxes individually for each character.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @param bool $recalculate
-     * @return array
-     */
-    private function calculateIndividualTaxes(Carbon $startDate, Carbon $endDate, bool $recalculate): array
-    {
-        // Get all characters who mined this month
-        $characters = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
-            ->distinct('character_id')
-            ->pluck('character_id');
-
-        $calculated = 0;
-        $totalTaxAmount = 0;
-        $errors = [];
-
-        foreach ($characters as $characterId) {
-            try {
-                // Check if tax already exists
-                $existingTax = MiningTax::where('character_id', $characterId)
-                    ->where('month', $startDate->format('Y-m-01'))
-                    ->first();
-
-                if ($existingTax && !$recalculate) {
-                    Log::debug("Mining Manager: Skipping character {$characterId} - tax already calculated");
-                    continue;
-                }
-
-                // Calculate tax for this character
-                $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
-
-                if ($taxAmount <= 0) {
-                    Log::debug("Mining Manager: Character {$characterId} has no tax liability");
-                    continue;
-                }
-
-                if ($existingTax) {
-                    // Update existing
-                    $existingTax->update([
-                        'amount_owed' => $taxAmount,
-                        'calculated_at' => Carbon::now(),
-                    ]);
-                    Log::info("Mining Manager: Recalculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
-                } else {
-                    // Create new
-                    MiningTax::create([
-                        'character_id' => $characterId,
-                        'month' => $startDate->format('Y-m-01'),
-                        'amount_owed' => $taxAmount,
-                        'amount_paid' => 0,
-                        'status' => 'unpaid',
-                        'calculated_at' => Carbon::now(),
-                    ]);
-                    Log::info("Mining Manager: Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
-                }
-
-                $calculated++;
-                $totalTaxAmount += $taxAmount;
-
-            } catch (\Exception $e) {
-                Log::error("Mining Manager: Error calculating tax for character {$characterId}: " . $e->getMessage());
-                $errors[] = [
-                    'character_id' => $characterId,
-                    'error' => $e->getMessage(),
-                ];
-            }
-        }
-
-        Log::info("Mining Manager: Individual tax calculation complete. Calculated: {$calculated}, Total: " . number_format($totalTaxAmount, 2) . " ISK");
-
-        // Log a warning summary if there were errors so admins notice
-        if (!empty($errors)) {
-            Log::warning("Mining Manager: Tax calculation completed with " . count($errors) . " error(s)", [
-                'month' => $startDate->format('Y-m'),
-                'successful' => $calculated,
-                'failed' => count($errors),
-                'errors' => array_map(fn($e) => "Character {$e['character_id']}: {$e['error']}", $errors),
-            ]);
-        }
-
-        return [
-            'method' => 'individually',
-            'count' => $calculated,
-            'total' => $totalTaxAmount,
-            'errors' => $errors,
-        ];
+        // Always use accumulated (per-account) tax calculation.
+        // Characters not linked to a SeAT account are automatically taxed individually
+        // since groupCharactersByMain() maps them to themselves.
+        return $this->calculateAccumulatedTaxes($startDate, $endDate, $recalculate);
     }
 
     /**
@@ -1081,7 +985,7 @@ class TaxCalculationService
             'breakdown' => array_values($breakdown),
             'total_value' => $totalValue,
             'total_tax' => $totalTax,
-            'calculation_method' => $this->settingsService->getGeneralSettings()['tax_calculation_method'],
+            'calculation_method' => 'accumulated',
         ];
     }
 

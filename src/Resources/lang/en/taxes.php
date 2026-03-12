@@ -125,9 +125,6 @@ return [
     // Calculation
     'tax_calculation' => 'Tax Calculation',
     'calculation_methods' => 'Calculation Method',
-    'calculation_method_help' => 'How should mining activity be calculated for taxes?',
-    'individual' => 'Individual',
-    'combined' => 'Combined',
     'advanced_options' => 'Advanced Options',
     'data_source_help' => 'Use archived data or live tracking data for calculations',
     'archived_data' => 'Archived Data',

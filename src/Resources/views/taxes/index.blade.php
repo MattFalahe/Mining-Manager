@@ -321,10 +321,11 @@
                                              class="img-circle"
                                              style="width: 32px; height: 32px;">
                                         <a href="{{ route('mining-manager.taxes.details', $tax->id) }}">
-                                            {{ $tax->character->name ?? 'Unknown' }}
+                                            {{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}
                                         </a>
                                         @if($moonOwnerCorpId)
-                                            @if($tax->corporation_id == $moonOwnerCorpId)
+                                            @php $taxCorpId = $tax->character_info['corporation_id'] ?? $tax->corporation_id ?? null; @endphp
+                                            @if($taxCorpId == $moonOwnerCorpId)
                                                 <span class="badge badge-primary ml-1" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.corporation_member') }}">
                                                     <i class="fas fa-building"></i>
                                                 </span>
@@ -336,8 +337,9 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{ $tax->affiliation->corporation_name ?? 'Unknown' }}
-                                        @if($moonOwnerCorpId && $tax->corporation_id == $moonOwnerCorpId)
+                                        {{ $tax->character_info['corporation_name'] ?? $tax->affiliation->corporation_name ?? 'Unknown' }}
+                                        @php $taxCorpId = $tax->character_info['corporation_id'] ?? $tax->corporation_id ?? null; @endphp
+                                        @if($moonOwnerCorpId && $taxCorpId == $moonOwnerCorpId)
                                             <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
                                         @endif
                                     </td>
@@ -409,7 +411,7 @@
                                             <button type="button"
                                                     class="btn btn-sm btn-warning send-reminder"
                                                     data-tax-id="{{ $tax->id }}"
-                                                    data-character-name="{{ $tax->character->name ?? 'Unknown' }}"
+                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
                                                     data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.send_reminder') }}">
                                                 <i class="fas fa-envelope"></i>

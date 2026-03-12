@@ -43,7 +43,7 @@
                             @forelse($taxCodes ?? [] as $code)
                             <tr>
                                 <td><code>{{ $code->code }}</code></td>
-                                <td>{{ $code->character->name ?? 'Unknown' }}</td>
+                                <td>{{ $code->character_info['name'] ?? $code->character->name ?? 'Unknown' }}</td>
                                 <td>{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y') : '-' }}</td>
                                 <td>{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
                                 <td>
