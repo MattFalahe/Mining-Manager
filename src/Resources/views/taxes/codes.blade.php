@@ -42,7 +42,7 @@
                         <tbody>
                             @forelse($taxCodes ?? [] as $code)
                             <tr>
-                                <td><code>{{ $code->code }}</code></td>
+                                <td><code>{{ $taxCodePrefix }}{{ $code->code }}</code></td>
                                 <td>{{ $code->character_info['name'] ?? $code->character->name ?? 'Unknown' }}</td>
                                 <td>{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y') : '-' }}</td>
                                 <td>{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
@@ -56,7 +56,7 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $code->code }}')">
+                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $taxCodePrefix }}{{ $code->code }}')">
                                         <i class="fas fa-copy"></i>
                                     </button>
                                 </td>

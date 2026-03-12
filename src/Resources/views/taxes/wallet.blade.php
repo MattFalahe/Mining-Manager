@@ -92,6 +92,7 @@
                                 <th>{{ trans('mining-manager::taxes.from_character') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::taxes.amount') }}</th>
                                 <th>{{ trans('mining-manager::taxes.description') }}</th>
+                                <th>{{ trans('mining-manager::taxes.reason') }}</th>
                                 <th>{{ trans('mining-manager::taxes.matched_tax') }}</th>
                                 <th>{{ trans('mining-manager::taxes.status') }}</th>
                                 <th class="text-center">{{ trans('mining-manager::taxes.actions') }}</th>
@@ -104,6 +105,13 @@
                                 <td>{{ $transaction->character_name }}</td>
                                 <td class="text-right">{{ number_format($transaction->amount, 0) }} ISK</td>
                                 <td><small>{{ $transaction->description }}</small></td>
+                                <td>
+                                    @if($transaction->reason)
+                                        <code>{{ $transaction->reason }}</code>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
                                 <td>
                                     @if($transaction->matched_tax_id)
                                         <a href="{{ route('mining-manager.taxes.details', $transaction->matched_tax_id) }}">
@@ -132,7 +140,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="7" class="text-center text-muted">{{ trans('mining-manager::taxes.no_transactions') }}</td>
+                                <td colspan="8" class="text-center text-muted">{{ trans('mining-manager::taxes.no_transactions') }}</td>
                             </tr>
                             @endforelse
                         </tbody>

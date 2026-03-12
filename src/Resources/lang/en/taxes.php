@@ -157,6 +157,9 @@ return [
     'no_taxes_found' => 'No taxes found',
     'no_tax_this_month' => 'No tax record for this month',
     'entries' => 'entries',
+    'flat_view' => 'Flat View',
+    'grouped_by_account' => 'Grouped by Account',
+    'owed' => 'owed',
     'showing_entries' => 'Showing :from to :to of :total entries',
 
     // Wallet & Transactions
@@ -184,6 +187,7 @@ return [
     'tax' => 'Tax',
     'tax_amount' => 'Tax Amount',
     'description' => 'Description',
+    'reason' => 'Reason / Tax Code',
     'notes' => 'Notes',
     'late' => 'Late',
 

@@ -285,6 +285,14 @@
                         {{ trans('mining-manager::taxes.tax_entries') }}
                     </h3>
                     <div class="card-tools">
+                        <div class="btn-group btn-group-sm mr-2" role="group">
+                            <button type="button" class="btn btn-outline-primary active" id="view-flat-btn">
+                                <i class="fas fa-list"></i> {{ trans('mining-manager::taxes.flat_view') }}
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" id="view-grouped-btn">
+                                <i class="fas fa-layer-group"></i> {{ trans('mining-manager::taxes.grouped_by_account') }}
+                            </button>
+                        </div>
                         <span class="badge badge-info" id="resultCount">{{ $taxes->total() }} {{ trans('mining-manager::taxes.entries') }}</span>
                     </div>
                 </div>
@@ -310,7 +318,13 @@
                             </thead>
                             <tbody>
                                 @forelse($taxes as $tax)
-                                <tr data-tax-id="{{ $tax->id }}">
+                                <tr data-tax-id="{{ $tax->id }}"
+                                    data-character-id="{{ $tax->character_id }}"
+                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
+                                    data-amount-owed="{{ $tax->amount_owed }}"
+                                    data-amount-paid="{{ $tax->amount_paid }}"
+                                    data-status="{{ $tax->status }}"
+                                    class="tax-row">
                                     @if($isAdmin ?? false)
                                     <td>
                                         <input type="checkbox" class="tax-checkbox" value="{{ $tax->id }}">
@@ -670,6 +684,108 @@ $(document).ready(function() {
         const formData = $('#filterForm').serialize();
         window.location.href = '{{ route("mining-manager.taxes.export") }}?' + formData;
     });
+
+    // View toggle: Flat / Grouped by Account
+    var isGrouped = false;
+
+    $('#view-flat-btn').on('click', function() {
+        if (!isGrouped) return;
+        isGrouped = false;
+        $(this).addClass('active');
+        $('#view-grouped-btn').removeClass('active');
+        showFlatView();
+    });
+
+    $('#view-grouped-btn').on('click', function() {
+        if (isGrouped) return;
+        isGrouped = true;
+        $(this).addClass('active');
+        $('#view-flat-btn').removeClass('active');
+        showGroupedView();
+    });
+
+    function showFlatView() {
+        // Remove grouped header rows
+        $('.grouped-header-row').remove();
+        // Show all original tax rows
+        $('.tax-row').show();
+    }
+
+    function showGroupedView() {
+        // Group rows by character_id
+        var groups = {};
+        $('.tax-row').each(function() {
+            var charId = $(this).data('character-id');
+            if (!groups[charId]) {
+                groups[charId] = {
+                    name: $(this).data('character-name'),
+                    totalOwed: 0,
+                    totalPaid: 0,
+                    rows: [],
+                    statuses: {}
+                };
+            }
+            groups[charId].totalOwed += parseFloat($(this).data('amount-owed')) || 0;
+            groups[charId].totalPaid += parseFloat($(this).data('amount-paid')) || 0;
+            groups[charId].rows.push($(this));
+            var st = $(this).data('status');
+            groups[charId].statuses[st] = (groups[charId].statuses[st] || 0) + 1;
+        });
+
+        // Hide all original rows and insert grouped headers
+        $('.tax-row').hide();
+        $('.grouped-header-row').remove();
+
+        var tbody = $('#taxTable tbody');
+        var colSpan = {{ ($isAdmin ?? false) ? 9 : 8 }};
+
+        // Sort groups by totalOwed descending
+        var sortedKeys = Object.keys(groups).sort(function(a, b) {
+            return groups[b].totalOwed - groups[a].totalOwed;
+        });
+
+        sortedKeys.forEach(function(charId) {
+            var g = groups[charId];
+            var statusBadge = '';
+            if (g.statuses['overdue']) statusBadge += '<span class="badge badge-danger mr-1">' + g.statuses['overdue'] + ' {{ trans("mining-manager::taxes.overdue") }}</span>';
+            if (g.statuses['unpaid']) statusBadge += '<span class="badge badge-warning mr-1">' + g.statuses['unpaid'] + ' {{ trans("mining-manager::taxes.unpaid") }}</span>';
+            if (g.statuses['paid']) statusBadge += '<span class="badge badge-success mr-1">' + g.statuses['paid'] + ' {{ trans("mining-manager::taxes.paid") }}</span>';
+            if (g.statuses['partial']) statusBadge += '<span class="badge badge-info mr-1">' + g.statuses['partial'] + ' {{ trans("mining-manager::taxes.partial") }}</span>';
+
+            var headerRow = $('<tr class="grouped-header-row" style="cursor: pointer; background: rgba(78, 115, 223, 0.15) !important;">' +
+                '<td colspan="' + colSpan + '">' +
+                '<div class="d-flex justify-content-between align-items-center">' +
+                '<div>' +
+                '<img src="https://images.evetech.net/characters/' + charId + '/portrait?size=32" class="img-circle mr-2" style="width: 32px; height: 32px;">' +
+                '<strong>' + g.name + '</strong>' +
+                '<small class="text-muted ml-2">(' + g.rows.length + ' {{ trans("mining-manager::taxes.entries") }})</small>' +
+                '</div>' +
+                '<div class="text-right">' +
+                '<span class="mr-3"><strong>' + Number(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
+                '<span class="mr-3"><strong>' + Number(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
+                statusBadge +
+                '<i class="fas fa-chevron-down ml-2"></i>' +
+                '</div>' +
+                '</div>' +
+                '</td>' +
+                '</tr>');
+
+            headerRow.data('character-id', charId);
+            headerRow.on('click', function() {
+                var cid = $(this).data('character-id');
+                var icon = $(this).find('.fa-chevron-down, .fa-chevron-up');
+                var rows = $('.tax-row[data-character-id="' + cid + '"]');
+                rows.toggle();
+                icon.toggleClass('fa-chevron-down fa-chevron-up');
+            });
+
+            tbody.append(headerRow);
+            // Move the original rows after the header (hidden)
+            g.rows.forEach(function(row) {
+                tbody.append(row);
+            });
+        });
+    }
 });
 </script>
 @endpush

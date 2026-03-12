@@ -412,6 +412,21 @@ class TaxController extends Controller
         $characterIds = $entries->pluck('character_id')->unique()->toArray();
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
 
+        // Also fetch info for main characters not already in the batch
+        // (main char may not have mined, but we need their name for account grouping)
+        $mainCharIds = collect($charactersInfo)
+            ->pluck('main_character_id')
+            ->filter()
+            ->unique()
+            ->diff(array_keys($charactersInfo))
+            ->values()
+            ->toArray();
+
+        if (!empty($mainCharIds)) {
+            $mainCharsInfo = $this->characterInfoService->getBatchCharacterInfo($mainCharIds);
+            $charactersInfo = array_replace($charactersInfo, $mainCharsInfo);
+        }
+
         // Batch-resolve ore type names from invTypes table
         $typeIds = $entries->pluck('type_id')->unique()->toArray();
         $typeNames = DB::table('invTypes')
@@ -602,12 +617,11 @@ class TaxController extends Controller
             // No corporation configured, return empty view
             return view('mining-manager::taxes.wallet', [
                 'transactions' => collect(),
-                'summary' => [
-                    'pending_count' => 0,
-                    'verified_count' => 0,
-                    'verified_today' => 0,
-                    'total_verified_isk' => 0,
-                    'unmatched_count' => 0,
+                'stats' => [
+                    'pending' => 0,
+                    'verified' => 0,
+                    'mismatched' => 0,
+                    'total_amount' => 0,
                 ],
                 'status' => $status,
                 'month' => $month,
@@ -641,12 +655,11 @@ class TaxController extends Controller
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->count();
 
-        $summary = [
-            'pending_count' => $pendingCount,
-            'verified_count' => $verifiedCount,
-            'verified_today' => $verifiedToday,
-            'total_verified_isk' => $totalVerifiedIsk,
-            'unmatched_count' => $unmatchedDonations->count(),
+        $stats = [
+            'pending' => $pendingCount,
+            'verified' => $verifiedCount,
+            'mismatched' => $unmatchedDonations->count(),
+            'total_amount' => $totalVerifiedIsk,
         ];
 
         // Filter transactions based on status
@@ -675,7 +688,7 @@ class TaxController extends Controller
 
         return view('mining-manager::taxes.wallet', compact(
             'transactions',
-            'summary',
+            'stats',
             'status',
             'month',
             'corporationId',
@@ -1190,11 +1203,15 @@ class TaxController extends Controller
 
         $features = $this->getFeatureFlags();
 
+        // Get tax code prefix from settings for display
+        $taxCodePrefix = $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-');
+
         return view('mining-manager::taxes.codes', compact(
             'taxCodes',
             'summary',
             'status',
             'search',
+            'taxCodePrefix',
             'isAdmin',
             'isDirector',
             'viewAll',
