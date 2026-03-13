@@ -27,21 +27,33 @@ return [
     'important' => 'Important',
     'example' => 'Example',
 
-    // Overview Section
-    'overview_title' => 'Mining Manager',
-    'overview_subtitle' => 'Comprehensive mining management plugin for SeAT',
+    // Overview Section - Plugin Information
     'plugin_information' => 'Plugin Information',
-    'plugin_name' => 'Mining Manager',
-    'plugin_package' => 'mattfalahe/mining-manager',
     'plugin_author' => 'Matt Falahe',
-    'plugin_license' => 'GPL-2.0-or-later',
-    'plugin_platform' => 'SeAT v5.x (Laravel 10)',
-    'plugin_php' => 'PHP 8.1+',
-    'label_package' => 'Package',
-    'label_author' => 'Author',
-    'label_license' => 'License',
-    'label_platform' => 'Platform',
-    'label_php' => 'PHP',
+    'plugin_author_email' => 'mattfalahe@gmail.com',
+    'plugin_license' => 'GPL-2.0',
+    'github_repository' => 'GitHub Repository',
+    'full_changelog' => 'Full Changelog',
+    'report_issues' => 'Report Issues',
+    'readme' => 'README',
+    'support_the_project' => 'Support the Project',
+    'support_star' => 'Star the GitHub repository',
+    'support_issues' => 'Report bugs and issues',
+    'support_features' => 'Suggest new features',
+    'support_contribute' => 'Contributing code improvements',
+    'support_share' => 'Share with other SeAT users',
+
+    // Overview Section - Welcome
+    'welcome_title' => 'Welcome to Mining Manager',
+    'welcome_desc' => 'Your comprehensive mining management and tax collection system for EVE Online corporations using SeAT.',
+
+    // Overview Section - What is
+    'what_is_mining_manager' => 'What is Mining Manager?',
+    'what_is_mining_manager_desc' => 'Mining Manager is a comprehensive SeAT plugin designed to help EVE Online corporations track mining activities, calculate and collect taxes, organize mining events, monitor moon extractions, detect unauthorized mining, and provide detailed analytics on mining performance.',
+    'key_benefits' => 'Key Benefits',
+    'key_benefits_desc' => 'Automated tax calculation, wallet payment verification, moon extraction tracking, theft detection, Discord/Slack notifications, and comprehensive analytics.',
+
+    // Overview Section - Core Features
     'core_features' => 'Core Features',
     'feature_ledger' => 'Mining Ledger',
     'feature_ledger_desc' => 'Track all mining activities with detailed volume, quantity, and ISK value breakdowns per character and corporation.',
@@ -55,7 +67,6 @@ return [
     'feature_analytics_desc' => 'Comprehensive charts, moon utilization analysis, pool vs mined comparisons, and ore popularity tracking.',
     'feature_theft' => 'Theft Detection',
     'feature_theft_desc' => 'Monitor unauthorized mining on corporation moons and track active theft incidents with automated alerts.',
-    'quick_navigation' => 'Quick Navigation',
 
     // Getting Started
     'getting_started_intro' => 'Welcome to the SeAT Mining Manager! This guide will help you get started with managing your corporation\'s mining operations.',

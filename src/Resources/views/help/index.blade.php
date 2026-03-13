@@ -436,41 +436,80 @@
 
             {{-- Overview Section --}}
             <div id="overview" class="help-section active">
+                {{-- Plugin Information --}}
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-cube"></i>
-                        {{ trans('mining-manager::help.overview_title') }}
+                        <i class="fas fa-info-circle"></i>
+                        {{ trans('mining-manager::help.plugin_information') }}
                     </h3>
-                    <p>{{ trans('mining-manager::help.overview_subtitle') }}</p>
+                    <p>
+                        Version: <img src="https://img.shields.io/github/v/release/MattFalahe/Mining-Manager?label=release&color=667eea" alt="version" style="vertical-align: middle;">
+                        <img src="https://img.shields.io/badge/SeAT-5.0-764ba2" alt="SeAT 5.0" style="vertical-align: middle;">
+                    </p>
+                    <p>License: {{ trans('mining-manager::help.plugin_license') }}</p>
+                    <p>
+                        <i class="fas fa-user"></i> {{ trans('mining-manager::help.plugin_author') }}<br>
+                        <i class="fas fa-envelope"></i> <a href="mailto:{{ trans('mining-manager::help.plugin_author_email') }}" style="color: #667eea;">{{ trans('mining-manager::help.plugin_author_email') }}</a>
+                    </p>
 
-                    <h4>{{ trans('mining-manager::help.plugin_information') }}</h4>
-                    <table class="plugin-info-table">
-                        <tr>
-                            <td>{{ trans('mining-manager::help.label_package') }}</td>
-                            <td><code>{{ trans('mining-manager::help.plugin_package') }}</code></td>
-                        </tr>
-                        <tr>
-                            <td>{{ trans('mining-manager::help.label_author') }}</td>
-                            <td>{{ trans('mining-manager::help.plugin_author') }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ trans('mining-manager::help.label_license') }}</td>
-                            <td>{{ trans('mining-manager::help.plugin_license') }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ trans('mining-manager::help.label_platform') }}</td>
-                            <td>{{ trans('mining-manager::help.plugin_platform') }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ trans('mining-manager::help.label_php') }}</td>
-                            <td>{{ trans('mining-manager::help.plugin_php') }}</td>
-                        </tr>
-                    </table>
+                    <div class="quick-links" style="margin-top: 15px;">
+                        <a href="https://github.com/MattFalahe/Mining-Manager" class="quick-link" target="_blank" style="padding: 10px;">
+                            <i class="fas fa-code-branch" style="font-size: 1rem; margin-bottom: 4px;"></i>
+                            {{ trans('mining-manager::help.github_repository') }}
+                        </a>
+                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md" class="quick-link" target="_blank" style="padding: 10px;">
+                            <i class="fas fa-list" style="font-size: 1rem; margin-bottom: 4px;"></i>
+                            {{ trans('mining-manager::help.full_changelog') }}
+                        </a>
+                        <a href="https://github.com/MattFalahe/Mining-Manager/issues" class="quick-link" target="_blank" style="padding: 10px;">
+                            <i class="fas fa-bug" style="font-size: 1rem; margin-bottom: 4px;"></i>
+                            {{ trans('mining-manager::help.report_issues') }}
+                        </a>
+                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/README.md" class="quick-link" target="_blank" style="padding: 10px;">
+                            <i class="fas fa-book" style="font-size: 1rem; margin-bottom: 4px;"></i>
+                            {{ trans('mining-manager::help.readme') }}
+                        </a>
+                    </div>
+
+                    <div class="success-box" style="margin-top: 20px;">
+                        <strong><i class="fas fa-heart"></i> {{ trans('mining-manager::help.support_the_project') }}:</strong>
+                        <ul style="margin-top: 8px; margin-bottom: 0;">
+                            <li>&#11088; {{ trans('mining-manager::help.support_star') }}</li>
+                            <li>&#128295; {{ trans('mining-manager::help.support_issues') }}</li>
+                            <li>&#128161; {{ trans('mining-manager::help.support_features') }}</li>
+                            <li>&#128295; {{ trans('mining-manager::help.support_contribute') }}</li>
+                            <li>&#127775; {{ trans('mining-manager::help.support_share') }}</li>
+                        </ul>
+                    </div>
                 </div>
 
+                {{-- Welcome --}}
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-th-large"></i>
+                        <i class="fas fa-gem"></i>
+                        {{ trans('mining-manager::help.welcome_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
+                </div>
+
+                {{-- What is Mining Manager? --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-info-circle"></i>
+                        {{ trans('mining-manager::help.what_is_mining_manager') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.what_is_mining_manager_desc') }}</p>
+
+                    <div class="info-box">
+                        <strong><i class="fas fa-lightbulb"></i> {{ trans('mining-manager::help.key_benefits') }}:</strong>
+                        {{ trans('mining-manager::help.key_benefits_desc') }}
+                    </div>
+                </div>
+
+                {{-- Core Features --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-star"></i>
                         {{ trans('mining-manager::help.core_features') }}
                     </h3>
                     <div class="feature-grid">
@@ -506,31 +545,6 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-link"></i>
-                        {{ trans('mining-manager::help.quick_navigation') }}
-                    </h3>
-                    <div class="quick-links">
-                        <a href="{{ route('mining-manager.dashboard') }}" class="quick-link">
-                            <i class="fas fa-tachometer-alt"></i>
-                            {{ trans('mining-manager::help.dashboard') }}
-                        </a>
-                        <a href="{{ route('mining-manager.taxes.calculate') }}" class="quick-link">
-                            <i class="fas fa-calculator"></i>
-                            {{ trans('mining-manager::help.calculate_tax') }}
-                        </a>
-                        <a href="{{ route('mining-manager.events.index') }}" class="quick-link">
-                            <i class="fas fa-calendar"></i>
-                            {{ trans('mining-manager::help.mining_events') }}
-                        </a>
-                        <a href="{{ route('mining-manager.settings.index') }}" class="quick-link">
-                            <i class="fas fa-cog"></i>
-                            {{ trans('mining-manager::help.settings') }}
-                        </a>
-                    </div>
-                </div>
             </div>
 
             {{-- Getting Started Section --}}
@@ -541,9 +555,6 @@
                         {{ trans('mining-manager::help.getting_started') }}
                     </h3>
                     <p>{{ trans('mining-manager::help.getting_started_intro') }}</p>
-
-                    <h4>{{ trans('mining-manager::help.what_is_mining_manager') }}</h4>
-                    <p>{{ trans('mining-manager::help.what_is_mining_manager_desc') }}</p>
 
                     <h4>{{ trans('mining-manager::help.quick_start_guide') }}</h4>
                     <ol class="step-by-step">
