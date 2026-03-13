@@ -217,10 +217,12 @@
                                     @endphp
                                     
                                     <div class="mb-2">
-                                        <div class="progress mm-progress-centered" style="height: 25px;">
-                                            <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
-                                                 role="progressbar"
-                                                 style="width: {{ max($progressPercent, 1) }}%"></div>
+                                        <div class="mm-progress-wrap">
+                                            <div class="progress" style="height: 25px;">
+                                                <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
+                                                     role="progressbar"
+                                                     style="width: {{ max($progressPercent, 1) }}%"></div>
+                                            </div>
                                             <span class="mm-pct-label">{{ number_format($progressPercent, 1) }}%</span>
                                         </div>
                                     </div>

@@ -301,8 +301,10 @@
                                             $maxValue = collect($analytics['system_breakdown'] ?? [])->max('total_value');
                                             $percentage = $maxValue > 0 ? (($system->total_value ?? 0) / $maxValue) * 100 : 0;
                                         @endphp
-                                        <div class="progress mm-progress-centered" style="height: 20px;">
-                                            <div class="progress-bar bg-info" style="width: {{ max($percentage, 1) }}%"></div>
+                                        <div class="mm-progress-wrap">
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar bg-info" style="width: {{ max($percentage, 1) }}%"></div>
+                                            </div>
                                             <span class="mm-pct-label">{{ number_format($percentage, 1) }}%</span>
                                         </div>
                                     </td>

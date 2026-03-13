@@ -189,8 +189,10 @@
                                             @foreach($topOres as $oreName => $oreData)
                                             <div class="d-flex align-items-center mb-1">
                                                 <span class="small mr-2" style="width: 80px;">{{ $oreName }}</span>
-                                                <div class="progress mm-progress-centered flex-grow-1" style="height: 15px;">
-                                                    <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                <div class="mm-progress-wrap flex-grow-1">
+                                                    <div class="progress" style="height: 15px;">
+                                                        <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                    </div>
                                                     <span class="mm-pct-label">{{ number_format($oreData['percentage'], 1) }}%</span>
                                                 </div>
                                             </div>
@@ -282,8 +284,10 @@
                                                 <tr>
                                                     <td>{{ $oreName }}</td>
                                                     <td>
-                                                        <div class="progress mm-progress-centered" style="height: 20px;">
-                                                            <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                        <div class="mm-progress-wrap">
+                                                            <div class="progress" style="height: 20px;">
+                                                                <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                            </div>
                                                             <span class="mm-pct-label">{{ number_format($oreData['percentage'], 2) }}%</span>
                                                         </div>
                                                     </td>

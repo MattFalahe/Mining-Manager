@@ -89,16 +89,20 @@
                                 <td class="text-right">{{ number_format($moon->pool_m3, 0) }}</td>
                                 <td class="text-right">{{ number_format($moon->mined_m3, 0) }}</td>
                                 <td>
-                                    <div class="progress mm-progress-centered" style="height: 22px;">
-                                        <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ max($moon->util_pct, 1) }}%"></div>
+                                    <div class="mm-progress-wrap">
+                                        <div class="progress" style="height: 22px;">
+                                            <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ max($moon->util_pct, 1) }}%"></div>
+                                        </div>
                                         <span class="mm-pct-label">{{ $moon->util_pct }}%</span>
                                     </div>
                                 </td>
                                 <td class="text-right text-success">{{ number_format($moon->pool_isk / 1000000, 0) }}M</td>
                                 <td class="text-right text-success">{{ number_format($moon->mined_isk / 1000000, 0) }}M</td>
                                 <td>
-                                    <div class="progress mm-progress-centered" style="height: 22px;">
-                                        <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ max($moon->value_pct, 1) }}%"></div>
+                                    <div class="mm-progress-wrap">
+                                        <div class="progress" style="height: 22px;">
+                                            <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ max($moon->value_pct, 1) }}%"></div>
+                                        </div>
                                         <span class="mm-pct-label">{{ $moon->value_pct }}%</span>
                                     </div>
                                 </td>
@@ -191,8 +195,10 @@
                                 <td class="text-right text-success">{{ number_format($ore->total_isk / 1000000, 1) }}M ISK</td>
                                 <td>
                                     @php $orePct = $maxOreIsk > 0 ? ($ore->total_isk / $maxOreIsk) * 100 : 0; @endphp
-                                    <div class="progress mm-progress-centered" style="height: 22px;">
-                                        <div class="progress-bar bg-warning" style="width: {{ max($orePct, 1) }}%"></div>
+                                    <div class="mm-progress-wrap">
+                                        <div class="progress" style="height: 22px;">
+                                            <div class="progress-bar bg-warning" style="width: {{ max($orePct, 1) }}%"></div>
+                                        </div>
                                         <span class="mm-pct-label">{{ number_format($orePct, 1) }}%</span>
                                     </div>
                                 </td>

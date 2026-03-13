@@ -567,31 +567,27 @@
     }
 }
 
-/* Centered-label progress bars — percentage always in the middle */
-.progress.mm-progress-centered {
-    position: relative;
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-    overflow: visible;
-}
-.progress.mm-progress-centered .progress-bar {
-    border-radius: 3px;
-}
-.progress.mm-progress-centered .mm-pct-label {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+/* Uniform progress bars — bar + percentage label to the right */
+.mm-progress-wrap {
     display: flex;
     align-items: center;
-    justify-content: center;
+}
+.mm-progress-wrap .progress {
+    flex: 1;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+.mm-progress-wrap .progress .progress-bar {
+    border-radius: 3px;
+}
+.mm-progress-wrap .mm-pct-label {
+    min-width: 45px;
+    text-align: right;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #fff;
-    text-shadow: 0 0 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.6);
-    pointer-events: none;
-    z-index: 1;
+    color: #ccc;
+    margin-left: 8px;
+    white-space: nowrap;
 }
 
 /* ============================================

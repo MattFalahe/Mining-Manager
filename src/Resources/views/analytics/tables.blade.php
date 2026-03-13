@@ -216,8 +216,10 @@
                                         @php
                                             $percentage = $totalValue > 0 ? (($ore->total_value ?? 0) / $totalValue) * 100 : 0;
                                         @endphp
-                                        <div class="progress mm-progress-centered" style="height: 20px;">
-                                            <div class="progress-bar bg-success" style="width: {{ max($percentage, 1) }}%"></div>
+                                        <div class="mm-progress-wrap">
+                                            <div class="progress" style="height: 20px;">
+                                                <div class="progress-bar bg-success" style="width: {{ max($percentage, 1) }}%"></div>
+                                            </div>
                                             <span class="mm-pct-label">{{ number_format($percentage, 1) }}%</span>
                                         </div>
                                     </td>
