@@ -695,15 +695,24 @@ class LedgerController extends Controller
             ->groupBy('character_id')
             ->get();
 
+        // Get volume (m³) from raw ledger joined with invTypes
+        $volumes = MiningLedger::whereIn('mining_ledger.character_id', $characterIds)
+            ->whereBetween('mining_ledger.date', [$startDate, $endDate])
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+            ->selectRaw('mining_ledger.character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
+            ->groupBy('mining_ledger.character_id')
+            ->pluck('total_volume_m3', 'character_id');
+
         $grandTotal = $entries->sum('total_value');
 
-        return $entries->map(function ($entry) use ($grandTotal) {
+        return $entries->map(function ($entry) use ($grandTotal, $volumes) {
             $charInfo = CharacterInfo::find($entry->character_id);
             return [
                 'character_id' => $entry->character_id,
                 'name' => $charInfo ? $charInfo->name : "Character {$entry->character_id}",
                 'total_value' => (float) $entry->total_value,
                 'quantity' => (float) $entry->quantity,
+                'total_volume_m3' => (float) ($volumes->get($entry->character_id) ?? 0),
                 'sessions' => (int) $entry->sessions,
                 'percentage' => $grandTotal > 0 ? ($entry->total_value / $grandTotal) * 100 : 0,
             ];
@@ -1012,6 +1021,7 @@ class LedgerController extends Controller
             'total_value' => $summaries->sum('total_value'),
             'total_tax' => $summaries->sum('total_tax'),
             'total_quantity' => $summaries->sum('total_quantity'),
+            'total_volume_m3' => $summaries->sum('total_volume_m3'),
             'moon_ore_value' => $summaries->sum('moon_ore_value'),
             'regular_ore_value' => $summaries->sum('regular_ore_value'),
             'ice_value' => $summaries->sum('ice_value'),
@@ -1185,15 +1195,17 @@ class LedgerController extends Controller
             ]);
 
         // Calculate totals for all included characters
-        $totals = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $totals = MiningLedger::whereIn('mining_ledger.character_id', $characterIds)
+            ->whereYear('mining_ledger.date', $monthDate->year)
+            ->whereMonth('mining_ledger.date', $monthDate->month)
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->selectRaw('
-                SUM(quantity) as total_quantity,
-                SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax,
-                COUNT(DISTINCT solar_system_id) as unique_systems,
-                COUNT(DISTINCT type_id) as unique_ores
+                SUM(mining_ledger.quantity) as total_quantity,
+                SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3,
+                SUM(mining_ledger.total_value) as total_value,
+                SUM(mining_ledger.tax_amount) as total_tax,
+                COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems,
+                COUNT(DISTINCT mining_ledger.type_id) as unique_ores
             ')
             ->first();
 

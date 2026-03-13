@@ -621,7 +621,16 @@ class LedgerSummaryService
             ->groupBy('character_id')
             ->map(fn($group) => $group->pluck('type_id')->toArray());
 
-        // --- BATCH QUERY 2: Get all system data for all characters in one query ---
+        // --- BATCH QUERY 2: Get total volume (m³) for all characters in one query ---
+        $allVolumes = MiningLedger::whereIn('character_id', $characterIds)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+            ->selectRaw('character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
+            ->groupBy('character_id')
+            ->pluck('total_volume_m3', 'character_id');
+
+        // --- BATCH QUERY 3: Get all system data for all characters in one query ---
         $allSystemData = MiningLedger::whereIn('character_id', $characterIds)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
@@ -630,7 +639,7 @@ class LedgerSummaryService
             ->get()
             ->groupBy('character_id');
 
-        // --- BATCH QUERY 3: Load all unique solar system names in one query ---
+        // --- BATCH QUERY 4: Load all unique solar system names in one query ---
         $allSystemIds = $allSystemData->flatten()->pluck('solar_system_id')->unique()->filter()->toArray();
         $solarSystems = [];
         if (!empty($allSystemIds)) {
@@ -645,11 +654,14 @@ class LedgerSummaryService
         }
 
         // Enrich each summary from the pre-loaded batch data (no extra queries)
-        $summaries = $summaries->map(function ($summary) use ($allOreTypes, $allSystemData, $solarSystems) {
+        $summaries = $summaries->map(function ($summary) use ($allOreTypes, $allVolumes, $allSystemData, $solarSystems) {
             $charId = $summary->character_id;
 
             // Ore types from batch
             $summary->ore_type_ids = $allOreTypes->get($charId, []);
+
+            // Volume from batch
+            $summary->total_volume_m3 = (float) $allVolumes->get($charId, 0);
 
             // System data from batch with pre-loaded names
             $systemData = $allSystemData->get($charId, collect())->sortByDesc('system_value')->values();
@@ -786,6 +798,7 @@ class LedgerSummaryService
                 $emptySummary->regular_ore_value = 0;
                 $emptySummary->ice_value = 0;
                 $emptySummary->gas_value = 0;
+                $emptySummary->total_volume_m3 = 0;
                 $emptySummary->alt_characters = collect();
                 $emptySummary->alt_count = 0;
                 $emptySummary->ore_type_ids = [];
@@ -822,6 +835,7 @@ class LedgerSummaryService
             $mainSummary->total_value = $userSummaries->sum('total_value');
             $mainSummary->total_tax = $userSummaries->sum('total_tax');
             $mainSummary->total_quantity = $userSummaries->sum('total_quantity');
+            $mainSummary->total_volume_m3 = $userSummaries->sum('total_volume_m3');
             $mainSummary->moon_ore_value = $userSummaries->sum('moon_ore_value');
             $mainSummary->regular_ore_value = $userSummaries->sum('regular_ore_value');
             $mainSummary->ice_value = $userSummaries->sum('ice_value');

@@ -107,6 +107,8 @@
                 <div class="info-box-content">
                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_quantity') }}</span>
                     <span class="info-box-number">{{ number_format($totals->total_quantity ?? 0, 0) }}</span>
+                    <small>{{ trans('mining-manager::ledger.units') }}</small>
+                    <span class="info-box-number" style="font-size: 16px;">{{ number_format($totals->total_volume_m3 ?? 0, 0) }}</span>
                     <small>m³</small>
                 </div>
             </div>
@@ -169,6 +171,7 @@
                                     {{ trans('mining-manager::ledger.quantity') }}
                                     <i class="fas fa-sort{{ $sortBy === 'quantity' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'quantity' ? ' active' : '' }}"></i>
                                 </th>
+                                <th class="text-right">{{ trans('mining-manager::ledger.volume') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::ledger.price_per_unit') }}</th>
                                 <th class="text-right sortable" onclick="sortTable('total_value')">
                                     {{ trans('mining-manager::ledger.total_value') }}
@@ -206,13 +209,14 @@
                                             <span class="badge badge-secondary">{{ trans('mining-manager::ledger.regular_ore') }}</span>
                                         @endif
                                     </td>
-                                    <td class="text-right">{{ number_format($entry->quantity, 2) }} m³</td>
+                                    <td class="text-right">{{ number_format($entry->quantity, 0) }}</td>
+                                    <td class="text-right">{{ number_format($entry->quantity * ($entry->type->volume ?? 0), 2) }} m³</td>
                                     <td class="text-right">{{ number_format($entry->unit_price ?? 0, 2) }} ISK</td>
                                     <td class="text-right"><strong>{{ number_format($entry->total_value, 2) }} ISK</strong></td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ ($showingMultiple ?? false) ? '7' : '6' }}" class="text-center">
+                                    <td colspan="{{ ($showingMultiple ?? false) ? '8' : '7' }}" class="text-center">
                                         <em>{{ trans('mining-manager::ledger.no_entries') }}</em>
                                     </td>
                                 </tr>

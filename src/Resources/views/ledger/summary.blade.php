@@ -217,7 +217,7 @@
                             </div>
                         </div>
 
-                        {{-- Total Quantity --}}
+                        {{-- Total Quantity / Volume --}}
                         <div class="col-lg-3 col-md-6">
                             <div class="info-box bg-gradient-info">
                                 <span class="info-box-icon">
@@ -226,6 +226,8 @@
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_quantity') }}</span>
                                     <span class="info-box-number">{{ number_format($totals['total_quantity'], 0) }}</span>
+                                    <small>{{ trans('mining-manager::ledger.units') }}</small>
+                                    <span class="info-box-number" style="font-size: 16px;">{{ number_format($totals['total_volume_m3'] ?? 0, 0) }}</span>
                                     <small>m³</small>
                                 </div>
                             </div>
@@ -276,6 +278,7 @@
                                     {{ trans('mining-manager::ledger.total_quantity') }}
                                     <i class="fas fa-sort{{ $sortBy === 'total_quantity' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'total_quantity' ? ' active' : '' }}"></i>
                                 </th>
+                                <th class="text-right">{{ trans('mining-manager::ledger.total_volume') }}</th>
                                 <th class="text-right sortable" onclick="sortTable('total_value')">
                                     {{ trans('mining-manager::ledger.total_value') }}
                                     <i class="fas fa-sort{{ $sortBy === 'total_value' ? ($sortDir === 'asc' ? '-up active' : '-down active') : '' }} sort-icon{{ $sortBy === 'total_value' ? ' active' : '' }}"></i>
@@ -331,7 +334,8 @@
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
-                                    <td class="text-right">{{ number_format($summary->total_quantity, 0) }} m³</td>
+                                    <td class="text-right">{{ number_format($summary->total_quantity, 0) }}</td>
+                                    <td class="text-right">{{ number_format($summary->total_volume_m3 ?? 0, 0) }} m³</td>
                                     <td class="text-right"><strong>{{ number_format($summary->total_value, 0) }} ISK</strong></td>
                                     <td>
                                         @if(isset($summary->primary_system))

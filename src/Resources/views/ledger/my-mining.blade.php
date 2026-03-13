@@ -270,6 +270,7 @@
                                     <th>{{ trans('mining-manager::ledger.character') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.total_value') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.quantity') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::ledger.volume') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.sessions') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.percentage') }}</th>
                                 </tr>
@@ -285,6 +286,7 @@
                                     </td>
                                     <td class="text-right">{{ number_format($charStat['total_value'], 0) }} ISK</td>
                                     <td class="text-right">{{ number_format($charStat['quantity'], 0) }}</td>
+                                    <td class="text-right">{{ number_format($charStat['total_volume_m3'] ?? 0, 0) }} m³</td>
                                     <td class="text-right">{{ $charStat['sessions'] }}</td>
                                     <td class="text-right">{{ number_format($charStat['percentage'], 1) }}%</td>
                                 </tr>
@@ -328,6 +330,7 @@
                                     <th>{{ trans('mining-manager::ledger.character') }}</th>
                                     <th>{{ trans('mining-manager::ledger.ore_type') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.quantity') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::ledger.volume') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::ledger.value') }}</th>
                                     <th>{{ trans('mining-manager::ledger.system') }}</th>
                                 </tr>
@@ -355,6 +358,7 @@
                                         @endif
                                     </td>
                                     <td class="text-right">{{ number_format($activity->quantity, 0) }}</td>
+                                    <td class="text-right">{{ number_format($activity->quantity * ($activity->type->volume ?? 0), 2) }} m³</td>
                                     <td class="text-right">
                                         <strong>{{ number_format($activity->total_value, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
@@ -363,7 +367,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted">
+                                    <td colspan="7" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::ledger.no_recent_activity') }}</p>
                                     </td>
