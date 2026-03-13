@@ -190,7 +190,7 @@
                 <div class="card-body">
                     <div class="row">
                         {{-- Total Value --}}
-                        <div class="col-lg-3 col-md-6">
+                        <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-success">
                                 <span class="info-box-icon">
                                     <i class="fas fa-coins"></i>
@@ -204,7 +204,7 @@
                         </div>
 
                         {{-- Total Tax --}}
-                        <div class="col-lg-3 col-md-6">
+                        <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-warning">
                                 <span class="info-box-icon">
                                     <i class="fas fa-percent"></i>
@@ -217,8 +217,8 @@
                             </div>
                         </div>
 
-                        {{-- Total Quantity / Volume --}}
-                        <div class="col-lg-3 col-md-6">
+                        {{-- Total Quantity --}}
+                        <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-info">
                                 <span class="info-box-icon">
                                     <i class="fas fa-cubes"></i>
@@ -227,14 +227,26 @@
                                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_quantity') }}</span>
                                     <span class="info-box-number">{{ number_format($totals['total_quantity'], 0) }}</span>
                                     <small>{{ trans('mining-manager::ledger.units') }}</small>
-                                    <span class="info-box-number" style="font-size: 16px;">{{ number_format($totals['total_volume_m3'] ?? 0, 0) }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Total Volume --}}
+                        <div class="col-lg col-md-6">
+                            <div class="info-box bg-gradient-teal">
+                                <span class="info-box-icon">
+                                    <i class="fas fa-box"></i>
+                                </span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">{{ trans('mining-manager::ledger.total_volume') }}</span>
+                                    <span class="info-box-number">{{ number_format($totals['total_volume_m3'] ?? 0, 0) }}</span>
                                     <small>m³</small>
                                 </div>
                             </div>
                         </div>
 
                         {{-- Active Miners --}}
-                        <div class="col-lg-3 col-md-6">
+                        <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-primary">
                                 <span class="info-box-icon">
                                     <i class="fas fa-users"></i>

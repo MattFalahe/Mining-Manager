@@ -86,7 +86,7 @@
 
     {{-- SUMMARY STATISTICS --}}
     <div class="row mb-3">
-        <div class="col-md-3">
+        <div class="col-lg col-md-6">
             <div class="info-box bg-gradient-success">
                 <span class="info-box-icon">
                     <i class="fas fa-coins"></i>
@@ -99,7 +99,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-lg col-md-6">
             <div class="info-box bg-gradient-info">
                 <span class="info-box-icon">
                     <i class="fas fa-cube"></i>
@@ -108,13 +108,24 @@
                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_quantity') }}</span>
                     <span class="info-box-number">{{ number_format($totals->total_quantity ?? 0, 0) }}</span>
                     <small>{{ trans('mining-manager::ledger.units') }}</small>
-                    <span class="info-box-number" style="font-size: 16px;">{{ number_format($totals->total_volume_m3 ?? 0, 0) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg col-md-6">
+            <div class="info-box bg-gradient-teal">
+                <span class="info-box-icon">
+                    <i class="fas fa-box"></i>
+                </span>
+                <div class="info-box-content">
+                    <span class="info-box-text">{{ trans('mining-manager::ledger.total_volume') }}</span>
+                    <span class="info-box-number">{{ number_format($totals->total_volume_m3 ?? 0, 0) }}</span>
                     <small>m³</small>
                 </div>
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-lg col-md-6">
             <div class="info-box bg-gradient-warning">
                 <span class="info-box-icon">
                     <i class="fas fa-map-marked-alt"></i>
@@ -127,7 +138,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-lg col-md-6">
             <div class="info-box bg-gradient-primary">
                 <span class="info-box-icon">
                     <i class="fas fa-gem"></i>
