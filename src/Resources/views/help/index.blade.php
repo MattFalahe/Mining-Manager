@@ -365,7 +365,7 @@
                         </li>
                         <li class="nav-item">
                             <a href="#" class="nav-link" data-section="events">
-                                <i class="fas fa-calendar-star"></i>
+                                <i class="fas fa-calendar-alt"></i>
                                 {{ trans('mining-manager::help.mining_events') }}
                             </a>
                         </li>
@@ -529,7 +529,7 @@
                             <p>{{ trans('mining-manager::help.feature_moon_desc') }}</p>
                         </div>
                         <div class="feature-item">
-                            <i class="fas fa-calendar-star"></i>
+                            <i class="fas fa-calendar-alt"></i>
                             <h5>{{ trans('mining-manager::help.feature_events') }}</h5>
                             <p>{{ trans('mining-manager::help.feature_events_desc') }}</p>
                         </div>
@@ -709,7 +709,7 @@
             <div id="events" class="help-section">
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-calendar-star"></i>
+                        <i class="fas fa-calendar-alt"></i>
                         {{ trans('mining-manager::help.mining_events_guide') }}
                     </h3>
                     <p>{{ trans('mining-manager::help.events_intro') }}</p>
