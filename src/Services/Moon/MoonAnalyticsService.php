@@ -99,6 +99,12 @@ class MoonAnalyticsService
                 ? DB::table('moons')->whereIn('moon_id', $moonIds)->pluck('name', 'moon_id')->toArray()
                 : [];
 
+            // Batch-load structure names from universe_structures
+            $structureIds = $extractions->pluck('structure_id')->unique()->filter()->toArray();
+            $structureNames = !empty($structureIds)
+                ? DB::table('universe_structures')->whereIn('structure_id', $structureIds)->pluck('name', 'structure_id')->toArray()
+                : [];
+
             $results = [];
             foreach ($byMoon as $moonId => $moonExtractions) {
                 $poolM3 = 0;
@@ -130,9 +136,14 @@ class MoonAnalyticsService
 
                 $uniqueMiners = count(array_unique($minerIds));
 
+                // Get structure name from the first extraction's structure_id
+                $firstStructureId = $moonExtractions->first()->structure_id ?? null;
+                $structureName = $firstStructureId ? ($structureNames[$firstStructureId] ?? null) : null;
+
                 $results[] = (object) [
                     'moon_id' => $moonId,
                     'moon_name' => $moonNames[$moonId] ?? "Moon {$moonId}",
+                    'structure_name' => $structureName,
                     'extraction_count' => $moonExtractions->count(),
                     'pool_m3' => $poolM3,
                     'mined_m3' => $minedM3,
@@ -292,11 +303,24 @@ class MoonAnalyticsService
                 ? DB::table('moons')->whereIn('moon_id', $moonIds)->pluck('name', 'moon_id')->toArray()
                 : [];
 
+            // Resolve structure names for chart labels
+            $structureNames = !empty($structureIds)
+                ? DB::table('universe_structures')->whereIn('structure_id', $structureIds)->pluck('name', 'structure_id')->toArray()
+                : [];
+            // Map moon_id → structure_name from first matching extraction
+            $moonStructureNames = [];
+            foreach ($extractions as $e) {
+                if (!isset($moonStructureNames[$e->moon_id]) && isset($structureNames[$e->structure_id])) {
+                    $moonStructureNames[$e->moon_id] = $structureNames[$e->structure_id];
+                }
+            }
+
             $results = [];
             foreach ($byMoon as $moonId => $data) {
                 $results[] = (object) [
                     'moon_id' => $moonId,
                     'moon_name' => $moonNames[$moonId] ?? "Moon {$moonId}",
+                    'structure_name' => $moonStructureNames[$moonId] ?? null,
                     'unique_miners' => max($data['miners']),
                     'active_days' => $data['active_days'],
                     'total_isk' => $data['total_isk'],

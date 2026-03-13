@@ -79,24 +79,39 @@
                         <tbody>
                             @forelse($utilization as $moon)
                             <tr>
-                                <td><i class="fas fa-moon"></i> {{ $moon->moon_name }}</td>
+                                <td>
+                                    <i class="fas fa-moon"></i> {{ $moon->moon_name }}
+                                    @if($moon->structure_name)
+                                        <br><small class="text-muted"><i class="fas fa-industry"></i> {{ $moon->structure_name }}</small>
+                                    @endif
+                                </td>
                                 <td class="text-center">{{ $moon->extraction_count }}</td>
                                 <td class="text-right">{{ number_format($moon->pool_m3, 0) }}</td>
                                 <td class="text-right">{{ number_format($moon->mined_m3, 0) }}</td>
                                 <td>
-                                    <div class="progress util-bar">
-                                        <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ $moon->util_pct }}%">
-                                            {{ $moon->util_pct }}%
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress util-bar flex-grow-1">
+                                            <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ max($moon->util_pct, 1) }}%">
+                                                @if($moon->util_pct >= 20){{ $moon->util_pct }}%@endif
+                                            </div>
                                         </div>
+                                        @if($moon->util_pct < 20 && $moon->util_pct > 0)
+                                            <span class="ml-2 small">{{ $moon->util_pct }}%</span>
+                                        @endif
                                     </div>
                                 </td>
                                 <td class="text-right text-success">{{ number_format($moon->pool_isk / 1000000, 0) }}M</td>
                                 <td class="text-right text-success">{{ number_format($moon->mined_isk / 1000000, 0) }}M</td>
                                 <td>
-                                    <div class="progress util-bar">
-                                        <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ $moon->value_pct }}%">
-                                            {{ $moon->value_pct }}%
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress util-bar flex-grow-1">
+                                            <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ max($moon->value_pct, 1) }}%">
+                                                @if($moon->value_pct >= 20){{ $moon->value_pct }}%@endif
+                                            </div>
                                         </div>
+                                        @if($moon->value_pct < 20 && $moon->value_pct > 0)
+                                            <span class="ml-2 small">{{ $moon->value_pct }}%</span>
+                                        @endif
                                     </div>
                                 </td>
                                 <td class="text-center">{{ $moon->unique_miners }}</td>
@@ -188,10 +203,15 @@
                                 <td class="text-right text-success">{{ number_format($ore->total_isk / 1000000, 1) }}M ISK</td>
                                 <td>
                                     @php $orePct = $maxOreIsk > 0 ? ($ore->total_isk / $maxOreIsk) * 100 : 0; @endphp
-                                    <div class="progress util-bar">
-                                        <div class="progress-bar bg-warning" style="width: {{ $orePct }}%">
-                                            {{ number_format($orePct, 1) }}%
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress util-bar flex-grow-1">
+                                            <div class="progress-bar bg-warning" style="width: {{ max($orePct, 1) }}%">
+                                                @if($orePct >= 20){{ number_format($orePct, 1) }}%@endif
+                                            </div>
                                         </div>
+                                        @if($orePct < 20 && $orePct > 0)
+                                            <span class="ml-2 small">{{ number_format($orePct, 1) }}%</span>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>
@@ -214,7 +234,7 @@ $(document).ready(function() {
     new Chart(popCtx, {
         type: 'bar',
         data: {
-            labels: {!! json_encode($popularity->pluck('moon_name')->toArray()) !!},
+            labels: {!! json_encode($popularity->map(function($m) { return $m->structure_name ? $m->structure_name : $m->moon_name; })->values()->toArray()) !!},
             datasets: [{
                 label: '{{ trans('mining-manager::analytics.unique_miners') }}',
                 data: {!! json_encode($popularity->pluck('unique_miners')->toArray()) !!},

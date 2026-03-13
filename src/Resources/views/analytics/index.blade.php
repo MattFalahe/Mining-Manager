@@ -297,14 +297,19 @@
                                     <td class="text-right text-success">{{ number_format(($system->total_value ?? 0) / 1000000, 0) }}M ISK</td>
                                     <td class="text-right">{{ $system->unique_miners ?? 0 }}</td>
                                     <td>
-                                        <div class="progress" style="height: 20px;">
-                                            @php
-                                                $maxValue = collect($analytics['system_breakdown'] ?? [])->max('total_value');
-                                                $percentage = $maxValue > 0 ? (($system->total_value ?? 0) / $maxValue) * 100 : 0;
-                                            @endphp
-                                            <div class="progress-bar bg-info" style="width: {{ $percentage }}%">
-                                                {{ number_format($percentage, 1) }}%
+                                        @php
+                                            $maxValue = collect($analytics['system_breakdown'] ?? [])->max('total_value');
+                                            $percentage = $maxValue > 0 ? (($system->total_value ?? 0) / $maxValue) * 100 : 0;
+                                        @endphp
+                                        <div class="d-flex align-items-center">
+                                            <div class="progress flex-grow-1" style="height: 20px;">
+                                                <div class="progress-bar bg-info" style="width: {{ max($percentage, 1) }}%">
+                                                    @if($percentage >= 20){{ number_format($percentage, 1) }}%@endif
+                                                </div>
                                             </div>
+                                            @if($percentage < 20 && $percentage > 0)
+                                                <span class="ml-2 small">{{ number_format($percentage, 1) }}%</span>
+                                            @endif
                                         </div>
                                     </td>
                                 </tr>
