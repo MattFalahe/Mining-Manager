@@ -403,6 +403,12 @@ class LedgerController extends Controller
         $totalValue = (float) ($agg->total_value ?? 0);
         $activeDays = (int) ($agg->active_days ?? 0);
 
+        // Total volume in m³ from raw ledger × invTypes.volume
+        $totalVolume = (float) $baseQuery()
+            ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
+            ->selectRaw('COALESCE(SUM(mining_ledger.quantity * invTypes.volume), 0) as total_volume')
+            ->value('total_volume');
+
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
@@ -442,6 +448,7 @@ class LedgerController extends Controller
         return [
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
+            'total_volume' => $totalVolume,
             'total_sessions' => $activeDays,
             'active_days' => $activeDays,
             'best_day_value' => $bestDayValue,

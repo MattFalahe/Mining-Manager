@@ -76,15 +76,15 @@
                             </div>
                         </div>
 
-                        {{-- Mining Sessions --}}
+                        {{-- Total Volume --}}
                         <div class="col-lg-3 col-md-6">
                             <div class="small-box bg-gradient-info">
                                 <div class="inner">
-                                    <h3>{{ $stats['total_sessions'] ?? 0 }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.mining_sessions') }}</p>
+                                    <h3>{{ number_format($stats['total_volume'] ?? 0, 0) }}</h3>
+                                    <p>{{ trans('mining-manager::ledger.total_volume') }} (m&sup3;)</p>
                                 </div>
                                 <div class="icon">
-                                    <i class="fas fa-history"></i>
+                                    <i class="fas fa-cube"></i>
                                 </div>
                             </div>
                         </div>
