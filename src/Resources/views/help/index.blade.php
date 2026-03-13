@@ -10,7 +10,7 @@
         display: flex;
         gap: 20px;
     }
-    
+
     .help-sidebar {
         flex: 0 0 280px;
         position: sticky;
@@ -18,12 +18,12 @@
         max-height: calc(100vh - 120px);
         overflow-y: auto;
     }
-    
+
     .help-content {
         flex: 1;
         min-width: 0;
     }
-    
+
     .help-nav .nav-link {
         color: #e2e8f0;
         border-radius: 5px;
@@ -32,35 +32,35 @@
         transition: all 0.3s;
         font-size: 0.95rem;
     }
-    
+
     .help-nav .nav-link:hover {
         background: rgba(102, 126, 234, 0.2);
     }
-    
+
     .help-nav .nav-link.active {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
-    
+
     .help-nav .nav-link i {
         width: 24px;
         text-align: center;
         margin-right: 10px;
     }
-    
+
     .help-section {
         display: none;
         animation: fadeIn 0.3s;
     }
-    
+
     .help-section.active {
         display: block;
     }
-    
+
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    
+
     .help-card {
         background: #2d3748;
         border-radius: 10px;
@@ -68,7 +68,7 @@
         margin-bottom: 20px;
         border: 1px solid rgba(102, 126, 234, 0.2);
     }
-    
+
     .help-card h3 {
         color: #667eea;
         margin-bottom: 15px;
@@ -76,25 +76,25 @@
         align-items: center;
         gap: 10px;
     }
-    
+
     .help-card h4 {
         color: #9ca3af;
         margin-top: 20px;
         margin-bottom: 10px;
         font-size: 1.1rem;
     }
-    
+
     .help-card p {
         color: #d1d5db;
         line-height: 1.6;
     }
-    
+
     .help-card ul, .help-card ol {
         color: #d1d5db;
         line-height: 1.8;
         margin-left: 20px;
     }
-    
+
     .help-card code {
         background: rgba(0, 0, 0, 0.3);
         padding: 2px 6px;
@@ -102,7 +102,7 @@
         color: #fbbf24;
         font-size: 0.9em;
     }
-    
+
     .help-card pre {
         background: rgba(0, 0, 0, 0.3);
         padding: 15px;
@@ -110,20 +110,20 @@
         overflow-x: auto;
         color: #d1d5db;
     }
-    
+
     .step-by-step {
         counter-reset: step-counter;
         list-style: none;
         padding-left: 0;
     }
-    
+
     .step-by-step li {
         counter-increment: step-counter;
         margin-bottom: 20px;
         padding-left: 50px;
         position: relative;
     }
-    
+
     .step-by-step li::before {
         content: counter(step-counter);
         position: absolute;
@@ -140,7 +140,7 @@
         font-weight: bold;
         font-size: 1.1rem;
     }
-    
+
     .info-box {
         background: rgba(23, 162, 184, 0.15);
         border-left: 4px solid #17a2b8;
@@ -148,7 +148,7 @@
         margin: 15px 0;
         border-radius: 5px;
     }
-    
+
     .warning-box {
         background: rgba(255, 193, 7, 0.15);
         border-left: 4px solid #ffc107;
@@ -156,7 +156,7 @@
         margin: 15px 0;
         border-radius: 5px;
     }
-    
+
     .success-box {
         background: rgba(28, 200, 138, 0.15);
         border-left: 4px solid #1cc88a;
@@ -164,43 +164,43 @@
         margin: 15px 0;
         border-radius: 5px;
     }
-    
+
     .feature-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
         gap: 15px;
         margin: 20px 0;
     }
-    
+
     .feature-item {
         background: rgba(102, 126, 234, 0.1);
         padding: 15px;
         border-radius: 8px;
         border: 1px solid rgba(102, 126, 234, 0.3);
     }
-    
+
     .feature-item i {
         font-size: 2rem;
         color: #667eea;
         margin-bottom: 10px;
     }
-    
+
     .feature-item h5 {
         color: #e2e8f0;
         margin-bottom: 8px;
     }
-    
+
     .feature-item p {
         color: #9ca3af;
         font-size: 0.9rem;
         margin: 0;
     }
-    
+
     .search-box {
         position: relative;
         margin-bottom: 20px;
     }
-    
+
     .search-box input {
         width: 100%;
         padding: 12px 45px 12px 15px;
@@ -209,7 +209,7 @@
         border-radius: 8px;
         color: #e2e8f0;
     }
-    
+
     .search-box i {
         position: absolute;
         right: 15px;
@@ -217,14 +217,14 @@
         transform: translateY(-50%);
         color: #9ca3af;
     }
-    
+
     .quick-links {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 10px;
         margin: 20px 0;
     }
-    
+
     .quick-link {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 15px;
@@ -234,26 +234,26 @@
         text-decoration: none;
         transition: transform 0.2s;
     }
-    
+
     .quick-link:hover {
         transform: translateY(-2px);
         color: white;
         text-decoration: none;
     }
-    
+
     .quick-link i {
         font-size: 2rem;
         display: block;
         margin-bottom: 8px;
     }
-    
+
     .faq-item {
         background: rgba(0, 0, 0, 0.2);
         border-radius: 8px;
         margin-bottom: 10px;
         overflow: hidden;
     }
-    
+
     .faq-question {
         padding: 15px;
         cursor: pointer;
@@ -262,41 +262,61 @@
         align-items: center;
         transition: background 0.2s;
     }
-    
+
     .faq-question:hover {
         background: rgba(102, 126, 234, 0.1);
     }
-    
+
     .faq-question i {
         transition: transform 0.3s;
     }
-    
+
     .faq-item.open .faq-question i {
         transform: rotate(180deg);
     }
-    
+
     .faq-answer {
         padding: 0 15px;
         max-height: 0;
         overflow: hidden;
         transition: all 0.3s;
     }
-    
+
     .faq-item.open .faq-answer {
         padding: 15px;
         max-height: 500px;
     }
-    
+
+    .plugin-info-table {
+        width: 100%;
+        color: #d1d5db;
+    }
+
+    .plugin-info-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .plugin-info-table td:first-child {
+        color: #9ca3af;
+        width: 120px;
+        font-weight: 600;
+    }
+
+    .plugin-info-table td:last-child {
+        color: #e2e8f0;
+    }
+
     @media (max-width: 768px) {
         .help-wrapper {
             flex-direction: column;
         }
-        
+
         .help-sidebar {
             position: relative;
             max-height: none;
         }
-        
+
         .feature-grid {
             grid-template-columns: 1fr;
         }
@@ -306,7 +326,7 @@
 
 @section('full')
 <div class="mining-manager-wrapper help-page">
-    
+
     <div class="help-wrapper">
         {{-- Sidebar Navigation --}}
         <div class="help-sidebar">
@@ -320,7 +340,13 @@
                 <div class="card-body p-0">
                     <ul class="nav nav-pills flex-column help-nav">
                         <li class="nav-item">
-                            <a href="#" class="nav-link active" data-section="getting-started">
+                            <a href="#" class="nav-link active" data-section="overview">
+                                <i class="fas fa-info-circle"></i>
+                                {{ trans('mining-manager::help.overview') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="getting-started">
                                 <i class="fas fa-rocket"></i>
                                 {{ trans('mining-manager::help.getting_started') }}
                             </a>
@@ -350,6 +376,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="theft-detection">
+                                <i class="fas fa-user-secret"></i>
+                                {{ trans('mining-manager::help.theft_detection') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="analytics">
                                 <i class="fas fa-chart-line"></i>
                                 {{ trans('mining-manager::help.analytics_reports') }}
@@ -359,18 +391,6 @@
                             <a href="#" class="nav-link" data-section="settings">
                                 <i class="fas fa-cog"></i>
                                 {{ trans('mining-manager::help.settings') }}
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a href="#" class="nav-link" data-section="faq">
-                                <i class="fas fa-question-circle"></i>
-                                {{ trans('mining-manager::help.faq') }}
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a href="#" class="nav-link" data-section="troubleshooting">
-                                <i class="fas fa-wrench"></i>
-                                {{ trans('mining-manager::help.troubleshooting') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -386,9 +406,15 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link" data-section="developer">
-                                <i class="fas fa-code"></i>
-                                {{ trans('mining-manager::help.developer_tools') }}
+                            <a href="#" class="nav-link" data-section="faq">
+                                <i class="fas fa-question-circle"></i>
+                                {{ trans('mining-manager::help.faq') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="troubleshooting">
+                                <i class="fas fa-wrench"></i>
+                                {{ trans('mining-manager::help.troubleshooting') }}
                             </a>
                         </li>
                     </ul>
@@ -398,18 +424,117 @@
 
         {{-- Content Area --}}
         <div class="help-content">
-            
+
             {{-- Search Box --}}
             <div class="search-box">
-                <input type="text" 
-                       id="helpSearch" 
+                <input type="text"
+                       id="helpSearch"
                        placeholder="{{ trans('mining-manager::help.search_placeholder') }}"
                        class="form-control">
                 <i class="fas fa-search"></i>
             </div>
 
+            {{-- Overview Section --}}
+            <div id="overview" class="help-section active">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-cube"></i>
+                        {{ trans('mining-manager::help.overview_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.overview_subtitle') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.plugin_information') }}</h4>
+                    <table class="plugin-info-table">
+                        <tr>
+                            <td>{{ trans('mining-manager::help.label_package') }}</td>
+                            <td><code>{{ trans('mining-manager::help.plugin_package') }}</code></td>
+                        </tr>
+                        <tr>
+                            <td>{{ trans('mining-manager::help.label_author') }}</td>
+                            <td>{{ trans('mining-manager::help.plugin_author') }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ trans('mining-manager::help.label_license') }}</td>
+                            <td>{{ trans('mining-manager::help.plugin_license') }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ trans('mining-manager::help.label_platform') }}</td>
+                            <td>{{ trans('mining-manager::help.plugin_platform') }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ trans('mining-manager::help.label_php') }}</td>
+                            <td>{{ trans('mining-manager::help.plugin_php') }}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-th-large"></i>
+                        {{ trans('mining-manager::help.core_features') }}
+                    </h3>
+                    <div class="feature-grid">
+                        <div class="feature-item">
+                            <i class="fas fa-book"></i>
+                            <h5>{{ trans('mining-manager::help.feature_ledger') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_ledger_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-coins"></i>
+                            <h5>{{ trans('mining-manager::help.feature_tax') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_tax_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-moon"></i>
+                            <h5>{{ trans('mining-manager::help.feature_moon') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_moon_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-calendar-star"></i>
+                            <h5>{{ trans('mining-manager::help.feature_events') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_events_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-chart-bar"></i>
+                            <h5>{{ trans('mining-manager::help.feature_analytics') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_analytics_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-user-secret"></i>
+                            <h5>{{ trans('mining-manager::help.feature_theft') }}</h5>
+                            <p>{{ trans('mining-manager::help.feature_theft_desc') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-link"></i>
+                        {{ trans('mining-manager::help.quick_navigation') }}
+                    </h3>
+                    <div class="quick-links">
+                        <a href="{{ route('mining-manager.dashboard') }}" class="quick-link">
+                            <i class="fas fa-tachometer-alt"></i>
+                            {{ trans('mining-manager::help.dashboard') }}
+                        </a>
+                        <a href="{{ route('mining-manager.taxes.calculate') }}" class="quick-link">
+                            <i class="fas fa-calculator"></i>
+                            {{ trans('mining-manager::help.calculate_tax') }}
+                        </a>
+                        <a href="{{ route('mining-manager.events.index') }}" class="quick-link">
+                            <i class="fas fa-calendar"></i>
+                            {{ trans('mining-manager::help.mining_events') }}
+                        </a>
+                        <a href="{{ route('mining-manager.settings.index') }}" class="quick-link">
+                            <i class="fas fa-cog"></i>
+                            {{ trans('mining-manager::help.settings') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
             {{-- Getting Started Section --}}
-            <div id="getting-started" class="help-section active">
+            <div id="getting-started" class="help-section">
                 <div class="help-card">
                     <h3>
                         <i class="fas fa-rocket"></i>
@@ -419,39 +544,6 @@
 
                     <h4>{{ trans('mining-manager::help.what_is_mining_manager') }}</h4>
                     <p>{{ trans('mining-manager::help.what_is_mining_manager_desc') }}</p>
-
-                    <div class="feature-grid">
-                        <div class="feature-item">
-                            <i class="fas fa-coins"></i>
-                            <h5>{{ trans('mining-manager::help.feature_tax_tracking') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_tax_tracking_desc') }}</p>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-book"></i>
-                            <h5>{{ trans('mining-manager::help.feature_ledger') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_ledger_desc') }}</p>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-calendar-star"></i>
-                            <h5>{{ trans('mining-manager::help.feature_events') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_events_desc') }}</p>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-moon"></i>
-                            <h5>{{ trans('mining-manager::help.feature_moon') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_moon_desc') }}</p>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-chart-bar"></i>
-                            <h5>{{ trans('mining-manager::help.feature_analytics') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_analytics_desc') }}</p>
-                        </div>
-                        <div class="feature-item">
-                            <i class="fas fa-file-alt"></i>
-                            <h5>{{ trans('mining-manager::help.feature_reports') }}</h5>
-                            <p>{{ trans('mining-manager::help.feature_reports_desc') }}</p>
-                        </div>
-                    </div>
 
                     <h4>{{ trans('mining-manager::help.quick_start_guide') }}</h4>
                     <ol class="step-by-step">
@@ -481,31 +573,6 @@
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.tip') }}:</strong>
                         {{ trans('mining-manager::help.getting_started_tip') }}
-                    </div>
-                </div>
-
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-link"></i>
-                        {{ trans('mining-manager::help.quick_links') }}
-                    </h3>
-                    <div class="quick-links">
-                        <a href="{{ route('mining-manager.dashboard') }}" class="quick-link">
-                            <i class="fas fa-tachometer-alt"></i>
-                            {{ trans('mining-manager::help.dashboard') }}
-                        </a>
-                        <a href="{{ route('mining-manager.taxes.calculate') }}" class="quick-link">
-                            <i class="fas fa-calculator"></i>
-                            {{ trans('mining-manager::help.calculate_tax') }}
-                        </a>
-                        <a href="{{ route('mining-manager.events.index') }}" class="quick-link">
-                            <i class="fas fa-calendar"></i>
-                            {{ trans('mining-manager::help.view_events') }}
-                        </a>
-                        <a href="{{ route('mining-manager.settings.index') }}" class="quick-link">
-                            <i class="fas fa-cog"></i>
-                            {{ trans('mining-manager::help.settings') }}
-                        </a>
                     </div>
                 </div>
             </div>
@@ -602,6 +669,28 @@
                     <p>{{ trans('mining-manager::help.tax_codes_desc') }}</p>
                     <p>{{ trans('mining-manager::help.tax_codes_usage') }}</p>
                     <pre>{{ trans('mining-manager::help.tax_code_example') }}</pre>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
+                        {{ trans('mining-manager::help.tax_code_prefix_note') }}
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-users"></i>
+                        {{ trans('mining-manager::help.accumulated_mode') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.accumulated_mode_desc') }}</p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-check-circle"></i>
+                        {{ trans('mining-manager::help.wallet_verification') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.wallet_verification_desc') }}</p>
                 </div>
             </div>
 
@@ -719,6 +808,52 @@
                 </div>
             </div>
 
+            {{-- Theft Detection Section --}}
+            <div id="theft-detection" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-user-secret"></i>
+                        {{ trans('mining-manager::help.theft_detection_guide') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.theft_detection_intro') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.how_theft_detection_works') }}</h4>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.theft_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.theft_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.theft_step_3') }}</li>
+                    </ol>
+
+                    <h4>{{ trans('mining-manager::help.theft_commands') }}</h4>
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 50%;"><code>mining-manager:detect-theft</code></td>
+                                    <td>{{ trans('mining-manager::help.theft_detect_desc') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:monitor-active-thefts</code></td>
+                                    <td>{{ trans('mining-manager::help.theft_monitor_desc') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong>
+                        {{ trans('mining-manager::help.theft_dry_run') }}
+                    </div>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
+                        {{ trans('mining-manager::help.theft_note') }}
+                    </div>
+                </div>
+            </div>
+
             {{-- Analytics & Reports Section --}}
             <div id="analytics" class="help-section">
                 <div class="help-card">
@@ -736,8 +871,27 @@
                         <li><strong>{{ trans('mining-manager::help.report_moon') }}:</strong> {{ trans('mining-manager::help.report_moon_desc') }}</li>
                         <li><strong>{{ trans('mining-manager::help.report_comparison') }}:</strong> {{ trans('mining-manager::help.report_comparison_desc') }}</li>
                     </ul>
+                </div>
 
-                    <h4>{{ trans('mining-manager::help.exporting_data') }}</h4>
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-moon"></i>
+                        {{ trans('mining-manager::help.moon_analytics') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.moon_analytics_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.moon_analytics_utilization') }}</li>
+                        <li>{{ trans('mining-manager::help.moon_analytics_pool_vs_mined') }}</li>
+                        <li>{{ trans('mining-manager::help.moon_analytics_per_extraction') }}</li>
+                        <li>{{ trans('mining-manager::help.moon_analytics_popularity') }}</li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-file-export"></i>
+                        {{ trans('mining-manager::help.exporting_data') }}
+                    </h3>
                     <p>{{ trans('mining-manager::help.exporting_desc') }}</p>
                 </div>
             </div>
@@ -751,17 +905,43 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.settings_intro') }}</p>
 
-                    <h4>{{ trans('mining-manager::help.general_settings_title') }}</h4>
-                    <p>{{ trans('mining-manager::help.general_settings_desc') }}</p>
+                    <h4>{{ trans('mining-manager::help.settings_tabs') }}</h4>
 
-                    <h4>{{ trans('mining-manager::help.tax_settings_title') }}</h4>
-                    <p>{{ trans('mining-manager::help.tax_settings_desc') }}</p>
+                    <h5><i class="fas fa-sliders-h text-primary"></i> {{ trans('mining-manager::help.settings_general') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_general_desc') }}</p>
 
-                    <h4>{{ trans('mining-manager::help.pricing_settings_title') }}</h4>
-                    <p>{{ trans('mining-manager::help.pricing_settings_desc') }}</p>
+                    <h5><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.settings_tax_payment') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_tax_payment_desc') }}</p>
 
-                    <h4>{{ trans('mining-manager::help.feature_settings_title') }}</h4>
-                    <p>{{ trans('mining-manager::help.feature_settings_desc') }}</p>
+                    <h5><i class="fas fa-credit-card text-info"></i> {{ trans('mining-manager::help.settings_wallet') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_wallet_desc') }}</p>
+
+                    <h5><i class="fas fa-database text-warning"></i> {{ trans('mining-manager::help.settings_calc_source') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_calc_source_desc') }}</p>
+
+                    <h5><i class="fas fa-percentage text-danger"></i> {{ trans('mining-manager::help.settings_tax_rates') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_tax_rates_desc') }}</p>
+
+                    <h5><i class="fas fa-filter text-primary"></i> {{ trans('mining-manager::help.settings_tax_selector') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_tax_selector_desc') }}</p>
+
+                    <h5><i class="fas fa-broadcast-tower text-success"></i> {{ trans('mining-manager::help.settings_live_tracking') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_live_tracking_desc') }}</p>
+
+                    <h5><i class="fas fa-bell text-info"></i> {{ trans('mining-manager::help.settings_notifications') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_notifications_desc') }}</p>
+
+                    <h5><i class="fas fa-hand-pointer text-warning"></i> {{ trans('mining-manager::help.settings_manual_actions') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_manual_actions_desc') }}</p>
+
+                    <h5><i class="fas fa-tag text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_pricing_desc') }}</p>
+
+                    <h5><i class="fas fa-moon text-primary"></i> {{ trans('mining-manager::help.settings_moon') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_moon_desc') }}</p>
+
+                    <h5><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.settings_diagnostics') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_diagnostics_desc') }}</p>
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
@@ -771,95 +951,7 @@
                 </div>
             </div>
 
-            {{-- FAQ Section --}}
-            <div id="faq" class="help-section">
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-question-circle"></i>
-                        {{ trans('mining-manager::help.frequently_asked') }}
-                    </h3>
-                    
-                    @foreach(range(1, 10) as $i)
-                    <div class="faq-item">
-                        <div class="faq-question">
-                            <strong>{{ trans("mining-manager::help.faq_q{$i}") }}</strong>
-                            <i class="fas fa-chevron-down"></i>
-                        </div>
-                        <div class="faq-answer">
-                            <p>{{ trans("mining-manager::help.faq_a{$i}") }}</p>
-                        </div>
-                    </div>
-                    @endforeach
-                </div>
-            </div>
-
-            {{-- Troubleshooting Section --}}
-            <div id="troubleshooting" class="help-section">
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-wrench"></i>
-                        {{ trans('mining-manager::help.troubleshooting_guide') }}
-                    </h3>
-                    <p>{{ trans('mining-manager::help.troubleshooting_intro') }}</p>
-
-                    <h4>{{ trans('mining-manager::help.common_issues') }}</h4>
-                    
-                    <h5>{{ trans('mining-manager::help.issue_1_title') }}</h5>
-                    <p>{{ trans('mining-manager::help.issue_1_desc') }}</p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.issue_1_solution_1') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_1_solution_2') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_1_solution_3') }}</li>
-                    </ul>
-
-                    <h5>{{ trans('mining-manager::help.issue_2_title') }}</h5>
-                    <p>{{ trans('mining-manager::help.issue_2_desc') }}</p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.issue_2_solution_1') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_2_solution_2') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_2_solution_3') }}</li>
-                    </ul>
-
-                    <h5>{{ trans('mining-manager::help.issue_3_title') }}</h5>
-                    <p>{{ trans('mining-manager::help.issue_3_desc') }}</p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.issue_3_solution_1') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_3_solution_2') }}</li>
-                        <li>{{ trans('mining-manager::help.issue_3_solution_3') }}</li>
-                    </ul>
-
-                    <div class="info-box">
-                        <i class="fas fa-life-ring"></i>
-                        <strong>{{ trans('mining-manager::help.need_help') }}:</strong>
-                        {{ trans('mining-manager::help.support_message') }}
-                    </div>
-                </div>
-            </div>
-
-            {{-- Permissions Section --}}
-            <div id="permissions" class="help-section">
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-shield-alt"></i>
-                        {{ trans('mining-manager::help.permissions_guide') }}
-                    </h3>
-                    <p>{{ trans('mining-manager::help.permissions_intro') }}</p>
-
-                    <h4>{{ trans('mining-manager::help.available_permissions') }}</h4>
-                    <ul>
-                        <li><strong>{{ trans('mining-manager::help.perm_view') }}:</strong> {{ trans('mining-manager::help.perm_view_desc') }}</li>
-                        <li><strong>{{ trans('mining-manager::help.perm_director') }}:</strong> {{ trans('mining-manager::help.perm_director_desc') }}</li>
-                        <li><strong>{{ trans('mining-manager::help.perm_events') }}:</strong> {{ trans('mining-manager::help.perm_events_desc') }}</li>
-                        <li><strong>{{ trans('mining-manager::help.perm_reports') }}:</strong> {{ trans('mining-manager::help.perm_reports_desc') }}</li>
-                        <li><strong>{{ trans('mining-manager::help.perm_settings') }}:</strong> {{ trans('mining-manager::help.perm_settings_desc') }}</li>
-                    </ul>
-
-                    <h4>{{ trans('mining-manager::help.setting_permissions') }}</h4>
-                    <p>{{ trans('mining-manager::help.setting_permissions_desc') }}</p>
-                </div>
-            </div>
-
-            {{-- Commands Section --}}
+            {{-- CLI Commands Section --}}
             <div id="commands" class="help-section">
                 <div class="help-card">
                     <h3>
@@ -888,19 +980,34 @@
                                     <td>Process mining ledger data from ESI</td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:cache-prices</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
+                                    <td>Cache ore prices from price provider</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-ledger-prices</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
+                                    <td>Update ledger entries with current prices</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-events</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
+                                    <td>Update mining event status</td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:update-extractions</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
                                     <td>Update moon extraction data from ESI</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:update-events</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td>Update mining events</td>
+                                    <td><code>mining-manager:verify-payments</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Verify wallet payments against tax codes</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:cache-prices</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
-                                    <td>Cache ore prices from price provider</td>
+                                    <td><code>mining-manager:monitor-active-thefts</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Monitor active theft incidents</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:recalculate-extraction-values</code></td>
@@ -908,9 +1015,24 @@
                                     <td>Update extraction values with current prices</td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:update-daily-summaries</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Update daily mining summaries</td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:calculate-taxes</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
                                     <td>Calculate monthly tax obligations</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:calculate-statistics</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Calculate monthly mining statistics</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:detect-jackpots</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
+                                    <td>Detect jackpot moon extractions</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:archive-extractions</code></td>
@@ -918,14 +1040,9 @@
                                     <td>Archive completed extractions</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:detect-jackpots</code></td>
+                                    <td><code>mining-manager:generate-reports</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Detect jackpot moon ores</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:verify-payments</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Verify wallet payments</td>
+                                    <td>Generate scheduled reports</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-theft</code></td>
@@ -933,9 +1050,9 @@
                                     <td>Full theft detection scan</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:monitor-active-thefts</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Monitor active theft incidents</td>
+                                    <td><code>mining-manager:send-reminders</code></td>
+                                    <td><span class="badge badge-success">25th of month</span></td>
+                                    <td>Send tax payment reminders</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-invoices</code></td>
@@ -946,11 +1063,6 @@
                                     <td><code>mining-manager:finalize-month</code></td>
                                     <td><span class="badge badge-success">2nd of month</span></td>
                                     <td>Finalize previous month summaries</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:send-reminders</code></td>
-                                    <td><span class="badge badge-success">25th of month</span></td>
-                                    <td>Send tax payment reminders</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -969,7 +1081,7 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-affiliations</code></td>
-                                    <td>Check character affiliations</td>
+                                    <td>Check character affiliations and alt grouping</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-extractions</code></td>
@@ -977,7 +1089,7 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-prices</code></td>
-                                    <td>Test price provider connectivity</td>
+                                    <td>Test price provider connectivity and accuracy</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-type-ids</code></td>
@@ -987,8 +1099,27 @@
                         </table>
                     </div>
 
-                    {{-- Manual Execution Commands --}}
-                    <h4 class="mt-4"><i class="fas fa-sync text-warning"></i> {{ trans('mining-manager::help.cli_manual') }}</h4>
+                    {{-- Data Management Commands --}}
+                    <h4 class="mt-4"><i class="fas fa-database text-warning"></i> {{ trans('mining-manager::help.cli_data_management') }}</h4>
+                    <p>{{ trans('mining-manager::help.cli_data_management_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 50%;"><code>mining-manager:backfill-ore-flags</code></td>
+                                    <td>Backfill ore type flags for existing ledger data</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:backfill-extraction-notifications</code></td>
+                                    <td>Backfill extraction notification records</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Manual Execution --}}
+                    <h4 class="mt-4"><i class="fas fa-sync text-success"></i> {{ trans('mining-manager::help.cli_manual') }}</h4>
                     <p>{{ trans('mining-manager::help.cli_manual_desc') }}</p>
 
                     <div class="table-responsive">
@@ -1009,10 +1140,6 @@
                                 <tr>
                                     <td><code>mining-manager:archive-extractions --dry-run</code></td>
                                     <td>Preview archival without changes</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:backfill-ore-flags</code></td>
-                                    <td>Backfill ore type flags</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1046,30 +1173,112 @@
                 </div>
             </div>
 
-            {{-- Developer Tools Section --}}
-            <div id="developer" class="help-section">
+            {{-- Permissions Section --}}
+            <div id="permissions" class="help-section">
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-code"></i>
-                        {{ trans('mining-manager::help.developer_guide') }}
+                        <i class="fas fa-shield-alt"></i>
+                        {{ trans('mining-manager::help.permissions_guide') }}
                     </h3>
-                    <p>{{ trans('mining-manager::help.developer_intro') }}</p>
+                    <p>{{ trans('mining-manager::help.permissions_intro') }}</p>
 
-                    {{-- Diagnostics Page --}}
-                    <h4><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostics') }}</h4>
-                    <p>{{ trans('mining-manager::help.diagnostics_desc') }}</p>
-                    <p><strong>{{ trans('mining-manager::help.diagnostics_features') }}</strong></p>
+                    <h4>{{ trans('mining-manager::help.available_permissions') }}</h4>
+
+                    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
+                            <h5><span class="badge badge-secondary">{{ trans('mining-manager::help.perm_view') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.perm_view_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #17a2b8;">
+                            <h5><span class="badge badge-info">{{ trans('mining-manager::help.perm_member') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.perm_member_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><span class="badge badge-warning">{{ trans('mining-manager::help.perm_director') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.perm_director_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
+                            <h5><span class="badge badge-danger">{{ trans('mining-manager::help.perm_admin') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.perm_admin_desc') }}</p>
+                        </div>
+                    </div>
+
+                    <h4>{{ trans('mining-manager::help.setting_permissions') }}</h4>
+                    <p>{{ trans('mining-manager::help.setting_permissions_desc') }}</p>
+                </div>
+            </div>
+
+            {{-- FAQ Section --}}
+            <div id="faq" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-question-circle"></i>
+                        {{ trans('mining-manager::help.frequently_asked') }}
+                    </h3>
+
+                    @foreach(range(1, 10) as $i)
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <strong>{{ trans("mining-manager::help.faq_q{$i}") }}</strong>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="faq-answer">
+                            <p>{{ trans("mining-manager::help.faq_a{$i}") }}</p>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+
+            {{-- Troubleshooting Section --}}
+            <div id="troubleshooting" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-wrench"></i>
+                        {{ trans('mining-manager::help.troubleshooting_guide') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.troubleshooting_intro') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.common_issues') }}</h4>
+
+                    <h5>{{ trans('mining-manager::help.issue_1_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.issue_1_desc') }}</p>
                     <ul>
-                        <li>{{ trans('mining-manager::help.diag_price_test') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_type_ids') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_cache') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_settings') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_webhooks') }}</li>
-                        <li>{{ trans('mining-manager::help.diag_valuation') }}</li>
+                        <li>{{ trans('mining-manager::help.issue_1_solution_1') }}</li>
+                        <li>{{ trans('mining-manager::help.issue_1_solution_2') }}</li>
+                        <li>{{ trans('mining-manager::help.issue_1_solution_3') }}</li>
+                        <li><code>{{ trans('mining-manager::help.issue_1_solution_4') }}</code></li>
                     </ul>
-                    <a href="{{ route('mining-manager.diagnostic.index') }}" class="btn btn-info">
-                        <i class="fas fa-external-link-alt"></i> Access Diagnostics Page
-                    </a>
+
+                    <h5>{{ trans('mining-manager::help.issue_2_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.issue_2_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.issue_2_solution_1') }}</li>
+                        <li><code>{{ trans('mining-manager::help.issue_2_solution_2') }}</code></li>
+                        <li><code>{{ trans('mining-manager::help.issue_2_solution_3') }}</code></li>
+                    </ul>
+
+                    <h5>{{ trans('mining-manager::help.issue_3_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.issue_3_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.issue_3_solution_1') }}</li>
+                        <li>{{ trans('mining-manager::help.issue_3_solution_2') }}</li>
+                        <li>{{ trans('mining-manager::help.issue_3_solution_3') }}</li>
+                    </ul>
+
+                    <h5>{{ trans('mining-manager::help.issue_4_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.issue_4_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.issue_4_solution_1') }}</li>
+                        <li><code>{{ trans('mining-manager::help.issue_4_solution_2') }}</code></li>
+                        <li><code>{{ trans('mining-manager::help.issue_4_solution_3') }}</code></li>
+                    </ul>
+
+                    <div class="info-box">
+                        <i class="fas fa-life-ring"></i>
+                        <strong>{{ trans('mining-manager::help.need_help') }}:</strong>
+                        {{ trans('mining-manager::help.support_message') }}
+                    </div>
                 </div>
             </div>
 
@@ -1084,46 +1293,46 @@ $(document).ready(function() {
     // Navigation
     $('.help-nav .nav-link').on('click', function(e) {
         e.preventDefault();
-        
+
         const section = $(this).data('section');
-        
+
         // Update nav
         $('.help-nav .nav-link').removeClass('active');
         $(this).addClass('active');
-        
+
         // Update content
         $('.help-section').removeClass('active');
         $(`#${section}`).addClass('active');
-        
+
         // Update URL hash
         window.location.hash = section;
-        
+
         // Scroll to top of content
         $('.help-content').scrollTop(0);
     });
-    
+
     // Load section from URL hash
     if (window.location.hash) {
         const hash = window.location.hash.substring(1);
         $(`.help-nav .nav-link[data-section="${hash}"]`).click();
     }
-    
+
     // FAQ Accordion
     $('.faq-question').on('click', function() {
         $(this).closest('.faq-item').toggleClass('open');
     });
-    
+
     // Search functionality
     let searchTimeout;
     $('#helpSearch').on('input', function() {
         clearTimeout(searchTimeout);
         const query = $(this).val().toLowerCase();
-        
+
         if (query.length < 2) {
             $('.help-card').show();
             return;
         }
-        
+
         searchTimeout = setTimeout(() => {
             $('.help-card').each(function() {
                 const text = $(this).text().toLowerCase();
