@@ -217,17 +217,11 @@
                                     @endphp
                                     
                                     <div class="mb-2">
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1" style="height: 25px;">
-                                                <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
-                                                     role="progressbar"
-                                                     style="width: {{ max($progressPercent, 1) }}%">
-                                                    @if($progressPercent >= 20){{ number_format($progressPercent, 1) }}%@endif
-                                                </div>
-                                            </div>
-                                            @if($progressPercent < 20)
-                                                <span class="ml-2 small">{{ number_format($progressPercent, 1) }}%</span>
-                                            @endif
+                                        <div class="progress mm-progress-centered" style="height: 25px;">
+                                            <div class="progress-bar bg-warning progress-bar-striped progress-bar-animated"
+                                                 role="progressbar"
+                                                 style="width: {{ max($progressPercent, 1) }}%"></div>
+                                            <span class="mm-pct-label">{{ number_format($progressPercent, 1) }}%</span>
                                         </div>
                                     </div>
                                     

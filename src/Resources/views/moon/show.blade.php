@@ -230,16 +230,10 @@
                                         {{ $oreType }}
                                     </td>
                                     <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1" style="height: 25px;">
-                                                <div class="ore-bar progress-bar"
-                                                     style="width: {{ max($data['percentage'], 1) }}%; background-color: {{ $colors[$colorIndex % count($colors)] }};">
-                                                    @if($data['percentage'] >= 20){{ number_format($data['percentage'], 2) }}%@endif
-                                                </div>
-                                            </div>
-                                            @if($data['percentage'] < 20 && $data['percentage'] > 0)
-                                                <span class="ml-2 small">{{ number_format($data['percentage'], 2) }}%</span>
-                                            @endif
+                                        <div class="progress mm-progress-centered" style="height: 25px;">
+                                            <div class="ore-bar progress-bar"
+                                                 style="width: {{ max($data['percentage'], 1) }}%; background-color: {{ $colors[$colorIndex % count($colors)] }};"></div>
+                                            <span class="mm-pct-label">{{ number_format($data['percentage'], 2) }}%</span>
                                         </div>
                                     </td>
                                     <td class="text-right">
@@ -431,16 +425,10 @@
                                         </td>
                                         <td class="text-center">
                                             @if($record->completion_percentage > 0)
-                                                <div class="d-flex align-items-center justify-content-center">
-                                                    <div class="progress flex-grow-1" style="height: 20px; min-width: 80px;">
-                                                        <div class="progress-bar bg-{{ $record->completion_percentage >= 80 ? 'success' : ($record->completion_percentage >= 50 ? 'warning' : 'danger') }}"
-                                                             style="width: {{ min($record->completion_percentage, 100) }}%">
-                                                            @if($record->completion_percentage >= 20){{ number_format($record->completion_percentage, 1) }}%@endif
-                                                        </div>
-                                                    </div>
-                                                    @if($record->completion_percentage < 20)
-                                                        <span class="ml-2 small">{{ number_format($record->completion_percentage, 1) }}%</span>
-                                                    @endif
+                                                <div class="progress mm-progress-centered" style="height: 20px; min-width: 80px;">
+                                                    <div class="progress-bar bg-{{ $record->completion_percentage >= 80 ? 'success' : ($record->completion_percentage >= 50 ? 'warning' : 'danger') }}"
+                                                         style="width: {{ min($record->completion_percentage, 100) }}%"></div>
+                                                    <span class="mm-pct-label">{{ number_format($record->completion_percentage, 1) }}%</span>
                                                 </div>
                                                 <small class="text-muted">{{ $record->total_miners }} miners</small>
                                             @else

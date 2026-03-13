@@ -16,8 +16,6 @@
     .moon-stat-card:hover { transform: translateY(-3px); }
     .moon-stat-card h3 { font-size: 2rem; margin: 0; font-weight: bold; }
     .moon-stat-card p { margin: 5px 0 0; opacity: 0.9; }
-    .util-bar { height: 22px; border-radius: 3px; }
-    .util-bar .progress-bar { font-size: 0.75rem; line-height: 22px; }
     .chart-container { height: 350px; position: relative; }
 </style>
 @endpush

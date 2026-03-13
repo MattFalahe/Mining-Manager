@@ -216,15 +216,9 @@
                                         @php
                                             $percentage = $totalValue > 0 ? (($ore->total_value ?? 0) / $totalValue) * 100 : 0;
                                         @endphp
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1" style="height: 20px;">
-                                                <div class="progress-bar bg-success" style="width: {{ max($percentage, 1) }}%">
-                                                    @if($percentage >= 20){{ number_format($percentage, 1) }}%@endif
-                                                </div>
-                                            </div>
-                                            @if($percentage < 20 && $percentage > 0)
-                                                <span class="ml-2 small">{{ number_format($percentage, 1) }}%</span>
-                                            @endif
+                                        <div class="progress mm-progress-centered" style="height: 20px;">
+                                            <div class="progress-bar bg-success" style="width: {{ max($percentage, 1) }}%"></div>
+                                            <span class="mm-pct-label">{{ number_format($percentage, 1) }}%</span>
                                         </div>
                                     </td>
                                     <td>{{ $ore->unique_miners ?? 0 }}</td>

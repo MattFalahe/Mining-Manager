@@ -89,29 +89,17 @@
                                 <td class="text-right">{{ number_format($moon->pool_m3, 0) }}</td>
                                 <td class="text-right">{{ number_format($moon->mined_m3, 0) }}</td>
                                 <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="progress util-bar flex-grow-1">
-                                            <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ max($moon->util_pct, 1) }}%">
-                                                @if($moon->util_pct >= 20){{ $moon->util_pct }}%@endif
-                                            </div>
-                                        </div>
-                                        @if($moon->util_pct < 20 && $moon->util_pct > 0)
-                                            <span class="ml-2 small">{{ $moon->util_pct }}%</span>
-                                        @endif
+                                    <div class="progress mm-progress-centered" style="height: 22px;">
+                                        <div class="progress-bar {{ $moon->util_pct >= 80 ? 'bg-success' : ($moon->util_pct >= 50 ? 'bg-info' : 'bg-warning') }}" style="width: {{ max($moon->util_pct, 1) }}%"></div>
+                                        <span class="mm-pct-label">{{ $moon->util_pct }}%</span>
                                     </div>
                                 </td>
                                 <td class="text-right text-success">{{ number_format($moon->pool_isk / 1000000, 0) }}M</td>
                                 <td class="text-right text-success">{{ number_format($moon->mined_isk / 1000000, 0) }}M</td>
                                 <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="progress util-bar flex-grow-1">
-                                            <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ max($moon->value_pct, 1) }}%">
-                                                @if($moon->value_pct >= 20){{ $moon->value_pct }}%@endif
-                                            </div>
-                                        </div>
-                                        @if($moon->value_pct < 20 && $moon->value_pct > 0)
-                                            <span class="ml-2 small">{{ $moon->value_pct }}%</span>
-                                        @endif
+                                    <div class="progress mm-progress-centered" style="height: 22px;">
+                                        <div class="progress-bar {{ $moon->value_pct >= 80 ? 'bg-success' : ($moon->value_pct >= 50 ? 'bg-primary' : 'bg-danger') }}" style="width: {{ max($moon->value_pct, 1) }}%"></div>
+                                        <span class="mm-pct-label">{{ $moon->value_pct }}%</span>
                                     </div>
                                 </td>
                                 <td class="text-center">{{ $moon->unique_miners }}</td>
@@ -203,15 +191,9 @@
                                 <td class="text-right text-success">{{ number_format($ore->total_isk / 1000000, 1) }}M ISK</td>
                                 <td>
                                     @php $orePct = $maxOreIsk > 0 ? ($ore->total_isk / $maxOreIsk) * 100 : 0; @endphp
-                                    <div class="d-flex align-items-center">
-                                        <div class="progress util-bar flex-grow-1">
-                                            <div class="progress-bar bg-warning" style="width: {{ max($orePct, 1) }}%">
-                                                @if($orePct >= 20){{ number_format($orePct, 1) }}%@endif
-                                            </div>
-                                        </div>
-                                        @if($orePct < 20 && $orePct > 0)
-                                            <span class="ml-2 small">{{ number_format($orePct, 1) }}%</span>
-                                        @endif
+                                    <div class="progress mm-progress-centered" style="height: 22px;">
+                                        <div class="progress-bar bg-warning" style="width: {{ max($orePct, 1) }}%"></div>
+                                        <span class="mm-pct-label">{{ number_format($orePct, 1) }}%</span>
                                     </div>
                                 </td>
                             </tr>

@@ -413,16 +413,10 @@
                                     </td>
                                     <td class="text-center">
                                         @if($history->completion_percentage > 0)
-                                            <div class="d-flex align-items-center justify-content-center">
-                                                <div class="progress flex-grow-1" style="height: 18px; min-width: 60px;">
-                                                    <div class="progress-bar bg-{{ $history->completion_percentage >= 80 ? 'success' : ($history->completion_percentage >= 50 ? 'warning' : 'danger') }}"
-                                                         style="width: {{ min($history->completion_percentage, 100) }}%">
-                                                        @if($history->completion_percentage >= 20){{ number_format($history->completion_percentage, 0) }}%@endif
-                                                    </div>
-                                                </div>
-                                                @if($history->completion_percentage < 20)
-                                                    <span class="ml-2 small">{{ number_format($history->completion_percentage, 0) }}%</span>
-                                                @endif
+                                            <div class="progress mm-progress-centered" style="height: 18px; min-width: 60px;">
+                                                <div class="progress-bar bg-{{ $history->completion_percentage >= 80 ? 'success' : ($history->completion_percentage >= 50 ? 'warning' : 'danger') }}"
+                                                     style="width: {{ min($history->completion_percentage, 100) }}%"></div>
+                                                <span class="mm-pct-label">{{ number_format($history->completion_percentage, 0) }}%</span>
                                             </div>
                                         @else
                                             <span class="text-muted">-</span>

@@ -189,14 +189,10 @@
                                             @foreach($topOres as $oreName => $oreData)
                                             <div class="d-flex align-items-center mb-1">
                                                 <span class="small mr-2" style="width: 80px;">{{ $oreName }}</span>
-                                                <div class="progress flex-grow-1" style="height: 15px;">
-                                                    <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%">
-                                                        @if($oreData['percentage'] >= 20){{ number_format($oreData['percentage'], 1) }}%@endif
-                                                    </div>
+                                                <div class="progress mm-progress-centered flex-grow-1" style="height: 15px;">
+                                                    <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                    <span class="mm-pct-label">{{ number_format($oreData['percentage'], 1) }}%</span>
                                                 </div>
-                                                @if($oreData['percentage'] < 20 && $oreData['percentage'] > 0)
-                                                    <span class="ml-2 small">{{ number_format($oreData['percentage'], 1) }}%</span>
-                                                @endif
                                             </div>
                                             @endforeach
                                         </div>
@@ -286,15 +282,9 @@
                                                 <tr>
                                                     <td>{{ $oreName }}</td>
                                                     <td>
-                                                        <div class="d-flex align-items-center">
-                                                            <div class="progress flex-grow-1" style="height: 20px;">
-                                                                <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%">
-                                                                    @if($oreData['percentage'] >= 20){{ number_format($oreData['percentage'], 2) }}%@endif
-                                                                </div>
-                                                            </div>
-                                                            @if($oreData['percentage'] < 20 && $oreData['percentage'] > 0)
-                                                                <span class="ml-2 small">{{ number_format($oreData['percentage'], 2) }}%</span>
-                                                            @endif
+                                                        <div class="progress mm-progress-centered" style="height: 20px;">
+                                                            <div class="progress-bar bg-info" style="width: {{ max($oreData['percentage'], 1) }}%"></div>
+                                                            <span class="mm-pct-label">{{ number_format($oreData['percentage'], 2) }}%</span>
                                                         </div>
                                                     </td>
                                                     <td class="text-right text-success">
