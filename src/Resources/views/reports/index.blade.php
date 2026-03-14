@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/dataTables.bootstrap4.min.css') }}">
 <style>
     .report-card {

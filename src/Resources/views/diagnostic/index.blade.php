@@ -4,7 +4,7 @@
 @section('page_header', 'Mining Manager - Diagnostic Tools')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
 <style>
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
 .mining-manager-wrapper.diagnostic-page .warning-box {

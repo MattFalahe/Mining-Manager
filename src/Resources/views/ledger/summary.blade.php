@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::ledger.mining_summary'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
 <style>
     .character-portrait {
         width: 32px;

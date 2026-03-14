@@ -4,7 +4,7 @@
 @section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
 @endpush
 
 @section('full')
