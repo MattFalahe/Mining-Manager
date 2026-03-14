@@ -1987,8 +1987,50 @@
 }
 
 /* ============================================
-   Tab Navigation (nav-tabs-custom for all pages)
+   Tab Navigation (all plugin pages)
    ============================================ */
+.mining-manager-wrapper .nav-tabs {
+    border-bottom: 2px solid #454d55;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link {
+    color: #c2c7d0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    padding: 12px 24px;
+    border: none;
+    background: transparent;
+    margin-right: 8px;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active {
+    background-color: #343a40;
+    border: 2px solid #454d55;
+    border-bottom: 2px solid #343a40;
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active i {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .nav-tabs .nav-link.active .badge {
+    color: #ffffff !important;
+}
+
+.mining-manager-wrapper .tab-content {
+    padding-top: 20px;
+}
+
+/* Legacy nav-tabs-custom support */
 .mining-manager-wrapper .nav-tabs-custom {
     margin-bottom: 0 !important;
 }
