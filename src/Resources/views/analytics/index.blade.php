@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .stat-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -51,7 +51,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper analytics-page">
+<div class="mining-manager-wrapper mining-dashboard analytics-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

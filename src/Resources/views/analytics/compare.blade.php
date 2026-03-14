@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .comparison-card {
         transition: all 0.3s;
@@ -108,7 +108,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper analytics-compare-page">
+<div class="mining-manager-wrapper mining-dashboard analytics-compare-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

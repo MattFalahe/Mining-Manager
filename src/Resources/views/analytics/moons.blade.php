@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .moon-stat-card {
         border-radius: 10px;
@@ -21,7 +21,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper analytics-moons-page">
+<div class="mining-manager-wrapper mining-dashboard analytics-moons-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">
