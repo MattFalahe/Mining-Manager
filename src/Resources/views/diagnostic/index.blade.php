@@ -164,6 +164,11 @@
 .mining-manager-wrapper.diagnostic-page .notification-terminal .log-error { color: #f85149 !important; }
 .mining-manager-wrapper.diagnostic-page .notification-terminal .log-skip .log-level { color: #8b949e !important; }
 .mining-manager-wrapper.diagnostic-page .notification-terminal .log-skip { color: #8b949e !important; }
+
+.diagnostic-page .nav-tabs .nav-link {
+    font-size: 0.95rem !important;
+    padding: 10px 16px !important;
+}
 </style>
 @endpush
 
