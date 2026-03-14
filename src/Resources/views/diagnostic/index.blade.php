@@ -168,7 +168,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper diagnostic-page">
+<div class="mining-manager-wrapper mining-dashboard diagnostic-page">
 
     @if(session('success'))
     <div class="alert alert-success alert-dismissible fade show" role="alert">
