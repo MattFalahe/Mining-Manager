@@ -1989,45 +1989,49 @@
 /* ============================================
    Tab Navigation (all plugin pages)
    ============================================ */
-.mining-manager-wrapper .nav-tabs {
-    border-bottom: 2px solid #454d55;
+.mining-manager-wrapper .card-tabs .nav-tabs {
+    border-bottom: 2px solid #454d55 !important;
 }
 
-.mining-manager-wrapper .nav-tabs .nav-link {
-    color: #c2c7d0;
-    font-size: 1.1rem;
-    font-weight: 500;
-    padding: 12px 24px;
-    border: none;
-    background: transparent;
-    margin-right: 8px;
-    border-radius: 8px 8px 0 0;
-    transition: all 0.3s ease;
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-item {
+    margin-right: 8px !important;
+    margin-bottom: -2px !important;
 }
 
-.mining-manager-wrapper .nav-tabs .nav-link:hover {
-    color: #fff;
-    background-color: rgba(255, 255, 255, 0.05);
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-link {
+    color: #c2c7d0 !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+    padding: 12px 24px !important;
+    border: none !important;
+    background: transparent !important;
+    border-radius: 8px 8px 0 0 !important;
+    transition: all 0.3s ease !important;
 }
 
-.mining-manager-wrapper .nav-tabs .nav-link.active {
-    background-color: #343a40;
-    border: 2px solid #454d55;
-    border-bottom: 2px solid #343a40;
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-link:hover {
+    color: #fff !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-link.active {
+    background-color: #343a40 !important;
+    border: 2px solid #454d55 !important;
+    border-bottom: 2px solid #343a40 !important;
     color: #ffffff !important;
-    font-weight: 600;
+    font-weight: 600 !important;
 }
 
-.mining-manager-wrapper .nav-tabs .nav-link.active i {
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-link.active i {
     color: #ffffff !important;
 }
 
-.mining-manager-wrapper .nav-tabs .nav-link.active .badge {
+.mining-manager-wrapper .card-tabs .nav-tabs .nav-link.active .badge {
     color: #ffffff !important;
 }
 
 .mining-manager-wrapper .tab-content {
-    padding-top: 20px;
+    padding-top: 20px !important;
 }
 
 /* Legacy nav-tabs-custom support */
