@@ -4,11 +4,11 @@
 @section('page_header', 'Theft Incident Details')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper">
+<div class="mining-manager-wrapper mining-dashboard">
 
     {{-- Back Button --}}
     <div class="row mb-3">

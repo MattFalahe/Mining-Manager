@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::ledger.mining_ledger') . ' - ' . ($characterInfo['name'] ?? 'Character'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .sortable {
         cursor: pointer;
@@ -25,7 +25,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper mining-ledger-details">
+<div class="mining-manager-wrapper mining-dashboard mining-ledger-details">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

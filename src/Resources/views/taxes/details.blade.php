@@ -4,11 +4,11 @@
 @section('page_header', trans('mining-manager::taxes.tax_details') . ' - ' . ($tax->character_info['name'] ?? $tax->character->name ?? 'Unknown'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper taxes-details-page">
+<div class="mining-manager-wrapper mining-dashboard taxes-details-page">
 
 @include('mining-manager::taxes.partials.tab-navigation')
 

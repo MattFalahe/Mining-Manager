@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/dataTables.bootstrap4.min.css') }}">
 <style>
     .report-card {
@@ -84,7 +84,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper reports-page">
+<div class="mining-manager-wrapper mining-dashboard reports-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

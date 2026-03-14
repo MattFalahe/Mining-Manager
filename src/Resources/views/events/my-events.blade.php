@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .event-card {
         transition: transform 0.2s, box-shadow 0.2s;
@@ -42,7 +42,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper events-my-events-page">
+<div class="mining-manager-wrapper mining-dashboard events-my-events-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

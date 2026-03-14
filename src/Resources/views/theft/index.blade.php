@@ -4,7 +4,7 @@
 @section('page_header', 'Moon Theft Detection')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
 .theft-detection-wrapper {
     padding: 15px;
@@ -52,7 +52,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper theft-detection-wrapper">
+<div class="mining-manager-wrapper mining-dashboard theft-detection-wrapper">
 
     {{-- Active Thefts Alert --}}
     @if($activeTheftsCount > 0)

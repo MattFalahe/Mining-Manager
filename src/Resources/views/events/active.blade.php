@@ -4,12 +4,12 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <meta http-equiv="refresh" content="30">
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper events-active-page">
+<div class="mining-manager-wrapper mining-dashboard events-active-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

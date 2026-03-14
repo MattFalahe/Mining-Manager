@@ -4,12 +4,12 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper moon-calendar-page">
+<div class="mining-manager-wrapper mining-dashboard moon-calendar-page">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

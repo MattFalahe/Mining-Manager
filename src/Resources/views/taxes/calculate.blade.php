@@ -4,11 +4,11 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper taxes-calculate-page">
+<div class="mining-manager-wrapper mining-dashboard taxes-calculate-page">
 
 
 @include('mining-manager::taxes.partials.tab-navigation')

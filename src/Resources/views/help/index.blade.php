@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .help-wrapper {
         display: flex;
@@ -325,7 +325,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper help-page">
+<div class="mining-manager-wrapper mining-dashboard help-page">
 
     <div class="help-wrapper">
         {{-- Sidebar Navigation --}}

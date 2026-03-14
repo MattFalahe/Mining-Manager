@@ -4,11 +4,11 @@
 @section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 @endpush
 
 @section('full')
-
+<div class="mining-dashboard">
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
@@ -593,5 +593,6 @@ $(document).ready(function() {
 
     </div>{{-- /.card-body --}}
 </div>{{-- /.card-tabs --}}
+</div>{{-- /.mining-dashboard --}}
 
 @endsection

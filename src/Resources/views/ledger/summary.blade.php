@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::ledger.mining_summary'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
     .character-portrait {
         width: 32px;
@@ -85,7 +85,7 @@
 @endpush
 
 @section('full')
-<div class="mining-manager-wrapper mining-ledger-summary">
+<div class="mining-manager-wrapper mining-dashboard mining-ledger-summary">
 
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">
