@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::dashboard.director_dashboard'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v={{ time() }}">
 <style>
 /* ULTRA-AGGRESSIVE CSS OVERRIDES - INLINE TO BEAT EVERYTHING */
 .mining-dashboard .tab-content {
