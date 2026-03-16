@@ -434,6 +434,7 @@ $(document).ready(function() {
             return field.name !== 'month' && field.name !== 'year';
         });
         formData.push({ name: 'month', value: yearVal + '-' + monthVal });
+        formData.push({ name: 'data_source', value: $('#data_source').val() });
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.process-calculation") }}',
@@ -506,7 +507,8 @@ $(document).ready(function() {
                 month: month,
                 corporation_id: corporationId,
                 character_id: characterId,
-                payment_method: paymentMethod
+                payment_method: paymentMethod,
+                data_source: $('#data_source').val()
             },
             success: function(response) {
                 if (response.status === 'success') {
