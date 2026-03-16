@@ -296,7 +296,7 @@
                                                     {{ number_format($entry['quantity']) }}
                                                     <small class="text-muted d-block">{{ $entry['ore_name'] ?? '' }}</small>
                                                 </td>
-                                                <td>{{ number_format($entry['quantity'] * ($entry['volume'] ?? 0), 2) }} m³</td>
+                                                <td>{{ number_format($entry['volume'] ?? 0, 2) }} m³</td>
                                                 <td>{{ number_format($entry['total_value'] ?? 0, 0) }} ISK</td>
                                                 <td>{{ number_format($entry['tax_amount'] ?? 0, 0) }} ISK</td>
                                                 <td>{{ number_format($entry['event_tax'] ?? 0, 0) }} ISK</td>
@@ -311,14 +311,28 @@
                         <div id="grouped-view" style="display:none;">
                             @php
                                 $groupedEntries = collect($liveTracking['entries'])->groupBy('main_character_id');
+                                // Ensure all accounts from full totals appear, even if no entries in limited display
+                                $allAccountTotals = $liveTracking['account_totals'] ?? [];
+                                foreach ($allAccountTotals as $acctMainId => $acctData) {
+                                    if (!$groupedEntries->has($acctMainId)) {
+                                        $groupedEntries[$acctMainId] = collect();
+                                    }
+                                }
                             @endphp
 
-                            @foreach($groupedEntries as $mainCharId => $accountEntries)
+                            @foreach($groupedEntries->sortByDesc(function($entries, $mainId) use ($allAccountTotals) {
+                                return $allAccountTotals[$mainId]['total_value'] ?? $entries->sum('total_value');
+                            }) as $mainCharId => $accountEntries)
                             @php
-                                $accountTotalValue = $accountEntries->sum('total_value');
-                                $accountTotalTax = $accountEntries->sum('tax_amount');
+                                // Use full per-account totals (not limited to display entries)
+                                $acctTotals = $liveTracking['account_totals'][$mainCharId] ?? null;
+                                $accountTotalValue = $acctTotals ? $acctTotals['total_value'] : $accountEntries->sum('total_value');
+                                $accountTotalTax = $acctTotals ? $acctTotals['total_tax'] : $accountEntries->sum('tax_amount');
+                                $accountCharCount = $acctTotals ? $acctTotals['character_count'] : $accountEntries->unique('character_id')->count();
                                 $accountCharacters = $accountEntries->unique('character_id');
-                                $mainCharName = $accountEntries->first()['main_character_name'] ?? 'Unknown Account';
+                                $mainCharName = $accountEntries->isNotEmpty()
+                                    ? ($accountEntries->first()['main_character_name'] ?? 'Unknown Account')
+                                    : ($liveTracking['account_groups'][$mainCharId]['main_character_name'] ?? 'Unknown Account');
                             @endphp
                             <div class="account-group-card">
                                 <div class="account-group-header"
@@ -331,7 +345,7 @@
                                         <strong>{{ $mainCharName }}</strong>
                                         <br>
                                         <small class="text-muted">
-                                            {{ $accountCharacters->count() }} character(s)
+                                            {{ $accountCharCount }} character(s)
                                             @if($accountCharacters->count() > 1)
                                                 -
                                                 @foreach($accountCharacters as $ac)

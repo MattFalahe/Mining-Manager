@@ -441,6 +441,16 @@ class TaxController extends Controller
         $estimatedTax = (float) ($summaryData->total_tax ?? 0);
         $characterCount = (int) ($summaryData->character_count ?? count($characterIds));
 
+        // === PER-ACCOUNT TOTALS (full aggregation, no limit) ===
+        $perCharacterTotals = MiningLedger::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $currentMonth->format('Y-m-d'))
+            ->where('date', '<=', now()->format('Y-m-d'))
+            ->whereNotNull('processed_at')
+            ->selectRaw('character_id, SUM(total_value) as total_value, SUM(tax_amount) as total_tax, SUM(quantity) as total_quantity')
+            ->groupBy('character_id')
+            ->get()
+            ->keyBy('character_id');
+
         // === DETAIL ENTRIES (limited for display) ===
         $entryQuery = MiningLedger::where('date', '>=', $currentMonth)
             ->whereIn('character_id', $characterIds)
@@ -448,8 +458,8 @@ class TaxController extends Controller
             ->limit(100);
         $entries = $entryQuery->get();
 
-        // Batch-resolve character names
-        $allCharIds = $entries->pluck('character_id')->unique()->toArray();
+        // Batch-resolve character names — use ALL character IDs (from full aggregation), not just from limited entries
+        $allCharIds = $perCharacterTotals->keys()->toArray();
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($allCharIds);
 
         $mainCharIds = collect($charactersInfo)
@@ -519,11 +529,32 @@ class TaxController extends Controller
             ];
         })->toArray();
 
+        // Build per-account totals from full aggregation (not limited entries)
+        $accountTotals = [];
+        foreach ($perCharacterTotals as $charId => $charTotal) {
+            $charInfo = $charactersInfo[$charId] ?? null;
+            $mainId = $charInfo['main_character_id'] ?? $charId;
+
+            if (!isset($accountTotals[$mainId])) {
+                $accountTotals[$mainId] = [
+                    'total_value' => 0,
+                    'total_tax' => 0,
+                    'total_quantity' => 0,
+                    'character_count' => 0,
+                ];
+            }
+            $accountTotals[$mainId]['total_value'] += (float) $charTotal->total_value;
+            $accountTotals[$mainId]['total_tax'] += (float) $charTotal->total_tax;
+            $accountTotals[$mainId]['total_quantity'] += (int) $charTotal->total_quantity;
+            $accountTotals[$mainId]['character_count']++;
+        }
+
         return [
             'has_data' => true,
             'mode' => $mode,
             'entries' => $mappedEntries,
             'account_groups' => $accountGroups,
+            'account_totals' => $accountTotals,
             'total_value' => $totalValue,
             'estimated_tax' => $estimatedTax,
             'character_count' => $characterCount,
