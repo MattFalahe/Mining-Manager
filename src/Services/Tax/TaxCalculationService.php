@@ -558,7 +558,7 @@ class TaxCalculationService
      * @param int|null $characterCorpId Corporation ID of the character being taxed
      * @return float
      */
-    private function getTaxRateForOre(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForOre(int $typeId, ?int $characterCorpId = null): float
     {
         // Get tax rates for this corporation (applies guest multiplier if applicable)
         $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);

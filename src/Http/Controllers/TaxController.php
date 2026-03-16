@@ -525,30 +525,33 @@ class TaxController extends Controller
             ->whereNotNull('processed_at')
             ->get();
 
+        // Pre-resolve character corporation IDs for per-corp tax rates
+        $charCorpMap = [];
+        if ($entries->isNotEmpty()) {
+            $charCorpMap = DB::table('character_affiliations')
+                ->whereIn('character_id', $entries->pluck('character_id')->unique()->toArray())
+                ->pluck('corporation_id', 'character_id')
+                ->toArray();
+        }
+
         $totalValue = 0;
         $totalTax = 0;
         $activeCharacters = [];
 
         foreach ($entries as $entry) {
-            $storedValue = (float) ($entry->total_value ?? 0);
-            $storedTax = (float) ($entry->tax_amount ?? 0);
-
             // Recalculate value using current cached prices
             try {
                 $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
                 $liveValue = (float) ($valuation['total_value'] ?? 0);
             } catch (\Exception $e) {
-                $liveValue = $storedValue; // fallback to stored if valuation fails
+                $liveValue = (float) ($entry->total_value ?? 0); // fallback to stored
             }
 
-            // Derive tax proportionally: if stored value had X% tax, apply same ratio to live value
-            if ($storedValue > 0 && $storedTax > 0) {
-                $taxRatio = $storedTax / $storedValue;
-                $liveTax = $liveValue * $taxRatio;
-            } else {
-                // No stored tax ratio — use stored tax_amount as-is
-                $liveTax = $storedTax;
-            }
+            // Get per-ore tax rate using character's corporation context
+            // Respects moon ore rarity rates, ice/gas/ore rates, and per-corporation multipliers
+            $charCorpId = $charCorpMap[$entry->character_id] ?? null;
+            $taxRate = $this->taxService->getTaxRateForOre($entry->type_id, $charCorpId);
+            $liveTax = $liveValue * ($taxRate / 100);
 
             $totalValue += $liveValue;
             $totalTax += $liveTax;
