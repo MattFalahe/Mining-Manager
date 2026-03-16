@@ -1224,7 +1224,8 @@ class DashboardController extends Controller
 
     /**
      * Get mining tax chart for last 12 months
-     * Current month shows live running totals that update as the month progresses
+     * Past months: use mining_taxes table (formally calculated)
+     * Current month: use mining_taxes if calculated, otherwise estimate from daily summaries
      */
     private function getMiningTaxLast12Months($corporationId)
     {
@@ -1246,15 +1247,20 @@ class DashboardController extends Controller
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
 
-            // For current month, if no tax records exist yet, estimate from daily summaries
+            // For current month, supplement with daily summaries if no formal tax records exist
             if ($i === 0 && $owedAmount == 0) {
-                $monthEnd = Carbon::now();
-                $currentMonthMining = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-                    ->whereBetween('date', [$month, $monthEnd])
+                $owedAmount = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                    ->where('date', '>=', $month->format('Y-m-d'))
+                    ->where('date', '<=', Carbon::now()->format('Y-m-d'))
                     ->sum('total_tax');
 
-                if ($currentMonthMining > 0) {
-                    $owedAmount = $currentMonthMining;
+                // If daily summaries have no tax data either, try summing tax_amount from mining_ledger directly
+                if ($owedAmount == 0) {
+                    $owedAmount = MiningLedger::whereIn('character_id', $characterIds)
+                        ->where('date', '>=', $month->format('Y-m-d'))
+                        ->where('date', '<=', Carbon::now()->format('Y-m-d'))
+                        ->whereNotNull('processed_at')
+                        ->sum('tax_amount');
                 }
             }
 
