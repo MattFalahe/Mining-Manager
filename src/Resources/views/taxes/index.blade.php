@@ -230,7 +230,7 @@
                             <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="monthFilter">{{ trans('mining-manager::taxes.month') }}</label>
-                                    <input type="month" class="form-control" id="monthFilter" name="month" value="{{ request('month', now()->format('Y-m')) }}">
+                                    <input type="month" class="form-control" id="monthFilter" name="month" value="{{ request('month', '') }}" placeholder="All Months">
                                 </div>
                             </div>
 

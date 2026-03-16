@@ -163,10 +163,10 @@ class TaxController extends Controller
      */
     public function index(Request $request)
     {
-        $status = $request->input('status', 'all');
-        $month = $request->input('month');
-        $corporationId = $request->input('corporation_id');
-        $minerType = $request->input('miner_type', 'all'); // 'all', 'corp', 'guest'
+        $status = $request->input('status') ?: 'all';
+        $month = $request->input('month') ?: null;
+        $corporationId = $request->input('corporation_id') ?: null;
+        $minerType = $request->input('miner_type') ?: 'all';
 
         // Get moon owner corporation ID from settings
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
