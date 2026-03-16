@@ -529,22 +529,51 @@ $(document).ready(function() {
     // Auto-refresh live tracking every 5 minutes
     setInterval(refreshLiveTracking, 300000);
 
+    // Refresh when calculation method changes
+    $('#data_source').on('change', function() {
+        refreshLiveTracking();
+    });
+
     function refreshLiveTracking() {
+        var mode = $('#data_source').val() || 'archived';
+        var $btn = $('#refresh-tracking-btn');
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Refreshing...');
+
         $.ajax({
             url: '{{ route("mining-manager.taxes.live-tracking") }}',
             method: 'GET',
+            data: { mode: mode },
             success: function(response) {
-                if (response.status === 'success' && response.data.has_data) {
-                    // Update summary stats
-                    $('.info-box-number').eq(0).text(Number(response.data.total_value).toLocaleString() + ' ISK');
-                    $('.info-box-number').eq(1).text(Number(response.data.estimated_tax).toLocaleString() + ' ISK');
-                    $('.info-box-number').eq(2).text(response.data.character_count);
-                    $('.info-box-number').eq(3).text(response.data.month);
+                // Remove any existing cache warning
+                $('#cache-stale-warning').remove();
+
+                if (response.status === 'cache_stale') {
+                    // Show cache stale warning banner
+                    var warningHtml = '<div id="cache-stale-warning" class="alert alert-warning alert-dismissible fade show mt-2">' +
+                        '<i class="fas fa-exclamation-triangle"></i> <strong>Price Cache Stale</strong> — ' +
+                        response.message +
+                        ' <em>Showing archived data in the meantime.</em>' +
+                        '<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>' +
+                        '</div>';
+                    $('#live-tracking-container').prepend(warningHtml);
                 }
-                $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString());
+
+                var data = response.data;
+                if (data && data.has_data) {
+                    // Update summary stats
+                    $('.info-box-number').eq(0).text(Number(data.total_value).toLocaleString() + ' ISK');
+                    $('.info-box-number').eq(1).text(Number(data.estimated_tax).toLocaleString() + ' ISK');
+                    $('.info-box-number').eq(2).text(data.character_count);
+                    $('.info-box-number').eq(3).text(data.month);
+                }
+                var modeLabel = mode === 'live' ? 'Live' : 'Archived';
+                $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString() + ' (' + modeLabel + ')');
+
+                $btn.prop('disabled', false).html('<i class="fas fa-sync"></i> Refresh Tracking');
             },
             error: function() {
                 toastr.warning('{{ trans("mining-manager::taxes.error_refreshing_tracking") }}');
+                $btn.prop('disabled', false).html('<i class="fas fa-sync"></i> Refresh Tracking');
             }
         });
     }

@@ -126,9 +126,9 @@ return [
     'tax_calculation' => 'Tax Calculation',
     'calculation_methods' => 'Calculation Method',
     'advanced_options' => 'Advanced Options',
-    'data_source_help' => 'Use archived data or live tracking data for calculations',
+    'data_source_help' => 'Archived: uses pre-calculated daily summaries (fast). Live: recalculates using current cached prices and tax rates (slower, most accurate)',
     'archived_data' => 'Archived Data',
-    'live_data' => 'Live Data',
+    'live_data' => 'Live (Current Prices)',
     'scope' => 'Scope',
 
     // Mining Activity

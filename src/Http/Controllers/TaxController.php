@@ -14,6 +14,8 @@ use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningLedgerDailySummary;
+use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\TaxInvoice;
 use MiningManager\Models\TaxCode;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -350,8 +352,9 @@ class TaxController extends Controller
 
         $paymentSettings = $this->settingsService->getPaymentSettings();
 
-        // Get live tracking data for current month
-        $liveTracking = $this->getLiveTrackingData();
+        // Get tracking data for current month (default: archived/daily summaries)
+        $dataSource = $sourceSettings['source'] ?? 'archived';
+        $liveTracking = $this->getLiveTrackingData($dataSource);
 
         $isAdmin = $this->isAdmin();
         $isDirector = $this->isDirector();
@@ -372,34 +375,33 @@ class TaxController extends Controller
     }
 
     /**
-     * Get live mining tracking data for current month
+     * Get mining tracking data for current month
+     * Uses daily summaries for accurate totals (archived mode)
+     * Recent entries loaded separately for the detail table display
      *
+     * @param string $mode 'archived' (default) or 'live'
      * @return array
      */
-    protected function getLiveTrackingData(): array
+    protected function getLiveTrackingData(string $mode = 'archived'): array
     {
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $currentMonth = now()->startOfMonth();
 
-        // Get mining ledger entries for current month
-        $query = MiningLedger::where('date', '>=', $currentMonth);
-
+        // Get character IDs for the corporation
+        $characterQuery = MiningLedger::where('date', '>=', $currentMonth);
         if ($moonOwnerCorpId) {
-            // Filter by corporation using a subquery to avoid duplicate rows from joins
-            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+            $characterQuery->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
                 $q->select('character_id')
                     ->from('character_affiliations')
                     ->where('corporation_id', $moonOwnerCorpId);
             });
         }
+        $characterIds = $characterQuery->distinct()->pluck('character_id')->toArray();
 
-        $entries = $query->orderBy('date', 'desc')
-            ->limit(50)
-            ->get();
-
-        if ($entries->isEmpty()) {
+        if (empty($characterIds)) {
             return [
                 'has_data' => false,
+                'mode' => $mode,
                 'entries' => [],
                 'total_value' => 0,
                 'estimated_tax' => 0,
@@ -408,12 +410,33 @@ class TaxController extends Controller
             ];
         }
 
-        // Batch-resolve character names (handles unregistered/external characters)
-        $characterIds = $entries->pluck('character_id')->unique()->toArray();
-        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+        // === SUMMARY TOTALS ===
+        if ($mode === 'live') {
+            $summaryData = $this->getLiveSummaryData($characterIds, $currentMonth);
+        } else {
+            // Archived mode: use pre-calculated daily summaries (fast and accurate)
+            $summaryData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                ->where('date', '>=', $currentMonth->format('Y-m-d'))
+                ->where('date', '<=', now()->format('Y-m-d'))
+                ->selectRaw('SUM(total_value) as total_value, SUM(total_tax) as total_tax, COUNT(DISTINCT character_id) as character_count')
+                ->first();
+        }
 
-        // Also fetch info for main characters not already in the batch
-        // (main char may not have mined, but we need their name for account grouping)
+        $totalValue = (float) ($summaryData->total_value ?? 0);
+        $estimatedTax = (float) ($summaryData->total_tax ?? 0);
+        $characterCount = (int) ($summaryData->character_count ?? count($characterIds));
+
+        // === DETAIL ENTRIES (limited for display) ===
+        $entryQuery = MiningLedger::where('date', '>=', $currentMonth)
+            ->whereIn('character_id', $characterIds)
+            ->orderBy('date', 'desc')
+            ->limit(100);
+        $entries = $entryQuery->get();
+
+        // Batch-resolve character names
+        $allCharIds = $entries->pluck('character_id')->unique()->toArray();
+        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($allCharIds);
+
         $mainCharIds = collect($charactersInfo)
             ->pluck('main_character_id')
             ->filter()
@@ -427,17 +450,14 @@ class TaxController extends Controller
             $charactersInfo = array_replace($charactersInfo, $mainCharsInfo);
         }
 
-        // Batch-resolve ore type names from invTypes table
+        // Batch-resolve ore type names
         $typeIds = $entries->pluck('type_id')->unique()->toArray();
         $typeNames = DB::table('invTypes')
             ->whereIn('typeID', $typeIds)
             ->pluck('typeName', 'typeID')
             ->toArray();
 
-        // Get configured tax rate
-        $taxRate = floatval($this->settingsService->getSetting('tax_rates.default_tax_rate', 10));
-
-        // Build account grouping map (main character ID -> account info)
+        // Build account grouping map
         $accountGroups = [];
         foreach ($charactersInfo as $charId => $charInfo) {
             $mainId = $charInfo['main_character_id'] ?? $charId;
@@ -453,23 +473,10 @@ class TaxController extends Controller
             }
         }
 
-        // Map entries with enriched data (including account grouping)
-        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $accountGroups, $typeNames, $taxRate) {
+        // Map entries with enriched data
+        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $accountGroups, $typeNames) {
             $charInfo = $charactersInfo[$entry->character_id] ?? null;
             $mainId = $charInfo['main_character_id'] ?? $entry->character_id;
-
-            // Use stored total_value, or calculate on-the-fly if missing
-            $totalValue = $entry->total_value ?? 0;
-            if ($totalValue == 0 && $entry->type_id && $entry->quantity) {
-                try {
-                    $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                    $totalValue = $valuation['total_value'] ?? 0;
-                } catch (\Exception $e) {
-                    $totalValue = 0;
-                }
-            }
-
-            $taxAmount = $totalValue * ($taxRate / 100);
 
             return [
                 'date' => $entry->date,
@@ -484,18 +491,15 @@ class TaxController extends Controller
                 'ore_name' => $typeNames[$entry->type_id] ?? "Type {$entry->type_id}",
                 'quantity' => $entry->quantity,
                 'volume' => $entry->volume ?? 0,
-                'total_value' => $totalValue,
-                'tax_amount' => $taxAmount,
-                'event_tax' => $entry->event_tax_amount ?? 0,
+                'total_value' => (float) ($entry->total_value ?? 0),
+                'tax_amount' => (float) ($entry->tax_amount ?? 0),
+                'event_tax' => (float) ($entry->event_tax_amount ?? 0),
             ];
         })->toArray();
 
-        $totalValue = collect($mappedEntries)->sum('total_value');
-        $estimatedTax = collect($mappedEntries)->sum('tax_amount');
-        $characterCount = count($characterIds);
-
         return [
             'has_data' => true,
+            'mode' => $mode,
             'entries' => $mappedEntries,
             'account_groups' => $accountGroups,
             'total_value' => $totalValue,
@@ -503,6 +507,58 @@ class TaxController extends Controller
             'character_count' => $characterCount,
             'account_count' => count($accountGroups),
             'month' => $currentMonth->format('F Y'),
+        ];
+    }
+
+    /**
+     * Get live summary data by recalculating from mining ledger with current cached prices
+     * Recalculates ore values using OreValuationService, then derives tax proportionally
+     *
+     * @return object with total_value, total_tax, character_count
+     */
+    protected function getLiveSummaryData(array $characterIds, Carbon $currentMonth): object
+    {
+        // Get all processed ledger entries for the current month
+        $entries = MiningLedger::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $currentMonth->format('Y-m-d'))
+            ->where('date', '<=', now()->format('Y-m-d'))
+            ->whereNotNull('processed_at')
+            ->get();
+
+        $totalValue = 0;
+        $totalTax = 0;
+        $activeCharacters = [];
+
+        foreach ($entries as $entry) {
+            $storedValue = (float) ($entry->total_value ?? 0);
+            $storedTax = (float) ($entry->tax_amount ?? 0);
+
+            // Recalculate value using current cached prices
+            try {
+                $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                $liveValue = (float) ($valuation['total_value'] ?? 0);
+            } catch (\Exception $e) {
+                $liveValue = $storedValue; // fallback to stored if valuation fails
+            }
+
+            // Derive tax proportionally: if stored value had X% tax, apply same ratio to live value
+            if ($storedValue > 0 && $storedTax > 0) {
+                $taxRatio = $storedTax / $storedValue;
+                $liveTax = $liveValue * $taxRatio;
+            } else {
+                // No stored tax ratio — use stored tax_amount as-is
+                $liveTax = $storedTax;
+            }
+
+            $totalValue += $liveValue;
+            $totalTax += $liveTax;
+            $activeCharacters[$entry->character_id] = true;
+        }
+
+        return (object) [
+            'total_value' => $totalValue,
+            'total_tax' => $totalTax,
+            'character_count' => count($activeCharacters),
         ];
     }
 
@@ -1279,15 +1335,53 @@ class TaxController extends Controller
 
     /**
      * Live tracking endpoint - returns current mining tracking data as JSON
+     * Accepts ?mode=archived (default) or ?mode=live
+     * Live mode checks price cache freshness first
      */
     public function liveTracking(Request $request)
     {
-        $data = $this->getLiveTrackingData();
+        $mode = $request->input('mode', 'archived');
+
+        // For live mode, check price cache freshness first
+        if ($mode === 'live') {
+            $cacheDuration = (int) $this->settingsService->getSetting('pricing.cache_duration', 60);
+            $freshCount = MiningPriceCache::where('cached_at', '>=', now()->subMinutes($cacheDuration))->count();
+            $totalCount = MiningPriceCache::count();
+
+            if ($totalCount > 0 && $freshCount === 0) {
+                // All cache entries are stale — trigger refresh and warn user
+                try {
+                    \Artisan::call('mining-manager:cache-prices', ['--type' => 'all']);
+                } catch (\Exception $e) {
+                    Log::warning('Failed to trigger price cache refresh: ' . $e->getMessage());
+                }
+
+                return response()->json([
+                    'status' => 'cache_stale',
+                    'message' => 'Price cache is stale (last updated ' . $this->getCacheAge() . ' ago). Refreshing prices — please try again in a few minutes.',
+                    'data' => $this->getLiveTrackingData('archived'), // Fall back to archived data while cache refreshes
+                ]);
+            }
+        }
+
+        $data = $this->getLiveTrackingData($mode);
 
         return response()->json([
             'status' => 'success',
             'data' => $data,
         ]);
+    }
+
+    /**
+     * Get human-readable age of the oldest price cache entry
+     */
+    protected function getCacheAge(): string
+    {
+        $oldest = MiningPriceCache::orderBy('cached_at', 'desc')->first();
+        if (!$oldest || !$oldest->cached_at) {
+            return 'never';
+        }
+        return Carbon::parse($oldest->cached_at)->diffForHumans(null, true);
     }
 
     /**
