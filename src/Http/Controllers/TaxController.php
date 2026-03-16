@@ -692,32 +692,49 @@ class TaxController extends Controller
             ]);
         }
 
+        // Get user's character IDs for scoping (non-admin/non-director users)
+        $userCharacterIds = [];
+        if (!$viewAll) {
+            $userCharacterIds = auth()->user()->characters->pluck('character_id')->toArray();
+        }
+
         // Get corporation donations (player_donation type transactions)
         $donations = $this->walletService->getCorporationDonations($corporationId, $days);
 
         // Get unmatched donations (donations without tax codes)
         $unmatchedDonations = $this->walletService->getUnmatchedDonations($corporationId, $days);
 
-        // Calculate summary statistics
-        $verifiedToday = DB::table('corporation_wallet_journals')
-            ->where('corporation_id', $corporationId)
-            ->where('ref_type', 'player_donation')
-            ->whereDate('date', Carbon::today())
-            ->count();
+        // Scope transactions for regular members: only show their own transfers
+        if (!$viewAll && !empty($userCharacterIds)) {
+            $donations = $donations->filter(function($transaction) use ($userCharacterIds) {
+                return in_array($transaction->first_party_id ?? $transaction->character_id ?? 0, $userCharacterIds);
+            });
+            $unmatchedDonations = $unmatchedDonations->filter(function($transaction) use ($userCharacterIds) {
+                return in_array($transaction->first_party_id ?? $transaction->character_id ?? 0, $userCharacterIds);
+            });
+        }
 
-        $totalVerifiedIsk = MiningTax::where('status', 'paid')
+        // Calculate summary statistics (scoped for regular members)
+        $statsBaseQuery = MiningTax::query();
+        if (!$viewAll && !empty($userCharacterIds)) {
+            $mainCharId = auth()->user()->main_character_id;
+            $taxCharIds = $mainCharId ? [$mainCharId] : $userCharacterIds;
+            $statsBaseQuery->whereIn('character_id', $taxCharIds);
+        }
+
+        $totalVerifiedIsk = (clone $statsBaseQuery)->where('status', 'paid')
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->sum('amount_paid');
 
-        $pendingCount = MiningTax::whereIn('status', ['unpaid', 'overdue'])->count();
-        $verifiedCount = MiningTax::where('status', 'paid')
+        $pendingCount = (clone $statsBaseQuery)->whereIn('status', ['unpaid', 'overdue'])->count();
+        $verifiedCount = (clone $statsBaseQuery)->where('status', 'paid')
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->count();
 
         $stats = [
             'pending' => $pendingCount,
             'verified' => $verifiedCount,
-            'mismatched' => $unmatchedDonations->count(),
+            'mismatched' => $viewAll ? $unmatchedDonations->count() : 0,
             'total_amount' => $totalVerifiedIsk,
         ];
 

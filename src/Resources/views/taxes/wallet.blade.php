@@ -55,7 +55,8 @@
         </div>
     </div>
 
-    {{-- Actions --}}
+    {{-- Actions (director/admin only) --}}
+    @if(($isDirector ?? false) || ($isAdmin ?? false))
     <div class="row">
         <div class="col-12">
             <div class="card card-dark">
@@ -76,6 +77,7 @@
             </div>
         </div>
     </div>
+    @endif
 
     {{-- Transactions Table --}}
     <div class="row">
@@ -152,7 +154,8 @@
 
 </div>
 
-{{-- Manual Entry Modal --}}
+{{-- Manual Entry Modal (director/admin only) --}}
+@if(($isDirector ?? false) || ($isAdmin ?? false))
 <div class="modal fade" id="manualEntryModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content bg-dark">
@@ -189,6 +192,7 @@
         </div>
     </div>
 </div>
+@endif
 
 @push('javascript')
 <script>
