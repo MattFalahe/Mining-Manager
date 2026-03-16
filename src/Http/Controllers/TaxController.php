@@ -414,12 +414,25 @@ class TaxController extends Controller
         if ($mode === 'live') {
             $summaryData = $this->getLiveSummaryData($characterIds, $currentMonth);
         } else {
-            // Archived mode: use pre-calculated daily summaries (fast and accurate)
+            // Archived mode: try daily summaries first, fall back to mining_ledger directly
             $summaryData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                 ->where('date', '>=', $currentMonth->format('Y-m-d'))
                 ->where('date', '<=', now()->format('Y-m-d'))
                 ->selectRaw('SUM(total_value) as total_value, SUM(total_tax) as total_tax, COUNT(DISTINCT character_id) as character_count')
                 ->first();
+
+            // If daily summaries have 0 tax but ledger has tax_amount, use ledger directly
+            if (((float) ($summaryData->total_tax ?? 0)) == 0 && ((float) ($summaryData->total_value ?? 0)) > 0) {
+                $ledgerTax = MiningLedger::whereIn('character_id', $characterIds)
+                    ->where('date', '>=', $currentMonth->format('Y-m-d'))
+                    ->where('date', '<=', now()->format('Y-m-d'))
+                    ->whereNotNull('processed_at')
+                    ->sum('tax_amount');
+
+                if ($ledgerTax > 0) {
+                    $summaryData->total_tax = $ledgerTax;
+                }
+            }
         }
 
         $totalValue = (float) ($summaryData->total_value ?? 0);
