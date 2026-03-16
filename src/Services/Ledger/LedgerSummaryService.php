@@ -173,13 +173,15 @@ class LedgerSummaryService
 
         // Aggregate per ore type AND corporation for the day (only processed entries)
         // Group by corporation_id so entries from different structure owners get correct tax rates
+        // Include SUM(tax_amount) so we can use actual calculated tax when available
         $oreEntries = (clone $baseQuery)
             ->selectRaw('
                 type_id,
                 ore_type,
                 corporation_id,
                 SUM(quantity) as total_quantity,
-                SUM(total_value) as total_value
+                SUM(total_value) as total_value,
+                SUM(tax_amount) as total_tax_amount
             ')
             ->groupBy('type_id', 'ore_type', 'corporation_id')
             ->get();
@@ -213,10 +215,20 @@ class LedgerSummaryService
                 $this->settingsService->setActiveCorporation((int) $entryCorporationId);
             }
 
-            // Calculate estimated tax — only if a corporation owns this entry
-            $isTaxable = $entryCorporationId ? $this->shouldTaxType($typeId) : false;
-            $taxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
-            $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
+            // Use actual tax_amount from mining_ledger when available (already calculated by process-ledger)
+            // Fall back to estimated calculation only when tax_amount is 0 or null
+            $actualTax = (float) ($entry->total_tax_amount ?? 0);
+            if ($actualTax > 0) {
+                // Use the real calculated tax from mining_ledger
+                $isTaxable = true;
+                $taxRate = $value > 0 ? round(($actualTax / $value) * 100, 2) : 0;
+                $estimatedTax = $actualTax;
+            } else {
+                // Fallback: estimate tax from configured rates
+                $isTaxable = $entryCorporationId ? $this->shouldTaxType($typeId) : false;
+                $taxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
+                $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
+            }
 
             $oreBreakdown[] = [
                 'type_id' => $typeId,
