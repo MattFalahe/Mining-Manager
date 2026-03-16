@@ -115,6 +115,14 @@ return [
     'tax_collection_desc' => 'Outstanding taxes, payment rates, and delinquent members',
     'active_events' => 'Active Events',
     'active_events_desc' => 'Currently running mining events and participation',
+    'dashboard_charts' => 'Director Dashboard Charts',
+    'dashboard_charts_desc' => 'The director dashboard includes several 12-month charts:',
+    'chart_mining_tax' => 'Mining Tax (12 Months) - Shows tax collected vs tax owed per month. The current month uses daily summaries for live estimates; past months show finalized data.',
+    'chart_mining_performance' => 'Corp Mining Performance - Total mining value across all corporation characters per month.',
+    'chart_moon_mining' => 'Moon Mining Performance - Moon ore value mined per month, tracked separately from regular ore.',
+    'chart_event_tax' => 'Event Tax Impact - Shows how mining events affected tax amounts through bonus modifiers.',
+    'chart_mining_by_group' => 'Mining by Group - Breakdown of mining value by ore category (Moon, Ice, Gas, Regular).',
+    'chart_mining_by_type' => 'Mining by Type - Top 10 most mined ore types by value.',
     'dashboard_note' => 'The dashboard updates automatically as new ESI data is processed. Use the refresh button to manually update data.',
 
     // Tax System
@@ -143,7 +151,15 @@ return [
 
     // Wallet Verification
     'wallet_verification' => 'Wallet Verification',
-    'wallet_verification_desc' => 'Directors can view the Wallet Verification page to see all corporation donations, their reason/message fields, and whether they matched a tax code. Unmatched payments can be manually assigned.',
+    'wallet_verification_desc' => 'The Wallet Verification page shows corporation donations and their matching status. Access is permission-based:',
+    'wallet_verification_member' => 'Members can only see their own wallet transfers and personal payment stats.',
+    'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, and manually record payments.',
+
+    // Calculation Methods
+    'calculation_methods' => 'Calculation Methods',
+    'calculation_methods_desc' => 'When viewing the Calculate Taxes page, you can choose between two data sources:',
+    'calc_archived' => 'Archived Data (Default) - Uses pre-calculated daily summaries for fast, accurate totals. Best for routine tax review.',
+    'calc_live' => 'Live (Current Prices) - Recalculates ore values using current cached market prices and applies current per-ore tax rates. Slower but shows what taxes would be if calculated right now. If the price cache is stale, a refresh is triggered automatically.',
 
     // Tax Codes
     'tax_codes' => 'Tax Codes Explained',
@@ -254,34 +270,68 @@ return [
 
     // Settings
     'settings_guide' => 'Settings Configuration Guide',
-    'settings_intro' => 'The settings page provides 12 configuration tabs covering all aspects of the Mining Manager system. Admin permission is required to modify settings.',
+    'settings_intro' => 'The settings page is organized into Global Settings (apply to all corporations), Corporation-Specific Settings (per-corp overrides), and System Settings. Admin permission is required to modify settings.',
     'settings_tabs' => 'Settings Tabs',
+
+    // Global Settings
+    'settings_global_header' => 'Global Settings',
     'settings_general' => 'General',
-    'settings_general_desc' => 'Corporation ID, ore valuation method (ore price or mineral price), price provider, price modifier, and region ID for market data.',
-    'settings_tax_payment' => 'Tax Payment',
-    'settings_tax_payment_desc' => 'Payment method (wallet transfer), grace period for payments, reminder settings, and minimum tax amount threshold.',
-    'settings_wallet' => 'Wallet',
-    'settings_wallet_desc' => 'Tax code prefix, auto-generation settings, payment matching rules, and wallet division monitoring configuration.',
-    'settings_calc_source' => 'Calculation Source',
-    'settings_calc_source_desc' => 'Data source for tax calculations (archived, live, or hybrid mode) and data age verification settings.',
-    'settings_tax_rates' => 'Tax Rates',
-    'settings_tax_rates_desc' => 'Configure tax rates by ore category: moon ore rates by rarity (R64 through R4), regular ore, ice, gas, and abyssal ore.',
-    'settings_tax_selector' => 'Tax Selector',
-    'settings_tax_selector_desc' => 'Choose which ore types to include in tax calculations: moon ore, regular ore, ice, gas, and abyssal ore.',
-    'settings_live_tracking' => 'Live Tracking',
-    'settings_live_tracking_desc' => 'Real-time display settings for the Calculate Taxes page, refresh intervals, and top miners count.',
-    'settings_notifications' => 'Notifications',
-    'settings_notifications_desc' => 'Event triggers, notification channels (mail, Discord, Slack), and webhook URL configuration.',
-    'settings_manual_actions' => 'Manual Actions',
-    'settings_manual_actions_desc' => 'Permissions for manual recalculation, deletion, and manual payment marking by directors.',
+    'settings_general_desc' => 'Moon owner corporation, ore valuation method (ore price or mineral price), price provider (SeAT, Janice, Fuzzwork, Custom), price modifier percentage, default region for market data, and data source (archived or live).',
     'settings_pricing' => 'Pricing',
-    'settings_pricing_desc' => 'Price type (sell, buy, or average), compression preference, cache duration, and market hub selection.',
-    'settings_moon' => 'Moon',
-    'settings_moon_desc' => 'Estimated chunk size, notification timing (hours before extraction), auto-calculation, and unscanned moon display options.',
-    'settings_diagnostics' => 'Diagnostics',
-    'settings_diagnostics_desc' => 'Built-in diagnostic tools: price provider testing, type ID validation, cache health, settings verification, webhook testing, and valuation testing.',
+    'settings_pricing_desc' => 'Price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. Controls how ore values are calculated across the plugin.',
+    'settings_features' => 'Features',
+    'settings_features_desc' => 'Toggle individual plugin features on/off: wallet verification, mining events, theft detection, moon analytics, notifications, reports, and diagnostics. Disabled features are hidden from the UI.',
+    'settings_webhooks' => 'Webhooks',
+    'settings_webhooks_desc' => 'Configure Discord and Slack webhook integrations for notifications. Set up webhook URLs, event triggers (theft detected, extraction ready, tax reminders), severity levels, and role pinging.',
+    'settings_notifications' => 'Notifications',
+    'settings_notifications_desc' => 'Configure notification channels (EVE Mail, Discord, Slack) and event triggers. Set up sender characters for EVE Mail, notification templates, and delivery preferences for tax reminders, event announcements, and extraction alerts.',
+    'settings_dashboard' => 'Dashboard',
+    'settings_dashboard_desc' => 'Customize dashboard appearance and behavior. Configure which charts and widgets are visible, default date ranges, top miner counts, and chart display preferences.',
+
+    // Corporation-Specific Settings
+    'settings_corp_header' => 'Corporation-Specific Settings',
+    'settings_tax_rates' => 'Tax Rates',
+    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Guest miner multiplier can apply different rates for non-corp members.',
+
+    // System Settings
+    'settings_system_header' => 'System Settings',
+    'settings_advanced' => 'Advanced',
+    'settings_advanced_desc' => 'System maintenance tools: clear price cache, reset settings to defaults, export/import settings as JSON, and view system information. Use with caution — some actions cannot be undone.',
+    'settings_help' => 'Help & Documentation',
+    'settings_help_desc' => 'Quick access to this help page from within the settings panel.',
+
     'settings_warning' => 'Admin Permission Required',
     'settings_warning_desc' => 'Only users with admin permissions can modify settings. Changes affect all members immediately.',
+
+    // Custom Styling
+    'custom_styling' => 'Custom Styling',
+    'custom_styling_guide' => 'CSS Overrides Guide',
+    'custom_styling_intro' => 'Mining Manager uses CSS wrapper classes on every page, allowing you to customize the appearance using SeAT\'s custom CSS feature or your own stylesheets.',
+    'css_class_hierarchy' => 'CSS Class Hierarchy',
+    'css_class_hierarchy_desc' => 'Every page uses a layered class structure for targeted styling:',
+    'css_base_class' => '.mining-manager-wrapper - Present on ALL plugin pages. Use this to style everything globally.',
+    'css_tab_class' => '.mining-dashboard - Applied to pages with Dashboard-style tab navigation. Controls tab appearance (font size, active state, rounded corners).',
+    'css_page_class' => 'Page-specific classes - Target individual pages for fine-grained overrides.',
+    'css_available_pages' => 'Available Page Classes',
+    'css_analytics_pages' => 'Analytics: .analytics-page, .analytics-charts-page, .analytics-tables-page, .analytics-compare-page, .analytics-moons-page',
+    'css_dashboard_pages' => 'Dashboard: .combined-director-dashboard, .personal-dashboard',
+    'css_diagnostic_pages' => 'Diagnostics: .diagnostic-page',
+    'css_events_pages' => 'Events: .events-page, .events-active-page, .events-calendar-page, .events-create-page, .events-my-events-page',
+    'css_ledger_pages' => 'Ledger: .mining-ledger, .mining-ledger-summary, .mining-ledger-details, .my-mining',
+    'css_moon_pages' => 'Moon: .moon-index-page, .moon-active-page, .moon-calendar-page, .moon-compositions-page, .moon-extractions-page, .moon-simulator-page',
+    'css_reports_pages' => 'Reports: .reports-page, .reports-generate-page, .reports-export-page, .reports-scheduled-page',
+    'css_settings_pages' => 'Settings: .settings-page',
+    'css_taxes_pages' => 'Taxes: .taxes-index-page, .taxes-calculate-page, .taxes-codes-page, .taxes-my-taxes-page, .taxes-wallet-page',
+    'css_theft_pages' => 'Theft: .theft-detection-wrapper',
+    'css_example_title' => 'Example Overrides',
+    'css_example_global' => '/* Change tab font size on all pages */',
+    'css_example_global_code' => '.mining-dashboard .nav-tabs .nav-link { font-size: 0.85rem; }',
+    'css_example_specific' => '/* Change tab font size only on the diagnostic page */',
+    'css_example_specific_code' => '.diagnostic-page .nav-tabs .nav-link { font-size: 0.90rem; }',
+    'css_example_all' => '/* Add custom background to all plugin pages */',
+    'css_example_all_code' => '.mining-manager-wrapper { background-color: #1a1a2e; }',
+    'css_where_to_add' => 'Where to Add Custom CSS',
+    'css_where_to_add_desc' => 'Add your CSS overrides in SeAT\'s custom CSS section (Administration > SeAT Settings > Custom CSS) or in your own theme stylesheet. This way your customizations survive plugin updates.',
 
     // FAQ
     'frequently_asked' => 'Frequently Asked Questions',

@@ -412,6 +412,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="custom-styling">
+                                <i class="fas fa-paint-brush"></i>
+                                {{ trans('mining-manager::help.custom_styling') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="troubleshooting">
                                 <i class="fas fa-wrench"></i>
                                 {{ trans('mining-manager::help.troubleshooting') }}
@@ -615,6 +621,17 @@
                         <li><strong>{{ trans('mining-manager::help.active_events') }}:</strong> {{ trans('mining-manager::help.active_events_desc') }}</li>
                     </ul>
 
+                    <h4>{{ trans('mining-manager::help.dashboard_charts') }}</h4>
+                    <p>{{ trans('mining-manager::help.dashboard_charts_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.chart_mining_tax') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.chart_mining_performance') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.chart_moon_mining') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.chart_event_tax') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.chart_mining_by_group') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.chart_mining_by_type') }}</strong></li>
+                    </ul>
+
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.note') }}:</strong>
@@ -702,6 +719,22 @@
                         {{ trans('mining-manager::help.wallet_verification') }}
                     </h3>
                     <p>{{ trans('mining-manager::help.wallet_verification_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.wallet_verification_member') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.wallet_verification_director') }}</strong></li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-calculator"></i>
+                        {{ trans('mining-manager::help.calculation_methods') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.calculation_methods_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.calc_archived') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_live') }}</strong></li>
+                    </ul>
                 </div>
             </div>
 
@@ -918,41 +951,38 @@
 
                     <h4>{{ trans('mining-manager::help.settings_tabs') }}</h4>
 
+                    <h4>{{ trans('mining-manager::help.settings_global_header') }}</h4>
+
                     <h5><i class="fas fa-sliders-h text-primary"></i> {{ trans('mining-manager::help.settings_general') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_general_desc') }}</p>
-
-                    <h5><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.settings_tax_payment') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_tax_payment_desc') }}</p>
-
-                    <h5><i class="fas fa-credit-card text-info"></i> {{ trans('mining-manager::help.settings_wallet') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_wallet_desc') }}</p>
-
-                    <h5><i class="fas fa-database text-warning"></i> {{ trans('mining-manager::help.settings_calc_source') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_calc_source_desc') }}</p>
-
-                    <h5><i class="fas fa-percentage text-danger"></i> {{ trans('mining-manager::help.settings_tax_rates') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_tax_rates_desc') }}</p>
-
-                    <h5><i class="fas fa-filter text-primary"></i> {{ trans('mining-manager::help.settings_tax_selector') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_tax_selector_desc') }}</p>
-
-                    <h5><i class="fas fa-broadcast-tower text-success"></i> {{ trans('mining-manager::help.settings_live_tracking') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_live_tracking_desc') }}</p>
-
-                    <h5><i class="fas fa-bell text-info"></i> {{ trans('mining-manager::help.settings_notifications') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_notifications_desc') }}</p>
-
-                    <h5><i class="fas fa-hand-pointer text-warning"></i> {{ trans('mining-manager::help.settings_manual_actions') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_manual_actions_desc') }}</p>
 
                     <h5><i class="fas fa-tag text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_pricing_desc') }}</p>
 
-                    <h5><i class="fas fa-moon text-primary"></i> {{ trans('mining-manager::help.settings_moon') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_moon_desc') }}</p>
+                    <h5><i class="fas fa-toggle-on text-success"></i> {{ trans('mining-manager::help.settings_features') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_features_desc') }}</p>
 
-                    <h5><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.settings_diagnostics') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_diagnostics_desc') }}</p>
+                    <h5><i class="fas fa-plug text-info"></i> {{ trans('mining-manager::help.settings_webhooks') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_webhooks_desc') }}</p>
+
+                    <h5><i class="fas fa-bell text-warning"></i> {{ trans('mining-manager::help.settings_notifications') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_notifications_desc') }}</p>
+
+                    <h5><i class="fas fa-tachometer-alt text-primary"></i> {{ trans('mining-manager::help.settings_dashboard') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_dashboard_desc') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.settings_corp_header') }}</h4>
+
+                    <h5><i class="fas fa-percentage text-danger"></i> {{ trans('mining-manager::help.settings_tax_rates') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_tax_rates_desc') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.settings_system_header') }}</h4>
+
+                    <h5><i class="fas fa-cogs text-warning"></i> {{ trans('mining-manager::help.settings_advanced') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_advanced_desc') }}</p>
+
+                    <h5><i class="fas fa-question-circle text-info"></i> {{ trans('mining-manager::help.settings_help') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_help_desc') }}</p>
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
@@ -1238,6 +1268,56 @@
                         </div>
                     </div>
                     @endforeach
+                </div>
+            </div>
+
+            {{-- Custom Styling Section --}}
+            <div id="custom-styling" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-paint-brush"></i>
+                        {{ trans('mining-manager::help.custom_styling_guide') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.custom_styling_intro') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.css_class_hierarchy') }}</h4>
+                    <p>{{ trans('mining-manager::help.css_class_hierarchy_desc') }}</p>
+                    <ul>
+                        <li><code>{{ trans('mining-manager::help.css_base_class') }}</code></li>
+                        <li><code>{{ trans('mining-manager::help.css_tab_class') }}</code></li>
+                        <li><code>{{ trans('mining-manager::help.css_page_class') }}</code></li>
+                    </ul>
+
+                    <h4>{{ trans('mining-manager::help.css_available_pages') }}</h4>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.css_analytics_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_dashboard_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_diagnostic_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_events_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_ledger_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_moon_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_reports_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_settings_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_taxes_pages') }}</li>
+                        <li>{{ trans('mining-manager::help.css_theft_pages') }}</li>
+                    </ul>
+
+                    <h4>{{ trans('mining-manager::help.css_example_title') }}</h4>
+
+                    <h5>{{ trans('mining-manager::help.css_example_global') }}</h5>
+                    <pre>{{ trans('mining-manager::help.css_example_global_code') }}</pre>
+
+                    <h5>{{ trans('mining-manager::help.css_example_specific') }}</h5>
+                    <pre>{{ trans('mining-manager::help.css_example_specific_code') }}</pre>
+
+                    <h5>{{ trans('mining-manager::help.css_example_all') }}</h5>
+                    <pre>{{ trans('mining-manager::help.css_example_all_code') }}</pre>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.css_where_to_add') }}:</strong>
+                        {{ trans('mining-manager::help.css_where_to_add_desc') }}
+                    </div>
                 </div>
             </div>
 
