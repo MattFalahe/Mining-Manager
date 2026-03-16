@@ -198,6 +198,7 @@ return [
     'error_sending_reminder' => 'Error sending reminder',
     'bulk_marked_success' => ':count taxes marked as paid successfully',
     'error_bulk_marking' => 'Error bulk marking taxes as paid',
+    'confirm_bulk_reminders' => 'Send tax reminders to',
     'bulk_reminders_sent' => ':count reminders sent successfully',
     'error_bulk_reminders' => 'Error sending bulk reminders',
 
@@ -229,4 +230,21 @@ return [
     'guest_miner' => 'Guest Miner',
     'isk_owed' => 'ISK Owed',
     'isk_paid' => 'ISK Paid',
+
+    // JavaScript UI translations (confirmations, toasts, etc.)
+    'confirm_send_reminder' => 'Send tax reminder to',
+    'confirm_bulk_mark_paid' => 'Mark as paid for',
+    'items' => 'items',
+    'select_items_first' => 'Please select items first',
+    'reminders_sent' => 'Reminders sent successfully',
+    'error_sending_reminders' => 'Error sending reminders',
+    'error_occurred' => 'An error occurred',
+    'error_refreshing_tracking' => 'Error refreshing tracking data',
+    'regenerate_confirm' => 'Are you sure you want to regenerate tax codes? Existing codes will be replaced.',
+    'code_copied' => 'Tax code copied to clipboard',
+    'code_copy_failed' => 'Failed to copy tax code',
+    'syncing_wallet' => 'Syncing wallet data...',
+    'auto_matching' => 'Auto-matching tax codes...',
+    'transaction_verified' => 'Transaction verified successfully',
+    'payment_recorded' => 'Payment recorded successfully',
 ];
