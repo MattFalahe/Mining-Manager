@@ -1210,11 +1210,16 @@ class LedgerController extends Controller
                 SUM(mining_ledger.quantity) as total_quantity,
                 SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3,
                 SUM(mining_ledger.total_value) as total_value,
-                SUM(mining_ledger.tax_amount) as total_tax,
                 COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems,
                 COUNT(DISTINCT mining_ledger.type_id) as unique_ores
             ')
             ->first();
+
+        // Get total_tax from daily summaries (single source of truth)
+        $totals->total_tax = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->sum('total_tax');
 
         return view('mining-manager::ledger.character-details', [
             'characterId' => $characterId,

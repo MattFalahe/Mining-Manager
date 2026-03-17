@@ -53,7 +53,6 @@ class LedgerSummaryService
                 MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax,
                 SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
                 SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
@@ -91,6 +90,12 @@ class LedgerSummaryService
             ->get()
             ->toArray();
 
+        // Get total_tax from daily summaries (single source of truth)
+        $totalTax = (float) MiningLedgerDailySummary::where('character_id', $characterId)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->sum('total_tax');
+
         // Create or update monthly summary
         return MiningLedgerMonthlySummary::updateOrCreate(
             [
@@ -101,7 +106,7 @@ class LedgerSummaryService
                 'corporation_id' => $summary->corporation_id,
                 'total_quantity' => $summary->total_quantity,
                 'total_value' => $summary->total_value,
-                'total_tax' => $summary->total_tax,
+                'total_tax' => $totalTax,
                 'moon_ore_value' => $summary->moon_ore_value,
                 'regular_ore_value' => $summary->regular_ore_value,
                 'ice_value' => $summary->ice_value,
@@ -567,12 +572,11 @@ class LedgerSummaryService
         // Group by character_id only — a character's total should be aggregated
         // across all corporations they mined at. Use MAX(corporation_id) to pick
         // the primary corporation for display purposes.
-        return $query->selectRaw('
+        $summaries = $query->selectRaw('
                 character_id,
                 MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax,
                 SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
                 SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
@@ -581,6 +585,21 @@ class LedgerSummaryService
             ->groupBy('character_id')
             ->with('character')
             ->get();
+
+        // Get total_tax from daily summaries (single source of truth) instead of
+        // the stale mining_ledger.tax_amount column
+        $dailySummaryTax = MiningLedgerDailySummary::whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->selectRaw('character_id, SUM(total_tax) as total_tax')
+            ->groupBy('character_id')
+            ->pluck('total_tax', 'character_id');
+
+        // Merge daily summary tax into each character's monthly summary
+        $summaries->each(function ($summary) use ($dailySummaryTax) {
+            $summary->total_tax = (float) ($dailySummaryTax->get($summary->character_id) ?? 0);
+        });
+
+        return $summaries;
     }
 
     /**
@@ -638,7 +657,7 @@ class LedgerSummaryService
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
-        return MiningLedger::where('character_id', $characterId)
+        $summaries = MiningLedger::where('character_id', $characterId)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
             ->selectRaw('
@@ -647,7 +666,6 @@ class LedgerSummaryService
                 corporation_id,
                 SUM(quantity) as total_quantity,
                 SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax,
                 SUM(CASE WHEN is_moon_ore = 1 THEN total_value ELSE 0 END) as moon_ore_value,
                 SUM(CASE WHEN is_ice = 1 THEN total_value ELSE 0 END) as ice_value,
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
@@ -656,6 +674,21 @@ class LedgerSummaryService
             ->groupBy(DB::raw('DATE(date)'), 'character_id', 'corporation_id')
             ->orderBy('date')
             ->get();
+
+        // Get total_tax from daily summaries (single source of truth) instead of
+        // the stale mining_ledger.tax_amount column
+        $dailySummaryTax = MiningLedgerDailySummary::where('character_id', $characterId)
+            ->whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->pluck('total_tax', 'date');
+
+        // Merge daily summary tax into each day's result
+        $summaries->each(function ($summary) use ($dailySummaryTax) {
+            $dateKey = Carbon::parse($summary->date)->toDateString();
+            $summary->total_tax = (float) ($dailySummaryTax->get($dateKey) ?? 0);
+        });
+
+        return $summaries;
     }
 
     /**
