@@ -330,7 +330,14 @@ class TheftDetectionService
             return true;
         }
 
-        // If character is not a member of moon owner corporation, they're external
+        // If character is not a member of any configured corporation, they're external
+        // Uses all configured corps (not just moon owner) so holding corp setups work
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        if (!empty($homeCorporationIds)) {
+            return !in_array((int) $characterInfo['corporation_id'], $homeCorporationIds, true);
+        }
+
+        // Fallback: compare against moon owner corporation
         if ($characterInfo['corporation_id'] != $moonOwnerCorpId) {
             return true;
         }

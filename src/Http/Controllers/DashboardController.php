@@ -427,10 +427,16 @@ class DashboardController extends Controller
         }
 
         // Keep ONLY characters confirmed to be in a different corporation
+        // Uses all configured corporations (not just moon owner) so holding corp setups work
         try {
+            $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+            if (empty($homeCorporationIds)) {
+                $homeCorporationIds = [$corporationId];
+            }
+
             $guestIds = DB::table('character_affiliations')
                 ->whereIn('character_id', $allMinerIds)
-                ->where('corporation_id', '!=', $corporationId)
+                ->whereNotIn('corporation_id', $homeCorporationIds)
                 ->pluck('character_id')
                 ->toArray();
 
@@ -630,10 +636,17 @@ class DashboardController extends Controller
         $allOreValue = $stats->all_ore_value ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
 
-        // Tax stats still from MiningTax table
-        $taxAmount = MiningTax::whereIn('character_id', $characterIds)
-            ->where('month', $startDate->format('Y-m-01'))
-            ->sum('amount_owed');
+        // Tax estimate from daily summaries (single source of truth)
+        $taxAmount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->sum('total_tax');
+
+        // If no daily summaries yet, fall back to mining_taxes
+        if ($taxAmount <= 0) {
+            $taxAmount = MiningTax::whereIn('character_id', $characterIds)
+                ->where('month', $startDate->format('Y-m-01'))
+                ->sum('amount_owed');
+        }
 
         $taxCollected = MiningTax::whereIn('character_id', $characterIds)
             ->where('month', $startDate->format('Y-m-01'))
@@ -1247,21 +1260,18 @@ class DashboardController extends Controller
                 ->where('month', $month->format('Y-m-01'))
                 ->sum('amount_owed');
 
-            // For current month, supplement with daily summaries if no formal tax records exist
-            if ($i === 0 && $owedAmount == 0) {
-                $owedAmount = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            // For current month, always use daily summaries as the estimate
+            // (single source of truth for tax), falling back to mining_taxes if available
+            if ($i === 0) {
+                $dailySummaryTax = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                     ->where('date', '>=', $month->format('Y-m-d'))
                     ->where('date', '<=', Carbon::now()->format('Y-m-d'))
                     ->sum('total_tax');
 
-                // If daily summaries have no tax data either, try summing tax_amount from mining_ledger directly
-                if ($owedAmount == 0) {
-                    $owedAmount = MiningLedger::whereIn('character_id', $characterIds)
-                        ->where('date', '>=', $month->format('Y-m-d'))
-                        ->where('date', '<=', Carbon::now()->format('Y-m-d'))
-                        ->whereNotNull('processed_at')
-                        ->sum('tax_amount');
+                if ($dailySummaryTax > 0) {
+                    $owedAmount = $dailySummaryTax;
                 }
+                // If daily summaries have no data yet, keep mining_taxes amount_owed as fallback
             }
 
             $months[] = $month->format('Y-m');
@@ -1630,12 +1640,18 @@ class DashboardController extends Controller
         $uniqueIds = array_values(array_unique($allIds));
 
         // Filter: exclude characters confirmed to be in a DIFFERENT corporation.
+        // Uses all configured corporations (not just moon owner) so holding corp setups work.
         // Characters with NO affiliation entry are kept (unregistered corp members).
         if (!empty($uniqueIds)) {
             try {
+                $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+                if (empty($homeCorporationIds)) {
+                    $homeCorporationIds = [$corporationId];
+                }
+
                 $nonCorpIds = DB::table('character_affiliations')
                     ->whereIn('character_id', $uniqueIds)
-                    ->where('corporation_id', '!=', $corporationId)
+                    ->whereNotIn('corporation_id', $homeCorporationIds)
                     ->pluck('character_id')
                     ->toArray();
 

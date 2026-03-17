@@ -194,20 +194,21 @@ class TaxController extends Controller
             });
         }
 
-        // Filter by miner type (corp member vs guest) - use character_affiliations for corporation_id
-        if ($minerType === 'corp' && $moonOwnerCorpId) {
-            // Only show corp members
-            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+        // Filter by miner type (corp member vs guest) - uses configured corporations list
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        if ($minerType === 'corp' && !empty($homeCorporationIds)) {
+            // Only show corp members (characters in any configured corporation)
+            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
                 $q->select('character_id')
                     ->from('character_affiliations')
-                    ->where('corporation_id', $moonOwnerCorpId);
+                    ->whereIn('corporation_id', $homeCorporationIds);
             });
-        } elseif ($minerType === 'guest' && $moonOwnerCorpId) {
-            // Only show guest miners (not corp members)
-            $query->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+        } elseif ($minerType === 'guest' && !empty($homeCorporationIds)) {
+            // Only show guest miners (characters NOT in any configured corporation)
+            $query->whereIn('character_id', function($q) use ($homeCorporationIds) {
                 $q->select('character_id')
                     ->from('character_affiliations')
-                    ->where('corporation_id', '!=', $moonOwnerCorpId);
+                    ->whereNotIn('corporation_id', $homeCorporationIds);
             });
         }
 
@@ -240,18 +241,18 @@ class TaxController extends Controller
         $corpSummaryQuery = null;
         $guestSummaryQuery = null;
 
-        if ($moonOwnerCorpId && $viewAll) {
+        if (!empty($homeCorporationIds) && $viewAll) {
             // Corp vs guest breakdown only shown to directors
-            $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+            $corpSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
                 $q->select('character_id')
                     ->from('character_affiliations')
-                    ->where('corporation_id', $moonOwnerCorpId);
+                    ->whereIn('corporation_id', $homeCorporationIds);
             });
 
-            $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($moonOwnerCorpId) {
+            $guestSummaryQuery = MiningTax::whereIn('character_id', function($q) use ($homeCorporationIds) {
                 $q->select('character_id')
                     ->from('character_affiliations')
-                    ->where('corporation_id', '!=', $moonOwnerCorpId);
+                    ->whereNotIn('corporation_id', $homeCorporationIds);
             });
         }
 
@@ -380,16 +381,12 @@ class TaxController extends Controller
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $currentMonth = now()->startOfMonth();
 
-        // Get character IDs for the corporation
-        $characterQuery = MiningLedger::where('date', '>=', $currentMonth);
-        if ($moonOwnerCorpId) {
-            $characterQuery->whereIn('character_id', function($q) use ($moonOwnerCorpId) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->where('corporation_id', $moonOwnerCorpId);
-            });
-        }
-        $characterIds = $characterQuery->distinct()->pluck('character_id')->toArray();
+        // Get ALL character IDs who mined this month (includes guests)
+        // Guests are taxed at guest rates via daily summaries, so they must be included
+        $characterIds = MiningLedger::where('date', '>=', $currentMonth)
+            ->distinct()
+            ->pluck('character_id')
+            ->toArray();
 
         if (empty($characterIds)) {
             return [

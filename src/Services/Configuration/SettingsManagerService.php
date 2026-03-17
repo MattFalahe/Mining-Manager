@@ -299,16 +299,22 @@ class SettingsManagerService
         // Get base (corp member) tax rates
         $corpTaxRates = $this->getTaxRates();
 
-        // Get moon owner corporation ID
-        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
-
-        // If no corporation ID provided or moon owner not configured, use corp rates
-        if (!$characterCorporationId || !$moonOwnerCorpId) {
+        // If no character corporation ID provided, use corp rates
+        if (!$characterCorporationId) {
             return $corpTaxRates;
         }
 
-        // If the character is from the moon owner corporation, use corp member rates
-        if ($characterCorporationId == $moonOwnerCorpId) {
+        // Build list of "home" corporations: configured corps + moon owner corp
+        // Anyone NOT in this list is a guest miner
+        $homeCorporationIds = $this->getHomeCorporationIds();
+
+        // If no corporations configured at all, treat everyone as corp member
+        if (empty($homeCorporationIds)) {
+            return $corpTaxRates;
+        }
+
+        // If the character belongs to any configured corporation, use corp member rates
+        if (in_array((int) $characterCorporationId, $homeCorporationIds, true)) {
             return $corpTaxRates;
         }
 
@@ -936,6 +942,32 @@ class SettingsManagerService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Get all "home" corporation IDs — configured corporations + moon owner corp.
+     * Characters belonging to any of these are considered corp members.
+     * Characters from any other corporation are considered guest miners.
+     *
+     * @return array<int>
+     */
+    public function getHomeCorporationIds(): array
+    {
+        // Get configured corporations (from "Switch Corporation Context" list)
+        $configuredCorpIds = DB::table('mining_manager_settings')
+            ->whereNotNull('corporation_id')
+            ->distinct()
+            ->pluck('corporation_id')
+            ->map(fn($id) => (int) $id)
+            ->toArray();
+
+        // Also include moon owner corporation (structure/moon holding corp)
+        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
+        if ($moonOwnerCorpId) {
+            $configuredCorpIds[] = (int) $moonOwnerCorpId;
+        }
+
+        return array_values(array_unique($configuredCorpIds));
     }
 
     /**
