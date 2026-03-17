@@ -185,7 +185,7 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td><small class="text-muted">{{ ucfirst($ore['category'] ?? 'ore') }}</small></td>
+                                    <td><small class="text-muted">{{ ucfirst(str_replace('_', ' ', $ore['category'] ?? 'ore')) }}</small></td>
                                     <td class="text-right">{{ number_format($ore['quantity'] ?? 0, 0) }}</td>
                                     <td class="text-right">{{ number_format($ore['total_value'] ?? 0, 0) }} ISK</td>
                                     <td class="text-right">

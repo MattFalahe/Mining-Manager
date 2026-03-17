@@ -642,6 +642,7 @@
 
             {{-- Tax System Section --}}
             <div id="tax-system" class="help-section">
+                {{-- Overview & Chain --}}
                 <div class="help-card">
                     <h3>
                         <i class="fas fa-coins"></i>
@@ -650,6 +651,7 @@
                     <p>{{ trans('mining-manager::help.tax_system_intro') }}</p>
 
                     <h4>{{ trans('mining-manager::help.how_taxes_work') }}</h4>
+                    <p>{{ trans('mining-manager::help.tax_chain_intro') }}</p>
                     <ol class="step-by-step">
                         <li>
                             <strong>{{ trans('mining-manager::help.tax_step_1_title') }}</strong><br>
@@ -671,60 +673,86 @@
                             <strong>{{ trans('mining-manager::help.tax_step_5_title') }}</strong><br>
                             {{ trans('mining-manager::help.tax_step_5_desc') }}
                         </li>
+                        <li>
+                            <strong>{{ trans('mining-manager::help.tax_step_6_title') }}</strong><br>
+                            {{ trans('mining-manager::help.tax_step_6_desc') }}
+                        </li>
                     </ol>
+                </div>
 
-                    <h4>{{ trans('mining-manager::help.payment_methods') }}</h4>
-                    <p><strong>{{ trans('mining-manager::help.wallet_method_title') }}</strong></p>
-                    <p>{{ trans('mining-manager::help.wallet_method_desc') }}</p>
-                    <ul>
-                        <li>{{ trans('mining-manager::help.wallet_step_1') }}</li>
-                        <li>{{ trans('mining-manager::help.wallet_step_2') }}</li>
-                        <li>{{ trans('mining-manager::help.wallet_step_3') }}</li>
-                    </ul>
+                {{-- Daily Summaries --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-database"></i>
+                        {{ trans('mining-manager::help.daily_summaries_explained') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.daily_summaries_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.daily_summaries_when_generated') }}</p>
 
-                    <div class="warning-box">
-                        <i class="fas fa-exclamation-triangle"></i>
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.important') }}:</strong>
-                        {{ trans('mining-manager::help.tax_warning') }}
+                        {{ trans('mining-manager::help.daily_summaries_settings') }}
                     </div>
                 </div>
 
+                {{-- Tax Rates & Categories --}}
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-barcode"></i>
-                        {{ trans('mining-manager::help.tax_codes') }}
+                        <i class="fas fa-percentage"></i>
+                        {{ trans('mining-manager::help.tax_rates_explained') }}
                     </h3>
-                    <p>{{ trans('mining-manager::help.tax_codes_desc') }}</p>
-                    <p>{{ trans('mining-manager::help.tax_codes_usage') }}</p>
-                    <pre>{{ trans('mining-manager::help.tax_code_example') }}</pre>
+                    <p>{{ trans('mining-manager::help.tax_rates_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.tax_rate_moon_ore') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_rate_regular_ore') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_rate_ice') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_rate_gas') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_rate_abyssal') }}</strong></li>
+                    </ul>
+
+                    <h4>{{ trans('mining-manager::help.tax_selector_explained') }}</h4>
+                    <p>{{ trans('mining-manager::help.tax_selector_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.tax_selector_all_moon') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_selector_corp_moon') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_selector_no_moon') }}</strong></li>
+                    </ul>
+                    <p>{{ trans('mining-manager::help.tax_selector_toggles') }}</p>
+                </div>
+
+                {{-- Guest Mining --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-user-friends"></i>
+                        {{ trans('mining-manager::help.guest_mining_explained') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.guest_mining_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.guest_rates_config') }}</p>
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.note') }}:</strong>
-                        {{ trans('mining-manager::help.tax_code_prefix_note') }}
+                        {{ trans('mining-manager::help.guest_detection') }}
                     </div>
                 </div>
 
+                {{-- Event Tax Modifiers --}}
                 <div class="help-card">
                     <h3>
-                        <i class="fas fa-users"></i>
-                        {{ trans('mining-manager::help.accumulated_mode') }}
+                        <i class="fas fa-calendar-check"></i>
+                        {{ trans('mining-manager::help.event_modifiers_explained') }}
                     </h3>
-                    <p>{{ trans('mining-manager::help.accumulated_mode_desc') }}</p>
-                </div>
-
-                <div class="help-card">
-                    <h3>
-                        <i class="fas fa-check-circle"></i>
-                        {{ trans('mining-manager::help.wallet_verification') }}
-                    </h3>
-                    <p>{{ trans('mining-manager::help.wallet_verification_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.event_modifiers_desc') }}</p>
                     <ul>
-                        <li><strong>{{ trans('mining-manager::help.wallet_verification_member') }}</strong></li>
-                        <li><strong>{{ trans('mining-manager::help.wallet_verification_director') }}</strong></li>
+                        <li>{{ trans('mining-manager::help.event_modifier_range') }}</li>
+                        <li>{{ trans('mining-manager::help.event_modifier_calc') }}</li>
+                        <li>{{ trans('mining-manager::help.event_modifier_overlap') }}</li>
+                        <li>{{ trans('mining-manager::help.event_modifier_daily') }}</li>
                     </ul>
                 </div>
 
+                {{-- Calculate Taxes Buttons --}}
                 <div class="help-card">
                     <h3>
                         <i class="fas fa-calculator"></i>
@@ -735,6 +763,74 @@
                         <li><strong>{{ trans('mining-manager::help.calc_calculate') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_recalculate') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_regenerate_codes') }}</strong></li>
+                    </ul>
+                </div>
+
+                {{-- Exemptions --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-shield-alt"></i>
+                        {{ trans('mining-manager::help.exemptions_explained') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.exemptions_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.exemption_threshold') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.minimum_tax') }}</strong></li>
+                    </ul>
+                </div>
+
+                {{-- Payment & Tax Codes --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-barcode"></i>
+                        {{ trans('mining-manager::help.tax_codes') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.tax_codes_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.tax_codes_usage') }}</p>
+                    <pre>{{ trans('mining-manager::help.tax_code_example') }}</pre>
+
+                    <h4>{{ trans('mining-manager::help.payment_methods') }}</h4>
+                    <p><strong>{{ trans('mining-manager::help.wallet_method_title') }}</strong></p>
+                    <p>{{ trans('mining-manager::help.wallet_method_desc') }}</p>
+                    <ol>
+                        <li>{{ trans('mining-manager::help.wallet_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.wallet_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.wallet_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.wallet_step_4') }}</li>
+                    </ol>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong>
+                        {{ trans('mining-manager::help.tax_warning') }}
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
+                        {{ trans('mining-manager::help.tax_code_prefix_note') }}
+                    </div>
+                </div>
+
+                {{-- Alt Grouping --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-users"></i>
+                        {{ trans('mining-manager::help.accumulated_mode') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.accumulated_mode_desc') }}</p>
+                </div>
+
+                {{-- Wallet Verification --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-check-circle"></i>
+                        {{ trans('mining-manager::help.wallet_verification') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.wallet_verification_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.wallet_verification_member') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.wallet_verification_director') }}</strong></li>
                     </ul>
                 </div>
             </div>
@@ -1012,99 +1108,135 @@
                                 <tr>
                                     <th>Command</th>
                                     <th>Schedule</th>
-                                    <th>Description</th>
+                                    <th>Description &amp; Options</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td><code>mining-manager:process-ledger</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
-                                    <td>Process mining ledger data from ESI</td>
+                                    <td>Process corporation observer mining data from ESI. Creates mining ledger entries with ore type flags, prices, and generates daily summaries.<br>
+                                        <small class="text-muted">Options: <code>--observer_id=</code> specific structure, <code>--character_id=</code> specific character, <code>--days=30</code> lookback period, <code>--recalculate</code> recalc existing entries</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:cache-prices</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
-                                    <td>Cache ore prices from price provider</td>
+                                    <td>Cache market price data from your configured price provider for all ore types.<br>
+                                        <small class="text-muted">Options: <code>--type=all</code> (ore|compressed-ore|moon|materials|minerals|ice|gas|all), <code>--region=10000002</code> region ID, <code>--force</code> refresh even if cache is fresh</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-ledger-prices</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
-                                    <td>Update ledger entries with current prices</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:update-events</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td>Update mining event status</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:update-extractions</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Update moon extraction data from ESI</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:verify-payments</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Verify wallet payments against tax codes</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:monitor-active-thefts</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Monitor active theft incidents</td>
-                                </tr>
-                                <tr>
-                                    <td><code>mining-manager:recalculate-extraction-values</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_twice_daily') }}</span></td>
-                                    <td>Update extraction values with current prices</td>
+                                    <td>Update mining ledger entry values using current market prices and tax rates. Also regenerates affected daily summaries.<br>
+                                        <small class="text-muted">Options: <code>--days=1</code> days to re-price, <code>--all-unpriced</code> all entries with 0 value, <code>--force</code> re-price even if value > 0, <code>--character_id=</code> specific character</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-daily-summaries</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Update daily mining summaries</td>
+                                    <td>Generate/update daily mining summaries with per-ore tax breakdown using current settings. This is the foundation of the tax system.<br>
+                                        <small class="text-muted">Options: <code>--days=2</code> days back, <code>--date=YYYY-MM-DD</code> specific date, <code>--month=YYYY-MM</code> entire month, <code>--today-only</code> fast mode, <code>--character_id=</code> specific character</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-events</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
+                                    <td>Update mining event participant data and statistics.<br>
+                                        <small class="text-muted">Options: <code>--event_id=</code> specific event, <code>--active</code> only active events</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:update-extractions</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Update moon extraction data from corporation structure ESI endpoints.<br>
+                                        <small class="text-muted">Options: <code>--structure_id=</code> specific structure, <code>--corporation_id=</code> specific corp, <code>--active-only</code> only active extractions</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:verify-payments</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Scan corporation wallet journal and match payments against issued tax codes.<br>
+                                        <small class="text-muted">Options: <code>--days=7</code> days to check back, <code>--character_id=</code> specific character, <code>--auto-match</code> automatically match payments</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:monitor-active-thefts</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
+                                    <td>Fast check: monitors characters already on the theft list for continued mining activity.<br>
+                                        <small class="text-muted">Options: <code>--hours=6</code> lookback period, <code>--notify</code> send notifications</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:recalculate-extraction-values</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_twice_daily') }}</span></td>
+                                    <td>Recalculate moon extraction values based on current prices. Useful for extractions arriving soon.<br>
+                                        <small class="text-muted">Options: <code>--hours=4</code> arrival window, <code>--force</code> recalculate even if recently done</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Calculate monthly tax obligations</td>
+                                    <td>Calculate monthly tax obligations by summing daily summaries. Creates MiningTax records per main character.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> recalculate existing records</small>
+                                    </td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:calculate-statistics</code></td>
+                                    <td><code>mining-manager:calculate-monthly-stats</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Calculate monthly mining statistics</td>
+                                    <td>Pre-calculate and store monthly dashboard statistics for performance.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--user_id=</code> specific user, <code>--recalculate</code> recalculate existing, <code>--current-month</code> fast mode, <code>--all-history</code> all historical months</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-jackpots</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Detect jackpot moon extractions</td>
+                                    <td>Detect jackpot moon extractions based on mining ledger data analysis.<br>
+                                        <small class="text-muted">Options: <code>--all</code> check all extractions, <code>--days=30</code> lookback period</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:archive-extractions</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Archive completed extractions</td>
+                                    <td>Archive completed moon extractions to history table and calculate actual mined values.<br>
+                                        <small class="text-muted">Options: <code>--days=7</code> archive older than N days, <code>--keep-months=12</code> keep history for N months, <code>--dry-run</code> preview without changes</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-reports</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Generate scheduled reports</td>
+                                    <td>Generate mining reports and analytics summaries.<br>
+                                        <small class="text-muted">Options: <code>--type=monthly</code> (daily|weekly|monthly|custom), <code>--start=YYYY-MM-DD</code>, <code>--end=YYYY-MM-DD</code>, <code>--format=json</code> (json|csv|pdf)</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-theft</code></td>
                                     <td><span class="badge badge-warning">{{ trans('mining-manager::help.schedule_twice_monthly') }}</span></td>
-                                    <td>Full theft detection scan</td>
+                                    <td>Full scan: detect unauthorized moon mining by non-corporation members with overdue taxes.<br>
+                                        <small class="text-muted">Options: <code>--days=15</code> lookback period, <code>--notify</code> send notifications for detected thefts</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:send-reminders</code></td>
                                     <td><span class="badge badge-success">25th of month</span></td>
-                                    <td>Send tax payment reminders</td>
+                                    <td>Send tax payment reminder notifications to characters with unpaid taxes.<br>
+                                        <small class="text-muted">Options: <code>--overdue-only</code> only overdue taxes, <code>--days-overdue=7</code> days threshold, <code>--dry-run</code> preview without sending</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-invoices</code></td>
                                     <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span></td>
-                                    <td>Generate tax invoices</td>
+                                    <td>Generate tax invoice records for unpaid mining taxes.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--character_id=</code> specific character, <code>--dry-run</code> preview without creating</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:finalize-month</code></td>
                                     <td><span class="badge badge-success">2nd of month</span></td>
-                                    <td>Finalize previous month summaries</td>
+                                    <td>Finalize previous month's daily and monthly summaries. Marks summaries as finalized so they are no longer regenerated.<br>
+                                        <small class="text-muted">Arguments: <code>{month?}</code> optional month in YYYY-MM format (defaults to previous month)</small>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1118,24 +1250,28 @@
                         <table class="table table-sm" style="color: #d1d5db;">
                             <tbody>
                                 <tr>
-                                    <td style="width: 50%;"><code>mining-manager:diagnose-character {character_id}</code></td>
-                                    <td>Diagnose a specific character's data</td>
+                                    <td style="width: 45%;"><code>mining-manager:diagnose-character {character_id}</code></td>
+                                    <td>Diagnose a specific character's corporation lookup, affiliation data, and mining records. Requires the character ID as an argument.</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:diagnose-affiliations</code></td>
-                                    <td>Check character affiliations and alt grouping</td>
+                                    <td><code>mining-manager:diagnose-affiliation</code></td>
+                                    <td>Check character affiliations and alt grouping. Verifies CharacterInfo relationships are working correctly.</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-extractions</code></td>
-                                    <td>Diagnose moon extraction issues</td>
+                                    <td>Diagnose moon extraction data issues. Checks for missing or incomplete extraction records from ESI.</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-prices</code></td>
-                                    <td>Test price provider connectivity and accuracy</td>
+                                    <td>Test price provider connectivity, cache health, and pricing accuracy.<br>
+                                        <small class="text-muted">Options: <code>--detailed</code> full breakdown, <code>--test-provider</code> test current provider, <code>--show-missing</code> list items without prices, <code>--show-sources</code> cache vs fallback, <code>--show-coverage</code> coverage stats for all 357 items</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:diagnose-type-ids</code></td>
-                                    <td>Validate ore type ID mappings</td>
+                                    <td>Verify ore type ID mappings against ESI API or local database.<br>
+                                        <small class="text-muted">Options: <code>--category=</code> specific category (ore|moon|ice|gas|all), <code>--include-abyssal</code> include Pochven ores, <code>--test-jackpot</code> test jackpot detection, <code>--verify-db</code> verify against local DB</small>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1149,18 +1285,22 @@
                         <table class="table table-sm" style="color: #d1d5db;">
                             <tbody>
                                 <tr>
-                                    <td style="width: 50%;"><code>mining-manager:backfill-ore-flags</code></td>
-                                    <td>Backfill ore type flags for existing ledger data</td>
+                                    <td style="width: 45%;"><code>mining-manager:backfill-ore-types</code></td>
+                                    <td>Backfill is_moon_ore, is_ice, and is_gas flags for existing mining ledger entries that were created before these flags were added.<br>
+                                        <small class="text-muted">Options: <code>--batch=1000</code> records per batch</small>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:backfill-extraction-notifications</code></td>
-                                    <td>Backfill extraction notification records</td>
+                                    <td>Backfill ore composition data from character notifications for existing moon extractions.<br>
+                                        <small class="text-muted">Options: <code>--limit=100</code> max extractions, <code>--structure=</code> specific structure, <code>--days=90</code> lookback, <code>--dry-run</code> preview, <code>--force</code> overwrite existing</small>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    {{-- Manual Execution --}}
+                    {{-- Common Manual Commands --}}
                     <h4 class="mt-4"><i class="fas fa-sync text-success"></i> {{ trans('mining-manager::help.cli_manual') }}</h4>
                     <p>{{ trans('mining-manager::help.cli_manual_desc') }}</p>
 
@@ -1168,20 +1308,36 @@
                         <table class="table table-sm" style="color: #d1d5db;">
                             <tbody>
                                 <tr>
-                                    <td style="width: 50%;"><code>mining-manager:process-ledger --force</code></td>
-                                    <td>Force process all mining data</td>
+                                    <td style="width: 55%;"><code>mining-manager:update-daily-summaries --month=2026-03</code></td>
+                                    <td>Regenerate all daily summaries for March 2026 with current prices and tax rates</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:update-extractions --corporation={id}</code></td>
-                                    <td>Update extractions for specific corp</td>
+                                    <td><code>mining-manager:update-ledger-prices --force --days=30</code></td>
+                                    <td>Force re-price all entries from last 30 days (also regenerates affected daily summaries)</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:detect-theft --dry-run</code></td>
-                                    <td>Preview theft detection without changes</td>
+                                    <td><code>mining-manager:calculate-taxes --month=2026-03 --recalculate</code></td>
+                                    <td>Recalculate taxes for March 2026, updating existing tax records</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:archive-extractions --dry-run</code></td>
-                                    <td>Preview archival without changes</td>
+                                    <td><code>mining-manager:cache-prices --force</code></td>
+                                    <td>Force refresh all cached prices even if cache is fresh</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:process-ledger --recalculate</code></td>
+                                    <td>Reprocess all mining data, recalculating prices and taxes</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:detect-theft --days=30 --notify</code></td>
+                                    <td>Run theft detection for last 30 days and send notifications</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:send-reminders --dry-run</code></td>
+                                    <td>Preview which tax reminders would be sent without actually sending them</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:diagnose-prices --detailed --show-missing</code></td>
+                                    <td>Full price diagnostic showing all categories and missing items</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1193,15 +1349,17 @@
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <strong>Warning:</strong> Test commands should only be used in development environments.
+                        <strong>Warning:</strong> Test commands should only be used in development environments. They create fake data that should not be mixed with real production data.
                     </div>
 
                     <div class="table-responsive">
                         <table class="table table-sm" style="color: #d1d5db;">
                             <tbody>
                                 <tr>
-                                    <td style="width: 50%;"><code>mining-manager:generate-test-data</code></td>
-                                    <td>Generate test mining data</td>
+                                    <td style="width: 45%;"><code>mining-manager:generate-test-data</code></td>
+                                    <td>Generate fake corporations, characters, and mining ledger entries for testing.<br>
+                                        <small class="text-muted">Options: <code>--corporations=3</code> number of corps, <code>--characters=5</code> per corp, <code>--days=30</code> of mining data, <code>--entries=10</code> per day per character, <code>--cleanup</code> remove existing test data first</small>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>

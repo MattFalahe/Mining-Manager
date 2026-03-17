@@ -127,26 +127,69 @@ return [
 
     // Tax System
     'tax_system_explained' => 'Tax System Explained',
-    'tax_system_intro' => 'The tax system automatically calculates what each member owes based on the value of ore they\'ve mined and the configured tax rates.',
-    'how_taxes_work' => 'How Taxes Work',
-    'tax_step_1_title' => 'Mining is Tracked',
-    'tax_step_1_desc' => 'Every time a member mines, the system automatically records the ore type, quantity, volume, and ISK value using current market prices.',
-    'tax_step_2_title' => 'Taxes are Calculated',
-    'tax_step_2_desc' => 'The system calculates each member\'s tax using accumulated mode, which groups all alt characters under a single main character for combined tax liability.',
-    'tax_step_3_title' => 'Tax Codes are Assigned',
-    'tax_step_3_desc' => 'Each member receives a unique tax code (e.g., TAX-MINC-VX45XUQC) that identifies their payment. The prefix is configurable in settings.',
-    'tax_step_4_title' => 'Payment is Made',
-    'tax_step_4_desc' => 'Members pay their taxes by sending ISK to the corporation wallet and entering their tax code in the transfer reason field.',
-    'tax_step_5_title' => 'Payment is Verified',
-    'tax_step_5_desc' => 'The system automatically scans corporation wallet journal entries and matches the reason field against issued tax codes.',
+    'tax_system_intro' => 'The tax system automatically calculates what each member owes based on the value of ore they\'ve mined and the configured tax rates. Daily summaries are the single source of truth for all tax data — every page (My Taxes, Calculate Taxes, Tax Overview, Dashboard) reads from daily summaries.',
+
+    // How the Tax Chain Works
+    'how_taxes_work' => 'How the Tax Chain Works',
+    'tax_chain_intro' => 'Mining tax follows a clear chain from ESI data to final payment:',
+    'tax_step_1_title' => '1. Mining Data is Fetched',
+    'tax_step_1_desc' => 'The process-ledger command runs every 30 minutes and fetches mining data from ESI corporation mining observers. Each entry records the character, ore type, quantity, date, and solar system.',
+    'tax_step_2_title' => '2. Prices are Applied',
+    'tax_step_2_desc' => 'The update-ledger-prices command runs daily and applies current market prices to each mining entry. Prices come from your configured price provider (SeAT, Janice, Fuzzwork, or Custom) using the selected price type (sell, buy, or average) from your chosen market hub region.',
+    'tax_step_3_title' => '3. Daily Summaries are Generated',
+    'tax_step_3_desc' => 'The update-daily-summaries command creates per-character, per-day summaries containing: total ISK value, per-ore breakdown with tax rates, event modifiers, and estimated tax. These summaries always use your current tax settings — if you change a rate, the next summary regeneration picks it up.',
+    'tax_step_4_title' => '4. Tax is Calculated',
+    'tax_step_4_desc' => 'At month end, the Calculate button sums all daily summaries into a single monthly tax record per member (grouped by main character). Alt characters are automatically combined under their main using SeAT\'s character affiliation system.',
+    'tax_step_5_title' => '5. Payment Codes are Generated',
+    'tax_step_5_desc' => 'Each member receives a unique tax code (e.g., TAX-MINC-VX45XUQC). They pay by sending ISK to the corporation wallet with their code in the transfer reason field.',
+    'tax_step_6_title' => '6. Payments are Verified',
+    'tax_step_6_desc' => 'The verify-payments command scans corporation wallet journal entries every 6 hours and automatically matches the reason field against issued tax codes. Matched payments update the tax status.',
+
+    // Daily Summaries as Source of Truth
+    'daily_summaries_explained' => 'Daily Summaries (Source of Truth)',
+    'daily_summaries_desc' => 'Daily summaries are the single source of truth for all tax calculations. Each summary stores a JSON breakdown per ore type containing: type ID, ore name, category, moon rarity, quantity, unit price, total value, tax rate, event modifier, effective rate, taxable flag, and estimated tax. When you view "My Taxes", the system reads directly from these summaries rather than recalculating from raw mining data.',
+    'daily_summaries_when_generated' => 'Summaries are generated automatically when mining data is processed and when prices are updated. They can also be regenerated on demand using the Recalculate button or the update-daily-summaries command.',
+    'daily_summaries_settings' => 'Tax rates in daily summaries always reflect your current settings at the time of generation. If you change a tax rate mid-month, use Recalculate to regenerate all summaries for that month with the new rates.',
+
+    // Tax Rates and Categories
+    'tax_rates_explained' => 'Tax Rates and Ore Categories',
+    'tax_rates_desc' => 'Tax rates are configured per-corporation in Settings > Tax Rates. Each ore category has its own rate:',
+    'tax_rate_moon_ore' => 'Moon Ore — Separate rates for each rarity tier: R64, R32, R16, R8, R4. Higher rarity typically means higher tax.',
+    'tax_rate_regular_ore' => 'Regular Ore — A single rate applied to all non-moon, non-ice, non-gas ores (Veldspar, Scordite, Plagioclase, etc.).',
+    'tax_rate_ice' => 'Ice — Applied to all ice mining products.',
+    'tax_rate_gas' => 'Gas — Applied to all gas cloud harvesting.',
+    'tax_rate_abyssal' => 'Abyssal Ore — Applied to rare ores from Abyssal Deadspace (Bezdnacine, Rakovene, Talassonite). Disabled by default in the Tax Selector.',
+
+    // Tax Selector
+    'tax_selector_explained' => 'Tax Selector (What Gets Taxed)',
+    'tax_selector_desc' => 'The Tax Selector controls which ore categories are subject to taxation. Found in Settings > Tax Rates under "Tax Selector":',
+    'tax_selector_all_moon' => 'All Moon Ore — Tax all moon ore regardless of which structure it was mined from.',
+    'tax_selector_corp_moon' => 'Only Corp Moon Ore — Only tax moon ore mined from structures owned by your configured Moon Owner Corporation. Moon ore mined from other corporations\' structures is not taxed.',
+    'tax_selector_no_moon' => 'No Moon Ore — Disable moon ore taxation entirely.',
+    'tax_selector_toggles' => 'Individual toggles exist for regular ore, ice, gas, and abyssal ore. Each can be independently enabled or disabled.',
+
+    // Guest Mining
+    'guest_mining_explained' => 'Guest Mining and Guest Tax Rates',
+    'guest_mining_desc' => 'A "guest miner" is any character whose corporation does not match the configured Moon Owner Corporation. Guest miners are automatically detected and can have different tax rates:',
+    'guest_rates_config' => 'Guest tax rates are configured separately in Settings > Tax Rates under "Guest Miner Tax Rates". You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal). If a guest rate is set to 0, the system falls back to the regular member rate for that category.',
+    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against the Moon Owner Corporation ID in settings.',
+
+    // Event Tax Modifiers
+    'event_modifiers_explained' => 'Mining Event Tax Modifiers',
+    'event_modifiers_desc' => 'Mining events can include a tax modifier that adjusts the effective tax rate for participants:',
+    'event_modifier_range' => 'Modifiers range from -100 (tax-free) to +100 (double tax). A modifier of -50 means participants pay half the normal tax rate.',
+    'event_modifier_calc' => 'The effective rate is calculated as: base_rate * (1 + modifier/100). For example, a 26% R64 rate with a -50 modifier becomes 13%.',
+    'event_modifier_overlap' => 'When multiple events overlap for the same character on the same date, the most beneficial modifier (lowest value) is used.',
+    'event_modifier_daily' => 'Event modifiers are stored in daily summaries, so they are visible in the ore breakdown on the My Taxes page.',
 
     // Payment Methods
     'payment_methods' => 'Payment Methods',
     'wallet_method_title' => 'Wallet Transfer Method',
     'wallet_method_desc' => 'Members send ISK directly to the corporation wallet:',
-    'wallet_step_1' => 'Send ISK to the configured corporation wallet division',
-    'wallet_step_2' => 'Enter your unique tax code in the transfer reason field (this is where the system looks for it)',
-    'wallet_step_3' => 'Payment will be automatically verified when the wallet verification command runs',
+    'wallet_step_1' => 'Go to your "My Taxes" page to see your tax code and amount owed',
+    'wallet_step_2' => 'In EVE, open the corporation wallet and click "Give Money"',
+    'wallet_step_3' => 'Enter the tax amount and paste your tax code into the "Reason" field',
+    'wallet_step_4' => 'The system will automatically verify your payment within 6 hours when the verify-payments command runs',
     'tax_warning' => 'Always include your tax code in the reason field! Without it, payments cannot be automatically matched and must be manually processed by a director.',
 
     // Wallet Verification
@@ -155,12 +198,18 @@ return [
     'wallet_verification_member' => 'Members can only see their own wallet transfers and personal payment stats.',
     'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, and manually record payments.',
 
-    // Calculation Methods
-    'calculation_methods' => 'Tax Calculation Buttons',
-    'calculation_methods_desc' => 'The Calculate Taxes page uses daily summaries as the single source of truth for all tax data. Daily summaries are generated automatically when mining data is processed and contain per-ore breakdowns with current tax rates and market prices.',
-    'calc_calculate' => 'Calculate - Sums existing daily summaries to create monthly tax records. Fast — use this for routine end-of-month tax finalization.',
-    'calc_recalculate' => 'Recalculate - Regenerates ALL daily summaries for the selected month using current market prices and tax rates, then calculates monthly taxes. Use this after changing tax rates or if prices were stale when summaries were originally created.',
-    'calc_regenerate_codes' => 'Regenerate Codes - Performs a full recalculation and then generates or updates payment codes for each member. Use this when you need fresh payment codes.',
+    // Calculation Buttons
+    'calculation_methods' => 'Calculate Taxes Page — Buttons',
+    'calculation_methods_desc' => 'The Calculate Taxes page provides three action buttons. All of them read from daily summaries as the single source of truth:',
+    'calc_calculate' => 'Calculate — Sums existing daily summaries to create monthly tax records (MiningTax entries). This is fast because it only reads stored data. Use this for routine end-of-month tax finalization when you are happy with the current daily summaries.',
+    'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates monthly tax records. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
+    'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
+
+    // Exemptions and Minimum Tax
+    'exemptions_explained' => 'Exemptions and Minimum Tax',
+    'exemptions_desc' => 'Two thresholds control small tax amounts:',
+    'exemption_threshold' => 'Exemption Threshold — If a character\'s total tax for the month is below this amount, they are exempt from tax entirely (tax = 0 ISK). Configured in Settings > Tax Rates > Exemptions.',
+    'minimum_tax' => 'Minimum Tax Amount — If a character\'s tax is above the exemption threshold but below this minimum, it is raised to the minimum. This prevents tiny invoices. Configured in Settings > Payment.',
 
     // Tax Codes
     'tax_codes' => 'Tax Codes Explained',
@@ -171,7 +220,7 @@ return [
 
     // Accumulated Mode
     'accumulated_mode' => 'Accumulated Mode (Alt Grouping)',
-    'accumulated_mode_desc' => 'Mining Manager groups all alt characters under a single main character for tax calculation. This uses SeAT\'s character affiliation system to determine which characters belong to the same player. The "Calculate Taxes" page shows grouped totals per main character with expandable alt details.',
+    'accumulated_mode_desc' => 'Mining Manager automatically groups all alt characters under a single main character for tax calculation. This uses SeAT\'s refresh token and user affiliation system to determine which characters belong to the same player. Tax is calculated on the combined total of all characters in the group, and the main character receives the tax invoice. The "Calculate Taxes" page shows grouped totals per main character. Characters not linked to a SeAT user account are taxed individually.',
 
     // Mining Events
     'mining_events_guide' => 'Mining Events Guide',
@@ -406,17 +455,17 @@ return [
     'setting_permissions_desc' => 'Permissions are managed through SeAT\'s standard ACL system. Navigate to SeAT Configuration > Access Control to assign roles and permissions to users. Most corporation members should receive the "member" permission, directors get "director", and only administrators get "admin".',
 
     // CLI Commands
-    'cli_intro' => 'Run these commands via SSH from your SeAT installation directory using: php artisan command-name',
+    'cli_intro' => 'Run commands via SSH from your SeAT installation directory. For Docker installations: docker compose exec seat-worker php artisan command-name. For bare-metal: php artisan command-name',
     'cli_scheduled' => 'Scheduled Commands',
-    'cli_scheduled_desc' => 'These commands run automatically on a schedule via Laravel\'s task scheduler:',
+    'cli_scheduled_desc' => 'These commands run automatically via Laravel\'s task scheduler. You can also run them manually at any time:',
     'cli_diagnostic' => 'Diagnostic Commands',
-    'cli_diagnostic_desc' => 'Use these commands to troubleshoot issues:',
-    'cli_manual' => 'Manual Execution',
-    'cli_manual_desc' => 'Useful flags for running scheduled commands manually:',
+    'cli_diagnostic_desc' => 'Use these commands to troubleshoot issues. They do not modify data unless specified:',
+    'cli_manual' => 'Common Manual Commands',
+    'cli_manual_desc' => 'Frequently used commands with their most useful options:',
     'cli_data_management' => 'Data Management Commands',
-    'cli_data_management_desc' => 'One-time or maintenance commands for data management:',
+    'cli_data_management_desc' => 'One-time or maintenance commands for data backfilling and cleanup:',
     'cli_test' => 'Test Commands (Development Only)',
-    'cli_test_desc' => 'Commands for generating test data in development environments:',
+    'cli_test_desc' => 'Commands for generating test data. Only use in development environments — they create fake data:',
 
     // Schedule Labels
     'schedule_30min' => 'Every 30 min',

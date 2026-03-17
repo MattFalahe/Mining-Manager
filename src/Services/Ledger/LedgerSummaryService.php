@@ -324,6 +324,10 @@ class LedgerSummaryService
             return (float) ($taxRates['gas'] ?? 10.0);
         }
 
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return (float) ($taxRates['abyssal_ore'] ?? 15.0);
+        }
+
         return (float) ($taxRates['ore'] ?? 10.0);
     }
 
@@ -364,6 +368,10 @@ class LedgerSummaryService
 
         if (TypeIdRegistry::isGas($typeId)) {
             return $taxSelector['gas'] ?? true;
+        }
+
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return $taxSelector['abyssal_ore'] ?? false;
         }
 
         return $taxSelector['ore'] ?? true;
@@ -438,6 +446,9 @@ class LedgerSummaryService
         }
         if (TypeIdRegistry::isGas($typeId)) {
             return 'gas';
+        }
+        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+            return 'abyssal_ore';
         }
         return 'ore';
     }
