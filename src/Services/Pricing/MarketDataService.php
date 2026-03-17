@@ -25,7 +25,7 @@ class MarketDataService
     /**
      * Cache duration in minutes
      */
-    const CACHE_DURATION = 60; // 1 hour default
+    const CACHE_DURATION = 240; // 4 hours default
     const CACHE_PREFIX = 'mining_manager_prices_';
     const HISTORICAL_CACHE_PREFIX = 'mining_manager_historical_';
 

@@ -195,7 +195,7 @@ class DiagnosePricesCommand extends Command
 
         // Get cache freshness
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
         $cutoff = Carbon::now()->subMinutes($cacheDuration);
         $fresh = MiningPriceCache::where('cached_at', '>', $cutoff)->count();
         $stale = $totalCached - $fresh;
@@ -877,7 +877,7 @@ class DiagnosePricesCommand extends Command
 
         // Check cache freshness
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
         $cutoff = Carbon::now()->subMinutes($cacheDuration);
         $stale = MiningPriceCache::where('cached_at', '<', $cutoff)->count();
         if ($stale > 10) {

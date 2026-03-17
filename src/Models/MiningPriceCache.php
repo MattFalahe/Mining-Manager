@@ -72,7 +72,7 @@ class MiningPriceCache extends Model
     {
         if ($minutes === null) {
             $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
-            $minutes = (int) ($pricingSettings['cache_duration'] ?? 60);
+            $minutes = (int) ($pricingSettings['cache_duration'] ?? 240);
         }
 
         return $query->where('cached_at', '>=', now()->subMinutes($minutes));
@@ -88,7 +88,7 @@ class MiningPriceCache extends Model
     {
         if ($minutes === null) {
             $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
-            $minutes = (int) ($pricingSettings['cache_duration'] ?? 60);
+            $minutes = (int) ($pricingSettings['cache_duration'] ?? 240);
         }
 
         return $this->cached_at->greaterThanOrEqualTo(now()->subMinutes($minutes));

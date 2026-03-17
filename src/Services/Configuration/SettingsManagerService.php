@@ -590,7 +590,7 @@ class SettingsManagerService
             // Price provider (checks settings first, falls back to ENV)
             'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'seat')),
             'price_type' => $this->getSetting('pricing.price_type', 'sell'),
-            'cache_duration' => $this->getSetting('pricing.cache_duration', 60),
+            'cache_duration' => $this->getSetting('pricing.cache_duration', 240),
             'auto_refresh' => $this->getSetting('pricing.auto_refresh', true),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
             

@@ -42,7 +42,7 @@ class MoonValueCalculationService
 
         $cacheKey = "mining-manager:moon-value:{$extraction->id}";
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
             // Ensure ore_composition is an array
@@ -164,7 +164,7 @@ class MoonValueCalculationService
 
         if ($priceCache) {
             // Check if cache is fresh
-            $cacheDuration = ($this->settingsService->getPricingSettings()['cache_duration'] ?? 60);
+            $cacheDuration = ($this->settingsService->getPricingSettings()['cache_duration'] ?? 240);
             if (!$priceCache->cached_at->addMinutes($cacheDuration)->isPast()) {
                 // Cache is fresh, use it
                 Log::debug("Mining Manager: Using cached price for type_id {$typeId} from mining_price_cache");

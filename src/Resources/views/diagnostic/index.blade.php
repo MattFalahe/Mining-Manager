@@ -2439,7 +2439,7 @@ function loadSystemStatus() {
                 '<span class="badge badge-' + pcBadge + ' mb-2">' + (pc.status || 'unknown').toUpperCase() + '</span>' +
                 '<table class="table table-sm table-dark">' +
                 '<tr><td>Total cached prices</td><td><strong>' + (pc.total_cached || 0) + '</strong></td></tr>' +
-                '<tr><td>Fresh (within ' + (pc.cache_duration_minutes || 60) + ' min)</td><td class="text-success">' + (pc.fresh || 0) + '</td></tr>' +
+                '<tr><td>Fresh (within ' + (pc.cache_duration_minutes || 240) + ' min)</td><td class="text-success">' + (pc.fresh || 0) + '</td></tr>' +
                 '<tr><td>Stale</td><td class="' + (pc.stale > 0 ? 'text-warning' : '') + '">' + (pc.stale || 0) + '</td></tr>' +
                 '</table>'
             );

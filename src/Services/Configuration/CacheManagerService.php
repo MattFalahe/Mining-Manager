@@ -35,7 +35,7 @@ class CacheManagerService
     /**
      * Default cache duration in minutes
      */
-    const DEFAULT_DURATION = 60;
+    const DEFAULT_DURATION = 240;
 
     /**
      * Statistics cache key

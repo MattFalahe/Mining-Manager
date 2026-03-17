@@ -606,7 +606,7 @@ class PriceProviderService
 
         // Check if cache is fresh based on configuration
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60); // minutes
+        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240); // minutes
         $cacheAge = $cacheEntry->cached_at->diffInMinutes(Carbon::now());
 
         return $cacheAge < $cacheDuration;

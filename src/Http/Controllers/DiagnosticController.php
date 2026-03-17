@@ -562,7 +562,7 @@ class DiagnosticController extends Controller
                     'janice_market' => $pricingSettings['janice_market'] ?? 'jita',
                     'janice_price_method' => $pricingSettings['janice_price_method'] ?? 'buy',
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
-                    'cache_duration' => ($pricingSettings['cache_duration'] ?? 60) . ' minutes',
+                    'cache_duration' => ($pricingSettings['cache_duration'] ?? 240) . ' minutes',
                     'auto_refresh' => ($pricingSettings['auto_refresh'] ?? true) ? 'Enabled' : 'Disabled',
                     'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
                     'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
@@ -721,7 +721,7 @@ class DiagnosticController extends Controller
         try {
             // Get cache duration from settings service (correct key path)
             $pricingSettings = $this->settingsService->getPricingSettings();
-            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
 
             // Get total cached items
             $totalCached = MiningPriceCache::count();
@@ -1943,7 +1943,7 @@ class DiagnosticController extends Controller
         // ── 3. Price Cache Freshness ─────────────────────────────────
         try {
             $pricingSettings = $this->settingsService->getPricingSettings();
-            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 60);
+            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
 
             $totalCached = MiningPriceCache::count();
             $freshCount = MiningPriceCache::where('cached_at', '>=', now()->subMinutes($cacheDuration))->count();

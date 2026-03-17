@@ -246,8 +246,8 @@ return [
         // Use compressed ore prices if available
         'prefer_compressed_prices' => false,
         
-        // Cache price data duration (hours)
-        'cache_duration' => 24,
+        // Cache price data duration (minutes)
+        'cache_duration' => 240,
         
         // Fallback price if no market data (ISK per unit)
         'fallback_price' => 100,

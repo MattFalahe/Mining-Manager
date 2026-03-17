@@ -187,8 +187,8 @@
                            class="form-control @error('cache_duration') is-invalid @enderror" 
                            id="cache_duration" 
                            name="cache_duration" 
-                           value="{{ old('cache_duration', $settings['pricing']['cache_duration'] ?? 60) }}"
-                           min="1" 
+                           value="{{ old('cache_duration', $settings['pricing']['cache_duration'] ?? 240) }}"
+                           min="30"
                            max="1440">
                     <div class="input-group-append">
                         <span class="input-group-text">minutes</span>
@@ -198,7 +198,8 @@
                     @enderror
                 </div>
                 <small class="form-text text-muted">
-                    How long to cache prices before refreshing. Range: 1-1440 minutes (1 min - 24 hours). <strong>Recommended: 60 minutes</strong>
+                    How long to cache prices before considering them stale. Range: 30-1440 minutes (30 min - 24 hours). <strong>Default: 240 minutes (4 hours)</strong>.
+                    If you change this, also update the <code>cache-prices</code> scheduled job frequency to match.
                 </small>
             </div>
 
