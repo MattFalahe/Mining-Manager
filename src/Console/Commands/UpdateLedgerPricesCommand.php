@@ -5,7 +5,10 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
+use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Settings\SettingsService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -44,6 +47,8 @@ class UpdateLedgerPricesCommand extends Command
         $characterId = $this->option('character_id');
 
         $valuationService = app(OreValuationService::class);
+        $taxService = app(TaxCalculationService::class);
+        $settingsService = app(SettingsService::class);
 
         // Build query
         $query = MiningLedger::query();
@@ -107,11 +112,31 @@ class UpdateLedgerPricesCommand extends Command
                     continue;
                 }
 
+                // Recalculate tax_amount using current tax rates
+                $entryCorpId = $entry->corporation_id;
+                if (!$entryCorpId && $entry->observer_id) {
+                    $entryCorpId = DB::table('corporation_industry_mining_observers')
+                        ->where('observer_id', $entry->observer_id)
+                        ->value('corporation_id');
+                }
+                if ($entryCorpId) {
+                    $settingsService->setActiveCorporation((int) $entryCorpId);
+                }
+
+                $characterCorpId = DB::table('character_affiliations')
+                    ->where('character_id', $entry->character_id)
+                    ->value('corporation_id');
+
+                $taxRate = $taxService->getTaxRateForOre($entry->type_id, $characterCorpId);
+                $newTaxAmount = $newTotalValue * ($taxRate / 100);
+
                 $entry->update([
                     'unit_price' => $values['unit_price'] ?? 0,
                     'ore_value' => $values['ore_value'] ?? 0,
                     'mineral_value' => $values['mineral_value'] ?? 0,
                     'total_value' => $newTotalValue,
+                    'tax_rate' => $taxRate,
+                    'tax_amount' => $newTaxAmount,
                 ]);
 
                 $updated++;

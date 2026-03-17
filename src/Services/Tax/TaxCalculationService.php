@@ -914,7 +914,7 @@ class TaxCalculationService
             ->whereNotNull('processed_at')
             ->get();
 
-        // Get character's corporation ID for tax rate determination (fallback only)
+        // Get character's corporation ID for tax rate determination
         $character = CharacterInfo::find($characterId);
         $characterCorpId = $character ? $character->corporation_id : null;
 
@@ -926,41 +926,31 @@ class TaxCalculationService
         $totalTax = 0;
 
         foreach ($miningData as $entry) {
+            // Switch corporation context per-entry for correct tax rates
+            $entryCorpId = $entry->corporation_id;
+            if (!$entryCorpId && $entry->observer_id) {
+                $entryCorpId = DB::table('corporation_industry_mining_observers')
+                    ->where('observer_id', $entry->observer_id)
+                    ->value('corporation_id');
+            }
+            if ($entryCorpId) {
+                $this->settingsService->setActiveCorporation((int) $entryCorpId);
+            }
+
+            if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
+                continue;
+            }
+
             $value = $this->calculateOreValue($entry);
 
-            // Use stored tax_amount and tax_rate from ledger (stamped at processing time)
-            // This preserves mid-month rate changes: each entry keeps the rate it was processed with
-            // Only Regenerate Codes should recalculate the full month with current rates
-            $storedTax = (float) ($entry->tax_amount ?? 0);
-            $storedRate = (float) ($entry->tax_rate ?? 0);
+            // Always use current tax rates from settings so My Taxes reflects
+            // the rates the corporation actually has configured right now
+            $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
+            $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
+            $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
+            $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
 
-            if ($storedTax > 0 && $storedRate > 0) {
-                // Use stored values from process-ledger
-                $tax = $storedTax;
-                $baseTaxRate = $storedRate;
-                $eventModifier = 0;
-            } else {
-                // Fallback: recalculate for entries without stored tax (e.g. processed before rates were set)
-                $entryCorpId = $entry->corporation_id;
-                if (!$entryCorpId && $entry->observer_id) {
-                    $entryCorpId = DB::table('corporation_industry_mining_observers')
-                        ->where('observer_id', $entry->observer_id)
-                        ->value('corporation_id');
-                }
-                if ($entryCorpId) {
-                    $this->settingsService->setActiveCorporation((int) $entryCorpId);
-                }
-
-                if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
-                    continue;
-                }
-
-                $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
-                $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
-                $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
-                $taxRate = max(0, $adjustedRate) / 100;
-                $tax = $value * $taxRate;
-            }
+            $tax = $value * $taxRate;
 
             $totalValue += $value;
             $totalTax += $tax;
@@ -982,7 +972,7 @@ class TaxCalculationService
                     'value' => 0,
                     'tax_rate' => $baseTaxRate,
                     'event_modifier' => $eventModifier,
-                    'effective_rate' => $baseTaxRate,
+                    'effective_rate' => max(0, $adjustedRate),
                     'tax' => 0,
                 ];
             }
