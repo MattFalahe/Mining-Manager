@@ -346,15 +346,10 @@ class TaxController extends Controller
         $currentYear = now()->year;
         $years = range($currentYear - 2, $currentYear);
 
-        $sourceSettings = [
-            'source' => $this->settingsService->getSetting('general.data_source', 'archived'),
-        ];
-
         $paymentSettings = $this->settingsService->getPaymentSettings();
 
-        // Get tracking data for current month (default: archived/daily summaries)
-        $dataSource = $sourceSettings['source'] ?? 'archived';
-        $liveTracking = $this->getLiveTrackingData($dataSource);
+        // Get tracking data from daily summaries
+        $liveTracking = $this->getLiveTrackingData();
 
         $isAdmin = $this->isAdmin();
         $isDirector = $this->isDirector();
@@ -364,7 +359,6 @@ class TaxController extends Controller
         return view('mining-manager::taxes.calculate', compact(
             'corporations',
             'years',
-            'sourceSettings',
             'paymentSettings',
             'liveTracking',
             'isAdmin',
@@ -375,14 +369,13 @@ class TaxController extends Controller
     }
 
     /**
-     * Get mining tracking data for current month
-     * Uses daily summaries for accurate totals (archived mode)
-     * Recent entries loaded separately for the detail table display
+     * Get mining tracking data for current month.
+     * Reads from daily summaries as the single source of truth.
+     * Detail entries loaded from mining_ledger for display only.
      *
-     * @param string $mode 'archived' (default) or 'live'
      * @return array
      */
-    protected function getLiveTrackingData(string $mode = 'archived'): array
+    protected function getLiveTrackingData(): array
     {
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $currentMonth = now()->startOfMonth();
@@ -401,7 +394,6 @@ class TaxController extends Controller
         if (empty($characterIds)) {
             return [
                 'has_data' => false,
-                'mode' => $mode,
                 'entries' => [],
                 'total_value' => 0,
                 'estimated_tax' => 0,
@@ -410,43 +402,22 @@ class TaxController extends Controller
             ];
         }
 
-        // === SUMMARY TOTALS ===
-        if ($mode === 'live') {
-            $summaryData = $this->getLiveSummaryData($characterIds, $currentMonth);
-        } else {
-            // Archived mode: try daily summaries first, fall back to mining_ledger directly
-            // Daily summaries may have total_tax = 0 if generated before tax rates were configured
-            $summaryData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-                ->where('date', '>=', $currentMonth->format('Y-m-d'))
-                ->where('date', '<=', now()->format('Y-m-d'))
-                ->selectRaw('SUM(total_value) as total_value, SUM(total_tax) as total_tax, COUNT(DISTINCT character_id) as character_count')
-                ->first();
-
-            // If daily summaries have 0 tax but mining_ledger has actual tax_amount, use that instead
-            if ($summaryData && (float) ($summaryData->total_tax ?? 0) == 0) {
-                $ledgerTax = MiningLedger::whereIn('character_id', $characterIds)
-                    ->where('date', '>=', $currentMonth->format('Y-m-d'))
-                    ->where('date', '<=', now()->format('Y-m-d'))
-                    ->whereNotNull('processed_at')
-                    ->selectRaw('SUM(total_value) as total_value, SUM(tax_amount) as total_tax, COUNT(DISTINCT character_id) as character_count')
-                    ->first();
-
-                if ($ledgerTax && (float) ($ledgerTax->total_tax ?? 0) > 0) {
-                    $summaryData = $ledgerTax;
-                }
-            }
-        }
+        // === SUMMARY TOTALS from daily summaries (single source of truth) ===
+        $summaryData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->where('date', '>=', $currentMonth->format('Y-m-d'))
+            ->where('date', '<=', now()->format('Y-m-d'))
+            ->selectRaw('SUM(total_value) as total_value, SUM(total_tax) as total_tax, COUNT(DISTINCT character_id) as character_count')
+            ->first();
 
         $totalValue = (float) ($summaryData->total_value ?? 0);
         $estimatedTax = (float) ($summaryData->total_tax ?? 0);
         $characterCount = (int) ($summaryData->character_count ?? count($characterIds));
 
-        // === PER-ACCOUNT TOTALS (full aggregation, no limit) ===
-        $perCharacterTotals = MiningLedger::whereIn('character_id', $characterIds)
+        // === PER-ACCOUNT TOTALS from daily summaries ===
+        $perCharacterTotals = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $currentMonth->format('Y-m-d'))
             ->where('date', '<=', now()->format('Y-m-d'))
-            ->whereNotNull('processed_at')
-            ->selectRaw('character_id, SUM(total_value) as total_value, SUM(tax_amount) as total_tax, SUM(quantity) as total_quantity')
+            ->selectRaw('character_id, SUM(total_value) as total_value, SUM(total_tax) as total_tax, SUM(total_quantity) as total_quantity')
             ->groupBy('character_id')
             ->get()
             ->keyBy('character_id');
@@ -551,7 +522,6 @@ class TaxController extends Controller
 
         return [
             'has_data' => true,
-            'mode' => $mode,
             'entries' => $mappedEntries,
             'account_groups' => $accountGroups,
             'account_totals' => $accountTotals,
@@ -564,65 +534,9 @@ class TaxController extends Controller
     }
 
     /**
-     * Get live summary data by recalculating from mining ledger with current cached prices
-     * Recalculates ore values using OreValuationService, then derives tax proportionally
-     *
-     * @return object with total_value, total_tax, character_count
-     */
-    protected function getLiveSummaryData(array $characterIds, Carbon $currentMonth): object
-    {
-        // Get all processed ledger entries for the current month
-        $entries = MiningLedger::whereIn('character_id', $characterIds)
-            ->where('date', '>=', $currentMonth->format('Y-m-d'))
-            ->where('date', '<=', now()->format('Y-m-d'))
-            ->whereNotNull('processed_at')
-            ->get();
-
-        // Pre-resolve character corporation IDs for per-corp tax rates
-        $charCorpMap = [];
-        if ($entries->isNotEmpty()) {
-            $charCorpMap = DB::table('character_affiliations')
-                ->whereIn('character_id', $entries->pluck('character_id')->unique()->toArray())
-                ->pluck('corporation_id', 'character_id')
-                ->toArray();
-        }
-
-        $totalValue = 0;
-        $totalTax = 0;
-        $activeCharacters = [];
-
-        foreach ($entries as $entry) {
-            // Recalculate value using current cached prices
-            try {
-                $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                $liveValue = (float) ($valuation['total_value'] ?? 0);
-            } catch (\Exception $e) {
-                $liveValue = (float) ($entry->total_value ?? 0); // fallback to stored
-            }
-
-            // Get per-ore tax rate using character's corporation context
-            // Respects moon ore rarity rates, ice/gas/ore rates, and per-corporation multipliers
-            $charCorpId = $charCorpMap[$entry->character_id] ?? null;
-            $taxRate = $this->taxService->getTaxRateForOre($entry->type_id, $charCorpId);
-            $liveTax = $liveValue * ($taxRate / 100);
-
-            $totalValue += $liveValue;
-            $totalTax += $liveTax;
-            $activeCharacters[$entry->character_id] = true;
-        }
-
-        return (object) [
-            'total_value' => $totalValue,
-            'total_tax' => $totalTax,
-            'character_count' => count($activeCharacters),
-        ];
-    }
-
-    /**
-     * Process tax calculation
-     * Respects the selected data_source mode (archived or live)
-     * - Archived: uses stored ledger values as-is
-     * - Live: refreshes ore prices on ledger entries before calculating
+     * Process tax calculation.
+     * Calculate: sums existing daily summaries into MiningTax records.
+     * Recalculate: regenerates all daily summaries with current prices/rates first.
      */
     public function calculate(Request $request)
     {
@@ -631,14 +545,12 @@ class TaxController extends Controller
             'recalculate' => 'boolean',
             'character_id' => 'nullable|integer',
             'corporation_id' => 'nullable|integer',
-            'data_source' => 'nullable|in:archived,live',
         ]);
 
         try {
             $month = Carbon::parse($validated['month'])->startOfMonth();
             $recalculate = $validated['recalculate'] ?? false;
             $characterId = $validated['character_id'] ?? null;
-            $dataSource = $validated['data_source'] ?? 'archived';
 
             // Set corporation context for settings (use provided or fall back to moon owner)
             $corporationId = $validated['corporation_id'] ?? null;
@@ -647,9 +559,10 @@ class TaxController extends Controller
             }
             $this->setCorporationContext($corporationId);
 
-            // Live mode: refresh ore values on ledger entries using current cached prices
-            if ($dataSource === 'live') {
-                $this->refreshLedgerPrices($month, $characterId, $corporationId);
+            // Recalculate mode: regenerate all daily summaries with current prices and tax rates
+            if ($recalculate) {
+                $regenerated = $this->taxService->regenerateMonthSummaries($month, $corporationId);
+                Log::info("Recalculate: regenerated {$regenerated} daily summaries for {$month->format('Y-m')}");
             }
 
             // Check if taxes already exist for this month
@@ -672,8 +585,7 @@ class TaxController extends Controller
                 ], 200);
             }
 
-            // Calculate taxes (corporation context already set)
-            // Uses stored total_value from ledger (which was just refreshed if live mode)
+            // Calculate taxes from daily summaries (corporation context already set)
             if ($characterId) {
                 $taxAmount = $this->taxService->recalculateTax((int) $characterId, $month);
                 $results = [
@@ -685,17 +597,6 @@ class TaxController extends Controller
             } else {
                 $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate);
             }
-
-            // Live mode: also update daily summaries to reflect new prices
-            if ($dataSource === 'live') {
-                try {
-                    \Artisan::call('mining-manager:update-daily-summaries', ['--month' => $month->format('Y-m')]);
-                } catch (\Exception $e) {
-                    Log::warning('Failed to update daily summaries after live calculation: ' . $e->getMessage());
-                }
-            }
-
-            $results['data_source'] = $dataSource;
 
             return response()->json([
                 'status' => 'success',
@@ -712,64 +613,6 @@ class TaxController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * Refresh ore prices on mining ledger entries using current cached market prices
-     * Updates total_value and tax_amount on each ledger entry
-     */
-    protected function refreshLedgerPrices(Carbon $month, ?int $characterId = null, ?int $corporationId = null): int
-    {
-        $endDate = $month->copy()->endOfMonth()->min(now());
-
-        $query = MiningLedger::where('date', '>=', $month->format('Y-m-d'))
-            ->where('date', '<=', $endDate->format('Y-m-d'))
-            ->whereNotNull('processed_at');
-
-        if ($characterId) {
-            $query->where('character_id', $characterId);
-        } elseif ($corporationId) {
-            $query->whereIn('character_id', function($q) use ($corporationId) {
-                $q->select('character_id')
-                    ->from('character_affiliations')
-                    ->where('corporation_id', $corporationId);
-            });
-        }
-
-        $entries = $query->get();
-        $updated = 0;
-
-        foreach ($entries as $entry) {
-            try {
-                $valuation = $this->oreValuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                $newValue = (float) ($valuation['total_value'] ?? 0);
-
-                if ($newValue > 0) {
-                    // Preserve the tax ratio from original calculation
-                    $oldValue = (float) ($entry->total_value ?? 0);
-                    $oldTax = (float) ($entry->tax_amount ?? 0);
-
-                    if ($oldValue > 0 && $oldTax > 0) {
-                        $taxRatio = $oldTax / $oldValue;
-                        $newTax = $newValue * $taxRatio;
-                    } else {
-                        // No existing ratio, use the tax rate for this ore type
-                        $taxRate = $this->taxService->getTaxRateForOre($entry->type_id);
-                        $newTax = $newValue * ($taxRate / 100);
-                    }
-
-                    $entry->total_value = $newValue;
-                    $entry->tax_amount = $newTax;
-                    $entry->save();
-                    $updated++;
-                }
-            } catch (\Exception $e) {
-                Log::warning("Failed to refresh price for ledger entry {$entry->id}: " . $e->getMessage());
-            }
-        }
-
-        Log::info("Live mode: refreshed prices on {$updated} ledger entries for {$month->format('Y-m')}");
-        return $updated;
     }
 
     /**
@@ -1492,41 +1335,7 @@ class TaxController extends Controller
      */
     public function liveTracking(Request $request)
     {
-        $mode = $request->input('mode', 'archived');
-
-        // For live mode, check price cache freshness first
-        if ($mode === 'live') {
-            $cacheDuration = (int) $this->settingsService->getSetting('pricing.cache_duration', 60);
-            $freshCount = MiningPriceCache::where('cached_at', '>=', now()->subMinutes($cacheDuration))->count();
-            $totalCount = MiningPriceCache::count();
-
-            if ($totalCount > 0 && $freshCount === 0) {
-                // All cache entries are stale — trigger refresh and warn user
-                try {
-                    \Artisan::call('mining-manager:cache-prices', ['--type' => 'all']);
-                } catch (\Exception $e) {
-                    Log::warning('Failed to trigger price cache refresh: ' . $e->getMessage());
-                }
-
-                return response()->json([
-                    'status' => 'cache_stale',
-                    'message' => 'Price cache is stale (last updated ' . $this->getCacheAge() . ' ago). Refreshing prices — please try again in a few minutes.',
-                    'data' => $this->getLiveTrackingData('archived'), // Fall back to archived data while cache refreshes
-                ]);
-            }
-        }
-
-        $data = $this->getLiveTrackingData($mode);
-
-        // After live calculation, trigger daily summary regeneration in background
-        // so archived mode will also reflect current prices on next load
-        if ($mode === 'live') {
-            try {
-                \Artisan::call('mining-manager:update-daily-summaries', ['--month' => now()->format('Y-m')]);
-            } catch (\Exception $e) {
-                Log::warning('Failed to trigger daily summary update after live calculation: ' . $e->getMessage());
-            }
-        }
+        $data = $this->getLiveTrackingData();
 
         return response()->json([
             'status' => 'success',
@@ -1535,21 +1344,9 @@ class TaxController extends Controller
     }
 
     /**
-     * Get human-readable age of the oldest price cache entry
-     */
-    protected function getCacheAge(): string
-    {
-        $oldest = MiningPriceCache::orderBy('cached_at', 'desc')->first();
-        if (!$oldest || !$oldest->cached_at) {
-            return 'never';
-        }
-        return Carbon::parse($oldest->cached_at)->diffForHumans(null, true);
-    }
-
-    /**
-     * Regenerate payments for a specific month
-     * Respects data_source mode: live refreshes prices before recalculating
-     * Always recalculates (force=true) and regenerates tax codes
+     * Regenerate payments for a specific month.
+     * Always recalculates daily summaries with current prices/rates,
+     * then calculates taxes and regenerates payment codes.
      */
     public function regeneratePayments(Request $request)
     {
@@ -1560,7 +1357,6 @@ class TaxController extends Controller
 
         try {
             $month = $request->input('month');
-            $dataSource = $request->input('data_source', 'archived');
 
             if (!$month) {
                 return response()->json([
@@ -1571,25 +1367,12 @@ class TaxController extends Controller
 
             $monthDate = Carbon::parse($month)->startOfMonth();
 
-            // Live mode: refresh ore values on ledger entries first
-            if ($dataSource === 'live') {
-                $refreshed = $this->refreshLedgerPrices($monthDate, null, $corporationId);
-                Log::info("Regenerate codes: refreshed {$refreshed} ledger entries with live prices for {$month}");
-            }
+            // Regenerate all daily summaries with current prices and tax rates
+            $regenerated = $this->taxService->regenerateMonthSummaries($monthDate, $corporationId);
+            Log::info("Regenerate codes: regenerated {$regenerated} daily summaries for {$month}");
 
-            // Recalculate taxes for the month (force=true to overwrite existing)
+            // Recalculate taxes from fresh daily summaries (force=true to overwrite existing)
             $results = $this->taxService->calculateMonthlyTaxes($monthDate, true);
-
-            // Live mode: also update daily summaries to reflect new prices
-            if ($dataSource === 'live') {
-                try {
-                    \Artisan::call('mining-manager:update-daily-summaries', ['--month' => $monthDate->format('Y-m')]);
-                } catch (\Exception $e) {
-                    Log::warning('Failed to update daily summaries after regeneration: ' . $e->getMessage());
-                }
-            }
-
-            $results['data_source'] = $dataSource;
 
             return response()->json([
                 'status' => 'success',

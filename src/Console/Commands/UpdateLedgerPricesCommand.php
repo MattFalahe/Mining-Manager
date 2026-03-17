@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Settings\SettingsService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -98,6 +99,7 @@ class UpdateLedgerPricesCommand extends Command
         $updated = 0;
         $errors = 0;
         $skipped = 0;
+        $affectedPairs = collect(); // Track character_id + date pairs for daily summary regeneration
 
         foreach ($entries as $entry) {
             try {
@@ -139,6 +141,15 @@ class UpdateLedgerPricesCommand extends Command
                     'tax_amount' => $newTaxAmount,
                 ]);
 
+                // Track this character+date for daily summary regeneration
+                $pairKey = $entry->character_id . '_' . $entry->date;
+                if (!$affectedPairs->has($pairKey)) {
+                    $affectedPairs->put($pairKey, [
+                        'character_id' => $entry->character_id,
+                        'date' => $entry->date,
+                    ]);
+                }
+
                 $updated++;
             } catch (\Exception $e) {
                 Log::error("Mining Manager: Failed to update price for ledger entry {$entry->id}: {$e->getMessage()}");
@@ -160,6 +171,39 @@ class UpdateLedgerPricesCommand extends Command
                 ['❌ Errors', $errors],
             ]
         );
+
+        // Regenerate daily summaries for affected character+date pairs
+        if ($affectedPairs->isNotEmpty()) {
+            $this->line('');
+            $this->info("📋 Regenerating daily summaries for {$affectedPairs->count()} character/date pairs...");
+
+            $summaryService = app(LedgerSummaryService::class);
+            $summariesUpdated = 0;
+            $summaryErrors = 0;
+
+            foreach ($affectedPairs as $pair) {
+                try {
+                    $date = Carbon::parse($pair['date']);
+                    $summaryService->generateDailySummary($pair['character_id'], $date);
+                    $summariesUpdated++;
+                } catch (\Exception $e) {
+                    Log::error("Mining Manager: Failed to regenerate daily summary for character {$pair['character_id']} on {$pair['date']}: {$e->getMessage()}");
+                    $summaryErrors++;
+                }
+            }
+
+            $this->table(
+                ['Daily Summaries', 'Count'],
+                [
+                    ['✅ Regenerated', $summariesUpdated],
+                    ['❌ Errors', $summaryErrors],
+                ]
+            );
+
+            if ($summariesUpdated > 0) {
+                Log::info("Mining Manager: Regenerated {$summariesUpdated} daily summaries after price update");
+            }
+        }
 
         if ($updated > 0) {
             Log::info("Mining Manager: Updated prices for {$updated} ledger entries");

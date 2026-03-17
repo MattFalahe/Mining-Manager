@@ -732,8 +732,9 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.calculation_methods_desc') }}</p>
                     <ul>
-                        <li><strong>{{ trans('mining-manager::help.calc_archived') }}</strong></li>
-                        <li><strong>{{ trans('mining-manager::help.calc_live') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_calculate') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_recalculate') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_regenerate_codes') }}</strong></li>
                     </ul>
                 </div>
             </div>

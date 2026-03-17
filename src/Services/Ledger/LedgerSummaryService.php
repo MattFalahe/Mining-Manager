@@ -5,6 +5,7 @@ namespace MiningManager\Services\Ledger;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerMonthlySummary;
 use MiningManager\Models\MiningLedgerDailySummary;
+use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use Seat\Eveapi\Models\Sde\SolarSystem;
@@ -120,9 +121,10 @@ class LedgerSummaryService
      * tracking — players can see what they mined, what it was worth at
      * the day's market price, and how much tax they'll owe for that day.
      *
-     * Note: The estimated tax uses simplified taxability checks (skips
-     * the per-entry corp moon observer cross-reference for performance).
-     * TaxCalculationService remains the authoritative tax at month-end.
+     * Daily summaries are the SINGLE SOURCE OF TRUTH for tax calculations.
+     * All consumers (My Taxes, Calculate Taxes, Tax Overview) read from here.
+     * Tax rates are always resolved from current settings, not from stored
+     * mining_ledger.tax_amount values.
      *
      * @param int $characterId
      * @param string $date YYYY-MM-DD format
@@ -162,31 +164,35 @@ class LedgerSummaryService
             );
         }
 
-        // Get the character's corporation ID for tax rate determination
+        // Get the character's corporation ID for guest mining detection
         $character = CharacterInfo::find($characterId);
         $characterCorpId = $character ? $character->corporation_id : null;
 
-        // Get corporation_id from ledger data
+        // Get corporation_id from ledger data (structure owner)
         $corporationId = (clone $baseQuery)
             ->whereNotNull('corporation_id')
             ->value('corporation_id');
 
+        // Get moon owner corporation for only_corp_moon_ore check
+        $moonOwnerCorpId = $this->settingsService->getGeneralSettings()['moon_owner_corporation_id'] ?? null;
+
+        // Get event tax modifier for this character on this date
+        $eventModifier = $this->getEventModifierForDate($characterId, $dateCarbon, $characterCorpId);
+
         // Aggregate per ore type AND corporation for the day (only processed entries)
         // Group by corporation_id so entries from different structure owners get correct tax rates
-        // Include SUM(tax_amount) so we can use actual calculated tax when available
         $oreEntries = (clone $baseQuery)
             ->selectRaw('
                 type_id,
                 ore_type,
                 corporation_id,
                 SUM(quantity) as total_quantity,
-                SUM(total_value) as total_value,
-                SUM(tax_amount) as total_tax_amount
+                SUM(total_value) as total_value
             ')
             ->groupBy('type_id', 'ore_type', 'corporation_id')
             ->get();
 
-        // Build rich ore breakdown with estimated tax
+        // Build rich ore breakdown with tax from current settings
         $oreBreakdown = [];
         $totalQuantity = 0;
         $totalValue = 0;
@@ -209,26 +215,24 @@ class LedgerSummaryService
                 ? TypeIdRegistry::getMoonOreRarity($typeId)
                 : null;
 
-            // Switch corporation context per-entry for correct tax rates
+            // Switch corporation context per-entry for correct tax selector and rates
             $entryCorporationId = $entry->corporation_id;
             if ($entryCorporationId) {
                 $this->settingsService->setActiveCorporation((int) $entryCorporationId);
             }
 
-            // Use actual tax_amount from mining_ledger when available (already calculated by process-ledger)
-            // Fall back to estimated calculation only when tax_amount is 0 or null
-            $actualTax = (float) ($entry->total_tax_amount ?? 0);
-            if ($actualTax > 0) {
-                // Use the real calculated tax from mining_ledger
-                $isTaxable = true;
-                $taxRate = $value > 0 ? round(($actualTax / $value) * 100, 2) : 0;
-                $estimatedTax = $actualTax;
-            } else {
-                // Fallback: estimate tax from configured rates
-                $isTaxable = $entryCorporationId ? $this->shouldTaxType($typeId) : false;
-                $taxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
-                $estimatedTax = $isTaxable ? $value * ($taxRate / 100) : 0;
+            // Always use current tax rates from settings (single source of truth)
+            $isTaxable = $entryCorporationId
+                ? $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId)
+                : false;
+            $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
+
+            // Apply event modifier
+            $effectiveRate = $baseTaxRate;
+            if ($isTaxable && $eventModifier !== 0) {
+                $effectiveRate = max(0, $baseTaxRate * (1 + ($eventModifier / 100)));
             }
+            $estimatedTax = $isTaxable ? $value * ($effectiveRate / 100) : 0;
 
             $oreBreakdown[] = [
                 'type_id' => $typeId,
@@ -238,7 +242,9 @@ class LedgerSummaryService
                 'quantity' => (float) $quantity,
                 'unit_price' => round($unitPrice, 2),
                 'total_value' => round((float) $value, 2),
-                'tax_rate' => $taxRate,
+                'tax_rate' => $baseTaxRate,
+                'event_modifier' => $eventModifier,
+                'effective_rate' => round($effectiveRate, 2),
                 'is_taxable' => $isTaxable,
                 'estimated_tax' => round($estimatedTax, 2),
             ];
@@ -248,9 +254,8 @@ class LedgerSummaryService
             $totalValue += $value;
             $totalTax += $estimatedTax;
 
-            // Category breakdown (use TypeIdRegistry via getOreCategory, not ore_type column)
-            $entryCategory = $this->getOreCategory($typeId);
-            switch ($entryCategory) {
+            // Category breakdown
+            switch ($category) {
                 case 'moon_ore':
                     $moonOreValue += $value;
                     break;
@@ -325,14 +330,15 @@ class LedgerSummaryService
     /**
      * Check if an ore type should be taxed based on settings.
      *
-     * Uses simplified taxability check for daily estimates — skips the
-     * per-entry corp moon observer cross-reference (only_corp_moon_ore).
-     * TaxCalculationService handles the authoritative check at month-end.
+     * Supports only_corp_moon_ore by comparing the entry's structure owner
+     * corporation against the configured moon owner corporation.
      *
      * @param int $typeId
+     * @param int|null $entryCorporationId Structure owner corporation
+     * @param int|null $moonOwnerCorpId Configured moon owner corporation
      * @return bool
      */
-    private function shouldTaxType(int $typeId): bool
+    private function shouldTaxType(int $typeId, ?int $entryCorporationId = null, ?int $moonOwnerCorpId = null): bool
     {
         $taxSelector = $this->settingsService->getTaxSelector();
 
@@ -340,6 +346,15 @@ class LedgerSummaryService
             if (!empty($taxSelector['no_moon_ore'])) {
                 return false;
             }
+
+            // only_corp_moon_ore: only tax moon ore from the configured moon owner corporation
+            if (!empty($taxSelector['only_corp_moon_ore'])) {
+                if (!$entryCorporationId || !$moonOwnerCorpId) {
+                    return false;
+                }
+                return (int) $entryCorporationId === (int) $moonOwnerCorpId;
+            }
+
             return $taxSelector['all_moon_ore'] ?? true;
         }
 
@@ -352,6 +367,40 @@ class LedgerSummaryService
         }
 
         return $taxSelector['ore'] ?? true;
+    }
+
+    /**
+     * Get the best event tax modifier for a character on a specific date.
+     *
+     * @param int $characterId
+     * @param Carbon $date
+     * @param int|null $characterCorpId
+     * @return int Modifier (-100 to +100, 0 = no event)
+     */
+    private function getEventModifierForDate(int $characterId, Carbon $date, ?int $characterCorpId = null): int
+    {
+        try {
+            $events = MiningEvent::where('status', 'active')
+                ->where('start_time', '<=', $date)
+                ->where(function ($query) use ($date) {
+                    $query->whereNull('end_time')
+                          ->orWhere('end_time', '>=', $date);
+                })
+                ->whereHas('participants', function ($query) use ($characterId) {
+                    $query->where('character_id', $characterId);
+                })
+                ->where(function ($query) use ($characterCorpId) {
+                    $query->whereNull('corporation_id')
+                          ->orWhere('corporation_id', $characterCorpId);
+                })
+                ->orderBy('tax_modifier', 'asc')
+                ->first();
+
+            return $events ? (int) $events->tax_modifier : 0;
+        } catch (\Exception $e) {
+            // MiningEvent table may not exist in early setup
+            return 0;
+        }
     }
 
     /**

@@ -73,25 +73,6 @@
                              Characters not registered in SeAT are taxed individually. --}}
                         <input type="hidden" name="calculation_method" value="accumulated">
 
-                        <!-- Calculation Data Source -->
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="data_source">{{ trans('mining-manager::taxes.calculation_methods') }}</label>
-                                <select class="form-control" id="data_source" name="data_source" required>
-                                    <option value="archived" {{ $sourceSettings['source'] == 'archived' ? 'selected' : '' }}>
-                                        {{ trans('mining-manager::taxes.archived_data') }}
-                                    </option>
-                                    <option value="live">
-                                        {{ trans('mining-manager::taxes.live_data') }}
-                                    </option>
-                                </select>
-                                <small class="form-text text-muted">
-                                    <i class="fas fa-info-circle"></i>
-                                    {{ trans('mining-manager::taxes.data_source_help') }}
-                                </small>
-                            </div>
-                        </div>
-
                         <!-- Payment Method Display -->
                         <div class="col-md-4">
                             <div class="form-group">
@@ -141,21 +122,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- Recalculate Option -->
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label>&nbsp;</label>
-                                            <div class="custom-control custom-checkbox">
-                                                <input type="checkbox" class="custom-control-input" id="recalculate" name="recalculate" value="1">
-                                                <label class="custom-control-label" for="recalculate">
-                                                    {{ trans('mining-manager::taxes.recalculate') }}
-                                                </label>
-                                            </div>
-                                            <small class="form-text text-muted">
-                                                {{ trans('mining-manager::taxes.recalculate_help') }}
-                                            </small>
-                                        </div>
-                                    </div>
+                                    <div class="col-md-6"></div>
                                 </div>
                             </div>
                         </div>
@@ -167,6 +134,10 @@
                             <button type="submit" class="btn btn-primary" id="calculate-btn">
                                 <i class="fas fa-calculator"></i>
                                 {{ trans('mining-manager::taxes.calculate') }}
+                            </button>
+                            <button type="button" class="btn btn-warning ml-2" id="recalculate-btn">
+                                <i class="fas fa-sync-alt"></i>
+                                {{ trans('mining-manager::taxes.recalculate') }}
                             </button>
                             <button type="button" class="btn btn-success ml-2" id="regenerate-payments-btn">
                                 <i class="fas fa-sync"></i>
@@ -448,7 +419,6 @@ $(document).ready(function() {
             return field.name !== 'month' && field.name !== 'year';
         });
         formData.push({ name: 'month', value: yearVal + '-' + monthVal });
-        formData.push({ name: 'data_source', value: $('#data_source').val() });
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.process-calculation") }}',
@@ -500,7 +470,69 @@ $(document).ready(function() {
         });
     });
 
-    // Regenerate Payments Button
+    // Recalculate Button — regenerates daily summaries with current prices/rates, then calculates
+    $('#recalculate-btn').on('click', function() {
+        if (!confirm('This will re-price all mining for the selected month using current market prices and tax rates. This may take a moment. Continue?')) {
+            return;
+        }
+
+        $('#calculate-btn').prop('disabled', true);
+        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Recalculating...');
+        $('#calculation-progress').show();
+        $('#calculation-results').hide();
+
+        var monthVal = String($('#month').val()).padStart(2, '0');
+        var yearVal = $('#year').val();
+
+        $.ajax({
+            url: '{{ route("mining-manager.taxes.process-calculation") }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                month: yearVal + '-' + monthVal,
+                recalculate: 1,
+                corporation_id: $('#corporation_id').val(),
+                character_id: $('#character_id').val()
+            },
+            success: function(response) {
+                $('#calculation-progress').hide();
+                $('#calculate-btn').prop('disabled', false);
+                $('#recalculate-btn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i> {{ trans("mining-manager::taxes.recalculate") }}');
+
+                if (response.status === 'success') {
+                    $('#results-alert')
+                        .removeClass('alert-danger alert-warning')
+                        .addClass('alert-success')
+                        .html(`
+                            <h5><i class="fas fa-check-circle"></i> ${response.message}</h5>
+                            <hr>
+                            <p><strong>{{ trans('mining-manager::taxes.taxes_calculated') }}:</strong> ${response.results.count}</p>
+                            <p><strong>{{ trans('mining-manager::taxes.total_tax') }}:</strong> ${Number(response.results.total).toLocaleString()} ISK</p>
+                        `);
+                    $('#calculation-results').show();
+                    refreshLiveTracking();
+                } else {
+                    $('#results-alert')
+                        .removeClass('alert-success alert-warning')
+                        .addClass('alert-danger')
+                        .html(`<i class="fas fa-exclamation-triangle"></i> ${response.message}`);
+                    $('#calculation-results').show();
+                }
+            },
+            error: function(xhr) {
+                $('#calculation-progress').hide();
+                $('#calculate-btn').prop('disabled', false);
+                $('#recalculate-btn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i> {{ trans("mining-manager::taxes.recalculate") }}');
+                $('#results-alert')
+                    .removeClass('alert-success')
+                    .addClass('alert-danger')
+                    .html(`<i class="fas fa-exclamation-triangle"></i> ${xhr.responseJSON?.message || '{{ trans("mining-manager::taxes.error_occurred") }}'}`);
+                $('#calculation-results').show();
+            }
+        });
+    });
+
+    // Regenerate Codes Button — recalculate + generate/update payment codes
     $('#regenerate-payments-btn').on('click', function() {
         if (!confirm('{{ trans("mining-manager::taxes.regenerate_confirm") }}')) {
             return;
@@ -521,12 +553,12 @@ $(document).ready(function() {
                 month: month,
                 corporation_id: corporationId,
                 character_id: characterId,
-                payment_method: paymentMethod,
-                data_source: $('#data_source').val()
+                payment_method: paymentMethod
             },
             success: function(response) {
                 if (response.status === 'success') {
                     toastr.success(response.message);
+                    refreshLiveTracking();
                 } else {
                     toastr.error(response.message);
                 }
@@ -539,51 +571,28 @@ $(document).ready(function() {
         });
     });
 
-    // Refresh Live Tracking
+    // Refresh Tracking
     $('#refresh-tracking-btn').on('click', refreshLiveTracking);
 
-    // Auto-refresh live tracking every 5 minutes
+    // Auto-refresh every 5 minutes
     setInterval(refreshLiveTracking, 300000);
 
-    // Refresh when calculation method changes
-    $('#data_source').on('change', function() {
-        refreshLiveTracking();
-    });
-
     function refreshLiveTracking() {
-        var mode = $('#data_source').val() || 'archived';
         var $btn = $('#refresh-tracking-btn');
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Refreshing...');
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.live-tracking") }}',
             method: 'GET',
-            data: { mode: mode },
             success: function(response) {
-                // Remove any existing cache warning
-                $('#cache-stale-warning').remove();
-
-                if (response.status === 'cache_stale') {
-                    // Show cache stale warning banner
-                    var warningHtml = '<div id="cache-stale-warning" class="alert alert-warning alert-dismissible fade show mt-2">' +
-                        '<i class="fas fa-exclamation-triangle"></i> <strong>Price Cache Stale</strong> — ' +
-                        response.message +
-                        ' <em>Showing archived data in the meantime.</em>' +
-                        '<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>' +
-                        '</div>';
-                    $('#live-tracking-container').prepend(warningHtml);
-                }
-
                 var data = response.data;
                 if (data && data.has_data) {
-                    // Update summary stats
                     $('.info-box-number').eq(0).text(Number(data.total_value).toLocaleString() + ' ISK');
                     $('.info-box-number').eq(1).text(Number(data.estimated_tax).toLocaleString() + ' ISK');
                     $('.info-box-number').eq(2).text(data.character_count);
                     $('.info-box-number').eq(3).text(data.month);
                 }
-                var modeLabel = mode === 'live' ? 'Live' : 'Archived';
-                $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString() + ' (' + modeLabel + ')');
+                $('#last-updated').text('{{ trans("mining-manager::taxes.updated") }}: ' + new Date().toLocaleTimeString());
 
                 $btn.prop('disabled', false).html('<i class="fas fa-sync"></i> Refresh Tracking');
             },

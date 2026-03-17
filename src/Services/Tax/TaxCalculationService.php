@@ -3,10 +3,12 @@
 namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +56,61 @@ class TaxCalculationService
     public function getCorporationContext(): ?int
     {
         return $this->settingsService->getActiveCorporation();
+    }
+
+    /**
+     * Regenerate all daily summaries for a month using current prices and tax rates.
+     * Used by the Recalculate button to refresh everything before calculating taxes.
+     *
+     * @param Carbon $month
+     * @param int|null $corporationId Optional filter by corporation
+     * @return int Number of summaries regenerated
+     */
+    public function regenerateMonthSummaries(Carbon $month, ?int $corporationId = null): int
+    {
+        $summaryService = app(LedgerSummaryService::class);
+
+        $startDate = $month->copy()->startOfMonth();
+        $endDate = $month->copy()->endOfMonth()->min(now());
+
+        // Find all characters with mining data in this month
+        $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at');
+
+        if ($corporationId) {
+            $query->where('corporation_id', $corporationId);
+        }
+
+        $characterIds = $query->distinct()->pluck('character_id');
+
+        // Find all unique dates with mining data
+        $dates = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at')
+            ->whereIn('character_id', $characterIds)
+            ->distinct()
+            ->pluck('date')
+            ->map(fn($d) => Carbon::parse($d)->format('Y-m-d'))
+            ->unique();
+
+        $count = 0;
+
+        foreach ($characterIds as $characterId) {
+            foreach ($dates as $date) {
+                // Check if this character has data for this date
+                $hasData = MiningLedger::where('character_id', $characterId)
+                    ->whereDate('date', $date)
+                    ->whereNotNull('processed_at')
+                    ->exists();
+
+                if ($hasData) {
+                    $summaryService->generateDailySummary($characterId, $date);
+                    $count++;
+                }
+            }
+        }
+
+        Log::info("Mining Manager: Regenerated {$count} daily summaries for {$month->format('Y-m')}");
+        return $count;
     }
 
     /**
@@ -309,7 +366,7 @@ class TaxCalculationService
     }
 
     /**
-     * Calculate tax for a single character.
+     * Calculate tax for a single character using daily summaries as source of truth.
      *
      * @param int $characterId
      * @param Carbon $startDate
@@ -319,82 +376,16 @@ class TaxCalculationService
      */
     private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $skipMinimum = false): float
     {
-        // Fetch mining data with cross-source dedup for corp moon ore:
-        // If both a personal ESI record (observer_id IS NULL) and an observer record
-        // (observer_id IS NOT NULL) exist for the same character+date+type_id,
-        // exclude the personal ESI record to prevent double-counting.
-        $miningData = MiningLedger::where('character_id', $characterId)
+        // Read from daily summaries — the single source of truth for tax
+        $totalTax = (float) MiningLedgerDailySummary::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
-            ->where(function ($query) use ($characterId, $startDate, $endDate) {
-                $query->whereNotNull('observer_id')  // Always include observer records
-                    ->orWhere(function ($q) use ($characterId, $startDate, $endDate) {
-                        // Include personal ESI records only if no observer record exists
-                        $q->whereNull('observer_id')
-                          ->whereNotExists(function ($sub) use ($characterId, $startDate, $endDate) {
-                              $sub->select(DB::raw(1))
-                                  ->from('mining_ledger as ml2')
-                                  ->whereColumn('ml2.character_id', 'mining_ledger.character_id')
-                                  ->whereColumn('ml2.date', 'mining_ledger.date')
-                                  ->whereColumn('ml2.type_id', 'mining_ledger.type_id')
-                                  ->whereNotNull('ml2.observer_id')
-                                  ->whereNull('ml2.deleted_at');
-                          });
-                    });
-            })
-            ->get();
+            ->sum('total_tax');
 
-        if ($miningData->isEmpty()) {
+        if ($totalTax <= 0) {
             return 0;
         }
 
-        // Get character's corporation ID for tax rate determination
-        $character = CharacterInfo::find($characterId);
-        $characterCorpId = $character ? $character->corporation_id : null;
-
-        // Pre-fetch all corp moon data for this character and date range (batch optimization)
-        $corpMoonCache = $this->batchLoadCorpMoonData($characterId, $startDate, $endDate);
-
-        // Calculate total value and weighted tax
-        $totalValue = 0;
-        $totalTax = 0;
-
-        foreach ($miningData as $entry) {
-            // Switch corporation context to the structure owner for THIS entry
-            // so shouldTaxOre() and getTaxRateForOre() read the correct corp's settings
-            $entryCorpId = $entry->corporation_id;
-            if (!$entryCorpId && $entry->observer_id) {
-                // Fallback for old entries with NULL corporation_id
-                $entryCorpId = DB::table('corporation_industry_mining_observers')
-                    ->where('observer_id', $entry->observer_id)
-                    ->value('corporation_id');
-            }
-            if ($entryCorpId) {
-                $this->settingsService->setActiveCorporation((int) $entryCorpId);
-            }
-
-            // Skip if this ore type should not be taxed (reads correct corp's tax_selector)
-            if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
-                continue;
-            }
-
-            $value = $this->calculateOreValue($entry);
-
-            // Get base tax rate (reads correct corp's tax_rates) and apply event modifier
-            $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
-            $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
-
-            // Apply event modifier: modifier is a percentage adjustment to the tax rate
-            // -100 = tax-free, -50 = half tax, +100 = double tax
-            $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
-            $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
-
-            $totalValue += $value;
-            $totalTax += $value * $taxRate;
-        }
-
         // Check exemption threshold FIRST (before minimum tax)
-        // This prevents minimum tax from bumping exempt amounts above threshold
         $exemptions = $this->settingsService->getExemptions();
         if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
             Log::debug("Mining Manager: Character {$characterId} exempt from tax (tax below threshold: {$totalTax} < {$exemptions['threshold']})");
@@ -402,7 +393,6 @@ class TaxCalculationService
         }
 
         // Apply minimum tax only in individual mode (not when accumulating)
-        // In accumulated mode, minimum tax is applied to the combined total instead
         if (!$skipMinimum) {
             $paymentSettings = $this->settingsService->getPaymentSettings();
             $minimumAmount = $paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000);
@@ -909,84 +899,52 @@ class TaxCalculationService
      */
     public function getTaxBreakdown(int $characterId, Carbon $startDate, Carbon $endDate): array
     {
-        $miningData = MiningLedger::where('character_id', $characterId)
+        // Read from daily summaries — the single source of truth for tax
+        $summaries = MiningLedgerDailySummary::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
             ->get();
-
-        // Get character's corporation ID for tax rate determination
-        $character = CharacterInfo::find($characterId);
-        $characterCorpId = $character ? $character->corporation_id : null;
-
-        // Pre-build corp moon cache for batch optimization (avoids N+1 queries)
-        $corpMoonCache = $this->buildCorpMoonCache($miningData);
 
         $breakdown = [];
         $totalValue = 0;
         $totalTax = 0;
 
-        foreach ($miningData as $entry) {
-            // Switch corporation context per-entry for correct tax rates
-            $entryCorpId = $entry->corporation_id;
-            if (!$entryCorpId && $entry->observer_id) {
-                $entryCorpId = DB::table('corporation_industry_mining_observers')
-                    ->where('observer_id', $entry->observer_id)
-                    ->value('corporation_id');
+        foreach ($summaries as $summary) {
+            foreach ($summary->ore_types ?? [] as $ore) {
+                $key = $ore['ore_name'] ?? "Type {$ore['type_id']}";
+
+                if (!isset($breakdown[$key])) {
+                    $breakdown[$key] = [
+                        'type_id' => $ore['type_id'],
+                        'name' => $key,
+                        'category' => $ore['category'] ?? 'ore',
+                        'rarity' => $ore['moon_rarity'] ?? null,
+                        'quantity' => 0,
+                        'value' => 0,
+                        'tax_rate' => $ore['tax_rate'] ?? 0,
+                        'event_modifier' => $ore['event_modifier'] ?? 0,
+                        'effective_rate' => $ore['effective_rate'] ?? $ore['tax_rate'] ?? 0,
+                        'tax' => 0,
+                    ];
+                }
+
+                $quantity = (float) ($ore['quantity'] ?? 0);
+                $value = (float) ($ore['total_value'] ?? 0);
+                $tax = (float) ($ore['estimated_tax'] ?? 0);
+
+                $breakdown[$key]['quantity'] += $quantity;
+                $breakdown[$key]['value'] += $value;
+                $breakdown[$key]['tax'] += $tax;
+
+                $totalValue += $value;
+                $totalTax += $tax;
             }
-            if ($entryCorpId) {
-                $this->settingsService->setActiveCorporation((int) $entryCorpId);
-            }
-
-            if (!$this->shouldTaxOre($entry->type_id, $entry, $corpMoonCache)) {
-                continue;
-            }
-
-            $value = $this->calculateOreValue($entry);
-
-            // Always use current tax rates from settings so My Taxes reflects
-            // the rates the corporation actually has configured right now
-            $baseTaxRate = $this->getTaxRateForOre($entry->type_id, $characterCorpId);
-            $eventModifier = $this->getEventTaxModifier($characterId, $entry, $characterCorpId);
-            $adjustedRate = $baseTaxRate * (1 + ($eventModifier / 100));
-            $taxRate = max(0, $adjustedRate) / 100; // Ensure non-negative and convert to decimal
-
-            $tax = $value * $taxRate;
-
-            $totalValue += $value;
-            $totalTax += $tax;
-
-            // Get ore name from type_id
-            $oreName = $this->getOreName($entry->type_id);
-            $oreCategory = $this->getOreCategory($entry->type_id);
-            $moonRarity = $this->getMoonOreRarity($entry->type_id);
-
-            $key = $oreName;
-
-            if (!isset($breakdown[$key])) {
-                $breakdown[$key] = [
-                    'type_id' => $entry->type_id,
-                    'name' => $oreName,
-                    'category' => $oreCategory,
-                    'rarity' => $moonRarity,
-                    'quantity' => 0,
-                    'value' => 0,
-                    'tax_rate' => $baseTaxRate,
-                    'event_modifier' => $eventModifier,
-                    'effective_rate' => max(0, $adjustedRate),
-                    'tax' => 0,
-                ];
-            }
-
-            $breakdown[$key]['quantity'] += $entry->quantity;
-            $breakdown[$key]['value'] += $value;
-            $breakdown[$key]['tax'] += $tax;
         }
 
         return [
             'breakdown' => array_values($breakdown),
             'total_value' => $totalValue,
             'total_tax' => $totalTax,
-            'calculation_method' => 'accumulated',
+            'calculation_method' => 'daily_summaries',
         ];
     }
 

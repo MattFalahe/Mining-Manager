@@ -156,10 +156,11 @@ return [
     'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, and manually record payments.',
 
     // Calculation Methods
-    'calculation_methods' => 'Calculation Methods',
-    'calculation_methods_desc' => 'When viewing the Calculate Taxes page, you can choose between two data sources:',
-    'calc_archived' => 'Archived Data (Default) - Uses pre-calculated daily summaries for fast, accurate totals. Best for routine tax review.',
-    'calc_live' => 'Live (Current Prices) - Recalculates ore values using current cached market prices and applies current per-ore tax rates. Slower but shows what taxes would be if calculated right now. If the price cache is stale, a refresh is triggered automatically.',
+    'calculation_methods' => 'Tax Calculation Buttons',
+    'calculation_methods_desc' => 'The Calculate Taxes page uses daily summaries as the single source of truth for all tax data. Daily summaries are generated automatically when mining data is processed and contain per-ore breakdowns with current tax rates and market prices.',
+    'calc_calculate' => 'Calculate - Sums existing daily summaries to create monthly tax records. Fast — use this for routine end-of-month tax finalization.',
+    'calc_recalculate' => 'Recalculate - Regenerates ALL daily summaries for the selected month using current market prices and tax rates, then calculates monthly taxes. Use this after changing tax rates or if prices were stale when summaries were originally created.',
+    'calc_regenerate_codes' => 'Regenerate Codes - Performs a full recalculation and then generates or updates payment codes for each member. Use this when you need fresh payment codes.',
 
     // Tax Codes
     'tax_codes' => 'Tax Codes Explained',
@@ -276,7 +277,7 @@ return [
     // Global Settings
     'settings_global_header' => 'Global Settings',
     'settings_general' => 'General',
-    'settings_general_desc' => 'Moon owner corporation, ore valuation method (ore price or mineral price), price provider (SeAT, Janice, Fuzzwork, Custom), price modifier percentage, default region for market data, and data source (archived or live).',
+    'settings_general_desc' => 'Moon owner corporation, ore valuation method (ore price or mineral price), price provider (SeAT, Janice, Fuzzwork, Custom), price modifier percentage, and default region for market data.',
     'settings_pricing' => 'Pricing',
     'settings_pricing_desc' => 'Price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. Controls how ore values are calculated across the plugin.',
     'settings_features' => 'Features',
