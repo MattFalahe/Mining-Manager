@@ -122,6 +122,19 @@
                 <i class="fas fa-file-alt"></i>
                 {{ trans('mining-manager::reports.report_details') }}
             </h3>
+            <div class="card-tools">
+                @if(isset($webhooks) && $webhooks->count() > 0)
+                <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#sendDiscordModal">
+                    <i class="fab fa-discord"></i> Send to Discord
+                </button>
+                @endif
+                <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
+                    <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
+                </a>
+                <button type="button" class="btn btn-sm btn-danger delete-report" data-report-id="{{ $report->id }}">
+                    <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
+                </button>
+            </div>
         </div>
         <div class="card-body">
             <div class="d-flex flex-wrap align-items-center">
@@ -159,21 +172,6 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    {{-- ACTION BUTTONS --}}
-    <div class="mb-3 text-right">
-        @if(isset($webhooks) && $webhooks->count() > 0)
-        <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#sendDiscordModal">
-            <i class="fab fa-discord"></i> Send to Discord
-        </button>
-        @endif
-        <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-success">
-            <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
-        </a>
-        <button type="button" class="btn btn-danger delete-report" data-report-id="{{ $report->id }}">
-            <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
-        </button>
     </div>
 
     @if($reportData)
@@ -433,7 +431,7 @@ $(document).ready(function() {
         }
 
         $.ajax({
-            url: '/mining-manager/reports/' + reportId,
+            url: '{{ route("mining-manager.reports.destroy", $report->id) }}',
             method: 'DELETE',
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
@@ -459,7 +457,7 @@ $(document).ready(function() {
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Sending...');
 
         $.ajax({
-            url: '/mining-manager/reports/' + reportId + '/send-discord',
+            url: '{{ route("mining-manager.reports.send-discord", $report->id) }}',
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
