@@ -116,19 +116,19 @@
     </div>
 
     {{-- REPORT METADATA --}}
-    <div class="card card-dark">
-        <div class="card-header">
+    <div class="card card-dark" style="overflow: visible;">
+        <div class="card-header" style="overflow: visible;">
             <h3 class="card-title">
                 <i class="fas fa-file-alt"></i>
                 {{ trans('mining-manager::reports.report_details') }}
             </h3>
-            <div class="card-tools">
+            <div class="card-tools" style="overflow: visible;">
                 @if(isset($webhooks) && $webhooks->count() > 0)
-                <div class="btn-group btn-group-sm mr-1">
-                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
+                <div class="btn-group btn-group-sm mr-1" style="position: relative; z-index: 1000;">
+                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
                         <i class="fab fa-discord"></i> Send to Discord
                     </button>
-                    <div class="dropdown-menu dropdown-menu-right">
+                    <div class="dropdown-menu dropdown-menu-right" style="z-index: 1001;">
                         @foreach($webhooks as $webhook)
                         <a class="dropdown-item send-to-discord" href="#"
                            data-report-id="{{ $report->id }}"
