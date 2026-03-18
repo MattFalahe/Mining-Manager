@@ -4,7 +4,30 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.2">
+<style>
+    .report-option-card { cursor: pointer; border: 2px solid transparent !important; transition: all 0.3s ease; position: relative; }
+    .report-option-card:hover { border-color: rgba(102, 126, 234, 0.5) !important; transform: translateY(-2px); }
+    .report-option-card.selected { border-color: #667eea !important; background: rgba(102, 126, 234, 0.15) !important; box-shadow: 0 0 15px rgba(102, 126, 234, 0.3); }
+    .report-option-card.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+
+    .format-option { cursor: pointer; border: 2px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.5rem; text-align: center; transition: all 0.3s ease; position: relative; }
+    .format-option:hover { border-color: rgba(40, 167, 69, 0.5); transform: translateY(-2px); }
+    .format-option.selected { border-color: #28a745 !important; background: rgba(40, 167, 69, 0.15) !important; box-shadow: 0 0 15px rgba(40, 167, 69, 0.3); }
+    .format-option.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+
+    .report-icon { font-size: 2.5rem; margin-bottom: 0.75rem; color: rgba(255,255,255,0.5); transition: color 0.3s; }
+    .report-option-card.selected .report-icon { color: #667eea; }
+    .format-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+    .step-indicator { display: flex; justify-content: space-between; position: relative; }
+    .step-indicator::before { content: ''; position: absolute; top: 20px; left: 10%; right: 10%; height: 2px; background: rgba(255,255,255,0.1); }
+    .step { text-align: center; position: relative; z-index: 1; color: rgba(255,255,255,0.4); transition: color 0.3s; }
+    .step.active, .step.completed { color: #fff; }
+    .step-circle { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 0.5rem; transition: all 0.3s; }
+    .step.active .step-circle { background: #667eea; box-shadow: 0 0 10px rgba(102,126,234,0.5); }
+    .step.completed .step-circle { background: #28a745; }
+</style>
 @endpush
 
 @section('full')

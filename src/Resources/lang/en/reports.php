@@ -223,6 +223,11 @@ return [
     'no_report_data_description' => 'This report does not contain any viewable data. Try downloading the report file instead.',
     'unknown' => 'Unknown',
 
+    // Discord
+    'send_to_discord' => 'Send to Discord',
+    'webhook' => 'Webhook',
+    'sent_to_discord' => 'Sent to Discord',
+
     // Miscellaneous
     'generating_status' => 'Generating',
     'completed_status' => 'Completed',

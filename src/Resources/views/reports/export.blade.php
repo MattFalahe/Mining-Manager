@@ -4,7 +4,18 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.2">
+<style>
+    .export-option-card { cursor: pointer; border: 2px solid transparent !important; transition: all 0.3s ease; position: relative; }
+    .export-option-card:hover { border-color: rgba(102, 126, 234, 0.5) !important; transform: translateY(-2px); }
+    .export-option-card.selected { border-color: #667eea !important; background: rgba(102, 126, 234, 0.15) !important; box-shadow: 0 0 15px rgba(102, 126, 234, 0.3); }
+    .export-option-card.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+
+    .format-button { cursor: pointer; border: 2px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1.5rem; transition: all 0.3s ease; position: relative; }
+    .format-button:hover { border-color: rgba(40, 167, 69, 0.5); transform: translateY(-2px); }
+    .format-button.selected { border-color: #28a745 !important; background: rgba(40, 167, 69, 0.15) !important; box-shadow: 0 0 15px rgba(40, 167, 69, 0.3); }
+    .format-button.selected::after { content: '\f058'; font-family: 'Font Awesome 5 Free'; font-weight: 900; position: absolute; top: 10px; right: 14px; color: #28a745; font-size: 1.3rem; }
+</style>
 @endpush
 
 @section('full')
