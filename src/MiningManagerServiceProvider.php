@@ -33,11 +33,11 @@ use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
 // Import Events
-use Seat\Eveapi\Events\CharacterMiningUpdated;
+
 use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
 
 // Import Listeners
-use MiningManager\Listeners\ProcessMiningLedgerListener;
+
 use MiningManager\Listeners\ProcessWalletJournalListener;
 
 class MiningManagerServiceProvider extends AbstractSeatPlugin
@@ -184,12 +184,32 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
      */
     private function registerEventListeners()
     {
-        // DEPRECATED: Character Mining Updates
-        // Note: Observer-based tracking (via scheduled command) is now primary
-        Event::listen(
-            CharacterMiningUpdated::class,
-            ProcessMiningLedgerListener::class
-        );
+        // Hook into SeAT's character mining job completion
+        // SeAT v5 doesn't fire events — we use Queue::after to detect when the job finishes
+        \Illuminate\Support\Facades\Queue::after(function (\Illuminate\Queue\Events\JobProcessed $event) {
+            $jobName = $event->job->resolveName();
+
+            // Character mining ledger updated — import into our mining_ledger table
+            if ($jobName === 'Seat\Eveapi\Jobs\Character\Industry\Mining') {
+                try {
+                    $payload = $event->job->payload();
+                    $command = unserialize($payload['data']['command'] ?? '');
+
+                    // Extract character_id from the job
+                    $characterId = $command->character_id ?? ($command->getCharacterId() ?? null);
+
+                    if ($characterId) {
+                        \Illuminate\Support\Facades\Log::debug("Mining Manager: SeAT character mining job completed for character {$characterId}, triggering import");
+                        \Illuminate\Support\Facades\Artisan::queue('mining-manager:import-character-mining', [
+                            '--character_id' => $characterId,
+                            '--days' => 7,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::debug("Mining Manager: Could not extract character_id from mining job: " . $e->getMessage());
+                }
+            }
+        });
 
         // Wallet Journal Updates - Track tax payments
         Event::listen(

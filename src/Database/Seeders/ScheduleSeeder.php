@@ -14,10 +14,20 @@ class ScheduleSeeder extends AbstractScheduleSeeder
     public function getSchedules(): array
     {
         return [
-            // Process mining ledger - runs every 30 minutes at :15 and :45 to keep data fresh
+            // Process corporation observer mining - runs every 30 minutes at :15 and :45
             [
                 'command' => 'mining-manager:process-ledger',
                 'expression' => '15,45 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Import character mining from SeAT ESI cache - runs every 30 minutes at :20 and :50
+            // Safety net: Queue::after hook handles real-time import, this catches any missed entries
+            [
+                'command' => 'mining-manager:import-character-mining --days=2',
+                'expression' => '20,50 * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
