@@ -352,23 +352,33 @@
                     <h3 class="card-title">
                         <i class="fas fa-percentage"></i>
                         {{ trans('mining-manager::reports.tax_summary') }}
+                        @if($reportData['taxes']['is_current_month'] ?? false)
+                            <span class="badge badge-warning ml-2">Estimated</span>
+                        @else
+                            <span class="badge badge-success ml-2">Final</span>
+                        @endif
                     </h3>
                 </div>
                 <div class="card-body">
+                    {{-- Estimated tax from daily summaries --}}
+                    @if(isset($reportData['taxes']['estimated_tax']))
                     <div class="tax-total mb-3">
-                        {{ number_format($reportData['taxes']['total_tax'] ?? 0, 2) }} ISK
+                        {{ number_format($reportData['taxes']['estimated_tax'], 2) }} ISK
+                        <small class="d-block text-muted mt-1">
+                            @if($reportData['taxes']['is_current_month'] ?? false)
+                                Estimated Tax (month in progress)
+                            @else
+                                Total Tax
+                            @endif
+                        </small>
                     </div>
+                    @endif
+
                     <table class="table table-sm mb-0">
-                        @if(isset($reportData['taxes']['tax_rate']))
+                        @if(isset($reportData['taxes']['total_owed']) && $reportData['taxes']['total_owed'] > 0)
                         <tr>
-                            <td><i class="fas fa-percentage text-muted"></i> {{ trans('mining-manager::reports.tax_rate') }}</td>
-                            <td class="text-right">{{ number_format($reportData['taxes']['tax_rate'], 1) }}%</td>
-                        </tr>
-                        @endif
-                        @if(isset($reportData['taxes']['taxable_value']))
-                        <tr>
-                            <td><i class="fas fa-coins text-muted"></i> {{ trans('mining-manager::reports.taxable_value') }}</td>
-                            <td class="text-right">{{ number_format($reportData['taxes']['taxable_value'], 2) }} ISK</td>
+                            <td><i class="fas fa-file-invoice-dollar text-warning"></i> Total Owed</td>
+                            <td class="text-right">{{ number_format($reportData['taxes']['total_owed'], 2) }} ISK</td>
                         </tr>
                         @endif
                         @if(isset($reportData['taxes']['total_paid']))
@@ -377,10 +387,20 @@
                             <td class="text-right">{{ number_format($reportData['taxes']['total_paid'], 2) }} ISK</td>
                         </tr>
                         @endif
-                        @if(isset($reportData['taxes']['total_outstanding']))
+                        @if(isset($reportData['taxes']['unpaid']) && $reportData['taxes']['unpaid'] > 0)
                         <tr>
                             <td><i class="fas fa-exclamation-circle text-danger"></i> {{ trans('mining-manager::reports.total_outstanding') }}</td>
-                            <td class="text-right text-danger font-weight-bold">{{ number_format($reportData['taxes']['total_outstanding'], 2) }} ISK</td>
+                            <td class="text-right text-danger font-weight-bold">{{ number_format($reportData['taxes']['unpaid'], 2) }} ISK</td>
+                        </tr>
+                        @endif
+                        @if(isset($reportData['taxes']['collection_rate']) && !($reportData['taxes']['is_current_month'] ?? false))
+                        <tr>
+                            <td><i class="fas fa-chart-pie text-info"></i> Collection Rate</td>
+                            <td class="text-right">
+                                <span class="badge badge-{{ $reportData['taxes']['collection_rate'] >= 80 ? 'success' : ($reportData['taxes']['collection_rate'] >= 50 ? 'warning' : 'danger') }}">
+                                    {{ number_format($reportData['taxes']['collection_rate'], 1) }}%
+                                </span>
+                            </td>
                         </tr>
                         @endif
                     </table>

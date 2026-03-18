@@ -1685,25 +1685,47 @@ class WebhookService
             'inline' => true,
         ];
 
-        // Estimated Tax
-        if (isset($taxes['total_owed'])) {
+        // Tax info - estimated vs final
+        $isCurrentMonth = $taxes['is_current_month'] ?? false;
+
+        if (isset($taxes['estimated_tax']) && $taxes['estimated_tax'] > 0) {
             $embed['fields'][] = [
-                'name' => '📊 Estimated Tax',
-                'value' => number_format($taxes['total_owed'], 0) . ' ISK',
+                'name' => $isCurrentMonth ? '📊 Estimated Tax' : '📊 Total Tax',
+                'value' => number_format($taxes['estimated_tax'], 0) . ' ISK',
                 'inline' => true,
             ];
         }
 
-        // Collection Rate
-        if (isset($taxes['collection_rate'])) {
-            $embed['fields'][] = [
-                'name' => '📈 Collection Rate',
-                'value' => number_format($taxes['collection_rate'], 1) . '%',
-                'inline' => true,
-            ];
+        // For past months, show payment details
+        if (!$isCurrentMonth) {
+            if (isset($taxes['total_paid']) && $taxes['total_paid'] > 0) {
+                $embed['fields'][] = [
+                    'name' => '✅ Total Paid',
+                    'value' => number_format($taxes['total_paid'], 0) . ' ISK',
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($taxes['unpaid']) && $taxes['unpaid'] > 0) {
+                $embed['fields'][] = [
+                    'name' => '❌ Outstanding',
+                    'value' => number_format($taxes['unpaid'], 0) . ' ISK',
+                    'inline' => true,
+                ];
+            }
+
+            if (isset($taxes['collection_rate'])) {
+                $embed['fields'][] = [
+                    'name' => '📈 Collection Rate',
+                    'value' => number_format($taxes['collection_rate'], 1) . '%',
+                    'inline' => true,
+                ];
+            }
         }
 
-        $embed['description'] = 'A new mining report has been generated and is ready for review.';
+        $embed['description'] = $isCurrentMonth
+            ? 'A new mining report has been generated. Tax values are estimated (month in progress).'
+            : 'A new mining report has been generated and is ready for review.';
 
         return $embed;
     }

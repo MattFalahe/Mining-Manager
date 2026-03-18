@@ -4,6 +4,7 @@ namespace MiningManager\Services\Analytics;
 
 use MiningManager\Models\MiningReport;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningEvent;
 use Illuminate\Support\Facades\DB;
@@ -212,16 +213,29 @@ class ReportGenerationService
      */
     private function getTaxData(Carbon $startDate, Carbon $endDate): array
     {
-        $taxes = MiningTax::whereBetween('month', [$startDate->startOfMonth(), $endDate->endOfMonth()])
+        $now = Carbon::now();
+        $isCurrentMonth = $endDate->isSameMonth($now);
+
+        // Get estimated tax from daily summaries (source of truth)
+        $estimatedTax = MiningLedgerDailySummary::whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->sum('total_tax');
+
+        // Get finalized tax records
+        $taxes = MiningTax::whereBetween('month', [$startDate->copy()->startOfMonth(), $endDate->copy()->endOfMonth()])
             ->get();
 
+        $totalOwed = $taxes->sum('amount_owed');
+        $totalPaid = $taxes->sum('amount_paid');
+
         return [
-            'total_owed' => $taxes->sum('amount_owed'),
-            'total_paid' => $taxes->sum('amount_paid'),
-            'unpaid' => $taxes->where('status', 'unpaid')->sum('amount_owed'),
+            'is_current_month' => $isCurrentMonth,
+            'estimated_tax' => round($estimatedTax, 2),
+            'total_owed' => $totalOwed,
+            'total_paid' => $totalPaid,
+            'unpaid' => $totalOwed - $totalPaid,
             'overdue' => $taxes->where('status', 'overdue')->sum('amount_owed'),
-            'collection_rate' => $taxes->sum('amount_owed') > 0 
-                ? ($taxes->sum('amount_paid') / $taxes->sum('amount_owed')) * 100 
+            'collection_rate' => $totalOwed > 0
+                ? round(($totalPaid / $totalOwed) * 100, 1)
                 : 0,
         ];
     }
