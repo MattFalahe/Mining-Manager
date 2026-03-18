@@ -109,26 +109,19 @@
 <div class="report-show">
 
     {{-- BACK LINK & ACTIONS --}}
-    <div class="mb-3 d-flex justify-content-between align-items-center">
-        <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-sm btn-outline-secondary">
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap">
+        <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-sm btn-outline-secondary mb-1">
             <i class="fas fa-arrow-left"></i> {{ trans('mining-manager::reports.back_to_reports') }}
         </a>
-        <div>
+        <div class="mb-1">
             @if(isset($webhooks) && $webhooks->count() > 0)
-            <div class="btn-group btn-group-sm mr-1">
-                <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
-                    <i class="fab fa-discord"></i> Send to Discord
+                @foreach($webhooks as $webhook)
+                <button type="button" class="btn btn-sm btn-primary send-to-discord"
+                        data-report-id="{{ $report->id }}"
+                        data-webhook-id="{{ $webhook->id }}">
+                    <i class="fab fa-discord"></i> {{ $webhook->name }}
                 </button>
-                <div class="dropdown-menu dropdown-menu-right">
-                    @foreach($webhooks as $webhook)
-                    <a class="dropdown-item send-to-discord" href="#"
-                       data-report-id="{{ $report->id }}"
-                       data-webhook-id="{{ $webhook->id }}">
-                        <i class="fas fa-paper-plane"></i> {{ $webhook->name }}
-                    </a>
-                    @endforeach
-                </div>
-            </div>
+                @endforeach
             @endif
             <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
                 <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
