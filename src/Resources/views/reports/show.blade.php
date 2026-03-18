@@ -108,44 +108,44 @@
 
 <div class="report-show">
 
-    {{-- BACK LINK --}}
-    <div class="mb-3">
+    {{-- BACK LINK & ACTIONS --}}
+    <div class="mb-3 d-flex justify-content-between align-items-center">
         <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-sm btn-outline-secondary">
             <i class="fas fa-arrow-left"></i> {{ trans('mining-manager::reports.back_to_reports') }}
         </a>
+        <div>
+            @if(isset($webhooks) && $webhooks->count() > 0)
+            <div class="btn-group btn-group-sm mr-1">
+                <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
+                    <i class="fab fa-discord"></i> Send to Discord
+                </button>
+                <div class="dropdown-menu dropdown-menu-right">
+                    @foreach($webhooks as $webhook)
+                    <a class="dropdown-item send-to-discord" href="#"
+                       data-report-id="{{ $report->id }}"
+                       data-webhook-id="{{ $webhook->id }}">
+                        <i class="fas fa-paper-plane"></i> {{ $webhook->name }}
+                    </a>
+                    @endforeach
+                </div>
+            </div>
+            @endif
+            <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
+                <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
+            </a>
+            <button type="button" class="btn btn-sm btn-danger delete-report" data-report-id="{{ $report->id }}">
+                <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
+            </button>
+        </div>
     </div>
 
     {{-- REPORT METADATA --}}
-    <div class="card card-dark" style="overflow: visible;">
-        <div class="card-header" style="overflow: visible;">
+    <div class="card card-dark">
+        <div class="card-header">
             <h3 class="card-title">
                 <i class="fas fa-file-alt"></i>
                 {{ trans('mining-manager::reports.report_details') }}
             </h3>
-            <div class="card-tools" style="overflow: visible;">
-                @if(isset($webhooks) && $webhooks->count() > 0)
-                <div class="btn-group btn-group-sm mr-1" style="position: relative; z-index: 1000;">
-                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
-                        <i class="fab fa-discord"></i> Send to Discord
-                    </button>
-                    <div class="dropdown-menu dropdown-menu-right" style="z-index: 1001;">
-                        @foreach($webhooks as $webhook)
-                        <a class="dropdown-item send-to-discord" href="#"
-                           data-report-id="{{ $report->id }}"
-                           data-webhook-id="{{ $webhook->id }}">
-                            <i class="fas fa-paper-plane"></i> {{ $webhook->name }}
-                        </a>
-                        @endforeach
-                    </div>
-                </div>
-                @endif
-                <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
-                    <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
-                </a>
-                <button type="button" class="btn btn-sm btn-danger delete-report" data-report-id="{{ $report->id }}">
-                    <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
-                </button>
-            </div>
         </div>
         <div class="card-body">
             <div class="d-flex flex-wrap align-items-center">
