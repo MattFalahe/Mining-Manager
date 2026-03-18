@@ -53,7 +53,7 @@ class ReportGenerationService
             'format' => $format,
             'data' => json_encode($reportData),
             'generated_at' => Carbon::now(),
-            'generated_by' => auth()->user()->name ?? 'system',
+            'generated_by' => auth()->check() ? auth()->user()->id : null,
         ]);
 
         // Generate file if not JSON
@@ -369,7 +369,7 @@ class ReportGenerationService
             'format'       => $format,
             'data'         => json_encode($rows),
             'generated_at' => Carbon::now(),
-            'generated_by' => auth()->user()->name ?? 'system',
+            'generated_by' => auth()->check() ? auth()->user()->id : null,
         ]);
 
         // Build file path
