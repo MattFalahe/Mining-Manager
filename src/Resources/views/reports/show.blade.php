@@ -108,24 +108,11 @@
 
 <div class="report-show">
 
-    {{-- BACK LINK & ACTIONS --}}
-    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap">
-        <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-sm btn-outline-secondary mb-1">
+    {{-- BACK LINK --}}
+    <div class="mb-3">
+        <a href="{{ route('mining-manager.reports.index') }}" class="btn btn-sm btn-outline-secondary">
             <i class="fas fa-arrow-left"></i> {{ trans('mining-manager::reports.back_to_reports') }}
         </a>
-        <div class="mb-1">
-            @if(isset($webhooks) && $webhooks->count() > 0)
-            <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#sendDiscordModal">
-                <i class="fab fa-discord"></i> Send to Discord
-            </button>
-            @endif
-            <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
-                <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
-            </a>
-            <button type="button" class="btn btn-sm btn-danger delete-report" data-report-id="{{ $report->id }}">
-                <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
-            </button>
-        </div>
     </div>
 
     {{-- REPORT METADATA --}}
@@ -172,6 +159,21 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    {{-- ACTION BUTTONS --}}
+    <div class="mb-3 text-right">
+        @if(isset($webhooks) && $webhooks->count() > 0)
+        <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#sendDiscordModal">
+            <i class="fab fa-discord"></i> Send to Discord
+        </button>
+        @endif
+        <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-success">
+            <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
+        </a>
+        <button type="button" class="btn btn-danger delete-report" data-report-id="{{ $report->id }}">
+            <i class="fas fa-trash"></i> {{ trans('mining-manager::reports.delete') }}
+        </button>
     </div>
 
     @if($reportData)
