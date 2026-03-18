@@ -115,13 +115,9 @@
         </a>
         <div class="mb-1">
             @if(isset($webhooks) && $webhooks->count() > 0)
-                @foreach($webhooks as $webhook)
-                <button type="button" class="btn btn-sm btn-primary send-to-discord"
-                        data-report-id="{{ $report->id }}"
-                        data-webhook-id="{{ $webhook->id }}">
-                    <i class="fab fa-discord"></i> {{ $webhook->name }}
-                </button>
-                @endforeach
+            <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#sendDiscordModal">
+                <i class="fab fa-discord"></i> Send to Discord
+            </button>
             @endif
             <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
                 <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
@@ -452,14 +448,13 @@ $(document).ready(function() {
         });
     });
 
-    // Send to Discord
-    $('.send-to-discord').on('click', function(e) {
-        e.preventDefault();
-        const reportId = $(this).data('report-id');
-        const webhookId = $(this).data('webhook-id');
+    // Send to Discord via modal
+    $('#sendDiscordBtn').on('click', function() {
+        const webhookId = $('#discord_webhook_select').val();
+        const reportId = {{ $report->id }};
         const $btn = $(this);
 
-        $btn.html('<i class="fas fa-spinner fa-spin"></i> Sending...');
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Sending...');
 
         $.ajax({
             url: '/mining-manager/reports/' + reportId + '/send-discord',
@@ -470,14 +465,12 @@ $(document).ready(function() {
             data: { webhook_id: webhookId },
             success: function(response) {
                 toastr.success(response.message || 'Report sent to Discord');
-                $btn.html('<i class="fas fa-check text-success"></i> Sent!');
-                setTimeout(function() {
-                    $btn.html('<i class="fas fa-paper-plane"></i> ' + $btn.text().trim());
-                }, 3000);
+                $btn.prop('disabled', false).html('<i class="fab fa-discord"></i> Send');
+                $('#sendDiscordModal').modal('hide');
             },
             error: function(xhr) {
                 toastr.error(xhr.responseJSON?.message || 'Failed to send to Discord');
-                $btn.html('<i class="fas fa-paper-plane"></i> ' + $btn.text().trim());
+                $btn.prop('disabled', false).html('<i class="fab fa-discord"></i> Send');
             }
         });
     });
@@ -489,4 +482,45 @@ $(document).ready(function() {
 </div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
+
+{{-- SEND TO DISCORD MODAL --}}
+@if(isset($webhooks) && $webhooks->count() > 0)
+<div class="modal fade" id="sendDiscordModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary">
+                <h5 class="modal-title">
+                    <i class="fab fa-discord"></i> Send Report to Discord
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="discord_webhook_select">Select Webhook</label>
+                    <select class="form-control" id="discord_webhook_select">
+                        @foreach($webhooks as $webhook)
+                        <option value="{{ $webhook->id }}">
+                            {{ $webhook->name }}
+                            ({{ $webhook->type }})
+                        </option>
+                        @endforeach
+                    </select>
+                </div>
+                <p class="text-muted mb-0">
+                    <i class="fas fa-info-circle"></i>
+                    The report summary will be sent as an embed to the selected webhook.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="sendDiscordBtn">
+                    <i class="fab fa-discord"></i> Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
 @endsection
