@@ -262,12 +262,17 @@
 
 </div>
 
-{{-- CREATE SCHEDULE MODAL --}}
-<div class="modal fade modal-dark" id="createScheduleModal" tabindex="-1" role="dialog">
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
+
+</div>{{-- /.mining-manager-wrapper --}}
+
+{{-- CREATE SCHEDULE MODAL - Must be outside card structure to avoid z-index issues --}}
+<div class="modal fade" id="createScheduleModal" tabindex="-1" role="dialog" aria-labelledby="createScheduleModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
+            <div class="modal-header bg-success">
+                <h5 class="modal-title" id="createScheduleModalLabel">
                     <i class="fas fa-plus-circle"></i>
                     {{ trans('mining-manager::reports.create_new_schedule') }}
                 </h5>
@@ -280,13 +285,13 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="schedule_name">{{ trans('mining-manager::reports.schedule_name') }}</label>
-                        <input type="text" class="form-control" id="schedule_name" name="name" required 
+                        <input type="text" class="form-control" id="schedule_name" name="name" required
                                placeholder="{{ trans('mining-manager::reports.schedule_name_placeholder') }}">
                     </div>
 
                     <div class="form-group">
                         <label for="schedule_description">{{ trans('mining-manager::reports.description') }}</label>
-                        <textarea class="form-control" id="schedule_description" name="description" rows="2" 
+                        <textarea class="form-control" id="schedule_description" name="description" rows="2"
                                   placeholder="{{ trans('mining-manager::reports.description_placeholder') }}"></textarea>
                     </div>
 
@@ -318,6 +323,25 @@
                         <input type="time" class="form-control" id="schedule_time" name="run_time" value="00:00" required>
                         <small class="form-text text-muted">{{ trans('mining-manager::reports.run_time_help') }}</small>
                     </div>
+
+                    {{-- Discord Notification --}}
+                    @if(isset($webhooks) && $webhooks->count() > 0)
+                    <hr>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="schedule_discord" name="send_to_discord">
+                        <label class="form-check-label" for="schedule_discord">
+                            <i class="fab fa-discord"></i> {{ trans('mining-manager::reports.send_to_discord') ?? 'Send to Discord' }}
+                        </label>
+                    </div>
+                    <div class="form-group" id="webhook_select_group" style="display:none;">
+                        <label for="schedule_webhook">{{ trans('mining-manager::reports.webhook') ?? 'Webhook' }}</label>
+                        <select class="form-control" id="schedule_webhook" name="webhook_id">
+                            @foreach($webhooks as $webhook)
+                            <option value="{{ $webhook->id }}">{{ $webhook->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    @endif
 
                     <div class="form-check">
                         <input type="checkbox" class="form-check-input" id="schedule_active" name="is_active" checked>
@@ -432,12 +456,13 @@ $(document).ready(function() {
     
     // Update countdowns every minute
     setInterval(updateCountdowns, 60000);
+
+    // Toggle Discord webhook select
+    $('#schedule_discord').on('change', function() {
+        $('#webhook_select_group').toggle($(this).is(':checked'));
+    });
 });
 </script>
 @endpush
 
-    </div>{{-- /.card-body --}}
-</div>{{-- /.card-tabs --}}
-
-</div>{{-- /.mining-manager-wrapper --}}
 @endsection

@@ -123,6 +123,22 @@
                 {{ trans('mining-manager::reports.report_details') }}
             </h3>
             <div class="card-tools">
+                @if(isset($webhooks) && $webhooks->count() > 0)
+                <div class="btn-group btn-group-sm mr-1">
+                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
+                        <i class="fab fa-discord"></i> Send to Discord
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-right">
+                        @foreach($webhooks as $webhook)
+                        <a class="dropdown-item send-to-discord" href="#"
+                           data-report-id="{{ $report->id }}"
+                           data-webhook-id="{{ $webhook->id }}">
+                            <i class="fas fa-paper-plane"></i> {{ $webhook->name }}
+                        </a>
+                        @endforeach
+                    </div>
+                </div>
+                @endif
                 <a href="{{ route('mining-manager.reports.download', $report->id) }}" class="btn btn-sm btn-success">
                     <i class="fas fa-download"></i> {{ trans('mining-manager::reports.download') }}
                 </a>
@@ -419,6 +435,36 @@ $(document).ready(function() {
             },
             error: function(xhr) {
                 toastr.error(xhr.responseJSON?.message || '{{ trans("mining-manager::reports.error_deleting") }}');
+            }
+        });
+    });
+
+    // Send to Discord
+    $('.send-to-discord').on('click', function(e) {
+        e.preventDefault();
+        const reportId = $(this).data('report-id');
+        const webhookId = $(this).data('webhook-id');
+        const $btn = $(this);
+
+        $btn.html('<i class="fas fa-spinner fa-spin"></i> Sending...');
+
+        $.ajax({
+            url: '/mining-manager/reports/' + reportId + '/send-discord',
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+            },
+            data: { webhook_id: webhookId },
+            success: function(response) {
+                toastr.success(response.message || 'Report sent to Discord');
+                $btn.html('<i class="fas fa-check text-success"></i> Sent!');
+                setTimeout(function() {
+                    $btn.html('<i class="fas fa-paper-plane"></i> ' + $btn.text().trim());
+                }, 3000);
+            },
+            error: function(xhr) {
+                toastr.error(xhr.responseJSON?.message || 'Failed to send to Discord');
+                $btn.html('<i class="fas fa-paper-plane"></i> ' + $btn.text().trim());
             }
         });
     });

@@ -1463,7 +1463,7 @@ class WebhookService
      * @param array $reportData
      * @return array
      */
-    protected function sendReportToWebhook(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
+    public function sendReportToWebhook(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
     {
         switch ($webhook->type) {
             case 'discord':

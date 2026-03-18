@@ -71,7 +71,9 @@ class ReportController extends Controller
             'pdf' => 'PDF',
         ];
 
-        return view('mining-manager::reports.generate', compact('reportTypes', 'formats'));
+        $webhooks = WebhookConfiguration::where('is_active', true)->get();
+
+        return view('mining-manager::reports.generate', compact('reportTypes', 'formats', 'webhooks'));
     }
 
     /**
@@ -104,8 +106,22 @@ class ReportController extends Controller
             // Generate report
             $report = $this->reportService->generateReport($startDate, $endDate, $type, $format);
 
+            // Send to Discord if requested
+            if ($request->has('send_to_discord') && $request->input('webhook_id')) {
+                try {
+                    $webhook = WebhookConfiguration::findOrFail($request->input('webhook_id'));
+                    $reportData = json_decode($report->data, true) ?? [];
+                    $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+                    $webhookService->sendReportToWebhook($webhook, $report, $reportData);
+                } catch (\Exception $e) {
+                    return redirect()->route('mining-manager.reports.show', $report->id)
+                        ->with('success', 'Report generated successfully')
+                        ->with('warning', 'Failed to send to Discord: ' . $e->getMessage());
+                }
+            }
+
             return redirect()->route('mining-manager.reports.show', $report->id)
-                ->with('success', 'Report generated successfully');
+                ->with('success', 'Report generated successfully' . ($request->has('send_to_discord') ? ' and sent to Discord' : ''));
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
@@ -126,7 +142,36 @@ class ReportController extends Controller
         // Decode report data
         $reportData = json_decode($report->data, true);
 
-        return view('mining-manager::reports.show', compact('report', 'reportData'));
+        $webhooks = WebhookConfiguration::where('is_active', true)->get();
+
+        return view('mining-manager::reports.show', compact('report', 'reportData', 'webhooks'));
+    }
+
+    /**
+     * Send an existing report to a Discord webhook
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function sendToDiscord(Request $request, $id)
+    {
+        $request->validate([
+            'webhook_id' => 'required|integer|exists:webhook_configurations,id',
+        ]);
+
+        try {
+            $report = MiningReport::findOrFail($id);
+            $webhook = WebhookConfiguration::findOrFail($request->input('webhook_id'));
+
+            $reportData = json_decode($report->data, true) ?? [];
+            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+            $webhookService->sendReportToWebhook($webhook, $report, $reportData);
+
+            return response()->json(['success' => true, 'message' => 'Report sent to Discord successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Failed to send: ' . $e->getMessage()], 500);
+        }
     }
 
     /**

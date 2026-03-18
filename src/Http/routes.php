@@ -614,6 +614,12 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/{id}/send-discord', [
+            'as' => 'mining-manager.reports.send-discord',
+            'uses' => 'ReportController@sendToDiscord',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::delete('/{id}', [
             'as' => 'mining-manager.reports.destroy',
             'uses' => 'ReportController@destroy',

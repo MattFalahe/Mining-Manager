@@ -2866,6 +2866,327 @@
 }
 
 /* ============================================
+   Report Option Cards & Format Selection
+   ============================================ */
+.mining-manager-wrapper .report-option-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+}
+
+.mining-manager-wrapper .report-option-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mining-manager-wrapper .report-option-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .report-option-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .report-option-card .card-body {
+    position: relative;
+}
+
+.mining-manager-wrapper .report-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    color: var(--mm-text-muted);
+    transition: color 0.3s ease;
+}
+
+.mining-manager-wrapper .report-option-card.selected .report-icon {
+    color: var(--mm-primary-start, #667eea);
+}
+
+.mining-manager-wrapper .format-option {
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .format-option:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .format-option.selected {
+    border-color: #28a745;
+    background: rgba(40, 167, 69, 0.15);
+    box-shadow: 0 0 15px rgba(40, 167, 69, 0.3);
+}
+
+.mining-manager-wrapper .format-option.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .format-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+}
+
+/* Export page type cards */
+.mining-manager-wrapper .export-option-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .export-option-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .export-option-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .export-option-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+/* Format buttons (export page) */
+.mining-manager-wrapper .format-button {
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+    position: relative;
+}
+
+.mining-manager-wrapper .format-button:hover {
+    border-color: rgba(40, 167, 69, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .format-button.selected {
+    border-color: #28a745;
+    background: rgba(40, 167, 69, 0.15);
+    box-shadow: 0 0 15px rgba(40, 167, 69, 0.3);
+}
+
+.mining-manager-wrapper .format-button.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+.mining-manager-wrapper .export-type-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    background: var(--mm-card-bg);
+}
+
+.mining-manager-wrapper .export-type-card:hover {
+    border-color: rgba(102, 126, 234, 0.5);
+    transform: translateY(-2px);
+}
+
+.mining-manager-wrapper .export-type-card.selected {
+    border-color: var(--mm-primary-start, #667eea);
+    background: rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+}
+
+.mining-manager-wrapper .export-type-card.selected::before {
+    content: '\f058';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #28a745;
+    font-size: 1.2rem;
+}
+
+/* Create schedule card */
+.mining-manager-wrapper .create-schedule-card {
+    cursor: pointer;
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    color: var(--mm-text-muted);
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.mining-manager-wrapper .create-schedule-card:hover {
+    border-color: #28a745;
+    color: #28a745;
+    background: rgba(40, 167, 69, 0.05);
+}
+
+/* Schedule card active/inactive states */
+.mining-manager-wrapper .schedule-card {
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper .schedule-active {
+    border-left: 3px solid #28a745;
+}
+
+.mining-manager-wrapper .schedule-inactive {
+    border-left: 3px solid #6c757d;
+    opacity: 0.7;
+}
+
+/* Step indicator */
+.mining-manager-wrapper .step-indicator {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+}
+
+.mining-manager-wrapper .step-indicator::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mining-manager-wrapper .step {
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    color: var(--mm-text-muted);
+    transition: color 0.3s ease;
+}
+
+.mining-manager-wrapper .step.active,
+.mining-manager-wrapper .step.completed {
+    color: var(--mm-text-white, #fff);
+}
+
+.mining-manager-wrapper .step-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.mining-manager-wrapper .step.active .step-circle {
+    background: var(--mm-primary-start, #667eea);
+    box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+}
+
+.mining-manager-wrapper .step.completed .step-circle {
+    background: #28a745;
+}
+
+/* Frequency badges */
+.mining-manager-wrapper .frequency-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.mining-manager-wrapper .freq-daily { background: rgba(23, 162, 184, 0.2); color: #17a2b8; }
+.mining-manager-wrapper .freq-weekly { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+.mining-manager-wrapper .freq-monthly { background: rgba(111, 66, 193, 0.2); color: #6f42c1; }
+
+/* Status toggle switch */
+.mining-manager-wrapper .status-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+}
+
+.mining-manager-wrapper .status-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.mining-manager-wrapper .status-toggle .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #6c757d;
+    transition: 0.3s;
+    border-radius: 20px;
+}
+
+.mining-manager-wrapper .status-toggle .slider::before {
+    position: absolute;
+    content: '';
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.mining-manager-wrapper .status-toggle input:checked + .slider {
+    background-color: #28a745;
+}
+
+.mining-manager-wrapper .status-toggle input:checked + .slider::before {
+    transform: translateX(20px);
+}
+
+/* ============================================
    Help Cards
    ============================================ */
 .mining-dashboard .help-card-grid,
