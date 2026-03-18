@@ -552,7 +552,14 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
-        // Wildcard view routes - MUST be after named routes
+        // Admin - generate, delete, export (MUST be before /{id} wildcard)
+        Route::get('/generate', [
+            'as' => 'mining-manager.reports.generate',
+            'uses' => 'ReportController@generate',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Wildcard view routes - MUST be after all named routes
         Route::get('/{id}', [
             'as' => 'mining-manager.reports.show',
             'uses' => 'ReportController@show',
@@ -563,13 +570,6 @@ Route::group([
             'as' => 'mining-manager.reports.download',
             'uses' => 'ReportController@download',
             'middleware' => 'can:mining-manager.director',
-        ]);
-
-        // Admin - generate, delete, export
-        Route::get('/generate', [
-            'as' => 'mining-manager.reports.generate',
-            'uses' => 'ReportController@generate',
-            'middleware' => 'can:mining-manager.admin',
         ]);
 
         Route::post('/', [
