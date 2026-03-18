@@ -5,6 +5,7 @@ namespace MiningManager\Services\Notification;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Models\TheftIncident;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Models\MiningReport;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -1404,6 +1405,310 @@ class WebhookService
     }
 
     // ============================================================================
+    // REPORT NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * Send a report generated notification to all configured webhooks
+     *
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array Results for each webhook
+     */
+    public function sendReportNotification(MiningReport $report, array $reportData): array
+    {
+        $webhooks = WebhookConfiguration::enabled()
+            ->forEvent('report_generated')
+            ->get();
+
+        if ($webhooks->isEmpty()) {
+            Log::debug("WebhookService: No webhooks configured for event type: report_generated");
+            return [];
+        }
+
+        $results = [];
+
+        foreach ($webhooks as $webhook) {
+            try {
+                $result = $this->sendReportToWebhook($webhook, $report, $reportData);
+                $results[$webhook->id] = $result;
+
+                if ($result['success']) {
+                    $webhook->recordSuccess();
+                } else {
+                    $webhook->recordFailure($result['error'] ?? 'Unknown error');
+                }
+            } catch (\Exception $e) {
+                Log::error("WebhookService: Exception sending report notification to webhook {$webhook->id}", [
+                    'error' => $e->getMessage(),
+                    'report_id' => $report->id,
+                ]);
+
+                $webhook->recordFailure($e->getMessage());
+                $results[$webhook->id] = [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Send report notification to a specific webhook
+     *
+     * @param WebhookConfiguration $webhook
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array
+     */
+    protected function sendReportToWebhook(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
+    {
+        switch ($webhook->type) {
+            case 'discord':
+                return $this->sendReportToDiscord($webhook, $report, $reportData);
+
+            case 'slack':
+                return $this->sendReportToSlack($webhook, $report, $reportData);
+
+            case 'custom':
+                return $this->sendReportToCustom($webhook, $report, $reportData);
+
+            default:
+                return ['success' => false, 'error' => "Unknown webhook type: {$webhook->type}"];
+        }
+    }
+
+    /**
+     * Send report notification to Discord
+     *
+     * @param WebhookConfiguration $webhook
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array
+     */
+    protected function sendReportToDiscord(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
+    {
+        $embed = $this->buildReportDiscordEmbed($report, $reportData);
+
+        $payload = ['embeds' => [$embed]];
+
+        if ($webhook->discord_role_id) {
+            $payload['content'] = $webhook->getDiscordRoleMention();
+        }
+
+        if ($webhook->discord_username) {
+            $payload['username'] = $webhook->discord_username;
+        }
+
+        if ($webhook->discord_avatar_url) {
+            $payload['avatar_url'] = $webhook->discord_avatar_url;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+
+            if ($response->successful() || $response->status() === 204) {
+                return ['success' => true];
+            }
+
+            return [
+                'success' => false,
+                'error' => "Discord returned status {$response->status()}: {$response->body()}",
+            ];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Discord: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Send report notification to Slack
+     *
+     * @param WebhookConfiguration $webhook
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array
+     */
+    protected function sendReportToSlack(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
+    {
+        $title = $this->getTitleForEventType('report_generated');
+
+        $summary = $reportData['summary'] ?? [];
+        $taxes = $reportData['taxes'] ?? [];
+        $period = $reportData['period'] ?? [];
+
+        $periodStr = isset($period['start'], $period['end'])
+            ? "{$period['start']} to {$period['end']}"
+            : 'N/A';
+
+        $fields = [
+            ['type' => 'mrkdwn', 'text' => "*Report Type:*\n" . ucfirst($report->report_type)],
+            ['type' => 'mrkdwn', 'text' => "*Period:*\n{$periodStr}"],
+            ['type' => 'mrkdwn', 'text' => "*Total Miners:*\n" . number_format($summary['unique_miners'] ?? 0)],
+            ['type' => 'mrkdwn', 'text' => "*Total Value Mined:*\n" . number_format($summary['total_value'] ?? 0, 0) . ' ISK'],
+        ];
+
+        if (isset($taxes['total_owed'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Estimated Tax:*\n" . number_format($taxes['total_owed'], 0) . ' ISK'];
+        }
+
+        if (isset($taxes['collection_rate'])) {
+            $fields[] = ['type' => 'mrkdwn', 'text' => "*Collection Rate:*\n" . number_format($taxes['collection_rate'], 1) . '%'];
+        }
+
+        $blocks = [
+            ['type' => 'header', 'text' => ['type' => 'plain_text', 'text' => $title]],
+            ['type' => 'section', 'fields' => $fields],
+        ];
+
+        $payload = ['text' => $title, 'blocks' => $blocks];
+
+        if ($webhook->slack_channel) {
+            $payload['channel'] = $webhook->slack_channel;
+        }
+        if ($webhook->slack_username) {
+            $payload['username'] = $webhook->slack_username;
+        }
+
+        try {
+            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Slack returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to Slack: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Send report notification to custom webhook
+     *
+     * @param WebhookConfiguration $webhook
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array
+     */
+    protected function sendReportToCustom(WebhookConfiguration $webhook, MiningReport $report, array $reportData): array
+    {
+        $payload = array_merge([
+            'event_type' => 'report_generated',
+            'timestamp' => now()->toIso8601String(),
+            'report' => [
+                'id' => $report->id,
+                'report_type' => $report->report_type,
+                'start_date' => $report->start_date ? $report->start_date->toDateString() : null,
+                'end_date' => $report->end_date ? $report->end_date->toDateString() : null,
+                'format' => $report->format,
+                'generated_at' => $report->generated_at ? $report->generated_at->toIso8601String() : now()->toIso8601String(),
+                'generated_by' => $report->generated_by,
+            ],
+            'summary' => $reportData['summary'] ?? [],
+            'taxes' => $reportData['taxes'] ?? [],
+        ], $reportData);
+
+        $request = Http::timeout(10);
+
+        if ($webhook->custom_headers && is_array($webhook->custom_headers)) {
+            foreach ($webhook->custom_headers as $key => $value) {
+                $request = $request->withHeader($key, $value);
+            }
+        }
+
+        try {
+            $response = $request->post($webhook->webhook_url, $payload);
+            if ($response->successful()) {
+                return ['success' => true];
+            }
+            return ['success' => false, 'error' => "Custom webhook returned status {$response->status()}: {$response->body()}"];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => "Failed to send to custom webhook: {$e->getMessage()}"];
+        }
+    }
+
+    /**
+     * Build Discord embed for report notifications
+     *
+     * @param MiningReport $report
+     * @param array $reportData
+     * @return array
+     */
+    protected function buildReportDiscordEmbed(MiningReport $report, array $reportData): array
+    {
+        $color = $this->getColorForEventType('report_generated');
+        $title = $this->getTitleForEventType('report_generated');
+
+        $summary = $reportData['summary'] ?? [];
+        $taxes = $reportData['taxes'] ?? [];
+        $period = $reportData['period'] ?? [];
+
+        $periodStr = isset($period['start'], $period['end'])
+            ? "{$period['start']} to {$period['end']}"
+            : 'N/A';
+
+        $embed = [
+            'title' => $title,
+            'color' => $color,
+            'timestamp' => now()->toIso8601String(),
+            'fields' => [],
+            'footer' => [
+                'text' => $this->getCorpName() . ' Mining Manager | Generated ' . ($report->generated_at ? $report->generated_at->format('Y-m-d H:i:s') : now()->format('Y-m-d H:i:s')),
+            ],
+        ];
+
+        // Report Type
+        $embed['fields'][] = [
+            'name' => '📋 Report Type',
+            'value' => ucfirst($report->report_type),
+            'inline' => true,
+        ];
+
+        // Period
+        $embed['fields'][] = [
+            'name' => '📅 Period',
+            'value' => $periodStr,
+            'inline' => true,
+        ];
+
+        // Total Miners
+        $embed['fields'][] = [
+            'name' => '👥 Total Miners',
+            'value' => number_format($summary['unique_miners'] ?? 0),
+            'inline' => true,
+        ];
+
+        // Total Value Mined
+        $embed['fields'][] = [
+            'name' => '💰 Total Value Mined',
+            'value' => number_format($summary['total_value'] ?? 0, 0) . ' ISK',
+            'inline' => true,
+        ];
+
+        // Estimated Tax
+        if (isset($taxes['total_owed'])) {
+            $embed['fields'][] = [
+                'name' => '📊 Estimated Tax',
+                'value' => number_format($taxes['total_owed'], 0) . ' ISK',
+                'inline' => true,
+            ];
+        }
+
+        // Collection Rate
+        if (isset($taxes['collection_rate'])) {
+            $embed['fields'][] = [
+                'name' => '📈 Collection Rate',
+                'value' => number_format($taxes['collection_rate'], 1) . '%',
+                'inline' => true,
+            ];
+        }
+
+        $embed['description'] = 'A new mining report has been generated and is ready for review.';
+
+        return $embed;
+    }
+
+    // ============================================================================
     // SHARED HELPERS
     // ============================================================================
 
@@ -1428,6 +1733,7 @@ class WebhookService
             'tax_reminder' => 0xF39C12,         // Amber
             'tax_invoice' => 0x3498DB,          // Blue
             'tax_overdue' => 0xE74C3C,          // Red
+            'report_generated' => 0x3498DB,     // Blue
             default => 0xFFFF00,                // Yellow
         };
     }
@@ -1453,6 +1759,7 @@ class WebhookService
             'tax_reminder' => '⏰ Tax Payment Reminder',
             'tax_invoice' => '📧 New Tax Invoice',
             'tax_overdue' => '❌ Overdue Tax Payment',
+            'report_generated' => '📊 Mining Report Generated',
             default => 'Mining Manager Alert',
         };
     }

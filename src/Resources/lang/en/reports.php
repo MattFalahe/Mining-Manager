@@ -55,7 +55,7 @@ return [
     // Format Descriptions
     'format_json_description' => 'Machine-readable data format',
     'format_csv_description' => 'Spreadsheet-compatible format',
-    'format_pdf_description' => 'Printable document format (coming soon)',
+    'format_pdf_description' => 'Printable document format with summary tables and charts',
     'best_for_excel' => 'Best for Excel/Spreadsheets',
     'best_for_api' => 'Best for API/Programming',
     
@@ -201,6 +201,28 @@ return [
     'all_regions' => 'All Regions',
     'only_unpaid' => 'Only Unpaid Taxes',
     
+    // Report Show/Detail
+    'report_details' => 'Report Details',
+    'total_quantity' => 'Total Quantity',
+    'total_value_isk' => 'Total Value (ISK)',
+    'unique_miners' => 'Unique Miners',
+    'top_miners' => 'Top Miners',
+    'miner_name' => 'Miner',
+    'quantity' => 'Quantity',
+    'value_isk' => 'Value (ISK)',
+    'percentage' => 'Percentage',
+    'ore_type' => 'Ore Type',
+    'system_breakdown' => 'System Breakdown',
+    'system_name' => 'System',
+    'tax_summary' => 'Tax Summary',
+    'tax_rate' => 'Tax Rate',
+    'taxable_value' => 'Taxable Value',
+    'total_paid' => 'Total Paid',
+    'total_outstanding' => 'Total Outstanding',
+    'no_report_data' => 'No Report Data Available',
+    'no_report_data_description' => 'This report does not contain any viewable data. Try downloading the report file instead.',
+    'unknown' => 'Unknown',
+
     // Miscellaneous
     'generating_status' => 'Generating',
     'completed_status' => 'Completed',

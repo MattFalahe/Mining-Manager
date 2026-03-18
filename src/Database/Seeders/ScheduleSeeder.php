@@ -88,6 +88,15 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Process scheduled reports - runs every hour to check for due schedules
+            [
+                'command' => 'mining-manager:generate-reports --scheduled',
+                'expression' => '0 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
             // Cache price data - runs every 4 hours at :30 past
             // (Reduces API load on providers like Janice while keeping prices reasonably fresh)
             [

@@ -1046,6 +1046,7 @@ class SettingsController extends Controller
             'notify_tax_reminder' => 'nullable|boolean',
             'notify_tax_invoice' => 'nullable|boolean',
             'notify_tax_overdue' => 'nullable|boolean',
+            'notify_report_generated' => 'nullable|boolean',
             'discord_role_id' => 'nullable|string|max:255',
             'discord_username' => 'nullable|string|max:255',
             'slack_channel' => 'nullable|string|max:255',
@@ -1078,6 +1079,7 @@ class SettingsController extends Controller
             $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
             $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
             $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
+            $data['notify_report_generated'] = $request->has('notify_report_generated');
 
             $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
 
@@ -1122,6 +1124,7 @@ class SettingsController extends Controller
                 'notify_tax_reminder' => 'nullable|boolean',
                 'notify_tax_invoice' => 'nullable|boolean',
                 'notify_tax_overdue' => 'nullable|boolean',
+                'notify_report_generated' => 'nullable|boolean',
                 'discord_role_id' => 'nullable|string|max:255',
                 'discord_username' => 'nullable|string|max:255',
                 'slack_channel' => 'nullable|string|max:255',
@@ -1152,6 +1155,7 @@ class SettingsController extends Controller
             $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
             $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
             $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
+            $data['notify_report_generated'] = $request->has('notify_report_generated');
 
             $webhook->update($data);
 

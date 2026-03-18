@@ -372,6 +372,10 @@ return [
     'custom_payload_template' => 'Custom Payload Template',
     'custom_payload_help' => 'JSON template with variables: {{event_type}}, {{character_id}}, {{character_name}}, {{ore_value}}, {{tax_owed}}, {{severity}}, {{status}}',
 
+    // Report Notifications
+    'reports_category' => 'Reports',
+    'report_generated' => 'Report Generated',
+
     // Common
     'optional' => 'Optional',
     'cancel' => 'Cancel',

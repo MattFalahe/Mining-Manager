@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningReport;
+use MiningManager\Models\ReportSchedule;
 use MiningManager\Services\Analytics\ReportGenerationService;
 use Carbon\Carbon;
 
@@ -18,7 +19,8 @@ class GenerateReportsCommand extends Command
                             {--type=monthly : Report type (daily|weekly|monthly|custom)}
                             {--start= : Start date for custom report (YYYY-MM-DD)}
                             {--end= : End date for custom report (YYYY-MM-DD)}
-                            {--format=json : Output format (json|csv|pdf)}';
+                            {--format=json : Output format (json|csv|pdf)}
+                            {--scheduled : Process all due scheduled reports}';
 
     /**
      * The console command description.
@@ -52,6 +54,11 @@ class GenerateReportsCommand extends Command
      */
     public function handle()
     {
+        // Handle scheduled reports mode
+        if ($this->option('scheduled')) {
+            return $this->handleScheduledReports();
+        }
+
         $this->info('Starting report generation...');
 
         $type = $this->option('type');
@@ -88,6 +95,72 @@ class GenerateReportsCommand extends Command
             $this->error("Error generating report: {$e->getMessage()}");
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Process all due scheduled reports.
+     *
+     * @return int
+     */
+    private function handleScheduledReports(): int
+    {
+        $this->info('Checking for due scheduled reports...');
+
+        $dueSchedules = ReportSchedule::where('is_active', true)
+            ->where('next_run', '<=', Carbon::now())
+            ->get();
+
+        if ($dueSchedules->isEmpty()) {
+            $this->info('No scheduled reports are due.');
+            return Command::SUCCESS;
+        }
+
+        $this->info("Found {$dueSchedules->count()} due schedule(s).");
+
+        $successCount = 0;
+        $failCount = 0;
+
+        foreach ($dueSchedules as $schedule) {
+            $this->info("Processing schedule: {$schedule->name} (ID: {$schedule->id})");
+
+            try {
+                // Get date range from the schedule's report_type
+                [$startDate, $endDate] = $schedule->getDateRangeForRun();
+
+                $this->info("  Period: {$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')}");
+                $this->info("  Type: {$schedule->report_type}, Format: {$schedule->format}");
+
+                // Generate report
+                $report = $this->reportService->generateReport(
+                    $startDate,
+                    $endDate,
+                    $schedule->report_type,
+                    $schedule->format
+                );
+
+                // Link report to schedule
+                $report->update(['schedule_id' => $schedule->id]);
+
+                // Update schedule tracking fields
+                $schedule->last_run = Carbon::now();
+                $schedule->reports_generated = $schedule->reports_generated + 1;
+                $schedule->calculateNextRun();
+                $schedule->save();
+
+                $this->info("  Report generated successfully (ID: {$report->id})");
+                $this->info("  Next run: {$schedule->next_run->format('Y-m-d H:i')}");
+
+                $successCount++;
+
+            } catch (\Exception $e) {
+                $this->error("  Error processing schedule '{$schedule->name}': {$e->getMessage()}");
+                $failCount++;
+            }
+        }
+
+        $this->info("Scheduled reports complete: {$successCount} succeeded, {$failCount} failed.");
+
+        return $failCount > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 
     /**

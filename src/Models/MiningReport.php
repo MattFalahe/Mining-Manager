@@ -27,6 +27,7 @@ class MiningReport extends Model
         'file_path',
         'generated_at',
         'generated_by',
+        'schedule_id',
     ];
 
     /**
@@ -40,6 +41,16 @@ class MiningReport extends Model
         'generated_at' => 'datetime',
         'data' => 'array',
     ];
+
+    /**
+     * Get the schedule that generated this report.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function schedule()
+    {
+        return $this->belongsTo(ReportSchedule::class, 'schedule_id');
+    }
 
     /**
      * Scope a query to filter by report type.

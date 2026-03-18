@@ -27,6 +27,7 @@ use Carbon\Carbon;
  * @property bool $notify_tax_reminder
  * @property bool $notify_tax_invoice
  * @property bool $notify_tax_overdue
+ * @property bool $notify_report_generated
  * @property string|null $discord_role_id
  * @property string|null $discord_username
  * @property string|null $slack_channel
@@ -73,6 +74,7 @@ class WebhookConfiguration extends Model
         'notify_tax_reminder',
         'notify_tax_invoice',
         'notify_tax_overdue',
+        'notify_report_generated',
         'discord_role_id',
         'discord_username',
         'slack_channel',
@@ -101,6 +103,7 @@ class WebhookConfiguration extends Model
         'notify_tax_reminder' => 'boolean',
         'notify_tax_invoice' => 'boolean',
         'notify_tax_overdue' => 'boolean',
+        'notify_report_generated' => 'boolean',
         'custom_headers' => 'array',
         'last_success_at' => 'datetime',
         'last_failure_at' => 'datetime',
@@ -177,6 +180,7 @@ class WebhookConfiguration extends Model
             'tax_reminder' => 'notify_tax_reminder',
             'tax_invoice' => 'notify_tax_invoice',
             'tax_overdue' => 'notify_tax_overdue',
+            'report_generated' => 'notify_report_generated',
         ];
 
         $column = $columnMap[$eventType] ?? null;
@@ -285,6 +289,7 @@ class WebhookConfiguration extends Model
             'tax_reminder' => $this->notify_tax_reminder,
             'tax_invoice' => $this->notify_tax_invoice,
             'tax_overdue' => $this->notify_tax_overdue,
+            'report_generated' => $this->notify_report_generated,
         ];
 
         return $eventMap[$eventType] ?? false;

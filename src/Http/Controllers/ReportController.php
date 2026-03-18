@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Analytics\ReportGenerationService;
 use MiningManager\Models\MiningReport;
+use MiningManager\Models\ReportSchedule;
+use MiningManager\Models\WebhookConfiguration;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -323,9 +325,14 @@ class ReportController extends Controller
      */
     private function downloadPdf(MiningReport $report, array $data)
     {
-        // PDF generation would require a PDF library like DomPDF or similar
-        // For now, return a placeholder
-        abort(501, 'PDF generation not yet implemented');
+        $filename = $this->generateFileName($report);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('mining-manager::reports.pdf.report', [
+            'data' => $data,
+            'report' => $report,
+        ]);
+
+        return $pdf->download($filename);
     }
 
     /**
@@ -336,11 +343,17 @@ class ReportController extends Controller
      */
     public function scheduled(Request $request)
     {
-        // For now, return empty collection until schedule management is fully implemented
-        $schedules = collect();
-        $recentReports = collect();
+        $schedules = ReportSchedule::orderBy('created_at', 'desc')->get();
 
-        return view('mining-manager::reports.scheduled', compact('schedules', 'recentReports'));
+        $recentReports = MiningReport::whereNotNull('schedule_id')
+            ->with('schedule')
+            ->orderBy('generated_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        $webhooks = WebhookConfiguration::where('is_enabled', true)->get();
+
+        return view('mining-manager::reports.scheduled', compact('schedules', 'recentReports', 'webhooks'));
     }
 
     /**
@@ -353,18 +366,38 @@ class ReportController extends Controller
     {
         try {
             $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string|max:1000',
                 'report_type' => 'required|in:daily,weekly,monthly',
                 'format' => 'required|in:json,csv,pdf',
                 'frequency' => 'required|in:daily,weekly,monthly',
-                'enabled' => 'boolean',
+                'run_time' => 'required|date_format:H:i',
+                'is_active' => 'nullable',
+                'send_to_discord' => 'nullable',
+                'webhook_id' => 'nullable|exists:webhook_configurations,id',
             ]);
 
-            // Schedule creation would require a report_schedules table
-            // For now, return success but indicate feature needs implementation
+            $schedule = ReportSchedule::create([
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'report_type' => $validated['report_type'],
+                'format' => $validated['format'],
+                'frequency' => $validated['frequency'],
+                'run_time' => $validated['run_time'],
+                'is_active' => $request->has('is_active'),
+                'send_to_discord' => $request->has('send_to_discord'),
+                'webhook_id' => $validated['webhook_id'] ?? null,
+                'created_by' => auth()->id(),
+            ]);
+
+            // Calculate initial next_run
+            $schedule->calculateNextRun();
+            $schedule->save();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Report schedule feature is not yet fully implemented',
+                'message' => 'Report schedule created successfully',
+                'schedule' => $schedule,
             ]);
 
         } catch (\Exception $e) {
@@ -385,12 +418,23 @@ class ReportController extends Controller
     public function toggleSchedule(Request $request, $id)
     {
         try {
-            // Schedule toggle would require a report_schedules table
-            // For now, return success but indicate feature needs implementation
+            $schedule = ReportSchedule::findOrFail($id);
+
+            $schedule->is_active = !$schedule->is_active;
+
+            // Recalculate next_run when activating
+            if ($schedule->is_active) {
+                $schedule->calculateNextRun();
+            }
+
+            $schedule->save();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Schedule toggling is not yet fully implemented',
+                'message' => $schedule->is_active
+                    ? 'Schedule activated successfully'
+                    : 'Schedule paused successfully',
+                'is_active' => $schedule->is_active,
             ]);
 
         } catch (\Exception $e) {
@@ -411,12 +455,32 @@ class ReportController extends Controller
     public function runSchedule(Request $request, $id)
     {
         try {
-            // Manual schedule execution would require a report_schedules table
-            // For now, return success but indicate feature needs implementation
+            $schedule = ReportSchedule::findOrFail($id);
+
+            // Get date range based on the schedule's report_type
+            [$startDate, $endDate] = $schedule->getDateRangeForRun();
+
+            // Generate the report
+            $report = $this->reportService->generateReport(
+                $startDate,
+                $endDate,
+                $schedule->report_type,
+                $schedule->format
+            );
+
+            // Link report to schedule
+            $report->update(['schedule_id' => $schedule->id]);
+
+            // Update schedule tracking fields
+            $schedule->last_run = Carbon::now();
+            $schedule->reports_generated = $schedule->reports_generated + 1;
+            $schedule->calculateNextRun();
+            $schedule->save();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Manual schedule execution is not yet fully implemented',
+                'message' => 'Report generated successfully',
+                'report_id' => $report->id,
             ]);
 
         } catch (\Exception $e) {
@@ -437,12 +501,12 @@ class ReportController extends Controller
     public function destroySchedule(Request $request, $id)
     {
         try {
-            // Schedule deletion would require a report_schedules table
-            // For now, return success but indicate feature needs implementation
+            $schedule = ReportSchedule::findOrFail($id);
+            $schedule->delete();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Schedule deletion is not yet fully implemented',
+                'message' => 'Schedule deleted successfully',
             ]);
 
         } catch (\Exception $e) {
@@ -464,14 +528,15 @@ class ReportController extends Controller
         $formats = [
             'csv' => 'CSV (Comma-Separated Values)',
             'json' => 'JSON (JavaScript Object Notation)',
-            'xlsx' => 'Excel (XLSX)',
         ];
 
         $exportTypes = [
-            'mining_ledger' => 'Mining Ledger Data',
+            'mining_activity' => 'Mining Activity',
             'tax_records' => 'Tax Records',
-            'moon_extractions' => 'Moon Extractions',
-            'events' => 'Mining Events',
+            'miner_stats' => 'Miner Statistics',
+            'system_stats' => 'System Statistics',
+            'ore_breakdown' => 'Ore Breakdown',
+            'event_data' => 'Event Data',
         ];
 
         return view('mining-manager::reports.export', compact('formats', 'exportTypes'));
@@ -487,8 +552,8 @@ class ReportController extends Controller
     {
         try {
             $validated = $request->validate([
-                'export_type' => 'required|in:mining_ledger,tax_records,moon_extractions,events',
-                'format' => 'required|in:csv,json,xlsx',
+                'export_type' => 'required|in:mining_activity,tax_records,miner_stats,system_stats,ore_breakdown,event_data',
+                'format' => 'required|in:csv,json',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after:start_date',
             ]);

@@ -5,8 +5,11 @@ namespace MiningManager\Services\Analytics;
 use MiningManager\Models\MiningReport;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
+use MiningManager\Models\MiningEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 
 class ReportGenerationService
@@ -57,6 +60,13 @@ class ReportGenerationService
         if ($format !== 'json') {
             $filePath = $this->generateReportFile($report, $reportData, $format);
             $report->update(['file_path' => $filePath]);
+        }
+
+        // Send webhook notification for report generation
+        try {
+            app(\MiningManager\Services\Notification\WebhookService::class)->sendReportNotification($report, $reportData);
+        } catch (\Exception $e) {
+            Log::warning("Failed to send report webhook: " . $e->getMessage());
         }
 
         return $report;
@@ -299,9 +309,8 @@ class ReportGenerationService
      */
     private function generatePdfFile(string $path, array $data): void
     {
-        // PDF generation would require a library like DomPDF or TCPDF
-        // This is a placeholder for now
-        throw new \Exception('PDF generation not yet implemented');
+        $pdf = Pdf::loadView('mining-manager::reports.pdf.report', ['data' => $data]);
+        Storage::put($path, $pdf->output());
     }
 
     /**
@@ -328,5 +337,186 @@ class ReportGenerationService
     {
         $data = json_decode($report->data, true);
         $this->generatePdfFile($path, $data);
+    }
+
+    /**
+     * Generate a quick export file.
+     *
+     * @param string $exportType
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @param string $format csv|json
+     * @return array{id: int, url: string}
+     */
+    public function generateExport(string $exportType, Carbon $startDate, Carbon $endDate, string $format): array
+    {
+        // Collect data based on export type
+        $rows = match ($exportType) {
+            'mining_activity' => $this->getMiningActivityExport($startDate, $endDate),
+            'tax_records'     => $this->getTaxRecordsExport($startDate, $endDate),
+            'miner_stats'     => $this->getMinerData($startDate, $endDate),
+            'system_stats'    => $this->getSystemData($startDate, $endDate),
+            'ore_breakdown'   => $this->getOreTypeData($startDate, $endDate),
+            'event_data'      => $this->getEventDataExport($startDate, $endDate),
+            default           => throw new \InvalidArgumentException("Unknown export type: {$exportType}"),
+        };
+
+        // Create a MiningReport record for tracking
+        $report = MiningReport::create([
+            'report_type'  => $exportType,
+            'start_date'   => $startDate,
+            'end_date'     => $endDate,
+            'format'       => $format,
+            'data'         => json_encode($rows),
+            'generated_at' => Carbon::now(),
+            'generated_by' => auth()->user()->name ?? 'system',
+        ]);
+
+        // Build file path
+        $filename = sprintf(
+            'export_%s_%s_%s_%d.%s',
+            $exportType,
+            $startDate->format('Ymd'),
+            $endDate->format('Ymd'),
+            $report->id,
+            $format
+        );
+        $path = "exports/{$filename}";
+
+        // Generate the file
+        if ($format === 'csv') {
+            $this->generateExportCsv($path, $rows, $exportType);
+        } else {
+            Storage::put($path, json_encode($rows, JSON_PRETTY_PRINT));
+        }
+
+        $report->update(['file_path' => $path]);
+
+        return [
+            'id'  => $report->id,
+            'url' => route('mining-manager.reports.export.download', $report->id),
+        ];
+    }
+
+    /**
+     * Get raw mining activity data for export.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    private function getMiningActivityExport(Carbon $startDate, Carbon $endDate): array
+    {
+        return MiningLedger::with(['character', 'type', 'solarSystem'])
+            ->whereBetween('date', [$startDate, $endDate])
+            ->orderBy('date', 'desc')
+            ->get()
+            ->map(function ($entry) {
+                return [
+                    'date'         => $entry->date->toDateString(),
+                    'character'    => $entry->character->name ?? 'Unknown',
+                    'character_id' => $entry->character_id,
+                    'ore_type'     => $entry->type_name,
+                    'type_id'      => $entry->type_id,
+                    'quantity'     => $entry->quantity,
+                    'system'       => $entry->system_name,
+                    'system_id'    => $entry->solar_system_id,
+                    'total_value'  => (float) $entry->total_value,
+                    'tax_amount'   => (float) $entry->tax_amount,
+                ];
+            })
+            ->toArray();
+    }
+
+    /**
+     * Get tax records for export.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    private function getTaxRecordsExport(Carbon $startDate, Carbon $endDate): array
+    {
+        return MiningTax::with('character')
+            ->whereBetween('month', [$startDate->startOfMonth(), $endDate->endOfMonth()])
+            ->orderBy('month', 'desc')
+            ->get()
+            ->map(function ($tax) {
+                return [
+                    'month'        => $tax->month->format('Y-m'),
+                    'character'    => $tax->character->name ?? 'Unknown',
+                    'character_id' => $tax->character_id,
+                    'amount_owed'  => (float) $tax->amount_owed,
+                    'amount_paid'  => (float) $tax->amount_paid,
+                    'balance'      => (float) $tax->getRemainingBalance(),
+                    'status'       => $tax->status,
+                    'due_date'     => $tax->due_date ? $tax->due_date->toDateString() : null,
+                    'paid_at'      => $tax->paid_at ? $tax->paid_at->toDateTimeString() : null,
+                ];
+            })
+            ->toArray();
+    }
+
+    /**
+     * Get event data for export.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    private function getEventDataExport(Carbon $startDate, Carbon $endDate): array
+    {
+        return MiningEvent::with('participants')
+            ->whereBetween('start_time', [$startDate, $endDate])
+            ->orderBy('start_time', 'desc')
+            ->get()
+            ->map(function ($event) {
+                return [
+                    'name'              => $event->name,
+                    'type'              => $event->getTypeLabel(),
+                    'status'            => $event->status,
+                    'start_time'        => $event->start_time->toDateTimeString(),
+                    'end_time'          => $event->end_time ? $event->end_time->toDateTimeString() : null,
+                    'duration_hours'    => $event->getDuration(),
+                    'participant_count' => $event->participant_count,
+                    'total_mined'       => $event->total_mined,
+                    'tax_modifier'      => $event->getFormattedTaxModifier(),
+                    'avg_per_participant' => $event->getAveragePerParticipant(),
+                ];
+            })
+            ->toArray();
+    }
+
+    /**
+     * Generate a CSV file from export data.
+     *
+     * @param string $path
+     * @param array $rows
+     * @param string $exportType
+     * @return void
+     */
+    private function generateExportCsv(string $path, array $rows, string $exportType): void
+    {
+        $csv = fopen('php://temp', 'r+');
+
+        if (empty($rows)) {
+            fputcsv($csv, ['No data found for the selected period']);
+            rewind($csv);
+            Storage::put($path, stream_get_contents($csv));
+            fclose($csv);
+            return;
+        }
+
+        // Write header row from the first record's keys
+        fputcsv($csv, array_keys($rows[0]));
+
+        // Write data rows
+        foreach ($rows as $row) {
+            fputcsv($csv, array_values($row));
+        }
+
+        rewind($csv);
+        Storage::put($path, stream_get_contents($csv));
+        fclose($csv);
     }
 }

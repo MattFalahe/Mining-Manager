@@ -179,6 +179,11 @@
                                                     <i class="fas fa-exclamation-circle"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_report_generated)
+                                                <span class="badge badge-info" title="{{ trans('mining-manager::settings.report_generated') }}">
+                                                    <i class="fas fa-chart-bar"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -401,6 +406,17 @@
                             <label class="custom-control-label" for="notify-tax-overdue">
                                 <i class="fas fa-exclamation-circle text-danger"></i>
                                 Tax Overdue
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-2"><strong>{{ trans('mining-manager::settings.reports_category') }}</strong></small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-report-generated" name="notify_report_generated" value="1">
+                            <label class="custom-control-label" for="notify-report-generated">
+                                <i class="fas fa-chart-bar text-info"></i>
+                                {{ trans('mining-manager::settings.report_generated') }}
                             </label>
                         </div>
                     </div>
