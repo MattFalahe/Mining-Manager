@@ -71,7 +71,7 @@ class ReportController extends Controller
             'pdf' => 'PDF',
         ];
 
-        $webhooks = WebhookConfiguration::where('is_active', true)->get();
+        $webhooks = WebhookConfiguration::where('is_enabled', true)->get();
 
         return view('mining-manager::reports.generate', compact('reportTypes', 'formats', 'webhooks'));
     }
@@ -142,7 +142,7 @@ class ReportController extends Controller
         // Decode report data
         $reportData = json_decode($report->data, true);
 
-        $webhooks = WebhookConfiguration::where('is_active', true)->get();
+        $webhooks = WebhookConfiguration::where('is_enabled', true)->get();
 
         return view('mining-manager::reports.show', compact('report', 'reportData', 'webhooks'));
     }
