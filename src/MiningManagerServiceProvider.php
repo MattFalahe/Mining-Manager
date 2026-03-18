@@ -29,6 +29,7 @@ use MiningManager\Console\Commands\MonitorActiveTheftsCommand;
 use MiningManager\Console\Commands\FinalizeMonthCommand;
 use MiningManager\Console\Commands\UpdateLedgerPricesCommand;
 use MiningManager\Console\Commands\UpdateDailySummariesCommand;
+use MiningManager\Console\Commands\ImportCharacterMiningCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
@@ -115,6 +116,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 FinalizeMonthCommand::class,
                 UpdateLedgerPricesCommand::class,
                 UpdateDailySummariesCommand::class,
+                ImportCharacterMiningCommand::class,
             ]);
         }
 
