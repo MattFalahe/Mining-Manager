@@ -197,18 +197,25 @@
                     </div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-4 mb-3">
                                 <div class="format-button text-center" data-format="csv">
                                     <i class="fas fa-file-csv fa-3x text-success mb-2"></i>
                                     <h6>CSV</h6>
                                     <small class="text-muted">{{ trans('mining-manager::reports.best_for_excel') }}</small>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-4 mb-3">
                                 <div class="format-button text-center" data-format="json">
                                     <i class="fas fa-file-code fa-3x text-primary mb-2"></i>
                                     <h6>JSON</h6>
                                     <small class="text-muted">{{ trans('mining-manager::reports.best_for_api') }}</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="format-button text-center" data-format="pdf">
+                                    <i class="fas fa-file-pdf fa-3x text-danger mb-2"></i>
+                                    <h6>PDF</h6>
+                                    <small class="text-muted">{{ trans('mining-manager::reports.format_pdf_description') }}</small>
                                 </div>
                             </div>
                         </div>

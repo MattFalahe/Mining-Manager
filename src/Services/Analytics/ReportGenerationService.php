@@ -400,6 +400,8 @@ class ReportGenerationService
         // Generate the file
         if ($format === 'csv') {
             $this->generateExportCsv($path, $rows, $exportType);
+        } elseif ($format === 'pdf') {
+            $this->generateExportPdf($path, $rows, $exportType, $startDate, $endDate);
         } else {
             Storage::put($path, json_encode($rows, JSON_PRETTY_PRINT));
         }
@@ -509,6 +511,28 @@ class ReportGenerationService
      * @param string $exportType
      * @return void
      */
+    /**
+     * Generate a PDF export file.
+     */
+    private function generateExportPdf(string $path, array $rows, string $exportType, Carbon $startDate, Carbon $endDate): void
+    {
+        $title = ucwords(str_replace('_', ' ', $exportType));
+        $columns = !empty($rows) ? array_keys($rows[0]) : [];
+
+        $pdf = Pdf::loadView('mining-manager::reports.pdf.export', [
+            'title' => $title,
+            'exportType' => $exportType,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'columns' => $columns,
+            'rows' => $rows,
+            'generatedAt' => Carbon::now(),
+        ]);
+
+        $pdf->setPaper('A4', 'landscape');
+        Storage::put($path, $pdf->output());
+    }
+
     private function generateExportCsv(string $path, array $rows, string $exportType): void
     {
         $csv = fopen('php://temp', 'r+');

@@ -573,6 +573,7 @@ class ReportController extends Controller
         $formats = [
             'csv' => 'CSV (Comma-Separated Values)',
             'json' => 'JSON (JavaScript Object Notation)',
+            'pdf' => 'PDF (Printable Document)',
         ];
 
         $exportTypes = [
@@ -598,7 +599,7 @@ class ReportController extends Controller
         try {
             $validated = $request->validate([
                 'export_type' => 'required|in:mining_activity,tax_records,miner_stats,system_stats,ore_breakdown,event_data',
-                'format' => 'required|in:csv,json',
+                'format' => 'required|in:csv,json,pdf',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after:start_date',
             ]);
