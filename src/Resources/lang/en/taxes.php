@@ -244,4 +244,38 @@ return [
     'auto_matching' => 'Auto-matching tax codes...',
     'transaction_verified' => 'Transaction verified successfully',
     'payment_recorded' => 'Payment recorded successfully',
+
+    // Calculation Results
+    'taxes_already_exist' => 'Taxes already exist for this period. Use Recalculate to overwrite.',
+    'calculation_complete' => 'Tax calculation completed successfully',
+    'calculation_error' => 'An error occurred during tax calculation',
+
+    // Payment Verification
+    'payment_verified' => 'Payment verified successfully',
+    'auto_match_complete' => 'Auto-matching completed',
+    'auto_match_error' => 'An error occurred during auto-matching',
+    'payments_verified' => 'Payments verified successfully',
+    'payments_regenerated' => 'Payment tracking regenerated successfully',
+    'regeneration_error' => 'An error occurred during regeneration',
+
+    // Tax Code Management
+    'no_unpaid_taxes_for_codes' => 'No unpaid taxes found to generate codes for',
+    'codes_generated' => 'Tax codes generated successfully',
+    'code_generation_error' => 'An error occurred generating tax codes',
+    'code_created' => 'Tax code created successfully',
+    'code_creation_error' => 'An error occurred creating the tax code',
+    'cannot_delete_used_code' => 'Cannot delete a used tax code',
+    'code_deleted' => 'Tax code deleted successfully',
+    'code_deletion_error' => 'An error occurred deleting the tax code',
+
+    // Status & Record Management
+    'status_updated' => 'Status updated successfully',
+    'status_update_error' => 'An error occurred updating the status',
+    'cannot_delete_paid' => 'Cannot delete a paid tax record',
+    'tax_deleted' => 'Tax record deleted successfully',
+    'deletion_error' => 'An error occurred deleting the tax record',
+
+    // Export & Receipt
+    'export_error' => 'An error occurred during export',
+    'receipt_error' => 'An error occurred generating the receipt',
 ];

@@ -184,4 +184,9 @@ return [
     'to' => 'to',
     'unlimited' => 'Unlimited',
     'view' => 'View',
+
+    // Participation Messages
+    'cannot_join_event' => 'You cannot join this event',
+    'already_joined' => 'You have already joined this event',
+    'not_participating' => 'You are not participating in this event',
 ];
