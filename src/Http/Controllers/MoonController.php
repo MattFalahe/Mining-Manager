@@ -61,7 +61,7 @@ class MoonController extends Controller
             ->where('natural_decay_time', '>', $now)
             ->update(['status' => 'ready']);
 
-        $query = MoonExtraction::with(['structure', 'corporation']);
+        $query = MoonExtraction::with(['structure.system', 'structure.type', 'corporation']);
 
         if ($status !== 'all') {
             // Map 'completed' filter to actual database statuses
@@ -76,7 +76,7 @@ class MoonController extends Controller
             $query->where('corporation_id', $corporationId);
         }
 
-        $extractions = $query->orderBy('chunk_arrival_time', 'desc')->paginate(20);
+        $extractions = $query->orderBy('chunk_arrival_time', 'asc')->paginate(20);
 
         // Batch-load structure and moon names to prevent N+1 queries
         MoonExtraction::loadDisplayNames($extractions->getCollection());
@@ -134,7 +134,7 @@ class MoonController extends Controller
      */
     public function show($id)
     {
-        $extraction = MoonExtraction::with(['structure', 'corporation'])->findOrFail($id);
+        $extraction = MoonExtraction::with(['structure.system', 'structure.type', 'corporation'])->findOrFail($id);
 
         // Calculate estimated value if ore composition available
         $estimatedValue = null;
@@ -155,10 +155,31 @@ class MoonController extends Controller
         }
 
         // Load extraction history for this structure
+        // First check archived history
         $history = \MiningManager\Models\MoonExtractionHistory::where('structure_id', $extraction->structure_id)
             ->orderBy('archived_at', 'desc')
             ->limit(10)
             ->get();
+
+        // If no archived history, show past extractions from the main table
+        if ($history->isEmpty()) {
+            $pastExtractions = MoonExtraction::where('structure_id', $extraction->structure_id)
+                ->where('id', '!=', $extraction->id)
+                ->orderBy('chunk_arrival_time', 'desc')
+                ->limit(10)
+                ->get();
+
+            // Map MoonExtraction fields to match MoonExtractionHistory fields for the view
+            foreach ($pastExtractions as $past) {
+                $past->final_status = $past->status;
+                $past->final_estimated_value = $past->calculated_value ?? $past->estimated_value ?? null;
+                $past->actual_mined_value = null;
+                $past->completion_percentage = 0;
+                $past->total_miners = 0;
+                $past->is_jackpot = $past->is_jackpot ?? false;
+            }
+            $history = $pastExtractions;
+        }
 
         // Calculate duration in days for each historical extraction
         foreach ($history as $record) {
@@ -406,7 +427,7 @@ class MoonController extends Controller
     public function extractions($structureId)
     {
         $extractions = MoonExtraction::where('structure_id', $structureId)
-            ->with(['structure'])
+            ->with(['structure.system', 'structure.type'])
             ->orderBy('extraction_start_time', 'desc')
             ->paginate(20);
 
@@ -438,7 +459,7 @@ class MoonController extends Controller
         // Get active extractions (currently extracting)
         $query = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '>=', Carbon::now())
-            ->with(['structure', 'corporation']);
+            ->with(['structure.system', 'structure.type', 'corporation']);
 
         if ($corporationId) {
             $query->where('corporation_id', $corporationId);

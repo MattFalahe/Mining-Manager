@@ -483,10 +483,7 @@
                     @else
                         <p class="text-muted">
                             <i class="fas fa-info-circle"></i>
-                            No extraction history available yet. Historical data will appear here after extractions are archived (7 days after completion).
-                        </p>
-                        <p class="text-muted">
-                            Click "{{ trans('mining-manager::moons.view_all') }}" to see all extractions for this structure.
+                            No other extractions found for this structure.
                         </p>
                     @endif
                 </div>
