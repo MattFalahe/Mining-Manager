@@ -206,6 +206,18 @@
                         <i class="fas fa-trophy"></i>
                         {{ trans('mining-manager::analytics.top_miners') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ route('mining-manager.analytics.index', array_merge(request()->except('group_by'), ['group_by' => 'account'])) }}"
+                               class="btn btn-sm {{ ($groupBy ?? 'account') === 'account' ? 'btn-info' : 'btn-outline-info' }}">
+                                {{ trans('mining-manager::analytics.by_account') }}
+                            </a>
+                            <a href="{{ route('mining-manager.analytics.index', array_merge(request()->except('group_by'), ['group_by' => 'character'])) }}"
+                               class="btn btn-sm {{ ($groupBy ?? 'account') === 'character' ? 'btn-info' : 'btn-outline-info' }}">
+                                {{ trans('mining-manager::analytics.by_character') }}
+                            </a>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -227,10 +239,16 @@
                                         </div>
                                     </td>
                                     <td>
-                                        <img src="https://images.evetech.net/characters/{{ $miner->character_id }}/portrait?size=32" 
-                                             class="img-circle" 
+                                        @php
+                                            $portraitId = ($groupBy ?? 'account') === 'account' ? ($miner->main_character_id ?? $miner->character_id ?? 0) : ($miner->character_id ?? 0);
+                                        @endphp
+                                        <img src="https://images.evetech.net/characters/{{ $portraitId }}/portrait?size=32"
+                                             class="img-circle"
                                              style="width: 32px;">
                                         {{ $miner->name }}
+                                        @if(($groupBy ?? 'account') === 'account' && isset($miner->character_count) && $miner->character_count > 1)
+                                            <span class="badge badge-secondary ml-1">{{ $miner->character_count }} {{ trans('mining-manager::analytics.characters') }}</span>
+                                        @endif
                                     </td>
                                     <td class="text-right">{{ number_format($miner->total_quantity ?? 0, 0) }}</td>
                                     <td class="text-right text-success">{{ number_format(($miner->total_value ?? 0) / 1000000, 0) }}M ISK</td>
@@ -257,6 +275,26 @@
                         <i class="fas fa-gem"></i>
                         {{ trans('mining-manager::analytics.ore_breakdown') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm">
+                            @php
+                                $oreCategories = [
+                                    '' => 'all_ores',
+                                    'regular_ore' => 'regular_ore',
+                                    'moon_ore' => 'moon_ore',
+                                    'ice' => 'ice',
+                                    'gas' => 'gas',
+                                    'abyssal_ore' => 'abyssal_ore',
+                                ];
+                            @endphp
+                            @foreach($oreCategories as $catValue => $catLabel)
+                                <a href="{{ route('mining-manager.analytics.index', array_merge(request()->except('ore_category'), $catValue ? ['ore_category' => $catValue] : [])) }}"
+                                   class="btn btn-sm {{ ($oreCategory ?? '') === $catValue ? 'btn-info' : 'btn-outline-info' }}">
+                                    {{ trans('mining-manager::analytics.' . $catLabel) }}
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">

@@ -5,6 +5,8 @@ namespace MiningManager\Services\Analytics;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\TypeIdRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
@@ -22,9 +24,15 @@ class MiningAnalyticsService
      */
     protected SettingsManagerService $settingsService;
 
-    public function __construct(SettingsManagerService $settingsService)
+    /**
+     * Character info service
+     */
+    protected CharacterInfoService $characterInfoService;
+
+    public function __construct(SettingsManagerService $settingsService, CharacterInfoService $characterInfoService)
     {
         $this->settingsService = $settingsService;
+        $this->characterInfoService = $characterInfoService;
     }
 
     /**
@@ -134,21 +142,100 @@ class MiningAnalyticsService
     }
 
     /**
+     * Get top miners grouped by account (main character), summing across alts.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @param int $limit
+     * @return \Illuminate\Support\Collection
+     */
+    public function getTopMinersByAccount(Carbon $startDate, Carbon $endDate, int $limit = 20)
+    {
+        $cacheKey = "mining-analytics:top-miners-account:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$limit}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit) {
+            // Get per-character mining data (no limit, we need all for grouping)
+            $perCharacter = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
+                ->select(
+                    'mining_ledger.character_id',
+                    'character_infos.name',
+                    DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw('SUM(mining_ledger.total_value) as total_value')
+                )
+                ->groupBy('mining_ledger.character_id', 'character_infos.name')
+                ->get();
+
+            if ($perCharacter->isEmpty()) {
+                return collect();
+            }
+
+            // Get batch character info to find main_character_id for each
+            $characterIds = $perCharacter->pluck('character_id')->toArray();
+            $charInfos = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+
+            // Group by main_character_id
+            $grouped = [];
+            foreach ($perCharacter as $miner) {
+                $charInfo = $charInfos[$miner->character_id] ?? null;
+                $mainId = $charInfo['main_character_id'] ?? $miner->character_id;
+
+                if (!isset($grouped[$mainId])) {
+                    // Use the main character's name if available
+                    $mainName = isset($charInfos[$mainId]) ? $charInfos[$mainId]['name'] : $miner->name;
+                    $grouped[$mainId] = [
+                        'main_character_id' => $mainId,
+                        'name' => $mainName,
+                        'total_quantity' => 0,
+                        'total_value' => 0,
+                        'character_count' => 0,
+                    ];
+                }
+
+                $grouped[$mainId]['total_quantity'] += $miner->total_quantity;
+                $grouped[$mainId]['total_value'] += $miner->total_value;
+                $grouped[$mainId]['character_count']++;
+            }
+
+            // Sort by total_quantity descending, limit, and return as collection of objects
+            return collect($grouped)
+                ->sortByDesc('total_quantity')
+                ->take($limit)
+                ->values()
+                ->map(function ($item) {
+                    return (object) $item;
+                });
+        });
+    }
+
+    /**
      * Get ore type breakdown in date range.
      *
      * @param Carbon $startDate
      * @param Carbon $endDate
+     * @param string|null $category Optional category filter (moon_ore, regular_ore, ice, gas, abyssal_ore)
      * @return \Illuminate\Support\Collection
      */
-    public function getOreBreakdown(Carbon $startDate, Carbon $endDate)
+    public function getOreBreakdown(Carbon $startDate, Carbon $endDate, ?string $category = null)
     {
-        $cacheKey = "mining-analytics:ore-breakdown:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $categoryKey = $category ?? 'all';
+        $cacheKey = "mining-analytics:ore-breakdown:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$categoryKey}";
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
-            $results = MiningLedger::with('type')
-                ->whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->select(
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $category) {
+            $query = MiningLedger::with('type')
+                ->whereBetween('mining_ledger.date', [$startDate, $endDate]);
+
+            // Filter by ore category if specified
+            if ($category) {
+                $typeIds = $this->getTypeIdsForCategory($category);
+                if (!empty($typeIds)) {
+                    $query->whereIn('mining_ledger.type_id', $typeIds);
+                }
+            }
+
+            $results = $query->select(
                     'mining_ledger.type_id',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value')
@@ -431,6 +518,24 @@ class MiningAnalyticsService
             'data' => $systemBreakdown->pluck('total_quantity')->toArray(),
             'values' => $systemBreakdown->pluck('total_value')->toArray(),
         ];
+    }
+
+    /**
+     * Get type IDs for an ore category.
+     *
+     * @param string $category
+     * @return array
+     */
+    protected function getTypeIdsForCategory(string $category): array
+    {
+        return match ($category) {
+            'moon_ore' => TypeIdRegistry::MOON_ORES,
+            'regular_ore' => TypeIdRegistry::REGULAR_ORES,
+            'ice' => array_merge(TypeIdRegistry::ICE, TypeIdRegistry::COMPRESSED_ICE),
+            'gas' => array_merge(TypeIdRegistry::GAS_FULLERITES, TypeIdRegistry::GAS_BOOSTERS),
+            'abyssal_ore' => TypeIdRegistry::ABYSSAL_ORES,
+            default => [],
+        };
     }
 
     /**

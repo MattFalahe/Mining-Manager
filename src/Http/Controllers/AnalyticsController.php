@@ -45,18 +45,27 @@ class AnalyticsController extends Controller
             ? Carbon::parse($request->input('end_date'))
             : Carbon::now();
 
+        // Get group_by and ore_category params
+        $groupBy = $request->input('group_by', 'account');
+        $oreCategory = $request->input('ore_category');
+
+        // Get top miners based on grouping
+        $topMiners = $groupBy === 'character'
+            ? $this->analyticsService->getTopMiners($startDate, $endDate, 20)
+            : $this->analyticsService->getTopMinersByAccount($startDate, $endDate, 20);
+
         // Get analytics data
         $analytics = [
             'total_volume' => $this->analyticsService->getTotalVolume($startDate, $endDate),
             'total_value' => $this->analyticsService->getTotalValue($startDate, $endDate),
             'unique_miners' => $this->analyticsService->getUniqueMinerCount($startDate, $endDate),
-            'top_miners' => $this->analyticsService->getTopMiners($startDate, $endDate, 20),
-            'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate),
+            'top_miners' => $topMiners,
+            'ore_breakdown' => $this->analyticsService->getOreBreakdown($startDate, $endDate, $oreCategory),
             'system_breakdown' => $this->analyticsService->getSystemBreakdown($startDate, $endDate),
             'daily_trends' => $this->analyticsService->getDailyTrends($startDate, $endDate),
         ];
 
-        return view('mining-manager::analytics.index', compact('analytics', 'startDate', 'endDate'));
+        return view('mining-manager::analytics.index', compact('analytics', 'startDate', 'endDate', 'groupBy', 'oreCategory'));
     }
 
     /**

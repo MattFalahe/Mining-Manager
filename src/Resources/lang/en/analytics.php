@@ -346,4 +346,18 @@ return [
     'no_mining_activity' => 'No mining activity recorded for this extraction.',
     'total' => 'Total',
     'pool_vs_mined' => 'Pool vs Mined Comparison',
+
+    // Account/Character Grouping
+    'by_account' => 'By Account',
+    'by_character' => 'By Character',
+    'characters' => 'characters',
+
+    // Ore Category Filters
+    'all_ores' => 'All',
+    'moon_ore' => 'Moon Ore',
+    'regular_ore' => 'Regular Ore',
+    'ice' => 'Ice',
+    'gas' => 'Gas',
+    'abyssal_ore' => 'Abyssal',
+    'ore_category' => 'Ore Category',
 ];
