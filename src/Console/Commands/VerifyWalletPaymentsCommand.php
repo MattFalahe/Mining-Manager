@@ -181,8 +181,11 @@ class VerifyWalletPaymentsCommand extends Command
             return null;
         }
 
-        // Look for tax code pattern (e.g., TAX-XXXXXX)
-        if (preg_match('/TAX-([A-Z0-9]{6})/', $description, $matches)) {
+        // Use configured prefix and length from settings
+        $prefix = preg_quote(\MiningManager\Models\TaxCode::getPrefix(), '/');
+        $length = \MiningManager\Models\TaxCode::getCodeLength();
+
+        if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/', $description, $matches)) {
             return $matches[1];
         }
 

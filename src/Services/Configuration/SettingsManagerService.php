@@ -275,7 +275,7 @@ class SettingsManagerService
 
             // Tax Code Settings
             'tax_code_prefix' => $this->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
-            'tax_code_length' => $this->getSetting('tax_rates.tax_code_length', 8),
+            'tax_code_length' => $this->getSetting('tax_rates.tax_code_length', 6),
             'auto_generate_tax_codes' => $this->getSetting('tax_rates.auto_generate_tax_codes', true),
 
             // Tax Period Settings

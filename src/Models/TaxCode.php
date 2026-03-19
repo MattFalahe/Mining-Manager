@@ -123,8 +123,39 @@ class TaxCode extends Model
      */
     public function getFullCode()
     {
-        $prefix = config('mining-manager.wallet.tax_code_prefix', 'TAX-');
-        return $prefix . $this->code;
+        return self::getPrefix() . $this->code;
+    }
+
+    /**
+     * Get the configured tax code prefix from settings.
+     *
+     * @return string
+     */
+    public static function getPrefix(): string
+    {
+        try {
+            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $taxRates = $settings->getTaxRates();
+            return $taxRates['tax_code_prefix'] ?? 'TAX-';
+        } catch (\Exception $e) {
+            return config('mining-manager.wallet.tax_code_prefix', 'TAX-');
+        }
+    }
+
+    /**
+     * Get the configured tax code length from settings.
+     *
+     * @return int
+     */
+    public static function getCodeLength(): int
+    {
+        try {
+            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $taxRates = $settings->getTaxRates();
+            return (int) ($taxRates['tax_code_length'] ?? 6);
+        } catch (\Exception $e) {
+            return (int) config('mining-manager.wallet.tax_code_length', 6);
+        }
     }
 
     /**
@@ -134,9 +165,9 @@ class TaxCode extends Model
      */
     public static function generateCode()
     {
-        $length = config('mining-manager.wallet.tax_code_length', 6);
+        $length = self::getCodeLength();
         $characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed ambiguous characters
-        
+
         do {
             $code = '';
             for ($i = 0; $i < $length; $i++) {
