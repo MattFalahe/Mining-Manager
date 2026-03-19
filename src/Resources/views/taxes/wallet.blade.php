@@ -154,7 +154,36 @@
 
 </div>
 
-{{-- Manual Entry Modal (director/admin only) --}}
+@push('javascript')
+<script>
+function syncWalletJournal() {
+    toastr.info('{{ trans("mining-manager::taxes.syncing_wallet") }}');
+    // Implementation
+}
+
+function autoMatch() {
+    toastr.info('{{ trans("mining-manager::taxes.auto_matching") }}');
+    // Implementation
+}
+
+function verifyTransaction(id) {
+    toastr.success('{{ trans("mining-manager::taxes.transaction_verified") }}');
+    // Implementation
+}
+
+function submitManualEntry() {
+    $('#manualEntryModal').modal('hide');
+    toastr.success('{{ trans("mining-manager::taxes.payment_recorded") }}');
+}
+</script>
+@endpush
+
+    </div>{{-- /.card-body --}}
+</div>{{-- /.card-tabs --}}
+
+</div>{{-- /.mining-manager-wrapper --}}
+
+{{-- Manual Entry Modal (director/admin only) - placed outside wrapper to avoid overflow clipping --}}
 @if(($isDirector ?? false) || ($isAdmin ?? false))
 <div class="modal fade" id="manualEntryModal" tabindex="-1">
     <div class="modal-dialog">
@@ -193,33 +222,4 @@
     </div>
 </div>
 @endif
-
-@push('javascript')
-<script>
-function syncWalletJournal() {
-    toastr.info('{{ trans("mining-manager::taxes.syncing_wallet") }}');
-    // Implementation
-}
-
-function autoMatch() {
-    toastr.info('{{ trans("mining-manager::taxes.auto_matching") }}');
-    // Implementation
-}
-
-function verifyTransaction(id) {
-    toastr.success('{{ trans("mining-manager::taxes.transaction_verified") }}');
-    // Implementation
-}
-
-function submitManualEntry() {
-    $('#manualEntryModal').modal('hide');
-    toastr.success('{{ trans("mining-manager::taxes.payment_recorded") }}');
-}
-</script>
-@endpush
-
-    </div>{{-- /.card-body --}}
-</div>{{-- /.card-tabs --}}
-
-</div>{{-- /.mining-manager-wrapper --}}
 @endsection

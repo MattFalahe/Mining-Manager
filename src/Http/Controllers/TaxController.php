@@ -702,7 +702,7 @@ class TaxController extends Controller
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->sum('amount_paid');
 
-        $pendingCount = (clone $statsBaseQuery)->whereIn('status', ['unpaid', 'overdue'])->count();
+        $pendingCount = $unmatchedDonations->count();
         $verifiedCount = (clone $statsBaseQuery)->where('status', 'paid')
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->count();

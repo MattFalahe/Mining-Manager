@@ -75,33 +75,6 @@
 
 </div>
 
-<div class="modal fade" id="generateCodeModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content bg-dark">
-            <div class="modal-header">
-                <h5 class="modal-title">{{ trans('mining-manager::taxes.generate_codes') }}</h5>
-                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-            </div>
-            <div class="modal-body">
-                <form id="generateCodeForm">
-                    <div class="form-group">
-                        <label>{{ trans('mining-manager::taxes.month') }}</label>
-                        <input type="month" class="form-control" name="month" required>
-                    </div>
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input" id="allMembers" name="all_members">
-                        <label class="form-check-label" for="allMembers">{{ trans('mining-manager::taxes.all_unpaid_members') }}</label>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ trans('mining-manager::taxes.cancel') }}</button>
-                <button type="button" class="btn btn-primary" onclick="generateCodes()">{{ trans('mining-manager::taxes.generate') }}</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 @push('javascript')
 <script>
 function copyCode(code) {
@@ -146,4 +119,32 @@ function generateCodes() {
 </div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
+
+{{-- Generate Code Modal - placed outside wrapper to avoid overflow clipping --}}
+<div class="modal fade" id="generateCodeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ trans('mining-manager::taxes.generate_codes') }}</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <form id="generateCodeForm">
+                    <div class="form-group">
+                        <label>{{ trans('mining-manager::taxes.month') }}</label>
+                        <input type="month" class="form-control" name="month" required>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="allMembers" name="all_members">
+                        <label class="form-check-label" for="allMembers">{{ trans('mining-manager::taxes.all_unpaid_members') }}</label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ trans('mining-manager::taxes.cancel') }}</button>
+                <button type="button" class="btn btn-primary" onclick="generateCodes()">{{ trans('mining-manager::taxes.generate') }}</button>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
