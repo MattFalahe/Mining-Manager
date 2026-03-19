@@ -79,11 +79,11 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Send tax reminders - runs on 25th of each month at 10 AM
-            // (Reminds miners about upcoming payment due on 1st)
+            // Send tax reminders - runs daily at 10 AM
+            // (Command checks send_tax_reminders and tax_reminder_days settings to determine if reminders are needed)
             [
                 'command' => 'mining-manager:send-reminders',
-                'expression' => '0 10 25 * *',
+                'expression' => '0 10 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,

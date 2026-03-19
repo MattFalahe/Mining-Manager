@@ -11,6 +11,7 @@ use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Pricing\OreValuationService;
+use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningLedger;
@@ -33,6 +34,7 @@ class TaxController extends Controller
     protected $settingsService;
     protected $characterInfoService;
     protected $oreValuationService;
+    protected $notificationService;
 
     public function __construct(
         TaxCalculationService $taxService,
@@ -40,7 +42,8 @@ class TaxController extends Controller
         TaxCodeGeneratorService $codeService,
         SettingsManagerService $settingsService,
         CharacterInfoService $characterInfoService,
-        OreValuationService $oreValuationService
+        OreValuationService $oreValuationService,
+        NotificationService $notificationService
     ) {
         $this->taxService = $taxService;
         $this->walletService = $walletService;
@@ -48,6 +51,7 @@ class TaxController extends Controller
         $this->settingsService = $settingsService;
         $this->characterInfoService = $characterInfoService;
         $this->oreValuationService = $oreValuationService;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -864,10 +868,28 @@ class TaxController extends Controller
     {
         try {
             $taxId = $request->input('tax_id');
-            
-            // Log the reminder action (actual notification implementation needed)
-            Log::info('Payment reminder requested', [
+            $tax = MiningTax::findOrFail($taxId);
+
+            $dueDate = $tax->due_date ? Carbon::parse($tax->due_date) : Carbon::now();
+            $daysRemaining = (int) max(0, Carbon::now()->startOfDay()->diffInDays($dueDate->startOfDay(), false));
+
+            $result = $this->notificationService->sendTaxReminder(
+                (int) $tax->character_id,
+                (float) $tax->amount_owed,
+                $dueDate,
+                $daysRemaining
+            );
+
+            // Update reminder tracking on the tax record
+            $tax->update([
+                'last_reminder_sent' => Carbon::now(),
+                'reminder_count' => ($tax->reminder_count ?? 0) + 1,
+            ]);
+
+            Log::info('Payment reminder sent', [
                 'tax_id' => $taxId,
+                'character_id' => $tax->character_id,
+                'amount' => $tax->amount_owed,
                 'requested_by' => auth()->user()->name,
             ]);
 
@@ -878,7 +900,7 @@ class TaxController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error sending reminder: ' . $e->getMessage());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => trans('mining-manager::taxes.error_sending_reminder'),
@@ -931,21 +953,60 @@ class TaxController extends Controller
     {
         try {
             $taxIds = $request->input('tax_ids', []);
-            
-            // Log the bulk reminder action
-            Log::info('Bulk reminders requested', [
-                'count' => count($taxIds),
+
+            $taxes = MiningTax::whereIn('id', $taxIds)->get();
+            $sent = 0;
+            $errors = 0;
+
+            // Group by character to send one reminder per character
+            $taxesByCharacter = $taxes->groupBy('character_id');
+
+            foreach ($taxesByCharacter as $characterId => $characterTaxes) {
+                try {
+                    $totalOwed = $characterTaxes->sum('amount_owed');
+
+                    // Find the earliest due date among these taxes
+                    $earliestDueDate = $characterTaxes->min('due_date');
+                    $dueDate = $earliestDueDate ? Carbon::parse($earliestDueDate) : Carbon::now();
+                    $daysRemaining = (int) max(0, Carbon::now()->startOfDay()->diffInDays($dueDate->startOfDay(), false));
+
+                    $this->notificationService->sendTaxReminder(
+                        (int) $characterId,
+                        (float) $totalOwed,
+                        $dueDate,
+                        $daysRemaining
+                    );
+
+                    // Update reminder tracking on each tax record
+                    foreach ($characterTaxes as $tax) {
+                        $tax->update([
+                            'last_reminder_sent' => Carbon::now(),
+                            'reminder_count' => ($tax->reminder_count ?? 0) + 1,
+                        ]);
+                    }
+
+                    $sent++;
+                } catch (\Exception $e) {
+                    Log::warning("Failed to send reminder to character {$characterId}: " . $e->getMessage());
+                    $errors++;
+                }
+            }
+
+            Log::info('Bulk reminders sent', [
+                'requested' => count($taxIds),
+                'characters_notified' => $sent,
+                'errors' => $errors,
                 'requested_by' => auth()->user()->name,
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.bulk_reminders_sent', ['count' => count($taxIds)]),
+                'message' => trans('mining-manager::taxes.bulk_reminders_sent', ['count' => $sent]),
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error sending bulk reminders: ' . $e->getMessage());
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => trans('mining-manager::taxes.error_bulk_reminders'),
@@ -1718,6 +1779,11 @@ class TaxController extends Controller
             $month = $request->input('month');
             $format = $request->input('format', 'csv');
 
+            // Normalize format: treat excel/xlsx as csv
+            if (in_array($format, ['excel', 'xlsx', 'xls'])) {
+                $format = 'csv';
+            }
+
             // Build query
             $query = MiningTax::with(['character']);
 
@@ -1736,44 +1802,56 @@ class TaxController extends Controller
 
             $taxes = $query->orderBy('month', 'desc')->orderBy('character_id')->get();
 
-            // Generate filename
-            $filename = 'taxes_export_' . Carbon::now()->format('Y-m-d_His') . '.' . $format;
+            if ($format === 'json') {
+                $data = $taxes->map(function ($tax) {
+                    return [
+                        'character' => $tax->character->name ?? 'Unknown',
+                        'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
+                        'amount_owed' => (float) $tax->amount_owed,
+                        'amount_paid' => (float) ($tax->amount_paid ?? 0),
+                        'status' => $tax->status,
+                        'due_date' => $tax->due_date ? Carbon::parse($tax->due_date)->format('Y-m-d') : null,
+                        'paid_at' => $tax->paid_at ? Carbon::parse($tax->paid_at)->format('Y-m-d') : null,
+                    ];
+                });
 
-            if ($format === 'csv') {
-                $headers = [
-                    'Content-Type' => 'text/csv',
-                    'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-                ];
+                $filename = 'taxes_export_' . Carbon::now()->format('Y-m-d_His') . '.json';
 
-                $callback = function() use ($taxes) {
-                    $file = fopen('php://output', 'w');
-
-                    // Headers
-                    fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
-
-                    // Data rows
-                    foreach ($taxes as $tax) {
-                        fputcsv($file, [
-                            $tax->character->name ?? 'Unknown',
-                            $tax->month,
-                            $tax->amount_owed,
-                            $tax->amount_paid ?? 0,
-                            $tax->status,
-                            $tax->due_date,
-                            $tax->paid_at,
-                        ]);
-                    }
-
-                    fclose($file);
-                };
-
-                return response()->stream($callback, 200, $headers);
+                return response()->json($data)
+                    ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
             }
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unsupported export format',
-            ], 400);
+            // Default: CSV export
+            $filename = 'taxes_export_' . Carbon::now()->format('Y-m-d_His') . '.csv';
+
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
+
+            $callback = function() use ($taxes) {
+                $file = fopen('php://output', 'w');
+
+                // Headers
+                fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+
+                // Data rows
+                foreach ($taxes as $tax) {
+                    fputcsv($file, [
+                        $tax->character->name ?? 'Unknown',
+                        $tax->month,
+                        $tax->amount_owed,
+                        $tax->amount_paid ?? 0,
+                        $tax->status,
+                        $tax->due_date,
+                        $tax->paid_at,
+                    ]);
+                }
+
+                fclose($file);
+            };
+
+            return response()->stream($callback, 200, $headers);
 
         } catch (\Exception $e) {
             Log::error('Tax export error: ' . $e->getMessage());
@@ -1797,47 +1875,65 @@ class TaxController extends Controller
         try {
             $format = $request->input('format', 'csv');
 
+            // Normalize format: treat excel/xlsx as csv
+            if (in_array($format, ['excel', 'xlsx', 'xls'])) {
+                $format = 'csv';
+            }
+
             $taxes = MiningTax::with(['character'])
                 ->whereIn('character_id', $characterIds)
                 ->orderBy('month', 'desc')
                 ->orderBy('character_id')
                 ->get();
 
-            $filename = 'my_taxes_' . Carbon::now()->format('Y-m-d_His') . '.' . $format;
+            if ($format === 'json') {
+                $data = $taxes->map(function ($tax) {
+                    return [
+                        'character' => $tax->character->name ?? 'Unknown',
+                        'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
+                        'amount_owed' => (float) $tax->amount_owed,
+                        'amount_paid' => (float) ($tax->amount_paid ?? 0),
+                        'status' => $tax->status,
+                        'due_date' => $tax->due_date ? Carbon::parse($tax->due_date)->format('Y-m-d') : null,
+                        'paid_at' => $tax->paid_at ? Carbon::parse($tax->paid_at)->format('Y-m-d') : null,
+                    ];
+                });
 
-            if ($format === 'csv') {
-                $headers = [
-                    'Content-Type' => 'text/csv',
-                    'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-                ];
+                $filename = 'my_taxes_' . Carbon::now()->format('Y-m-d_His') . '.json';
 
-                $callback = function() use ($taxes) {
-                    $file = fopen('php://output', 'w');
-
-                    fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
-
-                    foreach ($taxes as $tax) {
-                        fputcsv($file, [
-                            $tax->character->name ?? 'Unknown',
-                            $tax->month,
-                            $tax->amount_owed,
-                            $tax->amount_paid ?? 0,
-                            $tax->status,
-                            $tax->due_date,
-                            $tax->paid_at,
-                        ]);
-                    }
-
-                    fclose($file);
-                };
-
-                return response()->stream($callback, 200, $headers);
+                return response()->json($data)
+                    ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
             }
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unsupported export format',
-            ], 400);
+            // Default: CSV export
+            $filename = 'my_taxes_' . Carbon::now()->format('Y-m-d_His') . '.csv';
+
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
+
+            $callback = function() use ($taxes) {
+                $file = fopen('php://output', 'w');
+
+                fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+
+                foreach ($taxes as $tax) {
+                    fputcsv($file, [
+                        $tax->character->name ?? 'Unknown',
+                        $tax->month,
+                        $tax->amount_owed,
+                        $tax->amount_paid ?? 0,
+                        $tax->status,
+                        $tax->due_date,
+                        $tax->paid_at,
+                    ]);
+                }
+
+                fclose($file);
+            };
+
+            return response()->stream($callback, 200, $headers);
 
         } catch (\Exception $e) {
             Log::error('Personal tax export error: ' . $e->getMessage());
