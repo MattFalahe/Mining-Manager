@@ -26,27 +26,9 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        Route::get('/director', [
-            'as' => 'mining-manager.dashboard.director',
-            'uses' => 'DashboardController@directorDashboard',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        Route::get('/metrics', [
-            'as' => 'mining-manager.dashboard.metrics',
-            'uses' => 'DashboardController@metrics',
-            'middleware' => 'can:mining-manager.member',
-        ]);
-
         Route::get('/live-data', [
             'as' => 'mining-manager.dashboard.live-data',
             'uses' => 'DashboardController@getLiveChartData',
-            'middleware' => 'can:mining-manager.member',
-        ]);
-
-        Route::post('/refresh', [
-            'as' => 'mining-manager.dashboard.refresh',
-            'uses' => 'DashboardController@refresh',
             'middleware' => 'can:mining-manager.member',
         ]);
 
@@ -636,15 +618,15 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
-        Route::get('/{id}', [
-            'as' => 'mining-manager.theft.show',
-            'uses' => 'TheftIncidentController@show',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
         Route::get('/export/csv', [
             'as' => 'mining-manager.theft.export',
             'uses' => 'TheftIncidentController@export',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::get('/{id}', [
+            'as' => 'mining-manager.theft.show',
+            'uses' => 'TheftIncidentController@show',
             'middleware' => 'can:mining-manager.director',
         ]);
 
@@ -783,17 +765,6 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::get('/{key}', [
-            'as' => 'mining-manager.settings.get',
-            'uses' => 'SettingsController@getSetting',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
-
-        Route::put('/{key}', [
-            'as' => 'mining-manager.settings.update',
-            'uses' => 'SettingsController@updateSetting',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
     });
 
     // Help Route - base view permission (anyone with plugin access)

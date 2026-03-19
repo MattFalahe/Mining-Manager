@@ -229,6 +229,22 @@ class MoonExtraction extends Model
     }
 
     /**
+     * Get the moon for this extraction.
+     */
+    public function moon()
+    {
+        return $this->belongsTo(\Seat\Eveapi\Models\Sde\Moon::class, 'moon_id', 'moon_id');
+    }
+
+    /**
+     * Get mining ledger entries for this extraction's structure and time period.
+     */
+    public function miningLedger()
+    {
+        return $this->hasMany(MiningLedger::class, 'observer_id', 'structure_id');
+    }
+
+    /**
      * Get how many hours the ready state lasts.
      * 48h normally, 51h if auto-fractured (no player fired the laser).
      */

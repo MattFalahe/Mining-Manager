@@ -55,11 +55,8 @@ class UpdateMoonExtractionsCommand extends Command
     {
         $this->info('Starting moon extraction update...');
 
-        // Build query for refineries
-        $query = CorporationStructure::where('type_id', 35835); // Athanor
-        
-        // Also include Tatara refineries
-        $query->orWhere('type_id', 35836);
+        // Build query for refineries (Athanor + Tatara)
+        $query = CorporationStructure::whereIn('type_id', [35835, 35836]);
 
         if ($structureId = $this->option('structure_id')) {
             $query->where('structure_id', $structureId);

@@ -120,57 +120,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Director Dashboard - Shows corporation-wide stats
-     */
-    public function directorDashboard()
-    {
-        $corporationId = $this->getUserCorporationId();
-
-        // Current month stats
-        $currentMonthStart = Carbon::now()->startOfMonth();
-        $currentMonthEnd = Carbon::now();
-
-        // Last 12 months period
-        $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
-
-        // === CURRENT MONTH STATISTICS ===
-        $currentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
-
-        // === LAST 12 MONTHS STATISTICS ===
-        $last12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
-
-        // === TOP 5 MINERS (OVERALL) ===
-        $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore', 5);
-        $topMinersOverallMoonOre = $this->getTopMinersOverall($corporationId, 'moon_ore', 5);
-
-        // === TOP 5 MINERS (LAST MONTH) ===
-        $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
-        $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
-        
-        $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
-        $topMinersLastMonthMoonOre = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
-
-        // === CHARTS DATA ===
-        $miningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
-        $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
-        $miningTaxChart = $this->getMiningTaxLast12Months($corporationId);
-        $eventTaxChart = $this->getEventTaxLast12Months($corporationId);
-
-        return view('mining-manager::dashboard.director', compact(
-            'currentMonthStats',
-            'last12MonthsStats',
-            'topMinersOverallAllOre',
-            'topMinersOverallMoonOre',
-            'topMinersLastMonthAllOre',
-            'topMinersLastMonthMoonOre',
-            'miningPerformanceChart',
-            'moonMiningPerformanceChart',
-            'miningTaxChart',
-            'eventTaxChart'
-        ));
-    }
-
-    /**
      * Combined Director Dashboard - Shows BOTH personal stats AND corporation overview
      * This ensures directors can track their own mining while managing the corporation
      *

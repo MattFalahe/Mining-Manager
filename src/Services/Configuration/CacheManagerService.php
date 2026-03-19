@@ -420,7 +420,7 @@ class CacheManagerService
      */
     protected function isCacheEnabled(): bool
     {
-        return $this->settings->get('cache_enabled', true);
+        return $this->settings->getSetting('cache_enabled', true);
     }
 
     /**
@@ -430,7 +430,7 @@ class CacheManagerService
      */
     protected function getDefaultDuration(): int
     {
-        return $this->settings->get('cache_duration', self::DEFAULT_DURATION);
+        return $this->settings->getSetting('cache_duration', self::DEFAULT_DURATION);
     }
 
     /**
@@ -441,7 +441,7 @@ class CacheManagerService
      */
     protected function recordCacheHit(string $key): void
     {
-        if (!$this->settings->get('cache_statistics', true)) {
+        if (!$this->settings->getSetting('cache_statistics', true)) {
             return;
         }
 
@@ -468,7 +468,7 @@ class CacheManagerService
      */
     protected function recordCacheMiss(string $key): void
     {
-        if (!$this->settings->get('cache_statistics', true)) {
+        if (!$this->settings->getSetting('cache_statistics', true)) {
             return;
         }
 
@@ -495,7 +495,7 @@ class CacheManagerService
      */
     protected function recordCacheWrite(string $key): void
     {
-        if (!$this->settings->get('cache_statistics', true)) {
+        if (!$this->settings->getSetting('cache_statistics', true)) {
             return;
         }
 

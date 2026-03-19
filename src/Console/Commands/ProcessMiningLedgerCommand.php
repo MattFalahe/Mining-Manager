@@ -320,7 +320,7 @@ class ProcessMiningLedgerCommand extends Command
             }
 
             // Clear dashboard cache so new data shows immediately
-            Cache::flush();
+            \MiningManager\Http\Controllers\DashboardController::clearDashboardCache();
             $this->info("\n✅ Processing complete. Dashboard cache cleared.");
 
             return Command::SUCCESS;

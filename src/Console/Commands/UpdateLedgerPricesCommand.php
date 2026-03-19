@@ -7,7 +7,7 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
-use MiningManager\Services\Settings\SettingsService;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -49,7 +49,7 @@ class UpdateLedgerPricesCommand extends Command
 
         $valuationService = app(OreValuationService::class);
         $taxService = app(TaxCalculationService::class);
-        $settingsService = app(SettingsService::class);
+        $settingsService = app(SettingsManagerService::class);
 
         // Build query
         $query = MiningLedger::query();

@@ -34,8 +34,7 @@
   },
   "autoload": {
     "psr-4": {
-      "MiningManager\\": "src/",
-      "MiningManager\\Database\\Seeders\\": "src/Database/seeders"
+      "MiningManager\\": "src/"
     }
   },
   "autoload-dev": {
