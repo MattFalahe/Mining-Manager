@@ -485,86 +485,6 @@ class SettingsController extends Controller
     }
 
     /**
-     * Update tax selector
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateTaxSelector(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'all_moon_ore' => 'boolean',
-            'only_corp_moon_ore' => 'boolean',
-            'ore' => 'boolean',
-            'ice' => 'boolean',
-            'gas' => 'boolean',
-            'abyssal_ore' => 'boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            $data = $validator->validated();
-            
-            // Convert to boolean (checkboxes not sent if unchecked)
-            $taxSelector = [
-                'all_moon_ore' => $request->has('all_moon_ore'),
-                'only_corp_moon_ore' => $request->has('only_corp_moon_ore'),
-                'ore' => $request->has('ore'),
-                'ice' => $request->has('ice'),
-                'gas' => $request->has('gas'),
-                'abyssal_ore' => $request->has('abyssal_ore'),
-            ];
-
-            $this->settingsService->updateTaxSelector($taxSelector);
-            $this->clearSettingsCache();
-
-            return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Tax selector updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating tax selector: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Update exemptions
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateExemptions(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'threshold' => 'required|numeric|min:0',
-            'grace_period_days' => 'required|integer|min:0|max:30',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        try {
-            $this->settingsService->updateExemptions($validator->validated());
-            $this->clearSettingsCache();
-
-            return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Exemption settings updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating exemptions: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Update pricing settings
      *
      * @param Request $request
@@ -899,29 +819,6 @@ class SettingsController extends Controller
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Error clearing cache: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Test price provider connection
-     *
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function testPriceProvider()
-    {
-        try {
-            $result = $this->settingsService->testPriceProviderConnection();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Connection successful',
-                'data' => $result,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Connection failed: ' . $e->getMessage(),
-            ], 400);
         }
     }
 

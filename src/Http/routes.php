@@ -202,12 +202,6 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/calculate', [
-            'as' => 'mining-manager.taxes.calculate.process',
-            'uses' => 'TaxController@processCalculation',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
-
         Route::post('/calculate/process', [
             'as' => 'mining-manager.taxes.process-calculation',
             'uses' => 'TaxController@processCalculation',

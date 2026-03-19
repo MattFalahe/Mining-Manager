@@ -1817,55 +1817,6 @@ class DashboardController extends Controller
     // ==================== DIAGNOSTIC METHOD ====================
 
     /**
-     * NEW: Diagnostic method to check affiliation table structure
-     * Call this from a route or tinker to verify your setup
-     * 
-     * To use: Add a temporary route or run in tinker:
-     * app(MiningManager\Http\Controllers\DashboardController::class)->diagnoseAffiliation()
-     */
-    public function diagnoseAffiliation()
-    {
-        $diagnostics = [
-            'tables' => [],
-            'columns' => [],
-            'sample_data' => [],
-            'relationships' => []
-        ];
-        
-        // Check if tables exist
-        $tables = ['character_affiliations', 'character_infos', 'users'];
-        foreach ($tables as $table) {
-            try {
-                $exists = \Schema::hasTable($table);
-                $diagnostics['tables'][$table] = $exists;
-                
-                if ($exists) {
-                    $diagnostics['columns'][$table] = \Schema::getColumnListing($table);
-                    $diagnostics['sample_data'][$table] = DB::table($table)->first();
-                }
-            } catch (\Exception $e) {
-                $diagnostics['tables'][$table] = 'ERROR: ' . $e->getMessage();
-            }
-        }
-        
-        // Check CharacterInfo model
-        try {
-            $char = CharacterInfo::first();
-            if ($char) {
-                $diagnostics['relationships']['character_has_affiliation'] = method_exists($char, 'affiliation');
-                $diagnostics['relationships']['character_has_corporation'] = method_exists($char, 'corporation');
-                $diagnostics['relationships']['character_keys'] = [
-                    'primary_key' => $char->getKeyName(),
-                    'attributes' => array_keys($char->getAttributes())
-                ];
-            }
-        } catch (\Exception $e) {
-            $diagnostics['relationships']['character_error'] = $e->getMessage();
-        }
-        
-        return response()->json($diagnostics, 200, [], JSON_PRETTY_PRINT);
-    }
-
     /**
      * Clear dashboard cache for a specific user
      * Called after processing new ledger data
