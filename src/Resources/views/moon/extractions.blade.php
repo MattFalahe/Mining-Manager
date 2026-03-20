@@ -68,11 +68,25 @@
                         </h2>
                         <p class="mb-1">
                             <i class="fas fa-map-marker-alt"></i>
-                            {{ $structure->system->name ?? 'Unknown System' }}
+                            @php
+                                $systemName = 'Unknown System';
+                                if ($structure && $structure->solar_system_id) {
+                                    $solarSystem = \Seat\Eveapi\Models\Sde\MapDenormalize::find($structure->solar_system_id);
+                                    $systemName = $solarSystem->itemName ?? "System #{$structure->solar_system_id}";
+                                }
+                            @endphp
+                            {{ $systemName }}
                         </p>
                         <p class="mb-0">
                             <i class="fas fa-shield-alt"></i>
-                            {{ $structure->type->name ?? 'Unknown Type' }}
+                            @php
+                                $typeName = 'Unknown Type';
+                                if ($structure && $structure->type_id) {
+                                    $invType = \Seat\Eveapi\Models\Sde\InvType::find($structure->type_id);
+                                    $typeName = $invType->typeName ?? "Type #{$structure->type_id}";
+                                }
+                            @endphp
+                            {{ $typeName }}
                         </p>
                     </div>
                     <div class="col-md-4 text-right">

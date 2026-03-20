@@ -61,7 +61,7 @@ class MoonController extends Controller
             ->where('natural_decay_time', '>', $now)
             ->update(['status' => 'ready']);
 
-        $query = MoonExtraction::with(['structure.system', 'structure.type', 'corporation']);
+        $query = MoonExtraction::with(['structure', 'corporation']);
 
         if ($status !== 'all') {
             // Map 'completed' filter to actual database statuses
@@ -134,7 +134,7 @@ class MoonController extends Controller
      */
     public function show($id)
     {
-        $extraction = MoonExtraction::with(['structure.system', 'structure.type', 'corporation'])->findOrFail($id);
+        $extraction = MoonExtraction::with(['structure', 'corporation'])->findOrFail($id);
 
         // Calculate estimated value if ore composition available
         $estimatedValue = null;
@@ -427,7 +427,7 @@ class MoonController extends Controller
     public function extractions($structureId)
     {
         $extractions = MoonExtraction::where('structure_id', $structureId)
-            ->with(['structure.system', 'structure.type'])
+            ->with(['structure'])
             ->orderBy('extraction_start_time', 'desc')
             ->paginate(20);
 
@@ -459,7 +459,7 @@ class MoonController extends Controller
         // Get active extractions (currently extracting)
         $query = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '>=', Carbon::now())
-            ->with(['structure.system', 'structure.type', 'corporation']);
+            ->with(['structure', 'corporation']);
 
         if ($corporationId) {
             $query->where('corporation_id', $corporationId);
