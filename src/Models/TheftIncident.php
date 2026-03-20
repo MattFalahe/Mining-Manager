@@ -225,6 +225,8 @@ class TheftIncident extends Model
         $this->status = 'resolved';
         $this->resolved_at = Carbon::now();
         $this->resolved_by = $userId;
+        $this->on_theft_list = false;
+        $this->is_active_theft = false;
 
         if ($notes) {
             $this->notes = $notes;
@@ -262,6 +264,8 @@ class TheftIncident extends Model
         $this->status = 'false_alarm';
         $this->resolved_at = Carbon::now();
         $this->resolved_by = $userId;
+        $this->on_theft_list = false;
+        $this->is_active_theft = false;
 
         if ($notes) {
             $this->notes = $notes;
@@ -391,18 +395,21 @@ class TheftIncident extends Model
     }
 
     /**
-     * Calculate severity based on ore value.
+     * Calculate severity based on ore value and tax owed.
+     * Uses max(taxOwed, oreValue) to match TheftDetectionService logic.
      *
      * @param float $oreValue
      * @return string (low, medium, high, critical)
      */
     protected function calculateSeverity(float $oreValue): string
     {
-        if ($oreValue >= 500000000) { // 500M ISK or more
+        $value = max($this->tax_owed ?? 0, $oreValue);
+
+        if ($value >= 500000000) { // 500M ISK or more
             return 'critical';
-        } elseif ($oreValue >= 200000000) { // 200M ISK or more
+        } elseif ($value >= 200000000) { // 200M ISK or more
             return 'high';
-        } elseif ($oreValue >= 50000000) { // 50M ISK or more
+        } elseif ($value >= 50000000) { // 50M ISK or more
             return 'medium';
         } else {
             return 'low';

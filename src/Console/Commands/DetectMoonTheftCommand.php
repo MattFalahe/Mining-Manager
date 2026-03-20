@@ -119,6 +119,25 @@ class DetectMoonTheftCommand extends Command
             if ($notify) {
                 $this->line('');
                 $this->info('Sending notifications...');
+                $notificationsSent = 0;
+
+                // Send notifications for newly detected thefts
+                if (isset($results['incidents']) && count($results['incidents']) > 0) {
+                    foreach ($results['incidents'] as $incidentResult) {
+                        if (($incidentResult['incident_created'] ?? false) && isset($incidentResult['incident'])) {
+                            $incident = $incidentResult['incident'];
+                            if ($incident->severity === 'critical') {
+                                $this->notificationService->notifyCriticalTheft($incident);
+                            } else {
+                                $this->notificationService->notifyTheftDetected($incident);
+                            }
+                            $notificationsSent++;
+                        }
+                    }
+                    if ($notificationsSent > 0) {
+                        $this->comment("Sent {$notificationsSent} new theft detection notifications");
+                    }
+                }
 
                 // Send notifications for active thefts
                 if ($activeTheftResults['count'] > 0) {
@@ -130,8 +149,6 @@ class DetectMoonTheftCommand extends Command
                     }
                     $this->comment("Sent {$activeTheftResults['count']} active theft notifications");
                 }
-
-                $this->comment('Note: Full notification system with webhooks will be configured in settings.');
             }
 
             // Log success

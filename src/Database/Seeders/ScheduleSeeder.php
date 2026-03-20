@@ -140,7 +140,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Detect moon theft - runs twice monthly (1st and 15th at 1 AM)
             // (Full scan: manages theft list, adds/removes characters based on tax status)
             [
-                'command' => 'mining-manager:detect-theft',
+                'command' => 'mining-manager:detect-theft --notify',
                 'expression' => '0 1 1,15 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
@@ -150,7 +150,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Monitor active thefts - runs every 6 hours
             // (Fast check: only monitors characters already on theft list)
             [
-                'command' => 'mining-manager:monitor-active-thefts',
+                'command' => 'mining-manager:monitor-active-thefts --notify',
                 'expression' => '0 */6 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,

@@ -75,10 +75,10 @@ class TheftIncidentController extends Controller
             $query->whereBetween('incident_date', [$dateFrom, $dateTo]);
         }
 
-        // Default sorting - prioritize active thefts
+        // Default sorting - prioritize active thefts, severity by logical order
         $query->orderBy('is_active_theft', 'desc')
               ->orderBy('incident_date', 'desc')
-              ->orderBy('severity', 'desc');
+              ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low')");
 
         $incidents = $query->paginate(50);
 
@@ -246,7 +246,16 @@ class TheftIncidentController extends Controller
         $query = TheftIncident::with(['character', 'corporation', 'miningTax']);
 
         if ($request->filled('status')) {
-            $query->where('status', $request->input('status'));
+            $status = $request->input('status');
+            if ($status === 'on_list') {
+                $query->where('on_theft_list', true)
+                      ->whereIn('status', ['detected', 'investigating']);
+            } elseif ($status === 'active') {
+                $query->where('is_active_theft', true)
+                      ->whereIn('status', ['detected', 'investigating']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($request->filled('severity')) {

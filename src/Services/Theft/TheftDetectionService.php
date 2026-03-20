@@ -233,6 +233,7 @@ class TheftDetectionService
             'quantity_mined' => $totalQuantity,
             'status' => 'detected',
             'severity' => $severity,
+            'on_theft_list' => true,
         ];
 
         $incident = $this->createIncident($incidentData);
@@ -306,7 +307,7 @@ class TheftDetectionService
     {
         return TheftIncident::unresolved()
             ->with(['character', 'corporation', 'miningTax'])
-            ->orderBy('severity', 'desc')
+            ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low')")
             ->orderBy('incident_date', 'desc')
             ->get();
     }
@@ -487,10 +488,11 @@ class TheftDetectionService
 
         foreach ($unresolvedIncidents as $incident) {
             try {
-                // Query for new mining activity after incident was created
+                // Query for new mining activity since last check (not since creation, to avoid double-counting)
+                $checkFrom = $incident->last_activity_at ?? $incident->created_at;
                 $newMiningRecords = DB::table('corporation_industry_mining_observer_data')
                     ->where('character_id', $incident->character_id)
-                    ->where('last_updated', '>', $incident->created_at)
+                    ->where('last_updated', '>', $checkFrom)
                     ->whereIn('type_id', $moonOreTypeIds)
                     ->get();
 

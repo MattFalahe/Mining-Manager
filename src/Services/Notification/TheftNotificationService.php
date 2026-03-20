@@ -194,13 +194,13 @@ class TheftNotificationService
             'total_value' => $incident->ore_value,
             'activity_count' => $incident->activity_count,
             'incident_id' => $incident->id,
-            'last_activity' => $incident->last_activity_at->toDateTimeString(),
+            'last_activity' => $incident->last_activity_at ? $incident->last_activity_at->toDateTimeString() : 'N/A',
         ]);
 
         $additionalData = [
             'incident_url' => route('mining-manager.theft.show', $incident->id),
             'new_mining_value' => $newMiningValue,
-            'last_activity' => $incident->last_activity_at->format('Y-m-d H:i:s'),
+            'last_activity' => $incident->last_activity_at ? $incident->last_activity_at->format('Y-m-d H:i:s') : 'N/A',
         ];
 
         $this->webhookService->sendTheftNotification($incident, 'active_theft', $additionalData);
