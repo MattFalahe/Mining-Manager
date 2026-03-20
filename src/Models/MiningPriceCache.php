@@ -68,7 +68,7 @@ class MiningPriceCache extends Model
      * @param int $minutes
      * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function scopeFresh($query, int $minutes = null)
+    public function scopeFresh($query, ?int $minutes = null)
     {
         if ($minutes === null) {
             $pricingSettings = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getPricingSettings();
