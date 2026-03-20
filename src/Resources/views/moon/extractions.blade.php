@@ -69,11 +69,8 @@
                         <p class="mb-1">
                             <i class="fas fa-map-marker-alt"></i>
                             @php
-                                $systemName = 'Unknown System';
-                                if ($structure && $structure->solar_system_id) {
-                                    $solarSystem = \Seat\Eveapi\Models\Sde\MapDenormalize::find($structure->solar_system_id);
-                                    $systemName = $solarSystem->itemName ?? "System #{$structure->solar_system_id}";
-                                }
+                                $moonNameStr = $extractions->first()->moon_name ?? '';
+                                $systemName = preg_match('/^(.+?)\s+[IVXLCDM]+\s+-/', $moonNameStr, $m) ? $m[1] : 'Unknown System';
                             @endphp
                             {{ $systemName }}
                         </p>
