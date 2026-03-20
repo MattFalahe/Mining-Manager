@@ -62,6 +62,12 @@ class EventController extends Controller
      */
     public function index(Request $request)
     {
+        $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
+        if (!($features['enable_events'] ?? true)) {
+            return redirect()->route('mining-manager.dashboard.index')
+                ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
+        }
+
         $status = $request->input('status', 'all');
         $corporationId = $request->input('corporation_id');
 
@@ -123,6 +129,12 @@ class EventController extends Controller
      */
     public function create()
     {
+        $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
+        if (!($features['enable_events'] ?? true) || !($features['allow_event_creation'] ?? true)) {
+            return redirect()->route('mining-manager.dashboard.index')
+                ->with('warning', 'Event creation is currently disabled. Enable it in Settings > Features.');
+        }
+
         // Get configured corporations for the dropdown
         $corporations = DB::table('corporation_infos')
             ->select('corporation_id', 'name', 'ticker')

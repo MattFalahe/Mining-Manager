@@ -54,6 +54,14 @@ class GenerateReportsCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['enable_reports'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         // Handle scheduled reports mode
         if ($this->option('scheduled')) {
             return $this->handleScheduledReports();

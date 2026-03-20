@@ -29,12 +29,20 @@ class ProcessMiningLedgerCommand extends Command
 
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['auto_process_ledger'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('╔════════════════════════════════════════════════════════════╗');
         $this->info('║   Mining Manager - Corporation Observer Processing         ║');
         $this->info('║   Tracking ALL miners at your structures - not just SeAT!  ║');
         $this->info('╚════════════════════════════════════════════════════════════╝');
         $this->line('');
-        
+
         $observerId = $this->option('observer_id');
         $characterId = $this->option('character_id');
         $days = $this->option('days');

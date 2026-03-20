@@ -197,8 +197,10 @@
         </div>
     </div>
 
+    @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
     <div class="row">
         {{-- TOP MINERS LEADERBOARD --}}
+        @if($features['allow_member_leaderboard'] ?? true)
         <div class="col-lg-6">
             <div class="card card-warning card-outline">
                 <div class="card-header">
@@ -245,7 +247,7 @@
                                         <img src="https://images.evetech.net/characters/{{ $portraitId }}/portrait?size=32"
                                              class="img-circle"
                                              style="width: 32px;">
-                                        {{ $miner->name }}
+                                        {{ ($features['show_character_names'] ?? true) ? $miner->name : 'Miner #' . ($miner->character_id ?? $index + 1) }}
                                         @if(($groupBy ?? 'account') === 'account' && isset($miner->character_count) && $miner->character_count > 1)
                                             <span class="badge badge-secondary ml-1">{{ $miner->character_count }} {{ trans('mining-manager::analytics.characters') }}</span>
                                         @endif
@@ -266,6 +268,7 @@
                 </div>
             </div>
         </div>
+        @endif
 
         {{-- ORE BREAKDOWN --}}
         <div class="col-lg-6">

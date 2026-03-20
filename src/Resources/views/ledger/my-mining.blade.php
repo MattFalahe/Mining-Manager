@@ -316,9 +316,12 @@
                         <button type="button" class="btn btn-sm btn-primary" onclick="window.print()">
                             <i class="fas fa-print"></i> {{ trans('mining-manager::ledger.print') }}
                         </button>
+                        @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
+                        @if($features['allow_export_data'] ?? true)
                         <button type="button" class="btn btn-sm btn-success" onclick="exportPersonalData()">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::ledger.export') }}
                         </button>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body p-0">

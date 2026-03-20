@@ -145,31 +145,6 @@
                 </small>
             </div>
 
-            <div class="form-group">
-                <label for="event_bonus_multiplier">
-                    <i class="fas fa-gift"></i>
-                    {{ trans('mining-manager::settings.event_bonus_multiplier') }}
-                </label>
-                <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('event_bonus_multiplier') is-invalid @enderror" 
-                           id="event_bonus_multiplier" 
-                           name="event_bonus_multiplier" 
-                           value="{{ old('event_bonus_multiplier', $settings->event_bonus_multiplier ?? 1.5) }}"
-                           min="1" 
-                           max="5" 
-                           step="0.1">
-                    <div class="input-group-append">
-                        <span class="input-group-text">x</span>
-                    </div>
-                    @error('event_bonus_multiplier')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.event_bonus_multiplier_help') }}
-                </small>
-            </div>
         </div>
     </div>
 

@@ -50,6 +50,14 @@ class CalculateMonthlyStatisticsCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['enable_analytics'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('🚀 Starting monthly statistics calculation...');
 
         if ($this->option('all-history')) {

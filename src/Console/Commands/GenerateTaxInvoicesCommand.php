@@ -41,6 +41,14 @@ class GenerateTaxInvoicesCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['auto_generate_invoices'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('Starting invoice generation...');
 
         $dryRun = $this->option('dry-run');

@@ -36,9 +36,20 @@ class ArchiveOldExtractionsCommand extends Command
      */
     public function handle()
     {
+        // Read feature flags for data retention settings
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+
         $daysOld = $this->option('days');
-        $keepMonths = $this->option('keep-months');
         $dryRun = $this->option('dry-run');
+
+        // Use ledger_retention_days from settings if --keep-months was not explicitly provided
+        if ($this->option('keep-months') === '12' && isset($features['ledger_retention_days'])) {
+            // Convert retention days to months (approximate)
+            $keepMonths = max(1, (int) round($features['ledger_retention_days'] / 30));
+        } else {
+            $keepMonths = $this->option('keep-months');
+        }
 
         $this->info("Mining Manager: Archiving moon extractions older than {$daysOld} days...");
 
@@ -128,13 +139,16 @@ class ArchiveOldExtractionsCommand extends Command
         }
 
         // Clean up old history records beyond retention period
-        if (!$dryRun) {
+        // Only runs if auto_cleanup_old_data is enabled in Settings > Features
+        if (!$dryRun && ($features['auto_cleanup_old_data'] ?? false)) {
             $oldHistoryCutoff = Carbon::now()->subMonths($keepMonths);
             $deletedHistory = MoonExtractionHistory::where('archived_at', '<', $oldHistoryCutoff)->delete();
 
             if ($deletedHistory > 0) {
                 $this->info("Cleaned up {$deletedHistory} history records older than {$keepMonths} months");
             }
+        } elseif (!$dryRun && !($features['auto_cleanup_old_data'] ?? false)) {
+            $this->info("Auto-cleanup disabled in settings. Skipping history deletion.");
         }
 
         $this->info("\nArchival complete:");

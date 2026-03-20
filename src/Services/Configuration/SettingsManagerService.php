@@ -803,7 +803,6 @@ class SettingsManagerService
             'enable_events' => (bool) $this->getSetting('features.enable_events', true),
             'allow_event_creation' => (bool) $this->getSetting('features.allow_event_creation', true),
             'auto_track_event_participation' => (bool) $this->getSetting('features.auto_track_event_participation', true),
-            'event_bonus_multiplier' => (float) $this->getSetting('features.event_bonus_multiplier', 1.5),
 
             // Moon mining
             'enable_moon_tracking' => (bool) $this->getSetting('features.enable_moon_tracking', true),

@@ -179,9 +179,12 @@
                         {{ trans('mining-manager::taxes.filters') }}
                     </h3>
                     <div class="card-tools">
+                        @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
+                        @if($features['allow_export_data'] ?? true)
                         <button type="button" class="btn btn-sm btn-info" id="exportTaxes">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::taxes.export') }}
                         </button>
+                        @endif
                         @if($isAdmin ?? false)
                         <button type="button" class="btn btn-sm btn-success" id="sendReminders" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.send_reminders_to_selected') }}">
                             <i class="fas fa-envelope"></i> {{ trans('mining-manager::taxes.send_reminders') }}

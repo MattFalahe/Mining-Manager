@@ -234,7 +234,7 @@ return [
     'auto_process_ledger' => 'Auto-Process Ledger',
     'auto_process_ledger_help' => 'Automatically process mining ledger data',
     'ledger_processing_interval' => 'Processing Interval',
-    'ledger_processing_interval_help' => 'How often to process ledger data',
+    'ledger_processing_interval_help' => 'How often to process ledger data (in minutes). Note: Changing this value requires manually updating the scheduled task interval in SeAT\'s scheduler.',
     'auto_calculate_taxes' => 'Auto-Calculate Taxes',
     'auto_calculate_taxes_help' => 'Automatically calculate taxes at end of period',
     'auto_generate_invoices' => 'Auto-Generate Invoices',

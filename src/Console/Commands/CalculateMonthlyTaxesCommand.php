@@ -61,6 +61,13 @@ class CalculateMonthlyTaxesCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $features = $this->settingsService->getFeatureFlags();
+        if (!($features['auto_calculate_taxes'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('Starting tax calculation...');
 
         // Determine which month to process

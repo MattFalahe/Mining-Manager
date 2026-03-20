@@ -52,6 +52,14 @@ class UpdateMiningEventsCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['enable_events'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('Starting event update...');
 
         // Build query for events

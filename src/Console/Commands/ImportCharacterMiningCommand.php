@@ -21,6 +21,14 @@ class ImportCharacterMiningCommand extends Command
 
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['enable_ledger_tracking'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('╔════════════════════════════════════════════════════════════╗');
         $this->info('║   Mining Manager - Character Mining Import                 ║');
         $this->info('║   Importing personal mining data from SeAT ESI cache       ║');

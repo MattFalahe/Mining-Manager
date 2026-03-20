@@ -53,6 +53,14 @@ class VerifyWalletPaymentsCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['verify_wallet_transactions'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('Starting payment verification...');
 
         $days = $this->option('days');

@@ -122,6 +122,8 @@
                     </div>
 
                     {{-- Leaderboard --}}
+                    @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
+                    @if($features['allow_member_leaderboard'] ?? true)
                     <div class="row mt-3">
                         <div class="col-12">
                             <h5>{{ trans('mining-manager::events.leaderboard') }}</h5>
@@ -134,7 +136,7 @@
                                         </span>
                                         <div class="info-box-content">
                                             <span class="info-box-text">{{ ['1st Place', '2nd Place', '3rd Place'][$index] }}</span>
-                                            <span class="info-box-number">{{ $top->character_name }}</span>
+                                            <span class="info-box-number">{{ ($features['show_character_names'] ?? true) ? $top->character_name : 'Miner #' . ($top->character_id ?? $index + 1) }}</span>
                                             <small>{{ number_format($top->total_mined, 0) }} ISK</small>
                                         </div>
                                     </div>
@@ -143,6 +145,7 @@
                             </div>
                         </div>
                     </div>
+                    @endif
                 </div>
                 <div class="card-footer">
                     <div class="btn-group">

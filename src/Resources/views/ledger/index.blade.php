@@ -117,9 +117,12 @@
                         {{ trans('mining-manager::ledger.filters') }}
                     </h3>
                     <div class="card-tools">
+                        @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
+                        @if($features['allow_export_data'] ?? true)
                         <button type="button" class="btn btn-sm btn-info" id="exportLedger">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::ledger.export') }}
                         </button>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">
@@ -420,9 +423,11 @@
                                 <i class="fas fa-trash"></i> {{ trans('mining-manager::ledger.delete_selected') }}
                             </button>
                             @endcan
+                            @if($features['allow_export_data'] ?? true)
                             <button type="button" class="btn btn-info" id="bulkExport">
                                 <i class="fas fa-download"></i> {{ trans('mining-manager::ledger.export_selected') }}
                             </button>
+                            @endif
                             <button type="button" class="btn btn-secondary" id="clearSelection">
                                 <i class="fas fa-times"></i> {{ trans('mining-manager::ledger.clear') }}
                             </button>

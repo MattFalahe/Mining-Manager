@@ -38,6 +38,12 @@ class ReportController extends Controller
      */
     public function index(Request $request)
     {
+        $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
+        if (!($features['enable_reports'] ?? true)) {
+            return redirect()->route('mining-manager.dashboard.index')
+                ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
+        }
+
         $type = $request->input('type', 'all');
 
         $query = MiningReport::query();

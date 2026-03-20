@@ -290,9 +290,12 @@
                         <button type="button" class="btn btn-sm btn-primary" onclick="window.print()">
                             <i class="fas fa-print"></i> {{ trans('mining-manager::taxes.print') }}
                         </button>
+                        @php $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags(); @endphp
+                        @if($features['allow_export_data'] ?? true)
                         <a href="{{ route('mining-manager.taxes.export-personal') }}" class="btn btn-sm btn-info">
                             <i class="fas fa-download"></i> {{ trans('mining-manager::taxes.export') }}
                         </a>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">

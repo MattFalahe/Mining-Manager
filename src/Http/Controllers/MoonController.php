@@ -45,6 +45,12 @@ class MoonController extends Controller
      */
     public function index(Request $request)
     {
+        $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
+        if (!($features['enable_moon_tracking'] ?? true)) {
+            return redirect()->route('mining-manager.dashboard.index')
+                ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
+        }
+
         $status = $request->input('status', 'all');
         $corporationId = $request->input('corporation_id');
 

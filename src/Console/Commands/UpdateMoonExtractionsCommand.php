@@ -53,6 +53,14 @@ class UpdateMoonExtractionsCommand extends Command
      */
     public function handle()
     {
+        // Check feature flag
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $features = $settingsService->getFeatureFlags();
+        if (!($features['enable_moon_tracking'] ?? true)) {
+            $this->info('Feature disabled in settings. Skipping.');
+            return Command::SUCCESS;
+        }
+
         $this->info('Starting moon extraction update...');
 
         // Build query for refineries (Athanor + Tatara)

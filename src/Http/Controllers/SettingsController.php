@@ -638,7 +638,6 @@ class SettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Number inputs
-            'event_bonus_multiplier' => 'required|numeric|min:1|max:5',
             'extraction_notification_hours' => 'required|integer|min:1|max:168',
             'ledger_processing_interval' => 'required|integer|min:15|max:1440',
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
@@ -689,7 +688,6 @@ class SettingsController extends Controller
                 'enable_events' => $request->has('enable_events'),
                 'allow_event_creation' => $request->has('allow_event_creation'),
                 'auto_track_event_participation' => $request->has('auto_track_event_participation'),
-                'event_bonus_multiplier' => $data['event_bonus_multiplier'],
 
                 // Moon mining
                 'enable_moon_tracking' => $request->has('enable_moon_tracking'),

@@ -36,6 +36,12 @@ class AnalyticsController extends Controller
      */
     public function index(Request $request)
     {
+        $features = app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags();
+        if (!($features['enable_analytics'] ?? true)) {
+            return redirect()->route('mining-manager.dashboard.index')
+                ->with('warning', 'This feature is currently disabled. Enable it in Settings > Features.');
+        }
+
         // Get date range from request or default to last 30 days
         $startDate = $request->input('start_date') 
             ? Carbon::parse($request->input('start_date'))
