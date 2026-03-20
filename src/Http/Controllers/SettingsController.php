@@ -639,7 +639,6 @@ class SettingsController extends Controller
         $validator = Validator::make($request->all(), [
             // Number inputs
             'extraction_notification_hours' => 'required|integer|min:1|max:168',
-            'ledger_processing_interval' => 'required|integer|min:15|max:1440',
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
             'tax_record_retention_days' => 'required|integer|min:90|max:3650',
 
@@ -704,7 +703,6 @@ class SettingsController extends Controller
 
                 // Automation
                 'auto_process_ledger' => $request->has('auto_process_ledger'),
-                'ledger_processing_interval' => $data['ledger_processing_interval'],
                 'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
                 'auto_generate_invoices' => $request->has('auto_generate_invoices'),
                 'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),

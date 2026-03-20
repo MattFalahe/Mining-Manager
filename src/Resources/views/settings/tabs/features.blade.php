@@ -348,29 +348,11 @@
                 </small>
             </div>
 
-            <div class="form-group">
-                <label for="ledger_processing_interval">
-                    <i class="fas fa-hourglass-half"></i>
-                    {{ trans('mining-manager::settings.ledger_processing_interval') }}
-                </label>
-                <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('ledger_processing_interval') is-invalid @enderror" 
-                           id="ledger_processing_interval" 
-                           name="ledger_processing_interval" 
-                           value="{{ old('ledger_processing_interval', $settings->ledger_processing_interval ?? 60) }}"
-                           min="15" 
-                           max="1440">
-                    <div class="input-group-append">
-                        <span class="input-group-text">{{ trans('mining-manager::settings.minutes') }}</span>
-                    </div>
-                    @error('ledger_processing_interval')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.ledger_processing_interval_help') }}
-                </small>
+            <div class="info-banner">
+                <i class="fas fa-info-circle"></i>
+                <strong>{{ trans('mining-manager::settings.ledger_processing_interval') }}:</strong>
+                Processing intervals are controlled by scheduled tasks (cron jobs). To change how often ledger data is processed, update the schedule directly in SeAT's Scheduler or your server's crontab.
+                See <strong>Help &amp; Documentation &gt; CLI Commands</strong> for details.
             </div>
 
             <div class="custom-control custom-switch mb-3">

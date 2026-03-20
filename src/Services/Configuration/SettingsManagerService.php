@@ -819,7 +819,6 @@ class SettingsManagerService
 
             // Automation
             'auto_process_ledger' => (bool) $this->getSetting('features.auto_process_ledger', true),
-            'ledger_processing_interval' => (int) $this->getSetting('features.ledger_processing_interval', 60),
             'auto_calculate_taxes' => (bool) $this->getSetting('features.auto_calculate_taxes', true),
             'auto_generate_invoices' => (bool) $this->getSetting('features.auto_generate_invoices', true),
             'verify_wallet_transactions' => (bool) $this->getSetting('features.verify_wallet_transactions', true),
