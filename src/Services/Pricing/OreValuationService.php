@@ -144,10 +144,12 @@ class OreValuationService
             }
         }
 
-        // If unit_price is still 0 but total_value is calculated (from refined minerals),
-        // derive an effective unit_price so the UI doesn't show 0 ISK/unit
-        if (($result['unit_price'] ?? 0) == 0 && $result['total_value'] > 0 && $quantity > 0) {
+        // unit_price should always reflect effective per-unit value (what we use for tax/valuation)
+        // This ensures consistency: unit_price * quantity ≈ total_value
+        if ($result['total_value'] > 0 && $quantity > 0) {
             $result['unit_price'] = $result['total_value'] / $quantity;
+        } elseif (($result['unit_price'] ?? 0) == 0 && $orePrice > 0) {
+            $result['unit_price'] = $orePrice;
         }
 
         return $result;
