@@ -430,6 +430,16 @@ document.addEventListener('DOMContentLoaded', function() {
             info.jsEvent.preventDefault();
             showExtractionDetails(info.event);
         },
+        datesSet: function(dateInfo) {
+            // Reload page when user navigates to a different month
+            var viewStart = dateInfo.start;
+            var newMonth = viewStart.getFullYear() + '-' + String(viewStart.getMonth() + 1).padStart(2, '0') + '-01';
+            var currentMonth = '{{ $month->format("Y-m") }}';
+            var viewMonth = viewStart.getFullYear() + '-' + String(viewStart.getMonth() + 1).padStart(2, '0');
+            if (viewMonth !== currentMonth) {
+                window.location.href = '{{ route("mining-manager.moon.calendar") }}?month=' + newMonth;
+            }
+        },
         height: 700,
         contentHeight: 650,
         firstDay: 1,
