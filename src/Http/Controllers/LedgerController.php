@@ -1494,9 +1494,9 @@ class LedgerController extends Controller
             $oreMineralOutput = [];
 
             if ($minerals) {
-                // Compressed ore: 1 unit = 1 batch (equivalent to 100 uncompressed)
-                // Uncompressed ore: 100 units = 1 batch
-                $batchCount = $isCompressed ? $quantity : floor($quantity / 100);
+                // Both compressed and uncompressed ores: 100 units = 1 batch in SDE
+                // SDE invTypeMaterials stores yield per batch of 100 for all ore types
+                $batchCount = floor($quantity / 100);
                 foreach ($minerals as $mineral) {
                     $mineralQty = floor($mineral['quantity'] * $yieldFraction * $batchCount);
                     if ($mineralQty > 0) {
