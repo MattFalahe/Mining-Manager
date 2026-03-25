@@ -431,12 +431,13 @@ document.addEventListener('DOMContentLoaded', function() {
             showExtractionDetails(info.event);
         },
         datesSet: function(dateInfo) {
-            // Reload page when user navigates to a different month
-            var viewStart = dateInfo.start;
-            var newMonth = viewStart.getFullYear() + '-' + String(viewStart.getMonth() + 1).padStart(2, '0') + '-01';
+            // FullCalendar's dateInfo.start is the grid start (may be in the previous month)
+            // Use the view's currentStart which is the actual first day of the displayed month
+            var viewDate = dateInfo.view.currentStart;
+            var viewMonth = viewDate.getFullYear() + '-' + String(viewDate.getMonth() + 1).padStart(2, '0');
             var currentMonth = '{{ $month->format("Y-m") }}';
-            var viewMonth = viewStart.getFullYear() + '-' + String(viewStart.getMonth() + 1).padStart(2, '0');
             if (viewMonth !== currentMonth) {
+                var newMonth = viewMonth + '-01';
                 window.location.href = '{{ route("mining-manager.moon.calendar") }}?month=' + newMonth;
             }
         },
