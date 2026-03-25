@@ -311,18 +311,6 @@
                                         </div>
                                     </div>
                                 </div>
-                            {{-- Auto Fracture Warning (within 3h of auto-fracture) --}}
-                            @elseif($extraction->shouldShowAutoFractureWarning())
-                                <div class="row mt-2">
-                                    <div class="col-12">
-                                        <div class="alert mm-alert-auto-fracture mb-0 py-2">
-                                            <i class="fas fa-exclamation-triangle"></i>
-                                            <strong>{{ trans('mining-manager::moons.auto_fracture_warning') }}:</strong>
-                                            {{ trans('mining-manager::moons.auto_fractures_in') }} {{ $extraction->getTimeUntilAutoFracture() }}
-                                            ({{ $extraction->natural_decay_time->format('M d, H:i') }})
-                                        </div>
-                                    </div>
-                                </div>
                             @endif
                         </div>
                     </div>

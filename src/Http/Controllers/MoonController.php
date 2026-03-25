@@ -55,17 +55,19 @@ class MoonController extends Controller
         $corporationId = $request->input('corporation_id');
 
         // Quick status sync - update extractions that have expired
-        $now = Carbon::now();
-        MoonExtraction::where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where('natural_decay_time', '<', $now)
-            ->update(['status' => 'expired']);
+        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
-        // Update ready status for arrived chunks
-        MoonExtraction::where('status', 'extracting')
+        // Update ready status for arrived chunks that aren't expired
+        $now = Carbon::now();
+        $readyCandidates = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
-            ->where('natural_decay_time', '>', $now)
-            ->update(['status' => 'ready']);
+            ->get()
+            ->filter(fn($e) => !$e->isExpired())
+            ->pluck('id');
+
+        if ($readyCandidates->isNotEmpty()) {
+            MoonExtraction::whereIn('id', $readyCandidates)->update(['status' => 'ready']);
+        }
 
         $query = MoonExtraction::with(['structure', 'corporation']);
 
@@ -152,12 +154,14 @@ class MoonController extends Controller
         $timeUntilArrival = null;
         $timeUntilDecay = null;
 
-        if ($extraction->chunk_arrival_time > Carbon::now()) {
+        if ($extraction->chunk_arrival_time && $extraction->chunk_arrival_time > Carbon::now()) {
             $timeUntilArrival = Carbon::now()->diffInHours($extraction->chunk_arrival_time);
         }
 
-        if ($extraction->natural_decay_time > Carbon::now()) {
-            $timeUntilDecay = Carbon::now()->diffInHours($extraction->natural_decay_time);
+        // Use model's expiry time (based on fractured_at when available)
+        $expiryTime = $extraction->getExpiryTime();
+        if ($expiryTime && $expiryTime > Carbon::now()) {
+            $timeUntilDecay = Carbon::now()->diffInHours($expiryTime);
         }
 
         // Load extraction history for this structure
@@ -220,21 +224,8 @@ class MoonController extends Controller
         // Detect auto-fractures before updating statuses
         app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
 
-        // Mark expired based on calculated expiry:
-        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
-        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
-        MoonExtraction::where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
-                $q->where(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', false)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
-                })->orWhere(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', true)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
-                });
-            })
-            ->update(['status' => 'expired']);
+        // Mark expired using fractured_at when available, legacy estimate otherwise
+        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
         // Get extractions for the month (including expired/past)
         $extractions = MoonExtraction::whereBetween('chunk_arrival_time', [
@@ -288,6 +279,8 @@ class MoonController extends Controller
             $historyExtraction->calculated_value = $history->final_estimated_value;
             $historyExtraction->is_jackpot = $history->is_jackpot;
             $historyExtraction->auto_fractured = $history->auto_fractured ?? false;
+            $historyExtraction->fractured_at = $history->fractured_at ?? null;
+            $historyExtraction->fractured_by = $history->fractured_by ?? null;
             $historyExtraction->is_archived = true;
             $pseudoExtractions->push($historyExtraction);
         }
@@ -487,8 +480,12 @@ class MoonController extends Controller
             $extraction->hours_until_arrival = Carbon::now()->diffInHours($extraction->chunk_arrival_time, false);
             $extraction->time_until_arrival = Carbon::now()->diff($extraction->chunk_arrival_time)->format('%d days, %h hours, %i minutes');
 
-            // Calculate time until natural decay
-            if ($extraction->natural_decay_time) {
+            // Calculate time until expiry (uses fractured_at when available)
+            $expiryTime = $extraction->getExpiryTime();
+            if ($expiryTime && $expiryTime->isFuture()) {
+                $extraction->hours_until_decay = Carbon::now()->diffInHours($expiryTime, false);
+                $extraction->time_until_decay = Carbon::now()->diff($expiryTime)->format('%d days, %h hours, %i minutes');
+            } elseif ($extraction->natural_decay_time) {
                 $extraction->hours_until_decay = Carbon::now()->diffInHours($extraction->natural_decay_time, false);
                 $extraction->time_until_decay = Carbon::now()->diff($extraction->natural_decay_time)->format('%d days, %h hours, %i minutes');
             }

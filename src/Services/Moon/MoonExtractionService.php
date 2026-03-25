@@ -519,25 +519,69 @@ class MoonExtractionService
      *
      * @return int Number of auto-fractures detected
      */
+    /**
+     * Detect fracture events from ESI notifications.
+     *
+     * Checks for both:
+     * - MoonminingLaserFired: player manually fired the laser
+     * - MoonminingAutomaticFracture: no one fired, EVE auto-fractured after 3h
+     *
+     * Sets fractured_at timestamp and fractured_by (player name for manual).
+     */
     public function detectAutoFractures(): int
     {
-        $readyExtractions = MoonExtraction::where('auto_fractured', false)
-            ->where('status', 'ready')
+        // Get all ready extractions that don't have a fracture time yet
+        $readyExtractions = MoonExtraction::whereNull('fractured_at')
+            ->whereIn('status', ['extracting', 'ready'])
             ->whereNotNull('chunk_arrival_time')
             ->where('chunk_arrival_time', '<=', Carbon::now())
             ->get();
 
         $detected = 0;
         foreach ($readyExtractions as $extraction) {
-            $notification = DB::table('character_notifications')
+            // Check for manual laser fire first (player blew it up)
+            $laserNotification = DB::table('character_notifications')
+                ->where('type', 'MoonminingLaserFired')
+                ->where('text', 'LIKE', '%structureID: ' . $extraction->structure_id . '%')
+                ->where('timestamp', '>=', $extraction->chunk_arrival_time)
+                ->where('timestamp', '<=', Carbon::now())
+                ->orderBy('timestamp')
+                ->first();
+
+            if ($laserNotification) {
+                // Extract player name from notification text if possible
+                $firedBy = null;
+                if (preg_match('/firedBy:\s*\[.*?,\s*"([^"]+)"\]/', $laserNotification->text, $matches)) {
+                    $firedBy = $matches[1];
+                } elseif (preg_match('/fired by (.+?) and/', $laserNotification->text, $matches)) {
+                    $firedBy = $matches[1];
+                }
+
+                $extraction->fractured_at = Carbon::parse($laserNotification->timestamp);
+                $extraction->fractured_by = $firedBy;
+                $extraction->auto_fractured = false;
+                $extraction->status = 'ready';
+                $extraction->save();
+                $detected++;
+                Log::info("Mining Manager: Manual fracture detected for extraction {$extraction->id} at structure {$extraction->structure_id}" .
+                    ($firedBy ? " by {$firedBy}" : ''));
+                continue;
+            }
+
+            // Check for auto-fracture notification
+            $autoNotification = DB::table('character_notifications')
                 ->where('type', 'MoonminingAutomaticFracture')
                 ->where('text', 'LIKE', '%structureID: ' . $extraction->structure_id . '%')
                 ->where('timestamp', '>=', $extraction->chunk_arrival_time)
                 ->where('timestamp', '<=', Carbon::now())
+                ->orderBy('timestamp')
                 ->first();
 
-            if ($notification) {
+            if ($autoNotification) {
+                $extraction->fractured_at = Carbon::parse($autoNotification->timestamp);
+                $extraction->fractured_by = null;
                 $extraction->auto_fractured = true;
+                $extraction->status = 'ready';
                 $extraction->save();
                 $detected++;
                 Log::info("Mining Manager: Auto-fracture detected for extraction {$extraction->id} at structure {$extraction->structure_id}");
@@ -559,21 +603,8 @@ class MoonExtractionService
         // Detect auto-fractures first (affects expiry timing)
         $this->detectAutoFractures();
 
-        // Mark as expired based on calculated expiry:
-        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
-        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
-        $expired = MoonExtraction::where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
-                $q->where(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', false)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
-                })->orWhere(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', true)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
-                });
-            })
-            ->update(['status' => 'expired']);
+        // Mark as expired using fractured_at when available, legacy estimate otherwise
+        $expired = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
         if ($expired > 0) {
             Log::info("Mining Manager: Marked {$expired} extractions as expired");

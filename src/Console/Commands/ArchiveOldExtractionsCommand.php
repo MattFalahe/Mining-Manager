@@ -58,19 +58,7 @@ class ArchiveOldExtractionsCommand extends Command
         }
 
         // First, update status for extractions that have passed their expiry time
-        $now = Carbon::now();
-        $expiredCount = MoonExtraction::where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
-                $q->where(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', false)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
-                })->orWhere(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', true)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
-                });
-            })
-            ->update(['status' => 'expired']);
+        $expiredCount = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
         if ($expiredCount > 0) {
             $this->info("Updated {$expiredCount} extractions to 'expired' status");
@@ -119,6 +107,8 @@ class ArchiveOldExtractionsCommand extends Command
                         'is_jackpot' => $extraction->is_jackpot,
                         'jackpot_detected_at' => $extraction->jackpot_detected_at,
                         'auto_fractured' => $extraction->auto_fractured,
+                        'fractured_at' => $extraction->fractured_at,
+                        'fractured_by' => $extraction->fractured_by,
                     ]);
 
                     // Delete the original extraction

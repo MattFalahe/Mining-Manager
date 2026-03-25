@@ -129,10 +129,30 @@
                                 <small class="text-muted">{{ $extraction->chunk_arrival_time->diffForHumans() }}</small>
                             </p>
 
+                            @if($extraction->fractured_at)
+                            <p><strong>Fractured:</strong></p>
+                            <p class="ml-3 mb-3">
+                                {{ $extraction->fractured_at->format('M d, Y H:i') }}<br>
+                                <small class="text-muted">
+                                    {{ $extraction->fractured_at->diffForHumans() }}
+                                    @if($extraction->fractured_by)
+                                        &mdash; by {{ $extraction->fractured_by }}
+                                    @elseif($extraction->auto_fractured)
+                                        &mdash; auto-fracture
+                                    @endif
+                                </small>
+                            </p>
+                            @endif
+
                             <p><strong>{{ trans('mining-manager::moons.natural_decay') }}:</strong></p>
                             <p class="ml-3 mb-3">
-                                {{ $extraction->natural_decay_time->format('M d, Y H:i') }}<br>
-                                <small class="text-muted">{{ $extraction->natural_decay_time->diffForHumans() }}</small>
+                                @if($extraction->getExpiryTime())
+                                    {{ $extraction->getExpiryTime()->format('M d, Y H:i') }}<br>
+                                    <small class="text-muted">{{ $extraction->getExpiryTime()->diffForHumans() }}</small>
+                                @else
+                                    {{ $extraction->natural_decay_time->format('M d, Y H:i') }}<br>
+                                    <small class="text-muted">{{ $extraction->natural_decay_time->diffForHumans() }}</small>
+                                @endif
                                 @if($extraction->isUnstable())
                                     <br><span class="badge badge-warning">{{ trans('mining-manager::moons.unstable') }}</span>
                                 @endif
@@ -170,10 +190,16 @@
                     <div class="mm-timer-box {{ $extraction->isUnstable() ? 'mm-timer-unstable' : 'mm-timer-fracture' }}">
                         @if($extraction->isUnstable())
                             <span class="badge badge-dark mb-2">{{ trans('mining-manager::moons.unstable') }}</span>
+                            <p class="mb-2">{{ trans('mining-manager::moons.expires_in') ?? 'Expires in' }}</p>
+                        @else
+                            <p class="mb-2">{{ trans('mining-manager::moons.unstable_in') ?? 'Unstable in' }}</p>
                         @endif
-                        <p class="mb-2">{{ trans('mining-manager::moons.auto_fractures_in') }}</p>
                         <h2>{{ floor($timeUntilDecay / 24) }}d {{ $timeUntilDecay % 24 }}h</h2>
-                        <small>{{ $extraction->natural_decay_time->format('M d, H:i') }}</small>
+                        @if($extraction->fractured_at)
+                            <small>Fractured: {{ $extraction->fractured_at->format('M d, H:i') }}{{ $extraction->fractured_by ? ' by ' . $extraction->fractured_by : '' }}</small>
+                        @else
+                            <small>{{ $extraction->getExpiryTime() ? $extraction->getExpiryTime()->format('M d, H:i') : '' }}</small>
+                        @endif
                     </div>
                 </div>
             </div>

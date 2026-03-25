@@ -39,6 +39,8 @@ class MoonExtraction extends Model
         'value_last_updated',
         'has_notification_data',
         'auto_fractured',
+        'fractured_at',
+        'fractured_by',
     ];
 
     /**
@@ -60,6 +62,7 @@ class MoonExtraction extends Model
         'value_last_updated' => 'datetime',
         'has_notification_data' => 'boolean',
         'auto_fractured' => 'boolean',
+        'fractured_at' => 'datetime',
     ];
 
     /**
@@ -245,30 +248,83 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Get how many hours the ready state lasts.
-     * 48h normally, 51h if auto-fractured (no player fired the laser).
+     * Get the actual fracture time (when mining became available).
+     *
+     * Timeline:
+     * - Chunk arrives (chunk_arrival_time) → waiting for player to fire laser
+     * - Player fires laser → fractured_at = notification timestamp (manual fracture)
+     * - No one fires → auto-fracture 3h after arrival → fractured_at = chunk_arrival + 3h
+     * - From fractured_at: 48h ready → 2h unstable → expired
+     *
+     * If fractured_at is not set, falls back to chunk_arrival_time (legacy behavior).
+     */
+    public function getFractureTime(): ?Carbon
+    {
+        if ($this->fractured_at) {
+            return $this->fractured_at;
+        }
+
+        // Legacy fallback: estimate based on auto_fractured flag
+        if ($this->chunk_arrival_time) {
+            return $this->auto_fractured
+                ? $this->chunk_arrival_time->copy()->addHours(3)
+                : $this->chunk_arrival_time->copy();
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the ready window duration in hours.
+     * Always 48 hours from fracture time.
      */
     public function getReadyDurationHours(): int
     {
-        return $this->auto_fractured ? 51 : 48;
+        return 48;
+    }
+
+    /**
+     * Get the time when the unstable phase starts (end of ready window).
+     */
+    public function getUnstableStartTime(): ?Carbon
+    {
+        $fractureTime = $this->getFractureTime();
+        return $fractureTime ? $fractureTime->copy()->addHours(48) : null;
+    }
+
+    /**
+     * Get the time when the extraction expires (end of unstable window).
+     */
+    public function getExpiryTime(): ?Carbon
+    {
+        $fractureTime = $this->getFractureTime();
+        return $fractureTime ? $fractureTime->copy()->addHours(50) : null;
     }
 
     /**
      * Check if moon is in unstable state.
-     * Unstable starts after the ready window ends and lasts 2 hours.
+     * Unstable starts 48h after fracture and lasts 2 hours.
      */
     public function isUnstable(): bool
     {
-        if (!$this->chunk_arrival_time) {
+        $unstableStart = $this->getUnstableStartTime();
+        $expiryTime = $this->getExpiryTime();
+
+        if (!$unstableStart || !$expiryTime) {
             return false;
         }
 
         $now = Carbon::now();
-        $readyHours = $this->getReadyDurationHours();
-        $unstableStart = $this->chunk_arrival_time->copy()->addHours($readyHours);
-        $unstableEnd = $unstableStart->copy()->addHours(2);
+        return $now >= $unstableStart && $now < $expiryTime;
+    }
 
-        return $now >= $unstableStart && $now < $unstableEnd;
+    /**
+     * Check if extraction has expired (past the unstable window).
+     */
+    public function isExpired(): bool
+    {
+        $expiryTime = $this->getExpiryTime();
+        return $expiryTime ? Carbon::now() >= $expiryTime : false;
     }
 
     /**
@@ -276,20 +332,10 @@ class MoonExtraction extends Model
      */
     public function shouldShowAutoFractureWarning(): bool
     {
-        if (!$this->chunk_arrival_time) {
-            return false;
-        }
-
-        $readyHours = $this->getReadyDurationHours();
-        $unstableStart = $this->chunk_arrival_time->copy()->addHours($readyHours);
-        $unstableEnd = $unstableStart->copy()->addHours(2);
-        $now = Carbon::now();
-
-        return $now >= $unstableStart && $now < $unstableEnd;
+        return $this->isUnstable();
     }
 
     /**
-     * Check if decay warning should be shown (within 3 hours of decay).
      * @deprecated Use shouldShowAutoFractureWarning() instead
      */
     public function shouldShowDecayWarning()
@@ -302,23 +348,32 @@ class MoonExtraction extends Model
      */
     public function getTimeUntilAutoFracture(): ?string
     {
-        if (!$this->chunk_arrival_time) {
+        $expiryTime = $this->getExpiryTime();
+
+        if (!$expiryTime || $expiryTime->isPast()) {
             return null;
         }
 
-        $readyHours = $this->getReadyDurationHours();
-        $unstableEnd = $this->chunk_arrival_time->copy()->addHours($readyHours + 2);
-
-        if ($unstableEnd->isPast()) {
-            return null;
-        }
-
-        $diff = Carbon::now()->diff($unstableEnd);
+        $diff = Carbon::now()->diff($expiryTime);
         return sprintf('%dd %dh', $diff->days, $diff->h);
     }
 
     /**
-     * Get time until decay in human readable format.
+     * Get time remaining in the ready phase (mining time left).
+     */
+    public function getTimeUntilUnstable(): ?string
+    {
+        $unstableStart = $this->getUnstableStartTime();
+
+        if (!$unstableStart || $unstableStart->isPast()) {
+            return null;
+        }
+
+        $diff = Carbon::now()->diff($unstableStart);
+        return sprintf('%dd %dh %dm', $diff->days, $diff->h, $diff->i);
+    }
+
+    /**
      * @deprecated Use getTimeUntilAutoFracture() instead
      */
     public function getTimeUntilDecay()
@@ -340,18 +395,19 @@ class MoonExtraction extends Model
 
     /**
      * Check if moon is still within the "Today" display window.
-     * Ready moons are shown for the duration of the ready window after arrival.
+     * Ready moons are shown for the duration of the ready window after fracture.
      */
     public function isWithinTodayWindow(): bool
     {
-        if (!$this->chunk_arrival_time) {
+        $fractureTime = $this->getFractureTime();
+        if (!$fractureTime) {
             return false;
         }
 
         $now = Carbon::now();
-        $windowEnd = $this->chunk_arrival_time->copy()->addHours($this->getReadyDurationHours());
+        $unstableStart = $this->getUnstableStartTime();
 
-        return $now >= $this->chunk_arrival_time && $now < $windowEnd;
+        return $now >= $fractureTime && $unstableStart && $now < $unstableStart;
     }
 
     /**
@@ -377,6 +433,41 @@ class MoonExtraction extends Model
 
         // Otherwise ready (arrived and within 48h)
         return 'ready';
+    }
+
+    /**
+     * Scope: extractions that have expired based on fractured_at or legacy estimate.
+     * Uses SQL-level checks so it can be used in bulk updates.
+     *
+     * Expiry = fractured_at + 50h (if fractured_at is set)
+     * Legacy: chunk_arrival + 50h (manual) or chunk_arrival + 53h (auto-fractured)
+     */
+    public function scopeExpiredByTime($query)
+    {
+        $now = Carbon::now();
+
+        return $query->where('status', '!=', 'expired')
+            ->where('status', '!=', 'fractured')
+            ->where(function ($q) use ($now) {
+                // Has actual fractured_at: expiry = fractured_at + 50h
+                $q->where(function ($q2) use ($now) {
+                    $q2->whereNotNull('fractured_at')
+                       ->where('fractured_at', '<', $now->copy()->subHours(50));
+                })
+                // Legacy fallback: no fractured_at, use old estimate
+                ->orWhere(function ($q2) use ($now) {
+                    $q2->whereNull('fractured_at')
+                       ->where(function ($q3) use ($now) {
+                           $q3->where(function ($q4) use ($now) {
+                               $q4->where('auto_fractured', false)
+                                  ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
+                           })->orWhere(function ($q4) use ($now) {
+                               $q4->where('auto_fractured', true)
+                                  ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
+                           });
+                       });
+                });
+            });
     }
 
     /**
@@ -414,33 +505,19 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Check if extraction is ready to mine.
+     * Check if extraction is ready to mine (between fracture and unstable).
      */
     public function isReady()
     {
-        if (!$this->chunk_arrival_time) {
+        $fractureTime = $this->getFractureTime();
+        if (!$fractureTime) {
             return false;
         }
 
         $now = now();
-        $readyEnd = $this->chunk_arrival_time->copy()->addHours($this->getReadyDurationHours());
+        $unstableStart = $this->getUnstableStartTime();
 
-        return $now->greaterThanOrEqualTo($this->chunk_arrival_time) && $now->lessThan($readyEnd);
-    }
-
-    /**
-     * Check if extraction has expired.
-     */
-    public function isExpired()
-    {
-        if (!$this->chunk_arrival_time) {
-            return false;
-        }
-
-        $readyHours = $this->getReadyDurationHours();
-        $expiredStart = $this->chunk_arrival_time->copy()->addHours($readyHours + 2);
-
-        return now()->greaterThanOrEqualTo($expiredStart);
+        return $now->greaterThanOrEqualTo($fractureTime) && $unstableStart && $now->lessThan($unstableStart);
     }
 
     /**
@@ -448,7 +525,7 @@ class MoonExtraction extends Model
      */
     public function getHoursUntilArrival()
     {
-        if (now()->greaterThan($this->chunk_arrival_time)) {
+        if (!$this->chunk_arrival_time || now()->greaterThan($this->chunk_arrival_time)) {
             return null;
         }
 
@@ -460,18 +537,13 @@ class MoonExtraction extends Model
      */
     public function getHoursUntilDecay()
     {
-        if (!$this->chunk_arrival_time) {
+        $expiryTime = $this->getExpiryTime();
+
+        if (!$expiryTime || now()->greaterThan($expiryTime)) {
             return null;
         }
 
-        $readyHours = $this->getReadyDurationHours();
-        $unstableEnd = $this->chunk_arrival_time->copy()->addHours($readyHours + 2);
-
-        if (now()->greaterThan($unstableEnd)) {
-            return null;
-        }
-
-        return now()->diffInHours($unstableEnd, false);
+        return now()->diffInHours($expiryTime, false);
     }
 
     // ============================================

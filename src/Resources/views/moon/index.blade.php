@@ -284,9 +284,24 @@
                                             <span class="text-warning">({{ $extraction->chunk_arrival_time->diffForHumans() }})</span>
                                         @endif
                                     </p>
-                                    @if($extraction->natural_decay_time)
+                                    @if($extraction->fractured_at)
                                     <p class="mb-0 text-muted small">
-                                        <strong>{{ trans('mining-manager::moons.auto_fracture') }}:</strong> {{ $extraction->natural_decay_time->format('M d, H:i') }}
+                                        <strong>Fractured:</strong> {{ $extraction->fractured_at->format('M d, H:i') }}
+                                        @if($extraction->fractured_by)
+                                            by {{ $extraction->fractured_by }}
+                                        @elseif($extraction->auto_fractured)
+                                            (auto)
+                                        @endif
+                                        @if($extraction->getTimeUntilUnstable())
+                                            &mdash; Mining: {{ $extraction->getTimeUntilUnstable() }} left
+                                        @endif
+                                        @if($extraction->isUnstable())
+                                            <span class="badge badge-warning ml-1">{{ trans('mining-manager::moons.unstable') }}</span>
+                                        @endif
+                                    </p>
+                                    @elseif($extraction->natural_decay_time)
+                                    <p class="mb-0 text-muted small">
+                                        <strong>Expires:</strong> {{ $extraction->getExpiryTime() ? $extraction->getExpiryTime()->format('M d, H:i') : $extraction->natural_decay_time->format('M d, H:i') }}
                                         @if($extraction->isUnstable())
                                             <span class="badge badge-warning ml-1">{{ trans('mining-manager::moons.unstable') }}</span>
                                         @endif

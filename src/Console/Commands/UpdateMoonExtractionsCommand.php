@@ -202,21 +202,8 @@ class UpdateMoonExtractionsCommand extends Command
             $this->info("Detected {$autoFractured} auto-fractured extractions");
         }
 
-        // Mark as expired based on calculated expiry:
-        // Non-autofractured: chunk_arrival + 50h (48h ready + 2h unstable)
-        // Autofractured: chunk_arrival + 53h (51h ready + 2h unstable)
-        $expired = MoonExtraction::where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
-                $q->where(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', false)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
-                })->orWhere(function ($q2) use ($now) {
-                    $q2->where('auto_fractured', true)
-                       ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
-                });
-            })
-            ->update(['status' => 'expired']);
+        // Mark as expired using fractured_at when available, legacy estimate otherwise
+        $expired = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
         if ($expired > 0) {
             $this->info("Marked {$expired} extractions as expired");
