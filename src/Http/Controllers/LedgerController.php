@@ -16,6 +16,7 @@ use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\ReprocessingRegistry;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use Carbon\Carbon;
@@ -1392,5 +1393,173 @@ class LedgerController extends Controller
                 'message' => 'Failed to load system details: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Display the reprocessing calculator page.
+     *
+     * @return \Illuminate\View\View
+     */
+    public function reprocessingCalculator()
+    {
+        // Get cached mineral prices (all refined materials)
+        $allMaterialIds = TypeIdRegistry::getAllRefinedMaterials();
+        $mineralPrices = MiningPriceCache::whereIn('type_id', $allMaterialIds)
+            ->get()
+            ->keyBy('type_id')
+            ->map(function ($cache) {
+                return [
+                    'type_id' => $cache->type_id,
+                    'price' => (float) $cache->getConfiguredPrice(),
+                ];
+            })
+            ->toArray();
+
+        return view('mining-manager::ledger.reprocessing', compact('mineralPrices'));
+    }
+
+    /**
+     * Calculate reprocessing output for given ores.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function calculateReprocessing(Request $request)
+    {
+        $request->validate([
+            'ores' => 'required|array|min:1',
+            'ores.*.type_name' => 'required|string',
+            'ores.*.quantity' => 'required|integer|min:1',
+            'yield_percent' => 'required|numeric|min:50|max:100',
+        ]);
+
+        $ores = $request->input('ores');
+        $yieldPercent = $request->input('yield_percent');
+        $yieldFraction = $yieldPercent / 100;
+
+        // Get all refined material prices
+        $allMaterialIds = TypeIdRegistry::getAllRefinedMaterials();
+        $mineralPrices = MiningPriceCache::whereIn('type_id', $allMaterialIds)
+            ->get()
+            ->mapWithKeys(function ($cache) {
+                return [$cache->type_id => (float) $cache->getConfiguredPrice()];
+            })
+            ->toArray();
+
+        // Resolve ore names to type IDs via invTypes table
+        $oreNames = collect($ores)->pluck('type_name')->unique()->toArray();
+        $oreNameToId = DB::table('invTypes')
+            ->whereIn('typeName', $oreNames)
+            ->pluck('typeID', 'typeName')
+            ->toArray();
+
+        $mineralTotals = [];   // mineralTypeId => total quantity
+        $oreResults = [];
+        $totalOreValue = 0;
+
+        foreach ($ores as $ore) {
+            $typeName = $ore['type_name'];
+            $quantity = (int) $ore['quantity'];
+
+            $typeId = $oreNameToId[$typeName] ?? null;
+            if ($typeId === null) {
+                continue;
+            }
+
+            // Determine if compressed
+            $isCompressed = TypeIdRegistry::isCompressedOre($typeId);
+
+            // Determine category
+            $category = 'regular';
+            if (TypeIdRegistry::isMoonOre($typeId)) {
+                $category = 'moon';
+            } elseif (TypeIdRegistry::isIce($typeId)) {
+                $category = 'ice';
+            } elseif (TypeIdRegistry::isGas($typeId)) {
+                $category = 'gas';
+            }
+
+            if ($isCompressed) {
+                $category = 'compressed ' . $category;
+            }
+
+            // Get ore price from cache for ore value
+            $orePrice = MiningPriceCache::where('type_id', $typeId)->first();
+            $orePricePerUnit = $orePrice ? (float) $orePrice->getConfiguredPrice() : 0;
+            $oreValue = $orePricePerUnit * $quantity;
+            $totalOreValue += $oreValue;
+
+            // Get reprocessing minerals
+            $minerals = ReprocessingRegistry::getMineralsWithDetails($typeId);
+            $oreMineralOutput = [];
+
+            if ($minerals) {
+                // Compressed ore: 1 unit = 1 batch (equivalent to 100 uncompressed)
+                // Uncompressed ore: 100 units = 1 batch
+                $batchCount = $isCompressed ? $quantity : floor($quantity / 100);
+                foreach ($minerals as $mineral) {
+                    $mineralQty = floor($mineral['quantity'] * $yieldFraction * $batchCount);
+                    if ($mineralQty > 0) {
+                        $mineralTypeId = $mineral['type_id'];
+                        $mineralTotals[$mineralTypeId] = ($mineralTotals[$mineralTypeId] ?? 0) + $mineralQty;
+                        $oreMineralOutput[] = [
+                            'name' => $mineral['name'],
+                            'quantity' => $mineralQty,
+                        ];
+                    }
+                }
+            }
+
+            $oreResults[] = [
+                'type_name' => $typeName,
+                'type_id' => $typeId,
+                'quantity' => $quantity,
+                'category' => $category,
+                'ore_value' => $oreValue,
+                'minerals' => $oreMineralOutput,
+            ];
+        }
+
+        // Build minerals output with prices
+        $mineralsOutput = [];
+        $totalMineralValue = 0;
+        $totalItems = 0;
+
+        // Get mineral names from DB for any we have
+        $mineralNames = DB::table('invTypes')
+            ->whereIn('typeID', array_keys($mineralTotals))
+            ->pluck('typeName', 'typeID')
+            ->toArray();
+
+        foreach ($mineralTotals as $mineralTypeId => $qty) {
+            $price = $mineralPrices[$mineralTypeId] ?? 0;
+            $value = $price * $qty;
+            $totalMineralValue += $value;
+            $totalItems += $qty;
+
+            $mineralsOutput[] = [
+                'type_id' => $mineralTypeId,
+                'name' => $mineralNames[$mineralTypeId] ?? "Unknown ({$mineralTypeId})",
+                'quantity' => $qty,
+                'price_per_unit' => $price,
+                'total_value' => $value,
+            ];
+        }
+
+        // Sort minerals by value descending
+        usort($mineralsOutput, function ($a, $b) {
+            return $b['total_value'] <=> $a['total_value'];
+        });
+
+        return response()->json([
+            'success' => true,
+            'summary' => [
+                'total_ore_value' => $totalOreValue,
+                'total_mineral_value' => $totalMineralValue,
+                'total_items' => $totalItems,
+            ],
+            'minerals' => $mineralsOutput,
+            'ores' => $oreResults,
+        ]);
     }
 }

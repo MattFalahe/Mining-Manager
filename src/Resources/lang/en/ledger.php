@@ -273,4 +273,20 @@ return [
     'entry_deleted' => 'Mining ledger entry deleted successfully.',
     'entries_deleted' => ':count mining ledger entries deleted successfully.',
     'delete_failed' => 'Failed to delete mining ledger entry.',
+
+    // Reprocessing Calculator
+    'reprocessing_calculator' => 'Reprocessing Calculator',
+    'reprocessing_yield' => 'Reprocessing Yield %',
+    'paste_ores' => 'Paste Ores',
+    'calculate' => 'Calculate',
+    'clear_input' => 'Clear',
+    'paste_help' => 'Paste ore data from EVE clipboard. Supported formats: "Ore Name[TAB]Quantity", "Quantity Ore Name", or "Ore Name Quantity".',
+    'total_ore_value' => 'Total Ore Value',
+    'total_mineral_value' => 'Total Mineral Value',
+    'total_items' => 'Total Items',
+    'mineral_name' => 'Mineral',
+    'minerals_output' => 'Minerals Output',
+    'ore_input_breakdown' => 'Ore Input Breakdown',
+    'no_valid_ores' => 'No valid ores found. Please check your input and try again.',
+    'reprocessing_results' => 'Reprocessing Results',
 ];
