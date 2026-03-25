@@ -881,8 +881,11 @@ class EventController extends Controller
             default => [5, 4, 3],
         };
 
+        // Escape LIKE wildcards to prevent unintended pattern matching
+        $escapedQuery = str_replace(['%', '_'], ['\%', '\_'], $query);
+
         $results = MapDenormalize::whereIn('groupID', $groupIDs)
-            ->where('itemName', 'like', "%{$query}%")
+            ->where('itemName', 'like', "%{$escapedQuery}%")
             ->select('itemID as id', 'itemName as text', 'groupID')
             ->orderBy('itemName')
             ->limit(25)

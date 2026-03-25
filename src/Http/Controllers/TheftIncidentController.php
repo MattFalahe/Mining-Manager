@@ -276,7 +276,7 @@ class TheftIncidentController extends Controller
             $query->whereBetween('incident_date', [$dateFrom, $dateTo]);
         }
 
-        $incidents = $query->orderBy('incident_date', 'desc')->get();
+        $incidents = $query->orderBy('incident_date', 'desc')->limit(50000)->get();
 
         $filename = 'theft_incidents_' . Carbon::now()->format('Y-m-d_His') . '.csv';
 

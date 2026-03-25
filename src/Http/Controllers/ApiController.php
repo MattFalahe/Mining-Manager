@@ -39,8 +39,15 @@ class ApiController extends Controller
      */
     public function ledger(Request $request)
     {
+        $request->validate([
+            'character_id' => 'nullable|integer',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'limit' => 'nullable|integer|min:1|max:1000',
+        ]);
+
         $characterId = $request->input('character_id');
-        $startDate = $request->input('start_date') 
+        $startDate = $request->input('start_date')
             ? Carbon::parse($request->input('start_date'))
             : Carbon::now()->subDays(30);
         $endDate = $request->input('end_date')
@@ -54,7 +61,7 @@ class ApiController extends Controller
         }
 
         $ledger = $query->orderBy('date', 'desc')
-            ->limit($request->input('limit', 100))
+            ->limit(min((int) $request->input('limit', 100), 1000))
             ->get();
 
         return response()->json([
@@ -72,6 +79,13 @@ class ApiController extends Controller
      */
     public function taxes(Request $request)
     {
+        $request->validate([
+            'character_id' => 'nullable|integer',
+            'status' => 'nullable|string|in:unpaid,paid,overdue,exempt,waived',
+            'month' => 'nullable|date',
+            'limit' => 'nullable|integer|min:1|max:1000',
+        ]);
+
         $characterId = $request->input('character_id');
         $status = $request->input('status');
         $month = $request->input('month');
@@ -91,7 +105,7 @@ class ApiController extends Controller
         }
 
         $taxes = $query->orderBy('month', 'desc')
-            ->limit($request->input('limit', 100))
+            ->limit(min((int) $request->input('limit', 100), 1000))
             ->get();
 
         return response()->json([
@@ -109,6 +123,13 @@ class ApiController extends Controller
      */
     public function events(Request $request)
     {
+        $request->validate([
+            'status' => 'nullable|string|in:planned,active,completed,cancelled',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'limit' => 'nullable|integer|min:1|max:500',
+        ]);
+
         $status = $request->input('status');
         $startDate = $request->input('start_date');
         $endDate = $request->input('end_date');
@@ -127,7 +148,7 @@ class ApiController extends Controller
         }
 
         $events = $query->orderBy('start_time', 'desc')
-            ->limit($request->input('limit', 50))
+            ->limit(min((int) $request->input('limit', 50), 500))
             ->get();
 
         return response()->json([
@@ -145,6 +166,13 @@ class ApiController extends Controller
      */
     public function extractions(Request $request)
     {
+        $request->validate([
+            'status' => 'nullable|string|in:extracting,ready,completed,expired',
+            'corporation_id' => 'nullable|integer',
+            'structure_id' => 'nullable|integer',
+            'limit' => 'nullable|integer|min:1|max:500',
+        ]);
+
         $status = $request->input('status');
         $corporationId = $request->input('corporation_id');
         $structureId = $request->input('structure_id');
@@ -164,7 +192,7 @@ class ApiController extends Controller
         }
 
         $extractions = $query->orderBy('chunk_arrival_time', 'desc')
-            ->limit($request->input('limit', 50))
+            ->limit(min((int) $request->input('limit', 50), 500))
             ->get();
 
         return response()->json([
@@ -182,10 +210,15 @@ class ApiController extends Controller
      */
     public function analytics(Request $request)
     {
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+        ]);
+
         $startDate = $request->input('start_date')
             ? Carbon::parse($request->input('start_date'))
             : Carbon::now()->subDays(30);
-        
+
         $endDate = $request->input('end_date')
             ? Carbon::parse($request->input('end_date'))
             : Carbon::now();
@@ -260,10 +293,15 @@ class ApiController extends Controller
      */
     public function characterSummary($characterId, Request $request)
     {
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+        ]);
+
         $startDate = $request->input('start_date')
             ? Carbon::parse($request->input('start_date'))
             : Carbon::now()->subDays(30);
-        
+
         $endDate = $request->input('end_date')
             ? Carbon::parse($request->input('end_date'))
             : Carbon::now();
@@ -321,6 +359,10 @@ class ApiController extends Controller
      */
     public function corporationCharacters(Request $request)
     {
+        $request->validate([
+            'corporation_id' => 'required|integer',
+        ]);
+
         $corporationId = $request->input('corporation_id');
 
         if (!$corporationId) {

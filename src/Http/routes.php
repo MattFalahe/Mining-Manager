@@ -904,8 +904,8 @@ Route::group([
         ]);
     });
 
-    // API Routes - Admin only
-    Route::group(['prefix' => 'api', 'middleware' => 'can:mining-manager.admin'], function () {
+    // API Routes - Admin only, rate limited
+    Route::group(['prefix' => 'api', 'middleware' => ['can:mining-manager.admin', 'throttle:60,1']], function () {
         Route::get('/ledger', [
             'as' => 'mining-manager.api.ledger',
             'uses' => 'ApiController@ledger',

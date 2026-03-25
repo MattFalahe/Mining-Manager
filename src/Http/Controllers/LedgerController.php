@@ -881,7 +881,7 @@ class LedgerController extends Controller
             $query->whereIn('id', $entryIds);
         }
 
-        $entries = $query->orderBy('date', 'desc')->get();
+        $entries = $query->orderBy('date', 'desc')->limit(100000)->get();
 
         $filename = 'mining_ledger_' . now()->format('Y-m-d_His') . '.csv';
 
@@ -946,7 +946,7 @@ class LedgerController extends Controller
             $query->where('date', '<=', $request->input('end_date'));
         }
 
-        $entries = $query->orderBy('date', 'desc')->get();
+        $entries = $query->orderBy('date', 'desc')->limit(100000)->get();
 
         $filename = 'my_mining_' . now()->format('Y-m-d_His') . '.csv';
 
