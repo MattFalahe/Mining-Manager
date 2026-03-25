@@ -137,7 +137,7 @@ class MoonAnalyticsService
                 $uniqueMiners = count(array_unique($minerIds));
 
                 // Get structure name from the first extraction's structure_id
-                $firstStructureId = $moonExtractions->first()->structure_id ?? null;
+                $firstStructureId = $moonExtractions->first()?->structure_id ?? null;
                 $structureName = $firstStructureId ? ($structureNames[$firstStructureId] ?? null) : null;
 
                 $results[] = (object) [

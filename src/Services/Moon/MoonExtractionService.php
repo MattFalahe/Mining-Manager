@@ -73,7 +73,7 @@ class MoonExtractionService
                 ->select('corporation_id')
                 ->first();
 
-            $moonOwnerCorpId = $firstExtraction->corporation_id ?? null;
+            $moonOwnerCorpId = $firstExtraction?->corporation_id ?? null;
 
             if ($moonOwnerCorpId) {
                 Log::warning("Mining Manager: moon_owner_corporation_id not configured, falling back to corporation {$moonOwnerCorpId} from extraction data");

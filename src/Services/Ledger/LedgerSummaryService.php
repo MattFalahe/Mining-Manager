@@ -926,7 +926,7 @@ class LedgerSummaryService
                 // so their name/portrait displays correctly. All miners are alts.
                 $mainSummary = new \stdClass();
                 $mainSummary->character_id = $mainCharId;
-                $mainSummary->corporation_id = $userSummaries->first()->corporation_id ?? $corporationId;
+                $mainSummary->corporation_id = $userSummaries->first()?->corporation_id ?? $corporationId;
                 $mainSummary->alt_characters = $userSummaries->values();
                 $mainSummary->ore_type_ids = [];
                 $mainSummary->systems = collect();

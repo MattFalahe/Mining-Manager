@@ -440,7 +440,7 @@ class MoonController extends Controller
             }
         }
 
-        $structure = $extractions->first()->structure ?? null;
+        $structure = $extractions->first()?->structure ?? null;
 
         return view('mining-manager::moon.extractions', compact('extractions', 'structure'));
     }

@@ -349,6 +349,24 @@ class LedgerController extends Controller
      * @param int|null $characterId
      * @return array
      */
+    /**
+     * Check if the current user can view a specific character's data.
+     * Directors can view all; members can only view their own linked characters.
+     */
+    protected function canViewCharacter(int $characterId): bool
+    {
+        $user = auth()->user();
+
+        // Directors and admins can view all characters
+        if ($user->can('mining-manager.director') || $user->can('mining-manager.admin')) {
+            return true;
+        }
+
+        // Members can only view their own linked characters
+        $userCharacterIds = $user->characters->pluck('character_id')->toArray();
+        return in_array($characterId, $userCharacterIds);
+    }
+
     protected function calculateLedgerStats($startDate, $endDate, $characterId = null)
     {
         $agg = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
@@ -1127,6 +1145,11 @@ class LedgerController extends Controller
      */
     public function showCharacterDetails(Request $request, $characterId)
     {
+        // Authorization: members can only view their own characters, directors can view all
+        if (!$this->canViewCharacter($characterId)) {
+            abort(403, 'You do not have permission to view this character.');
+        }
+
         $month = $request->get('month', now()->format('Y-m'));
         $includeAlts = $request->get('include_alts', false); // Option to include alt characters
         $sortBy = $request->get('sort_by', 'date'); // Default sort column
@@ -1246,6 +1269,11 @@ class LedgerController extends Controller
      */
     public function getCharacterDailySummary(Request $request, $characterId)
     {
+        // Authorization: members can only view their own characters, directors can view all
+        if (!$this->canViewCharacter($characterId)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
         $month = $request->get('month', now()->format('Y-m'));
 
         try {
@@ -1313,6 +1341,11 @@ class LedgerController extends Controller
      */
     public function getDetailedEntries(Request $request, $characterId)
     {
+        // Authorization: members can only view their own characters, directors can view all
+        if (!$this->canViewCharacter($characterId)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
         $date = $request->get('date');
 
         try {
@@ -1362,6 +1395,11 @@ class LedgerController extends Controller
      */
     public function getCharacterSystemDetails(Request $request, $characterId, $systemId)
     {
+        // Authorization: members can only view their own characters, directors can view all
+        if (!$this->canViewCharacter($characterId)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
         $month = $request->get('month', now()->format('Y-m'));
 
         try {
