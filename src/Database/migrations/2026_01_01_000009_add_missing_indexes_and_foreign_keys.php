@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class AddMissingIndexesAndForeignKeys extends Migration
 {
     /**
      * Add missing indexes for commonly queried columns and
@@ -54,4 +54,4 @@ return new class extends Migration
             $table->dropIndex('idx_mining_ledger_observer_date');
         });
     }
-};
+}
