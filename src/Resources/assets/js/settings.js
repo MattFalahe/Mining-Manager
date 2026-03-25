@@ -29,7 +29,7 @@ const MiningSettings = {
  * Initialize settings page
  */
 MiningSettings.init = function() {
-    console.log('Initializing Settings...');
+    // console.log('Initializing Settings...');
     
     // Initialize navigation
     this.initNavigation();
@@ -56,7 +56,7 @@ MiningSettings.init = function() {
     // Warn on unsaved changes
     this.setupUnsavedWarning();
     
-    console.log('Settings initialized successfully');
+    // console.log('Settings initialized successfully');
 };
 
 /* ============================================
@@ -394,7 +394,7 @@ MiningSettings.initFeatureToggles = function() {
         const feature = $checkbox.data('feature');
         const enabled = $checkbox.is(':checked');
         
-        console.log(`Feature ${feature} ${enabled ? 'enabled' : 'disabled'}`);
+        // console.log(`Feature ${feature} ${enabled ? 'enabled' : 'disabled'}`);
         
         // Show/hide related settings
         const $relatedSettings = $(`.feature-settings[data-feature="${feature}"]`);
@@ -416,7 +416,7 @@ MiningSettings.initFeatureToggles = function() {
  * Load settings from server
  */
 MiningSettings.loadSettings = function() {
-    console.log('Loading settings...');
+    // console.log('Loading settings...');
     
     const $page = $('.settings-page');
     MiningManager.showLoading($page);
@@ -427,7 +427,7 @@ MiningSettings.loadSettings = function() {
             MiningSettings.saveOriginalValues();
             MiningSettings.state.unsavedChanges = false;
             MiningSettings.updateSaveButton();
-            console.log('Settings loaded successfully');
+            // console.log('Settings loaded successfully');
         })
         .fail(function(jqXHR) {
             console.error('Failed to load settings:', jqXHR);
@@ -466,7 +466,7 @@ MiningSettings.populateSettings = function(data) {
  * Save settings to server
  */
 MiningSettings.saveSettings = function() {
-    console.log('Saving settings...');
+    // console.log('Saving settings...');
     
     // Validate all fields
     let isValid = true;
@@ -791,7 +791,7 @@ MiningSettings.cleanup = function() {
     // Remove event listeners
     $(document).off('keydown');
     
-    console.log('Settings cleanup complete');
+    // console.log('Settings cleanup complete');
 };
 
 // Cleanup on page unload

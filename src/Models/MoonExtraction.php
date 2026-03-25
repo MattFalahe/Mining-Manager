@@ -562,9 +562,17 @@ class MoonExtraction extends Model
         $isJackpot = MoonOreHelper::detectJackpotInComposition($this->ore_composition);
 
         if ($isJackpot && !$this->is_jackpot) {
-            $this->is_jackpot = true;
-            $this->jackpot_detected_at = now();
-            $this->save();
+            // Atomic update to prevent race condition with concurrent workers
+            $updated = static::where('id', $this->id)
+                ->where('is_jackpot', false)
+                ->update([
+                    'is_jackpot' => true,
+                    'jackpot_detected_at' => now(),
+                ]);
+
+            if ($updated) {
+                $this->refresh();
+            }
         }
 
         return $isJackpot;

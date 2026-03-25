@@ -20,6 +20,56 @@ use Carbon\Carbon;
 class WebhookService
 {
     /**
+     * Send an HTTP POST with retry logic for transient failures.
+     *
+     * @param string $url
+     * @param array $payload
+     * @param int $maxAttempts
+     * @param int $retryDelaySeconds
+     * @return \Illuminate\Http\Client\Response
+     * @throws \Exception
+     */
+    protected function postWithRetry(string $url, array $payload, int $maxAttempts = 3, int $retryDelaySeconds = 2): \Illuminate\Http\Client\Response
+    {
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                $response = Http::timeout(10)->post($url, $payload);
+
+                // Don't retry on client errors (4xx) — only on server errors (5xx) or rate limits (429)
+                if ($response->successful() || $response->status() === 204 || ($response->clientError() && $response->status() !== 429)) {
+                    return $response;
+                }
+
+                // Rate limited — respect Retry-After header if present
+                if ($response->status() === 429) {
+                    $retryAfter = (int) ($response->header('Retry-After') ?? $retryDelaySeconds);
+                    Log::debug("Mining Manager: Webhook rate limited, retrying in {$retryAfter}s (attempt {$attempt}/{$maxAttempts})");
+                    sleep(min($retryAfter, 10));
+                    continue;
+                }
+
+                Log::debug("Mining Manager: Webhook returned {$response->status()}, retrying (attempt {$attempt}/{$maxAttempts})");
+            } catch (\Exception $e) {
+                $lastException = $e;
+                Log::debug("Mining Manager: Webhook request failed: {$e->getMessage()} (attempt {$attempt}/{$maxAttempts})");
+            }
+
+            if ($attempt < $maxAttempts) {
+                sleep($retryDelaySeconds);
+            }
+        }
+
+        // Return last response if we have one, otherwise throw
+        if (isset($response)) {
+            return $response;
+        }
+
+        throw $lastException ?? new \Exception('Webhook request failed after all retry attempts');
+    }
+
+    /**
      * Send a theft detection notification to all configured webhooks
      *
      * @param TheftIncident $incident
@@ -130,7 +180,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful() || $response->status() === 204) {
                 return ['success' => true];
@@ -272,7 +322,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful()) {
                 return ['success' => true];
@@ -605,7 +655,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful() || $response->status() === 204) {
                 return ['success' => true];
@@ -793,7 +843,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
             if ($response->successful()) {
                 return ['success' => true];
             }
@@ -926,7 +976,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful() || $response->status() === 204) {
                 return ['success' => true];
@@ -1069,7 +1119,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
             if ($response->successful()) {
                 return ['success' => true];
             }
@@ -1226,7 +1276,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful() || $response->status() === 204) {
                 return ['success' => true];
@@ -1356,7 +1406,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
             if ($response->successful()) {
                 return ['success' => true];
             }
@@ -1507,7 +1557,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
 
             if ($response->successful() || $response->status() === 204) {
                 return ['success' => true];
@@ -1572,7 +1622,7 @@ class WebhookService
         }
 
         try {
-            $response = Http::timeout(10)->post($webhook->webhook_url, $payload);
+            $response = $this->postWithRetry($webhook->webhook_url, $payload);
             if ($response->successful()) {
                 return ['success' => true];
             }

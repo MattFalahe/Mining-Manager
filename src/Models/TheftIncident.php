@@ -383,7 +383,9 @@ class TheftIncident extends Model
     {
         $this->is_active_theft = true;
         $this->last_activity_at = now();
-        $this->activity_count = $this->activity_count + 1;
+
+        // Use atomic increment to prevent race condition
+        $this->increment('activity_count');
 
         if ($newMiningValue > 0) {
             $this->ore_value += $newMiningValue;

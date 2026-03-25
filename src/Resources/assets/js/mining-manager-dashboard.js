@@ -31,7 +31,7 @@ const MiningDashboard = {
  * Initialize the dashboard
  */
 MiningDashboard.init = function() {
-    console.log('Initializing Mining Dashboard...');
+    // console.log('Initializing Mining Dashboard...');
     
     // Initialize charts
     this.initOreDistributionChart();
@@ -49,7 +49,7 @@ MiningDashboard.init = function() {
     // Bind event handlers
     this.bindEvents();
     
-    console.log('Mining Dashboard initialized successfully');
+    // console.log('Mining Dashboard initialized successfully');
 };
 
 /* ============================================
@@ -259,12 +259,12 @@ MiningDashboard.initValueChart = function() {
  * Load dashboard statistics
  */
 MiningDashboard.loadDashboardStats = function() {
-    console.log('Loading dashboard stats...');
+    // console.log('Loading dashboard stats...');
     
     return MiningManager.get(MiningManager.api.dashboard + '/stats')
         .done(function(data) {
             MiningDashboard.updateStats(data);
-            console.log('Dashboard stats loaded');
+            // console.log('Dashboard stats loaded');
         })
         .fail(function(jqXHR) {
             console.error('Failed to load dashboard stats:', jqXHR);
@@ -318,12 +318,12 @@ MiningDashboard.updateStats = function(data) {
  * Load recent activity
  */
 MiningDashboard.loadRecentActivity = function() {
-    console.log('Loading recent activity...');
+    // console.log('Loading recent activity...');
     
     return MiningManager.get(MiningManager.api.dashboard + '/activity')
         .done(function(data) {
             MiningDashboard.updateRecentActivity(data);
-            console.log('Recent activity loaded');
+            // console.log('Recent activity loaded');
         })
         .fail(function(jqXHR) {
             console.error('Failed to load recent activity:', jqXHR);
@@ -470,7 +470,7 @@ MiningDashboard.setupAutoRefresh = function() {
         self.loadRecentActivity();
     }, this.config.refreshInterval);
     
-    console.log(`Auto-refresh enabled (${this.config.refreshInterval / 1000}s interval)`);
+    // console.log(`Auto-refresh enabled (${this.config.refreshInterval / 1000}s interval)`);
 };
 
 /**
@@ -487,7 +487,7 @@ MiningDashboard.stopAutoRefresh = function() {
         this.intervals.activity = null;
     }
     
-    console.log('Auto-refresh disabled');
+    // console.log('Auto-refresh disabled');
 };
 
 /* ============================================
@@ -657,7 +657,7 @@ MiningDashboard.cleanup = function() {
     
     this.charts = {};
     
-    console.log('Dashboard cleanup complete');
+    // console.log('Dashboard cleanup complete');
 };
 
 /* ============================================
@@ -684,11 +684,11 @@ document.addEventListener('visibilitychange', function() {
     
     if (document.hidden) {
         MiningDashboard.stopAutoRefresh();
-        console.log('Dashboard paused (tab hidden)');
+        // console.log('Dashboard paused (tab hidden)');
     } else {
         MiningDashboard.setupAutoRefresh();
         MiningDashboard.loadDashboardStats();
-        console.log('Dashboard resumed (tab visible)');
+        // console.log('Dashboard resumed (tab visible)');
     }
 });
 

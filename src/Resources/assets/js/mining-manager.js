@@ -867,9 +867,9 @@ $(document).ajaxError(function(event, jqXHR, settings, thrownError) {
 /* ============================================
    Console Information
    ============================================ */
-console.log('%cMining Manager', 'color: #667eea; font-size: 24px; font-weight: bold;');
-console.log('%cVersion 2.0', 'color: #9ca3af; font-size: 14px;');
-console.log('%cInitialized successfully', 'color: #28a745; font-size: 12px;');
+// console.log('%cMining Manager', 'color: #667eea; font-size: 24px; font-weight: bold;');
+// console.log('%cVersion 2.0', 'color: #9ca3af; font-size: 14px;');
+// console.log('%cInitialized successfully', 'color: #28a745; font-size: 12px;');
 
 /* ============================================
    Export for module systems

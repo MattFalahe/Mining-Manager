@@ -30,7 +30,7 @@ const TaxManagement = {
  * Initialize tax management
  */
 TaxManagement.init = function() {
-    console.log('Initializing Tax Management...');
+    // console.log('Initializing Tax Management...');
     
     // Load saved preferences
     this.loadPreferences();
@@ -53,7 +53,7 @@ TaxManagement.init = function() {
         this.loadTaxHistory();
     }
     
-    console.log('Tax Management initialized successfully');
+    // console.log('Tax Management initialized successfully');
 };
 
 /* ============================================
@@ -92,7 +92,7 @@ TaxManagement.initPeriodSelector = function() {
  * Calculate tax for current period
  */
 TaxManagement.calculateTax = function() {
-    console.log('Calculating tax...');
+    // console.log('Calculating tax...');
     
     const $calculator = $('#taxCalculator');
     if (!$calculator.length) return;
@@ -109,7 +109,7 @@ TaxManagement.calculateTax = function() {
         .done(function(data) {
             TaxManagement.displayTaxCalculation(data);
             TaxManagement.state.calculation = data;
-            console.log('Tax calculated successfully');
+            // console.log('Tax calculated successfully');
         })
         .fail(function(jqXHR) {
             console.error('Tax calculation failed:', jqXHR);
@@ -407,7 +407,7 @@ TaxManagement.getCorpWallet = function() {
  * Load tax history
  */
 TaxManagement.loadTaxHistory = function() {
-    console.log('Loading tax history...');
+    // console.log('Loading tax history...');
     
     const $container = $('#taxHistory');
     MiningManager.showLoading($container);
@@ -415,7 +415,7 @@ TaxManagement.loadTaxHistory = function() {
     return MiningManager.get(MiningManager.api.taxes + '/history')
         .done(function(data) {
             TaxManagement.displayTaxHistory(data);
-            console.log('Tax history loaded');
+            // console.log('Tax history loaded');
         })
         .fail(function(jqXHR) {
             console.error('Failed to load tax history:', jqXHR);

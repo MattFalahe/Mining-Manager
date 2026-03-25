@@ -40,9 +40,11 @@ class MoonValueCalculationService
             return null;
         }
 
-        $cacheKey = "mining-manager:moon-value:{$extraction->id}";
         $pricingSettings = $this->settingsService->getPricingSettings();
         $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
+        // Include settings hash so cache invalidates when pricing config changes
+        $settingsHash = md5(json_encode($pricingSettings));
+        $cacheKey = "mining-manager:moon-value:{$extraction->id}:{$settingsHash}";
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
             // Ensure ore_composition is an array
