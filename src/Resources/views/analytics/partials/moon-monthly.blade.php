@@ -147,7 +147,7 @@
 @endphp
 {{-- MOON POPULARITY CHART --}}
 <div class="row">
-    <div class="col-lg-6">
+    <div class="col-12">
         <div class="card card-success card-outline">
             <div class="card-header">
                 <h3 class="card-title">
@@ -162,14 +162,17 @@
             </div>
         </div>
     </div>
+</div>
 
+{{-- ORE DISTRIBUTION CHARTS --}}
+<div class="row">
     {{-- ORE DISTRIBUTION (ISK) --}}
     <div class="col-lg-6">
         <div class="card card-warning card-outline">
             <div class="card-header">
                 <h3 class="card-title">
                     <i class="fas fa-gem"></i>
-                    {{ trans('mining-manager::analytics.ore_distribution') }}
+                    {{ trans('mining-manager::analytics.ore_distribution') }} (ISK)
                 </h3>
             </div>
             <div class="card-body">
@@ -179,10 +182,8 @@
             </div>
         </div>
     </div>
-</div>
 
-{{-- ORE DISTRIBUTION (QUANTITY) --}}
-<div class="row">
+    {{-- ORE DISTRIBUTION (QUANTITY) --}}
     <div class="col-lg-6">
         <div class="card card-info card-outline">
             <div class="card-header">

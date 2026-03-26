@@ -38,6 +38,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/tables') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.tables') }}">
                     <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
                 </a>
@@ -45,11 +50,6 @@
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/compare') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.compare') }}">
                     <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
-                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
                 </a>
             </li>
         </ul>
@@ -131,15 +131,33 @@
             </div>
         </div>
 
-        {{-- MINER ACTIVITY --}}
+        {{-- ORE DISTRIBUTION (QUANTITY) --}}
         <div class="col-lg-6">
+            <div class="card card-success card-outline chart-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-cubes"></i>
+                        {{ trans('mining-manager::analytics.ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="oreDistributionQtyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- MINER ACTIVITY --}}
+    <div class="row">
+        <div class="col-12">
             <div class="card card-warning card-outline chart-card">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-users"></i>
                         {{ trans('mining-manager::analytics.miner_activity') }}
                     </h3>
-                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -159,7 +177,6 @@
                         <i class="fas fa-globe"></i>
                         {{ trans('mining-manager::analytics.system_activity') }}
                     </h3>
-                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -168,26 +185,6 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    {{-- ORE DISTRIBUTION (QUANTITY) --}}
-    <div class="row">
-        <div class="col-lg-6">
-            <div class="card card-success card-outline chart-card">
-                <div class="card-header">
-                    <h3 class="card-title">
-                        <i class="fas fa-cubes"></i>
-                        {{ trans('mining-manager::analytics.ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
-                    </h3>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="oreDistributionQtyChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6"></div>
     </div>
 
     {{-- WEEKLY ACTIVITY HEATMAP --}}

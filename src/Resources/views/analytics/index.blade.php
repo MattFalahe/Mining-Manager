@@ -68,6 +68,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/tables') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.tables') }}">
                     <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
                 </a>
@@ -75,11 +80,6 @@
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/compare') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.compare') }}">
                     <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
-                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
                 </a>
             </li>
         </ul>
@@ -306,10 +306,8 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    {{-- ORE BREAKDOWN BY QUANTITY --}}
-    <div class="row">
+        {{-- ORE BREAKDOWN (QUANTITY) --}}
         <div class="col-lg-6">
             <div class="card card-success card-outline">
                 <div class="card-header">
@@ -317,6 +315,16 @@
                         <i class="fas fa-cubes"></i>
                         {{ trans('mining-manager::analytics.ore_breakdown') }} ({{ trans('mining-manager::analytics.total_quantity') }})
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm">
+                            @foreach($oreCategories as $catValue => $catLabel)
+                                <a href="{{ route('mining-manager.analytics.index', array_merge(request()->except('ore_category'), $catValue ? ['ore_category' => $catValue] : [])) }}"
+                                   class="btn btn-sm {{ ($oreCategory ?? '') === $catValue ? 'btn-info' : 'btn-outline-info' }}">
+                                    {{ trans('mining-manager::analytics.' . $catLabel) }}
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -325,7 +333,6 @@
                 </div>
             </div>
         </div>
-        <div class="col-lg-6"></div>
     </div>
 
     {{-- SYSTEM BREAKDOWN --}}

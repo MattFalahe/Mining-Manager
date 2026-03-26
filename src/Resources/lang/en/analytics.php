@@ -331,7 +331,7 @@ return [
     'pool_isk' => 'Pool ISK',
     'mined_isk' => 'Mined ISK',
     'moon_popularity' => 'Moon Popularity',
-    'ore_distribution' => 'Ore Distribution (ISK)',
+    'ore_distribution' => 'Ore Distribution',
     'ore_popularity_detail' => 'Ore Mining Detail',
     'ore_name' => 'Ore',
     'quantity_mined' => 'Quantity Mined',

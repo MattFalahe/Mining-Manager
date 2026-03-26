@@ -125,6 +125,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/tables') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.tables') }}">
                     <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
                 </a>
@@ -132,11 +137,6 @@
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/compare') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.compare') }}">
                     <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
-                    <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
                 </a>
             </li>
         </ul>
