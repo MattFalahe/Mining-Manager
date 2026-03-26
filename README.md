@@ -34,12 +34,55 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 
 ## Permissions
 
-| Permission | Description |
+4-tier permission model — higher tiers inherit all lower tier access.
+
+| Permission | Tier | Description |
+|---|---|---|
+| `mining-manager.view` | Base | Help page access |
+| `mining-manager.member` | Member | View own mining data, join events, view moon schedules, reprocessing calculator |
+| `mining-manager.director` | Director | View all corp data, manage operations, analytics, reports, theft detection |
+| `mining-manager.admin` | Admin | Full control: settings, tax management, delete actions, API, diagnostics |
+
+## Artisan Commands
+
+27 commands available, 21 run on automated schedules via SeAT's scheduler.
+
+### Operational Commands
+
+| Command | Schedule | Description |
+|---|---|---|
+| `mining-manager:process-ledger` | Every 30min (:15, :45) | Process corporation observer mining data |
+| `mining-manager:import-character-mining` | Every 30min (:20, :50) | Import character mining from SeAT ESI cache |
+| `mining-manager:update-extractions` | Every 6h | Refresh moon extraction data from ESI |
+| `mining-manager:update-events` | Every 2h | Update mining event status and participant data |
+| `mining-manager:cache-prices` | Every 4h (:30) | Cache market prices from configured provider |
+| `mining-manager:update-ledger-prices` | Daily 1:00 AM | Lock in daily session prices for mining entries |
+| `mining-manager:update-daily-summaries` | Daily 2:30 AM | Safety net for non-observer mining data |
+| `mining-manager:calculate-taxes` | Daily 2:00 AM | Update running month-to-date tax totals |
+| `mining-manager:generate-invoices` | 1st of month 3:00 AM | Generate tax invoices for previous month |
+| `mining-manager:verify-payments` | Every 6h | Match wallet transfers against tax codes |
+| `mining-manager:send-reminders` | Daily 10:00 AM | Send tax payment reminders (if enabled in settings) |
+| `mining-manager:generate-reports` | Daily 4:00 AM | Generate daily reports and process scheduled reports |
+| `mining-manager:recalculate-extraction-values` | Twice daily (6AM/6PM) | Update moon extraction values with current prices |
+| `mining-manager:archive-extractions` | Daily 5:00 AM | Archive completed extractions older than 7 days |
+| `mining-manager:detect-jackpots` | Daily 6:00 AM | Identify high-value jackpot moon extractions |
+| `mining-manager:detect-theft` | 1st and 15th 1:00 AM | Full scan for unauthorized moon mining |
+| `mining-manager:monitor-active-thefts` | Every 6h | Monitor characters already on theft list |
+| `mining-manager:finalize-month` | 2nd of month 3:00 AM | Pre-calculate summaries for closed month |
+| `mining-manager:calculate-monthly-stats` | 2nd of month 4:00 AM + every 30min (current month) | Dashboard statistics |
+
+### Utility Commands
+
+| Command | Description |
 |---|---|
-| `mining-manager.view` | View mining data and reports |
-| `mining-manager.manage_events` | Create and manage mining events |
-| `mining-manager.manage_taxes` | Calculate and manage taxes |
-| `mining-manager.admin` | Full administrative access |
+| `mining-manager:backfill-ore-types` | One-time backfill of ore type flags on existing data |
+| `mining-manager:backfill-extraction-notifications` | Backfill fractured_at from historical ESI notifications |
+| `mining-manager:generate-test-data` | Generate test data for development/testing |
+| `mining-manager:diagnose-prices` | Diagnose price cache health and market data |
+| `mining-manager:diagnose-affiliation` | Debug character corporation affiliations |
+| `mining-manager:diagnose-character` | Debug character mining data and imports |
+| `mining-manager:diagnose-extractions` | Debug moon extraction data and notifications |
+| `mining-manager:diagnose-type-ids` | Debug ore type ID classification |
 
 ## Support
 

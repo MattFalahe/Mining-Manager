@@ -19,6 +19,6 @@ All notable changes to Mining Manager will be documented in this file.
 - Corporation dashboard with 12-month charts and statistics
 - Theft detection and monitoring
 - Configurable price cache with multiple market data sources
-- 26 artisan commands with 20 automated scheduled tasks
+- 27 artisan commands with 21 automated scheduled tasks
 - Full Help & Documentation page built into the plugin
 - SeAT 5.x permission integration
