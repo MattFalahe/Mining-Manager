@@ -507,8 +507,7 @@
                     <p>{{ trans('mining-manager::help.what_is_mining_manager_desc') }}</p>
 
                     <div class="info-box">
-                        <strong><i class="fas fa-lightbulb"></i> {{ trans('mining-manager::help.key_benefits') }}:</strong>
-                        {{ trans('mining-manager::help.key_benefits_desc') }}
+                        <strong><i class="fas fa-lightbulb"></i> {{ trans('mining-manager::help.key_benefits') }}:</strong> {{ trans('mining-manager::help.key_benefits_desc') }}
                     </div>
                 </div>
 
@@ -588,8 +587,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.tip') }}:</strong>
-                        {{ trans('mining-manager::help.getting_started_tip') }}
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> {{ trans('mining-manager::help.getting_started_tip') }}
                     </div>
                 </div>
             </div>
@@ -634,8 +632,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
-                        {{ trans('mining-manager::help.dashboard_note') }}
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.dashboard_note') }}
                     </div>
                 </div>
             </div>
@@ -691,8 +688,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.important') }}:</strong>
-                        {{ trans('mining-manager::help.daily_summaries_settings') }}
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.daily_summaries_settings') }}
                     </div>
                 </div>
 
@@ -732,8 +728,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
-                        {{ trans('mining-manager::help.guest_detection') }}
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.guest_detection') }}
                     </div>
                 </div>
 
@@ -801,14 +796,12 @@
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <strong>{{ trans('mining-manager::help.important') }}:</strong>
-                        {{ trans('mining-manager::help.tax_warning') }}
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.tax_warning') }}
                     </div>
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
-                        {{ trans('mining-manager::help.tax_code_prefix_note') }}
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_code_prefix_note') }}
                     </div>
                 </div>
 
@@ -863,8 +856,7 @@
 
                     <div class="success-box">
                         <i class="fas fa-gift"></i>
-                        <strong>{{ trans('mining-manager::help.bonus_tip') }}:</strong>
-                        {{ trans('mining-manager::help.event_bonus_desc') }}
+                        <strong>{{ trans('mining-manager::help.bonus_tip') }}:</strong> {{ trans('mining-manager::help.event_bonus_desc') }}
                     </div>
                 </div>
             </div>
@@ -889,8 +881,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-calculator"></i>
-                        <strong>{{ trans('mining-manager::help.moon_value') }}:</strong>
-                        {{ trans('mining-manager::help.moon_value_desc') }}
+                        <strong>{{ trans('mining-manager::help.moon_value') }}:</strong> {{ trans('mining-manager::help.moon_value_desc') }}
                     </div>
                 </div>
 
@@ -983,14 +974,12 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.tip') }}:</strong>
-                        {{ trans('mining-manager::help.theft_dry_run') }}
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> {{ trans('mining-manager::help.theft_dry_run') }}
                     </div>
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
-                        {{ trans('mining-manager::help.theft_note') }}
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.theft_note') }}
                     </div>
                 </div>
             </div>
@@ -1083,8 +1072,7 @@
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <strong>{{ trans('mining-manager::help.settings_warning') }}:</strong>
-                        {{ trans('mining-manager::help.settings_warning_desc') }}
+                        <strong>{{ trans('mining-manager::help.settings_warning') }}:</strong> {{ trans('mining-manager::help.settings_warning_desc') }}
                     </div>
                 </div>
             </div>
@@ -1367,8 +1355,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>Note:</strong>
-                        All commands should be run from your SeAT installation directory using <code>php artisan</code>.
+                        <strong>Note:</strong> All commands should be run from your SeAT installation directory using <code>php artisan</code>.
                     </div>
                 </div>
             </div>
@@ -1474,8 +1461,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>{{ trans('mining-manager::help.css_where_to_add') }}:</strong>
-                        {{ trans('mining-manager::help.css_where_to_add_desc') }}
+                        <strong>{{ trans('mining-manager::help.css_where_to_add') }}:</strong> {{ trans('mining-manager::help.css_where_to_add_desc') }}
                     </div>
                 </div>
             </div>
@@ -1526,8 +1512,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-life-ring"></i>
-                        <strong>{{ trans('mining-manager::help.need_help') }}:</strong>
-                        {{ trans('mining-manager::help.support_message') }}
+                        <strong>{{ trans('mining-manager::help.need_help') }}:</strong> {{ trans('mining-manager::help.support_message') }}
                     </div>
                 </div>
             </div>
