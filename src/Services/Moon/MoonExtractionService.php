@@ -603,6 +603,26 @@ class MoonExtractionService
         // Detect auto-fractures first (affects expiry timing)
         $this->detectAutoFractures();
 
+        // Snapshot estimated_value for extractions about to expire that have 0 value
+        // This preserves historical prices before archival
+        $aboutToExpire = MoonExtraction::expiredByTime()
+            ->where(function ($q) {
+                $q->where('estimated_value', 0)->orWhereNull('estimated_value');
+            })
+            ->whereNotNull('ore_composition')
+            ->get();
+
+        foreach ($aboutToExpire as $extraction) {
+            try {
+                $value = $this->valueService->calculateExtractionValue($extraction);
+                if ($value > 0) {
+                    $extraction->update(['estimated_value' => $value]);
+                }
+            } catch (\Exception $e) {
+                // Non-critical, continue
+            }
+        }
+
         // Mark as expired using fractured_at when available, legacy estimate otherwise
         $expired = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 

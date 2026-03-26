@@ -185,14 +185,10 @@ class MoonController extends Controller
             foreach ($pastExtractions as $past) {
                 $past->final_status = $past->status;
 
-                // Use stored estimated_value, or calculate live if missing
-                $estValue = $past->estimated_value ?: null;
-                if (!$estValue && $past->ore_composition) {
-                    $estValue = $this->valueService->calculateExtractionValue($past);
-                }
-                $past->final_estimated_value = $estValue;
+                // Use stored estimated_value (historical price at time of extraction)
+                $past->final_estimated_value = $past->estimated_value ?: null;
 
-                // Calculate actual mined from ledger data
+                // Calculate actual mined from ledger data (ledger prices are already historical)
                 $minedData = $this->calculateActualMined($past);
                 $past->actual_mined_value = $minedData['total_value'] ?: null;
                 $past->total_miners = $minedData['total_miners'];
@@ -349,7 +345,7 @@ class MoonController extends Controller
             $totalMiners = $miningData->pluck('character_id')->unique()->count();
 
             $completionPercentage = 0;
-            $estValue = $extraction->estimated_value ?: ($extraction->ore_composition ? $this->valueService->calculateExtractionValue($extraction) : 0);
+            $estValue = $extraction->estimated_value ?: 0;
             if ($estValue > 0) {
                 $completionPercentage = min(100, ($totalValue / $estValue) * 100);
             }
