@@ -183,7 +183,6 @@
                     <div class="card-tools">
                         <div class="btn-group btn-group-sm" id="heatmapViewToggle">
                             <button type="button" class="btn btn-outline-light active" data-view="summary">{{ trans('mining-manager::analytics.summary') ?? 'Summary' }}</button>
-                            <button type="button" class="btn btn-outline-light" data-view="character">{{ trans('mining-manager::analytics.by_character') ?? 'By Character' }}</button>
                             <button type="button" class="btn btn-outline-light" data-view="account">{{ trans('mining-manager::analytics.by_account') ?? 'By Account' }}</button>
                         </div>
                     </div>
@@ -423,7 +422,7 @@ function buildHeatmapChart(view) {
             borderWidth: 1
         }];
     } else {
-        const sourceData = view === 'character' ? (heatmapData.by_character || []) : (heatmapData.by_account || []);
+        const sourceData = heatmapData.by_account || [];
         sourceData.forEach((entry, i) => {
             datasets.push({
                 label: entry.label,

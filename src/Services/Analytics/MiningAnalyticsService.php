@@ -576,7 +576,7 @@ class MiningAnalyticsService
                 ];
             }
 
-            // Also get per-character breakdown for the toggle
+            // Build per-character totals by day of week
             $characterTotals = [];
             foreach ($raw as $entry) {
                 $charId = $entry->character_id;
@@ -587,66 +587,71 @@ class MiningAnalyticsService
                 $characterTotals[$charId][$dow] += $entry->total_value;
             }
 
-            // Get character names
             $charIds = array_keys($characterTotals);
-            $charNames = [];
-            if (!empty($charIds)) {
-                $charNames = DB::table('character_infos')
-                    ->whereIn('character_id', $charIds)
-                    ->pluck('name', 'character_id')
-                    ->toArray();
-            }
 
             // Build per-account (user) grouping
             $accountTotals = [];
             $accountNames = [];
             if (!empty($charIds)) {
+                // Map character_id -> user_id via refresh_tokens
                 $userMap = DB::table('refresh_tokens')
                     ->whereIn('character_id', $charIds)
-                    ->select('character_id', 'user_id')
-                    ->get()
                     ->pluck('user_id', 'character_id')
                     ->toArray();
 
+                // Get SeAT user main character: users.main_character_id
+                $userMainChars = DB::table('users')
+                    ->whereIn('id', array_unique(array_values($userMap)))
+                    ->pluck('main_character_id', 'id')
+                    ->toArray();
+
+                // Get all character names we might need
+                $allCharIds = array_unique(array_merge($charIds, array_values($userMainChars)));
+                $charNames = DB::table('character_infos')
+                    ->whereIn('character_id', $allCharIds)
+                    ->pluck('name', 'character_id')
+                    ->toArray();
+
                 foreach ($characterTotals as $charId => $dowValues) {
-                    $userId = $userMap[$charId] ?? 'unknown_' . $charId;
-                    if (!isset($accountTotals[$userId])) {
-                        $accountTotals[$userId] = array_fill(0, 7, 0);
-                        // Use the main character name for the account
-                        $mainCharId = DB::table('user_settings')
-                            ->where('user_id', $userId)
-                            ->where('name', 'main_character_id')
-                            ->value('value');
-                        $accountNames[$userId] = $charNames[$mainCharId ?? $charId] ?? ($charNames[$charId] ?? "Account #{$userId}");
-                    }
-                    for ($d = 0; $d < 7; $d++) {
-                        $accountTotals[$userId][$d] += $dowValues[$d];
+                    $userId = $userMap[$charId] ?? null;
+
+                    if ($userId) {
+                        // Registered character — group under account
+                        if (!isset($accountTotals[$userId])) {
+                            $accountTotals[$userId] = array_fill(0, 7, 0);
+                            // Use the SeAT main character name for this account
+                            $mainCharId = $userMainChars[$userId] ?? $charId;
+                            $accountNames[$userId] = $charNames[$mainCharId] ?? ($charNames[$charId] ?? "Account #{$userId}");
+                        }
+                        for ($d = 0; $d < 7; $d++) {
+                            $accountTotals[$userId][$d] += $dowValues[$d];
+                        }
+                    } else {
+                        // Guest miner — show as individual
+                        $guestKey = 'guest_' . $charId;
+                        $accountTotals[$guestKey] = $dowValues;
+                        $accountNames[$guestKey] = $charNames[$charId] ?? "Guest #{$charId}";
                     }
                 }
             }
 
-            // Format character datasets
-            $charDatasets = [];
-            foreach ($characterTotals as $charId => $dowValues) {
-                $charDatasets[] = [
-                    'label' => $charNames[$charId] ?? "Character #{$charId}",
+            // Format account datasets
+            $acctDatasets = [];
+            foreach ($accountTotals as $key => $dowValues) {
+                $acctDatasets[] = [
+                    'label' => $accountNames[$key] ?? "Unknown",
                     'data' => $dowValues,
                 ];
             }
 
-            // Format account datasets
-            $acctDatasets = [];
-            foreach ($accountTotals as $userId => $dowValues) {
-                $acctDatasets[] = [
-                    'label' => $accountNames[$userId] ?? "Account #{$userId}",
-                    'data' => $dowValues,
-                ];
-            }
+            // Sort by total value descending so biggest contributors are at bottom of stack
+            usort($acctDatasets, function ($a, $b) {
+                return array_sum($b['data']) - array_sum($a['data']);
+            });
 
             return [
                 'summary' => $result,
                 'day_labels' => $dayNames,
-                'by_character' => $charDatasets,
                 'by_account' => $acctDatasets,
             ];
         });
