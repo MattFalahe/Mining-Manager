@@ -125,6 +125,26 @@
 </div>
 
 @if($popularity->isNotEmpty())
+@php
+    // Group ore popularity by R-category
+    $categoryLabels = [
+        'r4' => 'Moon R4', 'r8' => 'Moon R8', 'r16' => 'Moon R16',
+        'r32' => 'Moon R32', 'r64' => 'Moon R64', 'unknown' => 'Other',
+    ];
+    $oreByCategoryIsk = [];
+    $oreByCategoryQty = [];
+    if ($orePopularity->isNotEmpty()) {
+        foreach ($orePopularity as $ore) {
+            $rarity = \MiningManager\Services\TypeIdRegistry::getMoonOreRarity($ore->type_id) ?? 'unknown';
+            $label = $categoryLabels[$rarity] ?? ucfirst($rarity);
+            $oreByCategoryIsk[$label] = ($oreByCategoryIsk[$label] ?? 0) + $ore->total_isk;
+            $oreByCategoryQty[$label] = ($oreByCategoryQty[$label] ?? 0) + $ore->total_quantity;
+        }
+        arsort($oreByCategoryIsk);
+        // Sort quantity in same order as ISK
+        $oreByCategoryQty = array_replace(array_intersect_key(array_flip(array_keys($oreByCategoryIsk)), $oreByCategoryQty), $oreByCategoryQty);
+    }
+@endphp
 {{-- MOON POPULARITY CHART --}}
 <div class="row">
     <div class="col-lg-6">
@@ -143,7 +163,7 @@
         </div>
     </div>
 
-    {{-- ORE POPULARITY CHART --}}
+    {{-- ORE DISTRIBUTION (ISK) --}}
     <div class="col-lg-6">
         <div class="card card-warning card-outline">
             <div class="card-header">
@@ -155,6 +175,25 @@
             <div class="card-body">
                 <div class="chart-container">
                     <canvas id="orePopularityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- ORE DISTRIBUTION (QUANTITY) --}}
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card card-info card-outline">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-cubes"></i>
+                    {{ trans('mining-manager::analytics.ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="orePopularityQtyChart"></canvas>
                 </div>
             </div>
         </div>
@@ -252,21 +291,19 @@ $(document).ready(function() {
         }
     });
 
-    @if($orePopularity->isNotEmpty())
-    // Ore Distribution — doughnut chart
-    var oreCtx = document.getElementById('orePopularityChart').getContext('2d');
+    @if(!empty($oreByCategoryIsk))
+    // Ore Distribution (ISK) — doughnut chart by category
     var oreColors = [
         '#4e73df', '#1cc88a', '#f6c23e', '#e74a3b', '#36b9cc',
-        '#858796', '#5a5c69', '#6610f2', '#fd7e14', '#20c9a6',
-        '#2c9faf', '#d63384', '#6f42c1', '#198754', '#0dcaf0'
+        '#858796', '#5a5c69', '#6610f2', '#fd7e14', '#20c9a6'
     ];
-    new Chart(oreCtx, {
+    new Chart(document.getElementById('orePopularityChart').getContext('2d'), {
         type: 'doughnut',
         data: {
-            labels: {!! json_encode($orePopularity->pluck('ore_name')->toArray()) !!},
+            labels: {!! json_encode(array_keys($oreByCategoryIsk)) !!},
             datasets: [{
-                data: {!! json_encode($orePopularity->pluck('total_isk')->map(fn($v) => round($v / 1000000, 1))->toArray()) !!},
-                backgroundColor: oreColors.slice(0, {{ $orePopularity->count() }}),
+                data: {!! json_encode(array_values(array_map(fn($v) => round($v / 1000000, 1), $oreByCategoryIsk))) !!},
+                backgroundColor: oreColors.slice(0, {{ count($oreByCategoryIsk) }}),
                 borderWidth: 1,
                 borderColor: '#1a1a2e',
             }]
@@ -283,6 +320,37 @@ $(document).ready(function() {
                     callbacks: {
                         label: function(context) {
                             return context.label + ': ' + context.parsed.toFixed(1) + 'M ISK';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Ore Distribution (Quantity) — doughnut chart by category
+    new Chart(document.getElementById('orePopularityQtyChart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: {!! json_encode(array_keys($oreByCategoryQty)) !!},
+            datasets: [{
+                data: {!! json_encode(array_values($oreByCategoryQty)) !!},
+                backgroundColor: oreColors.slice(0, {{ count($oreByCategoryQty) }}),
+                borderWidth: 1,
+                borderColor: '#1a1a2e',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#ccc', padding: 12, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed.toLocaleString() + ' units';
                         }
                     }
                 }

@@ -114,15 +114,14 @@
     </div>
 
     <div class="row">
-        {{-- ORE DISTRIBUTION --}}
+        {{-- ORE DISTRIBUTION (ISK) --}}
         <div class="col-lg-6">
             <div class="card card-success card-outline chart-card">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-gem"></i>
-                        {{ trans('mining-manager::analytics.ore_distribution') }}
+                        {{ trans('mining-manager::analytics.ore_distribution') }} (ISK)
                     </h3>
-                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -169,6 +168,26 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    {{-- ORE DISTRIBUTION (QUANTITY) --}}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card card-success card-outline chart-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-cubes"></i>
+                        {{ trans('mining-manager::analytics.ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="oreDistributionQtyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6"></div>
     </div>
 
     {{-- WEEKLY ACTIVITY HEATMAP --}}
@@ -338,9 +357,10 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
 });
 }
 
-// Ore Distribution Chart
+// Ore Distribution Chart (ISK)
 if (!oreDistributionData || !oreDistributionData.labels || oreDistributionData.labels.length === 0) {
     showNoDataMessage('oreDistributionChart');
+    showNoDataMessage('oreDistributionQtyChart');
 } else {
 charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart'), {
     type: 'doughnut',
@@ -354,6 +374,34 @@ charts.oreDistribution = new Chart(document.getElementById('oreDistributionChart
         }]
     },
     options: getDoughnutChartOptions()
+});
+
+// Ore Distribution Chart (Quantity)
+charts.oreDistributionQty = new Chart(document.getElementById('oreDistributionQtyChart'), {
+    type: 'doughnut',
+    data: {
+        labels: oreDistributionData.labels,
+        datasets: [{
+            data: oreDistributionData.data,
+            backgroundColor: colors.primary,
+            borderColor: '#343a40',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'right', labels: { color: '#fff' } },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return context.label + ': ' + context.parsed.toLocaleString() + ' units';
+                    }
+                }
+            }
+        }
+    }
 });
 }
 

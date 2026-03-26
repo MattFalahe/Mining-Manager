@@ -270,13 +270,13 @@
         </div>
         @endif
 
-        {{-- ORE BREAKDOWN --}}
+        {{-- ORE BREAKDOWN (ISK) --}}
         <div class="col-lg-6">
             <div class="card card-success card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-gem"></i>
-                        {{ trans('mining-manager::analytics.ore_breakdown') }}
+                        {{ trans('mining-manager::analytics.ore_breakdown') }} (ISK)
                     </h3>
                     <div class="card-tools">
                         <div class="btn-group btn-group-sm">
@@ -306,6 +306,26 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    {{-- ORE BREAKDOWN BY QUANTITY --}}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card card-success card-outline">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-cubes"></i>
+                        {{ trans('mining-manager::analytics.ore_breakdown') }} ({{ trans('mining-manager::analytics.total_quantity') }})
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="oreBreakdownQtyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6"></div>
     </div>
 
     {{-- SYSTEM BREAKDOWN --}}
@@ -449,20 +469,22 @@ new Chart(dailyTrendsCtx, {
     }
 });
 
-// Ore Breakdown Chart
-const oreBreakdownCtx = document.getElementById('oreBreakdownChart');
+// Ore Breakdown Charts
 const oreBreakdownData = @json($analytics['ore_breakdown'] ?? []);
+const oreChartColors = [
+    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+    '#FF9F40', '#C9CBCF', '#4BC0C0', '#FF6384', '#36A2EB',
+    '#FFCE56', '#9966FF', '#FF9F40', '#C9CBCF', '#4BC0C0'
+];
 
-new Chart(oreBreakdownCtx, {
+// By ISK
+new Chart(document.getElementById('oreBreakdownChart'), {
     type: 'doughnut',
     data: {
         labels: oreBreakdownData.map(d => d.ore_name),
         datasets: [{
             data: oreBreakdownData.map(d => d.total_value),
-            backgroundColor: [
-                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-                '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
-            ],
+            backgroundColor: oreChartColors.slice(0, oreBreakdownData.length),
             borderColor: '#343a40',
             borderWidth: 2
         }]
@@ -471,15 +493,39 @@ new Chart(oreBreakdownCtx, {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: {
-                position: 'right',
-                labels: { color: '#fff' }
-            },
+            legend: { position: 'right', labels: { color: '#fff' } },
             tooltip: {
                 callbacks: {
                     label: function(context) {
-                        const value = context.parsed || 0;
-                        return context.label + ': ' + (value / 1000000).toFixed(1) + 'M ISK';
+                        return context.label + ': ' + (context.parsed / 1000000).toFixed(1) + 'M ISK';
+                    }
+                }
+            }
+        }
+    }
+});
+
+// By Quantity
+new Chart(document.getElementById('oreBreakdownQtyChart'), {
+    type: 'doughnut',
+    data: {
+        labels: oreBreakdownData.map(d => d.ore_name),
+        datasets: [{
+            data: oreBreakdownData.map(d => d.total_quantity),
+            backgroundColor: oreChartColors.slice(0, oreBreakdownData.length),
+            borderColor: '#343a40',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'right', labels: { color: '#fff' } },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return context.label + ': ' + context.parsed.toLocaleString() + ' units';
                     }
                 }
             }
