@@ -475,12 +475,38 @@ class MiningAnalyticsService
      */
     public function getOreDistributionData(Carbon $startDate, Carbon $endDate)
     {
-        $oreBreakdown = $this->getOreBreakdown($startDate, $endDate);
+        $cacheKey = "mining-analytics:ore-distribution-cat:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        $byCategory = Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
+            return MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->select(
+                    DB::raw("COALESCE(mining_ledger.ore_category, 'unknown') as category"),
+                    DB::raw('SUM(mining_ledger.total_value) as total_value'),
+                    DB::raw('SUM(mining_ledger.quantity) as total_quantity')
+                )
+                ->groupBy('category')
+                ->orderByDesc('total_value')
+                ->get();
+        });
+
+        $categoryLabels = [
+            'ore' => 'Regular Ore',
+            'moon_r4' => 'Moon R4',
+            'moon_r8' => 'Moon R8',
+            'moon_r16' => 'Moon R16',
+            'moon_r32' => 'Moon R32',
+            'moon_r64' => 'Moon R64',
+            'ice' => 'Ice',
+            'gas' => 'Gas',
+            'abyssal' => 'Abyssal',
+            'unknown' => 'Other',
+        ];
 
         return [
-            'labels' => $oreBreakdown->pluck('ore_name')->toArray(),
-            'data' => $oreBreakdown->pluck('total_quantity')->toArray(),
-            'values' => $oreBreakdown->pluck('total_value')->toArray(),
+            'labels' => $byCategory->map(fn($r) => $categoryLabels[$r->category] ?? ucfirst($r->category))->toArray(),
+            'data' => $byCategory->pluck('total_quantity')->toArray(),
+            'values' => $byCategory->pluck('total_value')->toArray(),
         ];
     }
 
