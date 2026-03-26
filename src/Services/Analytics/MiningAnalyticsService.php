@@ -493,7 +493,7 @@ class MiningAnalyticsService
      */
     public function getMinerActivityData(Carbon $startDate, Carbon $endDate)
     {
-        $topMiners = $this->getTopMiners($startDate, $endDate, 10);
+        $topMiners = $this->getTopMinersByAccount($startDate, $endDate, 10);
 
         return [
             'labels' => $topMiners->pluck('name')->toArray(),
