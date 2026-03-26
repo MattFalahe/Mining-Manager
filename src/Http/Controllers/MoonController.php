@@ -8,7 +8,9 @@ use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
+use MiningManager\Models\MiningLedger;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class MoonController extends Controller
 {
@@ -182,10 +184,19 @@ class MoonController extends Controller
             // Map MoonExtraction fields to match MoonExtractionHistory fields for the view
             foreach ($pastExtractions as $past) {
                 $past->final_status = $past->status;
-                $past->final_estimated_value = $past->calculated_value ?? $past->estimated_value ?? null;
-                $past->actual_mined_value = null;
-                $past->completion_percentage = 0;
-                $past->total_miners = 0;
+
+                // Use stored estimated_value, or calculate live if missing
+                $estValue = $past->estimated_value ?: null;
+                if (!$estValue && $past->ore_composition) {
+                    $estValue = $this->valueService->calculateExtractionValue($past);
+                }
+                $past->final_estimated_value = $estValue;
+
+                // Calculate actual mined from ledger data
+                $minedData = $this->calculateActualMined($past);
+                $past->actual_mined_value = $minedData['total_value'] ?: null;
+                $past->total_miners = $minedData['total_miners'];
+                $past->completion_percentage = $minedData['completion_percentage'];
                 $past->is_jackpot = $past->is_jackpot ?? false;
             }
             $history = $pastExtractions;
@@ -298,6 +309,59 @@ class MoonController extends Controller
         }
 
         return view('mining-manager::moon.calendar', compact('calendar', 'month'));
+    }
+
+    /**
+     * Calculate actual mined value from mining_ledger for an extraction.
+     *
+     * @param MoonExtraction $extraction
+     * @return array{total_value: float, total_miners: int, completion_percentage: float}
+     */
+    private function calculateActualMined(MoonExtraction $extraction): array
+    {
+        $default = ['total_value' => 0, 'total_miners' => 0, 'completion_percentage' => 0];
+
+        try {
+            if (!$extraction->chunk_arrival_time || !$extraction->natural_decay_time) {
+                return $default;
+            }
+
+            // Get solar_system_id from structure
+            $solarSystemId = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->value('solar_system_id');
+
+            if (!$solarSystemId) {
+                return $default;
+            }
+
+            $miningData = MiningLedger::where('solar_system_id', $solarSystemId)
+                ->where('date', '>=', $extraction->chunk_arrival_time->format('Y-m-d'))
+                ->where('date', '<=', $extraction->natural_decay_time->format('Y-m-d'))
+                ->where('is_moon_ore', true)
+                ->get();
+
+            if ($miningData->isEmpty()) {
+                return $default;
+            }
+
+            $totalValue = $miningData->sum('total_value');
+            $totalMiners = $miningData->pluck('character_id')->unique()->count();
+
+            $completionPercentage = 0;
+            $estValue = $extraction->estimated_value ?: ($extraction->ore_composition ? $this->valueService->calculateExtractionValue($extraction) : 0);
+            if ($estValue > 0) {
+                $completionPercentage = min(100, ($totalValue / $estValue) * 100);
+            }
+
+            return [
+                'total_value' => $totalValue,
+                'total_miners' => $totalMiners,
+                'completion_percentage' => round($completionPercentage, 2),
+            ];
+        } catch (\Exception $e) {
+            return $default;
+        }
     }
 
     /**
