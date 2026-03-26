@@ -164,38 +164,75 @@
     </div>
 </div>
 
-{{-- ORE DISTRIBUTION CHARTS --}}
+{{-- POOL ORE DISTRIBUTION --}}
+@if(!empty($poolOreDistribution))
 <div class="row">
-    {{-- ORE DISTRIBUTION (ISK) --}}
+    <div class="col-lg-6">
+        <div class="card card-primary card-outline">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-gem"></i>
+                    {{ trans('mining-manager::analytics.pool_ore_distribution') }} (ISK)
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="poolOreIskChart"></canvas>
+                </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.pool_ore_note') }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card card-primary card-outline">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-cubes"></i>
+                    {{ trans('mining-manager::analytics.pool_ore_distribution') }} (m³)
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="poolOreVolChart"></canvas>
+                </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.pool_ore_note') }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- MINED ORE DISTRIBUTION --}}
+<div class="row">
     <div class="col-lg-6">
         <div class="card card-warning card-outline">
             <div class="card-header">
                 <h3 class="card-title">
                     <i class="fas fa-gem"></i>
-                    {{ trans('mining-manager::analytics.ore_distribution') }} (ISK)
+                    {{ trans('mining-manager::analytics.mined_ore_distribution') }} (ISK)
                 </h3>
             </div>
             <div class="card-body">
                 <div class="chart-container">
                     <canvas id="orePopularityChart"></canvas>
                 </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.mined_ore_note') }}</small>
             </div>
         </div>
     </div>
-
-    {{-- ORE DISTRIBUTION (QUANTITY) --}}
     <div class="col-lg-6">
-        <div class="card card-info card-outline">
+        <div class="card card-warning card-outline">
             <div class="card-header">
                 <h3 class="card-title">
                     <i class="fas fa-cubes"></i>
-                    {{ trans('mining-manager::analytics.ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
+                    {{ trans('mining-manager::analytics.mined_ore_distribution') }} ({{ trans('mining-manager::analytics.total_quantity') }})
                 </h3>
             </div>
             <div class="card-body">
                 <div class="chart-container">
                     <canvas id="orePopularityQtyChart"></canvas>
                 </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.mined_ore_note') }}</small>
             </div>
         </div>
     </div>
@@ -292,12 +329,82 @@ $(document).ready(function() {
         }
     });
 
-    @if(!empty($oreByCategoryIsk))
-    // Ore Distribution (ISK) — doughnut chart by category
     var oreColors = [
         '#4e73df', '#1cc88a', '#f6c23e', '#e74a3b', '#36b9cc',
         '#858796', '#5a5c69', '#6610f2', '#fd7e14', '#20c9a6'
     ];
+
+    @if(!empty($poolOreDistribution))
+    // Pool Ore Distribution (ISK) — what extractions offered
+    @php
+        $poolLabels = array_keys($poolOreDistribution);
+        $poolIskValues = array_values(array_map(fn($v) => round($v['isk'] / 1000000, 1), $poolOreDistribution));
+        $poolVolValues = array_values(array_map(fn($v) => round($v['volume'], 0), $poolOreDistribution));
+    @endphp
+    new Chart(document.getElementById('poolOreIskChart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: {!! json_encode($poolLabels) !!},
+            datasets: [{
+                data: {!! json_encode($poolIskValues) !!},
+                backgroundColor: oreColors.slice(0, {{ count($poolLabels) }}),
+                borderWidth: 1,
+                borderColor: '#1a1a2e',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#ccc', padding: 12, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed.toFixed(1) + 'M ISK';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Pool Ore Distribution (Volume) — what extractions offered
+    new Chart(document.getElementById('poolOreVolChart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: {!! json_encode($poolLabels) !!},
+            datasets: [{
+                data: {!! json_encode($poolVolValues) !!},
+                backgroundColor: oreColors.slice(0, {{ count($poolLabels) }}),
+                borderWidth: 1,
+                borderColor: '#1a1a2e',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#ccc', padding: 12, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed.toLocaleString() + ' m³';
+                        }
+                    }
+                }
+            }
+        }
+    });
+    @endif
+
+    @if(!empty($oreByCategoryIsk))
+    // Mined Ore Distribution (ISK) — what players actually mined
     new Chart(document.getElementById('orePopularityChart').getContext('2d'), {
         type: 'doughnut',
         data: {

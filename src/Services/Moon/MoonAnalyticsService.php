@@ -372,6 +372,48 @@ class MoonAnalyticsService
     }
 
     /**
+     * Get pool ore distribution from extraction compositions, grouped by R-category.
+     */
+    public function getPoolOreDistribution(Carbon $month): array
+    {
+        $cacheKey = "moon-analytics:pool-ore-dist:{$month->format('Ym')}";
+
+        return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($month) {
+            $extractions = $this->getExtractionsForMonth($month);
+
+            $byCategory = [];
+            foreach ($extractions as $extraction) {
+                $composition = $extraction->ore_composition;
+                if (!is_array($composition)) {
+                    continue;
+                }
+
+                foreach ($composition as $ore) {
+                    $typeId = $ore['type_id'] ?? 0;
+                    $rarity = \MiningManager\Services\TypeIdRegistry::getMoonOreRarity($typeId) ?? 'unknown';
+
+                    $categoryLabels = [
+                        'r4' => 'Moon R4', 'r8' => 'Moon R8', 'r16' => 'Moon R16',
+                        'r32' => 'Moon R32', 'r64' => 'Moon R64', 'unknown' => 'Other',
+                    ];
+                    $label = $categoryLabels[$rarity] ?? ucfirst($rarity);
+
+                    if (!isset($byCategory[$label])) {
+                        $byCategory[$label] = ['isk' => 0, 'volume' => 0];
+                    }
+                    $byCategory[$label]['isk'] += ($ore['value'] ?? 0);
+                    $byCategory[$label]['volume'] += ($ore['volume_m3'] ?? 0);
+                }
+            }
+
+            // Sort by ISK descending
+            uasort($byCategory, fn($a, $b) => $b['isk'] <=> $a['isk']);
+
+            return $byCategory;
+        });
+    }
+
+    /**
      * Get list of available extractions for the dropdown picker.
      */
     public function getAvailableExtractions(?Carbon $month = null): Collection

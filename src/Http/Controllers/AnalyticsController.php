@@ -543,6 +543,7 @@ class AnalyticsController extends Controller
             $data['utilization'] = $moonService->getMoonUtilization($month);
             $data['popularity'] = $moonService->getMoonPopularity($month);
             $data['orePopularity'] = $moonService->getOrePopularity($month);
+            $data['poolOreDistribution'] = $moonService->getPoolOreDistribution($month);
         }
 
         return view('mining-manager::analytics.moons', $data);

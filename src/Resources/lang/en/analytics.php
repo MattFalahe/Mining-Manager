@@ -361,4 +361,10 @@ return [
     'gas' => 'Gas',
     'abyssal_ore' => 'Abyssal',
     'ore_category' => 'Ore Category',
+
+    // Moon Ore Distribution Labels
+    'mined_ore_distribution' => 'Mined Ore Distribution',
+    'pool_ore_distribution' => 'Pool Ore Distribution',
+    'mined_ore_note' => 'Based on what players actually mined from moon belts.',
+    'pool_ore_note' => 'Based on what was available in extraction pools before mining.',
 ];
