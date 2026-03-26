@@ -108,6 +108,7 @@
                     <div class="chart-container">
                         <canvas id="miningTrendsChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_mining_trends') }}</small>
                 </div>
             </div>
         </div>
@@ -127,6 +128,7 @@
                     <div class="chart-container">
                         <canvas id="oreDistributionChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_ore_distribution_isk') }}</small>
                 </div>
             </div>
         </div>
@@ -144,6 +146,7 @@
                     <div class="chart-container">
                         <canvas id="oreDistributionQtyChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_ore_distribution_qty') }}</small>
                 </div>
             </div>
         </div>
@@ -163,6 +166,7 @@
                     <div class="chart-container">
                         <canvas id="minerActivityChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_miner_activity') }}</small>
                 </div>
             </div>
         </div>
@@ -182,6 +186,7 @@
                     <div class="chart-container">
                         <canvas id="systemActivityChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_system_activity') }}</small>
                 </div>
             </div>
         </div>
@@ -204,7 +209,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">Average daily mining value by day of week ({{ $startDate->format('M d') }} - {{ $endDate->format('M d, Y') }})</p>
+                    <small class="text-muted d-block mb-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_weekly_activity') }}</small>
                     <div class="chart-container" style="height: 500px;">
                         <canvas id="heatmapChart"></canvas>
                     </div>

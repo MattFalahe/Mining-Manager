@@ -248,5 +248,9 @@ return [
     // Additional Moon Mining Terms
     'total_ores' => 'Total Ores',
     'view_all_extractions' => 'View All Extractions',
-    
+
+    // Chart Info Notes
+    'note_value_over_time' => 'Estimated ISK value of moon extractions over time.',
+    'note_composition' => 'Ore composition of this moon by volume percentage.',
+    'note_pool_vs_mined' => 'Comparison of what was available in the pool vs what was actually mined.',
 ];

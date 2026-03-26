@@ -296,6 +296,7 @@
                 </div>
                 <div class="card-body">
                     <canvas id="valueChart" style="height: 300px;"></canvas>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::moons.note_value_over_time') }}</small>
                 </div>
             </div>
         </div>

@@ -188,6 +188,7 @@
                 <div class="chart-container">
                     <canvas id="poolVsMinedChart"></canvas>
                 </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::moons.note_pool_vs_mined') }}</small>
             </div>
         </div>
     </div>

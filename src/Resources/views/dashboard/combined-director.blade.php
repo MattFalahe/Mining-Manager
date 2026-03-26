@@ -290,6 +290,7 @@
                                         </div>
                                         <div class="card-body">
                                             <canvas id="personalMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_performance') }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -305,6 +306,7 @@
                                         </div>
                                         <div class="card-body">
                                             <canvas id="personalVolumeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_by_group') }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -323,6 +325,7 @@
                                         </div>
                                         <div class="card-body">
                                             <canvas id="personalByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_by_type') }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -338,6 +341,7 @@
                                         </div>
                                         <div class="card-body">
                                             <canvas id="personalIncomeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                            <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_income') }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -510,6 +514,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpMiningPerformanceChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_mining_performance') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -520,6 +525,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpMoonMiningChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_moon_mining') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -534,6 +540,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpMiningByGroupChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_mining_by_group') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -544,6 +551,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpMiningByTypeChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_top_ores') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -558,6 +566,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_tax') }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -568,6 +577,7 @@
                                             </div>
                                             <div class="card-body">
                                                 <canvas id="corpEventTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
+                                                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_event_tax') }}</small>
                                             </div>
                                         </div>
                                     </div>

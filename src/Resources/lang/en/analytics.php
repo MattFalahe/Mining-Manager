@@ -367,4 +367,19 @@ return [
     'pool_ore_distribution' => 'Pool Ore Distribution',
     'mined_ore_note' => 'Based on what players actually mined from moon belts.',
     'pool_ore_note' => 'Based on what was available in extraction pools before mining.',
+
+    // Chart Info Notes
+    'note_daily_trends' => 'Daily mining quantity and ISK value over the selected date range.',
+    'note_ore_breakdown_isk' => 'Ore categories mined by total ISK value. Use filters to narrow by type.',
+    'note_ore_breakdown_qty' => 'Ore categories mined by raw unit count. Use filters to narrow by type.',
+    'note_mining_trends' => 'Mining quantity (left axis) and ISK value (right axis) over time.',
+    'note_ore_distribution_isk' => 'Ore categories mined by ISK value within the selected date range.',
+    'note_ore_distribution_qty' => 'Ore categories mined by raw unit count within the selected date range.',
+    'note_miner_activity' => 'Top accounts ranked by total ISK value mined.',
+    'note_system_activity' => 'Solar systems ranked by total ISK value of mining activity.',
+    'note_weekly_activity' => 'Average daily mining value by day of week. Switch to By Account for per-account breakdown.',
+    'note_moon_popularity' => 'Moon structures ranked by number of unique miners who mined there.',
+    'note_volume_comparison' => 'Side-by-side comparison of total quantity mined across selected periods.',
+    'note_value_comparison' => 'Side-by-side comparison of total ISK value mined across selected periods.',
+    'note_trend_comparison' => 'Overlaid daily trends for each selected period for visual comparison.',
 ];

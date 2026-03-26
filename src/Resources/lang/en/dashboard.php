@@ -95,4 +95,16 @@ return [
     // Errors
     'error_loading_data' => 'Error loading dashboard data',
     'error_refreshing_chart' => 'Error refreshing chart',
+
+    // Chart Info Notes
+    'note_mining_performance' => 'Your monthly mining quantity over the last 12 months.',
+    'note_mining_by_group' => 'ISK value breakdown by ore group (Moon Ore, Regular, Ice, etc.).',
+    'note_mining_by_type' => 'Top 10 individual ore types you mined, ranked by ISK value.',
+    'note_mining_income' => 'Monthly ISK value of your mining activity over the last 12 months.',
+    'note_corp_mining_performance' => 'Total corporation mining quantity per month over 12 months.',
+    'note_corp_moon_mining' => 'Corporation moon ore mining value per month over 12 months.',
+    'note_corp_mining_by_group' => 'Corporation-wide ISK breakdown by ore group.',
+    'note_corp_top_ores' => 'Top ore types mined across the corporation, ranked by ISK value.',
+    'note_corp_tax' => 'Monthly mining tax collected from corporation members.',
+    'note_corp_event_tax' => 'Monthly event-based tax collected during special mining events.',
 ];

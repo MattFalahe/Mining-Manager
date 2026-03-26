@@ -353,6 +353,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="miningPerformanceChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_performance') }}</small>
                 </div>
             </div>
         </div>
@@ -373,6 +374,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="miningVolumeChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_by_group') }}</small>
                 </div>
             </div>
         </div>
@@ -390,6 +392,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="miningByTypeChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_by_type') }}</small>
                 </div>
             </div>
         </div>
@@ -410,6 +413,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="miningIncomeChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_income') }}</small>
                 </div>
             </div>
         </div>

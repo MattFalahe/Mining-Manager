@@ -338,6 +338,7 @@
                         <div class="composition-chart">
                             <canvas id="compositionChart"></canvas>
                         </div>
+                        <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::moons.note_composition') }}</small>
                     </div>
                 </div>
             </div>

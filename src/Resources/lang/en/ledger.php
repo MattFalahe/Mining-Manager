@@ -289,4 +289,9 @@ return [
     'ore_input_breakdown' => 'Ore Input Breakdown',
     'no_valid_ores' => 'No valid ores found. Please check your input and try again.',
     'reprocessing_results' => 'Reprocessing Results',
+
+    // Chart Info Notes
+    'note_mining_trend' => 'Your daily mining quantity over the selected month.',
+    'note_ore_distribution' => 'Breakdown of ore types you mined, by ISK value.',
+    'note_monthly_comparison' => 'Side-by-side comparison of your mining across recent months.',
 ];

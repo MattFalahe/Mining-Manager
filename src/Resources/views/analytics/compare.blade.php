@@ -394,6 +394,7 @@
                     <div class="chart-container">
                         <canvas id="volumeComparisonChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_volume_comparison') }}</small>
                 </div>
             </div>
         </div>
@@ -411,6 +412,7 @@
                     <div class="chart-container">
                         <canvas id="valueComparisonChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_value_comparison') }}</small>
                 </div>
             </div>
         </div>
@@ -430,6 +432,7 @@
                     <div class="chart-container" style="height: 400px;">
                         <canvas id="trendComparisonChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_trend_comparison') }}</small>
                 </div>
             </div>
         </div>

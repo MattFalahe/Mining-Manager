@@ -159,6 +159,7 @@
                 <div class="chart-container">
                     <canvas id="moonPopularityChart"></canvas>
                 </div>
+                <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_moon_popularity') }}</small>
             </div>
         </div>
     </div>

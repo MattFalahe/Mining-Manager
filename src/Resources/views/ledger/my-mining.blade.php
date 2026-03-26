@@ -234,6 +234,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="miningTrendChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.note_mining_trend') }}</small>
                 </div>
             </div>
         </div>
@@ -251,6 +252,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="oreDistributionChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.note_ore_distribution') }}</small>
                 </div>
             </div>
         </div>
@@ -403,6 +405,7 @@
                     <div class="chart-container" style="position: relative; height: 250px;">
                         <canvas id="monthlyComparisonChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.note_monthly_comparison') }}</small>
                 </div>
             </div>
         </div>

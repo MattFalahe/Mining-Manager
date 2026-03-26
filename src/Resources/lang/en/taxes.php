@@ -278,4 +278,7 @@ return [
     // Export & Receipt
     'export_error' => 'An error occurred during export',
     'receipt_error' => 'An error occurred generating the receipt',
+
+    // Chart Info Notes
+    'note_tax_trend' => 'Your estimated monthly tax over recent months.',
 ];

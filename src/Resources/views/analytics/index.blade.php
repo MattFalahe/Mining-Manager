@@ -192,6 +192,7 @@
                     <div class="chart-container">
                         <canvas id="dailyTrendsChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_daily_trends') }}</small>
                 </div>
             </div>
         </div>
@@ -307,6 +308,7 @@
                     <div class="chart-container">
                         <canvas id="oreBreakdownChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_ore_breakdown_isk') }}</small>
                 </div>
             </div>
         </div>
@@ -334,6 +336,7 @@
                     <div class="chart-container">
                         <canvas id="oreBreakdownQtyChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.note_ore_breakdown_qty') }}</small>
                 </div>
             </div>
         </div>

@@ -505,6 +505,7 @@
                     <div class="chart-container" style="position: relative; height: 300px;">
                         <canvas id="taxTrendChart"></canvas>
                     </div>
+                    <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::taxes.note_tax_trend') }}</small>
                 </div>
             </div>
         </div>
