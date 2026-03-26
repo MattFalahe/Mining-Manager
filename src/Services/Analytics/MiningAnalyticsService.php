@@ -171,31 +171,53 @@ class MiningAnalyticsService
                 return collect();
             }
 
-            // Get batch character info to find main_character_id for each
+            // Map character_id -> user_id via refresh_tokens
             $characterIds = $perCharacter->pluck('character_id')->toArray();
-            $charInfos = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+            $userMap = DB::table('refresh_tokens')
+                ->whereIn('character_id', $characterIds)
+                ->pluck('user_id', 'character_id')
+                ->toArray();
 
-            // Group by main_character_id
+            // Get SeAT user main character: users.main_character_id
+            $userMainChars = DB::table('users')
+                ->whereIn('id', array_unique(array_values($userMap)))
+                ->pluck('main_character_id', 'id')
+                ->toArray();
+
+            // Get all character names we might need
+            $allCharIds = array_unique(array_merge($characterIds, array_values($userMainChars)));
+            $charNames = DB::table('character_infos')
+                ->whereIn('character_id', $allCharIds)
+                ->pluck('name', 'character_id')
+                ->toArray();
+
+            // Group by SeAT account (user_id)
             $grouped = [];
             foreach ($perCharacter as $miner) {
-                $charInfo = $charInfos[$miner->character_id] ?? null;
-                $mainId = $charInfo['main_character_id'] ?? $miner->character_id;
+                $userId = $userMap[$miner->character_id] ?? null;
 
-                if (!isset($grouped[$mainId])) {
-                    // Use the main character's name if available
-                    $mainName = isset($charInfos[$mainId]) ? $charInfos[$mainId]['name'] : $miner->name;
-                    $grouped[$mainId] = [
+                if ($userId) {
+                    $mainId = $userMainChars[$userId] ?? $miner->character_id;
+                    $groupKey = $userId;
+                } else {
+                    // Guest miner — no SeAT account
+                    $mainId = $miner->character_id;
+                    $groupKey = 'guest_' . $miner->character_id;
+                }
+
+                if (!isset($grouped[$groupKey])) {
+                    $grouped[$groupKey] = [
                         'main_character_id' => $mainId,
-                        'name' => $mainName,
+                        'name' => $charNames[$mainId] ?? $miner->name,
                         'total_quantity' => 0,
                         'total_value' => 0,
                         'character_count' => 0,
                     ];
                 }
 
-                $grouped[$mainId]['total_quantity'] += $miner->total_quantity;
-                $grouped[$mainId]['total_value'] += $miner->total_value;
-                $grouped[$mainId]['character_count']++;
+                $grouped[$groupKey]['total_quantity'] += $miner->total_quantity;
+                $grouped[$groupKey]['total_value'] += $miner->total_value;
+                $grouped[$groupKey]['character_count']++;
             }
 
             // Sort by total_quantity descending, limit, and return as collection of objects

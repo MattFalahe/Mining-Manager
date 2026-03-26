@@ -269,7 +269,21 @@
             </div>
         </div>
         @endif
+    </div>
 
+    @php
+        $oreCategories = [
+            '' => 'all_ores',
+            'regular_ore' => 'regular_ore',
+            'moon_ore' => 'moon_ore',
+            'ice' => 'ice',
+            'gas' => 'gas',
+            'abyssal_ore' => 'abyssal_ore',
+        ];
+    @endphp
+
+    {{-- ORE BREAKDOWN CHARTS --}}
+    <div class="row">
         {{-- ORE BREAKDOWN (ISK) --}}
         <div class="col-lg-6">
             <div class="card card-success card-outline">
@@ -280,16 +294,6 @@
                     </h3>
                     <div class="card-tools">
                         <div class="btn-group btn-group-sm">
-                            @php
-                                $oreCategories = [
-                                    '' => 'all_ores',
-                                    'regular_ore' => 'regular_ore',
-                                    'moon_ore' => 'moon_ore',
-                                    'ice' => 'ice',
-                                    'gas' => 'gas',
-                                    'abyssal_ore' => 'abyssal_ore',
-                                ];
-                            @endphp
                             @foreach($oreCategories as $catValue => $catLabel)
                                 <a href="{{ route('mining-manager.analytics.index', array_merge(request()->except('ore_category'), $catValue ? ['ore_category' => $catValue] : [])) }}"
                                    class="btn btn-sm {{ ($oreCategory ?? '') === $catValue ? 'btn-info' : 'btn-outline-info' }}">
