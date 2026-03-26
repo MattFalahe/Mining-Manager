@@ -189,7 +189,7 @@
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Average daily mining value by day of week ({{ $startDate->format('M d') }} - {{ $endDate->format('M d, Y') }})</p>
-                    <div class="chart-container">
+                    <div class="chart-container" style="height: 500px;">
                         <canvas id="heatmapChart"></canvas>
                     </div>
                 </div>
