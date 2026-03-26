@@ -521,6 +521,138 @@ class MiningAnalyticsService
     }
 
     /**
+     * Get heatmap data: daily activity by day of week, with per-character breakdown.
+     * Uses last 30 days of mining_ledger data grouped by day of week and character.
+     *
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return array
+     */
+    public function getHeatmapData(Carbon $startDate, Carbon $endDate)
+    {
+        $cacheKey = "mining-analytics:heatmap:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}";
+        $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate) {
+            // Get daily data per character
+            $raw = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
+                ->select(
+                    'mining_ledger.date',
+                    'mining_ledger.character_id',
+                    DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
+                    DB::raw('SUM(mining_ledger.total_value) as total_value')
+                )
+                ->groupBy('mining_ledger.date', 'mining_ledger.character_id')
+                ->get();
+
+            // Build day-of-week aggregation
+            $dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            $byDow = array_fill(0, 7, ['value' => 0, 'quantity' => 0, 'miners' => [], 'days_count' => 0]);
+
+            // Track unique dates per DOW for averaging
+            $datesPerDow = array_fill(0, 7, []);
+
+            foreach ($raw as $entry) {
+                $date = Carbon::parse($entry->date);
+                $dow = $date->dayOfWeekIso - 1; // 0=Monday ... 6=Sunday
+                $byDow[$dow]['value'] += $entry->total_value;
+                $byDow[$dow]['quantity'] += $entry->total_quantity;
+                $byDow[$dow]['miners'][$entry->character_id] = ($byDow[$dow]['miners'][$entry->character_id] ?? 0) + $entry->total_value;
+                $datesPerDow[$dow][$date->format('Y-m-d')] = true;
+            }
+
+            // Calculate averages and per-character data
+            $result = [];
+            foreach ($dayNames as $i => $name) {
+                $numDays = max(1, count($datesPerDow[$i]));
+                $result[] = [
+                    'day' => $name,
+                    'avg_value' => round($byDow[$i]['value'] / $numDays),
+                    'avg_quantity' => round($byDow[$i]['quantity'] / $numDays),
+                    'total_value' => $byDow[$i]['value'],
+                    'total_quantity' => $byDow[$i]['quantity'],
+                    'unique_miners' => count($byDow[$i]['miners']),
+                    'days_in_range' => $numDays,
+                ];
+            }
+
+            // Also get per-character breakdown for the toggle
+            $characterTotals = [];
+            foreach ($raw as $entry) {
+                $charId = $entry->character_id;
+                if (!isset($characterTotals[$charId])) {
+                    $characterTotals[$charId] = array_fill(0, 7, 0);
+                }
+                $dow = Carbon::parse($entry->date)->dayOfWeekIso - 1;
+                $characterTotals[$charId][$dow] += $entry->total_value;
+            }
+
+            // Get character names
+            $charIds = array_keys($characterTotals);
+            $charNames = [];
+            if (!empty($charIds)) {
+                $charNames = DB::table('character_infos')
+                    ->whereIn('character_id', $charIds)
+                    ->pluck('name', 'character_id')
+                    ->toArray();
+            }
+
+            // Build per-account (user) grouping
+            $accountTotals = [];
+            $accountNames = [];
+            if (!empty($charIds)) {
+                $userMap = DB::table('refresh_tokens')
+                    ->whereIn('character_id', $charIds)
+                    ->select('character_id', 'user_id')
+                    ->get()
+                    ->pluck('user_id', 'character_id')
+                    ->toArray();
+
+                foreach ($characterTotals as $charId => $dowValues) {
+                    $userId = $userMap[$charId] ?? 'unknown_' . $charId;
+                    if (!isset($accountTotals[$userId])) {
+                        $accountTotals[$userId] = array_fill(0, 7, 0);
+                        // Use the main character name for the account
+                        $mainCharId = DB::table('user_settings')
+                            ->where('user_id', $userId)
+                            ->where('name', 'main_character_id')
+                            ->value('value');
+                        $accountNames[$userId] = $charNames[$mainCharId ?? $charId] ?? ($charNames[$charId] ?? "Account #{$userId}");
+                    }
+                    for ($d = 0; $d < 7; $d++) {
+                        $accountTotals[$userId][$d] += $dowValues[$d];
+                    }
+                }
+            }
+
+            // Format character datasets
+            $charDatasets = [];
+            foreach ($characterTotals as $charId => $dowValues) {
+                $charDatasets[] = [
+                    'label' => $charNames[$charId] ?? "Character #{$charId}",
+                    'data' => $dowValues,
+                ];
+            }
+
+            // Format account datasets
+            $acctDatasets = [];
+            foreach ($accountTotals as $userId => $dowValues) {
+                $acctDatasets[] = [
+                    'label' => $accountNames[$userId] ?? "Account #{$userId}",
+                    'data' => $dowValues,
+                ];
+            }
+
+            return [
+                'summary' => $result,
+                'day_labels' => $dayNames,
+                'by_character' => $charDatasets,
+                'by_account' => $acctDatasets,
+            ];
+        });
+    }
+
+    /**
      * Get type IDs for an ore category.
      *
      * @param string $category

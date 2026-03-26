@@ -96,6 +96,7 @@ class AnalyticsController extends Controller
             'ore_distribution' => $this->analyticsService->getOreDistributionData($startDate, $endDate),
             'miner_activity' => $this->analyticsService->getMinerActivityData($startDate, $endDate),
             'system_activity' => $this->analyticsService->getSystemActivityData($startDate, $endDate),
+            'heatmap' => $this->analyticsService->getHeatmapData($startDate, $endDate),
         ];
 
         return view('mining-manager::analytics.charts', compact('chartData', 'startDate', 'endDate'));

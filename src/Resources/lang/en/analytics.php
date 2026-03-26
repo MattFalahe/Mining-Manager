@@ -294,6 +294,7 @@ return [
     'heatmap_description' => 'Visualize mining activity patterns by hour and day',
     'horizontal_bar' => 'Horizontal Bar Chart',
     'hourly_activity_heatmap' => 'Hourly Activity Heatmap',
+    'weekly_activity' => 'Weekly Activity',
     'miners' => 'Miners',
     'ore_breakdown' => 'Ore Breakdown',
     'ore_types' => 'Ore Types',

@@ -102,13 +102,7 @@
                         <i class="fas fa-chart-line"></i>
                         {{ trans('mining-manager::analytics.mining_trends') }}
                     </h3>
-                    <div class="card-tools">
-                        <select class="form-control form-control-sm chart-type-selector" data-chart="miningTrends">
-                            <option value="line">{{ trans('mining-manager::analytics.line_chart') }}</option>
-                            <option value="bar">{{ trans('mining-manager::analytics.bar_chart') }}</option>
-                            <option value="area">{{ trans('mining-manager::analytics.area_chart') }}</option>
-                        </select>
-                    </div>
+                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -128,13 +122,7 @@
                         <i class="fas fa-gem"></i>
                         {{ trans('mining-manager::analytics.ore_distribution') }}
                     </h3>
-                    <div class="card-tools">
-                        <select class="form-control form-control-sm chart-type-selector" data-chart="oreDistribution">
-                            <option value="doughnut">{{ trans('mining-manager::analytics.doughnut_chart') }}</option>
-                            <option value="pie">{{ trans('mining-manager::analytics.pie_chart') }}</option>
-                            <option value="polarArea">{{ trans('mining-manager::analytics.polar_chart') }}</option>
-                        </select>
-                    </div>
+                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -152,12 +140,7 @@
                         <i class="fas fa-users"></i>
                         {{ trans('mining-manager::analytics.miner_activity') }}
                     </h3>
-                    <div class="card-tools">
-                        <select class="form-control form-control-sm chart-type-selector" data-chart="minerActivity">
-                            <option value="bar">{{ trans('mining-manager::analytics.bar_chart') }}</option>
-                            <option value="horizontalBar">{{ trans('mining-manager::analytics.horizontal_bar') }}</option>
-                        </select>
-                    </div>
+                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -177,12 +160,7 @@
                         <i class="fas fa-globe"></i>
                         {{ trans('mining-manager::analytics.system_activity') }}
                     </h3>
-                    <div class="card-tools">
-                        <select class="form-control form-control-sm chart-type-selector" data-chart="systemActivity">
-                            <option value="bar">{{ trans('mining-manager::analytics.bar_chart') }}</option>
-                            <option value="radar">{{ trans('mining-manager::analytics.radar_chart') }}</option>
-                        </select>
-                    </div>
+                    <div class="card-tools"></div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
@@ -193,18 +171,25 @@
         </div>
     </div>
 
-    {{-- HOURLY HEAT MAP --}}
+    {{-- WEEKLY ACTIVITY HEATMAP --}}
     <div class="row">
         <div class="col-12">
             <div class="card card-primary card-outline">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-calendar-alt"></i>
-                        {{ trans('mining-manager::analytics.hourly_activity_heatmap') }}
+                        {{ trans('mining-manager::analytics.weekly_activity') ?? 'Weekly Activity' }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" id="heatmapViewToggle">
+                            <button type="button" class="btn btn-outline-light active" data-view="summary">{{ trans('mining-manager::analytics.summary') ?? 'Summary' }}</button>
+                            <button type="button" class="btn btn-outline-light" data-view="character">{{ trans('mining-manager::analytics.by_character') ?? 'By Character' }}</button>
+                            <button type="button" class="btn btn-outline-light" data-view="account">{{ trans('mining-manager::analytics.by_account') ?? 'By Account' }}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">{{ trans('mining-manager::analytics.heatmap_description') }}</p>
+                    <p class="text-muted">Average daily mining value by day of week ({{ $startDate->format('M d') }} - {{ $endDate->format('M d, Y') }})</p>
                     <div class="chart-container">
                         <canvas id="heatmapChart"></canvas>
                     </div>
@@ -284,24 +269,73 @@ charts.miningTrends = new Chart(document.getElementById('miningTrendsChart'), {
     data: {
         labels: miningTrendsData.map(d => d.date ? d.date.substring(0, 10) : ''),
         datasets: [{
-            label: '{{ trans("mining-manager::analytics.volume") }}',
+            label: '{{ trans("mining-manager::analytics.total_quantity") }}',
             data: miningTrendsData.map(d => d.total_quantity),
             borderColor: colors.primary[0],
-            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+            backgroundColor: 'rgba(102, 126, 234, 0.15)',
             borderWidth: 2,
             fill: true,
-            tension: 0.4
+            tension: 0.4,
+            yAxisID: 'y',
+            pointRadius: 3,
+            pointBackgroundColor: colors.primary[0]
         }, {
             label: '{{ trans("mining-manager::analytics.value") }}',
-            data: miningTrendsData.map(d => d.total_value / 1000000),
-            borderColor: colors.primary[1],
-            backgroundColor: 'rgba(118, 75, 162, 0.1)',
+            data: miningTrendsData.map(d => d.total_value),
+            borderColor: '#f5576c',
+            backgroundColor: 'rgba(245, 87, 108, 0.1)',
             borderWidth: 2,
             fill: true,
-            tension: 0.4
+            tension: 0.4,
+            yAxisID: 'y1',
+            pointRadius: 3,
+            pointBackgroundColor: '#f5576c'
         }]
     },
-    options: getLineChartOptions()
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { labels: { color: '#fff' } },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) label += ': ';
+                        if (context.dataset.yAxisID === 'y1') {
+                            label += (context.parsed.y / 1000000).toFixed(1) + ' M ISK';
+                        } else {
+                            label += context.parsed.y.toLocaleString();
+                        }
+                        return label;
+                    }
+                }
+            }
+        },
+        scales: {
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: { display: true, text: '{{ trans("mining-manager::analytics.total_quantity") }}', color: '#fff' },
+                ticks: { color: colors.primary[0] },
+                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+            },
+            y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: { display: true, text: '{{ trans("mining-manager::analytics.value") }} (ISK)', color: '#fff' },
+                ticks: {
+                    color: '#f5576c',
+                    callback: function(value) { return (value / 1000000).toFixed(0) + 'M'; }
+                },
+                grid: { drawOnChartArea: false }
+            },
+            x: { ticks: { color: '#fff' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+        }
+    }
 });
 }
 
@@ -364,20 +398,90 @@ charts.systemActivity = new Chart(document.getElementById('systemActivityChart')
 });
 }
 
-// Heatmap Chart (simplified as bar chart - true heatmap requires additional library)
-charts.heatmap = new Chart(document.getElementById('heatmapChart'), {
-    type: 'bar',
-    data: {
-        labels: Array.from({length: 24}, (_, i) => i + ':00'),
-        datasets: [{
-            label: '{{ trans("mining-manager::analytics.activity") }}',
-            data: Array.from({length: 24}, () => Math.floor(Math.random() * 100)),
-            backgroundColor: colors.success[0],
-            borderColor: colors.success[0],
+// Weekly Activity Heatmap
+const heatmapData = @json($chartData['heatmap'] ?? []);
+const heatmapColors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fbbf24', '#ef4444', '#10b981', '#8b5cf6'];
+
+function buildHeatmapChart(view) {
+    if (charts.heatmap) charts.heatmap.destroy();
+
+    let datasets = [];
+    let labels = heatmapData.day_labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    if (view === 'summary') {
+        datasets = [{
+            label: 'Avg Value (M ISK)',
+            data: (heatmapData.summary || []).map(d => d.avg_value / 1000000),
+            backgroundColor: labels.map((_, i) => {
+                const values = (heatmapData.summary || []).map(d => d.avg_value);
+                const max = Math.max(...values);
+                const val = values[i] || 0;
+                const intensity = max > 0 ? 0.3 + (val / max) * 0.7 : 0.3;
+                return `rgba(102, 126, 234, ${intensity})`;
+            }),
+            borderColor: '#667eea',
             borderWidth: 1
-        }]
-    },
-    options: getBarChartOptions()
+        }];
+    } else {
+        const sourceData = view === 'character' ? (heatmapData.by_character || []) : (heatmapData.by_account || []);
+        sourceData.forEach((entry, i) => {
+            datasets.push({
+                label: entry.label,
+                data: entry.data.map(v => v / 1000000),
+                backgroundColor: heatmapColors[i % heatmapColors.length],
+                borderColor: heatmapColors[i % heatmapColors.length],
+                borderWidth: 1
+            });
+        });
+    }
+
+    charts.heatmap = new Chart(document.getElementById('heatmapChart'), {
+        type: 'bar',
+        data: { labels: labels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: view !== 'summary',
+                    labels: { color: '#fff' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + ' M ISK';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    stacked: view !== 'summary',
+                    title: { display: true, text: view === 'summary' ? 'Avg Value (M ISK)' : 'Total Value (M ISK)', color: '#fff' },
+                    ticks: { color: '#fff' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
+                x: {
+                    stacked: view !== 'summary',
+                    ticks: { color: '#fff' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                }
+            }
+        }
+    });
+}
+
+if (heatmapData && heatmapData.summary) {
+    buildHeatmapChart('summary');
+} else {
+    showNoDataMessage('heatmapChart');
+}
+
+// Heatmap view toggle
+$('#heatmapViewToggle .btn').on('click', function() {
+    $('#heatmapViewToggle .btn').removeClass('active');
+    $(this).addClass('active');
+    buildHeatmapChart($(this).data('view'));
 });
 
 // Chart options functions
@@ -437,26 +541,7 @@ function getBarChartOptions() {
     };
 }
 
-// Chart type selector
-$('.chart-type-selector').on('change', function() {
-    const chartName = $(this).data('chart');
-    const newType = $(this).val();
-    
-    if (charts[chartName]) {
-        charts[chartName].destroy();
-        
-        const canvas = document.getElementById(chartName + 'Chart');
-        const currentData = charts[chartName].data;
-        
-        charts[chartName] = new Chart(canvas, {
-            type: newType,
-            data: currentData,
-            options: newType.includes('doughnut') || newType.includes('pie') || newType.includes('polar') 
-                ? getDoughnutChartOptions() 
-                : (newType === 'line' ? getLineChartOptions() : getBarChartOptions())
-        });
-    }
-});
+// Chart type selectors removed — fixed chart types
 
 // Export chart as image
 $('.export-chart').on('click', function() {
