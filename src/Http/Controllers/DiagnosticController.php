@@ -462,6 +462,18 @@ class DiagnosticController extends Controller
                 }
             }
 
+            // Check if Manager Core is installed when testing it
+            if ($provider === 'manager-core') {
+                if (!\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled()) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Manager Core package is not installed. Install mattfalahe/manager-core to use this provider.',
+                        'provider' => $provider,
+                        'missing_config' => true
+                    ], 400);
+                }
+            }
+
             // Test with common ore types
             $testTypeIds = [
                 34,     // Tritanium
@@ -603,6 +615,18 @@ class DiagnosticController extends Controller
                     return response()->json([
                         'success' => false,
                         'error' => 'Janice API key not configured. Please set it in Settings or add MINING_MANAGER_JANICE_API_KEY to your .env file.',
+                        'provider' => $provider,
+                        'missing_config' => true
+                    ], 400);
+                }
+            }
+
+            // Check if Manager Core is installed when testing it
+            if ($provider === 'manager-core') {
+                if (!\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled()) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'Manager Core package is not installed. Install mattfalahe/manager-core to use this provider.',
                         'provider' => $provider,
                         'missing_config' => true
                     ], 400);

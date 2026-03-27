@@ -594,7 +594,10 @@
                                     <option value="seat">SeAT Database (Default)</option>
                                     <option value="janice">Janice API (Requires API Key)</option>
                                     <option value="fuzzwork">Fuzzwork Market</option>
-                                    <option value="custom">Custom Prices</option>
+                                    <option value="manager-core"
+                                        {{ \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled() ? '' : 'disabled' }}>
+                                        Manager Core {{ \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled() ? '(Installed)' : '(Not Installed)' }}
+                                    </option>
                                 </select>
                             </div>
 
@@ -650,6 +653,9 @@
                                             <option value="seat">SeAT Database</option>
                                             <option value="janice">Janice API</option>
                                             <option value="fuzzwork">Fuzzwork Market</option>
+                                            @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
+                                            <option value="manager-core">Manager Core</option>
+                                            @endif
                                         </select>
                                     </div>
                                 </div>
@@ -1355,8 +1361,12 @@ function checkProviderRequirements() {
     if (provider === 'janice') {
         warningText.innerHTML = 'Janice API requires an API key. Make sure you have configured <code>janice_api_key</code> in Settings or set <code>MINING_MANAGER_JANICE_API_KEY</code> in your .env file. You can get a free API key from <a href="https://janice.e-351.com/" target="_blank">janice.e-351.com</a>.';
         warningBox.style.display = 'block';
-    } else if (provider === 'custom') {
-        warningText.innerHTML = 'Custom prices must be configured in Settings. Each ore type needs a manual price entry.';
+    } else if (provider === 'manager-core') {
+        @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
+            warningText.innerHTML = '<i class="fas fa-check-circle text-success"></i> Manager Core is installed. This test will read prices from Manager Core\'s cached market data. Make sure Manager Core has been configured and has run at least one price update cycle.';
+        @else
+            warningText.innerHTML = '<i class="fas fa-times-circle text-danger"></i> <strong>Manager Core is not installed.</strong> Install the <code>mattfalahe/manager-core</code> package to use this provider. EvePraisal integration is available through Manager Core\'s price provider settings.';
+        @endif
         warningBox.style.display = 'block';
     } else {
         warningBox.style.display = 'none';
