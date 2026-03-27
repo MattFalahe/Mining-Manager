@@ -658,14 +658,9 @@ class DashboardController extends Controller
      */
     private function getTopMinersRanking($oreType, $startDate, $endDate, $limit = 20)
     {
-        $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at');
+        $valueColumn = $oreType === 'moon_ore' ? 'moon_ore_value' : 'total_value';
 
-        // Filter by ore type
-        if ($oreType === 'moon_ore') {
-            $moonOreTypeIds = $this->getMoonOreTypeIds();
-            $query->whereIn('type_id', $moonOreTypeIds);
-        }
+        $query = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate]);
 
         // Apply corporation filter from dashboard settings
         $corporationFilter = $this->settingsService->getSetting('dashboard_leaderboard_corporation_filter', 'all');
@@ -683,52 +678,15 @@ class DashboardController extends Controller
             }
         }
 
-        $miningData = $query->get();
-        
-        // Get all unique character IDs
-        $characterIds = $miningData->pluck('character_id')->unique()->toArray();
-        
-        // Get character info in batch (optimized)
-        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
-        
-        // Group by main character (account) - this sums all alts together
-        $grouped = $miningData->groupBy(function($entry) use ($charactersInfo) {
-            $charInfo = $charactersInfo[$entry->character_id] ?? null;
-            
-            // Use main_character_id if available, otherwise use character_id
-            if ($charInfo && $charInfo['main_character_id']) {
-                return $charInfo['main_character_id'];
-            }
-            
-            return $entry->character_id;
-        });
+        $topCharacters = $query
+            ->selectRaw("character_id, SUM({$valueColumn}) as total_value, SUM(total_quantity) as total_quantity")
+            ->groupBy('character_id')
+            ->having('total_value', '>', 0)
+            ->orderByDesc('total_value')
+            ->limit($limit * 3)
+            ->get();
 
-        $rankings = [];
-        foreach ($grouped as $mainCharId => $entries) {
-            $totalValue = $this->calculateTotalValue($entries);
-            
-            // ALWAYS get fresh info for the main character (not from cache of alts)
-            // This ensures we show the MAIN's corporation, not an alt's corporation
-            $mainCharInfo = $this->characterInfoService->getCharacterInfo($mainCharId);
-            
-            $rankings[] = [
-                'main_character_id' => $mainCharId,
-                'character_name' => $mainCharInfo['name'],
-                'corporation_name' => $mainCharInfo['corporation_name'],
-                'total_value' => $totalValue,
-                'total_quantity' => $entries->sum('quantity'),
-                'is_registered' => $mainCharInfo['is_registered'],
-                // Count how many alts contributed to this total
-                'alt_count' => $entries->pluck('character_id')->unique()->count() - 1,
-            ];
-        }
-
-        // Sort by total value descending
-        usort($rankings, function($a, $b) {
-            return $b['total_value'] <=> $a['total_value'];
-        });
-
-        return array_slice($rankings, 0, $limit);
+        return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
     }
 
     /**
@@ -871,6 +829,7 @@ class DashboardController extends Controller
 
             $miners[] = [
                 'character_id' => $mainCharId,
+                'main_character_id' => $mainCharId,
                 'character_name' => $mainCharInfo['name'],
                 'corporation_name' => $mainCharInfo['corporation_name'],
                 'total_value' => $data['total_value'],
