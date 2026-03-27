@@ -157,32 +157,44 @@
         font-size: 1.1rem;
     }
 
-    .info-box {
-        background: rgba(23, 162, 184, 0.15);
-        border-left: 4px solid #17a2b8;
+    .info-box,
+    .warning-box,
+    .success-box {
         padding: 15px;
         margin: 15px 0;
         border-radius: 5px;
         color: #d1d5db !important;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .info-box {
+        background: rgba(23, 162, 184, 0.15);
+        border-left: 4px solid #17a2b8;
     }
 
     .warning-box {
         background: rgba(255, 193, 7, 0.15);
         border-left: 4px solid #ffc107;
-        padding: 15px;
-        margin: 15px 0;
-        border-radius: 5px;
-        color: #d1d5db !important;
     }
 
     .success-box {
         background: rgba(28, 200, 138, 0.15);
         border-left: 4px solid #1cc88a;
-        padding: 15px;
-        margin: 15px 0;
-        border-radius: 5px;
-        color: #d1d5db !important;
     }
+
+    .info-box > i,
+    .warning-box > i,
+    .success-box > i {
+        margin-top: 3px;
+        flex-shrink: 0;
+    }
+
+    .info-box > i { color: #17a2b8; }
+    .warning-box > i { color: #ffc107; }
+    .success-box > i { color: #1cc88a; }
 
     .feature-grid {
         display: grid;
@@ -499,14 +511,17 @@
                     </div>
 
                     <div class="success-box" style="margin-top: 20px;">
-                        <strong><i class="fas fa-heart"></i> {{ trans('mining-manager::help.support_the_project') }}:</strong>
-                        <ul style="margin-top: 8px; margin-bottom: 0;">
+                        <i class="fas fa-heart"></i>
+                        <div>
+                            <strong>{{ trans('mining-manager::help.support_the_project') }}:</strong>
+                            <ul style="margin-top: 8px; margin-bottom: 0;">
                             <li>&#11088; {{ trans('mining-manager::help.support_star') }}</li>
                             <li>&#128295; {{ trans('mining-manager::help.support_issues') }}</li>
                             <li>&#128161; {{ trans('mining-manager::help.support_features') }}</li>
                             <li>&#128295; {{ trans('mining-manager::help.support_contribute') }}</li>
                             <li>&#127775; {{ trans('mining-manager::help.support_share') }}</li>
-                        </ul>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
@@ -528,7 +543,8 @@
                     <p>{{ trans('mining-manager::help.what_is_mining_manager_desc') }}</p>
 
                     <div class="info-box">
-                        <strong><i class="fas fa-lightbulb"></i> {{ trans('mining-manager::help.key_benefits') }}:</strong> {{ trans('mining-manager::help.key_benefits_desc') }}
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>{{ trans('mining-manager::help.key_benefits') }}:</strong> {{ trans('mining-manager::help.key_benefits_desc') }}
                     </div>
                 </div>
 
