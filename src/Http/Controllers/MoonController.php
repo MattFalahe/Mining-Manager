@@ -390,6 +390,7 @@ class MoonController extends Controller
                     $moonData[$extraction->moon_id] = [
                         'moon_id' => $extraction->moon_id,
                         'moon_name' => $extraction->moon_name, // Use accessor
+                        'structure_name' => $extraction->structure_name,
                         'extractions' => [],
                         'average_value' => 0,
                     ];

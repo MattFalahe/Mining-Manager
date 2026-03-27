@@ -160,9 +160,13 @@
                                         {{-- Moon Info --}}
                                         <div class="col-md-4">
                                             <h5 class="mb-1">
+                                                <i class="fas fa-industry text-warning"></i>
+                                                {{ $data['structure_name'] ?? 'Unknown Structure' }}
+                                            </h5>
+                                            <p class="mb-0 small">
                                                 <i class="fas fa-moon text-info"></i>
                                                 {{ $data['moon_name'] ?? 'Unknown Moon' }}
-                                            </h5>
+                                            </p>
                                             <p class="mb-0 text-muted small">
                                                 {{ count($data['extractions']) }} {{ trans('mining-manager::moons.extractions') }}
                                             </p>
@@ -226,15 +230,19 @@
                         <div class="card bg-secondary mb-2">
                             <div class="card-header p-2" id="heading{{ $moonId }}">
                                 <h5 class="mb-0">
-                                    <button class="btn btn-link text-light w-100 text-left d-flex justify-content-between align-items-center collapsed" 
-                                            type="button" 
-                                            data-toggle="collapse" 
-                                            data-target="#collapse{{ $moonId }}" 
-                                            aria-expanded="false" 
+                                    <button class="btn btn-link text-light w-100 text-left d-flex justify-content-between align-items-center collapsed"
+                                            type="button"
+                                            data-toggle="collapse"
+                                            data-target="#collapse{{ $moonId }}"
+                                            aria-expanded="false"
                                             aria-controls="collapse{{ $moonId }}">
                                         <span>
-                                            <i class="fas fa-moon text-info"></i>
-                                            {{ $data['moon_name'] ?? 'Unknown Moon' }}
+                                            <i class="fas fa-industry text-warning"></i>
+                                            {{ $data['structure_name'] ?? 'Unknown Structure' }}
+                                            <small class="text-muted ml-2">
+                                                <i class="fas fa-moon text-info"></i>
+                                                {{ $data['moon_name'] ?? 'Unknown Moon' }}
+                                            </small>
                                         </span>
                                         <span class="badge badge-success">
                                             {{ number_format($data['average_value'], 0) }} ISK
