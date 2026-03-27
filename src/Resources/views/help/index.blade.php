@@ -324,7 +324,8 @@
 
     /* ============================================
        Light Theme Overrides
-       When AdminLTE dark-mode is NOT active
+       Only change text colors so content is readable
+       on light backgrounds. No background changes.
        ============================================ */
     body:not(.dark-mode) .help-nav .nav-link {
         color: #374151;
@@ -334,49 +335,18 @@
         color: #fff;
     }
 
-    body:not(.dark-mode) .help-card {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-    }
-
-    body:not(.dark-mode) .help-card h3 {
-        color: #4f46e5;
-    }
-
-    body:not(.dark-mode) .help-card h4 {
-        color: #6b7280;
-    }
-
     body:not(.dark-mode) .help-card p,
     body:not(.dark-mode) .help-card ul,
     body:not(.dark-mode) .help-card ol {
         color: #374151;
     }
 
-    body:not(.dark-mode) .help-card code {
-        background: #f3f4f6;
-        color: #b45309;
-    }
-
-    body:not(.dark-mode) .help-card pre {
-        background: #f3f4f6;
-        color: #374151;
+    body:not(.dark-mode) .help-card h4 {
+        color: #4b5563;
     }
 
     body:not(.dark-mode) .search-box input {
-        background: #ffffff;
-        border-color: #d1d5db;
         color: #374151;
-    }
-
-    body:not(.dark-mode) .search-box i {
-        color: #6b7280;
-    }
-
-    body:not(.dark-mode) .feature-item {
-        background: rgba(79, 70, 229, 0.05);
-        border-color: rgba(79, 70, 229, 0.2);
     }
 
     body:not(.dark-mode) .feature-item h5 {
@@ -384,50 +354,19 @@
     }
 
     body:not(.dark-mode) .feature-item p {
-        color: #6b7280;
-    }
-
-    body:not(.dark-mode) .info-box {
-        background: rgba(23, 162, 184, 0.08);
-        color: #1e3a5f;
-    }
-
-    body:not(.dark-mode) .warning-box {
-        background: rgba(255, 193, 7, 0.08);
-        color: #664d03;
-    }
-
-    body:not(.dark-mode) .success-box {
-        background: rgba(28, 200, 138, 0.08);
-        color: #0f5132;
-    }
-
-    body:not(.dark-mode) .faq-item {
-        background: #f9fafb;
+        color: #4b5563;
     }
 
     body:not(.dark-mode) .faq-question {
         color: #374151;
     }
 
-    body:not(.dark-mode) .faq-question:hover {
-        background: rgba(79, 70, 229, 0.05);
-    }
-
     body:not(.dark-mode) .faq-answer {
         color: #4b5563;
     }
 
-    body:not(.dark-mode) .plugin-info-table {
-        color: #374151;
-    }
-
-    body:not(.dark-mode) .plugin-info-table td {
-        border-bottom-color: #e5e7eb;
-    }
-
     body:not(.dark-mode) .plugin-info-table td:first-child {
-        color: #6b7280;
+        color: #4b5563;
     }
 
     body:not(.dark-mode) .plugin-info-table td:last-child {
