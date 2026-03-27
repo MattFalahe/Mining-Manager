@@ -280,6 +280,13 @@
                     @endif
                 </div>
                 <div class="card-body p-0">
+                    @if(!$hasMoons)
+                        <div class="text-center text-muted p-4">
+                            <i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.
+                        </div>
+                    @elseif(empty($topMinersMoonOre))
+                        <div class="text-center text-muted p-4">No data available</div>
+                    @else
                     <div class="table-responsive">
                         <table class="table table-dark table-striped table-hover">
                             <thead>
@@ -303,8 +310,8 @@
                                         @endif
                                     </td>
                                     <td>
-                                        <img src="https://images.evetech.net/characters/{{ $miner['main_character_id'] }}/portrait?size=32" 
-                                             class="img-circle" 
+                                        <img src="https://images.evetech.net/characters/{{ $miner['main_character_id'] }}/portrait?size=32"
+                                             class="img-circle"
                                              style="width: 32px; height: 32px;">
                                         <strong>{{ $miner['character_name'] }}</strong>
                                         @if(!$miner['is_registered'])
@@ -328,6 +335,7 @@
                             </tbody>
                         </table>
                     </div>
+                    @endif
                 </div>
             </div>
         </div>

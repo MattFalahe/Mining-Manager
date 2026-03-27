@@ -262,7 +262,9 @@
                                             </h3>
                                         </div>
                                         <div class="card-body">
-                                            @if($userRankMoonOre)
+                                            @if(!$hasMoons)
+                                                <p class="text-center text-muted"><i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.</p>
+                                            @elseif($userRankMoonOre)
                                                 <div class="text-center">
                                                     <h1 class="display-3 text-info">
                                                         <i class="fas fa-medal"></i> #{{ $userRankMoonOre }}
@@ -489,7 +491,7 @@
                                     <div class="col-lg-6">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-moon"></i> Top Miners - Moon Ore</h3>
+                                                <h3 class="card-title"><i class="fas fa-moon"></i> Top Miners - Corporation Moon Ore</h3>
                                             </div>
                                             <div class="card-body p-0">
                                                 <table class="table table-sm table-striped">
@@ -931,7 +933,15 @@ $('#corporation-tab').on('shown.bs.tab', function() {
 
             // === TOP MINERS TABLES ===
             populateTopMinersTable('#corp-top-miners-all-ore', data.topMinersOverallAllOre || []);
-            populateTopMinersTable('#corp-top-miners-moon-ore', data.topMinersOverallMoonOre || []);
+            if (data.hasMoons === false) {
+                $('#corp-top-miners-moon-ore').html(
+                    '<tr><td colspan="4" class="text-center text-muted">' +
+                    '<i class="fas fa-moon mr-1"></i> Your corporation doesn\'t have any moons.' +
+                    '</td></tr>'
+                );
+            } else {
+                populateTopMinersTable('#corp-top-miners-moon-ore', data.topMinersOverallMoonOre || []);
+            }
 
             // === CHARTS ===
             initCorpCharts(data);
