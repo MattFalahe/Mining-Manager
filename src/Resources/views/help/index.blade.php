@@ -25,7 +25,7 @@
     }
 
     .help-nav .nav-link {
-        color: #e2e8f0;
+        color: #e2e8f0 !important;
         border-radius: 5px;
         margin-bottom: 5px;
         padding: 10px 15px;
@@ -70,7 +70,7 @@
     }
 
     .help-card h3 {
-        color: #667eea;
+        color: #667eea !important;
         margin-bottom: 15px;
         display: flex;
         align-items: center;
@@ -78,19 +78,19 @@
     }
 
     .help-card h4 {
-        color: #9ca3af;
+        color: #9ca3af !important;
         margin-top: 20px;
         margin-bottom: 10px;
         font-size: 1.1rem;
     }
 
     .help-card p {
-        color: #d1d5db;
+        color: #d1d5db !important;
         line-height: 1.6;
     }
 
     .help-card ul, .help-card ol {
-        color: #d1d5db;
+        color: #d1d5db !important;
         line-height: 1.8;
         margin-left: 20px;
     }
@@ -99,7 +99,7 @@
         background: rgba(0, 0, 0, 0.3);
         padding: 2px 6px;
         border-radius: 3px;
-        color: #fbbf24;
+        color: #fbbf24 !important;
         font-size: 0.9em;
     }
 
@@ -108,7 +108,7 @@
         padding: 15px;
         border-radius: 5px;
         overflow-x: auto;
-        color: #d1d5db;
+        color: #d1d5db !important;
     }
 
     .step-by-step {
@@ -122,6 +122,7 @@
         margin-bottom: 20px;
         padding-left: 50px;
         position: relative;
+        color: #d1d5db !important;
     }
 
     .step-by-step li::before {
@@ -147,6 +148,7 @@
         padding: 15px;
         margin: 15px 0;
         border-radius: 5px;
+        color: #d1d5db !important;
     }
 
     .warning-box {
@@ -155,6 +157,7 @@
         padding: 15px;
         margin: 15px 0;
         border-radius: 5px;
+        color: #d1d5db !important;
     }
 
     .success-box {
@@ -186,12 +189,12 @@
     }
 
     .feature-item h5 {
-        color: #e2e8f0;
+        color: #e2e8f0 !important;
         margin-bottom: 8px;
     }
 
     .feature-item p {
-        color: #9ca3af;
+        color: #9ca3af !important;
         font-size: 0.9rem;
         margin: 0;
     }
@@ -207,7 +210,7 @@
         background: #2d3748;
         border: 1px solid rgba(102, 126, 234, 0.3);
         border-radius: 8px;
-        color: #e2e8f0;
+        color: #e2e8f0 !important;
     }
 
     .search-box i {
@@ -261,6 +264,7 @@
         justify-content: space-between;
         align-items: center;
         transition: background 0.2s;
+        color: #e2e8f0 !important;
     }
 
     .faq-question:hover {
@@ -280,6 +284,7 @@
         max-height: 0;
         overflow: hidden;
         transition: all 0.3s;
+        color: #d1d5db !important;
     }
 
     .faq-item.open .faq-answer {
@@ -289,7 +294,7 @@
 
     .plugin-info-table {
         width: 100%;
-        color: #d1d5db;
+        color: #d1d5db !important;
     }
 
     .plugin-info-table td {
@@ -298,13 +303,13 @@
     }
 
     .plugin-info-table td:first-child {
-        color: #9ca3af;
+        color: #9ca3af !important;
         width: 120px;
         font-weight: 600;
     }
 
     .plugin-info-table td:last-child {
-        color: #e2e8f0;
+        color: #e2e8f0 !important;
     }
 
     @media (max-width: 768px) {
