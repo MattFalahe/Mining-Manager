@@ -17,37 +17,37 @@
     {{-- ═══════════════════════════════════════════════════════════════ --}}
     {{-- SECTION 1: EVE Mail --}}
     {{-- ═══════════════════════════════════════════════════════════════ --}}
-    <div class="card bg-dark mb-3" style="border: 1px solid rgba(255,255,255,0.1);">
-        <div class="card-header" style="background: linear-gradient(135deg, #1a5276 0%, #2471a3 100%); filter: grayscale(50%);">
-            <h5 class="card-title mb-0">
+    <div class="card mb-3" style="background: #1e2a38; border: 1px solid rgba(255,255,255,0.05); opacity: 0.65;">
+        <div class="card-header" style="background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);">
+            <h5 class="card-title mb-0" style="color: #8899aa;">
                 <i class="fas fa-envelope"></i>
                 EVE Mail
-                <span class="badge badge-secondary ml-2" style="font-size: 0.7rem;">NOT AVAILABLE</span>
+                <span class="badge ml-2" style="font-size: 0.7rem; background: #4a5568; color: #a0aec0;">NOT AVAILABLE</span>
             </h5>
         </div>
         <div class="card-body">
             {{-- Not Supported Banner --}}
-            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; color: #333;">
-                <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
-                <strong style="color: #1a1a1a;">Currently Not Supported</strong> — EVE Mail notifications require the
-                <code style="color: #856404; background: rgba(0,0,0,0.1); padding: 1px 4px; border-radius: 3px;">esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
+            <div class="mb-3" style="background: rgba(102, 126, 234, 0.1); border-left: 4px solid #667eea; border-radius: 5px; padding: 15px; color: #c0c8d4;">
+                <i class="fas fa-info-circle" style="color: #667eea;"></i>
+                <strong style="color: #e2e8f0;">Currently Not Supported</strong> — EVE Mail notifications require the
+                <code style="color: #fbbf24; background: rgba(0,0,0,0.3); padding: 1px 4px; border-radius: 3px;">esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
                 configuration. The scope exists in EVE's ESI API but SeAT does not offer it as an option during
                 character authentication.
                 <br><br>
-                <small style="color: #555;">
+                <small style="color: #9ca3af;">
                     This feature will be enabled in a future update once scope support is confirmed with SeAT developers.
                     In the meantime, please use Discord or Slack webhooks for notifications.
                 </small>
             </div>
 
             {{-- Enable Toggle - forced off and disabled --}}
-            <div class="custom-control custom-switch mb-3" style="opacity: 0.5;">
+            <div class="custom-control custom-switch mb-3" style="opacity: 0.4;">
                 <input type="checkbox" class="custom-control-input"
                        id="evemail_enabled" name="evemail_enabled" value="0" disabled>
                 <label class="custom-control-label" for="evemail_enabled">
-                    <strong>Enable EVE Mail Notifications</strong>
+                    <strong style="color: #8899aa;">Enable EVE Mail Notifications</strong>
                 </label>
-                <small class="form-text text-muted">This option is currently disabled pending ESI scope support in SeAT.</small>
+                <small class="form-text" style="color: #6b7280;">This option is currently disabled pending ESI scope support in SeAT.</small>
             </div>
 
             @php
