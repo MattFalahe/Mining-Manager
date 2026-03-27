@@ -497,7 +497,6 @@ class SettingsController extends Controller
             'price_provider' => 'required|in:seat,fuzzwork,janice,manager-core',
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
-            'auto_refresh' => 'nullable|boolean',
             'fallback_to_jita' => 'nullable|boolean',
             
             // Janice-specific settings
@@ -576,7 +575,6 @@ class SettingsController extends Controller
             $this->settingsService->updatePricingSettings([
                 'price_type' => $data['price_type'],
                 'cache_duration' => $data['cache_duration'],
-                'auto_refresh' => $request->has('auto_refresh'),
                 'fallback_to_jita' => $request->has('fallback_to_jita'),
                 // Refining settings
                 'use_refined_value' => $request->has('use_refined_value'),

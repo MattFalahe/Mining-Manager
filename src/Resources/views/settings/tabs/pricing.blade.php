@@ -227,13 +227,13 @@
                 </div>
             </div>
 
-            <div class="form-group mt-3">
+            <div class="form-group mt-3" id="price-type-group">
                 <label for="price_type">
                     <i class="fas fa-chart-line"></i>
                     Price Type
                 </label>
-                <select class="form-control @error('price_type') is-invalid @enderror" 
-                        id="price_type" 
+                <select class="form-control @error('price_type') is-invalid @enderror"
+                        id="price_type"
                         name="price_type">
                     <option value="sell" {{ (isset($settings['pricing']['price_type']) && $settings['pricing']['price_type'] == 'sell') || !isset($settings['pricing']['price_type']) ? 'selected' : '' }}>
                         Sell Orders (Lowest sell price)
@@ -249,7 +249,7 @@
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
                 <small class="form-text text-muted">
-                    Which market price to use for calculations
+                    Which market price to use for calculations (used by SeAT, Fuzzwork, and Manager Core)
                 </small>
             </div>
         </div>
@@ -293,22 +293,6 @@
             <div class="custom-control custom-switch">
                 <input type="checkbox" 
                        class="custom-control-input" 
-                       id="auto_refresh" 
-                       name="auto_refresh" 
-                       value="1"
-                       {{ old('auto_refresh', $settings['pricing']['auto_refresh'] ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="auto_refresh">
-                    <i class="fas fa-sync-alt"></i>
-                    Auto-refresh prices when cache expires
-                </label>
-                <small class="form-text text-muted">
-                    Automatically fetch new prices when cache duration passes
-                </small>
-            </div>
-
-            <div class="custom-control custom-switch mt-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
                        id="fallback_to_jita" 
                        name="fallback_to_jita" 
                        value="1"
@@ -318,7 +302,7 @@
                     Fallback to Jita prices if unavailable
                 </label>
                 <small class="form-text text-muted">
-                    Use Jita (The Forge) prices if selected market has no data
+                    When a non-Jita market returns 0 for an item, automatically retry with Jita prices using the same provider
                 </small>
             </div>
         </div>
@@ -469,6 +453,13 @@ $(document).ready(function() {
             $('#manager-core-config').slideDown(300);
         } else {
             $('#manager-core-config').slideUp(300);
+        }
+
+        // Hide Price Type when Janice is selected (Janice uses its own Price Method)
+        if (provider === 'janice') {
+            $('#price-type-group').slideUp(300);
+        } else {
+            $('#price-type-group').slideDown(300);
         }
     }
 

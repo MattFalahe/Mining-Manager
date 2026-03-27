@@ -575,7 +575,6 @@ class DiagnosticController extends Controller
                     'janice_price_method' => $pricingSettings['janice_price_method'] ?? 'buy',
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
                     'cache_duration' => ($pricingSettings['cache_duration'] ?? 240) . ' minutes',
-                    'auto_refresh' => ($pricingSettings['auto_refresh'] ?? true) ? 'Enabled' : 'Disabled',
                     'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
                     'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
                     'default_region_id' => $generalSettings['default_region_id'] ?? 10000002,

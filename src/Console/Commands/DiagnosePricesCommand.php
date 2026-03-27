@@ -154,11 +154,6 @@ class DiagnosePricesCommand extends Command
                     $this->getStatusIcon(isset($pricingSettings['cache_duration']))
                 ],
                 [
-                    'Auto Refresh',
-                    $pricingSettings['auto_refresh'] ? 'Enabled' : 'Disabled',
-                    $this->getStatusIcon($pricingSettings['auto_refresh'] ?? false)
-                ],
-                [
                     'Use Refined Value',
                     $pricingSettings['use_refined_value'] ? 'Yes' : 'No',
                     '📊'

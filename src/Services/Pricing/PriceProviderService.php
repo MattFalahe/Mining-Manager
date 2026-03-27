@@ -18,9 +18,7 @@ use Exception;
  * - SeAT Database (market_prices table) - Default, no ESI calls
  * - Janice - Janice API (requires API key)
  * - Fuzzwork - Fuzzwork market data
- * - Custom - Manually configured prices
- *
- * NO ESI CALLS - Uses SeAT's existing database tables
+ * - Manager Core - Shared price cache (ESI/EvePraisal/SeAT)
  */
 class PriceProviderService
 {
@@ -76,32 +74,29 @@ class PriceProviderService
         ]);
 
         try {
-            switch ($provider) {
-                case self::PROVIDER_JANICE:
-                    return $this->getPricesFromJanice($typeIds);
-                
-                case self::PROVIDER_FUZZWORK:
-                    return $this->getPricesFromFuzzwork($typeIds);
-                
-                case self::PROVIDER_MANAGER_CORE:
-                    return $this->getPricesFromManagerCore($typeIds);
+            $prices = match ($provider) {
+                self::PROVIDER_JANICE => $this->getPricesFromJanice($typeIds),
+                self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzwork($typeIds),
+                self::PROVIDER_MANAGER_CORE => $this->getPricesFromManagerCore($typeIds),
+                default => $this->getPricesFromSeAT($typeIds),
+            };
 
-                case self::PROVIDER_SEAT:
-                default:
-                    return $this->getPricesFromSeAT($typeIds);
-            }
+            // Fallback to Jita: if enabled and market is not Jita, retry zero-price items with Jita
+            $prices = $this->applyJitaFallback($provider, $prices, $typeIds);
+
+            return $prices;
         } catch (Exception $e) {
             Log::error('Failed to fetch prices', [
                 'provider' => $provider,
                 'error' => $e->getMessage()
             ]);
-            
+
             // Fallback to SeAT database if configured provider fails
             if ($provider !== self::PROVIDER_SEAT) {
                 Log::info('Falling back to SeAT database provider');
                 return $this->getPricesFromSeAT($typeIds);
             }
-            
+
             throw $e;
         }
     }
@@ -467,6 +462,170 @@ class PriceProviderService
             if (!isset($prices[$typeId])) {
                 $prices[$typeId] = 0;
                 Log::warning('Price not found in Manager Core', ['type_id' => $typeId, 'market' => $market]);
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Apply Jita fallback for items that returned 0 price
+     *
+     * When fallback_to_jita is enabled and the configured market is not Jita,
+     * re-fetch any zero-price items using Jita as the market.
+     *
+     * @param string $provider
+     * @param array $prices
+     * @param array $typeIds
+     * @return array
+     */
+    protected function applyJitaFallback(string $provider, array $prices, array $typeIds): array
+    {
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $fallbackEnabled = $pricingSettings['fallback_to_jita'] ?? true;
+
+        if (!$fallbackEnabled) {
+            return $prices;
+        }
+
+        // Determine current market per provider
+        $currentMarket = match ($provider) {
+            self::PROVIDER_JANICE => $pricingSettings['janice_market'] ?? 'jita',
+            self::PROVIDER_MANAGER_CORE => $pricingSettings['manager_core_market'] ?? 'jita',
+            default => 'jita', // SeAT/Fuzzwork default to Jita region
+        };
+
+        // No fallback needed if already using Jita
+        if ($currentMarket === 'jita') {
+            return $prices;
+        }
+
+        // Find items that returned 0
+        $zeroTypeIds = array_keys(array_filter($prices, fn($price) => $price <= 0));
+
+        if (empty($zeroTypeIds)) {
+            return $prices;
+        }
+
+        Log::info("Jita fallback: {$currentMarket} returned 0 for " . count($zeroTypeIds) . " items, retrying with Jita");
+
+        try {
+            $jitaPrices = match ($provider) {
+                self::PROVIDER_JANICE => $this->getPricesFromJaniceWithMarket($zeroTypeIds, 'jita'),
+                self::PROVIDER_MANAGER_CORE => $this->getPricesFromManagerCoreWithMarket($zeroTypeIds, 'jita'),
+                self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzworkWithRegion($zeroTypeIds, self::DEFAULT_REGION_ID),
+                default => [],
+            };
+
+            $fallbackCount = 0;
+            foreach ($jitaPrices as $typeId => $price) {
+                if ($price > 0 && ($prices[$typeId] ?? 0) <= 0) {
+                    $prices[$typeId] = $price;
+                    $fallbackCount++;
+                }
+            }
+
+            if ($fallbackCount > 0) {
+                Log::info("Jita fallback: recovered prices for {$fallbackCount} items");
+            }
+        } catch (Exception $e) {
+            Log::warning('Jita fallback failed: ' . $e->getMessage());
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Fetch Janice prices with a specific market override
+     *
+     * @param array $typeIds
+     * @param string $market
+     * @return array
+     */
+    protected function getPricesFromJaniceWithMarket(array $typeIds, string $market): array
+    {
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $apiKey = $pricingSettings['janice_api_key'] ?? '';
+        if (empty($apiKey)) {
+            return [];
+        }
+
+        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
+    }
+
+    /**
+     * Fetch Manager Core prices with a specific market override
+     *
+     * @param array $typeIds
+     * @param string $market
+     * @return array
+     */
+    protected function getPricesFromManagerCoreWithMarket(array $typeIds, string $market): array
+    {
+        if (!self::isManagerCoreInstalled()) {
+            return [];
+        }
+
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $priceType = $pricingSettings['price_type'] ?? 'sell';
+        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
+
+        $prices = [];
+
+        $marketPrices = DB::table('manager_core_market_prices')
+            ->whereIn('type_id', $typeIds)
+            ->where('market', $market)
+            ->where('price_type', $priceType === 'average' ? 'sell' : $priceType)
+            ->get();
+
+        foreach ($marketPrices as $item) {
+            $price = match ($variant) {
+                'min' => (float) ($item->price_min ?? 0),
+                'max' => (float) ($item->price_max ?? 0),
+                'avg' => (float) ($item->price_avg ?? 0),
+                'median' => (float) ($item->price_median ?? 0),
+                'percentile' => (float) ($item->price_percentile ?? 0),
+                default => (float) ($item->price_min ?? 0),
+            };
+            $prices[$item->type_id] = $price;
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Fetch Fuzzwork prices with a specific region override
+     *
+     * @param array $typeIds
+     * @param int $regionId
+     * @return array
+     */
+    protected function getPricesFromFuzzworkWithRegion(array $typeIds, int $regionId): array
+    {
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $priceMethod = $pricingSettings['price_type'] ?? 'sell';
+        $typeIdsString = implode(',', $typeIds);
+
+        $response = Http::get(self::FUZZWORK_MARKET_URL, [
+            'region' => $regionId,
+            'types' => $typeIdsString,
+        ]);
+
+        if (!$response->successful()) {
+            return [];
+        }
+
+        $data = $response->json();
+        $prices = [];
+
+        foreach ($typeIds as $typeId) {
+            if (isset($data[$typeId])) {
+                $itemData = $data[$typeId];
+                $prices[$typeId] = match ($priceMethod) {
+                    'buy' => (float) ($itemData['buy']['max'] ?? 0),
+                    'sell' => (float) ($itemData['sell']['min'] ?? 0),
+                    default => ((float) ($itemData['buy']['max'] ?? 0) + (float) ($itemData['sell']['min'] ?? 0)) / 2,
+                };
             }
         }
 
