@@ -37,6 +37,7 @@ class PriceProviderService
     const PROVIDER_JANICE = 'janice';
     const PROVIDER_FUZZWORK = 'fuzzwork';
     const PROVIDER_CUSTOM = 'custom';
+    const PROVIDER_MANAGER_CORE = 'manager-core';
 
     /**
      * Default market hub for regional prices
@@ -85,7 +86,10 @@ class PriceProviderService
                 
                 case self::PROVIDER_CUSTOM:
                     return $this->getCustomPrices($typeIds);
-                
+
+                case self::PROVIDER_MANAGER_CORE:
+                    return $this->getPricesFromManagerCore($typeIds);
+
                 case self::PROVIDER_SEAT:
                 default:
                     return $this->getPricesFromSeAT($typeIds);
@@ -417,6 +421,116 @@ class PriceProviderService
     }
 
     /**
+     * Fetch prices from Manager Core's market_prices table
+     *
+     * Uses Manager Core's cached price data which can be sourced from
+     * ESI, EvePraisal, or SeAT's price provider system.
+     *
+     * @param array $typeIds
+     * @return array
+     */
+    protected function getPricesFromManagerCore(array $typeIds): array
+    {
+        if (!self::isManagerCoreInstalled()) {
+            throw new Exception('Manager Core is not installed. Install mattfalahe/manager-core to use this provider.');
+        }
+
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $priceType = $pricingSettings['price_type'] ?? 'sell';
+        $market = $pricingSettings['manager_core_market'] ?? 'jita';
+        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
+
+        $prices = [];
+
+        // Query Manager Core's market prices table
+        $marketPrices = DB::table('manager_core_market_prices')
+            ->whereIn('type_id', $typeIds)
+            ->where('market', $market)
+            ->where('price_type', $priceType === 'average' ? 'sell' : $priceType)
+            ->get();
+
+        foreach ($marketPrices as $item) {
+            // Select the price based on configured variant
+            $price = match ($variant) {
+                'min' => (float) ($item->price_min ?? 0),
+                'max' => (float) ($item->price_max ?? 0),
+                'avg' => (float) ($item->price_avg ?? 0),
+                'median' => (float) ($item->price_median ?? 0),
+                'percentile' => (float) ($item->price_percentile ?? 0),
+                default => (float) ($item->price_min ?? 0),
+            };
+
+            // For 'average' price type, average buy and sell
+            if ($priceType === 'average') {
+                $buyPrice = DB::table('manager_core_market_prices')
+                    ->where('type_id', $item->type_id)
+                    ->where('market', $market)
+                    ->where('price_type', 'buy')
+                    ->first();
+
+                if ($buyPrice) {
+                    $buyValue = match ($variant) {
+                        'min' => (float) ($buyPrice->price_min ?? 0),
+                        'max' => (float) ($buyPrice->price_max ?? 0),
+                        'avg' => (float) ($buyPrice->price_avg ?? 0),
+                        'median' => (float) ($buyPrice->price_median ?? 0),
+                        'percentile' => (float) ($buyPrice->price_percentile ?? 0),
+                        default => (float) ($buyPrice->price_min ?? 0),
+                    };
+                    $price = ($price + $buyValue) / 2;
+                }
+            }
+
+            $prices[$item->type_id] = $price;
+        }
+
+        // Fill missing prices with 0
+        foreach ($typeIds as $typeId) {
+            if (!isset($prices[$typeId])) {
+                $prices[$typeId] = 0;
+                Log::warning('Price not found in Manager Core', ['type_id' => $typeId, 'market' => $market]);
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Check if Manager Core package is installed
+     *
+     * @return bool
+     */
+    public static function isManagerCoreInstalled(): bool
+    {
+        return class_exists('ManagerCore\Services\PricingService');
+    }
+
+    /**
+     * Subscribe all Mining Manager type IDs to Manager Core
+     *
+     * Registers all ore, mineral, moon material, ice, and gas type IDs
+     * with Manager Core's subscription system so it fetches prices for them.
+     *
+     * @param string $market Market to subscribe to (default: jita)
+     * @return int Number of type IDs subscribed
+     */
+    public function subscribeToManagerCore(string $market = 'jita'): int
+    {
+        if (!self::isManagerCoreInstalled()) {
+            throw new Exception('Manager Core is not installed.');
+        }
+
+        $typeIds = \MiningManager\Services\TypeIdRegistry::getTypeIdsByCategory('all');
+
+        $pricingService = app('ManagerCore\Services\PricingService');
+        $pricingService->registerTypes('mining-manager', $typeIds, $market);
+
+        Log::info('Mining Manager: Subscribed ' . count($typeIds) . " type IDs to Manager Core for market '{$market}'");
+
+        return count($typeIds);
+    }
+
+    /**
      * Get the configured price provider
      *
      * @return string
@@ -486,6 +600,12 @@ class PriceProviderService
                 'description' => 'Manually configured prices',
                 'requires_config' => true,
                 'config_fields' => ['custom_prices']
+            ],
+            self::PROVIDER_MANAGER_CORE => [
+                'name' => 'Manager Core',
+                'description' => 'Use Manager Core\'s cached market prices (ESI, EvePraisal, or SeAT)',
+                'requires_config' => false,
+                'available' => self::isManagerCoreInstalled(),
             ]
         ];
     }
@@ -532,7 +652,7 @@ class PriceProviderService
         $provider = $this->getConfiguredProvider();
 
         // For database and custom providers, no need to batch
-        if (in_array($provider, [self::PROVIDER_SEAT, self::PROVIDER_CUSTOM])) {
+        if (in_array($provider, [self::PROVIDER_SEAT, self::PROVIDER_CUSTOM, self::PROVIDER_MANAGER_CORE])) {
             return $this->getPrices($typeIds);
         }
 

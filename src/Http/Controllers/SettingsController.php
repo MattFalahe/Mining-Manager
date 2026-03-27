@@ -494,7 +494,7 @@ class SettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Price provider settings
-            'price_provider' => 'required|in:seat,fuzzwork,janice,custom',
+            'price_provider' => 'required|in:seat,fuzzwork,janice,custom,manager-core',
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
             'auto_refresh' => 'nullable|boolean',
@@ -504,6 +504,10 @@ class SettingsController extends Controller
             'janice_api_key' => 'nullable|string|max:255',
             'janice_market' => 'nullable|in:jita,amarr',
             'janice_price_method' => 'nullable|in:buy,sell,split',
+
+            // Manager Core-specific settings
+            'manager_core_market' => 'nullable|string|max:50',
+            'manager_core_variant' => 'nullable|in:min,max,avg,median,percentile',
             
             // Refining settings
             'use_refined_value' => 'nullable|boolean',
@@ -534,6 +538,26 @@ class SettingsController extends Controller
                 $this->settingsService->updateSetting('janice_price_method', $data['janice_price_method'], 'string');
             }
 
+            // Manager Core-specific settings
+            if (isset($data['manager_core_market'])) {
+                $this->settingsService->updateSetting('manager_core_market', $data['manager_core_market'], 'string');
+            }
+            if (isset($data['manager_core_variant'])) {
+                $this->settingsService->updateSetting('manager_core_variant', $data['manager_core_variant'], 'string');
+            }
+
+            // Auto-subscribe type IDs to Manager Core when selected as provider
+            if (($data['price_provider'] ?? '') === 'manager-core') {
+                try {
+                    $priceProviderService = app(\MiningManager\Services\Pricing\PriceProviderService::class);
+                    $market = $data['manager_core_market'] ?? 'jita';
+                    $count = $priceProviderService->subscribeToManagerCore($market);
+                    Log::info("Mining Manager: Auto-subscribed {$count} type IDs to Manager Core");
+                } catch (\Exception $subEx) {
+                    Log::warning('Mining Manager: Failed to subscribe to Manager Core: ' . $subEx->getMessage());
+                }
+            }
+
             // Update other pricing settings via service (these use 'pricing.' prefix)
             $this->settingsService->updatePricingSettings([
                 'price_type' => $data['price_type'],
@@ -543,6 +567,9 @@ class SettingsController extends Controller
                 // Refining settings
                 'use_refined_value' => $request->has('use_refined_value'),
                 'refining_efficiency' => $data['refining_efficiency'],
+                // Manager Core settings
+                'manager_core_market' => $data['manager_core_market'] ?? 'jita',
+                'manager_core_variant' => $data['manager_core_variant'] ?? 'min',
             ]);
 
             // Clear all settings + price caches

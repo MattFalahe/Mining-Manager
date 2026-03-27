@@ -41,6 +41,11 @@
                     <option value="custom" {{ (isset($settings['pricing']['price_provider']) && $settings['pricing']['price_provider'] == 'custom') ? 'selected' : '' }}>
                         Custom Prices (Manual configuration)
                     </option>
+                    @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
+                    <option value="manager-core" {{ (isset($settings['pricing']['price_provider']) && $settings['pricing']['price_provider'] == 'manager-core') ? 'selected' : '' }}>
+                        Manager Core (Shared price cache - ESI/EvePraisal/SeAT)
+                    </option>
+                    @endif
                 </select>
                 @error('price_provider')
                     <div class="invalid-feedback">{{ $message }}</div>
@@ -50,6 +55,9 @@
                     <strong>Fuzzwork:</strong> External market data API - no configuration needed<br>
                     <strong>Janice:</strong> Accurate appraisal service - requires free API key<br>
                     <strong>Custom:</strong> Set your own prices manually
+                    @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
+                    <br><strong>Manager Core:</strong> Uses Manager Core's shared price cache with full statistics, history, and trending
+                    @endif
                 </small>
             </div>
 
@@ -137,6 +145,89 @@
                 <div class="alert alert-warning mb-0">
                     <i class="fas fa-exclamation-triangle"></i>
                     <strong>Important:</strong> After saving Janice settings, run <code>php artisan mining-manager:cache-prices --type=moon --force</code> to populate prices.
+                </div>
+            </div>
+
+            {{-- Manager Core Configuration --}}
+            <div id="manager-core-config" style="display: none;" class="mt-4 p-3 bg-secondary rounded border border-info">
+                <h6 class="text-info mb-3">
+                    <i class="fas fa-cubes"></i> Manager Core Configuration
+                </h6>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="manager_core_market">
+                                <i class="fas fa-map-marker-alt"></i>
+                                Market
+                            </label>
+                            <select class="form-control @error('manager_core_market') is-invalid @enderror"
+                                    id="manager_core_market"
+                                    name="manager_core_market">
+                                <option value="jita" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'jita') || !isset($settings['pricing']['manager_core_market']) ? 'selected' : '' }}>
+                                    Jita
+                                </option>
+                                <option value="amarr" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'amarr') ? 'selected' : '' }}>
+                                    Amarr
+                                </option>
+                                <option value="dodixie" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'dodixie') ? 'selected' : '' }}>
+                                    Dodixie
+                                </option>
+                                <option value="hek" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'hek') ? 'selected' : '' }}>
+                                    Hek
+                                </option>
+                                <option value="rens" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'rens') ? 'selected' : '' }}>
+                                    Rens
+                                </option>
+                            </select>
+                            @error('manager_core_market')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <small class="form-text text-muted">
+                                Which market hub to read prices from (must be enabled in Manager Core)
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="manager_core_variant">
+                                <i class="fas fa-calculator"></i>
+                                Price Variant
+                            </label>
+                            <select class="form-control @error('manager_core_variant') is-invalid @enderror"
+                                    id="manager_core_variant"
+                                    name="manager_core_variant">
+                                <option value="min" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'min') || !isset($settings['pricing']['manager_core_variant']) ? 'selected' : '' }}>
+                                    Minimum
+                                </option>
+                                <option value="max" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'max') ? 'selected' : '' }}>
+                                    Maximum
+                                </option>
+                                <option value="avg" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'avg') ? 'selected' : '' }}>
+                                    Average (Weighted)
+                                </option>
+                                <option value="median" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'median') ? 'selected' : '' }}>
+                                    Median
+                                </option>
+                                <option value="percentile" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'percentile') ? 'selected' : '' }}>
+                                    Percentile (5th)
+                                </option>
+                            </select>
+                            @error('manager_core_variant')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <small class="form-text text-muted">
+                                Which price statistic to use for tax and value calculations
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Auto-Subscribe:</strong> When you save with Manager Core selected, all mining-related type IDs (ores, minerals, moon materials, ice, gas) will be automatically subscribed to Manager Core's price tracking.
+                    Prices are updated on Manager Core's schedule and shared across all plugins.
                 </div>
             </div>
 
@@ -366,21 +457,30 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
-    // Show/hide Janice config based on provider selection
-    function toggleJaniceConfig() {
+    // Show/hide provider-specific config based on selection
+    function toggleProviderConfig() {
         const provider = $('#price_provider').val();
+
+        // Janice config
         if (provider === 'janice') {
             $('#janice-config').slideDown(300);
         } else {
             $('#janice-config').slideUp(300);
         }
+
+        // Manager Core config
+        if (provider === 'manager-core') {
+            $('#manager-core-config').slideDown(300);
+        } else {
+            $('#manager-core-config').slideUp(300);
+        }
     }
-    
+
     // Initialize on page load
-    toggleJaniceConfig();
-    
+    toggleProviderConfig();
+
     // Update when provider changes
-    $('#price_provider').on('change', toggleJaniceConfig);
+    $('#price_provider').on('change', toggleProviderConfig);
     
     // Show warning if Janice selected but no API key
     $('#price_provider').on('change', function() {
