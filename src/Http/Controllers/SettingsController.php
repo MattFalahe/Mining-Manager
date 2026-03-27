@@ -494,7 +494,7 @@ class SettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Price provider settings
-            'price_provider' => 'required|in:seat,fuzzwork,janice,custom,manager-core',
+            'price_provider' => 'required|in:seat,fuzzwork,janice,manager-core',
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
             'auto_refresh' => 'nullable|boolean',

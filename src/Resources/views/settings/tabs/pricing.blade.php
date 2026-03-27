@@ -38,9 +38,6 @@
                     <option value="janice" {{ (isset($settings['pricing']['price_provider']) && $settings['pricing']['price_provider'] == 'janice') ? 'selected' : '' }}>
                         Janice (Appraisal service - Requires API key)
                     </option>
-                    <option value="custom" {{ (isset($settings['pricing']['price_provider']) && $settings['pricing']['price_provider'] == 'custom') ? 'selected' : '' }}>
-                        Custom Prices (Manual configuration)
-                    </option>
                     @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
                     <option value="manager-core" {{ (isset($settings['pricing']['price_provider']) && $settings['pricing']['price_provider'] == 'manager-core') ? 'selected' : '' }}>
                         Manager Core (Shared price cache - ESI/EvePraisal/SeAT)
@@ -53,8 +50,7 @@
                 <small class="form-text text-muted">
                     <strong>SeAT Database:</strong> Uses SeAT's existing market_prices table (refreshed by SeAT's jobs)<br>
                     <strong>Fuzzwork:</strong> External market data API - no configuration needed<br>
-                    <strong>Janice:</strong> Accurate appraisal service - requires free API key<br>
-                    <strong>Custom:</strong> Set your own prices manually
+                    <strong>Janice:</strong> Accurate appraisal service - requires free API key
                     @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
                     <br><strong>Manager Core:</strong> Uses Manager Core's shared price cache with full statistics, history, and trending
                     @endif

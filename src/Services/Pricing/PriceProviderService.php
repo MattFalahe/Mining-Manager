@@ -36,7 +36,6 @@ class PriceProviderService
     const PROVIDER_SEAT = 'seat';
     const PROVIDER_JANICE = 'janice';
     const PROVIDER_FUZZWORK = 'fuzzwork';
-    const PROVIDER_CUSTOM = 'custom';
     const PROVIDER_MANAGER_CORE = 'manager-core';
 
     /**
@@ -84,9 +83,6 @@ class PriceProviderService
                 case self::PROVIDER_FUZZWORK:
                     return $this->getPricesFromFuzzwork($typeIds);
                 
-                case self::PROVIDER_CUSTOM:
-                    return $this->getCustomPrices($typeIds);
-
                 case self::PROVIDER_MANAGER_CORE:
                     return $this->getPricesFromManagerCore($typeIds);
 
@@ -403,24 +399,6 @@ class PriceProviderService
     }
 
     /**
-     * Get custom configured prices
-     *
-     * @param array $typeIds
-     * @return array
-     */
-    protected function getCustomPrices(array $typeIds): array
-    {
-        $customPrices = $this->settingsService->getSetting('custom_prices', []);
-        $prices = [];
-
-        foreach ($typeIds as $typeId) {
-            $prices[$typeId] = (float) ($customPrices[$typeId] ?? 0);
-        }
-
-        return $prices;
-    }
-
-    /**
      * Fetch prices from Manager Core's market_prices table
      *
      * Uses Manager Core's cached price data which can be sourced from
@@ -624,12 +602,6 @@ class PriceProviderService
                 'description' => 'Community market aggregator',
                 'requires_config' => false
             ],
-            self::PROVIDER_CUSTOM => [
-                'name' => 'Custom',
-                'description' => 'Manually configured prices',
-                'requires_config' => true,
-                'config_fields' => ['custom_prices']
-            ],
             self::PROVIDER_MANAGER_CORE => [
                 'name' => 'Manager Core',
                 'description' => 'Use Manager Core\'s cached market prices (ESI, EvePraisal, or SeAT)',
@@ -681,7 +653,7 @@ class PriceProviderService
         $provider = $this->getConfiguredProvider();
 
         // For database and custom providers, no need to batch
-        if (in_array($provider, [self::PROVIDER_SEAT, self::PROVIDER_CUSTOM, self::PROVIDER_MANAGER_CORE])) {
+        if (in_array($provider, [self::PROVIDER_SEAT, self::PROVIDER_MANAGER_CORE])) {
             return $this->getPrices($typeIds);
         }
 
