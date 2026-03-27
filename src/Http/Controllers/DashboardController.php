@@ -738,17 +738,21 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $query = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereNotNull('processed_at');
-
-        if ($oreType === 'moon_ore') {
-            $moonOreTypeIds = $this->getMoonOreTypeIds();
-            $query->whereIn('type_id', $moonOreTypeIds);
+        if (empty($characterIds)) {
+            return [];
         }
 
-        $miningData = $query->with('character')->get();
+        $valueColumn = $oreType === 'moon_ore' ? 'moon_ore_value' : 'total_value';
 
-        return $this->aggregateTopMiners($miningData, $limit);
+        $topCharacters = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->selectRaw("character_id, SUM({$valueColumn}) as total_value, SUM(total_quantity) as total_quantity")
+            ->groupBy('character_id')
+            ->having('total_value', '>', 0)
+            ->orderByDesc('total_value')
+            ->limit($limit * 3) // Fetch extra to account for alt grouping
+            ->get();
+
+        return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
     }
 
     /**
@@ -758,18 +762,22 @@ class DashboardController extends Controller
     {
         $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        $query = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at');
-
-        if ($oreType === 'moon_ore') {
-            $moonOreTypeIds = $this->getMoonOreTypeIds();
-            $query->whereIn('type_id', $moonOreTypeIds);
+        if (empty($characterIds)) {
+            return [];
         }
 
-        $miningData = $query->with('character')->get();
+        $valueColumn = $oreType === 'moon_ore' ? 'moon_ore_value' : 'total_value';
 
-        return $this->aggregateTopMiners($miningData, $limit);
+        $topCharacters = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->selectRaw("character_id, SUM({$valueColumn}) as total_value, SUM(total_quantity) as total_quantity")
+            ->groupBy('character_id')
+            ->having('total_value', '>', 0)
+            ->orderByDesc('total_value')
+            ->limit($limit * 3)
+            ->get();
+
+        return $this->aggregateTopMinersFromSummary($topCharacters, $limit);
     }
 
     /**
@@ -818,6 +826,61 @@ class DashboardController extends Controller
         usort($miners, function($a, $b) {
             return $b['total_value'] <=> $a['total_value'];
         });
+
+        return array_slice($miners, 0, $limit);
+    }
+
+    /**
+     * Aggregate top miners from daily summary SQL results (fast path)
+     * Groups by main character, resolves names in batch.
+     */
+    private function aggregateTopMinersFromSummary($summaryRows, $limit)
+    {
+        if ($summaryRows->isEmpty()) {
+            return [];
+        }
+
+        $characterIds = $summaryRows->pluck('character_id')->toArray();
+        $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($characterIds);
+
+        // Group by main character
+        $grouped = [];
+        foreach ($summaryRows as $row) {
+            $charInfo = $charactersInfo[$row->character_id] ?? null;
+            $mainId = ($charInfo && $charInfo['main_character_id']) ? $charInfo['main_character_id'] : $row->character_id;
+
+            if (!isset($grouped[$mainId])) {
+                $grouped[$mainId] = [
+                    'total_value' => 0,
+                    'total_quantity' => 0,
+                    'alt_ids' => [],
+                ];
+            }
+            $grouped[$mainId]['total_value'] += (float) $row->total_value;
+            $grouped[$mainId]['total_quantity'] += (float) $row->total_quantity;
+            $grouped[$mainId]['alt_ids'][] = $row->character_id;
+        }
+
+        // Resolve main character names in batch
+        $mainIds = array_keys($grouped);
+        $mainInfoBatch = $this->characterInfoService->getBatchCharacterInfo($mainIds);
+
+        $miners = [];
+        foreach ($grouped as $mainCharId => $data) {
+            $mainCharInfo = $mainInfoBatch[$mainCharId] ?? ['name' => "Character {$mainCharId}", 'corporation_name' => 'Unknown', 'is_registered' => false];
+
+            $miners[] = [
+                'character_id' => $mainCharId,
+                'character_name' => $mainCharInfo['name'],
+                'corporation_name' => $mainCharInfo['corporation_name'],
+                'total_value' => $data['total_value'],
+                'total_quantity' => $data['total_quantity'],
+                'is_registered' => $mainCharInfo['is_registered'] ?? false,
+                'alt_count' => count(array_unique($data['alt_ids'])) - 1,
+            ];
+        }
+
+        usort($miners, fn($a, $b) => $b['total_value'] <=> $a['total_value']);
 
         return array_slice($miners, 0, $limit);
     }
@@ -1523,11 +1586,18 @@ class DashboardController extends Controller
      * DIFFERENT corporation. Characters with no affiliation data are kept
      * (likely unregistered corp members).
      */
+    private $corpCharacterIdsCache = [];
+
     private function getCorporationCharacterIds($corporationId)
     {
         if (!$corporationId) {
             \Log::warning('getCorporationCharacterIds: No corporation ID provided');
             return [];
+        }
+
+        // Return cached result if already resolved this request
+        if (isset($this->corpCharacterIdsCache[$corporationId])) {
+            return $this->corpCharacterIdsCache[$corporationId];
         }
 
         $allIds = [];
@@ -1621,6 +1691,8 @@ class DashboardController extends Controller
             'corporation_id' => $corporationId,
             'count' => count($uniqueIds),
         ]);
+
+        $this->corpCharacterIdsCache[$corporationId] = $uniqueIds;
 
         return $uniqueIds;
     }
