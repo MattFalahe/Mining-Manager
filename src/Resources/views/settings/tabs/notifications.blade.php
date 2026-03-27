@@ -27,14 +27,14 @@
         </div>
         <div class="card-body">
             {{-- Not Supported Banner --}}
-            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; color: #d1d5db;">
-                <i class="fas fa-exclamation-triangle text-warning"></i>
-                <strong style="color: #e2e8f0;">Currently Not Supported</strong> — EVE Mail notifications require the
-                <code style="color: #fbbf24;">esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
+            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; color: #333;">
+                <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
+                <strong style="color: #1a1a1a;">Currently Not Supported</strong> — EVE Mail notifications require the
+                <code style="color: #856404; background: rgba(0,0,0,0.1); padding: 1px 4px; border-radius: 3px;">esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
                 configuration. The scope exists in EVE's ESI API but SeAT does not offer it as an option during
                 character authentication.
                 <br><br>
-                <small style="color: #9ca3af;">
+                <small style="color: #555;">
                     This feature will be enabled in a future update once scope support is confirmed with SeAT developers.
                     In the meantime, please use Discord or Slack webhooks for notifications.
                 </small>
