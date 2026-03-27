@@ -17,31 +17,31 @@
     {{-- ═══════════════════════════════════════════════════════════════ --}}
     {{-- SECTION 1: EVE Mail --}}
     {{-- ═══════════════════════════════════════════════════════════════ --}}
-    <div class="card bg-dark mb-3">
-        <div class="card-header" style="background: linear-gradient(135deg, #1a5276 0%, #2471a3 100%); opacity: 0.7;">
+    <div class="card bg-dark mb-3" style="border: 1px solid rgba(255,255,255,0.1);">
+        <div class="card-header" style="background: linear-gradient(135deg, #1a5276 0%, #2471a3 100%); filter: grayscale(50%);">
             <h5 class="card-title mb-0">
                 <i class="fas fa-envelope"></i>
                 EVE Mail
                 <span class="badge badge-secondary ml-2" style="font-size: 0.7rem;">NOT AVAILABLE</span>
             </h5>
         </div>
-        <div class="card-body" style="opacity: 0.6;">
+        <div class="card-body">
             {{-- Not Supported Banner --}}
-            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; opacity: 1;">
+            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; color: #d1d5db;">
                 <i class="fas fa-exclamation-triangle text-warning"></i>
-                <strong>Currently Not Supported</strong> — EVE Mail notifications require the
-                <code>esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
+                <strong style="color: #e2e8f0;">Currently Not Supported</strong> — EVE Mail notifications require the
+                <code style="color: #fbbf24;">esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
                 configuration. The scope exists in EVE's ESI API but SeAT does not offer it as an option during
                 character authentication.
                 <br><br>
-                <small class="text-muted">
+                <small style="color: #9ca3af;">
                     This feature will be enabled in a future update once scope support is confirmed with SeAT developers.
                     In the meantime, please use Discord or Slack webhooks for notifications.
                 </small>
             </div>
 
             {{-- Enable Toggle - forced off and disabled --}}
-            <div class="custom-control custom-switch mb-3">
+            <div class="custom-control custom-switch mb-3" style="opacity: 0.5;">
                 <input type="checkbox" class="custom-control-input"
                        id="evemail_enabled" name="evemail_enabled" value="0" disabled>
                 <label class="custom-control-label" for="evemail_enabled">
