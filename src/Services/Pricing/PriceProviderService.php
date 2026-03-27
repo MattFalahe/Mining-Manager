@@ -531,6 +531,35 @@ class PriceProviderService
     }
 
     /**
+     * Unsubscribe all Mining Manager type IDs from Manager Core
+     *
+     * Called when switching away from Manager Core as price provider
+     * to clean up subscriptions so manager-core doesn't fetch prices
+     * we no longer need.
+     *
+     * @return int Number of subscriptions removed
+     */
+    public function unsubscribeFromManagerCore(): int
+    {
+        if (!self::isManagerCoreInstalled()) {
+            return 0;
+        }
+
+        try {
+            $count = DB::table('manager_core_type_subscriptions')
+                ->where('plugin_name', 'mining-manager')
+                ->delete();
+
+            Log::info("Mining Manager: Unsubscribed {$count} type IDs from Manager Core");
+
+            return $count;
+        } catch (Exception $e) {
+            Log::warning('Mining Manager: Failed to unsubscribe from Manager Core: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * Get the configured price provider
      *
      * @return string

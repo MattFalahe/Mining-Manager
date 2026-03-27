@@ -523,6 +523,20 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
+            // Check if switching away from Manager Core — unsubscribe if so
+            $previousProvider = $this->settingsService->getSetting('price_provider', 'seat');
+            $newProvider = $data['price_provider'] ?? 'seat';
+
+            if ($previousProvider === 'manager-core' && $newProvider !== 'manager-core') {
+                try {
+                    $priceProviderService = app(\MiningManager\Services\Pricing\PriceProviderService::class);
+                    $count = $priceProviderService->unsubscribeFromManagerCore();
+                    Log::info("Mining Manager: Unsubscribed {$count} types from Manager Core (switched to {$newProvider})");
+                } catch (\Exception $unsubEx) {
+                    Log::warning('Mining Manager: Failed to unsubscribe from Manager Core: ' . $unsubEx->getMessage());
+                }
+            }
+
             // Store price provider and Janice settings via settings service
             // These use top-level keys (not 'pricing.' prefix) to match getPricingSettings() reads
             if (isset($data['price_provider'])) {
