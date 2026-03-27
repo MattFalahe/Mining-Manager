@@ -5,8 +5,10 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\MarketDataService;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class CachePriceDataCommand extends Command
@@ -43,16 +45,25 @@ class CachePriceDataCommand extends Command
     protected $marketService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
      * Create a new command instance.
      *
      * @param PriceProviderService $priceService
      * @param MarketDataService $marketService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(PriceProviderService $priceService, MarketDataService $marketService)
+    public function __construct(PriceProviderService $priceService, MarketDataService $marketService, SettingsManagerService $settingsService)
     {
         parent::__construct();
         $this->priceService = $priceService;
         $this->marketService = $marketService;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -81,6 +92,105 @@ class CachePriceDataCommand extends Command
 
         $this->info("Found " . count($typeIds) . " items to cache");
 
+        // Check if Manager Core is the active provider — use fast DB sync path
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $provider = $pricingSettings['price_provider'] ?? 'seat';
+
+        if ($provider === 'manager-core' && PriceProviderService::isManagerCoreInstalled()) {
+            $this->syncFromManagerCore($typeIds, $regionId);
+        } else {
+            $this->fetchFromProvider($typeIds, $regionId, $force);
+        }
+
+        // Clean up old cache entries
+        $this->cleanupOldCache();
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Sync prices from Manager Core's market_prices table into mining_price_cache
+     *
+     * Fast DB-to-DB copy — no API calls, no rate limiting needed.
+     *
+     * @param array $typeIds
+     * @param int $regionId
+     * @return void
+     */
+    private function syncFromManagerCore(array $typeIds, int $regionId): void
+    {
+        $pricingSettings = $this->settingsService->getPricingSettings();
+        $market = $pricingSettings['manager_core_market'] ?? 'jita';
+        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
+
+        $this->info("Syncing from Manager Core (market: {$market}, variant: {$variant})...");
+
+        // Fetch all matching prices from Manager Core in one query
+        $mcPrices = DB::table('manager_core_market_prices')
+            ->whereIn('type_id', $typeIds)
+            ->where('market', $market)
+            ->get()
+            ->groupBy('type_id');
+
+        $synced = 0;
+        $missing = 0;
+
+        $bar = $this->output->createProgressBar(count($typeIds));
+        $bar->start();
+
+        foreach ($typeIds as $typeId) {
+            $typePrices = $mcPrices->get($typeId);
+
+            if (!$typePrices || $typePrices->isEmpty()) {
+                $missing++;
+                $bar->advance();
+                continue;
+            }
+
+            $sellRow = $typePrices->firstWhere('price_type', 'sell');
+            $buyRow = $typePrices->firstWhere('price_type', 'buy');
+
+            // Extract the configured variant price
+            $variantField = "price_{$variant}";
+
+            $sellPrice = $sellRow ? (float) ($sellRow->$variantField ?? $sellRow->price_min ?? 0) : 0;
+            $buyPrice = $buyRow ? (float) ($buyRow->$variantField ?? $buyRow->price_min ?? 0) : 0;
+            $avgPrice = ($sellPrice + $buyPrice) / 2;
+
+            if ($sellPrice > 0 || $buyPrice > 0) {
+                $this->priceService->cachePriceData($typeId, $regionId, [
+                    'sell' => $sellPrice,
+                    'buy' => $buyPrice,
+                    'average' => $avgPrice > 0 ? $avgPrice : max($sellPrice, $buyPrice),
+                ]);
+                $synced++;
+            } else {
+                $missing++;
+            }
+
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $this->newLine(2);
+
+        $this->info("Manager Core sync complete!");
+        $this->info("Synced: {$synced} items");
+        if ($missing > 0) {
+            $this->warn("Missing in Manager Core: {$missing} items");
+        }
+    }
+
+    /**
+     * Fetch prices from the configured provider (SeAT, Janice, Fuzzwork)
+     *
+     * @param array $typeIds
+     * @param int $regionId
+     * @param bool $force
+     * @return void
+     */
+    private function fetchFromProvider(array $typeIds, int $regionId, bool $force): void
+    {
         $cached = 0;
         $skipped = 0;
         $errors = 0;
@@ -97,18 +207,16 @@ class CachePriceDataCommand extends Command
                     continue;
                 }
 
-                // FIXED: Use correct keys that PriceProviderService expects
                 // getCachedPrice will fetch from provider and cache automatically
                 $price = $this->marketService->getCachedPrice($typeId, $force);
 
                 if ($price !== null) {
-                    // Create price data structure with CORRECT keys
                     $priceData = [
-                        'sell' => $price,     // Correct key (not 'sell_price')
-                        'buy' => $price,      // Correct key (not 'buy_price')
-                        'average' => $price,  // Correct key (not 'average_price')
+                        'sell' => $price,
+                        'buy' => $price,
+                        'average' => $price,
                     ];
-                    
+
                     $this->priceService->cachePriceData($typeId, $regionId, $priceData);
                     $cached++;
                 } else {
@@ -141,11 +249,6 @@ class CachePriceDataCommand extends Command
         if ($errors > 0) {
             $this->warn("Errors: {$errors}");
         }
-
-        // Clean up old cache entries
-        $this->cleanupOldCache();
-
-        return Command::SUCCESS;
     }
 
     /**

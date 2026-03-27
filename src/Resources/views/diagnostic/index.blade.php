@@ -2445,14 +2445,38 @@ function loadSystemStatus() {
             // Price Cache
             var pc = data.price_cache || {};
             var pcBadge = pc.status === 'healthy' ? 'success' : (pc.status === 'critical' ? 'danger' : 'warning');
-            $('#ss-price-cache').html(
-                '<span class="badge badge-' + pcBadge + ' mb-2">' + (pc.status || 'unknown').toUpperCase() + '</span>' +
-                '<table class="table table-sm table-dark">' +
-                '<tr><td>Total cached prices</td><td><strong>' + (pc.total_cached || 0) + '</strong></td></tr>' +
+            var pcHtml = '<span class="badge badge-' + pcBadge + ' mb-2">' + (pc.status || 'unknown').toUpperCase() + '</span>';
+
+            // Show provider info
+            if (pc.provider) {
+                pcHtml += ' <span class="badge badge-info mb-2"><i class="fas fa-server"></i> ' + pc.provider + '</span>';
+            }
+
+            pcHtml += '<table class="table table-sm table-dark">' +
+                '<tr><td>Total cached prices (local)</td><td><strong>' + (pc.total_cached || 0) + '</strong></td></tr>' +
                 '<tr><td>Fresh (within ' + (pc.cache_duration_minutes || 240) + ' min)</td><td class="text-success">' + (pc.fresh || 0) + '</td></tr>' +
                 '<tr><td>Stale</td><td class="' + (pc.stale > 0 ? 'text-warning' : '') + '">' + (pc.stale || 0) + '</td></tr>' +
-                '</table>'
-            );
+                '</table>';
+
+            // Manager Core external cache info
+            if (pc.manager_core) {
+                var mc = pc.manager_core;
+                if (mc.error) {
+                    pcHtml += '<div class="alert alert-danger mt-2"><i class="fas fa-exclamation-circle"></i> Manager Core error: ' + mc.error + '</div>';
+                } else {
+                    pcHtml += '<div class="card card-outline card-info mt-2"><div class="card-header py-2"><h3 class="card-title"><i class="fas fa-cubes"></i> Manager Core (External Source)</h3></div>' +
+                        '<div class="card-body p-0"><table class="table table-sm table-dark mb-0">' +
+                        '<tr><td>Market</td><td><strong>' + (mc.market || 'jita') + '</strong></td></tr>' +
+                        '<tr><td>Total prices in Manager Core</td><td><strong>' + (mc.total_prices || 0) + '</strong></td></tr>' +
+                        '<tr><td>Last updated</td><td>' + (mc.last_updated_ago || 'never') + '</td></tr>' +
+                        '</table></div></div>';
+                    @if(\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled() && Route::has('manager-core.pricing.index'))
+                    pcHtml += '<small class="text-muted"><i class="fas fa-external-link-alt"></i> <a href="{{ route("manager-core.pricing.index") }}" class="text-info">View full cache in Manager Core →</a></small>';
+                    @endif
+                }
+            }
+
+            $('#ss-price-cache').html(pcHtml);
 
             // Scheduled Jobs
             var jobs = data.scheduled_jobs || {};

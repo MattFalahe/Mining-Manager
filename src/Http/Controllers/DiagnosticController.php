@@ -1980,7 +1980,29 @@ class DiagnosticController extends Controller
                 'cache_duration_minutes' => $cacheDuration,
                 'status' => $staleCount === 0 && $totalCached > 0 ? 'healthy'
                     : ($totalCached === 0 ? 'critical' : 'warning'),
+                'provider' => $pricingSettings['price_provider'] ?? 'seat',
             ];
+
+            // Add Manager Core external cache info when it's the active provider
+            if (($pricingSettings['price_provider'] ?? 'seat') === 'manager-core'
+                && \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled()) {
+                try {
+                    $mcMarket = $pricingSettings['manager_core_market'] ?? 'jita';
+                    $mcTotal = DB::table('manager_core_market_prices')->where('market', $mcMarket)->count();
+                    $mcLastUpdate = DB::table('manager_core_market_prices')
+                        ->where('market', $mcMarket)
+                        ->max('updated_at');
+
+                    $results['price_cache']['manager_core'] = [
+                        'market' => $mcMarket,
+                        'total_prices' => $mcTotal,
+                        'last_updated' => $mcLastUpdate,
+                        'last_updated_ago' => $mcLastUpdate ? \Carbon\Carbon::parse($mcLastUpdate)->diffForHumans() : 'never',
+                    ];
+                } catch (\Exception $mcEx) {
+                    $results['price_cache']['manager_core'] = ['error' => $mcEx->getMessage()];
+                }
+            }
         } catch (\Exception $e) {
             $results['price_cache'] = ['status' => 'error', 'error' => $e->getMessage()];
         }
