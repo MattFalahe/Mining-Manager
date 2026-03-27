@@ -10,7 +10,7 @@
 
     <div class="info-banner">
         <i class="fas fa-info-circle"></i>
-        Configure how notifications are delivered through EVE Mail, Discord webhooks, and Slack.
+        Configure how notifications are delivered through Discord webhooks and Slack.
         Each channel can be independently enabled and configured with specific notification types.
     </div>
 
@@ -18,100 +18,49 @@
     {{-- SECTION 1: EVE Mail --}}
     {{-- ═══════════════════════════════════════════════════════════════ --}}
     <div class="card bg-dark mb-3">
-        <div class="card-header" style="background: linear-gradient(135deg, #1a5276 0%, #2471a3 100%);">
+        <div class="card-header" style="background: linear-gradient(135deg, #1a5276 0%, #2471a3 100%); opacity: 0.7;">
             <h5 class="card-title mb-0">
                 <i class="fas fa-envelope"></i>
                 EVE Mail
+                <span class="badge badge-secondary ml-2" style="font-size: 0.7rem;">NOT AVAILABLE</span>
             </h5>
         </div>
-        <div class="card-body">
-            {{-- ESI Info Banner --}}
-            <div class="alert alert-info mb-3" style="border-left: 4px solid #17a2b8;">
-                <i class="fas fa-satellite"></i>
-                <strong>ESI Integration:</strong> This feature uses ESI API calls to send in-game EVE mail.
-                The sender character must have the <code>esi-mail.send_mail.v1</code> scope authorized in SeAT.
+        <div class="card-body" style="opacity: 0.6;">
+            {{-- Not Supported Banner --}}
+            <div class="alert alert-warning mb-3" style="border-left: 4px solid #ffc107; opacity: 1;">
+                <i class="fas fa-exclamation-triangle text-warning"></i>
+                <strong>Currently Not Supported</strong> — EVE Mail notifications require the
+                <code>esi-mail.send_mail.v1</code> ESI scope, which is not currently available in SeAT's SSO scope
+                configuration. The scope exists in EVE's ESI API but SeAT does not offer it as an option during
+                character authentication.
+                <br><br>
+                <small class="text-muted">
+                    This feature will be enabled in a future update once scope support is confirmed with SeAT developers.
+                    In the meantime, please use Discord or Slack webhooks for notifications.
+                </small>
             </div>
 
-            {{-- Enable Toggle --}}
+            {{-- Enable Toggle - forced off and disabled --}}
             <div class="custom-control custom-switch mb-3">
                 <input type="checkbox" class="custom-control-input"
-                       id="evemail_enabled" name="evemail_enabled" value="1"
-                       {{ old('evemail_enabled', $notificationSettings['evemail_enabled'] ?? false) ? 'checked' : '' }}>
+                       id="evemail_enabled" name="evemail_enabled" value="0" disabled>
                 <label class="custom-control-label" for="evemail_enabled">
                     <strong>Enable EVE Mail Notifications</strong>
                 </label>
-                <small class="form-text text-muted">Send notifications as in-game EVE mail from a designated character.</small>
+                <small class="form-text text-muted">This option is currently disabled pending ESI scope support in SeAT.</small>
             </div>
 
-            <div id="evemail-options" style="{{ old('evemail_enabled', $notificationSettings['evemail_enabled'] ?? false) ? '' : 'opacity: 0.5; pointer-events: none;' }}">
-                {{-- Sender Character --}}
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="evemail_sender_character_id">
-                                <i class="fas fa-user"></i> Sender Character
-                            </label>
-                            <select class="form-control" id="evemail_sender_character_id" name="evemail_sender_character_id">
-                                <option value="">-- Select Character --</option>
-                                @foreach($allTokenCharacters as $char)
-                                    <option value="{{ $char->character_id }}"
-                                        {{ old('evemail_sender_character_id', $notificationSettings['evemail_sender_character_id'] ?? '') == $char->character_id ? 'selected' : '' }}>
-                                        {{ $char->name }} ({{ $char->character_id }})
-                                        {{ $char->has_mail_scope ? '✓ mail scope' : '⚠ no mail scope' }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <small class="form-text text-muted">
-                                All characters with tokens. Characters marked <strong>✓ mail scope</strong> have <code>esi-mail.send_mail.v1</code> authorized.
-                                @if($allTokenCharacters->where('has_mail_scope', 1)->count() === 0)
-                                    <br><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No characters have the mail scope. Re-authorize a character with ESI mail permissions in SeAT.</span>
-                                @endif
-                            </small>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="evemail_sender_character_override">
-                                <i class="fas fa-keyboard"></i> Manual Character ID Override
-                            </label>
-                            <input type="number" class="form-control" id="evemail_sender_character_override"
-                                   name="evemail_sender_character_override"
-                                   value="{{ old('evemail_sender_character_override', $notificationSettings['evemail_sender_character_override'] ?? '') }}"
-                                   placeholder="Character ID">
-                            <small class="form-text text-muted">Overrides the dropdown selection if set.</small>
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Per-type Checkboxes --}}
-                <label class="mb-2"><i class="fas fa-filter"></i> Notification Types</label>
-                <div class="row">
-                    @php
-                        $evemailTypes = old('evemail_types', $notificationSettings['evemail_types'] ?? []);
-                        $evemailTypeList = [
-                            'tax_reminder' => ['label' => 'Tax Reminder', 'icon' => 'fas fa-clock text-warning'],
-                            'tax_invoice' => ['label' => 'Tax Invoice Created', 'icon' => 'fas fa-file-invoice text-info'],
-                            'tax_overdue' => ['label' => 'Tax Overdue', 'icon' => 'fas fa-exclamation-circle text-danger'],
-                            'event_created' => ['label' => 'Event Created', 'icon' => 'fas fa-calendar-plus text-primary'],
-                            'event_started' => ['label' => 'Event Started', 'icon' => 'fas fa-play text-success'],
-                            'event_completed' => ['label' => 'Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary'],
-                            'moon_ready' => ['label' => 'Moon Extraction Ready', 'icon' => 'fas fa-moon text-warning'],
-                        ];
-                    @endphp
-                    @foreach($evemailTypeList as $typeKey => $typeInfo)
-                        <div class="col-md-6">
-                            <div class="custom-control custom-checkbox mb-2">
-                                <input type="checkbox" class="custom-control-input"
-                                       id="evemail_type_{{ $typeKey }}" name="evemail_type_{{ $typeKey }}" value="1"
-                                       {{ ($evemailTypes[$typeKey] ?? true) ? 'checked' : '' }}>
-                                <label class="custom-control-label" for="evemail_type_{{ $typeKey }}">
-                                    <i class="{{ $typeInfo['icon'] }}"></i> {{ $typeInfo['label'] }}
-                                </label>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
+            @php
+                $evemailTypeList = [
+                    'tax_reminder' => ['label' => 'Tax Reminder', 'icon' => 'fas fa-clock text-warning'],
+                    'tax_invoice' => ['label' => 'Tax Invoice Created', 'icon' => 'fas fa-file-invoice text-info'],
+                    'tax_overdue' => ['label' => 'Tax Overdue', 'icon' => 'fas fa-exclamation-circle text-danger'],
+                    'event_created' => ['label' => 'Event Created', 'icon' => 'fas fa-calendar-plus text-primary'],
+                    'event_started' => ['label' => 'Event Started', 'icon' => 'fas fa-play text-success'],
+                    'event_completed' => ['label' => 'Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary'],
+                    'moon_ready' => ['label' => 'Moon Extraction Ready', 'icon' => 'fas fa-moon text-warning'],
+                ];
+            @endphp
         </div>
     </div>
 
@@ -345,13 +294,7 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
-    // Toggle EVE Mail options visibility
-    $('#evemail_enabled').on('change', function() {
-        $('#evemail-options').css({
-            'opacity': this.checked ? '1' : '0.5',
-            'pointer-events': this.checked ? 'auto' : 'none'
-        });
-    });
+    // EVE Mail toggle disabled - feature not currently supported
 
     // Toggle Slack options visibility
     $('#slack_enabled').on('change', function() {
