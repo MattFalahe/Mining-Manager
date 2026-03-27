@@ -140,7 +140,7 @@
 
                 <div class="alert alert-warning mb-0">
                     <i class="fas fa-exclamation-triangle"></i>
-                    <strong>Important:</strong> After saving Janice settings, run <code>php artisan mining-manager:cache-prices --type=moon --force</code> to populate prices.
+                    <strong>Important:</strong> After saving Janice settings, run <code>php artisan mining-manager:cache-prices --type=all --force</code> to populate prices for all ores, minerals, moon materials, ice, and gas.
                 </div>
             </div>
 
