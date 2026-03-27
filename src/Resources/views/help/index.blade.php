@@ -22,6 +22,7 @@
     .help-content {
         flex: 1;
         min-width: 0;
+        color: #d1d5db !important;
     }
 
     .help-nav .nav-link {
@@ -84,6 +85,12 @@
         font-size: 1.1rem;
     }
 
+    .help-card h5 {
+        color: #e2e8f0 !important;
+        margin-top: 15px;
+        margin-bottom: 8px;
+    }
+
     .help-card p {
         color: #d1d5db !important;
         line-height: 1.6;
@@ -93,6 +100,14 @@
         color: #d1d5db !important;
         line-height: 1.8;
         margin-left: 20px;
+    }
+
+    .help-card strong {
+        color: #e2e8f0 !important;
+    }
+
+    .help-card li {
+        color: #d1d5db !important;
     }
 
     .help-card code {
@@ -166,6 +181,7 @@
         padding: 15px;
         margin: 15px 0;
         border-radius: 5px;
+        color: #d1d5db !important;
     }
 
     .feature-grid {
