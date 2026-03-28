@@ -5,6 +5,7 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+@include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
@@ -87,7 +88,7 @@
                     <h3 class="card-title">{{ trans('mining-manager::taxes.wallet_transactions') }}</h3>
                 </div>
                 <div class="card-body p-0">
-                    <table class="table table-dark table-striped">
+                    <table class="table table-dark table-striped" id="walletTable">
                         <thead>
                             <tr>
                                 <th>{{ trans('mining-manager::taxes.date') }}</th>
@@ -155,7 +156,27 @@
 </div>
 
 @push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
+$(document).ready(function() {
+    $('#walletTable').DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[0, 'desc']],
+        language: {
+            search: "Search:",
+            lengthMenu: "Show _MENU_ entries",
+            info: "Showing _START_ to _END_ of _TOTAL_ entries",
+            infoEmpty: "No entries found",
+            infoFiltered: "(filtered from _MAX_ total entries)",
+            paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
+        },
+        columnDefs: [
+            { orderable: false, targets: [7] }
+        ]
+    });
+});
+
 function syncWalletJournal() {
     toastr.info('{{ trans("mining-manager::taxes.syncing_wallet") }}');
     // Implementation

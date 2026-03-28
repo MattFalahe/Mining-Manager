@@ -5,6 +5,7 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+@include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
@@ -28,7 +29,7 @@
                     @endif
                 </div>
                 <div class="card-body p-0">
-                    <table class="table table-dark table-striped">
+                    <table class="table table-dark table-striped" id="taxCodesTable">
                         <thead>
                             <tr>
                                 <th>{{ trans('mining-manager::taxes.code') }}</th>
@@ -76,7 +77,27 @@
 </div>
 
 @push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
+$(document).ready(function() {
+    $('#taxCodesTable').DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[2, 'desc']],
+        language: {
+            search: "Search:",
+            lengthMenu: "Show _MENU_ entries",
+            info: "Showing _START_ to _END_ of _TOTAL_ entries",
+            infoEmpty: "No entries found",
+            infoFiltered: "(filtered from _MAX_ total entries)",
+            paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
+        },
+        columnDefs: [
+            { orderable: false, targets: [5] }
+        ]
+    });
+});
+
 function copyCode(code) {
     navigator.clipboard.writeText(code).then(() => {
         toastr.success('{{ trans("mining-manager::taxes.code_copied") }}');

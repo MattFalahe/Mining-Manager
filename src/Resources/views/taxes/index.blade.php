@@ -6,6 +6,7 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/tax-management.css') }}">
+@include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
@@ -296,7 +297,7 @@
                                 <i class="fas fa-layer-group"></i> {{ trans('mining-manager::taxes.grouped_by_account') }}
                             </button>
                         </div>
-                        <span class="badge badge-info" id="resultCount">{{ $taxes->total() }} {{ trans('mining-manager::taxes.entries') }}</span>
+                        <span class="badge badge-info" id="resultCount">{{ $taxes->count() }} {{ trans('mining-manager::taxes.entries') }}</span>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -449,11 +450,7 @@
                         </table>
                     </div>
                 </div>
-                @if($taxes->hasPages())
-                <div class="card-footer clearfix">
-                    {{ $taxes->appends(request()->query())->links() }}
-                </div>
-                @endif
+                {{-- Pagination handled by DataTables --}}
             </div>
         </div>
     </div>
@@ -526,10 +523,33 @@
 </div>
 
 @push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 $(document).ready(function() {
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();
+
+    // Initialize DataTables
+    $('#taxTable').DataTable({
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+        order: [[{{ ($isAdmin ?? false) ? 4 : 3 }}, 'desc']],
+        language: {
+            search: "Search:",
+            lengthMenu: "Show _MENU_ entries",
+            info: "Showing _START_ to _END_ of _TOTAL_ entries",
+            infoEmpty: "No entries found",
+            infoFiltered: "(filtered from _MAX_ total entries)",
+            paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
+        },
+        columnDefs: [
+            @if($isAdmin ?? false)
+            { orderable: false, targets: [0, 8] },
+            @else
+            { orderable: false, targets: [7] },
+            @endif
+        ]
+    });
 
     // Select all checkbox
     $('#selectAll').on('change', function() {

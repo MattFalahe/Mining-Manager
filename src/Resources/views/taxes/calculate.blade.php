@@ -5,6 +5,7 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+@include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
@@ -382,10 +383,7 @@
                             @endforeach
                         </div>
 
-                        <!-- Pagination Info -->
-                        <div class="text-muted mt-2">
-                            {{ trans('mining-manager::taxes.showing_entries', ['count' => min(50, count($liveTracking['entries'])), 'total' => count($liveTracking['entries'])]) }}
-                        </div>
+                        {{-- Pagination handled by DataTables --}}
                     @else
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle"></i>
@@ -399,10 +397,28 @@
 </div>
 
 @push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 $(document).ready(function() {
     // Initialize Select2
     $('.select2').select2();
+
+    // Initialize DataTables on the flat view table
+    if ($('#live-tracking-table tbody tr').length > 0 && !$('#live-tracking-table tbody tr td[colspan]').length) {
+        $('#live-tracking-table').DataTable({
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+            order: [[0, 'desc']],
+            language: {
+                search: "Search:",
+                lengthMenu: "Show _MENU_ entries",
+                info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                infoEmpty: "No entries found",
+                infoFiltered: "(filtered from _MAX_ total entries)",
+                paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
+            }
+        });
+    }
 
     // Tax Calculation Form Submission
     $('#tax-calculation-form').on('submit', function(e) {

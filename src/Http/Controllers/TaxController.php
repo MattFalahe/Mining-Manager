@@ -227,10 +227,10 @@ class TaxController extends Controller
 
         $taxes = $query->orderBy('month', 'desc')
             ->orderBy('character_id')
-            ->paginate(50);
+            ->get();
 
         // Enrich with character names and corporation names
-        $this->enrichPaginatorWithCharacterInfo($taxes, $this->characterInfoService);
+        $taxes = $this->enrichWithCharacterInfo(collect($taxes), $this->characterInfoService);
 
         // Summary statistics - split by corp/guest if moon owner is configured
         // Helper to apply user scoping to summary queries
@@ -1290,10 +1290,10 @@ class TaxController extends Controller
         }
 
         $taxCodes = $query->orderBy('created_at', 'desc')
-            ->paginate(50);
+            ->get();
 
         // Enrich with character names
-        $this->enrichPaginatorWithCharacterInfo($taxCodes, $this->characterInfoService);
+        $taxCodes = $this->enrichWithCharacterInfo(collect($taxCodes), $this->characterInfoService);
 
         // Summary statistics (scoped unless viewing all)
         $summaryBase = TaxCode::query();
