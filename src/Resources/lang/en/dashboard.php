@@ -9,6 +9,7 @@ return [
     'live' => 'Live',
     'current_month_stats' => 'Current Month Statistics',
     'last_12_months_stats' => 'Last 12 Months Statistics',
+    'last_12_months' => 'Last 12 Months',
     'this_month' => 'This Month',
     'units' => 'units',
     'rank' => 'Rank',

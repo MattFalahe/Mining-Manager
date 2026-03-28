@@ -87,17 +87,22 @@ class DashboardController extends Controller
             $last12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
 
             // === TOP MINER RANKINGS ===
-            // Get user's main character for ranking
             $mainCharacterId = $this->getMainCharacterId($user);
 
-            $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
-            $topMinersMoonOreResult = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+            // Last 12 months rankings
+            $topMiners12mAllOre = $this->getTopMinersRanking('all_ore', $last12MonthsStart, $currentMonthEnd);
+            $topMiners12mMoonOreResult = $this->getTopMinersRanking('moon_ore', $last12MonthsStart, $currentMonthEnd);
+            $hasMoons = $topMiners12mMoonOreResult !== null;
+            $topMiners12mMoonOre = $topMiners12mMoonOreResult ?? [];
+            $userRank12mAllOre = $this->getUserRank($mainCharacterId, $topMiners12mAllOre);
+            $userRank12mMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMiners12mMoonOre) : null;
 
-            $hasMoons = $topMinersMoonOreResult !== null;
-            $topMinersMoonOre = $topMinersMoonOreResult ?? [];
-
-            $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
-            $userRankMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMinersMoonOre) : null;
+            // Current month rankings
+            $topMinersMonthAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMonthMoonOreResult = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMonthMoonOre = $topMinersMonthMoonOreResult ?? [];
+            $userRankMonthAllOre = $this->getUserRank($mainCharacterId, $topMinersMonthAllOre);
+            $userRankMonthMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMinersMonthMoonOre) : null;
 
             // === CHARTS DATA ===
             $miningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
@@ -108,11 +113,15 @@ class DashboardController extends Controller
             return [
                 'currentMonthStats' => $currentMonthStats,
                 'last12MonthsStats' => $last12MonthsStats,
-                'topMinersAllOre' => $topMinersAllOre,
-                'topMinersMoonOre' => $topMinersMoonOre,
+                'topMiners12mAllOre' => $topMiners12mAllOre,
+                'topMiners12mMoonOre' => $topMiners12mMoonOre,
+                'topMinersMonthAllOre' => $topMinersMonthAllOre,
+                'topMinersMonthMoonOre' => $topMinersMonthMoonOre,
                 'hasMoons' => $hasMoons,
-                'userRankAllOre' => $userRankAllOre,
-                'userRankMoonOre' => $userRankMoonOre,
+                'userRank12mAllOre' => $userRank12mAllOre,
+                'userRank12mMoonOre' => $userRank12mMoonOre,
+                'userRankMonthAllOre' => $userRankMonthAllOre,
+                'userRankMonthMoonOre' => $userRankMonthMoonOre,
                 'miningPerformanceChart' => $miningPerformanceChart,
                 'miningVolumeByGroupChart' => $miningVolumeByGroupChart,
                 'miningByTypeChart' => $miningByTypeChart,
@@ -156,14 +165,21 @@ class DashboardController extends Controller
 
             // Personal rankings
             $mainCharacterId = $this->getMainCharacterId($user);
-            $topMinersAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
-            $topMinersMoonOreResult = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
 
-            $hasMoons = $topMinersMoonOreResult !== null;
-            $topMinersMoonOre = $topMinersMoonOreResult ?? [];
+            // Last 12 months rankings
+            $topMiners12mAllOre = $this->getTopMinersRanking('all_ore', $last12MonthsStart, $currentMonthEnd);
+            $topMiners12mMoonOreResult = $this->getTopMinersRanking('moon_ore', $last12MonthsStart, $currentMonthEnd);
+            $hasMoons = $topMiners12mMoonOreResult !== null;
+            $topMiners12mMoonOre = $topMiners12mMoonOreResult ?? [];
+            $userRank12mAllOre = $this->getUserRank($mainCharacterId, $topMiners12mAllOre);
+            $userRank12mMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMiners12mMoonOre) : null;
 
-            $userRankAllOre = $this->getUserRank($mainCharacterId, $topMinersAllOre);
-            $userRankMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMinersMoonOre) : null;
+            // Current month rankings
+            $topMinersMonthAllOre = $this->getTopMinersRanking('all_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMonthMoonOreResult = $this->getTopMinersRanking('moon_ore', $currentMonthStart, $currentMonthEnd);
+            $topMinersMonthMoonOre = $topMinersMonthMoonOreResult ?? [];
+            $userRankMonthAllOre = $this->getUserRank($mainCharacterId, $topMinersMonthAllOre);
+            $userRankMonthMoonOre = $hasMoons ? $this->getUserRank($mainCharacterId, $topMinersMonthMoonOre) : null;
 
             // Personal charts
             $personalMiningPerformanceChart = $this->getMiningPerformanceLast12Months($characterIds);
@@ -174,11 +190,15 @@ class DashboardController extends Controller
             return [
                 'personalCurrentMonthStats' => $personalCurrentMonthStats,
                 'personalLast12MonthsStats' => $personalLast12MonthsStats,
-                'topMinersAllOre' => $topMinersAllOre,
-                'topMinersMoonOre' => $topMinersMoonOre,
+                'topMiners12mAllOre' => $topMiners12mAllOre,
+                'topMiners12mMoonOre' => $topMiners12mMoonOre,
+                'topMinersMonthAllOre' => $topMinersMonthAllOre,
+                'topMinersMonthMoonOre' => $topMinersMonthMoonOre,
                 'hasMoons' => $hasMoons,
-                'userRankAllOre' => $userRankAllOre,
-                'userRankMoonOre' => $userRankMoonOre,
+                'userRank12mAllOre' => $userRank12mAllOre,
+                'userRank12mMoonOre' => $userRank12mMoonOre,
+                'userRankMonthAllOre' => $userRankMonthAllOre,
+                'userRankMonthMoonOre' => $userRankMonthMoonOre,
                 'personalMiningPerformanceChart' => $personalMiningPerformanceChart,
                 'personalMiningVolumeByGroupChart' => $personalMiningVolumeByGroupChart,
                 'personalMiningByTypeChart' => $personalMiningByTypeChart,
@@ -213,18 +233,12 @@ class DashboardController extends Controller
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
-            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
-            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
+            // Last 12 months rankings (matches the stats section above)
+            $topMiners12mAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $last12MonthsStart, $currentMonthEnd);
+            $topMiners12mMoonOreResult = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $last12MonthsStart, $currentMonthEnd);
 
-            $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore');
-            $topMinersOverallMoonOreResult = $this->getTopMinersOverall($corporationId, 'moon_ore');
-            $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd);
-            $topMinersLastMonthMoonOreResult = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd);
-
-            // null means corporation has no moons configured
-            $hasMoons = $topMinersOverallMoonOreResult !== null;
-            $topMinersOverallMoonOre = $topMinersOverallMoonOreResult ?? [];
-            $topMinersLastMonthMoonOre = $topMinersLastMonthMoonOreResult ?? [];
+            $hasMoons = $topMiners12mMoonOreResult !== null;
+            $topMiners12mMoonOre = $topMiners12mMoonOreResult ?? [];
 
             $corpMiningPerformanceChart = $this->getCorpMiningPerformanceLast12Months($corporationId);
             $moonMiningPerformanceChart = $this->getCorpMoonMiningPerformanceLast12Months($corporationId);
@@ -236,10 +250,8 @@ class DashboardController extends Controller
             return [
                 'corpCurrentMonthStats' => $corpCurrentMonthStats,
                 'corpLast12MonthsStats' => $corpLast12MonthsStats,
-                'topMinersOverallAllOre' => $topMinersOverallAllOre,
-                'topMinersOverallMoonOre' => $topMinersOverallMoonOre,
-                'topMinersLastMonthAllOre' => $topMinersLastMonthAllOre,
-                'topMinersLastMonthMoonOre' => $topMinersLastMonthMoonOre,
+                'topMiners12mAllOre' => $topMiners12mAllOre,
+                'topMiners12mMoonOre' => $topMiners12mMoonOre,
                 'hasMoons' => $hasMoons,
                 'corpMiningPerformanceChart' => $corpMiningPerformanceChart,
                 'moonMiningPerformanceChart' => $moonMiningPerformanceChart,

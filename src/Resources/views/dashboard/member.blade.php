@@ -192,89 +192,39 @@
         </div>
     </div>
 
-    {{-- TOP MINER RANKINGS --}}
+    {{-- TOP MINER RANKINGS - LAST 12 MONTHS --}}
     <div class="row">
-        {{-- All Ore Ranking --}}
         <div class="col-lg-6">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-trophy"></i>
-                        {{ trans('mining-manager::dashboard.top_miners_all_ore') }}
+                        {{ trans('mining-manager::dashboard.top_miners_all_ore') }} — {{ trans('mining-manager::dashboard.last_12_months') }}
                     </h3>
-                    @if($userRankAllOre)
+                    @if($userRank12mAllOre)
                     <div class="card-tools">
                         <span class="badge badge-info">
-                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankAllOre }}
+                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRank12mAllOre }}
                         </span>
                     </div>
                     @endif
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-dark table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th style="width: 50px">{{ trans('mining-manager::dashboard.rank') }}</th>
-                                    <th>{{ trans('mining-manager::dashboard.character') }}</th>
-                                    <th>{{ trans('mining-manager::dashboard.corporation') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::dashboard.value') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($topMinersAllOre as $index => $miner)
-                                <tr class="{{ $miner['main_character_id'] == auth()->user()->main_character_id ? 'table-primary' : '' }}">
-                                    <td>
-                                        @if($index < 3)
-                                            <span class="badge badge-{{ $index == 0 ? 'warning' : ($index == 1 ? 'secondary' : 'bronze') }}">
-                                                #{{ $index + 1 }}
-                                            </span>
-                                        @else
-                                            <span class="text-muted">#{{ $index + 1 }}</span>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        <img src="https://images.evetech.net/characters/{{ $miner['main_character_id'] }}/portrait?size=32" 
-                                             class="img-circle" 
-                                             style="width: 32px; height: 32px;">
-                                        <strong>{{ $miner['character_name'] }}</strong>
-                                        @if(!$miner['is_registered'])
-                                            <span class="badge badge-warning" title="Character not registered in SeAT">
-                                                <i class="fas fa-exclamation-triangle"></i> Not Registered
-                                            </span>
-                                        @endif
-                                        @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
-                                            <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
-                                                <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td>{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</td>
-                                    <td class="text-right">
-                                        <strong>{{ number_format($miner['total_value'], 0) }}</strong>
-                                        <small class="text-muted">ISK</small>
-                                    </td>
-                                </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
+                    @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMiners12mAllOre])
                 </div>
             </div>
         </div>
-
-        {{-- Moon Ore Ranking --}}
         <div class="col-lg-6">
             <div class="card card-dark">
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-moon"></i>
-                        {{ trans('mining-manager::dashboard.top_miners_moon_ore') }}
+                        {{ trans('mining-manager::dashboard.top_miners_moon_ore') }} — {{ trans('mining-manager::dashboard.last_12_months') }}
                     </h3>
-                    @if($userRankMoonOre)
+                    @if($userRank12mMoonOre)
                     <div class="card-tools">
                         <span class="badge badge-info">
-                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankMoonOre }}
+                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRank12mMoonOre }}
                         </span>
                     </div>
                     @endif
@@ -284,57 +234,58 @@
                         <div class="text-center text-muted p-4">
                             <i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.
                         </div>
-                    @elseif(empty($topMinersMoonOre))
-                        <div class="text-center text-muted p-4">No data available</div>
                     @else
-                    <div class="table-responsive">
-                        <table class="table table-dark table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th style="width: 50px">{{ trans('mining-manager::dashboard.rank') }}</th>
-                                    <th>{{ trans('mining-manager::dashboard.character') }}</th>
-                                    <th>{{ trans('mining-manager::dashboard.corporation') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::dashboard.value') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($topMinersMoonOre as $index => $miner)
-                                <tr class="{{ $miner['main_character_id'] == auth()->user()->main_character_id ? 'table-primary' : '' }}">
-                                    <td>
-                                        @if($index < 3)
-                                            <span class="badge badge-{{ $index == 0 ? 'warning' : ($index == 1 ? 'secondary' : 'bronze') }}">
-                                                #{{ $index + 1 }}
-                                            </span>
-                                        @else
-                                            <span class="text-muted">#{{ $index + 1 }}</span>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        <img src="https://images.evetech.net/characters/{{ $miner['main_character_id'] }}/portrait?size=32"
-                                             class="img-circle"
-                                             style="width: 32px; height: 32px;">
-                                        <strong>{{ $miner['character_name'] }}</strong>
-                                        @if(!$miner['is_registered'])
-                                            <span class="badge badge-warning" title="Character not registered in SeAT">
-                                                <i class="fas fa-exclamation-triangle"></i> Not Registered
-                                            </span>
-                                        @endif
-                                        @if(isset($miner['alt_count']) && $miner['alt_count'] > 0)
-                                            <span class="badge badge-info" title="Total includes {{ $miner['alt_count'] }} alt character(s)">
-                                                <i class="fas fa-users"></i> +{{ $miner['alt_count'] }} alts
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td>{{ $miner['corporation_name'] ?? 'Unknown Corporation' }}</td>
-                                    <td class="text-right">
-                                        <strong>{{ number_format($miner['total_value'], 0) }}</strong>
-                                        <small class="text-muted">ISK</small>
-                                    </td>
-                                </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                        @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMiners12mMoonOre])
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- TOP MINER RANKINGS - CURRENT MONTH --}}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-trophy"></i>
+                        {{ trans('mining-manager::dashboard.top_miners_all_ore') }} — {{ now()->format('F Y') }}
+                    </h3>
+                    @if($userRankMonthAllOre)
+                    <div class="card-tools">
+                        <span class="badge badge-info">
+                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankMonthAllOre }}
+                        </span>
                     </div>
+                    @endif
+                </div>
+                <div class="card-body p-0">
+                    @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMinersMonthAllOre])
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-moon"></i>
+                        {{ trans('mining-manager::dashboard.top_miners_moon_ore') }} — {{ now()->format('F Y') }}
+                    </h3>
+                    @if($userRankMonthMoonOre)
+                    <div class="card-tools">
+                        <span class="badge badge-info">
+                            {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankMonthMoonOre }}
+                        </span>
+                    </div>
+                    @endif
+                </div>
+                <div class="card-body p-0">
+                    @if(!$hasMoons)
+                        <div class="text-center text-muted p-4">
+                            <i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.
+                        </div>
+                    @else
+                        @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMinersMonthMoonOre])
                     @endif
                 </div>
             </div>

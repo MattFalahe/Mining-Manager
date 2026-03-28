@@ -228,51 +228,100 @@
                                 </div>
                             </div>
 
-                            {{-- PERSONAL RANKINGS --}}
+                            {{-- PERSONAL RANKINGS - LAST 12 MONTHS --}}
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-lg-6">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
                                                 <i class="fas fa-trophy"></i>
-                                                {{ trans('mining-manager::dashboard.my_rank_all_ore') }}
+                                                {{ trans('mining-manager::dashboard.top_miners_all_ore') }} — {{ trans('mining-manager::dashboard.last_12_months') }}
                                             </h3>
-                                        </div>
-                                        <div class="card-body">
-                                            @if($userRankAllOre)
-                                                <div class="text-center">
-                                                    <h1 class="display-3 text-warning">
-                                                        <i class="fas fa-medal"></i> #{{ $userRankAllOre }}
-                                                    </h1>
-                                                    <p class="text-muted">{{ trans('mining-manager::dashboard.out_of') }} {{ count($topMinersAllOre) }} {{ trans('mining-manager::dashboard.miners') }}</p>
-                                                </div>
-                                            @else
-                                                <p class="text-center text-muted">{{ trans('mining-manager::dashboard.no_ranking_data') }}</p>
+                                            @if($userRank12mAllOre)
+                                            <div class="card-tools">
+                                                <span class="badge badge-info">
+                                                    {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRank12mAllOre }}
+                                                </span>
+                                            </div>
                                             @endif
+                                        </div>
+                                        <div class="card-body p-0">
+                                            @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMiners12mAllOre])
                                         </div>
                                     </div>
                                 </div>
-
-                                <div class="col-md-6">
+                                <div class="col-lg-6">
                                     <div class="card card-dark">
                                         <div class="card-header">
                                             <h3 class="card-title">
                                                 <i class="fas fa-moon"></i>
-                                                {{ trans('mining-manager::dashboard.my_rank_moon_ore') }}
+                                                {{ trans('mining-manager::dashboard.top_miners_moon_ore') }} — {{ trans('mining-manager::dashboard.last_12_months') }}
                                             </h3>
+                                            @if($userRank12mMoonOre)
+                                            <div class="card-tools">
+                                                <span class="badge badge-info">
+                                                    {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRank12mMoonOre }}
+                                                </span>
+                                            </div>
+                                            @endif
                                         </div>
-                                        <div class="card-body">
+                                        <div class="card-body p-0">
                                             @if(!$hasMoons)
-                                                <p class="text-center text-muted"><i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.</p>
-                                            @elseif($userRankMoonOre)
-                                                <div class="text-center">
-                                                    <h1 class="display-3 text-info">
-                                                        <i class="fas fa-medal"></i> #{{ $userRankMoonOre }}
-                                                    </h1>
-                                                    <p class="text-muted">{{ trans('mining-manager::dashboard.out_of') }} {{ count($topMinersMoonOre) }} {{ trans('mining-manager::dashboard.miners') }}</p>
+                                                <div class="text-center text-muted p-4">
+                                                    <i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.
                                                 </div>
                                             @else
-                                                <p class="text-center text-muted">{{ trans('mining-manager::dashboard.no_ranking_data') }}</p>
+                                                @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMiners12mMoonOre])
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- PERSONAL RANKINGS - CURRENT MONTH --}}
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-trophy"></i>
+                                                {{ trans('mining-manager::dashboard.top_miners_all_ore') }} — {{ now()->format('F Y') }}
+                                            </h3>
+                                            @if($userRankMonthAllOre)
+                                            <div class="card-tools">
+                                                <span class="badge badge-info">
+                                                    {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankMonthAllOre }}
+                                                </span>
+                                            </div>
+                                            @endif
+                                        </div>
+                                        <div class="card-body p-0">
+                                            @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMinersMonthAllOre])
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-6">
+                                    <div class="card card-dark">
+                                        <div class="card-header">
+                                            <h3 class="card-title">
+                                                <i class="fas fa-moon"></i>
+                                                {{ trans('mining-manager::dashboard.top_miners_moon_ore') }} — {{ now()->format('F Y') }}
+                                            </h3>
+                                            @if($userRankMonthMoonOre)
+                                            <div class="card-tools">
+                                                <span class="badge badge-info">
+                                                    {{ trans('mining-manager::dashboard.your_rank') }}: #{{ $userRankMonthMoonOre }}
+                                                </span>
+                                            </div>
+                                            @endif
+                                        </div>
+                                        <div class="card-body p-0">
+                                            @if(!$hasMoons)
+                                                <div class="text-center text-muted p-4">
+                                                    <i class="fas fa-moon mr-1"></i> Your corporation doesn't have any moons.
+                                                </div>
+                                            @else
+                                                @include('mining-manager::dashboard.partials.ranking-table', ['miners' => $topMinersMonthMoonOre])
                                             @endif
                                         </div>
                                     </div>
@@ -474,7 +523,7 @@
                                     <div class="col-lg-6">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-trophy"></i> Top Miners - All Ore</h3>
+                                                <h3 class="card-title"><i class="fas fa-trophy"></i> Top Miners - All Ore — Last 12 Months</h3>
                                             </div>
                                             <div class="card-body p-0">
                                                 <table class="table table-sm table-striped">
@@ -491,7 +540,7 @@
                                     <div class="col-lg-6">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-moon"></i> Top Miners - Corporation Moon Ore</h3>
+                                                <h3 class="card-title"><i class="fas fa-moon"></i> Top Miners - Corporation Moon Ore — Last 12 Months</h3>
                                             </div>
                                             <div class="card-body p-0">
                                                 <table class="table table-sm table-striped">
@@ -932,7 +981,7 @@ $('#corporation-tab').on('shown.bs.tab', function() {
             $('#corp-12m-active-miners').text(l12.active_miners || 0);
 
             // === TOP MINERS TABLES ===
-            populateTopMinersTable('#corp-top-miners-all-ore', data.topMinersOverallAllOre || []);
+            populateTopMinersTable('#corp-top-miners-all-ore', data.topMiners12mAllOre || []);
             if (data.hasMoons === false) {
                 $('#corp-top-miners-moon-ore').html(
                     '<tr><td colspan="4" class="text-center text-muted">' +
@@ -940,7 +989,7 @@ $('#corporation-tab').on('shown.bs.tab', function() {
                     '</td></tr>'
                 );
             } else {
-                populateTopMinersTable('#corp-top-miners-moon-ore', data.topMinersOverallMoonOre || []);
+                populateTopMinersTable('#corp-top-miners-moon-ore', data.topMiners12mMoonOre || []);
             }
 
             // === CHARTS ===
