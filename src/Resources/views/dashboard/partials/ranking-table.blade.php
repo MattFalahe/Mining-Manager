@@ -13,7 +13,7 @@
         </thead>
         <tbody>
             @foreach($miners as $index => $miner)
-            <tr class="{{ $miner['main_character_id'] == auth()->user()->main_character_id ? 'table-primary' : '' }}">
+            <tr @if($miner['main_character_id'] == auth()->user()->main_character_id) style="background: rgba(26, 188, 156, 0.08) !important; border-left: 3px solid #1abc9c;" @endif>
                 <td>
                     @if($index < 3)
                         <span class="badge badge-{{ $index == 0 ? 'warning' : ($index == 1 ? 'secondary' : 'bronze') }}">
