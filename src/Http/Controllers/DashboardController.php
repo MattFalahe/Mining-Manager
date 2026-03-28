@@ -216,10 +216,10 @@ class DashboardController extends Controller
             $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
             $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
-            $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore', 5);
-            $topMinersOverallMoonOreResult = $this->getTopMinersOverall($corporationId, 'moon_ore', 5);
-            $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd, 5);
-            $topMinersLastMonthMoonOreResult = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd, 5);
+            $topMinersOverallAllOre = $this->getTopMinersOverall($corporationId, 'all_ore');
+            $topMinersOverallMoonOreResult = $this->getTopMinersOverall($corporationId, 'moon_ore');
+            $topMinersLastMonthAllOre = $this->getTopMinersForPeriod($corporationId, 'all_ore', $lastMonthStart, $lastMonthEnd);
+            $topMinersLastMonthMoonOreResult = $this->getTopMinersForPeriod($corporationId, 'moon_ore', $lastMonthStart, $lastMonthEnd);
 
             // null means corporation has no moons configured
             $hasMoons = $topMinersOverallMoonOreResult !== null;
@@ -671,33 +671,24 @@ class DashboardController extends Controller
      * UPDATED: Uses CharacterInfoService for proper character/corp names and unregistered character support
      * UPDATED: Now supports corporation filtering based on dashboard settings
      */
-    private function getTopMinersRanking($oreType, $startDate, $endDate, $limit = 20)
+    private function getTopMinersRanking($oreType, $startDate, $endDate, $limit = 10)
     {
+        $corporationId = $this->getUserCorporationId();
+
         // For moon ore, only count mining at corporation-owned moon structures
         if ($oreType === 'moon_ore') {
-            $corporationId = $this->getUserCorporationId();
             return $this->getTopMoonMinersFromLedger($corporationId, $startDate, $endDate, $limit);
         }
 
-        $query = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate]);
+        // Always filter to viewing user's corporation members
+        $characterIds = $this->getCorporationCharacterIds($corporationId);
 
-        // Apply corporation filter from dashboard settings
-        $corporationFilter = $this->settingsService->getSetting('dashboard_leaderboard_corporation_filter', 'all');
-
-        if ($corporationFilter === 'specific') {
-            $corporationIdsJson = $this->settingsService->getSetting('dashboard_leaderboard_corporation_ids', '[]');
-            $corporationIds = json_decode($corporationIdsJson, true);
-
-            if (!empty($corporationIds)) {
-                $query->whereIn('character_id', function($subQuery) use ($corporationIds) {
-                    $subQuery->select('character_id')
-                        ->from('character_affiliations')
-                        ->whereIn('corporation_id', $corporationIds);
-                });
-            }
+        if (empty($characterIds)) {
+            return [];
         }
 
-        $topCharacters = $query
+        $topCharacters = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate, $endDate])
             ->selectRaw("character_id, SUM(total_value) as total_value, SUM(total_quantity) as total_quantity")
             ->groupBy('character_id')
             ->having('total_value', '>', 0)
@@ -711,7 +702,7 @@ class DashboardController extends Controller
     /**
      * Get top miners for corporation (overall or for period)
      */
-    private function getTopMinersOverall($corporationId, $oreType, $limit = 5)
+    private function getTopMinersOverall($corporationId, $oreType, $limit = 10)
     {
         // For moon ore, only count mining at corporation-owned moon structures
         if ($oreType === 'moon_ore') {
@@ -738,7 +729,7 @@ class DashboardController extends Controller
     /**
      * Get top miners for specific period
      */
-    private function getTopMinersForPeriod($corporationId, $oreType, $startDate, $endDate, $limit = 5)
+    private function getTopMinersForPeriod($corporationId, $oreType, $startDate, $endDate, $limit = 10)
     {
         // For moon ore, only count mining at corporation-owned moon structures
         if ($oreType === 'moon_ore') {
@@ -769,7 +760,7 @@ class DashboardController extends Controller
      *
      * @return array|null Returns null if corporation has no moons configured
      */
-    private function getTopMoonMinersFromLedger($corporationId, $startDate, $endDate, $limit = 5)
+    private function getTopMoonMinersFromLedger($corporationId, $startDate, $endDate, $limit = 10)
     {
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $structureCorpId = $moonOwnerCorpId ?: $corporationId;
@@ -786,8 +777,16 @@ class DashboardController extends Controller
             return null; // Signal to view: no moons owned
         }
 
+        // Restrict to corporation members only
+        $corpMemberIds = $this->getCorporationCharacterIds($corporationId);
+
+        if (empty($corpMemberIds)) {
+            return [];
+        }
+
         // Query mining at corp-owned observers (observer_id = structure_id from moon_extractions)
         $query = MiningLedger::whereIn('observer_id', $corpObserverIds)
+            ->whereIn('character_id', $corpMemberIds)
             ->where('is_moon_ore', true)
             ->whereNotNull('processed_at')
             ->selectRaw("character_id, SUM(total_value) as total_value, SUM(quantity) as total_quantity")
