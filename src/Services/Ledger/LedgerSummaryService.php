@@ -178,6 +178,19 @@ class LedgerSummaryService
             ->whereNotNull('corporation_id')
             ->value('corporation_id');
 
+        // Ensure corporation context is set for reading settings
+        // Without this, commands running without web context won't find corp-scoped settings
+        $configuredCorpId = $this->settingsService->getActiveCorporation();
+        if (!$configuredCorpId) {
+            // Bootstrap from database: find the first configured corporation
+            $firstCorpSetting = \MiningManager\Models\Setting::where('key', 'general.moon_owner_corporation_id')
+                ->whereNotNull('corporation_id')
+                ->first();
+            if ($firstCorpSetting) {
+                $this->settingsService->setActiveCorporation((int) $firstCorpSetting->corporation_id);
+            }
+        }
+
         // Get moon owner corporation for only_corp_moon_ore check
         $moonOwnerCorpId = $this->settingsService->getGeneralSettings()['moon_owner_corporation_id'] ?? null;
 
