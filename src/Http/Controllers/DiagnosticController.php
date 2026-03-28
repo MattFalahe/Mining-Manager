@@ -1327,17 +1327,26 @@ class DiagnosticController extends Controller
             $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
 
-            // Get character info
+            // Get character info (may not exist for guest miners not registered in SeAT)
             $character = DB::table('character_infos')
                 ->where('character_id', $characterId)
                 ->first();
 
+            // If character not in SeAT, check if they have mining ledger entries
             if (!$character) {
-                return response()->json([
-                    'success' => false,
-                    'error' => "Character {$characterId} not found"
-                ], 404);
+                $hasMiningData = DB::table('mining_ledger')
+                    ->where('character_id', $characterId)
+                    ->exists();
+
+                if (!$hasMiningData) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Character {$characterId} not found in SeAT and has no mining data"
+                    ], 404);
+                }
             }
+
+            $characterName = $character->name ?? "Character {$characterId} (not in SeAT)";
 
             // Get character's corporation
             $affiliation = DB::table('character_affiliations')
@@ -1443,9 +1452,9 @@ class DiagnosticController extends Controller
                 'success' => true,
                 'character' => [
                     'id' => $characterId,
-                    'name' => $character->name,
+                    'name' => $characterName,
                     'corporation_id' => $corporationId,
-                    'corporation_name' => $corporationName,
+                    'corporation_name' => $corporationName ?? 'Unknown (guest miner)',
                 ],
                 'period' => [
                     'month' => $month,

@@ -168,10 +168,16 @@ class TaxCalculationService
      */
     private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, bool $recalculate): array
     {
-        // Get all characters who mined this month
-        $characters = MiningLedger::whereBetween('date', [$startDate, $endDate])
-            ->whereNotNull('processed_at')
-            ->distinct('character_id')
+        // Get all characters who mined at our corporation's structures this month
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
+            ->whereNotNull('processed_at');
+
+        if ($moonOwnerCorpId) {
+            $query->where('corporation_id', $moonOwnerCorpId);
+        }
+
+        $characters = $query->distinct('character_id')
             ->pluck('character_id');
 
         // Group characters by main character (user)

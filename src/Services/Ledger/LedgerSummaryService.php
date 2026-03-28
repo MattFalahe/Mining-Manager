@@ -220,10 +220,11 @@ class LedgerSummaryService
                 ? TypeIdRegistry::getMoonOreRarity($typeId)
                 : null;
 
-            // Switch corporation context per-entry for correct tax selector and rates
+            // Use moon owner corporation context for tax selector and rates
+            // The entry's corporation_id is the structure owner — used for comparison only
             $entryCorporationId = $entry->corporation_id;
-            if ($entryCorporationId) {
-                $this->settingsService->setActiveCorporation((int) $entryCorporationId);
+            if ($moonOwnerCorpId) {
+                $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
             }
 
             // Always use current tax rates from settings (single source of truth)
