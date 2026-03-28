@@ -774,17 +774,20 @@ class DashboardController extends Controller
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $structureCorpId = $moonOwnerCorpId ?: $corporationId;
 
-        // Check if this corporation owns any moon structures
-        $hasMoons = MiningLedger::where('corporation_id', $structureCorpId)
-            ->where('is_moon_ore', true)
-            ->whereNotNull('observer_id')
-            ->exists();
+        // Check if this corporation owns any moon structures using moon_extractions table
+        // (mining_ledger.corporation_id may be NULL for personal ESI imports)
+        $corpObserverIds = DB::table('moon_extractions')
+            ->where('corporation_id', $structureCorpId)
+            ->distinct()
+            ->pluck('structure_id')
+            ->toArray();
 
-        if (!$hasMoons) {
+        if (empty($corpObserverIds)) {
             return null; // Signal to view: no moons owned
         }
 
-        $query = MiningLedger::where('corporation_id', $structureCorpId)
+        // Query mining at corp-owned observers (observer_id = structure_id from moon_extractions)
+        $query = MiningLedger::whereIn('observer_id', $corpObserverIds)
             ->where('is_moon_ore', true)
             ->whereNotNull('processed_at')
             ->selectRaw("character_id, SUM(total_value) as total_value, SUM(quantity) as total_quantity")
