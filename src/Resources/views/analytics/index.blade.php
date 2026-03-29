@@ -94,19 +94,37 @@
         <div class="col-12">
             <div class="card card-primary card-outline">
                 <div class="card-body">
-                    <form method="GET" action="{{ route('mining-manager.analytics.index') }}" class="form-inline">
-                        <div class="form-group mr-3">
+                    <form method="GET" action="{{ route('mining-manager.analytics.index') }}" class="form-inline flex-wrap">
+                        <div class="form-group mr-3 mb-2">
                             <label class="mr-2">{{ trans('mining-manager::analytics.start_date') }}</label>
                             <input type="date" name="start_date" class="form-control" value="{{ $startDate->format('Y-m-d') }}">
                         </div>
-                        <div class="form-group mr-3">
+                        <div class="form-group mr-3 mb-2">
                             <label class="mr-2">{{ trans('mining-manager::analytics.end_date') }}</label>
                             <input type="date" name="end_date" class="form-control" value="{{ $endDate->format('Y-m-d') }}">
                         </div>
-                        <button type="submit" class="btn btn-primary mr-2">
+                        <div class="form-group mr-3 mb-2">
+                            <label class="mr-2"><i class="fas fa-building"></i> Corporation</label>
+                            <select name="corporation_id" class="form-control">
+                                <option value="">All Corporations</option>
+                                @if(isset($userCorporationId) && $userCorporationId && isset($corporations[$userCorporationId]))
+                                    <option value="{{ $userCorporationId }}" {{ ($corporationId ?? null) == $userCorporationId ? 'selected' : '' }}>
+                                        {{ $corporations[$userCorporationId] }} (My Corp)
+                                    </option>
+                                @endif
+                                @foreach($corporations as $corpId => $corpName)
+                                    @if(!isset($userCorporationId) || $corpId != $userCorporationId)
+                                        <option value="{{ $corpId }}" {{ ($corporationId ?? null) == $corpId ? 'selected' : '' }}>
+                                            {{ $corpName }}
+                                        </option>
+                                    @endif
+                                @endforeach
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary mr-2 mb-2">
                             <i class="fas fa-filter"></i> {{ trans('mining-manager::analytics.filter') }}
                         </button>
-                        <div class="btn-group mr-2">
+                        <div class="btn-group mr-2 mb-2">
                             <button type="button" class="btn btn-secondary quick-filter" data-days="7">7d</button>
                             <button type="button" class="btn btn-secondary quick-filter" data-days="30">30d</button>
                             <button type="button" class="btn btn-secondary quick-filter" data-days="90">90d</button>
