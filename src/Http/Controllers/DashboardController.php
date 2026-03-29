@@ -1227,7 +1227,7 @@ class DashboardController extends Controller
 
         // Single query for all 12 months instead of 12 separate queries
         $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->where('date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
+            ->where('date', '>=', Carbon::now()->subMonths(12)->startOfMonth())
             ->selectRaw("DATE_FORMAT(date, '%Y-%m') as month_key, SUM(total_value) as total_value")
             ->groupBy('month_key')
             ->get()
@@ -1261,7 +1261,7 @@ class DashboardController extends Controller
 
         // Single query for all 12 months — same pattern as getCorpMiningPerformanceLast12Months
         $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
-            ->where('date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
+            ->where('date', '>=', Carbon::now()->subMonths(12)->startOfMonth())
             ->selectRaw("DATE_FORMAT(date, '%Y-%m') as month_key, SUM(moon_ore_value) as total_value")
             ->groupBy('month_key')
             ->get()
