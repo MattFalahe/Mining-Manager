@@ -711,7 +711,88 @@
                             <strong>{{ trans('mining-manager::help.tax_step_6_title') }}</strong><br>
                             {{ trans('mining-manager::help.tax_step_6_desc') }}
                         </li>
+                        <li>
+                            <strong>{{ trans('mining-manager::help.tax_step_7_title') }}</strong><br>
+                            {{ trans('mining-manager::help.tax_step_7_desc') }}
+                        </li>
+                        <li>
+                            <strong>{{ trans('mining-manager::help.tax_step_8_title') }}</strong><br>
+                            {{ trans('mining-manager::help.tax_step_8_desc') }}
+                        </li>
+                        <li>
+                            <strong>{{ trans('mining-manager::help.tax_step_9_title') }}</strong><br>
+                            {{ trans('mining-manager::help.tax_step_9_desc') }}
+                        </li>
                     </ol>
+                </div>
+
+                {{-- Tax Calculation Periods --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-calendar-alt"></i>
+                        {{ trans('mining-manager::help.tax_periods_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.tax_periods_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.tax_period_monthly') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_period_biweekly') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.tax_period_weekly') }}</strong></li>
+                    </ul>
+
+                    <div class="info-box">
+                        <i class="fas fa-chart-bar"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_periods_charts') }}
+                    </div>
+
+                    <p>{{ trans('mining-manager::help.tax_periods_due_date') }}</p>
+                    <p>{{ trans('mining-manager::help.tax_periods_codes') }}</p>
+                </div>
+
+                {{-- Nightly Pipeline --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-cogs"></i>
+                        {{ trans('mining-manager::help.nightly_pipeline_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.nightly_pipeline_desc') }}</p>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.pipeline_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_4') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_5') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_6') }}</li>
+                        <li>{{ trans('mining-manager::help.pipeline_step_7') }}</li>
+                    </ol>
+                    <p>{{ trans('mining-manager::help.pipeline_other') }}</p>
+                </div>
+
+                {{-- Triggered By / Audit Trail --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-history"></i>
+                        {{ trans('mining-manager::help.triggered_by_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.triggered_by_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.triggered_by_scheduled') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.triggered_by_manual') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.triggered_by_regenerate') }}</strong></li>
+                    </ul>
+                </div>
+
+                {{-- Admin Tax Controls --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-user-shield"></i>
+                        {{ trans('mining-manager::help.admin_controls_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.admin_controls_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.admin_control_delete') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.admin_control_mark_paid') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.admin_control_status') }}</strong></li>
+                    </ul>
                 </div>
 
                 {{-- Daily Summaries --}}
@@ -1153,15 +1234,15 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-ledger-prices</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
-                                    <td>Update mining ledger entry values using current market prices and tax rates. Also regenerates affected daily summaries.<br>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 1:00 AM</td>
+                                    <td>Lock in current market prices on mining ledger entries. Also regenerates affected daily summaries. First step in the nightly pipeline.<br>
                                         <small class="text-muted">Options: <code>--days=1</code> days to re-price, <code>--all-unpriced</code> all entries with 0 value, <code>--force</code> re-price even if value > 0, <code>--character_id=</code> specific character</small>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-daily-summaries</code></td>
-                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Generate/update daily mining summaries with per-ore tax breakdown using current settings. This is the foundation of the tax system.<br>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 1:30 AM</td>
+                                    <td>Safety net: catches non-observer mining (belt mining) and late ESI data. Generates/updates daily summaries with per-ore tax breakdown. Runs before tax calculation to ensure complete data.<br>
                                         <small class="text-muted">Options: <code>--days=2</code> days back, <code>--date=YYYY-MM-DD</code> specific date, <code>--month=YYYY-MM</code> entire month, <code>--today-only</code> fast mode, <code>--character_id=</code> specific character</small>
                                     </td>
                                 </tr>
@@ -1202,15 +1283,15 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes</code></td>
-                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Calculate monthly tax obligations by summing daily summaries. Creates MiningTax records per main character.<br>
-                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> recalculate existing records</small>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:15 AM</td>
+                                    <td>Calculate tax obligations by summing daily summaries. Creates MiningTax records per main character for the previous completed period. <strong>Smart scheduling:</strong> only acts on period boundary days (1st for monthly, 1st/15th for biweekly, Mondays for weekly). Skips silently on other days.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> legacy monthly, <code>--period-start=YYYY-MM-DD</code> specific period, <code>--period-type=</code> override (monthly|biweekly|weekly), <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> overwrite existing, <code>--force</code> run even if not a boundary day</small>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-monthly-stats</code></td>
-                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Pre-calculate and store monthly dashboard statistics for performance.<br>
+                                    <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span> 3:00 AM + <span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
+                                    <td>Pre-calculate and store dashboard statistics. Full run on the 1st of each month at 3:00 AM for the closed month. Fast <code>--current-month</code> mode runs every 30 minutes to keep live dashboard data current.<br>
                                         <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--user_id=</code> specific user, <code>--recalculate</code> recalculate existing, <code>--current-month</code> fast mode, <code>--all-history</code> all historical months</small>
                                     </td>
                                 </tr>
@@ -1244,22 +1325,22 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:send-reminders</code></td>
-                                    <td><span class="badge badge-success">25th of month</span></td>
-                                    <td>Send tax payment reminder notifications to characters with unpaid taxes.<br>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 10:00 AM</td>
+                                    <td>Send tax payment reminder notifications to characters with unpaid taxes. Finds taxes within the reminder window (configurable, default 3 days before due date) or already overdue. Groups by character — one notification per player even if they owe multiple periods.<br>
                                         <small class="text-muted">Options: <code>--overdue-only</code> only overdue taxes, <code>--days-overdue=7</code> days threshold, <code>--dry-run</code> preview without sending</small>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-invoices</code></td>
-                                    <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span></td>
-                                    <td>Generate tax invoice records for unpaid mining taxes.<br>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:30 AM</td>
+                                    <td>Generate invoice records for unpaid taxes with completed periods. Smart: only creates invoices for taxes that don't already have one. Runs daily so biweekly/weekly periods get invoices promptly after each period ends.<br>
                                         <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--character_id=</code> specific character, <code>--dry-run</code> preview without creating</small>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:finalize-month</code></td>
-                                    <td><span class="badge badge-success">2nd of month</span></td>
-                                    <td>Finalize previous month's daily and monthly summaries. Marks summaries as finalized so they are no longer regenerated.<br>
+                                    <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span> 2:00 AM</td>
+                                    <td>Lock previous month's daily summaries as final so they won't be regenerated. Runs on the 1st at 2:00 AM, before tax calculation at 2:15 AM. Refuses to finalize the current or future months.<br>
                                         <small class="text-muted">Arguments: <code>{month?}</code> optional month in YYYY-MM format (defaults to previous month)</small>
                                     </td>
                                 </tr>
@@ -1342,7 +1423,15 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes --month=2026-03 --recalculate</code></td>
-                                    <td>Recalculate taxes for March 2026, updating existing tax records</td>
+                                    <td>Recalculate taxes for March 2026 (monthly mode), updating existing tax records</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:calculate-taxes --period-start=2026-03-15 --period-type=biweekly</code></td>
+                                    <td>Calculate biweekly taxes for the period containing March 15 (Mar 15-31)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:calculate-taxes --force</code></td>
+                                    <td>Force tax calculation today even if it's not a period boundary day</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:cache-prices --force</code></td>
@@ -1392,7 +1481,7 @@
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong>Note:</strong> All commands should be run from your SeAT installation directory using <code>php artisan</code>.
+                        <strong>Note:</strong> All commands should be run from your SeAT installation directory. For Docker: <code>docker exec -it seat-docker-front-1 php artisan command-name</code>. For bare-metal: <code>php artisan command-name</code>.
                     </div>
                 </div>
             </div>

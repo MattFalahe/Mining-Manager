@@ -135,15 +135,57 @@ return [
     'tax_step_1_title' => '1. Mining Data is Fetched',
     'tax_step_1_desc' => 'The process-ledger command runs every 30 minutes and fetches mining data from ESI corporation mining observers. Each entry records the character, ore type, quantity, date, and solar system.',
     'tax_step_2_title' => '2. Prices are Applied',
-    'tax_step_2_desc' => 'The update-ledger-prices command runs daily and applies current market prices to each mining entry. Prices come from your configured price provider (SeAT, Janice, Fuzzwork, or Custom) using the selected price type (sell, buy, or average) from your chosen market hub region.',
+    'tax_step_2_desc' => 'The update-ledger-prices command runs daily at 1:00 AM and applies current market prices to each mining entry. Prices come from your configured price provider (SeAT, Janice, Fuzzwork, or Custom) using the selected price type (sell, buy, or average) from your chosen market hub region.',
     'tax_step_3_title' => '3. Daily Summaries are Generated',
-    'tax_step_3_desc' => 'The update-daily-summaries command creates per-character, per-day summaries containing: total ISK value, per-ore breakdown with tax rates, event modifiers, and estimated tax. These summaries always use your current tax settings — if you change a rate, the next summary regeneration picks it up.',
-    'tax_step_4_title' => '4. Tax is Calculated',
-    'tax_step_4_desc' => 'At month end, the Calculate button sums all daily summaries into a single monthly tax record per member (grouped by main character). Alt characters are automatically combined under their main using SeAT\'s character affiliation system.',
-    'tax_step_5_title' => '5. Payment Codes are Generated',
-    'tax_step_5_desc' => 'Each member receives a unique tax code (e.g., TAX-MINC-VX45XUQC). They pay by sending ISK to the corporation wallet with their code in the transfer reason field.',
-    'tax_step_6_title' => '6. Payments are Verified',
-    'tax_step_6_desc' => 'The verify-payments command scans corporation wallet journal entries every 6 hours and automatically matches the reason field against issued tax codes. Matched payments update the tax status.',
+    'tax_step_3_desc' => 'The update-daily-summaries command (1:30 AM) creates per-character, per-day summaries containing: total ISK value, per-ore breakdown with tax rates, event modifiers, and estimated tax. These summaries always use your current tax settings — if you change a rate, the next summary regeneration picks it up.',
+    'tax_step_4_title' => '4. Month is Finalized',
+    'tax_step_4_desc' => 'On the 1st of each month at 2:00 AM, the finalize-month command locks the previous month\'s daily summaries. This ensures tax calculation works from complete, final data that will not change.',
+    'tax_step_5_title' => '5. Tax is Calculated',
+    'tax_step_5_desc' => 'The calculate-taxes command runs daily at 2:15 AM but only acts on period boundaries — the 1st for monthly, the 1st and 15th for biweekly, or Mondays for weekly. It sums daily summaries into a tax record per member (grouped by main character) for the previous completed period. Each record stores the period type, start/end dates, due date, and a triggered_by audit trail.',
+    'tax_step_6_title' => '6. Invoice is Generated',
+    'tax_step_6_desc' => 'The generate-invoices command runs daily at 2:30 AM and creates invoice records for any unpaid taxes with completed periods. It skips taxes that already have an invoice — safe to run every day.',
+    'tax_step_7_title' => '7. Payment Codes are Issued',
+    'tax_step_7_desc' => 'Each tax record gets a unique payment code (e.g., TAX-MINC-VX45XUQC). Members pay by sending ISK to the corporation wallet with their code in the transfer reason field. Each period gets its own code.',
+    'tax_step_8_title' => '8. Payments are Verified',
+    'tax_step_8_desc' => 'The verify-payments command scans corporation wallet journal entries every 6 hours and automatically matches the reason field against issued tax codes. Matched payments update the tax status to "paid".',
+    'tax_step_9_title' => '9. Reminders are Sent',
+    'tax_step_9_desc' => 'The send-reminders command runs daily at 10:00 AM. It finds unpaid taxes approaching their due date (within the configured reminder window, default 3 days before) or already overdue, and sends one notification per character with their total owed and earliest due date.',
+
+    // Tax Periods
+    'tax_periods_title' => 'Tax Calculation Periods',
+    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Three period types are supported:',
+    'tax_period_monthly' => 'Monthly — One tax bill per calendar month (1st to last day). Calculated on the 1st of the following month.',
+    'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 1st and 15th.',
+    'tax_period_weekly' => 'Weekly — One tax bill per ISO week (Monday to Sunday). Calculated every Monday.',
+    'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Multiple periods within the same month are aggregated into one data point.',
+    'tax_periods_due_date' => 'Each tax record gets a due date calculated as: period end date + payment deadline days (configurable in settings, default 7 days). For example, a biweekly period ending March 14 would be due March 21.',
+    'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month, weekly members receive 4-5 codes per month.',
+
+    // Nightly Pipeline
+    'nightly_pipeline_title' => 'Behind the Scenes — Nightly Pipeline',
+    'nightly_pipeline_desc' => 'Every night, a chain of automated commands runs in a specific order. Each step depends on the previous one completing first:',
+    'pipeline_step_1' => '1:00 AM — update-ledger-prices: Locks in current market prices on mining ledger entries.',
+    'pipeline_step_2' => '1:30 AM — update-daily-summaries: Catches any missed mining data (belt mining, late ESI imports) and ensures all summaries are current.',
+    'pipeline_step_3' => '2:00 AM — finalize-month (1st only): Locks the previous month\'s summaries as final so they won\'t be regenerated.',
+    'pipeline_step_4' => '2:15 AM — calculate-taxes: Creates tax records for the completed period. Only acts on period boundary days (1st for monthly, 1st/15th for biweekly, Mondays for weekly). Skips silently on other days.',
+    'pipeline_step_5' => '2:30 AM — generate-invoices: Creates invoice records for any new unpaid taxes with completed periods.',
+    'pipeline_step_6' => '3:00 AM — calculate-monthly-stats (1st only): Pre-calculates dashboard statistics for the closed month.',
+    'pipeline_step_7' => '10:00 AM — send-reminders: Sends payment reminders for taxes approaching or past their due date.',
+    'pipeline_other' => 'Additionally, verify-payments runs every 6 hours to match wallet transfers against tax codes, and calculate-monthly-stats --current-month runs every 30 minutes to keep the dashboard current.',
+
+    // Triggered By / Audit Trail
+    'triggered_by_title' => 'Audit Trail (Triggered By)',
+    'triggered_by_desc' => 'Every tax record logs who or what created it in the "Triggered By" field:',
+    'triggered_by_scheduled' => 'Scheduled Task — Created automatically by the nightly calculate-taxes cron job.',
+    'triggered_by_manual' => 'Manual: CharacterName — Created by an admin clicking Calculate or Recalculate in the UI.',
+    'triggered_by_regenerate' => 'Regenerate: CharacterName — Created by an admin clicking Regenerate Codes in the UI.',
+
+    // Admin Tax Controls
+    'admin_controls_title' => 'Admin Tax Management',
+    'admin_controls_desc' => 'Administrators have additional controls on the Tax Overview and Tax Details pages:',
+    'admin_control_delete' => 'Delete — Remove a tax record entirely. Useful for incorrectly created records.',
+    'admin_control_mark_paid' => 'Mark as Paid — Manually mark a tax as paid with optional notes (e.g., "Paid via contract" or "Waived"). This also marks any active tax codes as "used" to prevent the wallet verification from double-processing.',
+    'admin_control_status' => 'Change Status — Change a tax record\'s status (unpaid, paid, overdue, waived). Changing to "paid" also marks tax codes as used.',
 
     // Daily Summaries as Source of Truth
     'daily_summaries_explained' => 'Daily Summaries (Source of Truth)',
@@ -201,9 +243,9 @@ return [
     // Calculation Buttons
     'calculation_methods' => 'Calculate Taxes Page — Buttons',
     'calculation_methods_desc' => 'The Calculate Taxes page provides three action buttons. All of them read from daily summaries as the single source of truth:',
-    'calc_calculate' => 'Calculate — Sums existing daily summaries to create monthly tax records (MiningTax entries). This is fast because it only reads stored data. Use this for routine end-of-month tax finalization when you are happy with the current daily summaries.',
-    'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates monthly tax records. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
-    'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
+    'calc_calculate' => 'Calculate — Sums existing daily summaries to create tax records for all periods within the selected month. This is fast because it only reads stored data. Use this for routine tax finalization when you are happy with the current daily summaries. For biweekly/weekly, this creates a separate record for each period in the month.',
+    'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates tax records for all periods. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
+    'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member for each period. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
 
     // Exemptions and Minimum Tax
     'exemptions_explained' => 'Exemptions and Minimum Tax',
@@ -455,7 +497,7 @@ return [
     'setting_permissions_desc' => 'Permissions are managed through SeAT\'s standard ACL system. Navigate to SeAT Configuration > Access Control to assign roles and permissions to users. Most corporation members should receive the "member" permission, directors get "director", and only administrators get "admin".',
 
     // CLI Commands
-    'cli_intro' => 'Run commands via SSH from your SeAT installation directory. For Docker installations: docker compose exec seat-worker php artisan command-name. For bare-metal: php artisan command-name',
+    'cli_intro' => 'Run commands via SSH from your SeAT installation directory. For Docker installations: docker exec -it seat-docker-front-1 php artisan command-name. For bare-metal: php artisan command-name',
     'cli_scheduled' => 'Scheduled Commands',
     'cli_scheduled_desc' => 'These commands run automatically via Laravel\'s task scheduler. You can also run them manually at any time:',
     'cli_diagnostic' => 'Diagnostic Commands',
@@ -476,4 +518,5 @@ return [
     'schedule_twice_daily' => 'Twice daily',
     'schedule_monthly' => '1st of month',
     'schedule_twice_monthly' => '1st & 15th',
+    'schedule_daily_smart' => 'Daily (smart)',
 ];
