@@ -4,61 +4,38 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 
 class CalculateMonthlyTaxesCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'mining-manager:calculate-taxes
-                            {--month= : Month to calculate (YYYY-MM format)}
+                            {--month= : Month to calculate (YYYY-MM format, monthly period only)}
+                            {--period-start= : Period start date (YYYY-MM-DD, for any period type)}
+                            {--period-type= : Override period type (monthly|biweekly|weekly)}
                             {--character_id= : Calculate for specific character}
                             {--corporation_id= : Calculate for specific structure-owner corporation}
-                            {--recalculate : Recalculate existing tax records}';
+                            {--recalculate : Recalculate existing tax records}
+                            {--force : Run even if today is not a period boundary}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Calculate monthly mining taxes for characters based on their mining activity';
+    protected $description = 'Calculate mining taxes based on configured period (monthly, biweekly, or weekly)';
 
-    /**
-     * Tax calculation service
-     *
-     * @var TaxCalculationService
-     */
-    protected $taxService;
+    protected TaxCalculationService $taxService;
+    protected SettingsManagerService $settingsService;
+    protected TaxPeriodHelper $periodHelper;
 
-    /**
-     * Settings manager service
-     *
-     * @var SettingsManagerService
-     */
-    protected $settingsService;
-
-    /**
-     * Create a new command instance.
-     *
-     * @param TaxCalculationService $taxService
-     * @param SettingsManagerService $settingsService
-     */
-    public function __construct(TaxCalculationService $taxService, SettingsManagerService $settingsService)
-    {
+    public function __construct(
+        TaxCalculationService $taxService,
+        SettingsManagerService $settingsService,
+        TaxPeriodHelper $periodHelper
+    ) {
         parent::__construct();
         $this->taxService = $taxService;
         $this->settingsService = $settingsService;
+        $this->periodHelper = $periodHelper;
     }
 
-    /**
-     * Execute the console command.
-     *
-     * @return int
-     */
     public function handle()
     {
         // Check feature flag
@@ -68,14 +45,10 @@ class CalculateMonthlyTaxesCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info('Starting tax calculation...');
-
-        // Determine which month to process
-        $month = $this->option('month')
-            ? Carbon::parse($this->option('month') . '-01')
-            : Carbon::now()->subMonth();
-
+        // Determine period type from option or settings
+        $periodType = $this->option('period-type') ?? $this->periodHelper->getConfiguredPeriodType();
         $recalculate = (bool) $this->option('recalculate');
+        $force = (bool) $this->option('force');
 
         // If a specific corporation is provided, set it as active context
         if ($corporationId = $this->option('corporation_id')) {
@@ -83,26 +56,48 @@ class CalculateMonthlyTaxesCommand extends Command
             $this->info("Using corporation context: {$corporationId}");
         }
 
-        $this->info("Calculating taxes for period: {$month->copy()->startOfMonth()->format('Y-m-d')} to {$month->copy()->endOfMonth()->format('Y-m-d')}");
+        // Determine the period to calculate
+        if ($this->option('period-start')) {
+            // Explicit period start date provided
+            $periodDate = Carbon::parse($this->option('period-start'));
+            [$startDate, $endDate] = $this->periodHelper->getPeriodBounds($periodDate, $periodType);
+        } elseif ($this->option('month')) {
+            // Legacy --month option (always monthly)
+            $month = Carbon::parse($this->option('month') . '-01');
+            $startDate = $month->copy()->startOfMonth();
+            $endDate = $month->copy()->endOfMonth();
+            $periodType = 'monthly';
+        } else {
+            // Automatic: calculate the previous completed period
+            // But only if today is a period boundary (or --force is used)
+            if (!$force && !$this->periodHelper->shouldCalculateToday($periodType)) {
+                $this->info("Today is not a {$periodType} boundary. Skipping. Use --force to override.");
+                return Command::SUCCESS;
+            }
+
+            [$startDate, $endDate] = $this->periodHelper->getPreviousCompletedPeriod($periodType);
+        }
+
+        $periodLabel = $this->periodHelper->formatPeriod($startDate, $endDate, $periodType);
+        $this->info("Calculating {$periodType} taxes for: {$periodLabel} ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})");
 
         if ($characterId = $this->option('character_id')) {
             $this->info("Calculating for character ID: {$characterId}");
 
-            // For a single character, use recalculateTax directly
             try {
-                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $month);
+                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $startDate);
                 $this->info("Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
             } catch (\Exception $e) {
                 $this->error("Error calculating tax for character {$characterId}: {$e->getMessage()}");
                 return Command::FAILURE;
             }
         } else {
-            // Use the service's calculateMonthlyTaxes which handles
-            // individual vs accumulated mode, grouping, and all business logic
             try {
-                $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate);
+                $triggeredBy = app()->runningInConsole() ? 'Scheduled Task' : 'System';
+                $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
 
                 $this->info("Tax calculation complete!");
+                $this->info("Period type: {$periodType}");
                 $this->info("Method: {$results['method']}");
                 $this->info("Calculated: {$results['count']} tax records");
                 $this->info("Total: " . number_format($results['total'], 2) . " ISK");

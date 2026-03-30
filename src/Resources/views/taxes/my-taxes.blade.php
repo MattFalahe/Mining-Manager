@@ -352,7 +352,7 @@
                         <table class="table table-dark table-striped table-hover">
                             <thead>
                                 <tr>
-                                    <th>{{ trans('mining-manager::taxes.month') }}</th>
+                                    <th>Period</th>
                                     @if($taxMethod === 'character')
                                     <th>Character</th>
                                     @endif
@@ -368,7 +368,7 @@
                                 @forelse($taxHistory as $tax)
                                 <tr>
                                     <td>
-                                        <strong>{{ \Carbon\Carbon::parse($tax->month)->format('F Y') }}</strong>
+                                        <strong>{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}</strong>
                                     </td>
                                     @if($taxMethod === 'character')
                                     <td>

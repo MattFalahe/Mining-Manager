@@ -34,7 +34,7 @@
                             <tr>
                                 <th>{{ trans('mining-manager::taxes.code') }}</th>
                                 <th>{{ trans('mining-manager::taxes.character') }}</th>
-                                <th>{{ trans('mining-manager::taxes.month') }}</th>
+                                <th>Period</th>
                                 <th>{{ trans('mining-manager::taxes.amount') }}</th>
                                 <th>{{ trans('mining-manager::taxes.status') }}</th>
                                 <th class="text-center">{{ trans('mining-manager::taxes.actions') }}</th>
@@ -45,7 +45,7 @@
                             <tr>
                                 <td><code>{{ $taxCodePrefix }}{{ $code->code }}</code></td>
                                 <td>{{ $code->character_info['name'] ?? $code->character->name ?? 'Unknown' }}</td>
-                                <td>{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y') : '-' }}</td>
+                                <td>{{ $code->miningTax ? ($code->miningTax->formatted_period ?? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y')) : '-' }}</td>
                                 <td>{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
                                 <td>
                                     @if($code->status === 'used')
@@ -80,6 +80,7 @@
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 $(document).ready(function() {
+    if ($('#taxCodesTable tbody tr').length > 0 && !$('#taxCodesTable tbody tr td[colspan]').length) {
     $('#taxCodesTable').DataTable({
         pageLength: 25,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
@@ -96,6 +97,7 @@ $(document).ready(function() {
             { orderable: false, targets: [5] }
         ]
     });
+    }
 });
 
 function copyCode(code) {

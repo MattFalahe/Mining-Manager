@@ -423,7 +423,10 @@ $(document).ready(function() {
     // Tax Calculation Form Submission
     $('#tax-calculation-form').on('submit', function(e) {
         e.preventDefault();
+        submitCalculation(false);
+    });
 
+    function submitCalculation(confirmIncomplete) {
         $('#calculate-btn').prop('disabled', true);
         $('#calculation-progress').show();
         $('#calculation-results').hide();
@@ -431,10 +434,13 @@ $(document).ready(function() {
         // Build month in YYYY-MM format from separate month/year fields
         var monthVal = String($('#month').val()).padStart(2, '0');
         var yearVal = $('#year').val();
-        var formData = $(this).serializeArray().filter(function(field) {
+        var formData = $('#tax-calculation-form').serializeArray().filter(function(field) {
             return field.name !== 'month' && field.name !== 'year';
         });
         formData.push({ name: 'month', value: yearVal + '-' + monthVal });
+        if (confirmIncomplete) {
+            formData.push({ name: 'confirm_incomplete', value: 1 });
+        }
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.process-calculation") }}',
@@ -443,6 +449,21 @@ $(document).ready(function() {
             success: function(response) {
                 $('#calculation-progress').hide();
                 $('#calculate-btn').prop('disabled', false);
+
+                if (response.status === 'incomplete_month') {
+                    if (response.is_future) {
+                        $('#results-alert')
+                            .removeClass('alert-success alert-warning')
+                            .addClass('alert-danger')
+                            .html(`<i class="fas fa-ban"></i> ${response.message}`);
+                        $('#calculation-results').show();
+                    } else {
+                        if (confirm(response.message + '\n\nDo you want to proceed anyway?')) {
+                            submitCalculation(true);
+                        }
+                    }
+                    return;
+                }
 
                 if (response.status === 'success') {
                     $('#results-alert')
@@ -484,36 +505,58 @@ $(document).ready(function() {
                 $('#calculation-results').show();
             }
         });
-    });
+    }
 
     // Recalculate Button — regenerates daily summaries with current prices/rates, then calculates
     $('#recalculate-btn').on('click', function() {
         if (!confirm('This will re-price all mining for the selected month using current market prices and tax rates. This may take a moment. Continue?')) {
             return;
         }
+        submitRecalculation(false);
+    });
 
+    function submitRecalculation(confirmIncomplete) {
         $('#calculate-btn').prop('disabled', true);
-        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Recalculating...');
+        $('#recalculate-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Recalculating...');
         $('#calculation-progress').show();
         $('#calculation-results').hide();
 
         var monthVal = String($('#month').val()).padStart(2, '0');
         var yearVal = $('#year').val();
+        var data = {
+            _token: '{{ csrf_token() }}',
+            month: yearVal + '-' + monthVal,
+            recalculate: 1,
+            corporation_id: $('#corporation_id').val(),
+            character_id: $('#character_id').val()
+        };
+        if (confirmIncomplete) {
+            data.confirm_incomplete = 1;
+        }
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.process-calculation") }}',
             method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                month: yearVal + '-' + monthVal,
-                recalculate: 1,
-                corporation_id: $('#corporation_id').val(),
-                character_id: $('#character_id').val()
-            },
+            data: data,
             success: function(response) {
                 $('#calculation-progress').hide();
                 $('#calculate-btn').prop('disabled', false);
                 $('#recalculate-btn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i> {{ trans("mining-manager::taxes.recalculate") }}');
+
+                if (response.status === 'incomplete_month') {
+                    if (response.is_future) {
+                        $('#results-alert')
+                            .removeClass('alert-success alert-warning')
+                            .addClass('alert-danger')
+                            .html(`<i class="fas fa-ban"></i> ${response.message}`);
+                        $('#calculation-results').show();
+                    } else {
+                        if (confirm(response.message + '\n\nDo you want to proceed anyway?')) {
+                            submitRecalculation(true);
+                        }
+                    }
+                    return;
+                }
 
                 if (response.status === 'success') {
                     $('#results-alert')
@@ -546,32 +589,52 @@ $(document).ready(function() {
                 $('#calculation-results').show();
             }
         });
-    });
+    }
 
     // Regenerate Codes Button — recalculate + generate/update payment codes
     $('#regenerate-payments-btn').on('click', function() {
         if (!confirm('{{ trans("mining-manager::taxes.regenerate_confirm") }}')) {
             return;
         }
+        submitRegenerate(false);
+    });
 
+    function submitRegenerate(confirmIncomplete) {
         const month = $('#year').val() + '-' + String($('#month').val()).padStart(2, '0');
         const corporationId = $('#corporation_id').val();
         const characterId = $('#character_id').val();
         const paymentMethod = '{{ $paymentSettings["method"] }}';
 
-        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::taxes.regenerating") }}');
+        $('#regenerate-payments-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::taxes.regenerating") }}');
+
+        var data = {
+            _token: '{{ csrf_token() }}',
+            month: month,
+            corporation_id: corporationId,
+            character_id: characterId,
+            payment_method: paymentMethod
+        };
+        if (confirmIncomplete) {
+            data.confirm_incomplete = 1;
+        }
 
         $.ajax({
             url: '{{ route("mining-manager.taxes.regenerate-payments") }}',
             method: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                month: month,
-                corporation_id: corporationId,
-                character_id: characterId,
-                payment_method: paymentMethod
-            },
+            data: data,
             success: function(response) {
+                if (response.status === 'incomplete_month') {
+                    $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
+                    if (response.is_future) {
+                        alert(response.message);
+                    } else {
+                        if (confirm(response.message + '\n\nDo you want to proceed anyway?')) {
+                            submitRegenerate(true);
+                        }
+                    }
+                    return;
+                }
+
                 if (response.status === 'success') {
                     toastr.success(response.message);
                     refreshLiveTracking();
@@ -585,7 +648,7 @@ $(document).ready(function() {
                 $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
             }
         });
-    });
+    }
 
     // Refresh Tracking
     $('#refresh-tracking-btn').on('click', refreshLiveTracking);

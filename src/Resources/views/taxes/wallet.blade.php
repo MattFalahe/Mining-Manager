@@ -159,6 +159,7 @@
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 $(document).ready(function() {
+    if ($('#walletTable tbody tr').length > 0 && !$('#walletTable tbody tr td[colspan]').length) {
     $('#walletTable').DataTable({
         pageLength: 25,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
@@ -175,6 +176,7 @@ $(document).ready(function() {
             { orderable: false, targets: [7] }
         ]
     });
+    }
 });
 
 function syncWalletJournal() {

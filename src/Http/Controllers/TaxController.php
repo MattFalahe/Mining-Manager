@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -353,6 +354,10 @@ class TaxController extends Controller
 
         $paymentSettings = $this->settingsService->getPaymentSettings();
 
+        // Get configured period type
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->getConfiguredPeriodType();
+
         // Get tracking data from daily summaries
         $liveTracking = $this->getLiveTrackingData();
 
@@ -365,6 +370,7 @@ class TaxController extends Controller
             'corporations',
             'years',
             'paymentSettings',
+            'periodType',
             'liveTracking',
             'isAdmin',
             'isDirector',
@@ -543,15 +549,55 @@ class TaxController extends Controller
     {
         $validated = $request->validate([
             'month' => 'required|date_format:Y-m',
+            'period_start' => 'nullable|date_format:Y-m-d',
             'recalculate' => 'boolean',
             'character_id' => 'nullable|integer',
             'corporation_id' => 'nullable|integer',
+            'confirm_incomplete' => 'boolean',
         ]);
 
         try {
-            $month = Carbon::parse($validated['month'])->startOfMonth();
+            $periodHelper = app(TaxPeriodHelper::class);
+            $periodType = $periodHelper->getConfiguredPeriodType();
             $recalculate = $validated['recalculate'] ?? false;
             $characterId = $validated['character_id'] ?? null;
+            $confirmIncomplete = $validated['confirm_incomplete'] ?? false;
+
+            $month = Carbon::parse($validated['month'])->startOfMonth();
+
+            // Get all periods within the selected month for the configured period type
+            // Monthly: 1 period, Biweekly: 2 periods, Weekly: 4-5 periods
+            if (!empty($validated['period_start'])) {
+                // Specific period requested
+                $periodDate = Carbon::parse($validated['period_start']);
+                $periods = [$periodHelper->getPeriodBounds($periodDate, $periodType)];
+            } else {
+                $periods = $periodHelper->getPeriodsInMonth($month, $periodType);
+            }
+
+            // Check for incomplete/future periods
+            $lastPeriodEnd = end($periods)[1];
+            $firstPeriodStart = $periods[0][0];
+            $monthLabel = $month->format('F Y');
+
+            if (!$periodHelper->isPeriodComplete($lastPeriodEnd) && !$confirmIncomplete) {
+                $isFuture = $firstPeriodStart->gt(Carbon::now());
+                $periodCount = count($periods);
+                $periodDesc = $periodCount > 1 ? "{$periodCount} {$periodType} periods in {$monthLabel}" : $monthLabel;
+                return response()->json([
+                    'status' => 'incomplete_month',
+                    'message' => $isFuture
+                        ? "{$periodDesc} hasn't started yet. There is no mining data to calculate taxes from."
+                        : "Not all periods in {$monthLabel} have ended yet. Tax calculations will be based on incomplete data and may need to be recalculated after the period ends.",
+                    'is_future' => $isFuture,
+                ], 200);
+            }
+
+            // Build trigger source for audit trail
+            $user = auth()->user();
+            $triggeredBy = $user
+                ? 'Manual: ' . ($user->main_character->name ?? 'User #' . $user->id)
+                : 'Manual: Unknown';
 
             // Set corporation context for settings (use provided or fall back to moon owner)
             $corporationId = $validated['corporation_id'] ?? null;
@@ -560,44 +606,52 @@ class TaxController extends Controller
             }
             $this->setCorporationContext($corporationId);
 
+            Log::info("Mining Manager: Tax calculation triggered by {$triggeredBy} for {$monthLabel} ({$periodType}, " . count($periods) . " periods)");
+
             // Recalculate mode: regenerate all daily summaries with current prices and tax rates
             if ($recalculate) {
                 $regenerated = $this->taxService->regenerateMonthSummaries($month, $corporationId);
-                Log::info("Recalculate: regenerated {$regenerated} daily summaries for {$month->format('Y-m')}");
+                Log::info("Recalculate: regenerated {$regenerated} daily summaries for {$monthLabel}");
             }
 
-            // Check if taxes already exist for this month
-            $existingQuery = MiningTax::where('month', $month->format('Y-m-01'));
+            // Calculate taxes for each period in the month
+            $totalCount = 0;
+            $totalAmount = 0;
+            $allErrors = [];
 
-            if ($characterId) {
-                $existingQuery->where('character_id', $characterId);
+            foreach ($periods as [$startDate, $endDate]) {
+                $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
+
+                // Check if taxes already exist for this period
+                $existingQuery = MiningTax::where('period_start', $startDate->format('Y-m-d'));
+                if ($characterId) {
+                    $existingQuery->where('character_id', $characterId);
+                }
+                $existingCount = $existingQuery->count();
+
+                if ($existingCount > 0 && !$recalculate) {
+                    // Skip periods that already have taxes (unless recalculating)
+                    continue;
+                }
+
+                if ($characterId) {
+                    $taxAmount = $this->taxService->recalculateTax((int) $characterId, $startDate);
+                    $totalCount += $taxAmount > 0 ? 1 : 0;
+                    $totalAmount += $taxAmount;
+                } else {
+                    $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
+                    $totalCount += $results['count'];
+                    $totalAmount += $results['total'];
+                    $allErrors = array_merge($allErrors, $results['errors'] ?? []);
+                }
             }
 
-            $existingCount = $existingQuery->count();
-
-            if ($existingCount > 0 && !$recalculate) {
-                return response()->json([
-                    'status' => 'warning',
-                    'message' => trans('mining-manager::taxes.taxes_already_exist', [
-                        'count' => $existingCount,
-                        'month' => $month->format('F Y')
-                    ]),
-                    'existing_count' => $existingCount,
-                ], 200);
-            }
-
-            // Calculate taxes from daily summaries (corporation context already set)
-            if ($characterId) {
-                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $month);
-                $results = [
-                    'method' => 'individual',
-                    'count' => $taxAmount > 0 ? 1 : 0,
-                    'total' => $taxAmount,
-                    'errors' => [],
-                ];
-            } else {
-                $results = $this->taxService->calculateMonthlyTaxes($month, $recalculate);
-            }
+            $results = [
+                'method' => $characterId ? 'individual' : ($periodType === 'monthly' ? 'accumulated' : "accumulated ({$periodType})"),
+                'count' => $totalCount,
+                'total' => $totalAmount,
+                'errors' => $allErrors,
+            ];
 
             return response()->json([
                 'status' => 'success',
@@ -832,17 +886,36 @@ class TaxController extends Controller
             $taxId = $request->input('tax_id');
             $amountPaid = $request->input('amount_paid');
             $paymentDate = $request->input('payment_date', Carbon::now());
+            $notes = $request->input('notes');
 
             $tax = MiningTax::findOrFail($taxId);
             $tax->status = 'paid';
             $tax->amount_paid = $amountPaid ?? $tax->amount_owed;
             $tax->paid_at = Carbon::parse($paymentDate);
+
+            $user = auth()->user();
+            $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            // Append payment note to existing notes
+            $paymentNote = "Marked as paid by {$userName} on " . Carbon::now()->format('Y-m-d H:i');
+            if ($notes) {
+                $paymentNote .= "\nReason: {$notes}";
+            }
+            $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $paymentNote : $paymentNote;
             $tax->save();
+
+            // Mark any active tax codes as used to prevent wallet listener from double-processing
+            $tax->taxCodes()->where('status', 'active')->update([
+                'status' => 'used',
+                'used_at' => Carbon::now(),
+                'notes' => "Manually marked paid by {$userName}",
+            ]);
 
             Log::info('Tax manually marked as paid', [
                 'tax_id' => $taxId,
                 'amount' => $amountPaid,
-                'marked_by' => auth()->user()->name,
+                'marked_by' => $userName,
+                'notes' => $notes,
             ]);
 
             return response()->json([
@@ -1423,19 +1496,60 @@ class TaxController extends Controller
                 ], 400);
             }
 
+            $periodHelper = app(TaxPeriodHelper::class);
+            $periodType = $periodHelper->getConfiguredPeriodType();
             $monthDate = Carbon::parse($month)->startOfMonth();
+            $monthLabel = $monthDate->format('F Y');
+
+            // Get all periods in the month
+            $periods = $periodHelper->getPeriodsInMonth($monthDate, $periodType);
+            $lastPeriodEnd = end($periods)[1];
+            $firstPeriodStart = $periods[0][0];
+
+            // Warn if regenerating for incomplete period
+            if (!$periodHelper->isPeriodComplete($lastPeriodEnd) && !$request->input('confirm_incomplete')) {
+                $isFuture = $firstPeriodStart->gt(Carbon::now());
+                return response()->json([
+                    'status' => 'incomplete_month',
+                    'message' => $isFuture
+                        ? "{$monthLabel} hasn't started yet."
+                        : "Not all periods in {$monthLabel} have ended yet. Regenerated codes will be based on incomplete data.",
+                    'is_future' => $isFuture,
+                ], 200);
+            }
+
+            $user = auth()->user();
+            $triggeredBy = $user
+                ? 'Regenerate: ' . ($user->main_character->name ?? 'User #' . $user->id)
+                : 'Regenerate: Unknown';
+
+            Log::info("Mining Manager: Regenerate codes triggered by {$triggeredBy} for {$monthLabel} ({$periodType}, " . count($periods) . " periods)");
 
             // Regenerate all daily summaries with current prices and tax rates
             $regenerated = $this->taxService->regenerateMonthSummaries($monthDate, $corporationId);
-            Log::info("Regenerate codes: regenerated {$regenerated} daily summaries for {$month}");
+            Log::info("Regenerate codes: regenerated {$regenerated} daily summaries for {$monthLabel}");
 
-            // Recalculate taxes from fresh daily summaries (force=true to overwrite existing)
-            $results = $this->taxService->calculateMonthlyTaxes($monthDate, true);
+            // Recalculate taxes for each period in the month
+            $totalCount = 0;
+            $totalAmount = 0;
+            $allErrors = [];
+
+            foreach ($periods as [$startDate, $endDate]) {
+                $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, true, $triggeredBy);
+                $totalCount += $results['count'];
+                $totalAmount += $results['total'];
+                $allErrors = array_merge($allErrors, $results['errors'] ?? []);
+            }
 
             return response()->json([
                 'status' => 'success',
                 'message' => trans('mining-manager::taxes.payments_regenerated'),
-                'results' => $results,
+                'results' => [
+                    'method' => "regenerate ({$periodType})",
+                    'count' => $totalCount,
+                    'total' => $totalAmount,
+                    'errors' => $allErrors,
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -1529,9 +1643,9 @@ class TaxController extends Controller
         // Always use accumulated (per-account) mode
         $taxCalculationMethod = 'accumulated';
 
-        // Get mining breakdown for the tax's character and month
-        $startDate = Carbon::parse($tax->month)->startOfMonth();
-        $endDate = Carbon::parse($tax->month)->endOfMonth();
+        // Get mining breakdown for the tax's period (or fall back to month)
+        $startDate = $tax->period_start ? Carbon::parse($tax->period_start) : Carbon::parse($tax->month)->startOfMonth();
+        $endDate = $tax->period_end ? Carbon::parse($tax->period_end) : Carbon::parse($tax->month)->endOfMonth();
 
         $miningBreakdown = [];
         $miningTotal = 0;
@@ -1697,13 +1811,23 @@ class TaxController extends Controller
             $oldStatus = $tax->status;
             $tax->status = $validated['status'];
 
-            // If marking as paid, set payment date
+            // If marking as paid, set payment date and deactivate tax codes
             if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
                 $tax->paid_at = Carbon::now();
                 $tax->amount_paid = $tax->amount_owed;
             }
 
             $tax->save();
+
+            // When changing to paid, mark active tax codes as used
+            if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
+                $userName = auth()->user()->main_character->name ?? auth()->user()->name ?? 'Unknown';
+                $tax->taxCodes()->where('status', 'active')->update([
+                    'status' => 'used',
+                    'used_at' => Carbon::now(),
+                    'notes' => "Status changed to paid by {$userName}",
+                ]);
+            }
 
             Log::info('Tax status updated', [
                 'tax_id' => $id,
@@ -1806,6 +1930,8 @@ class TaxController extends Controller
                 $data = $taxes->map(function ($tax) {
                     return [
                         'character' => $tax->character->name ?? 'Unknown',
+                        'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
+                        'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
                         'amount_owed' => (float) $tax->amount_owed,
                         'amount_paid' => (float) ($tax->amount_paid ?? 0),
@@ -1833,12 +1959,14 @@ class TaxController extends Controller
                 $file = fopen('php://output', 'w');
 
                 // Headers
-                fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+                fputcsv($file, ['Character', 'Period', 'Period Type', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
 
                 // Data rows
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
                         $tax->character->name ?? 'Unknown',
+                        $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
+                        $tax->period_type ?? 'monthly',
                         $tax->month,
                         $tax->amount_owed,
                         $tax->amount_paid ?? 0,
@@ -1890,6 +2018,8 @@ class TaxController extends Controller
                 $data = $taxes->map(function ($tax) {
                     return [
                         'character' => $tax->character->name ?? 'Unknown',
+                        'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
+                        'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
                         'amount_owed' => (float) $tax->amount_owed,
                         'amount_paid' => (float) ($tax->amount_paid ?? 0),
@@ -1916,11 +2046,13 @@ class TaxController extends Controller
             $callback = function() use ($taxes) {
                 $file = fopen('php://output', 'w');
 
-                fputcsv($file, ['Character', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
+                fputcsv($file, ['Character', 'Period', 'Period Type', 'Month', 'Amount Owed', 'Amount Paid', 'Status', 'Due Date', 'Paid At']);
 
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
                         $tax->character->name ?? 'Unknown',
+                        $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
+                        $tax->period_type ?? 'monthly',
                         $tax->month,
                         $tax->amount_owed,
                         $tax->amount_paid ?? 0,
@@ -1969,7 +2101,7 @@ class TaxController extends Controller
             $receipt = "TAX RECEIPT\n";
             $receipt .= "===========\n\n";
             $receipt .= "Character: " . ($tax->character->name ?? 'Unknown') . "\n";
-            $receipt .= "Month: " . Carbon::parse($tax->month)->format('F Y') . "\n";
+            $receipt .= "Period: " . ($tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y')) . "\n";
             $receipt .= "Amount Owed: " . number_format($tax->amount_owed, 2) . " ISK\n";
             $receipt .= "Amount Paid: " . number_format($tax->amount_paid ?? 0, 2) . " ISK\n";
             $receipt .= "Status: " . strtoupper($tax->status) . "\n";
@@ -1982,7 +2114,7 @@ class TaxController extends Controller
 
             $receipt .= "\nGenerated: " . Carbon::now()->toDateTimeString() . "\n";
 
-            $filename = 'receipt_' . $tax->character_id . '_' . Carbon::parse($tax->month)->format('Y-m') . '.txt';
+            $filename = 'receipt_' . $tax->character_id . '_' . ($tax->period_start ? Carbon::parse($tax->period_start)->format('Y-m-d') : Carbon::parse($tax->month)->format('Y-m')) . '.txt';
 
             return response($receipt, 200)
                 ->header('Content-Type', 'text/plain')

@@ -74,20 +74,37 @@ class SendTaxRemindersCommand extends Command
             $this->warn('DRY RUN MODE - No notifications will be sent');
         }
 
-        // Build query for unpaid taxes that have a due date
+        // Build query for unpaid taxes with completed periods
         $query = MiningTax::where('status', 'unpaid')
-            ->where('amount_owed', '>', 0)
-            ->whereNotNull('due_date');
+            ->where('amount_owed', '>', 0);
 
         if ($overdueOnly) {
-            // Consider tax overdue if it's for a month that ended more than X days ago
             $overdueDate = Carbon::now()->subDays($daysOverdue);
-            $query->whereRaw('DATE_ADD(month, INTERVAL 1 MONTH) < ?', [$overdueDate]);
+            $query->where(function ($q) use ($overdueDate) {
+                // Use due_date if set
+                $q->where(function ($inner) use ($overdueDate) {
+                    $inner->whereNotNull('due_date')->where('due_date', '<', $overdueDate);
+                })->orWhere(function ($inner) use ($overdueDate) {
+                    // Fallback for records without due_date: period_end + grace
+                    $inner->whereNull('due_date')
+                          ->whereNotNull('period_end')
+                          ->where('period_end', '<', $overdueDate);
+                });
+            });
             $this->info("Sending reminders for taxes overdue by {$daysOverdue}+ days");
         } else {
-            // Only send reminders for taxes whose due date is within the reminder window or already past
+            // Send reminders for taxes whose due date is within the reminder window or already past
             $reminderThreshold = Carbon::now()->addDays($reminderDaysBefore);
-            $query->where('due_date', '<=', $reminderThreshold);
+            $query->where(function ($q) use ($reminderThreshold) {
+                $q->where(function ($inner) use ($reminderThreshold) {
+                    $inner->whereNotNull('due_date')->where('due_date', '<=', $reminderThreshold);
+                })->orWhere(function ($inner) use ($reminderThreshold) {
+                    // Fallback for records without due_date
+                    $inner->whereNull('due_date')
+                          ->whereNotNull('period_end')
+                          ->where('period_end', '<', Carbon::now()->startOfDay());
+                });
+            });
             $this->info("Sending reminders for taxes due within {$reminderDaysBefore} days (or overdue)");
         }
 

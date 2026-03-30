@@ -114,14 +114,17 @@ class TaxCalculationService
     }
 
     /**
-     * Calculate taxes for all miners in a month.
-     * Handles both individual and accumulated calculation methods.
+     * Calculate taxes for a specific period.
+     * Primary method that supports all period types (monthly, biweekly, weekly).
      *
-     * @param Carbon $month
+     * @param Carbon $startDate Period start date
+     * @param Carbon $endDate Period end date
+     * @param string $periodType 'monthly', 'biweekly', or 'weekly'
      * @param bool $recalculate
+     * @param string|null $triggeredBy
      * @return array
      */
-    public function calculateMonthlyTaxes(Carbon $month, bool $recalculate = false): array
+    public function calculateTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
     {
         // Check if any corporation is configured for tax calculation
         if ($this->settingsService->getActiveCorporation() === null) {
@@ -129,7 +132,6 @@ class TaxCalculationService
             $configuredCorps = $this->settingsService->getAllCorporations();
 
             if (!$moonOwnerCorpId && $configuredCorps->isEmpty()) {
-                // No corporation configured at all → statistics only mode
                 Log::info("Mining Manager: No corporation configured — skipping tax calculation (statistics only)");
                 return [
                     'method' => 'none',
@@ -140,21 +142,33 @@ class TaxCalculationService
                 ];
             }
 
-            // Set initial context (will be overridden per-entry in calculateCharacterTax)
             if ($moonOwnerCorpId) {
                 $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
                 Log::debug("Mining Manager: Initial corporation context set to moon owner: {$moonOwnerCorpId}");
             }
         }
+
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
+        Log::info("Mining Manager: Starting {$periodType} tax calculation for {$periodLabel}" . ($triggeredBy ? " (triggered by: {$triggeredBy})" : ''));
+
+        return $this->calculateAccumulatedTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
+    }
+
+    /**
+     * Backward-compatible wrapper: calculate taxes for a calendar month.
+     *
+     * @param Carbon $month
+     * @param bool $recalculate
+     * @param string|null $triggeredBy
+     * @return array
+     */
+    public function calculateMonthlyTaxes(Carbon $month, bool $recalculate = false, ?string $triggeredBy = null): array
+    {
         $startDate = $month->copy()->startOfMonth();
         $endDate = $month->copy()->endOfMonth();
 
-        Log::info("Mining Manager: Starting tax calculation for {$startDate->format('Y-m')}");
-
-        // Always use accumulated (per-account) tax calculation.
-        // Characters not linked to a SeAT account are automatically taxed individually
-        // since groupCharactersByMain() maps them to themselves.
-        return $this->calculateAccumulatedTaxes($startDate, $endDate, $recalculate);
+        return $this->calculateTaxes($startDate, $endDate, 'monthly', $recalculate, $triggeredBy);
     }
 
     /**
@@ -163,12 +177,14 @@ class TaxCalculationService
      *
      * @param Carbon $startDate
      * @param Carbon $endDate
+     * @param string $periodType
      * @param bool $recalculate
+     * @param string|null $triggeredBy
      * @return array
      */
-    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, bool $recalculate): array
+    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
     {
-        // Get all characters who mined at our corporation's structures this month
+        // Get all characters who mined at our corporation's structures this period
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
             ->whereNotNull('processed_at');
@@ -183,16 +199,31 @@ class TaxCalculationService
         // Group characters by main character (user)
         $groupedByMain = $this->groupCharactersByMain($characters);
 
+        // Calculate due date for this period
+        $periodHelper = app(TaxPeriodHelper::class);
+        $dueDate = $periodHelper->calculateDueDate($endDate);
+
+        // Calendar month for backward compat (charts group by this)
+        $calendarMonth = $startDate->copy()->startOfMonth()->format('Y-m-01');
+
         $calculated = 0;
         $totalTaxAmount = 0;
         $errors = [];
 
         foreach ($groupedByMain as $mainCharacterId => $characterIds) {
             try {
-                // Check if tax already exists for main character
+                // Check if tax already exists for this character + period
                 $existingTax = MiningTax::where('character_id', $mainCharacterId)
-                    ->where('month', $startDate->format('Y-m-01'))
+                    ->where('period_start', $startDate->format('Y-m-d'))
                     ->first();
+
+                // Fallback: check old-style month lookup for pre-migration records
+                if (!$existingTax && $periodType === 'monthly') {
+                    $existingTax = MiningTax::where('character_id', $mainCharacterId)
+                        ->where('month', $calendarMonth)
+                        ->whereNull('period_start')
+                        ->first();
+                }
 
                 if ($existingTax && !$recalculate) {
                     Log::debug("Mining Manager: Skipping main character {$mainCharacterId} - tax already calculated");
@@ -200,7 +231,6 @@ class TaxCalculationService
                 }
 
                 // Calculate combined tax for all characters in this group
-                // Skip per-character minimum tax — we apply minimum to the combined total
                 $combinedTaxAmount = 0;
                 $taxBreakdown = [];
 
@@ -246,18 +276,28 @@ class TaxCalculationService
                         'amount_owed' => $combinedTaxAmount,
                         'calculated_at' => Carbon::now(),
                         'notes' => $notes,
+                        'triggered_by' => $triggeredBy ?? $existingTax->triggered_by,
+                        'period_type' => $periodType,
+                        'period_start' => $startDate->format('Y-m-d'),
+                        'period_end' => $endDate->format('Y-m-d'),
+                        'due_date' => $dueDate->format('Y-m-d'),
                     ]);
                     Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                 } else {
                     // Create new
                     MiningTax::create([
                         'character_id' => $mainCharacterId,
-                        'month' => $startDate->format('Y-m-01'),
+                        'month' => $calendarMonth,
+                        'period_type' => $periodType,
+                        'period_start' => $startDate->format('Y-m-d'),
+                        'period_end' => $endDate->format('Y-m-d'),
                         'amount_owed' => $combinedTaxAmount,
                         'amount_paid' => 0,
                         'status' => 'unpaid',
                         'calculated_at' => Carbon::now(),
+                        'due_date' => $dueDate->format('Y-m-d'),
                         'notes' => $notes,
+                        'triggered_by' => $triggeredBy,
                     ]);
                     Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                 }
@@ -274,12 +314,12 @@ class TaxCalculationService
             }
         }
 
-        Log::info("Mining Manager: Accumulated tax calculation complete. Calculated: {$calculated} main characters, Total: " . number_format($totalTaxAmount, 2) . " ISK");
+        $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
+        Log::info("Mining Manager: Accumulated tax calculation complete for {$periodLabel}. Calculated: {$calculated} main characters, Total: " . number_format($totalTaxAmount, 2) . " ISK");
 
-        // Log a warning summary if there were errors so admins notice
         if (!empty($errors)) {
             Log::warning("Mining Manager: Accumulated tax calculation completed with " . count($errors) . " error(s)", [
-                'month' => $startDate->format('Y-m'),
+                'period' => $periodLabel,
                 'successful' => $calculated,
                 'failed' => count($errors),
                 'errors' => array_map(fn($e) => "Character {$e['character_id']}: {$e['error']}", $errors),
@@ -857,7 +897,21 @@ class TaxCalculationService
         $overdueDate = Carbon::now()->subDays($gracePeriod);
 
         $updated = MiningTax::where('status', 'unpaid')
-            ->where('month', '<', $overdueDate->startOfMonth())
+            ->where(function ($q) use ($overdueDate) {
+                // Use due_date if set, otherwise fall back to period_end or month
+                $q->where(function ($inner) use ($overdueDate) {
+                    $inner->whereNotNull('due_date')
+                          ->where('due_date', '<', $overdueDate);
+                })->orWhere(function ($inner) use ($overdueDate) {
+                    $inner->whereNull('due_date')
+                          ->whereNotNull('period_end')
+                          ->where('period_end', '<', $overdueDate->copy()->subDays($gracePeriod));
+                })->orWhere(function ($inner) use ($overdueDate) {
+                    $inner->whereNull('due_date')
+                          ->whereNull('period_end')
+                          ->where('month', '<', $overdueDate->startOfMonth());
+                });
+            })
             ->update(['status' => 'overdue']);
 
         if ($updated > 0) {
@@ -878,20 +932,27 @@ class TaxCalculationService
     {
         $startDate = $month->copy()->startOfMonth();
         $endDate = $month->copy()->endOfMonth();
-    
+
         $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
-    
+
+        // Try period_start first, fall back to month for pre-migration records
         $tax = MiningTax::where('character_id', $characterId)
-            ->where('month', $startDate->format('Y-m-01'))
+            ->where('period_start', $startDate->format('Y-m-d'))
             ->first();
-    
+
+        if (!$tax) {
+            $tax = MiningTax::where('character_id', $characterId)
+                ->where('month', $startDate->format('Y-m-01'))
+                ->first();
+        }
+
         if ($tax) {
             $tax->update([
                 'amount_owed' => $taxAmount,
                 'calculated_at' => Carbon::now(),
             ]);
         }
-    
+
         return $taxAmount;
     }
 

@@ -62,8 +62,19 @@ class GenerateTaxInvoicesCommand extends Command
 
         if ($month = $this->option('month')) {
             $monthDate = Carbon::parse($month . '-01');
+            // Filter by calendar month (covers all period types within that month)
             $query->where('month', $monthDate->format('Y-m-01'));
             $this->info("Generating invoices for month: {$monthDate->format('Y-m')}");
+        } else {
+            // Default: generate for all unpaid taxes with completed periods
+            $query->where(function ($q) {
+                $q->whereNotNull('period_end')
+                  ->where('period_end', '<', Carbon::now()->startOfDay());
+            })->orWhere(function ($q) {
+                // Pre-migration records without period_end
+                $q->whereNull('period_end')
+                  ->where('month', '<', Carbon::now()->startOfMonth());
+            });
         }
 
         if ($characterId = $this->option('character_id')) {

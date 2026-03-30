@@ -55,8 +55,8 @@
 
                     <ul class="list-group list-group-unbordered mb-3">
                         <li class="list-group-item bg-dark">
-                            <b>{{ trans('mining-manager::taxes.month') }}</b>
-                            <span class="float-right">{{ \Carbon\Carbon::parse($tax->month)->format('F Y') }}</span>
+                            <b>Period</b>
+                            <span class="float-right">{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}</span>
                         </li>
                         <li class="list-group-item bg-dark">
                             <b>{{ trans('mining-manager::taxes.status') }}</b>
@@ -96,6 +96,30 @@
                     <button class="btn btn-info btn-block" onclick="window.print()">
                         <i class="fas fa-print"></i> {{ trans('mining-manager::taxes.print') }}
                     </button>
+
+                    @if(auth()->user()->can('mining-manager.admin'))
+                    <hr>
+                    @if($tax->status !== 'paid')
+                    <button class="btn btn-success btn-block" data-toggle="modal" data-target="#markPaidModal">
+                        <i class="fas fa-check"></i> Mark as Paid
+                    </button>
+                    @endif
+                    <div class="form-group mt-2">
+                        <label class="text-muted"><small>Change Status</small></label>
+                        <select class="form-control form-control-sm" id="statusSelect">
+                            <option value="" disabled selected>-- Select --</option>
+                            <option value="unpaid" {{ $tax->status === 'unpaid' ? 'disabled' : '' }}>Unpaid</option>
+                            <option value="paid" {{ $tax->status === 'paid' ? 'disabled' : '' }}>Paid</option>
+                            <option value="overdue" {{ $tax->status === 'overdue' ? 'disabled' : '' }}>Overdue</option>
+                            <option value="exempted" {{ $tax->status === 'exempted' ? 'disabled' : '' }}>Exempted</option>
+                        </select>
+                    </div>
+                    @if($tax->status !== 'paid')
+                    <button class="btn btn-danger btn-block mt-2" id="deleteTaxBtn">
+                        <i class="fas fa-trash"></i> Delete Record
+                    </button>
+                    @endif
+                    @endif
                 </div>
             </div>
         </div>
@@ -133,6 +157,14 @@
                     <div class="callout callout-success">
                         <h5><i class="fas fa-check-circle"></i> {{ trans('mining-manager::taxes.payment_confirmed') }}</h5>
                         <p>{{ trans('mining-manager::taxes.paid_on') }}: {{ $tax->paid_at ? \Carbon\Carbon::parse($tax->paid_at)->format('F d, Y') : 'N/A' }}</p>
+                    </div>
+                    @endif
+
+                    {{-- Triggered By --}}
+                    @if($tax->triggered_by)
+                    <div class="callout callout-secondary">
+                        <h5><i class="fas fa-user-clock"></i> Triggered By</h5>
+                        <p class="mb-0">{{ $tax->triggered_by }} &mdash; {{ $tax->calculated_at ? \Carbon\Carbon::parse($tax->calculated_at)->format('F d, Y H:i') : '' }}</p>
                     </div>
                     @endif
 
@@ -231,4 +263,111 @@
 </div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
+
+@if(auth()->user()->can('mining-manager.admin'))
+{{-- Mark as Paid Modal --}}
+<div class="modal fade" id="markPaidModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Mark as Paid</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Amount Paid (ISK)</label>
+                    <input type="number" class="form-control" id="detailAmountPaid" value="{{ $tax->amount_owed }}">
+                </div>
+                <div class="form-group">
+                    <label>Payment Date</label>
+                    <input type="date" class="form-control" id="detailPaymentDate" value="{{ now()->format('Y-m-d') }}">
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea class="form-control" id="detailNotes" rows="3" placeholder="e.g. Paid via external plugin, manual verification..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmDetailMarkPaid">
+                    <i class="fas fa-check"></i> Confirm Payment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@push('javascript')
+<script>
+$(document).ready(function() {
+    // Mark as Paid
+    $('#confirmDetailMarkPaid').on('click', function() {
+        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+        $.ajax({
+            url: '{{ route("mining-manager.taxes.mark-paid") }}',
+            method: 'POST',
+            data: {
+                tax_id: {{ $tax->id }},
+                amount_paid: $('#detailAmountPaid').val(),
+                payment_date: $('#detailPaymentDate').val(),
+                notes: $('#detailNotes').val()
+            },
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            success: function(response) {
+                toastr.success(response.message || 'Marked as paid');
+                setTimeout(() => location.reload(), 1000);
+            },
+            error: function(xhr) {
+                toastr.error(xhr.responseJSON?.message || 'Error marking as paid');
+                $('#confirmDetailMarkPaid').prop('disabled', false).html('<i class="fas fa-check"></i> Confirm Payment');
+            }
+        });
+    });
+
+    // Change Status
+    $('#statusSelect').on('change', function() {
+        var newStatus = $(this).val();
+        if (!newStatus) return;
+
+        if (confirm('Change status to "' + newStatus + '"?')) {
+            $.ajax({
+                url: '{{ url("mining-manager/tax") }}/{{ $tax->id }}/status',
+                method: 'POST',
+                data: { status: newStatus },
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                success: function(response) {
+                    toastr.success(response.message || 'Status updated');
+                    setTimeout(() => location.reload(), 1000);
+                },
+                error: function(xhr) {
+                    toastr.error(xhr.responseJSON?.message || 'Error updating status');
+                    $('#statusSelect').val('');
+                }
+            });
+        } else {
+            $(this).val('');
+        }
+    });
+
+    // Delete Tax Record
+    $('#deleteTaxBtn').on('click', function() {
+        if (confirm('Delete this tax record for {{ $tax->character_info["name"] ?? "Unknown" }} ({{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format("F Y") }})?\n\nThis action cannot be undone.')) {
+            $.ajax({
+                url: '{{ url("mining-manager/tax") }}/{{ $tax->id }}',
+                method: 'DELETE',
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                success: function(response) {
+                    toastr.success(response.message || 'Tax record deleted');
+                    setTimeout(() => window.location.href = '{{ route("mining-manager.taxes.index") }}', 1000);
+                },
+                error: function(xhr) {
+                    toastr.error(xhr.responseJSON?.message || 'Cannot delete this tax record');
+                }
+            });
+        }
+    });
+});
+</script>
+@endpush
+@endif
 @endsection

@@ -312,11 +312,12 @@
                                     @endif
                                     <th>{{ trans('mining-manager::taxes.character') }}</th>
                                     <th>{{ trans('mining-manager::taxes.corporation') }}</th>
-                                    <th>{{ trans('mining-manager::taxes.month') }}</th>
+                                    <th>Period</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_owed') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.due_date') }}</th>
+                                    <th>Triggered By</th>
                                     <th class="text-center">{{ trans('mining-manager::taxes.actions') }}</th>
                                 </tr>
                             </thead>
@@ -361,7 +362,7 @@
                                             <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
                                         @endif
                                     </td>
-                                    <td>{{ \Carbon\Carbon::parse($tax->month)->format('F Y') }}</td>
+                                    <td>{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}</td>
                                     <td class="text-right">
                                         <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
@@ -410,6 +411,23 @@
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
+                                    <td>
+                                        @if($tax->triggered_by)
+                                            <small class="text-muted" data-toggle="tooltip" title="{{ $tax->triggered_by }}">
+                                                @if(str_starts_with($tax->triggered_by, 'Scheduled'))
+                                                    <i class="fas fa-clock"></i> Scheduled
+                                                @elseif(str_starts_with($tax->triggered_by, 'Manual:'))
+                                                    <i class="fas fa-user"></i> {{ str_replace('Manual: ', '', $tax->triggered_by) }}
+                                                @elseif(str_starts_with($tax->triggered_by, 'Regenerate:'))
+                                                    <i class="fas fa-sync"></i> {{ str_replace('Regenerate: ', '', $tax->triggered_by) }}
+                                                @else
+                                                    {{ $tax->triggered_by }}
+                                                @endif
+                                            </small>
+                                        @else
+                                            <small class="text-muted">-</small>
+                                        @endif
+                                    </td>
                                     <td class="text-center">
                                         <div class="btn-group">
                                             <a href="{{ route('mining-manager.taxes.details', $tax->id) }}"
@@ -434,13 +452,22 @@
                                                     title="{{ trans('mining-manager::taxes.send_reminder') }}">
                                                 <i class="fas fa-envelope"></i>
                                             </button>
+                                            <button type="button"
+                                                    class="btn btn-sm btn-danger delete-tax"
+                                                    data-tax-id="{{ $tax->id }}"
+                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
+                                                    data-month="{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}"
+                                                    data-toggle="tooltip"
+                                                    title="Delete tax record">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
                                             @endif
                                         </div>
                                     </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ ($isAdmin ?? false) ? 9 : 8 }}" class="text-center text-muted">
+                                    <td colspan="{{ ($isAdmin ?? false) ? 10 : 9 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_taxes_found') }}</p>
                                     </td>
@@ -470,6 +497,9 @@
                             </button>
                             <button type="button" class="btn btn-warning" id="bulkSendReminders">
                                 <i class="fas fa-envelope"></i> {{ trans('mining-manager::taxes.send_reminders') }}
+                            </button>
+                            <button type="button" class="btn btn-danger" id="bulkDelete">
+                                <i class="fas fa-trash"></i> Delete Selected
                             </button>
                             <button type="button" class="btn btn-secondary" id="clearSelection">
                                 <i class="fas fa-times"></i> {{ trans('mining-manager::taxes.clear') }}
@@ -530,26 +560,28 @@ $(document).ready(function() {
     $('[data-toggle="tooltip"]').tooltip();
 
     // Initialize DataTables
-    $('#taxTable').DataTable({
-        pageLength: 25,
-        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-        order: [[{{ ($isAdmin ?? false) ? 4 : 3 }}, 'desc']],
-        language: {
-            search: "Search:",
-            lengthMenu: "Show _MENU_ entries",
-            info: "Showing _START_ to _END_ of _TOTAL_ entries",
-            infoEmpty: "No entries found",
-            infoFiltered: "(filtered from _MAX_ total entries)",
-            paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
-        },
-        columnDefs: [
-            @if($isAdmin ?? false)
-            { orderable: false, targets: [0, 8] },
-            @else
-            { orderable: false, targets: [7] },
-            @endif
-        ]
-    });
+    if ($('#taxTable tbody tr').length > 0 && !$('#taxTable tbody tr td[colspan]').length) {
+        $('#taxTable').DataTable({
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+            order: [[{{ ($isAdmin ?? false) ? 4 : 3 }}, 'desc']],
+            language: {
+                search: "Search:",
+                lengthMenu: "Show _MENU_ entries",
+                info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                infoEmpty: "No entries found",
+                infoFiltered: "(filtered from _MAX_ total entries)",
+                paginate: { first: "First", last: "Last", next: "Next", previous: "Previous" }
+            },
+            columnDefs: [
+                @if($isAdmin ?? false)
+                { orderable: false, targets: [0, 9] },
+                @else
+                { orderable: false, targets: [8] },
+                @endif
+            ]
+        });
+    }
 
     // Select all checkbox
     $('#selectAll').on('change', function() {
@@ -699,6 +731,71 @@ $(document).ready(function() {
                     toastr.error(xhr.responseJSON?.message || '{{ trans("mining-manager::taxes.error_sending_reminders") }}');
                 }
             });
+        }
+    });
+
+    // Delete single tax record
+    $('.delete-tax').on('click', function() {
+        const taxId = $(this).data('tax-id');
+        const characterName = $(this).data('character-name');
+        const month = $(this).data('month');
+
+        if (confirm('Delete tax record for ' + characterName + ' (' + month + ')?\n\nThis action cannot be undone.')) {
+            $.ajax({
+                url: '{{ url("mining-manager/tax") }}/' + taxId,
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                },
+                success: function(response) {
+                    toastr.success(response.message || 'Tax record deleted');
+                    setTimeout(() => location.reload(), 1000);
+                },
+                error: function(xhr) {
+                    toastr.error(xhr.responseJSON?.message || 'Cannot delete this tax record');
+                }
+            });
+        }
+    });
+
+    // Bulk delete
+    $('#bulkDelete').on('click', function() {
+        const selectedIds = $('.tax-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (selectedIds.length === 0) {
+            toastr.warning('Select items first');
+            return;
+        }
+
+        if (confirm('Delete ' + selectedIds.length + ' tax record(s)?\n\nPaid records cannot be deleted. This action cannot be undone.')) {
+            var deleted = 0;
+            var errors = 0;
+            var total = selectedIds.length;
+
+            selectedIds.forEach(function(id) {
+                $.ajax({
+                    url: '{{ url("mining-manager/tax") }}/' + id,
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                    },
+                    success: function() { deleted++; checkDone(); },
+                    error: function() { errors++; checkDone(); }
+                });
+            });
+
+            function checkDone() {
+                if (deleted + errors === total) {
+                    if (errors > 0) {
+                        toastr.warning('Deleted ' + deleted + ' record(s). ' + errors + ' could not be deleted (paid records are protected).');
+                    } else {
+                        toastr.success('Deleted ' + deleted + ' record(s).');
+                    }
+                    setTimeout(() => location.reload(), 1000);
+                }
+            }
         }
     });
 

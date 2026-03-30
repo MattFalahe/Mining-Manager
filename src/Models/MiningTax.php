@@ -2,8 +2,10 @@
 
 namespace MiningManager\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Character\CharacterAffiliation;
 
@@ -26,6 +28,9 @@ class MiningTax extends Model
     protected $fillable = [
         'character_id',
         'month',
+        'period_type',
+        'period_start',
+        'period_end',
         'amount_owed',
         'amount_paid',
         'status',
@@ -36,6 +41,7 @@ class MiningTax extends Model
         'transaction_id',
         'notes',
         'due_date',
+        'triggered_by',
     ];
 
     /**
@@ -45,6 +51,8 @@ class MiningTax extends Model
      */
     protected $casts = [
         'month' => 'date',
+        'period_start' => 'date',
+        'period_end' => 'date',
         'due_date' => 'date',
         'amount_owed' => 'decimal:2',
         'amount_paid' => 'decimal:2',
@@ -92,6 +100,40 @@ class MiningTax extends Model
     }
 
     /**
+     * Get the formatted period label for display.
+     * Monthly: "March 2026", Biweekly: "Mar 1-14, 2026", Weekly: "Mar 3-9, 2026"
+     *
+     * @return string
+     */
+    public function getFormattedPeriodAttribute(): string
+    {
+        $type = $this->period_type ?? 'monthly';
+        $start = $this->period_start ?? $this->month;
+        $end = $this->period_end;
+
+        if (!$start) {
+            return 'Unknown';
+        }
+
+        if (!$end) {
+            return Carbon::parse($start)->format('F Y');
+        }
+
+        $start = Carbon::parse($start);
+        $end = Carbon::parse($end);
+
+        return match ($type) {
+            'biweekly' => $start->format('M j') . '-' . $end->format('j, Y'),
+            'weekly' => $start->format('M j') . '-' . (
+                $start->month === $end->month
+                    ? $end->format('j, Y')
+                    : $end->format('M j, Y')
+            ),
+            default => $start->format('F Y'),
+        };
+    }
+
+    /**
      * Get the tax invoices for this tax record.
      */
     public function taxInvoices()
@@ -109,9 +151,6 @@ class MiningTax extends Model
 
     /**
      * Scope a query to only include unpaid taxes.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeUnpaid($query)
     {
@@ -120,9 +159,6 @@ class MiningTax extends Model
 
     /**
      * Scope a query to only include overdue taxes.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeOverdue($query)
     {
@@ -131,9 +167,6 @@ class MiningTax extends Model
 
     /**
      * Scope a query to only include paid taxes.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopePaid($query)
     {
@@ -141,11 +174,7 @@ class MiningTax extends Model
     }
 
     /**
-     * Scope a query to filter by month.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $month
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope a query to filter by calendar month (for charts and backward compat).
      */
     public function scopeForMonth($query, $month)
     {
@@ -153,9 +182,24 @@ class MiningTax extends Model
     }
 
     /**
+     * Scope a query to filter by period start date.
+     */
+    public function scopeForPeriod($query, $periodStart)
+    {
+        return $query->where('period_start', $periodStart);
+    }
+
+    /**
+     * Scope a query to filter by period type.
+     */
+    public function scopeOfType($query, string $periodType)
+    {
+        return $query->where('period_type', $periodType);
+    }
+
+    /**
      * Check if tax is overdue.
-     *
-     * @return bool
+     * Uses period_end + grace period (or due_date if set).
      */
     public function isOverdue()
     {
@@ -163,16 +207,21 @@ class MiningTax extends Model
             return false;
         }
 
+        // Use explicit due_date if set
+        if ($this->due_date) {
+            return now()->greaterThan($this->due_date);
+        }
+
+        // Fallback: calculate from period_end or month
         $gracePeriod = config('mining-manager.tax_payment.grace_period_days', 7);
-        $dueDate = $this->month->copy()->addMonth()->addDays($gracePeriod);
+        $periodEnd = $this->period_end ?? $this->month->copy()->endOfMonth();
+        $dueDate = Carbon::parse($periodEnd)->addDays($gracePeriod);
 
         return now()->greaterThan($dueDate);
     }
 
     /**
      * Get remaining balance.
-     *
-     * @return float
      */
     public function getRemainingBalance()
     {
@@ -181,8 +230,6 @@ class MiningTax extends Model
 
     /**
      * Check if fully paid.
-     *
-     * @return bool
      */
     public function isFullyPaid()
     {
@@ -191,8 +238,6 @@ class MiningTax extends Model
 
     /**
      * Get payment percentage.
-     *
-     * @return float
      */
     public function getPaymentPercentage()
     {
