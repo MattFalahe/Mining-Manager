@@ -534,15 +534,24 @@ $('.download-receipt').on('click', function() {
     window.location.href = '{{ route("mining-manager.taxes.download-receipt", ":id") }}'.replace(':id', taxId);
 });
 
-// Tax Trend Chart
+// Tax Trend Chart — aggregate by calendar month so biweekly/weekly periods merge into one data point
 @if($taxHistory->count() > 0)
+@php
+    $chartData = $taxHistory->groupBy(fn($t) => \Carbon\Carbon::parse($t->month)->format('Y-m'))
+        ->sortKeys()
+        ->map(fn($group) => [
+            'label' => \Carbon\Carbon::parse($group->first()->month)->format('M Y'),
+            'owed' => $group->sum('amount_owed'),
+            'paid' => $group->sum('amount_paid'),
+        ]);
+@endphp
 const taxTrendCtx = document.getElementById('taxTrendChart').getContext('2d');
 const taxTrendData = {
-    labels: @json($taxHistory->pluck('month')->map(fn($m) => \Carbon\Carbon::parse($m)->format('M Y'))),
+    labels: @json($chartData->pluck('label')->values()),
     datasets: [
         {
             label: '{{ trans("mining-manager::taxes.amount_owed") }}',
-            data: @json($taxHistory->pluck('amount_owed')),
+            data: @json($chartData->pluck('owed')->values()),
             borderColor: 'rgba(255, 159, 64, 1)',
             backgroundColor: 'rgba(255, 159, 64, 0.2)',
             borderWidth: 2,
@@ -551,7 +560,7 @@ const taxTrendData = {
         },
         {
             label: '{{ trans("mining-manager::taxes.amount_paid") }}',
-            data: @json($taxHistory->pluck('amount_paid')),
+            data: @json($chartData->pluck('paid')->values()),
             borderColor: 'rgba(0, 210, 255, 1)',
             backgroundColor: 'rgba(0, 210, 255, 0.2)',
             borderWidth: 2,
