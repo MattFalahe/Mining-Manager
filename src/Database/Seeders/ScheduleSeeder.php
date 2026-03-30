@@ -61,10 +61,11 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Generate tax invoices - runs on 1st of each month at 3 AM
+            // Generate tax invoices - runs daily at 2:15 AM (after tax calculation)
+            // Smart: only creates invoices for completed periods that don't have one yet
             [
                 'command' => 'mining-manager:generate-invoices',
-                'expression' => '0 3 1 * *',
+                'expression' => '15 2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,

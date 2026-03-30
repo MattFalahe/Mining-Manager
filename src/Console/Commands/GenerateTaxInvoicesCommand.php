@@ -56,9 +56,12 @@ class GenerateTaxInvoicesCommand extends Command
             $this->warn('DRY RUN MODE - No invoices will be created');
         }
 
-        // Build query for unpaid taxes
+        // Build query for unpaid taxes with completed periods that need invoices
         $query = MiningTax::where('status', 'unpaid')
-            ->where('amount_owed', '>', 0);
+            ->where('amount_owed', '>', 0)
+            ->whereDoesntHave('taxInvoices', function ($q) {
+                $q->whereIn('status', ['pending', 'sent']);
+            });
 
         if ($month = $this->option('month')) {
             $monthDate = Carbon::parse($month . '-01');
@@ -66,14 +69,16 @@ class GenerateTaxInvoicesCommand extends Command
             $query->where('month', $monthDate->format('Y-m-01'));
             $this->info("Generating invoices for month: {$monthDate->format('Y-m')}");
         } else {
-            // Default: generate for all unpaid taxes with completed periods
+            // Default: only taxes whose period has ended (no invoices for in-progress periods)
             $query->where(function ($q) {
-                $q->whereNotNull('period_end')
-                  ->where('period_end', '<', Carbon::now()->startOfDay());
-            })->orWhere(function ($q) {
-                // Pre-migration records without period_end
-                $q->whereNull('period_end')
-                  ->where('month', '<', Carbon::now()->startOfMonth());
+                $q->where(function ($inner) {
+                    $inner->whereNotNull('period_end')
+                          ->where('period_end', '<', Carbon::now()->startOfDay());
+                })->orWhere(function ($inner) {
+                    // Pre-migration records without period_end
+                    $inner->whereNull('period_end')
+                          ->where('month', '<', Carbon::now()->startOfMonth());
+                });
             });
         }
 
@@ -92,22 +97,10 @@ class GenerateTaxInvoicesCommand extends Command
         $this->info("Found {$unpaidTaxes->count()} unpaid tax records");
 
         $generated = 0;
-        $skipped = 0;
         $errors = 0;
 
         foreach ($unpaidTaxes as $tax) {
             try {
-                // Check if invoice already exists
-                $existingInvoice = TaxInvoice::where('mining_tax_id', $tax->id)
-                    ->whereIn('status', ['pending', 'sent'])
-                    ->first();
-
-                if ($existingInvoice) {
-                    $this->line("Skipping character {$tax->character_id} - invoice already exists");
-                    $skipped++;
-                    continue;
-                }
-
                 if ($dryRun) {
                     $this->line("Would generate invoice for character {$tax->character_id}: " . number_format($tax->amount_owed, 2) . " ISK");
                     $generated++;
@@ -134,9 +127,6 @@ class GenerateTaxInvoicesCommand extends Command
 
         $this->info("Invoice generation complete!");
         $this->info("Generated: {$generated} invoices");
-        if ($skipped > 0) {
-            $this->info("Skipped: {$skipped} (already have invoices)");
-        }
         if ($errors > 0) {
             $this->warn("Errors: {$errors}");
         }
