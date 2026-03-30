@@ -212,9 +212,9 @@ return [
 
     // Guest Mining
     'guest_mining_explained' => 'Guest Mining and Guest Tax Rates',
-    'guest_mining_desc' => 'A "guest miner" is any character whose corporation does not match the configured Moon Owner Corporation. Guest miners are automatically detected and can have different tax rates:',
+    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of "home" corporations. The home corporation list includes all configured corporations (any corp with settings in the database) plus the Moon Owner Corporation. Guest miners are automatically detected and can have different tax rates:',
     'guest_rates_config' => 'Guest tax rates are configured separately in Settings > Tax Rates under "Guest Miner Tax Rates". You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal). If a guest rate is set to 0, the system falls back to the regular member rate for that category.',
-    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against the Moon Owner Corporation ID in settings.',
+    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against all home corporations (configured corporations + Moon Owner Corporation). Members of any configured corporation are taxed at that corporation\'s rates, not as guests.',
 
     // Event Tax Modifiers
     'event_modifiers_explained' => 'Mining Event Tax Modifiers',
@@ -383,7 +383,7 @@ return [
     // Corporation-Specific Settings
     'settings_corp_header' => 'Corporation-Specific Settings',
     'settings_tax_rates' => 'Tax Rates',
-    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Guest miner multiplier can apply different rates for non-corp members.',
+    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Guest tax rates apply different rates for characters not belonging to any configured corporation.',
 
     // System Settings
     'settings_system_header' => 'System Settings',
