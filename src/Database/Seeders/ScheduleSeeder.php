@@ -2,10 +2,32 @@
 
 namespace MiningManager\Database\Seeders;
 
+use Illuminate\Support\Facades\DB;
 use Seat\Services\Seeding\AbstractScheduleSeeder;
 
 class ScheduleSeeder extends AbstractScheduleSeeder
 {
+    /**
+     * Override parent run() to update existing schedule expressions.
+     * AbstractScheduleSeeder only inserts new commands and skips existing ones,
+     * so changed cron expressions never get applied.
+     */
+    public function run(): void
+    {
+        foreach ($this->getSchedules() as $job) {
+            DB::table('schedules')->updateOrInsert(
+                ['command' => $job['command']],
+                $job
+            );
+        }
+
+        // Remove deprecated commands
+        $deprecated = $this->getDeprecatedSchedules();
+        if (! empty($deprecated)) {
+            DB::table('schedules')->whereIn('command', $deprecated)->delete();
+        }
+    }
+
     /**
      * Returns a list of schedules to be added to the schedule table.
      *
