@@ -160,22 +160,22 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Finalize month summaries - runs daily at 2:00 AM (before tax calculation)
-            // Locks previous month's daily summaries so taxes are calculated from final data.
-            // Safe daily: only acts on previous month, re-finalizing already-finalized data is a no-op.
+            // Finalize month summaries - runs on 1st of each month at 2:00 AM (before tax calculation)
+            // Locks previous month's daily summaries so the 1st-of-month tax run uses finalized data.
+            // Moved from 2nd→1st so finalization happens before calculate-taxes at 2:15.
             [
                 'command' => 'mining-manager:finalize-month',
-                'expression' => '0 2 * * *',
+                'expression' => '0 2 1 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Calculate monthly statistics - runs daily at 3:00 AM (after taxes + invoices)
-            // Pre-calculates dashboard stats for closed months. Safe daily: skips already-calculated months.
+            // Calculate monthly statistics - runs on 1st of each month at 3:00 AM (after taxes + invoices)
+            // Pre-calculates dashboard stats for the now-closed previous month.
             [
                 'command' => 'mining-manager:calculate-monthly-stats',
-                'expression' => '0 3 * * *',
+                'expression' => '0 3 1 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
