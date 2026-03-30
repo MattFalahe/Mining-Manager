@@ -547,7 +547,7 @@ $('.download-receipt').on('click', function() {
     // Build complete 12-month timeline with zeros for missing months
     $chartData = collect();
     for ($i = 11; $i >= 0; $i--) {
-        $m = \Carbon\Carbon::now()->subMonths($i)->startOfMonth();
+        $m = \Carbon\Carbon::now()->startOfMonth()->subMonths($i);
         $key = $m->format('Y-m');
         $chartData->put($key, [
             'label' => $m->format('M Y'),

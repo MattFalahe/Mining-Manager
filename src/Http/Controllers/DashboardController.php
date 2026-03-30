@@ -943,7 +943,7 @@ class DashboardController extends Controller
 
         // Loop from 11 months ago to current month (i=0 is current month)
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthEnd = $month->copy()->endOfMonth();
             $monthKey = $month->format('Y-m');
 
@@ -1162,7 +1162,7 @@ class DashboardController extends Controller
             });
 
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthEnd = $month->copy()->endOfMonth();
             $monthKey = $month->format('Y-m');
 
@@ -1237,7 +1237,7 @@ class DashboardController extends Controller
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthKey = $month->format('Y-m');
 
             $months[] = $monthKey;
@@ -1271,7 +1271,7 @@ class DashboardController extends Controller
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthKey = $month->format('Y-m');
 
             $months[] = $monthKey;
@@ -1298,7 +1298,7 @@ class DashboardController extends Controller
         $owed = [];
 
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
 
             $collectedAmount = MiningTax::whereIn('character_id', $characterIds)
                 ->where('month', $month->format('Y-m-01'))
@@ -1347,7 +1347,7 @@ class DashboardController extends Controller
         $data = [];
 
         for ($i = 11; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->startOfMonth();
+            $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthEnd = $month->copy()->endOfMonth();
 
             if ($i === 0) {
