@@ -534,16 +534,27 @@ $('.download-receipt').on('click', function() {
     window.location.href = '{{ route("mining-manager.taxes.download-receipt", ":id") }}'.replace(':id', taxId);
 });
 
-// Tax Trend Chart — aggregate by calendar month so biweekly/weekly periods merge into one data point
+// Tax Trend Chart — full 12-month timeline, aggregate by calendar month, zeros for missing months
 @if($taxHistory->count() > 0)
 @php
-    $chartData = $taxHistory->groupBy(fn($t) => \Carbon\Carbon::parse($t->month)->format('Y-m'))
-        ->sortKeys()
+    // Group existing records by month
+    $monthlyTotals = $taxHistory->groupBy(fn($t) => \Carbon\Carbon::parse($t->month)->format('Y-m'))
         ->map(fn($group) => [
-            'label' => \Carbon\Carbon::parse($group->first()->month)->format('M Y'),
             'owed' => $group->sum('amount_owed'),
             'paid' => $group->sum('amount_paid'),
         ]);
+
+    // Build complete 12-month timeline with zeros for missing months
+    $chartData = collect();
+    for ($i = 11; $i >= 0; $i--) {
+        $m = \Carbon\Carbon::now()->subMonths($i)->startOfMonth();
+        $key = $m->format('Y-m');
+        $chartData->put($key, [
+            'label' => $m->format('M Y'),
+            'owed'  => $monthlyTotals->get($key)['owed'] ?? 0,
+            'paid'  => $monthlyTotals->get($key)['paid'] ?? 0,
+        ]);
+    }
 @endphp
 const taxTrendCtx = document.getElementById('taxTrendChart').getContext('2d');
 const taxTrendData = {
