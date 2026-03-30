@@ -51,21 +51,23 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Calculate monthly taxes - runs daily at 2 AM to update running totals
-            // (Keeps dashboard current with month-to-date tax obligations)
+            // Calculate mining taxes - runs daily at 2:15 AM
+            // Smart: checks shouldCalculateToday() and only acts on period boundaries
+            // (monthly=1st, biweekly=1st&15th, weekly=Mondays). Skips other days.
+            // Pipeline: ledger-prices (1:00) → daily-summaries (1:30) → finalize (2:00) → taxes (2:15)
             [
                 'command' => 'mining-manager:calculate-taxes',
-                'expression' => '0 2 * * *',
+                'expression' => '15 2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Generate tax invoices - runs daily at 2:15 AM (after tax calculation)
+            // Generate tax invoices - runs daily at 2:30 AM (after tax calculation)
             // Smart: only creates invoices for completed periods that don't have one yet
             [
                 'command' => 'mining-manager:generate-invoices',
-                'expression' => '15 2 * * *',
+                'expression' => '30 2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
@@ -158,21 +160,22 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Finalize month summaries - runs on 2nd of each month at 3 AM
-            // (Creates pre-calculated summaries for previous month to improve ledger performance)
+            // Finalize month summaries - runs daily at 2:00 AM (before tax calculation)
+            // Locks previous month's daily summaries so taxes are calculated from final data.
+            // Safe daily: only acts on previous month, re-finalizing already-finalized data is a no-op.
             [
                 'command' => 'mining-manager:finalize-month',
-                'expression' => '0 3 2 * *',
+                'expression' => '0 2 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Calculate monthly statistics - runs on 2nd of each month at 4 AM
-            // (Pre-calculates dashboard statistics for closed months, runs after finalization)
+            // Calculate monthly statistics - runs daily at 3:00 AM (after taxes + invoices)
+            // Pre-calculates dashboard stats for closed months. Safe daily: skips already-calculated months.
             [
                 'command' => 'mining-manager:calculate-monthly-stats',
-                'expression' => '0 4 2 * *',
+                'expression' => '0 3 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
@@ -188,12 +191,12 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Update daily summaries (safety net) - runs daily at 2:30 AM
-            // Catches non-observer mining (belt mining, etc.) and any late ESI data
-            // NOTE: process-ledger now auto-generates daily summaries for all observer data it processes
+            // Update daily summaries (safety net) - runs daily at 1:30 AM (before finalize + taxes)
+            // Catches non-observer mining (belt mining, etc.) and any late ESI data.
+            // Must run before finalize-month and calculate-taxes so they work from complete data.
             [
                 'command' => 'mining-manager:update-daily-summaries',
-                'expression' => '30 2 * * *',
+                'expression' => '30 1 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
