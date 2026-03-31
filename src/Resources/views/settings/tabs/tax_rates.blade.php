@@ -731,33 +731,21 @@
                     <i class="fas fa-wallet"></i>
                     {{ trans('mining-manager::settings.tax_wallet_division') }}
                 </label>
+                @php
+                    $currentDivision = $settings->tax_wallet_division ?? 1;
+                    // Backwards compatibility: convert 1000-1007 to 1-7
+                    if ($currentDivision >= 1000) {
+                        $currentDivision = $currentDivision - 999;
+                    }
+                @endphp
                 <select class="form-control @error('tax_wallet_division') is-invalid @enderror"
                         id="tax_wallet_division"
                         name="tax_wallet_division">
-                    <option value="1000" {{ ($settings->tax_wallet_division ?? '1000') == '1000' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.master_wallet') }} (1000)
-                    </option>
-                    <option value="1001" {{ ($settings->tax_wallet_division ?? '') == '1001' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_1') }} (1001)
-                    </option>
-                    <option value="1002" {{ ($settings->tax_wallet_division ?? '') == '1002' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_2') }} (1002)
-                    </option>
-                    <option value="1003" {{ ($settings->tax_wallet_division ?? '') == '1003' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_3') }} (1003)
-                    </option>
-                    <option value="1004" {{ ($settings->tax_wallet_division ?? '') == '1004' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_4') }} (1004)
-                    </option>
-                    <option value="1005" {{ ($settings->tax_wallet_division ?? '') == '1005' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_5') }} (1005)
-                    </option>
-                    <option value="1006" {{ ($settings->tax_wallet_division ?? '') == '1006' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_6') }} (1006)
-                    </option>
-                    <option value="1007" {{ ($settings->tax_wallet_division ?? '') == '1007' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.division_7') }} (1007)
-                    </option>
+                    @foreach($walletDivisions as $divId => $divName)
+                        <option value="{{ $divId }}" {{ $currentDivision == $divId ? 'selected' : '' }}>
+                            {{ $divName }}
+                        </option>
+                    @endforeach
                 </select>
                 @error('tax_wallet_division')
                     <div class="invalid-feedback">{{ $message }}</div>

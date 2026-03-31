@@ -1142,6 +1142,9 @@ class TaxController extends Controller
                 'isDirector' => $this->isDirector(),
                 'viewAll' => $this->isViewingAll(),
                 'features' => $this->getFeatureFlags(),
+                'walletDivisionName' => $this->settingsService->getWalletDivisionName(),
+                'walletDivision' => $this->settingsService->getPaymentSettings()['wallet_division'] ?? 1,
+                'corpName' => null,
             ]);
         }
 
@@ -1237,6 +1240,18 @@ class TaxController extends Controller
         $viewAll = $this->isViewingAll();
         $features = $this->getFeatureFlags();
 
+        // Wallet division info for payment instructions
+        $walletDivisionName = $this->settingsService->getWalletDivisionName();
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $walletDivision = $paymentSettings['wallet_division'] ?? 1;
+
+        // Get corporation name for payment instructions
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $corpName = null;
+        if ($moonOwnerCorpId) {
+            $corpName = \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $moonOwnerCorpId)->value('name');
+        }
+
         return view('mining-manager::taxes.my-taxes', compact(
             'taxHistory',
             'summary',
@@ -1254,7 +1269,10 @@ class TaxController extends Controller
             'isAdmin',
             'isDirector',
             'viewAll',
-            'features'
+            'features',
+            'walletDivisionName',
+            'walletDivision',
+            'corpName'
         ));
     }
 

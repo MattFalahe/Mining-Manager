@@ -111,6 +111,10 @@ class SettingsController extends Controller
             return $query->forCorporation($corporationId);
         })->get();
 
+        // Get wallet division names for the tax wallet division dropdown
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $walletDivisions = $this->getWalletDivisionNames($moonOwnerCorpId);
+
         // Notification tab data
         $mailScopeCharacters = $this->settingsService->getMailScopeCharacters();
         $allTokenCharacters = $this->settingsService->getAllTokenCharacters();
@@ -123,6 +127,7 @@ class SettingsController extends Controller
             'hasCustomSettings',
             'isFirstTimeSetup',
             'webhooks',
+            'walletDivisions',
             'mailScopeCharacters',
             'allTokenCharacters',
             'seatConnectorAvailable'
@@ -211,6 +216,49 @@ class SettingsController extends Controller
                 'error' => $e->getMessage()
             ]);
             return collect();
+        }
+    }
+
+    /**
+     * Get wallet division names from corporation_divisions table.
+     * Falls back to default EVE division names if not available.
+     *
+     * @param int|null $corporationId
+     * @return array Division ID (1-7) => name
+     */
+    private function getWalletDivisionNames(?int $corporationId = null): array
+    {
+        $defaultNames = [
+            1 => 'Master Wallet',
+            2 => '2nd Wallet Division',
+            3 => '3rd Wallet Division',
+            4 => '4th Wallet Division',
+            5 => '5th Wallet Division',
+            6 => '6th Wallet Division',
+            7 => '7th Wallet Division',
+        ];
+
+        if (!$corporationId) {
+            return $defaultNames;
+        }
+
+        try {
+            $divisions = DB::table('corporation_divisions')
+                ->where('corporation_id', $corporationId)
+                ->pluck('name', 'division')
+                ->toArray();
+
+            // Fill in missing divisions with defaults
+            for ($i = 1; $i <= 7; $i++) {
+                if (!isset($divisions[$i]) || empty($divisions[$i])) {
+                    $divisions[$i] = $defaultNames[$i];
+                }
+            }
+
+            ksort($divisions);
+            return $divisions;
+        } catch (\Exception $e) {
+            return $defaultNames;
         }
     }
 
@@ -416,7 +464,7 @@ class SettingsController extends Controller
 
             // Tax Payment Method
             'tax_payment_method' => 'required|in:wallet',
-            'tax_wallet_division' => 'required|integer|min:1000|max:1007',
+            'tax_wallet_division' => 'required|integer|min:1|max:7',
 
             // Tax Code Settings
             'tax_code_prefix' => 'required|string|max:10',

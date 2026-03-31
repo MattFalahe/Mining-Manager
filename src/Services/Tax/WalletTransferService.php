@@ -42,6 +42,27 @@ class WalletTransferService
     }
 
     /**
+     * Get the wallet divisions to check for payments.
+     * Always includes master wallet (1) as fallback, plus the configured division.
+     *
+     * @return array
+     */
+    private function getPaymentDivisions(): array
+    {
+        $paymentSettings = $this->settings->getPaymentSettings();
+        $division = (int) ($paymentSettings['wallet_division'] ?? 1);
+
+        // Always check master wallet (1) as secondary source
+        $divisions = [1];
+        if ($division !== 1) {
+            // Configured division is primary, master wallet is fallback
+            array_unshift($divisions, $division);
+        }
+
+        return array_unique($divisions);
+    }
+
+    /**
      * Verify wallet payments against outstanding taxes.
      *
      * @param int $days
@@ -334,9 +355,13 @@ class WalletTransferService
             }
 
             // Build query for corporation wallet journals
+            // Filter by configured wallet division(s) — primary + master wallet fallback
+            $divisions = $this->getPaymentDivisions();
+
             $query = DB::table('corporation_wallet_journals')
                 ->where('ref_type', 'player_donation')
                 ->where('first_party_id', $taxRecord->character_id)
+                ->whereIn('division', $divisions)
                 ->where(function($q) use ($taxCode) {
                     $q->where('reason', 'LIKE', "%{$taxCode->code}%")
                       ->orWhere('description', 'LIKE', "%{$taxCode->code}%");
@@ -393,10 +418,13 @@ class WalletTransferService
     {
         $cutoffDate = Carbon::now()->subDays($days);
 
+        $divisions = $this->getPaymentDivisions();
+
         return DB::table('corporation_wallet_journals as cwj')
             ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
+            ->whereIn('cwj.division', $divisions)
             ->where('cwj.date', '>=', $cutoffDate)
             ->select(
                 'cwj.*',
@@ -489,11 +517,14 @@ class WalletTransferService
     {
         $cutoffDate = Carbon::now()->subDays($days);
 
-        // Get all donations with character names
+        // Get all donations with character names (filtered to payment divisions)
+        $divisions = $this->getPaymentDivisions();
+
         $donations = DB::table('corporation_wallet_journals as cwj')
             ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
+            ->whereIn('cwj.division', $divisions)
             ->where('cwj.date', '>=', $cutoffDate)
             ->select('cwj.*', 'ci.name as character_name')
             ->get();

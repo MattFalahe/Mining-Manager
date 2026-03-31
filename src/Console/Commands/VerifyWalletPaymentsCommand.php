@@ -6,7 +6,9 @@ use Illuminate\Console\Command;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\WalletTransferService;
-use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class VerifyWalletPaymentsCommand extends Command
@@ -36,14 +38,23 @@ class VerifyWalletPaymentsCommand extends Command
     protected $walletService;
 
     /**
+     * Settings manager service
+     *
+     * @var SettingsManagerService
+     */
+    protected $settingsService;
+
+    /**
      * Create a new command instance.
      *
      * @param WalletTransferService $walletService
+     * @param SettingsManagerService $settingsService
      */
-    public function __construct(WalletTransferService $walletService)
+    public function __construct(WalletTransferService $walletService, SettingsManagerService $settingsService)
     {
         parent::__construct();
         $this->walletService = $walletService;
+        $this->settingsService = $settingsService;
     }
 
     /**
@@ -54,8 +65,7 @@ class VerifyWalletPaymentsCommand extends Command
     public function handle()
     {
         // Check feature flag
-        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
-        $features = $settingsService->getFeatureFlags();
+        $features = $this->settingsService->getFeatureFlags();
         if (!($features['verify_wallet_transactions'] ?? true)) {
             $this->info('Feature disabled in settings. Skipping.');
             return Command::SUCCESS;
@@ -63,26 +73,48 @@ class VerifyWalletPaymentsCommand extends Command
 
         $this->info('Starting payment verification...');
 
-        $days = $this->option('days');
+        $days = (int) $this->option('days');
         $characterId = $this->option('character_id');
         $autoMatch = $this->option('auto-match');
         $cutoffDate = Carbon::now()->subDays($days);
 
-        $this->info("Checking transactions from the last {$days} days");
+        // Get payment settings for division info
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $division = $paymentSettings['wallet_division'] ?? 1;
+        $divisionName = $this->settingsService->getWalletDivisionName();
 
-        // Get wallet transactions that might be tax payments
-        $query = CharacterWalletJournal::where('date', '>=', $cutoffDate)
-            ->whereIn('ref_type', ['player_donation', 'corporation_account_withdrawal']);
+        $this->info("Checking transactions from the last {$days} days");
+        $this->info("Primary wallet division: {$divisionName} (division {$division})" .
+            ($division !== 1 ? ' + Master Wallet (fallback)' : ''));
+
+        // Get corporation ID for filtering
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
+        // Build the divisions to check (primary + master wallet fallback)
+        $divisions = [$division];
+        if ($division !== 1) {
+            $divisions[] = 1; // Always check master wallet as fallback
+        }
+
+        // Query corporation wallet journals with division filtering
+        $query = DB::table('corporation_wallet_journals')
+            ->where('date', '>=', $cutoffDate)
+            ->where('ref_type', 'player_donation')
+            ->whereIn('division', $divisions);
+
+        if ($moonOwnerCorpId) {
+            $query->where('corporation_id', $moonOwnerCorpId);
+        }
 
         if ($characterId) {
             $query->where('first_party_id', $characterId);
             $this->info("Verifying payments for character ID: {$characterId}");
         }
 
-        $transactions = $query->get();
+        $transactions = $query->orderBy('date', 'desc')->get();
 
         if ($transactions->isEmpty()) {
-            $this->warn('No relevant transactions found');
+            $this->warn('No relevant transactions found in configured wallet divisions');
             return Command::SUCCESS;
         }
 
@@ -94,8 +126,9 @@ class VerifyWalletPaymentsCommand extends Command
 
         foreach ($transactions as $transaction) {
             try {
-                // Check if transaction has a tax code in description
-                $taxCode = $this->extractTaxCode($transaction->description);
+                // Check if transaction has a tax code in reason or description
+                $text = ($transaction->reason ?? '') . ' ' . ($transaction->description ?? '');
+                $taxCode = $this->extractTaxCode($text);
 
                 if (!$taxCode) {
                     $unmatched++;
@@ -124,19 +157,24 @@ class VerifyWalletPaymentsCommand extends Command
 
                 // Verify amount matches
                 $amount = abs($transaction->amount);
-                $tolerance = 0.01; // 1 cent tolerance for rounding
+                $tolerance = $paymentSettings['match_tolerance'] ?? 100;
 
                 if (abs($amount - $tax->amount_owed) > $tolerance) {
                     $this->warn("Amount mismatch for tax code '{$taxCode}': " .
-                               "Expected {$tax->amount_owed}, Got {$amount}");
+                               "Expected " . number_format($tax->amount_owed, 2) . ", Got " . number_format($amount, 2));
                 }
+
+                $divLabel = $transaction->division == 1 ? 'Master Wallet' : "Division {$transaction->division}";
 
                 if ($autoMatch) {
                     // Update tax record
+                    $previousPaid = $tax->amount_paid ?? 0;
+                    $newPaid = $previousPaid + $amount;
+
                     $tax->update([
-                        'amount_paid' => $amount,
+                        'amount_paid' => $newPaid,
                         'paid_at' => $transaction->date,
-                        'status' => 'paid',
+                        'status' => $newPaid >= $tax->amount_owed ? 'paid' : 'partial',
                         'transaction_id' => $transaction->id,
                     ]);
 
@@ -144,14 +182,15 @@ class VerifyWalletPaymentsCommand extends Command
                     $taxCodeRecord->update([
                         'used_at' => Carbon::now(),
                         'transaction_id' => $transaction->id,
+                        'status' => 'used',
                     ]);
 
                     $this->line("Matched payment for character {$transaction->first_party_id}: " .
-                               number_format($amount, 2) . " ISK");
+                               number_format($amount, 2) . " ISK [{$divLabel}]");
                     $matched++;
                 } else {
                     $this->line("Found potential match for character {$transaction->first_party_id}: " .
-                               number_format($amount, 2) . " ISK (code: {$taxCode})");
+                               number_format($amount, 2) . " ISK (code: {$taxCode}) [{$divLabel}]");
                     $matched++;
                 }
 
@@ -178,23 +217,23 @@ class VerifyWalletPaymentsCommand extends Command
     }
 
     /**
-     * Extract tax code from transaction description
+     * Extract tax code from transaction text (reason + description)
      *
-     * @param string $description
+     * @param string $text
      * @return string|null
      */
-    private function extractTaxCode(?string $description): ?string
+    private function extractTaxCode(?string $text): ?string
     {
-        if (!$description) {
+        if (!$text) {
             return null;
         }
 
         // Use configured prefix and length from settings
-        $prefix = preg_quote(\MiningManager\Models\TaxCode::getPrefix(), '/');
-        $length = \MiningManager\Models\TaxCode::getCodeLength();
+        $prefix = preg_quote(TaxCode::getPrefix(), '/');
+        $length = TaxCode::getCodeLength();
 
-        if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/', $description, $matches)) {
-            return $matches[1];
+        if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/', $text, $matches)) {
+            return strtoupper($matches[1]);
         }
 
         return null;

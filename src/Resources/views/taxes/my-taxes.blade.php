@@ -122,22 +122,49 @@
                                 <h5><i class="icon fas fa-info-circle"></i> {{ trans('mining-manager::taxes.payment_instructions') }}</h5>
                                 <p>{{ trans('mining-manager::taxes.payment_info_text') }}</p>
 
-                                <strong>{{ trans('mining-manager::taxes.payment_options') }}:</strong>
-                                <ul>
-                                    <li>{{ trans('mining-manager::taxes.option_wallet_transfer') }}:
-                                        @php
-                                            $activeTaxCode = $currentTax->taxCodes->where('status', 'active')->first();
-                                        @endphp
-                                        <code class="text-dark">{{ $activeTaxCode->code ?? trans('mining-manager::taxes.code_pending') }}</code>
-                                    </li>
-                                </ul>
+                                @php
+                                    $activeTaxCode = $currentTax->taxCodes->where('status', 'active')->first();
+                                @endphp
+
+                                <div class="card bg-dark border-info mt-2 mb-2">
+                                    <div class="card-header bg-dark border-info">
+                                        <h6 class="mb-0"><i class="fas fa-list-ol"></i> How to Pay Your Mining Tax</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ol class="mb-0">
+                                            <li class="mb-2">
+                                                Open your EVE wallet and click <strong>"Give Money"</strong>
+                                            </li>
+                                            <li class="mb-2">
+                                                Set the recipient to: <strong>{{ $corpName ?? 'your corporation' }}</strong>
+                                            </li>
+                                            @if(($walletDivision ?? 1) !== 1)
+                                            <li class="mb-2">
+                                                Select wallet division: <strong>{{ $walletDivisionName ?? 'Master Wallet' }}</strong>
+                                                <br><small class="text-muted">If you don't select a division, it will go to Master Wallet (also accepted)</small>
+                                            </li>
+                                            @endif
+                                            <li class="mb-2">
+                                                Enter the amount: <strong>{{ number_format($currentTax->amount_owed, 0) }} ISK</strong>
+                                            </li>
+                                            <li class="mb-2">
+                                                In the <strong>"Reason"</strong> field, paste your tax code:
+                                                <br>
+                                                <code class="text-warning" style="font-size: 1.1em;">{{ $activeTaxCode->code ?? trans('mining-manager::taxes.code_pending') }}</code>
+                                                @if($activeTaxCode)
+                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyTaxCode('{{ $activeTaxCode->code }}')">
+                                                    <i class="fas fa-copy"></i> Copy
+                                                </button>
+                                                @endif
+                                            </li>
+                                            <li class="mb-0">
+                                                Click <strong>"Send"</strong> — your payment will be automatically verified
+                                            </li>
+                                        </ol>
+                                    </div>
+                                </div>
 
                                 <div class="mt-2">
-                                    @if($activeTaxCode)
-                                    <button type="button" class="btn btn-sm btn-primary" onclick="copyTaxCode('{{ $activeTaxCode->code }}')">
-                                        <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy_tax_code') }}
-                                    </button>
-                                    @endif
                                     <a href="{{ route('mining-manager.taxes.details', $currentTax->id) }}" class="btn btn-sm btn-info">
                                         <i class="fas fa-eye"></i> {{ trans('mining-manager::taxes.view_details') }}
                                     </a>

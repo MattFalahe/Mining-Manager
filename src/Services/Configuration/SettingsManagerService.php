@@ -208,16 +208,62 @@ class SettingsManagerService
             $this->getSetting('payment.method', 'wallet')
         );
 
+        $division = (int) $this->getSetting('tax_rates.tax_wallet_division',
+            $this->getSetting('payment.wallet_division', 1)
+        );
+
+        // Backwards compatibility: convert 1000-1007 to 1-7
+        if ($division >= 1000) {
+            $division = $division - 999;
+        }
+
         return [
             'method' => $method,
-            'wallet_division' => $this->getSetting('tax_rates.tax_wallet_division',
-                $this->getSetting('payment.wallet_division', 1000)
-            ),
+            'wallet_division' => $division,
             'payment_character_id' => $this->getSetting('payment.payment_character_id'),
             'auto_verify' => $this->getSetting('payment.auto_verify', false),
             'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
         ];
+    }
+
+    /**
+     * Get the display name for the configured wallet division.
+     *
+     * @return string
+     */
+    public function getWalletDivisionName(): string
+    {
+        $paymentSettings = $this->getPaymentSettings();
+        $division = $paymentSettings['wallet_division'];
+        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
+
+        $defaultNames = [
+            1 => 'Master Wallet',
+            2 => '2nd Wallet Division',
+            3 => '3rd Wallet Division',
+            4 => '4th Wallet Division',
+            5 => '5th Wallet Division',
+            6 => '6th Wallet Division',
+            7 => '7th Wallet Division',
+        ];
+
+        if ($moonOwnerCorpId) {
+            try {
+                $name = DB::table('corporation_divisions')
+                    ->where('corporation_id', $moonOwnerCorpId)
+                    ->where('division', $division)
+                    ->value('name');
+
+                if (!empty($name)) {
+                    return $name;
+                }
+            } catch (\Exception $e) {
+                // Fall through to default
+            }
+        }
+
+        return $defaultNames[$division] ?? "Division {$division}";
     }
 
     /**
