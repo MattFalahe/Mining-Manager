@@ -129,9 +129,12 @@ class TaxPeriodHelper
     /**
      * Check if the daily cron should trigger a tax calculation today.
      *
-     * Monthly: calculate on the 1st (for previous month)
-     * Biweekly: calculate on the 1st and 15th
-     * Weekly: calculate on Mondays
+     * Shifted by 1 day to allow observer data (which can lag 12-24h from ESI)
+     * to settle before calculating taxes.
+     *
+     * Monthly: calculate on the 2nd (for previous month)
+     * Biweekly: calculate on the 2nd and 16th
+     * Weekly: calculate on Tuesdays
      *
      * @param string $periodType
      * @return bool
@@ -141,9 +144,9 @@ class TaxPeriodHelper
         $now = Carbon::now();
 
         return match ($periodType) {
-            'weekly' => $now->isMonday(),
-            'biweekly' => $now->day === 1 || $now->day === 15,
-            default => $now->day === 1,
+            'weekly' => $now->isTuesday(),
+            'biweekly' => $now->day === 2 || $now->day === 16,
+            default => $now->day === 2,
         };
     }
 

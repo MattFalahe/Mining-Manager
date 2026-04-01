@@ -5,6 +5,7 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Ledger\LedgerSummaryService;
+use MiningManager\Services\Pricing\OreValuationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -158,6 +159,101 @@ class UpdateDailySummariesCommand extends Command
             Log::info("Mining Manager: Updated {$generated} daily summaries for {$characters->count()} character(s)");
         }
 
+        // Reconciliation: check previous 2 days for character-imported moon ore
+        // entries that now have matching observer data. Observer data can arrive
+        // 12-24h late from ESI, so we retroactively clean up and regenerate.
+        if (!$date && !$month && !$characterId) {
+            $this->reconcileLateObserverData($summaryService);
+        }
+
         return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * Reconcile character-imported entries with late-arriving observer data.
+     *
+     * Character mining ESI data arrives without corporation_id. Observer data
+     * (which is authoritative and includes corporation_id) can arrive 12-24h
+     * later. This step finds character-imported moon ore entries from the
+     * previous 2 days that now have matching observer data, adjusts quantities
+     * (to preserve non-corp mining), and regenerates affected daily summaries.
+     */
+    private function reconcileLateObserverData(LedgerSummaryService $summaryService): void
+    {
+        $this->line('');
+        $this->info('🔗 Reconciling late observer data (previous 2 days)...');
+
+        $reconcileStart = Carbon::today()->subDays(2);
+        $reconcileEnd = Carbon::yesterday();
+
+        $orphans = MiningLedger::whereNull('corporation_id')
+            ->whereNull('observer_id')
+            ->where('is_moon_ore', true)
+            ->whereBetween('date', [$reconcileStart, $reconcileEnd])
+            ->get();
+
+        if ($orphans->isEmpty()) {
+            $this->info('   No unresolved character-imported moon ore entries found.');
+            return;
+        }
+
+        $valuationService = app(OreValuationService::class);
+        $cleaned = 0;
+        $adjusted = 0;
+        $affectedPairs = collect();
+
+        foreach ($orphans as $orphan) {
+            // Sum all observer quantities for same character+date+type
+            $observerQty = MiningLedger::where('character_id', $orphan->character_id)
+                ->whereDate('date', $orphan->date)
+                ->where('type_id', $orphan->type_id)
+                ->whereNotNull('observer_id')
+                ->sum('quantity');
+
+            if ($observerQty <= 0) {
+                continue;
+            }
+
+            $pairKey = $orphan->character_id . '|' . $orphan->date;
+            $affectedPairs->put($pairKey, [
+                'character_id' => $orphan->character_id,
+                'date' => $orphan->date instanceof Carbon ? $orphan->date->format('Y-m-d') : (string) $orphan->date,
+            ]);
+
+            $remainder = $orphan->quantity - $observerQty;
+            if ($remainder <= 0) {
+                $orphan->delete();
+                $cleaned++;
+            } else {
+                $remainderValues = $valuationService->calculateOreValue($orphan->type_id, $remainder);
+                $orphan->update([
+                    'quantity' => $remainder,
+                    'unit_price' => $remainderValues['unit_price'] ?? 0,
+                    'ore_value' => $remainderValues['ore_value'] ?? 0,
+                    'mineral_value' => $remainderValues['mineral_value'] ?? 0,
+                    'total_value' => $remainderValues['total_value'] ?? 0,
+                    'tax_rate' => 0,
+                    'tax_amount' => 0,
+                    'processed_at' => Carbon::now(),
+                ]);
+                $adjusted++;
+            }
+        }
+
+        if ($cleaned > 0 || $adjusted > 0) {
+            $this->info("   Removed {$cleaned} duplicates, adjusted {$adjusted} entries.");
+
+            // Regenerate daily summaries for affected character+date pairs
+            foreach ($affectedPairs as $pair) {
+                try {
+                    $summaryService->generateDailySummary($pair['character_id'], $pair['date']);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Reconciliation summary failed for character {$pair['character_id']} on {$pair['date']}: {$e->getMessage()}");
+                }
+            }
+            $this->info("   Regenerated {$affectedPairs->count()} daily summaries.");
+        } else {
+            $this->info('   No late observer data found to reconcile.');
+        }
     }
 }

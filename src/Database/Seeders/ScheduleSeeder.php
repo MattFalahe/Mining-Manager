@@ -75,7 +75,8 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             ],
             // Calculate mining taxes - runs daily at 2:15 AM
             // Smart: checks shouldCalculateToday() and only acts on period boundaries
-            // (monthly=1st, biweekly=1st&15th, weekly=Mondays). Skips other days.
+            // Shifted +1 day to allow observer data to settle (ESI lags 12-24h):
+            // (monthly=2nd, biweekly=2nd&16th, weekly=Tuesdays). Skips other days.
             // Pipeline: ledger-prices (1:00) → daily-summaries (1:30) → finalize (2:00) → taxes (2:15)
             [
                 'command' => 'mining-manager:calculate-taxes',
@@ -182,22 +183,22 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Finalize month summaries - runs on 1st of each month at 2:00 AM (before tax calculation)
-            // Locks previous month's daily summaries so the 1st-of-month tax run uses finalized data.
-            // Moved from 2nd→1st so finalization happens before calculate-taxes at 2:15.
+            // Finalize month summaries - runs on 2nd of each month at 2:00 AM (before tax calculation)
+            // Locks previous month's daily summaries so the tax run uses finalized data.
+            // Runs on 2nd (not 1st) to allow observer data to settle before finalizing.
             [
                 'command' => 'mining-manager:finalize-month',
-                'expression' => '0 2 1 * *',
+                'expression' => '0 2 2 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Calculate monthly statistics - runs on 1st of each month at 3:00 AM (after taxes + invoices)
+            // Calculate monthly statistics - runs on 2nd of each month at 3:00 AM (after taxes + invoices)
             // Pre-calculates dashboard stats for the now-closed previous month.
             [
                 'command' => 'mining-manager:calculate-monthly-stats',
-                'expression' => '0 3 1 * *',
+                'expression' => '0 3 2 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
