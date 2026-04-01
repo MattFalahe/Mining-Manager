@@ -197,19 +197,38 @@ class ProcessMiningLedgerCommand extends Command
                             $skipped++;
                         }
                     } else {
-                        // Cross-source dedup: remove personal ESI record if it exists
+                        // Cross-source dedup: adjust personal ESI record if it exists
+                        // Character ESI combines ALL mining of a type in a system into one entry,
+                        // so if a character mined at both a corp moon and non-corp moon,
+                        // we subtract the observer quantity and keep the remainder as untaxed.
                         $personalDupe = MiningLedger::where('character_id', $entry->character_id)
                             ->whereDate('date', Carbon::parse($entry->last_updated)->toDateString())
                             ->where('type_id', $entry->type_id)
-                            ->when($solarSystemId, function ($q) use ($solarSystemId) {
-                                $q->where('solar_system_id', $solarSystemId);
-                            })
                             ->whereNull('observer_id')
                             ->first();
 
                         if ($personalDupe) {
-                            $personalDupe->delete();
-                            Log::debug("Mining Manager: Replaced personal ESI record with observer data for character {$entry->character_id}, type {$entry->type_id}");
+                            $remainder = $personalDupe->quantity - $entry->quantity;
+                            if ($remainder <= 0) {
+                                // Observer covers all or more — remove the character entry
+                                $personalDupe->delete();
+                                Log::debug("Mining Manager: Replaced personal ESI record with observer data for character {$entry->character_id}, type {$entry->type_id}");
+                            } else {
+                                // Character mined more than observer shows — keep remainder as non-corp mining
+                                $valuationService = app(OreValuationService::class);
+                                $remainderValues = $valuationService->calculateOreValue($entry->type_id, $remainder);
+                                $personalDupe->update([
+                                    'quantity' => $remainder,
+                                    'unit_price' => $remainderValues['unit_price'] ?? 0,
+                                    'ore_value' => $remainderValues['ore_value'] ?? 0,
+                                    'mineral_value' => $remainderValues['mineral_value'] ?? 0,
+                                    'total_value' => $remainderValues['total_value'] ?? 0,
+                                    'tax_rate' => 0,
+                                    'tax_amount' => 0,
+                                    'processed_at' => Carbon::now(),
+                                ]);
+                                Log::debug("Mining Manager: Adjusted personal ESI record for character {$entry->character_id}, type {$entry->type_id}: kept {$remainder} units as non-corp mining");
+                            }
                         }
 
                         MiningLedger::create($data);
@@ -294,6 +313,68 @@ class ProcessMiningLedgerCommand extends Command
             // Check for jackpot ores in processed entries
             if ($processed > 0) {
                 $this->checkForJackpotOres($observerEntries);
+            }
+
+            // Clean up orphaned character-imported entries where observer data exists
+            // Character ESI combines all mining of a type in a system, so orphans
+            // may contain both corp and non-corp quantities mixed together.
+            if ($processed > 0 || $updated > 0) {
+                $this->line('');
+                $this->info('🔗 Cleaning up character-imported entries with matching observer data...');
+
+                $cleaned = 0;
+                $adjusted = 0;
+                try {
+                    $orphans = MiningLedger::whereNull('corporation_id')
+                        ->whereNull('observer_id')
+                        ->where('is_moon_ore', true)
+                        ->where('date', '>=', $cutoffDate->toDateString())
+                        ->get();
+
+                    $valuationSvc = app(OreValuationService::class);
+
+                    foreach ($orphans as $orphan) {
+                        // Sum all observer quantities for same character+date+type
+                        $observerQty = MiningLedger::where('character_id', $orphan->character_id)
+                            ->whereDate('date', $orphan->date)
+                            ->where('type_id', $orphan->type_id)
+                            ->whereNotNull('observer_id')
+                            ->sum('quantity');
+
+                        if ($observerQty <= 0) {
+                            continue;
+                        }
+
+                        $remainder = $orphan->quantity - $observerQty;
+                        if ($remainder <= 0) {
+                            $orphan->delete();
+                            $cleaned++;
+                        } else {
+                            // Keep remainder as non-corp mining
+                            $remainderValues = $valuationSvc->calculateOreValue($orphan->type_id, $remainder);
+                            $orphan->update([
+                                'quantity' => $remainder,
+                                'unit_price' => $remainderValues['unit_price'] ?? 0,
+                                'ore_value' => $remainderValues['ore_value'] ?? 0,
+                                'mineral_value' => $remainderValues['mineral_value'] ?? 0,
+                                'total_value' => $remainderValues['total_value'] ?? 0,
+                                'tax_rate' => 0,
+                                'tax_amount' => 0,
+                                'processed_at' => Carbon::now(),
+                            ]);
+                            $adjusted++;
+                        }
+                    }
+
+                    if ($cleaned > 0 || $adjusted > 0) {
+                        $this->info("   Removed {$cleaned} duplicates, adjusted {$adjusted} entries (kept non-corp remainder).");
+                    } else {
+                        $this->info("   No orphaned entries to clean up.");
+                    }
+                } catch (\Exception $e) {
+                    $this->warn("   ⚠️  Backfill failed: {$e->getMessage()}");
+                    Log::warning('Mining Manager: Corporation ID backfill failed', ['error' => $e->getMessage()]);
+                }
             }
 
             // Auto-generate daily summaries for all dates that were touched
