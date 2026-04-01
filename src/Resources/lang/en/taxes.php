@@ -79,6 +79,7 @@ return [
     'code_pending' => 'Code Pending',
     'copy_tax_code' => 'Copy Tax Code',
     'generate_codes' => 'Generate Tax Codes',
+    'assign_codes' => 'Assign Codes',
     'regenerate_codes' => 'Regenerate Codes',
     'no_codes' => 'No tax codes found',
     'copy' => 'Copy',

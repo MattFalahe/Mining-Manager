@@ -140,6 +140,10 @@
                                 <i class="fas fa-sync-alt"></i>
                                 {{ trans('mining-manager::taxes.recalculate') }}
                             </button>
+                            <button type="button" class="btn btn-secondary ml-2" id="assign-codes-btn">
+                                <i class="fas fa-barcode"></i>
+                                {{ trans('mining-manager::taxes.assign_codes') }}
+                            </button>
                             <button type="button" class="btn btn-success ml-2" id="regenerate-payments-btn">
                                 <i class="fas fa-sync"></i>
                                 {{ trans('mining-manager::taxes.regenerate_codes') }}
@@ -590,6 +594,37 @@ $(document).ready(function() {
             }
         });
     }
+
+    // Assign Codes Button — generate payment codes without recalculating
+    $('#assign-codes-btn').on('click', function() {
+        const month = $('#year').val() + '-' + String($('#month').val()).padStart(2, '0');
+
+        $('#assign-codes-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Generating...');
+
+        $.ajax({
+            url: '{{ route("mining-manager.taxes.codes.generate") }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                month: month
+            },
+            success: function(response) {
+                if (response.status === 'success') {
+                    toastr.success(response.message + ' (' + response.results.generated + ' codes)');
+                    refreshLiveTracking();
+                } else if (response.status === 'warning') {
+                    toastr.warning(response.message);
+                } else {
+                    toastr.error(response.message);
+                }
+                $('#assign-codes-btn').prop('disabled', false).html('<i class="fas fa-barcode"></i> {{ trans("mining-manager::taxes.assign_codes") }}');
+            },
+            error: function(xhr) {
+                alert('{{ trans("mining-manager::taxes.error_occurred") }}');
+                $('#assign-codes-btn').prop('disabled', false).html('<i class="fas fa-barcode"></i> {{ trans("mining-manager::taxes.assign_codes") }}');
+            }
+        });
+    });
 
     // Regenerate Codes Button — recalculate + generate/update payment codes
     $('#regenerate-payments-btn').on('click', function() {
