@@ -213,16 +213,21 @@ class TaxCalculationService
         foreach ($groupedByMain as $mainCharacterId => $characterIds) {
             try {
                 // Check if tax already exists for this character + period
-                $existingTax = MiningTax::where('character_id', $mainCharacterId)
-                    ->where('period_start', $startDate->format('Y-m-d'))
+                // Use withTrashed() because soft-deleted records still hold the unique constraint
+                $existingTax = MiningTax::withTrashed()
+                    ->where('character_id', $mainCharacterId)
+                    ->where(function ($q) use ($startDate, $calendarMonth) {
+                        $q->where('period_start', $startDate->format('Y-m-d'))
+                          ->orWhere(function ($inner) use ($calendarMonth) {
+                              $inner->where('month', $calendarMonth)
+                                    ->whereNull('period_start');
+                          });
+                    })
                     ->first();
 
-                // Fallback: check old-style month lookup for pre-migration records
-                if (!$existingTax && $periodType === 'monthly') {
-                    $existingTax = MiningTax::where('character_id', $mainCharacterId)
-                        ->where('month', $calendarMonth)
-                        ->whereNull('period_start')
-                        ->first();
+                // Restore soft-deleted records so they can be updated
+                if ($existingTax && $existingTax->trashed()) {
+                    $existingTax->restore();
                 }
 
                 if ($existingTax && !$recalculate) {
@@ -284,7 +289,7 @@ class TaxCalculationService
                     ]);
                     Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                 } else {
-                    // Create new
+                    // Create new tax record
                     MiningTax::create([
                         'character_id' => $mainCharacterId,
                         'month' => $calendarMonth,
