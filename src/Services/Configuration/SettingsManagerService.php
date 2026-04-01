@@ -722,11 +722,24 @@ class SettingsManagerService
     public function getNotificationSettings(): array
     {
         return [
+            // Global per-type toggles (master switches)
+            'enabled_types' => $this->getSetting('notifications.enabled_types', [
+                'tax_generated' => true,
+                'tax_reminder' => true,
+                'tax_invoice' => true,
+                'tax_overdue' => true,
+                'event_created' => true,
+                'event_started' => true,
+                'event_completed' => true,
+                'moon_ready' => true,
+            ]),
+
             // EVE Mail
             'evemail_enabled' => (bool) $this->getSetting('notifications.evemail_enabled', false),
             'evemail_sender_character_id' => $this->getSetting('notifications.evemail_sender_character_id', null),
             'evemail_sender_character_override' => $this->getSetting('notifications.evemail_sender_character_override', null),
             'evemail_types' => $this->getSetting('notifications.evemail_types', [
+                'tax_generated' => true,
                 'tax_reminder' => true,
                 'tax_invoice' => true,
                 'tax_overdue' => true,
@@ -740,6 +753,7 @@ class SettingsManagerService
             'slack_enabled' => (bool) $this->getSetting('notifications.slack_enabled', false),
             'slack_webhook_url' => $this->getSetting('notifications.slack_webhook_url', ''),
             'slack_types' => $this->getSetting('notifications.slack_types', [
+                'tax_generated' => true,
                 'tax_reminder' => true,
                 'tax_invoice' => true,
                 'tax_overdue' => true,

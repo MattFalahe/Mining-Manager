@@ -11,7 +11,82 @@
     <div class="info-banner">
         <i class="fas fa-info-circle"></i>
         Configure how notifications are delivered through Discord webhooks and Slack.
-        Each channel can be independently enabled and configured with specific notification types.
+        Use the master toggles below to enable/disable each notification type globally,
+        then configure channel-specific settings further down.
+    </div>
+
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    {{-- GLOBAL NOTIFICATION TOGGLES --}}
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-sliders-h"></i>
+                Notification Types (Master Toggles)
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                These are global master switches. If a notification type is disabled here, it won't be sent through any channel (Discord, Slack, etc.) regardless of individual webhook settings.
+            </small>
+
+            @php
+                $enabledTypes = $notificationSettings['enabled_types'] ?? [];
+                $globalTypes = [
+                    'tax_generated' => ['label' => 'Taxes Generated', 'icon' => 'fas fa-calculator text-info', 'desc' => 'When taxes are calculated for a period — broadcasts payment instructions to all members'],
+                    'tax_reminder' => ['label' => 'Tax Payment Reminder', 'icon' => 'fas fa-clock text-warning', 'desc' => 'Reminder sent before the payment deadline'],
+                    'tax_invoice' => ['label' => 'Tax Invoice Created', 'icon' => 'fas fa-file-invoice text-info', 'desc' => 'When a tax invoice is generated for an unpaid tax'],
+                    'tax_overdue' => ['label' => 'Tax Payment Overdue', 'icon' => 'fas fa-exclamation-circle text-danger', 'desc' => 'When a tax payment is past its due date'],
+                    'event_created' => ['label' => 'Mining Event Created', 'icon' => 'fas fa-calendar-plus text-primary', 'desc' => 'New mining event has been scheduled'],
+                    'event_started' => ['label' => 'Mining Event Started', 'icon' => 'fas fa-play text-success', 'desc' => 'A mining event has begun'],
+                    'event_completed' => ['label' => 'Mining Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary', 'desc' => 'A mining event has finished with results'],
+                    'moon_ready' => ['label' => 'Moon Extraction Ready', 'icon' => 'fas fa-moon text-warning', 'desc' => 'Moon chunk is ready for mining'],
+                ];
+            @endphp
+
+            {{-- Tax Notifications --}}
+            <h6 class="mt-2 mb-2"><i class="fas fa-coins text-warning"></i> Tax Notifications</h6>
+            @foreach(['tax_generated', 'tax_reminder', 'tax_invoice', 'tax_overdue'] as $typeKey)
+                @php $typeInfo = $globalTypes[$typeKey]; @endphp
+                <div class="custom-control custom-switch mb-2 ml-3">
+                    <input type="checkbox" class="custom-control-input"
+                           id="notify_global_{{ $typeKey }}" name="notify_global_{{ $typeKey }}" value="1"
+                           {{ ($enabledTypes[$typeKey] ?? true) ? 'checked' : '' }}>
+                    <label class="custom-control-label" for="notify_global_{{ $typeKey }}">
+                        <i class="{{ $typeInfo['icon'] }}"></i> {{ $typeInfo['label'] }}
+                    </label>
+                    <small class="form-text text-muted ml-4">{{ $typeInfo['desc'] }}</small>
+                </div>
+            @endforeach
+
+            {{-- Event Notifications --}}
+            <h6 class="mt-3 mb-2"><i class="fas fa-calendar text-primary"></i> Event Notifications</h6>
+            @foreach(['event_created', 'event_started', 'event_completed'] as $typeKey)
+                @php $typeInfo = $globalTypes[$typeKey]; @endphp
+                <div class="custom-control custom-switch mb-2 ml-3">
+                    <input type="checkbox" class="custom-control-input"
+                           id="notify_global_{{ $typeKey }}" name="notify_global_{{ $typeKey }}" value="1"
+                           {{ ($enabledTypes[$typeKey] ?? true) ? 'checked' : '' }}>
+                    <label class="custom-control-label" for="notify_global_{{ $typeKey }}">
+                        <i class="{{ $typeInfo['icon'] }}"></i> {{ $typeInfo['label'] }}
+                    </label>
+                    <small class="form-text text-muted ml-4">{{ $typeInfo['desc'] }}</small>
+                </div>
+            @endforeach
+
+            {{-- Moon Notifications --}}
+            <h6 class="mt-3 mb-2"><i class="fas fa-moon text-warning"></i> Moon Notifications</h6>
+            @php $typeInfo = $globalTypes['moon_ready']; @endphp
+            <div class="custom-control custom-switch mb-2 ml-3">
+                <input type="checkbox" class="custom-control-input"
+                       id="notify_global_moon_ready" name="notify_global_moon_ready" value="1"
+                       {{ ($enabledTypes['moon_ready'] ?? true) ? 'checked' : '' }}>
+                <label class="custom-control-label" for="notify_global_moon_ready">
+                    <i class="{{ $typeInfo['icon'] }}"></i> {{ $typeInfo['label'] }}
+                </label>
+                <small class="form-text text-muted ml-4">{{ $typeInfo['desc'] }}</small>
+            </div>
+        </div>
     </div>
 
     {{-- ═══════════════════════════════════════════════════════════════ --}}
@@ -52,6 +127,7 @@
 
             @php
                 $evemailTypeList = [
+                    'tax_generated' => ['label' => 'Taxes Generated', 'icon' => 'fas fa-calculator text-info'],
                     'tax_reminder' => ['label' => 'Tax Reminder', 'icon' => 'fas fa-clock text-warning'],
                     'tax_invoice' => ['label' => 'Tax Invoice Created', 'icon' => 'fas fa-file-invoice text-info'],
                     'tax_overdue' => ['label' => 'Tax Overdue', 'icon' => 'fas fa-exclamation-circle text-danger'],
@@ -116,10 +192,11 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
+                                        @if($wh->notify_tax_generated) <span class="badge badge-info" title="Taxes Generated"><i class="fas fa-calculator"></i></span> @endif
                                         @if($wh->notify_tax_reminder) <span class="badge badge-warning" title="Tax Reminder"><i class="fas fa-clock"></i></span> @endif
                                         @if($wh->notify_tax_invoice) <span class="badge badge-info" title="Tax Invoice"><i class="fas fa-file-invoice"></i></span> @endif
                                         @if($wh->notify_tax_overdue) <span class="badge badge-danger" title="Tax Overdue"><i class="fas fa-exclamation-circle"></i></span> @endif
-                                        @if(!$wh->notify_tax_reminder && !$wh->notify_tax_invoice && !$wh->notify_tax_overdue)
+                                        @if(!$wh->notify_tax_generated && !$wh->notify_tax_reminder && !$wh->notify_tax_invoice && !$wh->notify_tax_overdue)
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>

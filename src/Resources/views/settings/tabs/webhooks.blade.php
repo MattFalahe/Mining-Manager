@@ -164,6 +164,11 @@
                                                     <i class="fas fa-flag-checkered"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_tax_generated)
+                                                <span class="badge badge-info" title="Taxes Generated">
+                                                    <i class="fas fa-calculator"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_tax_reminder)
                                                 <span class="badge badge-warning" title="Tax Reminder">
                                                     <i class="fas fa-clock"></i>
@@ -387,6 +392,13 @@
                         <hr class="my-2">
                         <small class="text-muted d-block mb-2"><strong>Tax Notifications</strong></small>
 
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-generated" name="notify_tax_generated" value="1">
+                            <label class="custom-control-label" for="notify-tax-generated">
+                                <i class="fas fa-calculator text-info"></i>
+                                Taxes Generated
+                            </label>
+                        </div>
                         <div class="custom-control custom-checkbox">
                             <input type="checkbox" class="custom-control-input" id="notify-tax-reminder" name="notify_tax_reminder" value="1">
                             <label class="custom-control-label" for="notify-tax-reminder">

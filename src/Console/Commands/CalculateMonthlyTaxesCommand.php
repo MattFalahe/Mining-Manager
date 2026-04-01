@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
 class CalculateMonthlyTaxesCommand extends Command
@@ -106,6 +107,22 @@ class CalculateMonthlyTaxesCommand extends Command
                     $this->warn("Errors: " . count($results['errors']));
                     foreach ($results['errors'] as $error) {
                         $this->error("  Character {$error['character_id']}: {$error['error']}");
+                    }
+                }
+
+                // Send "taxes generated" notification if any taxes were created
+                if ($results['count'] > 0) {
+                    try {
+                        $dueDate = $this->periodHelper->calculateDueDate($endDate);
+                        app(NotificationService::class)->sendTaxGenerated(
+                            $periodLabel,
+                            $results['count'],
+                            $results['total'],
+                            $periodType,
+                            $dueDate?->format('Y-m-d')
+                        );
+                    } catch (\Exception $e) {
+                        $this->warn("Tax generated notification failed: {$e->getMessage()}");
                     }
                 }
             } catch (\Exception $e) {

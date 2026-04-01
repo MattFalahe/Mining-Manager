@@ -2276,6 +2276,7 @@ class DiagnosticController extends Controller
         // Format message
         $notificationService = app(NotificationService::class);
         $typeConst = match ($type) {
+            'tax_generated' => NotificationService::TYPE_TAX_GENERATED,
             'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
             'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
             'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
@@ -2343,6 +2344,7 @@ class DiagnosticController extends Controller
         // Format Discord embed
         $notificationService = app(NotificationService::class);
         $typeConst = match ($type) {
+            'tax_generated' => NotificationService::TYPE_TAX_GENERATED,
             'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
             'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
             'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
@@ -2480,6 +2482,7 @@ class DiagnosticController extends Controller
         // Format message
         $notificationService = app(NotificationService::class);
         $typeConst = match ($type) {
+            'tax_generated' => NotificationService::TYPE_TAX_GENERATED,
             'tax_reminder' => NotificationService::TYPE_TAX_REMINDER,
             'tax_invoice' => NotificationService::TYPE_TAX_INVOICE,
             'tax_overdue' => NotificationService::TYPE_TAX_OVERDUE,
@@ -2537,6 +2540,19 @@ class DiagnosticController extends Controller
         ];
 
         return match ($type) {
+            'tax_generated' => [
+                'period_label' => 'March 2026',
+                'period_type' => 'monthly',
+                'tax_count' => 15,
+                'total_amount' => $amount * 15,
+                'formatted_amount' => number_format($amount * 15, 2) . ' ISK',
+                'due_date' => $dueDate,
+                'corp_name' => $this->settingsService->getSetting('general.moon_owner_corporation_id')
+                    ? (\Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $this->settingsService->getSetting('general.moon_owner_corporation_id'))->value('name') ?? 'Test Corporation')
+                    : 'Test Corporation',
+                'wallet_division' => $this->settingsService->getWalletDivisionName(),
+                'tax_code_prefix' => $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
+            ],
             'tax_reminder' => array_merge($base, [
                 'days_remaining' => $daysRemaining,
             ]),

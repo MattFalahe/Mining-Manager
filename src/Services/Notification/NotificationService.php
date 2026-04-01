@@ -43,6 +43,7 @@ class NotificationService
     /**
      * Notification types
      */
+    const TYPE_TAX_GENERATED = 'tax_generated';
     const TYPE_TAX_REMINDER = 'tax_reminder';
     const TYPE_TAX_INVOICE = 'tax_invoice';
     const TYPE_TAX_OVERDUE = 'tax_overdue';
@@ -79,6 +80,12 @@ class NotificationService
         if (!$this->isEnabled()) {
             Log::info('Notifications disabled, skipping send');
             return ['skipped' => true];
+        }
+
+        // Check global per-type toggle (master override)
+        if ($type !== self::TYPE_CUSTOM && !$this->isTypeGloballyEnabled($type)) {
+            Log::info("Notification type '{$type}' is globally disabled, skipping");
+            return ['skipped' => true, 'reason' => 'type_disabled'];
         }
 
         $channels = $channels ?? $this->getEnabledChannels();
@@ -170,6 +177,40 @@ class NotificationService
         ];
 
         return $this->send(self::TYPE_TAX_OVERDUE, [$characterId], $data);
+    }
+
+    /**
+     * Send tax generated notification (broadcast)
+     *
+     * Sent when taxes are calculated for a period, notifying all members
+     * with general payment info and instructions.
+     *
+     * @param string $periodLabel Human-readable period (e.g., "March 2026")
+     * @param int $taxCount Number of tax records created
+     * @param float $totalAmount Total ISK across all tax records
+     * @param string $periodType monthly|biweekly|weekly
+     * @param string|null $dueDate Due date for the taxes
+     * @return array
+     */
+    public function sendTaxGenerated(string $periodLabel, int $taxCount, float $totalAmount, string $periodType = 'monthly', ?string $dueDate = null): array
+    {
+        $divisionName = $this->settings->getWalletDivisionName();
+        $corpName = $this->getCorpName();
+
+        $data = [
+            'period_label' => $periodLabel,
+            'period_type' => $periodType,
+            'tax_count' => $taxCount,
+            'total_amount' => $totalAmount,
+            'formatted_amount' => number_format($totalAmount, 2) . ' ISK',
+            'due_date' => $dueDate,
+            'corp_name' => $corpName,
+            'wallet_division' => $divisionName,
+            'tax_code_prefix' => $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
+        ];
+
+        // This is a broadcast — no specific recipients, goes to all configured channels
+        return $this->send(self::TYPE_TAX_GENERATED, [], $data);
     }
 
     /**
@@ -471,9 +512,42 @@ class NotificationService
      * @param string $channel
      * @return bool
      */
+    /**
+     * Check if a notification type is globally enabled (master toggle).
+     * Stored in notifications.enabled_types setting.
+     */
+    protected function isTypeGloballyEnabled(string $type): bool
+    {
+        $enabledTypes = $this->settings->getSetting('notifications.enabled_types', []);
+
+        // If no toggles have been saved yet, all types are enabled by default
+        if (empty($enabledTypes)) {
+            return true;
+        }
+
+        $typeKey = match ($type) {
+            self::TYPE_TAX_GENERATED => 'tax_generated',
+            self::TYPE_TAX_REMINDER => 'tax_reminder',
+            self::TYPE_TAX_INVOICE => 'tax_invoice',
+            self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_EVENT_CREATED => 'event_created',
+            self::TYPE_EVENT_STARTED => 'event_started',
+            self::TYPE_EVENT_COMPLETED => 'event_completed',
+            self::TYPE_MOON_READY => 'moon_ready',
+            default => null,
+        };
+
+        if ($typeKey === null) {
+            return true;
+        }
+
+        return (bool) ($enabledTypes[$typeKey] ?? true);
+    }
+
     protected function isTypeEnabledForChannel(string $type, string $channel): bool
     {
         $typeKey = match ($type) {
+            self::TYPE_TAX_GENERATED => 'tax_generated',
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
@@ -555,6 +629,7 @@ class NotificationService
     {
         // Map notification type to webhook event column
         $eventType = match ($type) {
+            self::TYPE_TAX_GENERATED => 'tax_generated',
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
@@ -861,12 +936,14 @@ class NotificationService
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 15158332, // Red
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
+            self::TYPE_TAX_GENERATED => 3447003, // Teal
             self::TYPE_EVENT_CREATED => 4437216, // Blue
             self::TYPE_EVENT_STARTED, self::TYPE_EVENT_COMPLETED => 3066993, // Green
             default => 4437216 // Blue
         };
 
         $title = match ($type) {
+            self::TYPE_TAX_GENERATED => '📋 Mining Taxes Generated',
             self::TYPE_TAX_REMINDER => '⏰ Tax Payment Reminder',
             self::TYPE_TAX_INVOICE => '📧 New Tax Invoice',
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
@@ -902,6 +979,13 @@ class NotificationService
     protected function formatFieldsForSlack(string $type, array $data): array
     {
         return match ($type) {
+            self::TYPE_TAX_GENERATED => [
+                ['title' => 'Period', 'value' => $data['period_label'], 'short' => true],
+                ['title' => 'Miners Taxed', 'value' => (string) $data['tax_count'], 'short' => true],
+                ['title' => 'Total Tax', 'value' => $data['formatted_amount'], 'short' => true],
+                ['title' => 'Due Date', 'value' => $data['due_date'] ?? 'See tax page', 'short' => true],
+                ['title' => 'How to Pay', 'value' => "Send ISK to {$data['corp_name']} → {$data['wallet_division']}. Include your tax code (starting with {$data['tax_code_prefix']}) in the reason field.", 'short' => false],
+            ],
             self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => [
                 ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true],
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true]
@@ -943,6 +1027,14 @@ class NotificationService
     protected function formatFieldsForDiscord(string $type, array $data): array
     {
         return match ($type) {
+            self::TYPE_TAX_GENERATED => [
+                ['name' => 'Period', 'value' => $data['period_label'], 'inline' => true],
+                ['name' => 'Miners Taxed', 'value' => (string) $data['tax_count'], 'inline' => true],
+                ['name' => 'Total Tax', 'value' => $data['formatted_amount'], 'inline' => true],
+                ['name' => 'Due Date', 'value' => $data['due_date'] ?? 'See tax page', 'inline' => true],
+                ['name' => 'Payment Wallet', 'value' => $data['wallet_division'], 'inline' => true],
+                ['name' => '💰 How to Pay', 'value' => "1. Open your wallet → **Give Money**\n2. Send to **{$data['corp_name']}**\n3. Wallet: **{$data['wallet_division']}**\n4. Paste your **tax code** (`{$data['tax_code_prefix']}XXXX`) in the reason\n5. Amount shown on your tax page", 'inline' => false],
+            ],
             self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => [
                 ['name' => 'Amount', 'value' => $data['formatted_amount'], 'inline' => true],
                 ['name' => 'Due Date', 'value' => $data['due_date'], 'inline' => true]

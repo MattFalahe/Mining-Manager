@@ -371,6 +371,13 @@ class SettingsController extends Controller
         try {
             $data = [];
 
+            // Global per-type toggles (master switches)
+            $enabledTypes = [];
+            foreach (['tax_generated', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
+                $enabledTypes[$type] = $request->has('notify_global_' . $type);
+            }
+            $data['enabled_types'] = $enabledTypes;
+
             // EVE Mail
             $data['evemail_enabled'] = $request->has('evemail_enabled');
             $data['evemail_sender_character_id'] = $request->input('evemail_sender_character_id');
@@ -378,7 +385,7 @@ class SettingsController extends Controller
 
             // Build EVE mail types array from individual checkboxes
             $evemailTypes = [];
-            foreach (['tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
+            foreach (['tax_generated', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
                 $evemailTypes[$type] = $request->has('evemail_type_' . $type);
             }
             $data['evemail_types'] = $evemailTypes;
@@ -389,7 +396,7 @@ class SettingsController extends Controller
 
             // Build Slack types array
             $slackTypes = [];
-            foreach (['tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
+            foreach (['tax_generated', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'event_created', 'event_started', 'event_completed', 'moon_ready'] as $type) {
                 $slackTypes[$type] = $request->has('slack_type_' . $type);
             }
             $data['slack_types'] = $slackTypes;

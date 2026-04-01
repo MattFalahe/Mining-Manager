@@ -60,6 +60,7 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
+                document.getElementById('notify-tax-generated').checked = webhook.notify_tax_generated;
                 document.getElementById('notify-tax-reminder').checked = webhook.notify_tax_reminder;
                 document.getElementById('notify-tax-invoice').checked = webhook.notify_tax_invoice;
                 document.getElementById('notify-tax-overdue').checked = webhook.notify_tax_overdue;
@@ -111,6 +112,7 @@ function saveWebhook() {
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,
+        notify_tax_generated: document.getElementById('notify-tax-generated').checked ? 1 : 0,
         notify_tax_reminder: document.getElementById('notify-tax-reminder').checked ? 1 : 0,
         notify_tax_invoice: document.getElementById('notify-tax-invoice').checked ? 1 : 0,
         notify_tax_overdue: document.getElementById('notify-tax-overdue').checked ? 1 : 0,

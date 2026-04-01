@@ -1042,6 +1042,7 @@
                                         <label><i class="fas fa-tag"></i> Notification Type</label>
                                         <select id="ntNotificationType" class="form-control" onchange="updateNotifTestFields()">
                                             <optgroup label="Tax Notifications">
+                                                <option value="tax_generated">📋 Taxes Generated</option>
                                                 <option value="tax_reminder">⏰ Tax Payment Reminder</option>
                                                 <option value="tax_invoice">📧 Tax Invoice Created</option>
                                                 <option value="tax_overdue">❌ Tax Payment Overdue</option>
