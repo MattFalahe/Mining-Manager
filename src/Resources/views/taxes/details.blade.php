@@ -85,7 +85,7 @@
                                                    ?? $tax->taxCodes->where('status', 'used')->first();
                                 @endphp
                                 @if($activeTaxCode)
-                                    <code>{{ $activeTaxCode->code }}</code>
+                                    <code>{{ $activeTaxCode->getFullCode() }}</code>
                                 @else
                                     <span class="text-muted">-</span>
                                 @endif

@@ -150,9 +150,9 @@
                                             <li class="mb-2">
                                                 In the <strong>"Reason"</strong> field, paste your tax code:
                                                 <br>
-                                                <code class="text-warning" style="font-size: 1.1em;">{{ $activeTaxCode->code ?? trans('mining-manager::taxes.code_pending') }}</code>
+                                                <code class="text-warning" style="font-size: 1.1em;">{{ $activeTaxCode ? $activeTaxCode->getFullCode() : trans('mining-manager::taxes.code_pending') }}</code>
                                                 @if($activeTaxCode)
-                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyTaxCode('{{ $activeTaxCode->code }}')">
+                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyTaxCode('{{ $activeTaxCode->getFullCode() }}')">
                                                     <i class="fas fa-copy"></i> Copy
                                                 </button>
                                                 @endif
@@ -453,10 +453,10 @@
                                                      ?? $tax->taxCodes->where('status', 'used')->first();
                                         @endphp
                                         @if($taxCode)
-                                            <code>{{ $taxCode->code }}</code>
+                                            <code>{{ $taxCode->getFullCode() }}</code>
                                             <button type="button"
                                                     class="btn btn-xs btn-link"
-                                                    onclick="copyTaxCode('{{ $taxCode->code }}')"
+                                                    onclick="copyTaxCode('{{ $taxCode->getFullCode() }}')"
                                                     data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.copy') }}">
                                                 <i class="fas fa-copy"></i>
