@@ -165,7 +165,7 @@ return [
     'nightly_pipeline_title' => 'Behind the Scenes — Nightly Pipeline',
     'nightly_pipeline_desc' => 'Every night, a chain of automated commands runs in a specific order. Each step depends on the previous one completing first:',
     'pipeline_step_1' => '1:00 AM — update-ledger-prices: Locks in current market prices on mining ledger entries.',
-    'pipeline_step_2' => '1:30 AM — update-daily-summaries: Catches any missed mining data (belt mining, late ESI imports) and ensures all summaries are current.',
+    'pipeline_step_2' => '1:30 AM — update-daily-summaries: Catches any missed mining data (belt mining, late ESI imports), reconciles character-imported entries against late-arriving observer data from the previous 2 days, and ensures all summaries are current.',
     'pipeline_step_3' => '2:00 AM — finalize-month (2nd only): Locks the previous month\'s summaries as final so they won\'t be regenerated. Runs on the 2nd to allow observer data to settle.',
     'pipeline_step_4' => '2:15 AM — calculate-taxes: Creates tax records for the completed period. Only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly, Tuesdays for weekly). The 1-day shift allows late observer data to be reconciled first.',
     'pipeline_step_5' => '2:30 AM — generate-invoices: Creates invoice records for any new unpaid taxes with completed periods.',
@@ -192,6 +192,8 @@ return [
     'daily_summaries_desc' => 'Daily summaries are the single source of truth for all tax calculations. Each summary stores a JSON breakdown per ore type containing: type ID, ore name, category, moon rarity, quantity, unit price, total value, tax rate, event modifier, effective rate, taxable flag, and estimated tax. When you view "My Taxes", the system reads directly from these summaries rather than recalculating from raw mining data.',
     'daily_summaries_when_generated' => 'Summaries are generated automatically when mining data is processed and when prices are updated. They can also be regenerated on demand using the Recalculate button or the update-daily-summaries command.',
     'daily_summaries_settings' => 'Tax rates in daily summaries always reflect your current settings at the time of generation. If you change a tax rate mid-month, use Recalculate to regenerate all summaries for that month with the new rates.',
+    'daily_summaries_reconciliation_title' => 'Observer Data Reconciliation:',
+    'daily_summaries_reconciliation_desc' => 'EVE ESI corporation observer data can lag 12-24 hours behind character mining data. The daily summary update command automatically reconciles the previous 2 days — matching character-imported moon ore entries against late-arriving observer data, removing duplicates, and adjusting quantities for characters who mined at both corp and non-corp moons. Affected daily summaries are regenerated automatically.',
 
     // Tax Rates and Categories
     'tax_rates_explained' => 'Tax Rates and Ore Categories',
@@ -245,6 +247,7 @@ return [
     'calculation_methods_desc' => 'The Calculate Taxes page provides three action buttons. All of them read from daily summaries as the single source of truth:',
     'calc_calculate' => 'Calculate — Sums existing daily summaries to create tax records for all periods within the selected month. This is fast because it only reads stored data. Use this for routine tax finalization when you are happy with the current daily summaries. For biweekly/weekly, this creates a separate record for each period in the month.',
     'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates tax records for all periods. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
+    'calc_assign_codes' => 'Assign Codes — Generates payment codes for any unpaid tax records that don\'t already have one. Does NOT recalculate taxes or regenerate daily summaries — it only assigns codes to existing tax records. Use this after running Calculate when you are ready to issue codes to members.',
     'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member for each period. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
 
     // Exemptions and Minimum Tax
@@ -432,7 +435,7 @@ return [
     'faq_q2' => 'How does alt grouping work for taxes?',
     'faq_a2' => 'Mining Manager uses accumulated mode, which groups all alt characters under the main character (via SeAT\'s refresh token / user affiliation system). Tax is calculated on the combined total.',
     'faq_q3' => 'What happens if someone doesn\'t pay their taxes?',
-    'faq_a3' => 'The system tracks payment status and can send reminder notifications on the 25th of each month. Directors can view all outstanding taxes on the Tax Overview page.',
+    'faq_a3' => 'The system tracks payment status and sends reminder notifications daily at 10:00 AM for taxes approaching their due date (configurable reminder window, default 3 days before) or already overdue. Directors can view all outstanding taxes on the Tax Overview page.',
     'faq_q4' => 'Where do I put my tax code when paying?',
     'faq_a4' => 'When sending ISK to the corporation wallet in-game, enter your tax code in the "reason" field of the transfer dialog. This is how the system matches your payment.',
     'faq_q5' => 'How are ore prices determined?',
@@ -447,6 +450,10 @@ return [
     'faq_a9' => 'Mining events are time-limited operations where participants earn bonus multipliers. The bonus reduces effective tax rates, incentivizing participation.',
     'faq_q10' => 'Is this compatible with other SeAT plugins?',
     'faq_a10' => 'Mining Manager is designed to work alongside other SeAT v5.x plugins. It uses standard SeAT authentication, permissions, and database systems.',
+    'faq_q11' => 'Why are taxes calculated on the 2nd instead of the 1st?',
+    'faq_a11' => 'EVE ESI corporation mining observer data can lag 12-24 hours behind the actual mining. Tax calculation, monthly finalization, and stats are shifted to the 2nd of the month (or Tuesday for weekly, 2nd/16th for biweekly) to allow this late-arriving data to settle. Additionally, the daily summary update command runs a reconciliation step on the previous 2 days, matching character-imported entries against observer data that arrived late.',
+    'faq_q12' => 'Why does some moon ore show 0% tax?',
+    'faq_a12' => 'If you use the "Only Corp Moon Ore" tax selector, moon ore must have observer data (corporation_id) to be taxed. Character mining ESI data arrives without corporation_id — it only gets linked when corporation observer data arrives (up to 24h later). The daily reconciliation process matches these entries automatically. If you see 0% tax, wait for the next update-daily-summaries run or manually trigger it.',
 
     // Troubleshooting
     'troubleshooting_guide' => 'Troubleshooting Guide',
@@ -516,7 +523,8 @@ return [
     'schedule_6hours' => 'Every 6 hours',
     'schedule_daily' => 'Daily',
     'schedule_twice_daily' => 'Twice daily',
-    'schedule_monthly' => '1st of month',
+    'schedule_monthly' => '2nd of month',
     'schedule_twice_monthly' => '1st & 15th',
     'schedule_daily_smart' => 'Daily (smart)',
+    'schedule_manual' => 'Manual',
 ];

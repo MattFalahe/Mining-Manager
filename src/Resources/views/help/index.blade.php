@@ -808,6 +808,11 @@
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.daily_summaries_settings') }}
                     </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-sync-alt"></i>
+                        <strong>{{ trans('mining-manager::help.daily_summaries_reconciliation_title') }}</strong> {{ trans('mining-manager::help.daily_summaries_reconciliation_desc') }}
+                    </div>
                 </div>
 
                 {{-- Tax Rates & Categories --}}
@@ -875,6 +880,7 @@
                     <ul>
                         <li><strong>{{ trans('mining-manager::help.calc_calculate') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_recalculate') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_assign_codes') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_regenerate_codes') }}</strong></li>
                     </ul>
                 </div>
@@ -1226,6 +1232,13 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:import-character-mining</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
+                                    <td>Import personal mining data from SeAT's ESI cache (belt, anomaly, ice, gas mining). Safety net for non-observer mining — the Queue::after hook handles real-time import, this catches any missed entries.<br>
+                                        <small class="text-muted">Options: <code>--character_id=</code> specific character, <code>--days=30</code> lookback period, <code>--force</code> re-import existing entries</small>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:cache-prices</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
                                     <td>Cache market price data from your configured price provider for all ore types.<br>
@@ -1242,7 +1255,7 @@
                                 <tr>
                                     <td><code>mining-manager:update-daily-summaries</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 1:30 AM</td>
-                                    <td>Safety net: catches non-observer mining (belt mining) and late ESI data. Generates/updates daily summaries with per-ore tax breakdown. Runs before tax calculation to ensure complete data.<br>
+                                    <td>Safety net: catches non-observer mining (belt mining) and late ESI data. Generates/updates daily summaries with per-ore tax breakdown. Also runs a <strong>reconciliation step</strong> on the previous 2 days — matching character-imported moon ore entries against late-arriving observer data (ESI 12-24h lag), removing duplicates and adjusting quantities.<br>
                                         <small class="text-muted">Options: <code>--days=2</code> days back, <code>--date=YYYY-MM-DD</code> specific date, <code>--month=YYYY-MM</code> entire month, <code>--today-only</code> fast mode, <code>--character_id=</code> specific character</small>
                                     </td>
                                 </tr>
@@ -1284,14 +1297,14 @@
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:15 AM</td>
-                                    <td>Calculate tax obligations by summing daily summaries. Creates MiningTax records per main character for the previous completed period. <strong>Smart scheduling:</strong> only acts on period boundary days (1st for monthly, 1st/15th for biweekly, Mondays for weekly). Skips silently on other days.<br>
+                                    <td>Calculate tax obligations by summing daily summaries. Creates MiningTax records per main character for the previous completed period. <strong>Smart scheduling:</strong> only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly, Tuesdays for weekly). The 1-day shift allows late-arriving observer data to settle before calculating. Skips silently on other days.<br>
                                         <small class="text-muted">Options: <code>--month=YYYY-MM</code> legacy monthly, <code>--period-start=YYYY-MM-DD</code> specific period, <code>--period-type=</code> override (monthly|biweekly|weekly), <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> overwrite existing, <code>--force</code> run even if not a boundary day</small>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-monthly-stats</code></td>
                                     <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span> 3:00 AM + <span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
-                                    <td>Pre-calculate and store dashboard statistics. Full run on the 1st of each month at 3:00 AM for the closed month. Fast <code>--current-month</code> mode runs every 30 minutes to keep live dashboard data current.<br>
+                                    <td>Pre-calculate and store dashboard statistics. Full run on the 2nd of each month at 3:00 AM for the closed month. Fast <code>--current-month</code> mode runs every 30 minutes to keep live dashboard data current.<br>
                                         <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--user_id=</code> specific user, <code>--recalculate</code> recalculate existing, <code>--current-month</code> fast mode, <code>--all-history</code> all historical months</small>
                                     </td>
                                 </tr>
@@ -1338,9 +1351,16 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:generate-tax-codes</code></td>
+                                    <td><span class="badge badge-warning">{{ trans('mining-manager::help.schedule_manual') }}</span></td>
+                                    <td>Generate payment codes for unpaid tax records without recalculating taxes. Use this to assign codes after running calculate-taxes, or via the "Assign Codes" button in the UI.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month (defaults to previous month)</small>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:finalize-month</code></td>
                                     <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span> 2:00 AM</td>
-                                    <td>Lock previous month's daily summaries as final so they won't be regenerated. Runs on the 1st at 2:00 AM, before tax calculation at 2:15 AM. Refuses to finalize the current or future months.<br>
+                                    <td>Lock previous month's daily summaries as final so they won't be regenerated. Runs on the 2nd at 2:00 AM to allow late-arriving observer data (12-24h ESI lag) to settle. Refuses to finalize the current or future months.<br>
                                         <small class="text-muted">Arguments: <code>{month?}</code> optional month in YYYY-MM format (defaults to previous month)</small>
                                     </td>
                                 </tr>
@@ -1442,6 +1462,14 @@
                                     <td>Reprocess all mining data, recalculating prices and taxes</td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:generate-tax-codes --month=2026-03</code></td>
+                                    <td>Generate payment codes for March 2026 unpaid taxes (without recalculation)</td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:import-character-mining --days=7</code></td>
+                                    <td>Import character mining data from ESI cache for the last 7 days</td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:detect-theft --days=30 --notify</code></td>
                                     <td>Run theft detection for last 30 days and send notifications</td>
                                 </tr>
@@ -1529,7 +1557,7 @@
                         {{ trans('mining-manager::help.frequently_asked') }}
                     </h3>
 
-                    @foreach(range(1, 10) as $i)
+                    @foreach(range(1, 12) as $i)
                     <div class="faq-item">
                         <div class="faq-question">
                             <strong>{{ trans("mining-manager::help.faq_q{$i}") }}</strong>
