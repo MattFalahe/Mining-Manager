@@ -134,7 +134,9 @@ class NotificationService
             'amount' => $amount,
             'due_date' => $dueDate->format('Y-m-d'),
             'days_remaining' => $daysRemaining,
-            'formatted_amount' => number_format($amount, 2) . ' ISK'
+            'formatted_amount' => number_format($amount, 2) . ' ISK',
+            'tax_page_url' => $this->getTaxPageUrl(),
+            'is_personal' => true,
         ];
 
         return $this->send(self::TYPE_TAX_REMINDER, [$characterId], $data);
@@ -152,7 +154,9 @@ class NotificationService
             'invoice_id' => $invoice->id,
             'amount' => $invoice->amount,
             'due_date' => $invoice->due_date->format('Y-m-d'),
-            'formatted_amount' => number_format($invoice->amount, 2) . ' ISK'
+            'formatted_amount' => number_format($invoice->amount, 2) . ' ISK',
+            'tax_page_url' => $this->getTaxPageUrl(),
+            'is_personal' => true,
         ];
 
         return $this->send(self::TYPE_TAX_INVOICE, [$invoice->character_id], $data);
@@ -173,7 +177,9 @@ class NotificationService
             'amount' => $amount,
             'due_date' => $dueDate->format('Y-m-d'),
             'days_overdue' => $daysOverdue,
-            'formatted_amount' => number_format($amount, 2) . ' ISK'
+            'formatted_amount' => number_format($amount, 2) . ' ISK',
+            'tax_page_url' => $this->getTaxPageUrl(),
+            'is_personal' => true,
         ];
 
         return $this->send(self::TYPE_TAX_OVERDUE, [$characterId], $data);
@@ -669,8 +675,10 @@ class NotificationService
                     }
                 }
 
-                // Add role mention if configured on webhook
-                if ($webhook->discord_role_id) {
+                // Add role mention if configured — but skip for personal notifications
+                // (reminders/overdue/invoices already ping individual users)
+                $isPersonal = $data['is_personal'] ?? false;
+                if ($webhook->discord_role_id && !$isPersonal) {
                     $roleMention = $webhook->getDiscordRoleMention();
                     $message['content'] = ($message['content'] ?? '')
                         ? $roleMention . ' ' . ($message['content'] ?? '')
@@ -986,14 +994,16 @@ class NotificationService
                 ['title' => 'Due Date', 'value' => $data['due_date'] ?? 'See tax page', 'short' => true],
                 ['title' => 'How to Pay', 'value' => "Send ISK to {$data['corp_name']} → {$data['wallet_division']}. Include your tax code (starting with {$data['tax_code_prefix']}) in the reason field.", 'short' => false],
             ],
-            self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => [
+            self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => array_filter([
                 ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true],
-                ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true]
-            ],
-            self::TYPE_TAX_OVERDUE => [
+                ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
+                isset($data['tax_page_url']) ? ['title' => 'View & Pay', 'value' => '<' . $data['tax_page_url'] . '|Open Tax Page>', 'short' => false] : null,
+            ]),
+            self::TYPE_TAX_OVERDUE => array_filter([
                 ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true],
-                ['title' => 'Days Overdue', 'value' => $data['days_overdue'], 'short' => true]
-            ],
+                ['title' => 'Days Overdue', 'value' => $data['days_overdue'], 'short' => true],
+                isset($data['tax_page_url']) ? ['title' => 'View & Pay', 'value' => '<' . $data['tax_page_url'] . '|Open Tax Page>', 'short' => false] : null,
+            ]),
             self::TYPE_EVENT_CREATED => [
                 ['title' => 'Event', 'value' => $data['event_name'], 'short' => true],
                 ['title' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'short' => true],
@@ -1035,14 +1045,16 @@ class NotificationService
                 ['name' => 'Payment Wallet', 'value' => $data['wallet_division'], 'inline' => true],
                 ['name' => '💰 How to Pay', 'value' => "1. Open your wallet → **Give Money**\n2. Send to **{$data['corp_name']}**\n3. Wallet: **{$data['wallet_division']}**\n4. Paste your **tax code** (`{$data['tax_code_prefix']}XXXX`) in the reason\n5. Amount shown on your tax page", 'inline' => false],
             ],
-            self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => [
+            self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => array_filter([
                 ['name' => 'Amount', 'value' => $data['formatted_amount'], 'inline' => true],
-                ['name' => 'Due Date', 'value' => $data['due_date'], 'inline' => true]
-            ],
-            self::TYPE_TAX_OVERDUE => [
+                ['name' => 'Due Date', 'value' => $data['due_date'], 'inline' => true],
+                isset($data['tax_page_url']) ? ['name' => '🔗 View & Pay', 'value' => '[Open Tax Page](' . $data['tax_page_url'] . ')', 'inline' => false] : null,
+            ]),
+            self::TYPE_TAX_OVERDUE => array_filter([
                 ['name' => 'Amount', 'value' => $data['formatted_amount'], 'inline' => true],
-                ['name' => 'Days Overdue', 'value' => (string)$data['days_overdue'], 'inline' => true]
-            ],
+                ['name' => 'Days Overdue', 'value' => (string)$data['days_overdue'], 'inline' => true],
+                isset($data['tax_page_url']) ? ['name' => '🔗 View & Pay', 'value' => '[Open Tax Page](' . $data['tax_page_url'] . ')', 'inline' => false] : null,
+            ]),
             self::TYPE_EVENT_CREATED => [
                 ['name' => 'Event', 'value' => $data['event_name'], 'inline' => false],
                 ['name' => 'Type', 'value' => $data['event_type'] ?? 'Mining Op', 'inline' => true],
@@ -1085,6 +1097,19 @@ class NotificationService
      *
      * @return string
      */
+    /**
+     * Get the tax page URL from settings or generate from current app URL.
+     */
+    protected function getTaxPageUrl(): string
+    {
+        $customUrl = $this->settings->getNotificationSettings()['discord_ping_tax_page_url'] ?? '';
+        if (!empty($customUrl)) {
+            return rtrim($customUrl, '/');
+        }
+
+        return rtrim(config('app.url', ''), '/') . '/mining-manager/tax';
+    }
+
     protected function getCorpName(): string
     {
         // Use moon owner corporation (the structure-owning corp), not the tax context corporation
