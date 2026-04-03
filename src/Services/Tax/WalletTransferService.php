@@ -189,7 +189,7 @@ class WalletTransferService
         $tax->update([
             'amount_paid' => $newPaid,
             'paid_at' => $transaction->date,
-            'status' => $newPaid >= $tax->amount_owed ? 'paid' : 'partial',
+            'status' => ($tax->amount_owed - $newPaid) < 1 ? 'paid' : 'partial',
             'transaction_id' => $transaction->id,
         ]);
 

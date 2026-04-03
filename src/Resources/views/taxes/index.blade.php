@@ -317,6 +317,7 @@
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.due_date') }}</th>
+                                    <th>Payment Date</th>
                                     <th>{{ trans('mining-manager::taxes.tax_code') }}</th>
                                     <th>Triggered By</th>
                                     <th class="text-center">{{ trans('mining-manager::taxes.actions') }}</th>
@@ -418,6 +419,13 @@
                                         @endif
                                     </td>
                                     <td>
+                                        @if($tax->paid_at)
+                                            {{ \Carbon\Carbon::parse($tax->paid_at)->format('Y-m-d H:i') }}
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>
                                         @php
                                             $taxCode = $tax->taxCodes->where('status', 'active')->first()
                                                      ?? $tax->taxCodes->where('status', 'used')->first();
@@ -487,7 +495,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ ($isAdmin ?? false) ? 10 : 9 }}" class="text-center text-muted">
+                                    <td colspan="{{ ($isAdmin ?? false) ? 11 : 10 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_taxes_found') }}</p>
                                     </td>
@@ -886,7 +894,7 @@ $(document).ready(function() {
         $('.grouped-header-row').remove();
 
         var tbody = $('#taxTable tbody');
-        var colSpan = {{ ($isAdmin ?? false) ? 9 : 8 }};
+        var colSpan = {{ ($isAdmin ?? false) ? 11 : 10 }};
 
         // Sort groups by totalOwed descending
         var sortedKeys = Object.keys(groups).sort(function(a, b) {

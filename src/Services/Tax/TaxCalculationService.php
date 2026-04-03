@@ -278,7 +278,7 @@ class TaxCalculationService
                 if ($existingTax) {
                     // Update existing
                     $existingTax->update([
-                        'amount_owed' => $combinedTaxAmount,
+                        'amount_owed' => round($combinedTaxAmount),
                         'calculated_at' => Carbon::now(),
                         'notes' => $notes,
                         'triggered_by' => $triggeredBy ?? $existingTax->triggered_by,
@@ -296,7 +296,7 @@ class TaxCalculationService
                         'period_type' => $periodType,
                         'period_start' => $startDate->format('Y-m-d'),
                         'period_end' => $endDate->format('Y-m-d'),
-                        'amount_owed' => $combinedTaxAmount,
+                        'amount_owed' => round($combinedTaxAmount),
                         'amount_paid' => 0,
                         'status' => 'unpaid',
                         'calculated_at' => Carbon::now(),
@@ -956,7 +956,7 @@ class TaxCalculationService
 
         if ($tax) {
             $tax->update([
-                'amount_owed' => $taxAmount,
+                'amount_owed' => round($taxAmount),
                 'calculated_at' => Carbon::now(),
             ]);
         }
@@ -1084,7 +1084,7 @@ class TaxCalculationService
         try {
             $tax = MiningTax::findOrFail($taxId);
 
-            $newAmount = max(0, $tax->amount_owed + $adjustmentAmount);
+            $newAmount = round(max(0, $tax->amount_owed + $adjustmentAmount));
 
             $tax->update([
                 'amount_owed' => $newAmount,
