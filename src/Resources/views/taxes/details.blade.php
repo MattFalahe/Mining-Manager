@@ -5,6 +5,7 @@
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+@include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
@@ -86,6 +87,9 @@
                                 @endphp
                                 @if($activeTaxCode)
                                     <code>{{ $activeTaxCode->getFullCode() }}</code>
+                                    <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ $activeTaxCode->getFullCode() }}', 'Tax code')" data-toggle="tooltip" title="Copy tax code">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
                                 @else
                                     <span class="text-muted">-</span>
                                 @endif
@@ -146,7 +150,14 @@
                                 <span class="info-box-icon"><i class="fas fa-receipt"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.amount_owed') }}</span>
-                                    <span class="info-box-number">{{ number_format($tax->amount_owed, 0) }}</span>
+                                    <span class="info-box-number">
+                                        {{ number_format($tax->amount_owed, 0) }}
+                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
+                                        <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @endif
+                                    </span>
                                     <small>ISK</small>
                                 </div>
                             </div>
@@ -189,7 +200,7 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-dark table-striped">
+                        <table class="table table-dark table-striped" id="breakdownTable">
                             <thead>
                                 <tr>
                                     @if(($taxCalculationMethod ?? 'individually') === 'accumulated')
@@ -218,9 +229,9 @@
                                         @endif
                                     </td>
                                     <td><small class="text-muted">{{ ucfirst(str_replace('_', ' ', $ore['category'] ?? 'ore')) }}</small></td>
-                                    <td class="text-right">{{ number_format($ore['quantity'] ?? 0, 0) }}</td>
-                                    <td class="text-right">{{ number_format($ore['total_value'] ?? 0, 0) }} ISK</td>
-                                    <td class="text-right">
+                                    <td class="text-right" data-order="{{ $ore['quantity'] ?? 0 }}">{{ number_format($ore['quantity'] ?? 0, 0) }}</td>
+                                    <td class="text-right" data-order="{{ $ore['total_value'] ?? 0 }}">{{ number_format($ore['total_value'] ?? 0, 0) }} ISK</td>
+                                    <td class="text-right" data-order="{{ $ore['tax_rate'] ?? 0 }}">
                                         {{ number_format($ore['tax_rate'] ?? 0, 1) }}%
                                         @if(($ore['event_modifier'] ?? 0) != 0)
                                             <br><small class="text-{{ $ore['event_modifier'] < 0 ? 'success' : 'danger' }}">
@@ -228,7 +239,7 @@
                                             </small>
                                         @endif
                                     </td>
-                                    <td class="text-right">{{ number_format($ore['tax_amount'] ?? 0, 0) }} ISK</td>
+                                    <td class="text-right" data-order="{{ $ore['tax_amount'] ?? 0 }}">{{ number_format($ore['tax_amount'] ?? 0, 0) }} ISK</td>
                                 </tr>
                                 @empty
                                 <tr>
@@ -263,6 +274,46 @@
 </div>{{-- /.card-tabs --}}
 
 </div>{{-- /.mining-manager-wrapper --}}
+
+@push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
+<script>
+function copyToClipboard(text, label) {
+    navigator.clipboard.writeText(text).then(function() {
+        toastr.success((label || 'Value') + ' copied: ' + text);
+    }, function(err) {
+        toastr.error('Failed to copy to clipboard');
+    });
+}
+
+$(document).ready(function() {
+    $('[data-toggle="tooltip"]').tooltip();
+
+    if ($('#breakdownTable tbody tr').length > 0 && !$('#breakdownTable tbody tr td[colspan]').length) {
+        $('#breakdownTable').DataTable({
+            paging: true,
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+            ordering: true,
+            order: [[{{ ($taxCalculationMethod ?? 'individually') === 'accumulated' ? 5 : 4 }}, 'desc']],
+            info: true,
+            searching: true,
+            autoWidth: false,
+            language: {
+                search: "Filter:",
+                lengthMenu: "Show _MENU_ entries",
+                info: "Showing _START_ to _END_ of _TOTAL_ ore entries",
+                emptyTable: "No mining data available"
+            },
+            columnDefs: [
+                { targets: [{{ ($taxCalculationMethod ?? 'individually') === 'accumulated' ? '3,4,5,6' : '2,3,4,5' }}], type: 'num-fmt' }
+            ],
+            dom: '<"row"<"col-sm-6"l><"col-sm-6"f>>rtip'
+        });
+    }
+});
+</script>
+@endpush
 
 @if(auth()->user()->can('mining-manager.admin'))
 {{-- Mark as Paid Modal --}}
