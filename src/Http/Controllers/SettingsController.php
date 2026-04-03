@@ -1054,21 +1054,21 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
-            // Convert checkboxes to booleans
-            $data['notify_theft_detected'] = $request->has('notify_theft_detected');
-            $data['notify_critical_theft'] = $request->has('notify_critical_theft');
-            $data['notify_active_theft'] = $request->has('notify_active_theft');
-            $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
-            $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
-            $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
-            $data['notify_event_created'] = $request->has('notify_event_created');
-            $data['notify_event_started'] = $request->has('notify_event_started');
-            $data['notify_event_completed'] = $request->has('notify_event_completed');
-            $data['notify_tax_generated'] = $request->has('notify_tax_generated');
-            $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
-            $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
-            $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
-            $data['notify_report_generated'] = $request->has('notify_report_generated');
+            // Convert checkboxes to booleans (boolean() checks actual value, not just key existence)
+            $data['notify_theft_detected'] = $request->boolean('notify_theft_detected');
+            $data['notify_critical_theft'] = $request->boolean('notify_critical_theft');
+            $data['notify_active_theft'] = $request->boolean('notify_active_theft');
+            $data['notify_incident_resolved'] = $request->boolean('notify_incident_resolved');
+            $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
+            $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
+            $data['notify_event_created'] = $request->boolean('notify_event_created');
+            $data['notify_event_started'] = $request->boolean('notify_event_started');
+            $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
+            $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
+            $data['notify_tax_invoice'] = $request->boolean('notify_tax_invoice');
+            $data['notify_tax_overdue'] = $request->boolean('notify_tax_overdue');
+            $data['notify_report_generated'] = $request->boolean('notify_report_generated');
 
             $webhook = \MiningManager\Models\WebhookConfiguration::create($data);
 
@@ -1132,21 +1132,21 @@ class SettingsController extends Controller
 
             $data = $validator->validated();
 
-            // Convert checkboxes to booleans
-            $data['notify_theft_detected'] = $request->has('notify_theft_detected');
-            $data['notify_critical_theft'] = $request->has('notify_critical_theft');
-            $data['notify_active_theft'] = $request->has('notify_active_theft');
-            $data['notify_incident_resolved'] = $request->has('notify_incident_resolved');
-            $data['notify_moon_arrival'] = $request->has('notify_moon_arrival');
-            $data['notify_jackpot_detected'] = $request->has('notify_jackpot_detected');
-            $data['notify_event_created'] = $request->has('notify_event_created');
-            $data['notify_event_started'] = $request->has('notify_event_started');
-            $data['notify_event_completed'] = $request->has('notify_event_completed');
-            $data['notify_tax_generated'] = $request->has('notify_tax_generated');
-            $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
-            $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
-            $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
-            $data['notify_report_generated'] = $request->has('notify_report_generated');
+            // Convert checkboxes to booleans (boolean() checks actual value, not just key existence)
+            $data['notify_theft_detected'] = $request->boolean('notify_theft_detected');
+            $data['notify_critical_theft'] = $request->boolean('notify_critical_theft');
+            $data['notify_active_theft'] = $request->boolean('notify_active_theft');
+            $data['notify_incident_resolved'] = $request->boolean('notify_incident_resolved');
+            $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
+            $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
+            $data['notify_event_created'] = $request->boolean('notify_event_created');
+            $data['notify_event_started'] = $request->boolean('notify_event_started');
+            $data['notify_event_completed'] = $request->boolean('notify_event_completed');
+            $data['notify_tax_generated'] = $request->boolean('notify_tax_generated');
+            $data['notify_tax_reminder'] = $request->boolean('notify_tax_reminder');
+            $data['notify_tax_invoice'] = $request->boolean('notify_tax_invoice');
+            $data['notify_tax_overdue'] = $request->boolean('notify_tax_overdue');
+            $data['notify_report_generated'] = $request->boolean('notify_report_generated');
 
             $webhook->update($data);
 
