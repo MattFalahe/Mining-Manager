@@ -248,6 +248,7 @@ $(document).ready(function() {
         $('#statOreValue').text(formatIsk(data.summary.total_ore_value));
         $('#statMineralValue').text(formatIsk(data.summary.total_mineral_value));
         $('#statTotalItems').text(formatNumber(data.summary.total_items));
+        console.log('Server used yield:', data.summary.yield_used, '% → mineral value:', data.summary.total_mineral_value);
         $('#summaryStats').show();
 
         // Render minerals table
@@ -278,8 +279,9 @@ $(document).ready(function() {
             } else {
                 mineralSummary = '<span class="text-muted">No reprocessing data</span>';
             }
+            var reprocessWarning = (!o.has_reprocessing_data) ? ' <span class="badge badge-danger" title="No reprocessing data found in SDE for this ore type"><i class="fas fa-exclamation-triangle"></i> No SDE data</span>' : '';
             oresHtml += '<tr>' +
-                '<td><img src="https://images.evetech.net/types/' + o.type_id + '/icon?size=32" class="img-circle" style="width:24px;height:24px;margin-right:8px;">' + o.type_name + '</td>' +
+                '<td><img src="https://images.evetech.net/types/' + o.type_id + '/icon?size=32" class="img-circle" style="width:24px;height:24px;margin-right:8px;">' + o.type_name + reprocessWarning + '</td>' +
                 '<td class="text-right"><strong>' + formatNumber(o.quantity) + '</strong></td>' +
                 '<td class="text-center">' + getCategoryBadge(o.category) + '</td>' +
                 '<td><small>' + mineralSummary + '</small></td>' +
@@ -301,6 +303,7 @@ $(document).ready(function() {
         }
 
         var yieldPercent = parseFloat($('#yieldPercent').val());
+        console.log('Yield input value:', $('#yieldPercent').val(), '→ parsed:', yieldPercent);
         if (isNaN(yieldPercent) || yieldPercent < 50 || yieldPercent > 100) {
             yieldPercent = 72.36;
             $('#yieldPercent').val(yieldPercent);

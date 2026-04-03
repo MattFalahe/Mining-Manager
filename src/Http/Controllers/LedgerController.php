@@ -1530,11 +1530,13 @@ class LedgerController extends Controller
             // Get reprocessing minerals
             $minerals = ReprocessingRegistry::getMineralsWithDetails($typeId);
             $oreMineralOutput = [];
+            $hasReprocessingData = !empty($minerals);
 
             if ($minerals) {
-                // Both compressed and uncompressed ores: 100 units = 1 batch in SDE
-                // SDE invTypeMaterials stores yield per batch of 100 for all ore types
-                $batchCount = floor($quantity / 100);
+                // Compressed ores: 1 unit = 1 batch (SDE stores full yield per compressed unit)
+                // Regular ores: 100 units = 1 batch
+                $batchSize = $isCompressed ? 1 : 100;
+                $batchCount = floor($quantity / $batchSize);
                 foreach ($minerals as $mineral) {
                     $mineralQty = floor($mineral['quantity'] * $yieldFraction * $batchCount);
                     if ($mineralQty > 0) {
@@ -1555,6 +1557,7 @@ class LedgerController extends Controller
                 'category' => $category,
                 'ore_value' => $oreValue,
                 'minerals' => $oreMineralOutput,
+                'has_reprocessing_data' => $hasReprocessingData,
             ];
         }
 
@@ -1595,6 +1598,7 @@ class LedgerController extends Controller
                 'total_ore_value' => $totalOreValue,
                 'total_mineral_value' => $totalMineralValue,
                 'total_items' => $totalItems,
+                'yield_used' => $yieldPercent,
             ],
             'minerals' => $mineralsOutput,
             'ores' => $oreResults,
