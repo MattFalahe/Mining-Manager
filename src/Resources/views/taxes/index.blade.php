@@ -317,6 +317,7 @@
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.due_date') }}</th>
+                                    <th>{{ trans('mining-manager::taxes.tax_code') }}</th>
                                     <th>Triggered By</th>
                                     <th class="text-center">{{ trans('mining-manager::taxes.actions') }}</th>
                                 </tr>
@@ -366,6 +367,11 @@
                                     <td class="text-right">
                                         <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
+                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
+                                        <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @endif
                                     </td>
                                     <td class="text-right">
                                         <strong>{{ number_format($tax->amount_paid, 0) }}</strong>
@@ -407,6 +413,20 @@
                                                     <br><small>({{ $dueDate->diffForHumans() }})</small>
                                                 @endif
                                             </span>
+                                        @else
+                                            <span class="text-muted">-</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @php
+                                            $taxCode = $tax->taxCodes->where('status', 'active')->first()
+                                                     ?? $tax->taxCodes->where('status', 'used')->first();
+                                        @endphp
+                                        @if($taxCode)
+                                            <code>{{ $taxCode->getFullCode() }}</code>
+                                            <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ $taxCode->getFullCode() }}', 'Tax code')" data-toggle="tooltip" title="Copy tax code">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
                                         @else
                                             <span class="text-muted">-</span>
                                         @endif
@@ -555,6 +575,15 @@
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
+// Copy to clipboard helper
+function copyToClipboard(text, label) {
+    navigator.clipboard.writeText(text).then(function() {
+        toastr.success((label || 'Value') + ' copied: ' + text);
+    }, function(err) {
+        toastr.error('Failed to copy to clipboard');
+    });
+}
+
 $(document).ready(function() {
     // Initialize tooltips
     $('[data-toggle="tooltip"]').tooltip();

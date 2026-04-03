@@ -226,7 +226,8 @@ class TaxController extends Controller
             $query->whereIn('character_id', $taxCharacterIds);
         }
 
-        $taxes = $query->orderBy('month', 'desc')
+        $taxes = $query->with('taxCodes')
+            ->orderBy('month', 'desc')
             ->orderBy('character_id')
             ->get();
 
