@@ -187,6 +187,9 @@
                         </button>
                         @endif
                         @if($isAdmin ?? false)
+                        <button type="button" class="btn btn-sm btn-warning" id="remindAllUnpaid" data-toggle="tooltip" title="Send reminders to all unpaid/overdue taxes">
+                            <i class="fas fa-bullhorn"></i> Remind All Unpaid
+                        </button>
                         <button type="button" class="btn btn-sm btn-success" id="sendReminders" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.send_reminders_to_selected') }}">
                             <i class="fas fa-envelope"></i> {{ trans('mining-manager::taxes.send_reminders') }}
                         </button>
@@ -743,6 +746,46 @@ $(document).ready(function() {
     });
 
     // Bulk send reminders
+    // Remind All Unpaid — sends reminders for all unpaid/overdue taxes without checkbox selection
+    $('#remindAllUnpaid').on('click', function() {
+        // Collect all tax IDs with unpaid/overdue/partial status
+        var unpaidIds = [];
+        $('.tax-row').each(function() {
+            var status = $(this).data('status');
+            if (status === 'unpaid' || status === 'overdue' || status === 'partial') {
+                unpaidIds.push($(this).data('tax-id'));
+            }
+        });
+
+        if (unpaidIds.length === 0) {
+            toastr.info('No unpaid taxes to remind about.');
+            return;
+        }
+
+        if (confirm('Send payment reminders for ' + unpaidIds.length + ' unpaid tax entries?')) {
+            var btn = $(this);
+            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Sending...');
+
+            $.ajax({
+                url: '{{ route("mining-manager.taxes.bulk-send-reminders") }}',
+                method: 'POST',
+                data: { tax_ids: unpaidIds },
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                },
+                success: function(response) {
+                    toastr.success(response.message || 'Reminders sent!');
+                },
+                error: function(xhr) {
+                    toastr.error(xhr.responseJSON?.message || 'Failed to send reminders');
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html('<i class="fas fa-bullhorn"></i> Remind All Unpaid');
+                }
+            });
+        }
+    });
+
     $('#bulkSendReminders, #sendReminders').on('click', function() {
         const selectedIds = $('.tax-checkbox:checked').map(function() {
             return $(this).val();
