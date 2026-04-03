@@ -372,6 +372,14 @@ class WalletTransferService
                 $query->where('corporation_id', $corporationId);
             }
 
+            // Exclude transactions already applied to any tax record
+            $appliedTransactionIds = MiningTax::whereNotNull('transaction_id')
+                ->pluck('transaction_id')
+                ->toArray();
+            if (!empty($appliedTransactionIds)) {
+                $query->whereNotIn('id', $appliedTransactionIds);
+            }
+
             // Get the most recent matching transaction (tax code match is primary identifier)
             $transaction = $query->orderBy('date', 'desc')->first();
 
@@ -456,9 +464,8 @@ class WalletTransferService
         $failed = 0;
         $errors = [];
 
-        // Get all unpaid taxes (exclude already-paid to prevent double-processing)
-        $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue'])
-            ->whereNull('transaction_id')
+        // Get all unpaid/overdue/partial taxes
+        $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
             ->get();
 
         foreach ($unpaidTaxes as $tax) {

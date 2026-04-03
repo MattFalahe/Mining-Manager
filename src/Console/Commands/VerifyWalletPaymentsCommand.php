@@ -123,6 +123,7 @@ class VerifyWalletPaymentsCommand extends Command
         $matched = 0;
         $unmatched = 0;
         $errors = 0;
+        $processedTransactionIds = [];
 
         foreach ($transactions as $transaction) {
             try {
@@ -146,11 +147,6 @@ class VerifyWalletPaymentsCommand extends Command
                     continue;
                 }
 
-                // Skip if this tax code was already used (payment already applied)
-                if ($taxCodeRecord->status === 'used') {
-                    continue;
-                }
-
                 // Find associated tax record
                 $tax = MiningTax::find($taxCodeRecord->mining_tax_id);
 
@@ -165,8 +161,16 @@ class VerifyWalletPaymentsCommand extends Command
                     continue;
                 }
 
-                // Skip if this transaction was already applied to this tax
+                // Skip if this exact transaction was already applied
+                // Check both the tax record and the processed set from this run
+                if (in_array($transaction->id, $processedTransactionIds)) {
+                    continue;
+                }
                 if ($tax->transaction_id == $transaction->id) {
+                    continue;
+                }
+                // Check if any other tax record already has this transaction
+                if (MiningTax::where('transaction_id', $transaction->id)->exists()) {
                     continue;
                 }
 
@@ -182,11 +186,8 @@ class VerifyWalletPaymentsCommand extends Command
                 $divLabel = $transaction->division == 1 ? 'Master Wallet' : "Division {$transaction->division}";
 
                 if ($autoMatch) {
-                    // Set amount_paid to the transaction amount (not additive for single payments)
-                    // For partial payments, add to existing amount_paid
-                    $newPaid = ($tax->amount_paid > 0 && $tax->transaction_id !== null)
-                        ? $tax->amount_paid + $amount
-                        : $amount;
+                    // Always add to existing amount_paid (supports partial payments)
+                    $newPaid = ($tax->amount_paid ?? 0) + $amount;
 
                     $tax->update([
                         'amount_paid' => $newPaid,
@@ -195,12 +196,16 @@ class VerifyWalletPaymentsCommand extends Command
                         'transaction_id' => $transaction->id,
                     ]);
 
-                    // Mark tax code as used
-                    $taxCodeRecord->update([
-                        'used_at' => Carbon::now(),
-                        'transaction_id' => $transaction->id,
-                        'status' => 'used',
-                    ]);
+                    // Only mark tax code as used once fully paid
+                    if (($tax->amount_owed - $newPaid) < 1) {
+                        $taxCodeRecord->update([
+                            'used_at' => Carbon::now(),
+                            'transaction_id' => $transaction->id,
+                            'status' => 'used',
+                        ]);
+                    }
+
+                    $processedTransactionIds[] = $transaction->id;
 
                     $this->line("Matched payment for character {$transaction->first_party_id}: " .
                                number_format($amount, 2) . " ISK [{$divLabel}]");
