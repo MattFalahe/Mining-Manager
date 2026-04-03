@@ -723,9 +723,12 @@ class TaxController extends Controller
             ]);
         }
 
-        // Get user's character IDs for scoping (non-admin/non-director users)
+        // Admins and directors always see all payments on the wallet page
+        $canSeeAll = $isAdmin || $isDirector;
+
+        // Get user's character IDs for scoping (member-only users)
         $userCharacterIds = [];
-        if (!$viewAll) {
+        if (!$canSeeAll) {
             $userCharacterIds = auth()->user()->characters->pluck('character_id')->toArray();
         }
 
@@ -736,7 +739,7 @@ class TaxController extends Controller
         $unmatchedDonations = $this->walletService->getUnmatchedDonations($corporationId, $days);
 
         // Scope transactions for regular members: only show their own transfers
-        if (!$viewAll && !empty($userCharacterIds)) {
+        if (!$canSeeAll && !empty($userCharacterIds)) {
             $donations = $donations->filter(function($transaction) use ($userCharacterIds) {
                 return in_array($transaction->first_party_id ?? $transaction->character_id ?? 0, $userCharacterIds);
             });
@@ -747,7 +750,7 @@ class TaxController extends Controller
 
         // Calculate summary statistics (scoped for regular members)
         $statsBaseQuery = MiningTax::query();
-        if (!$viewAll && !empty($userCharacterIds)) {
+        if (!$canSeeAll && !empty($userCharacterIds)) {
             $mainCharId = auth()->user()->main_character_id;
             $taxCharIds = $mainCharId ? [$mainCharId] : $userCharacterIds;
             $statsBaseQuery->whereIn('character_id', $taxCharIds);
@@ -765,7 +768,7 @@ class TaxController extends Controller
         $stats = [
             'pending' => $pendingCount,
             'verified' => $verifiedCount,
-            'mismatched' => $viewAll ? $unmatchedDonations->count() : 0,
+            'mismatched' => $canSeeAll ? $unmatchedDonations->count() : 0,
             'total_amount' => $totalVerifiedIsk,
         ];
 
