@@ -98,7 +98,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             ],
             // Verify wallet payments - runs every 6 hours
             [
-                'command' => 'mining-manager:verify-payments',
+                'command' => 'mining-manager:verify-payments --auto-match',
                 'expression' => '0 */6 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,

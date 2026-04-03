@@ -372,31 +372,37 @@ class WalletTransferService
                 $query->where('corporation_id', $corporationId);
             }
 
-            // Look for transactions around the expected amount
-            $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
-            $query->whereBetween('amount', [
-                $taxRecord->amount_owed - $tolerance,
-                $taxRecord->amount_owed + $tolerance
-            ]);
-
-            // Get the most recent matching transaction
+            // Get the most recent matching transaction (tax code match is primary identifier)
             $transaction = $query->orderBy('date', 'desc')->first();
 
             if (!$transaction) {
                 return null;
             }
 
+            // Check amount tolerance — warn but don't block if code matches
+            $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
+            $amountDiff = abs(abs($transaction->amount) - $taxRecord->amount_owed);
+            $amountMismatch = $amountDiff > $tolerance;
+
+            if ($amountMismatch) {
+                Log::warning("WalletTransferService: Amount mismatch for tax {$taxRecord->id} — expected " .
+                    number_format($taxRecord->amount_owed, 2) . ", got " .
+                    number_format(abs($transaction->amount), 2) . " (diff: " .
+                    number_format($amountDiff, 2) . " ISK)");
+            }
+
             return [
                 'id' => $transaction->id,
                 'corporation_id' => $transaction->corporation_id,
                 'date' => $transaction->date,
-                'amount' => $transaction->amount,
+                'amount' => abs($transaction->amount),
                 'first_party_id' => $transaction->first_party_id,
                 'second_party_id' => $transaction->second_party_id,
                 'reason' => $transaction->reason,
                 'description' => $transaction->description,
                 'ref_type' => $transaction->ref_type,
                 'tax_code' => $taxCode->code,
+                'amount_mismatch' => $amountMismatch,
             ];
 
         } catch (\Exception $e) {
@@ -539,7 +545,10 @@ class WalletTransferService
             // Try to extract any tax code pattern from reason or description
             $text = ($donation->reason ?? '') . ' ' . ($donation->description ?? '');
 
-            if (preg_match('/TAX-([A-Z0-9]{6})/i', $text, $matches)) {
+            $prefix = preg_quote(TaxCode::getPrefix(), '/');
+            $length = TaxCode::getCodeLength();
+
+            if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/i', $text, $matches)) {
                 $code = strtoupper($matches[1]);
 
                 // Check if this code exists in our database
