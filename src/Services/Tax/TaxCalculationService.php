@@ -899,7 +899,10 @@ class TaxCalculationService
     {
         $exemptions = $this->settingsService->getExemptions();
         $gracePeriod = $exemptions['grace_period_days'];
-        $overdueDate = Carbon::now()->subDays($gracePeriod);
+        // Add ESI lag buffer (payment grace period hours) to allow wallet data to arrive
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $esiGraceHours = $paymentSettings['grace_period_hours'] ?? 24;
+        $overdueDate = Carbon::now()->subDays($gracePeriod)->subHours($esiGraceHours);
 
         $updated = MiningTax::where('status', 'unpaid')
             ->where(function ($q) use ($overdueDate) {

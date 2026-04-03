@@ -544,19 +544,26 @@ class WalletTransferService
 
             // Try to extract any tax code pattern from reason or description
             $text = ($donation->reason ?? '') . ' ' . ($donation->description ?? '');
-
-            $prefix = preg_quote(TaxCode::getPrefix(), '/');
             $length = TaxCode::getCodeLength();
 
-            if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/i', $text, $matches)) {
-                $code = strtoupper($matches[1]);
+            // Collect all known prefixes: current setting + any stored in DB
+            $prefixes = collect([TaxCode::getPrefix()]);
+            $storedPrefixes = TaxCode::select('prefix')->distinct()->whereNotNull('prefix')->pluck('prefix');
+            $prefixes = $prefixes->merge($storedPrefixes)->unique();
 
-                // Check if this code exists in our database
-                $taxCode = TaxCode::where('code', $code)->first();
+            foreach ($prefixes as $tryPrefix) {
+                $escapedPrefix = preg_quote($tryPrefix, '/');
+                if (preg_match('/' . $escapedPrefix . '([A-Z0-9]{' . $length . '})/i', $text, $matches)) {
+                    $code = strtoupper($matches[1]);
 
-                if ($taxCode) {
-                    $foundMatch = true;
-                    $matchedTaxId = $taxCode->mining_tax_id;
+                    // Check if this code exists in our database
+                    $taxCode = TaxCode::where('code', $code)->first();
+
+                    if ($taxCode) {
+                        $foundMatch = true;
+                        $matchedTaxId = $taxCode->mining_tax_id;
+                        break;
+                    }
                 }
             }
 

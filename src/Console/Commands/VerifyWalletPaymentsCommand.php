@@ -228,12 +228,18 @@ class VerifyWalletPaymentsCommand extends Command
             return null;
         }
 
-        // Use configured prefix and length from settings
-        $prefix = preg_quote(TaxCode::getPrefix(), '/');
         $length = TaxCode::getCodeLength();
 
-        if (preg_match('/' . $prefix . '([A-Z0-9]{' . $length . '})/', $text, $matches)) {
-            return strtoupper($matches[1]);
+        // Try all known prefixes: current setting + any stored in DB
+        $prefixes = collect([TaxCode::getPrefix()]);
+        $storedPrefixes = TaxCode::select('prefix')->distinct()->whereNotNull('prefix')->pluck('prefix');
+        $prefixes = $prefixes->merge($storedPrefixes)->unique();
+
+        foreach ($prefixes as $tryPrefix) {
+            $escapedPrefix = preg_quote($tryPrefix, '/');
+            if (preg_match('/' . $escapedPrefix . '([A-Z0-9]{' . $length . '})/', $text, $matches)) {
+                return strtoupper($matches[1]);
+            }
         }
 
         return null;

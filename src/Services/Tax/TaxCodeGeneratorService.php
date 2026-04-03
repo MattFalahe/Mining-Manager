@@ -59,6 +59,7 @@ class TaxCodeGeneratorService
             'mining_tax_id' => $tax->id,
             'character_id' => $tax->character_id,
             'code' => $code,
+            'prefix' => TaxCode::getPrefix(),
             'status' => 'active',
             'generated_at' => Carbon::now(),
             'expires_at' => Carbon::now()->addDays($expirationDays),

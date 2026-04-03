@@ -23,6 +23,7 @@ class TaxCode extends Model
         'mining_tax_id',
         'character_id',
         'code',
+        'prefix',
         'status',
         'generated_at',
         'expires_at',
@@ -123,7 +124,9 @@ class TaxCode extends Model
      */
     public function getFullCode()
     {
-        return self::getPrefix() . $this->code;
+        // Use stored prefix if available, otherwise fall back to current setting
+        $prefix = $this->prefix ?? self::getPrefix();
+        return $prefix . $this->code;
     }
 
     /**
