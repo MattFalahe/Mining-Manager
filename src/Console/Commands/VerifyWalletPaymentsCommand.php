@@ -21,7 +21,8 @@ class VerifyWalletPaymentsCommand extends Command
     protected $signature = 'mining-manager:verify-payments
                             {--days=7 : Number of days to check back}
                             {--character_id= : Verify payments for specific character}
-                            {--auto-match : Automatically match payments to taxes}';
+                            {--auto-match : Automatically match payments to taxes}
+                            {--reset-month= : Reset all payment data for a month (YYYY-MM) and re-match}';
 
     /**
      * The console command description.
@@ -69,6 +70,11 @@ class VerifyWalletPaymentsCommand extends Command
         if (!($features['verify_wallet_transactions'] ?? true)) {
             $this->info('Feature disabled in settings. Skipping.');
             return Command::SUCCESS;
+        }
+
+        // Handle --reset-month: clear payment data for a month, then re-match
+        if ($resetMonth = $this->option('reset-month')) {
+            return $this->handleResetMonth($resetMonth);
         }
 
         $this->info('Starting payment verification...');
@@ -265,5 +271,74 @@ class VerifyWalletPaymentsCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * Reset payment data for a specific month and re-match from wallet.
+     */
+    protected function handleResetMonth(string $monthStr): int
+    {
+        try {
+            $month = Carbon::parse($monthStr . '-01');
+        } catch (\Exception $e) {
+            $this->error("Invalid month format. Use YYYY-MM (e.g., 2026-03)");
+            return Command::FAILURE;
+        }
+
+        $monthLabel = $month->format('F Y');
+        $monthKey = $month->format('Y-m');
+
+        // Find all taxes for this month
+        $taxes = MiningTax::where('month', $month->format('Y-m-01'))
+            ->orWhere(function ($q) use ($month) {
+                $q->where('period_start', '>=', $month->startOfMonth()->format('Y-m-d'))
+                  ->where('period_start', '<=', $month->endOfMonth()->format('Y-m-d'));
+            })
+            ->get();
+
+        if ($taxes->isEmpty()) {
+            $this->warn("No tax records found for {$monthLabel}");
+            return Command::SUCCESS;
+        }
+
+        $this->info("Found {$taxes->count()} tax records for {$monthLabel}");
+        $this->info("Resetting payment data...");
+
+        $resetCount = 0;
+        foreach ($taxes as $tax) {
+            $wasChanged = $tax->amount_paid > 0 || $tax->status === 'paid' || $tax->status === 'partial';
+
+            $tax->update([
+                'amount_paid' => 0,
+                'paid_at' => null,
+                'status' => 'unpaid',
+                'transaction_id' => null,
+            ]);
+
+            // Reset associated tax codes back to active
+            TaxCode::where('mining_tax_id', $tax->id)
+                ->where('status', 'used')
+                ->update([
+                    'status' => 'active',
+                    'used_at' => null,
+                    'transaction_id' => null,
+                ]);
+
+            if ($wasChanged) {
+                $resetCount++;
+            }
+        }
+
+        $this->info("Reset {$resetCount} paid/partial records back to unpaid");
+        $this->info("Re-matching payments from wallet...");
+
+        // Now run auto-match with enough days to cover the month
+        $daysSinceMonthStart = Carbon::now()->diffInDays($month->startOfMonth()) + 5;
+        $this->call('mining-manager:verify-payments', [
+            '--days' => $daysSinceMonthStart,
+            '--auto-match' => true,
+        ]);
+
+        return Command::SUCCESS;
     }
 }
