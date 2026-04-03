@@ -235,37 +235,39 @@
 
 </div>
 
-{{-- EVENT DETAILS MODAL --}}
-<div class="modal fade" id="eventModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content bg-dark">
-            <div class="modal-header">
-                <h5 class="modal-title" id="eventModalTitle"></h5>
-                <button type="button" class="close text-light" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
-            </div>
-            <div class="modal-body" id="eventModalBody">
-                <div class="text-center">
-                    <i class="fas fa-spinner fa-spin fa-2x"></i>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <a href="#" id="eventViewButton" class="btn btn-info" target="_blank">
-                    <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
-                </a>
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                    {{ trans('mining-manager::events.close') }}
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/fullcalendar.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Inject modal at body level to avoid stacking context issues
+    var modalHtml = `
+    <div class="modal fade" id="eventModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content bg-dark">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="eventModalTitle"></h5>
+                    <button type="button" class="close text-light" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="eventModalBody">
+                    <div class="text-center">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a href="#" id="eventViewButton" class="btn btn-info" target="_blank">
+                        <i class="fas fa-eye"></i> {{ trans('mining-manager::events.view_details') }}
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                        {{ trans('mining-manager::events.close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    $('body').append(modalHtml);
+
     const calendarEl = document.getElementById('calendar');
     
     const calendar = new FullCalendar.Calendar(calendarEl, {

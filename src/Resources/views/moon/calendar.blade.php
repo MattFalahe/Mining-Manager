@@ -283,55 +283,57 @@
 
 </div>
 
-{{-- EXTRACTION DETAILS MODAL --}}
-<div class="modal fade" id="extractionModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-gem"></i>
-                    <span id="extractionModalTitle"></span>
-                </h5>
-                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-            </div>
-            <div class="modal-body" id="extractionModalBody">
-                <div class="mm-event-detail-row">
-                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.status') }}</div>
-                    <div class="mm-event-detail-value" id="eventStatus"></div>
-                </div>
-                <div class="mm-event-detail-row">
-                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.moon') }}</div>
-                    <div class="mm-event-detail-value" id="eventMoon"></div>
-                </div>
-                <div class="mm-event-detail-row">
-                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.chunk_arrival') }}</div>
-                    <div class="mm-event-detail-value" id="eventArrival"></div>
-                </div>
-                <div class="mm-event-detail-row" id="eventValueRow">
-                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.estimated_value') }}</div>
-                    <div class="mm-event-detail-value" id="eventValue"></div>
-                </div>
-                <div class="mm-event-detail-row" id="eventOreRow" style="display: none;">
-                    <div class="mm-event-detail-label">{{ trans('mining-manager::moons.ore_composition') }}</div>
-                    <div class="mm-event-detail-value" id="eventOres"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <a href="#" id="extractionViewButton" class="btn btn-info">
-                    <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.view_details') }}
-                </a>
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                    {{ trans('mining-manager::moons.close') }}
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/fullcalendar.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Inject modal at body level to avoid stacking context issues
+    var modalHtml = `
+    <div class="modal fade" id="extractionModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-gem"></i>
+                        <span id="extractionModalTitle"></span>
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body" id="extractionModalBody">
+                    <div class="mm-event-detail-row">
+                        <div class="mm-event-detail-label">{{ trans('mining-manager::moons.status') }}</div>
+                        <div class="mm-event-detail-value" id="eventStatus"></div>
+                    </div>
+                    <div class="mm-event-detail-row">
+                        <div class="mm-event-detail-label">{{ trans('mining-manager::moons.moon') }}</div>
+                        <div class="mm-event-detail-value" id="eventMoon"></div>
+                    </div>
+                    <div class="mm-event-detail-row">
+                        <div class="mm-event-detail-label">{{ trans('mining-manager::moons.chunk_arrival') }}</div>
+                        <div class="mm-event-detail-value" id="eventArrival"></div>
+                    </div>
+                    <div class="mm-event-detail-row" id="eventValueRow">
+                        <div class="mm-event-detail-label">{{ trans('mining-manager::moons.estimated_value') }}</div>
+                        <div class="mm-event-detail-value" id="eventValue"></div>
+                    </div>
+                    <div class="mm-event-detail-row" id="eventOreRow" style="display: none;">
+                        <div class="mm-event-detail-label">{{ trans('mining-manager::moons.ore_composition') }}</div>
+                        <div class="mm-event-detail-value" id="eventOres"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a href="#" id="extractionViewButton" class="btn btn-info">
+                        <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.view_details') }}
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                        {{ trans('mining-manager::moons.close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    $('body').append(modalHtml);
+
     const calendarEl = document.getElementById('calendar');
     const calendarData = @json($calendar);
 
