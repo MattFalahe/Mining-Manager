@@ -287,7 +287,7 @@ class SettingsController extends Controller
             'show_character_portraits' => 'nullable|boolean',
 
             // Payment Settings
-            'payment_match_tolerance' => 'nullable|integer|min:0|max:10000',
+            'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
         ]);
 

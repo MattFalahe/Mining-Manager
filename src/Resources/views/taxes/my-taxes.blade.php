@@ -146,6 +146,9 @@
                                             @endif
                                             <li class="mb-2">
                                                 Enter the amount: <strong>{{ number_format($currentTax->amount_owed, 0) }} ISK</strong>
+                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ round($currentTax->amount_owed) }}', 'ISK amount')">
+                                                    <i class="fas fa-copy"></i> Copy
+                                                </button>
                                             </li>
                                             <li class="mb-2">
                                                 In the <strong>"Reason"</strong> field, paste your tax code:
@@ -406,6 +409,15 @@
                                     @endif
                                     <td class="text-right">
                                         {{ number_format($tax->amount_owed, 0) }} ISK
+                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
+                                        <button type="button"
+                                                class="btn btn-xs btn-link"
+                                                onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')"
+                                                data-toggle="tooltip"
+                                                title="{{ trans('mining-manager::taxes.copy') }} ISK">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @endif
                                     </td>
                                     <td class="text-right">
                                         {{ number_format($tax->amount_paid, 0) }} ISK
@@ -545,6 +557,15 @@
 <script>
 // Initialize tooltips
 $('[data-toggle="tooltip"]').tooltip();
+
+// Copy to clipboard (generic)
+function copyToClipboard(text, label) {
+    navigator.clipboard.writeText(text).then(function() {
+        toastr.success((label || 'Value') + ' copied: ' + text);
+    }, function(err) {
+        toastr.error('Failed to copy to clipboard');
+    });
+}
 
 // Copy tax code function
 function copyTaxCode(code) {

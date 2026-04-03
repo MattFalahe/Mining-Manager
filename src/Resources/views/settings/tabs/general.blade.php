@@ -270,8 +270,8 @@
                                    name="payment_match_tolerance"
                                    value="{{ old('payment_match_tolerance', $settings->payment_match_tolerance ?? 100) }}"
                                    min="0"
-                                   max="10000"
-                                   step="100">
+                                   max="100000000"
+                                   step="1000">
                             <div class="input-group-append">
                                 <span class="input-group-text">ISK</span>
                             </div>
