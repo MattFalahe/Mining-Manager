@@ -456,8 +456,9 @@ class WalletTransferService
         $failed = 0;
         $errors = [];
 
-        // Get all unpaid taxes
+        // Get all unpaid taxes (exclude already-paid to prevent double-processing)
         $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue'])
+            ->whereNull('transaction_id')
             ->get();
 
         foreach ($unpaidTaxes as $tax) {

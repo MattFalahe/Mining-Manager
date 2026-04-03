@@ -146,12 +146,27 @@ class VerifyWalletPaymentsCommand extends Command
                     continue;
                 }
 
+                // Skip if this tax code was already used (payment already applied)
+                if ($taxCodeRecord->status === 'used') {
+                    continue;
+                }
+
                 // Find associated tax record
                 $tax = MiningTax::find($taxCodeRecord->mining_tax_id);
 
                 if (!$tax) {
                     $this->warn("Tax record not found for code '{$taxCode}'");
                     $unmatched++;
+                    continue;
+                }
+
+                // Skip if tax is already fully paid
+                if ($tax->status === 'paid') {
+                    continue;
+                }
+
+                // Skip if this transaction was already applied to this tax
+                if ($tax->transaction_id == $transaction->id) {
                     continue;
                 }
 
@@ -167,9 +182,11 @@ class VerifyWalletPaymentsCommand extends Command
                 $divLabel = $transaction->division == 1 ? 'Master Wallet' : "Division {$transaction->division}";
 
                 if ($autoMatch) {
-                    // Update tax record
-                    $previousPaid = $tax->amount_paid ?? 0;
-                    $newPaid = $previousPaid + $amount;
+                    // Set amount_paid to the transaction amount (not additive for single payments)
+                    // For partial payments, add to existing amount_paid
+                    $newPaid = ($tax->amount_paid > 0 && $tax->transaction_id !== null)
+                        ? $tax->amount_paid + $amount
+                        : $amount;
 
                     $tax->update([
                         'amount_paid' => $newPaid,
