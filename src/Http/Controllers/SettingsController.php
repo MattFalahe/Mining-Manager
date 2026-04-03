@@ -1030,6 +1030,7 @@ class SettingsController extends Controller
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',
+            'notify_tax_generated' => 'nullable|boolean',
             'notify_tax_reminder' => 'nullable|boolean',
             'notify_tax_invoice' => 'nullable|boolean',
             'notify_tax_overdue' => 'nullable|boolean',
@@ -1063,6 +1064,7 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->has('notify_event_created');
             $data['notify_event_started'] = $request->has('notify_event_started');
             $data['notify_event_completed'] = $request->has('notify_event_completed');
+            $data['notify_tax_generated'] = $request->has('notify_tax_generated');
             $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
             $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
             $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');
@@ -1108,6 +1110,7 @@ class SettingsController extends Controller
                 'notify_event_created' => 'nullable|boolean',
                 'notify_event_started' => 'nullable|boolean',
                 'notify_event_completed' => 'nullable|boolean',
+                'notify_tax_generated' => 'nullable|boolean',
                 'notify_tax_reminder' => 'nullable|boolean',
                 'notify_tax_invoice' => 'nullable|boolean',
                 'notify_tax_overdue' => 'nullable|boolean',
@@ -1139,6 +1142,7 @@ class SettingsController extends Controller
             $data['notify_event_created'] = $request->has('notify_event_created');
             $data['notify_event_started'] = $request->has('notify_event_started');
             $data['notify_event_completed'] = $request->has('notify_event_completed');
+            $data['notify_tax_generated'] = $request->has('notify_tax_generated');
             $data['notify_tax_reminder'] = $request->has('notify_tax_reminder');
             $data['notify_tax_invoice'] = $request->has('notify_tax_invoice');
             $data['notify_tax_overdue'] = $request->has('notify_tax_overdue');

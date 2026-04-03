@@ -64,6 +64,7 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-tax-reminder').checked = webhook.notify_tax_reminder;
                 document.getElementById('notify-tax-invoice').checked = webhook.notify_tax_invoice;
                 document.getElementById('notify-tax-overdue').checked = webhook.notify_tax_overdue;
+                document.getElementById('notify-report-generated').checked = webhook.notify_report_generated;
 
                 // Discord settings
                 const discordRoleField = document.getElementById('discord-role-id');
@@ -116,6 +117,7 @@ function saveWebhook() {
         notify_tax_reminder: document.getElementById('notify-tax-reminder').checked ? 1 : 0,
         notify_tax_invoice: document.getElementById('notify-tax-invoice').checked ? 1 : 0,
         notify_tax_overdue: document.getElementById('notify-tax-overdue').checked ? 1 : 0,
+        notify_report_generated: document.getElementById('notify-report-generated').checked ? 1 : 0,
         discord_role_id: document.getElementById('discord-role-id')?.value || null,
         discord_username: document.getElementById('discord-username')?.value || null,
         slack_channel: document.getElementById('slack-channel')?.value || null,
