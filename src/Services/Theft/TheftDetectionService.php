@@ -658,6 +658,123 @@ class TheftDetectionService
     }
 
     /**
+     * Detect tax delinquents — characters with 2+ overdue tax bills.
+     * These are flagged on the theft list regardless of whether they are
+     * corp members or external miners.
+     *
+     * @param int $minOverdue Minimum number of overdue bills to trigger (default 2)
+     * @return array Statistics about delinquent detection
+     */
+    public function detectTaxDelinquents(int $minOverdue = 2): array
+    {
+        $created = 0;
+        $updated = 0;
+        $skipped = 0;
+
+        // Find characters with N+ overdue tax records
+        $delinquents = MiningTax::where('status', 'overdue')
+            ->select('character_id', DB::raw('COUNT(*) as overdue_count'), DB::raw('SUM(amount_owed) as total_owed'))
+            ->groupBy('character_id')
+            ->having('overdue_count', '>=', $minOverdue)
+            ->get();
+
+        foreach ($delinquents as $delinquent) {
+            try {
+                // Get character info
+                $characterInfo = $this->characterService->getCharacterInfo($delinquent->character_id);
+                $characterName = $characterInfo['name'] ?? 'Unknown';
+                $corporationId = $characterInfo['corporation_id'] ?? null;
+
+                // Get the overdue tax records for date range
+                $overdueTaxes = MiningTax::where('character_id', $delinquent->character_id)
+                    ->where('status', 'overdue')
+                    ->orderBy('period_start')
+                    ->get();
+
+                $earliestPeriod = $overdueTaxes->min('period_start') ?? $overdueTaxes->min('month');
+                $latestPeriod = $overdueTaxes->max('period_end') ?? $overdueTaxes->max('month');
+
+                // Check if an unresolved delinquency incident already exists
+                $existing = TheftIncident::where('character_id', $delinquent->character_id)
+                    ->where('notes', 'LIKE', '%Tax delinquent%')
+                    ->unresolved()
+                    ->first();
+
+                $severity = $this->calculateSeverity($delinquent->total_owed, 0);
+
+                if ($existing) {
+                    // Update existing incident with latest totals
+                    $this->updateIncident($existing, [
+                        'tax_owed' => $delinquent->total_owed,
+                        'severity' => $severity,
+                        'mining_date_to' => $latestPeriod,
+                        'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
+                                   number_format($delinquent->total_owed, 0) . " ISK",
+                    ]);
+                    $updated++;
+                } else {
+                    // Check if there's a removed_paid incident we should reactivate
+                    $removedIncident = TheftIncident::where('character_id', $delinquent->character_id)
+                        ->where('notes', 'LIKE', '%Tax delinquent%')
+                        ->where('status', 'removed_paid')
+                        ->first();
+
+                    if ($removedIncident) {
+                        $removedIncident->addToList();
+                        $this->updateIncident($removedIncident, [
+                            'tax_owed' => $delinquent->total_owed,
+                            'severity' => $severity,
+                            'mining_date_to' => $latestPeriod,
+                            'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
+                                       number_format($delinquent->total_owed, 0) . " ISK",
+                        ]);
+                        $updated++;
+                    } else {
+                        // Create new incident
+                        $this->createIncident([
+                            'character_id' => $delinquent->character_id,
+                            'character_name' => $characterName,
+                            'corporation_id' => $corporationId,
+                            'mining_tax_id' => $overdueTaxes->first()->id,
+                            'incident_date' => Carbon::now(),
+                            'mining_date_from' => $earliestPeriod,
+                            'mining_date_to' => $latestPeriod,
+                            'ore_value' => 0,
+                            'tax_owed' => $delinquent->total_owed,
+                            'quantity_mined' => 0,
+                            'status' => 'detected',
+                            'severity' => $severity,
+                            'on_theft_list' => true,
+                            'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
+                                       number_format($delinquent->total_owed, 0) . " ISK",
+                        ]);
+                        $created++;
+                    }
+                }
+
+                Log::info("TheftDetectionService: Tax delinquent flagged", [
+                    'character_id' => $delinquent->character_id,
+                    'character_name' => $characterName,
+                    'overdue_count' => $delinquent->overdue_count,
+                    'total_owed' => $delinquent->total_owed,
+                ]);
+            } catch (\Exception $e) {
+                Log::error("TheftDetectionService: Failed to process delinquent {$delinquent->character_id}", [
+                    'error' => $e->getMessage(),
+                ]);
+                $skipped++;
+            }
+        }
+
+        return [
+            'total_delinquents' => $delinquents->count(),
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => $skipped,
+        ];
+    }
+
+    /**
      * Get theft statistics for dashboard
      *
      * @return array

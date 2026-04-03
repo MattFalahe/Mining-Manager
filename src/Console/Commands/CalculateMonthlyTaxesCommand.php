@@ -131,6 +131,16 @@ class CalculateMonthlyTaxesCommand extends Command
             }
         }
 
+        // Always update overdue statuses (runs daily regardless of period boundary)
+        try {
+            $overdueCount = $this->taxService->updateOverdueTaxes();
+            if ($overdueCount > 0) {
+                $this->info("Marked {$overdueCount} taxes as overdue");
+            }
+        } catch (\Exception $e) {
+            $this->warn("Failed to update overdue statuses: {$e->getMessage()}");
+        }
+
         return Command::SUCCESS;
     }
 }

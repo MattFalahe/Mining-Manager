@@ -118,6 +118,12 @@ class DetectMoonTheftCommand extends Command
             $this->line('');
             $this->displayEnhancedReport($results, $activeTheftResults);
 
+            // Detect tax delinquents (characters with 2+ overdue bills)
+            $this->line('');
+            $this->info('Checking for tax delinquents...');
+            $delinquentResults = $this->detectionService->detectTaxDelinquents();
+            $this->displayDelinquentReport($delinquentResults);
+
             // Get statistics
             $stats = $this->detectionService->getStatistics();
             $this->line('');
@@ -285,6 +291,30 @@ class DetectMoonTheftCommand extends Command
             return '3rd occurrence';
         } else {
             return "{$count}th occurrence";
+        }
+    }
+
+    /**
+     * Display tax delinquent detection report
+     *
+     * @param array $results
+     */
+    protected function displayDelinquentReport(array $results)
+    {
+        if ($results['total_delinquents'] === 0) {
+            $this->line('<fg=green>✓ No tax delinquents found</>');
+            return;
+        }
+
+        $this->line("<fg=yellow>⚠ Tax Delinquents: {$results['total_delinquents']} characters with 2+ overdue bills</>");
+        if ($results['created'] > 0) {
+            $this->line("  • Added to theft list: <fg=yellow>{$results['created']}</>");
+        }
+        if ($results['updated'] > 0) {
+            $this->line("  • Updated existing incidents: <fg=cyan>{$results['updated']}</>");
+        }
+        if ($results['skipped'] > 0) {
+            $this->line("  • Already on theft list: <fg=gray>{$results['skipped']}</>");
         }
     }
 
