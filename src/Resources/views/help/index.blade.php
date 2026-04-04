@@ -397,6 +397,24 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="how-to-pay">
+                                <i class="fas fa-hand-holding-usd"></i>
+                                {{ trans('mining-manager::help.how_to_pay') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="how-to-collect">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                                {{ trans('mining-manager::help.how_to_collect') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="webhooks-notifications">
+                                <i class="fas fa-bell"></i>
+                                {{ trans('mining-manager::help.webhooks_notifications') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="events">
                                 <i class="fas fa-calendar-alt"></i>
                                 {{ trans('mining-manager::help.mining_events') }}
@@ -952,6 +970,192 @@
                 </div>
             </div>
 
+            {{-- How to Pay Your Taxes (Member Guide) --}}
+            <div id="how-to-pay" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-hand-holding-usd"></i>
+                        {{ trans('mining-manager::help.how_to_pay_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.how_to_pay_intro') }}</p>
+
+                    <h4><i class="fas fa-route text-primary"></i> {{ trans('mining-manager::help.pay_timeline_title') }}</h4>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.pay_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_4') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_5') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_6') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_step_7') }}</li>
+                    </ol>
+
+                    <h4><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.pay_ingame_title') }}</h4>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.pay_ingame_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_ingame_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_ingame_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_ingame_step_4') }}</li>
+                        <li>{{ trans('mining-manager::help.pay_ingame_step_5') }}</li>
+                    </ol>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.pay_reason_warning') }}
+                    </div>
+
+                    <h4><i class="fas fa-puzzle-piece text-info"></i> {{ trans('mining-manager::help.pay_partial_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.pay_partial_desc') }}</p>
+
+                    <h4><i class="fas fa-check-double text-success"></i> {{ trans('mining-manager::help.pay_verification_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.pay_verification_desc') }}</p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> {{ trans('mining-manager::help.pay_tip') }}
+                    </div>
+                </div>
+            </div>
+
+            {{-- How to Collect Taxes (Director Guide) --}}
+            <div id="how-to-collect" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-file-invoice-dollar"></i>
+                        {{ trans('mining-manager::help.how_to_collect_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.how_to_collect_intro') }}</p>
+
+                    <h4><i class="fas fa-cogs text-warning"></i> {{ trans('mining-manager::help.collect_setup_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.collect_setup_desc') }}</p>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.collect_setup_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_setup_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_setup_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_setup_step_4') }}</li>
+                    </ol>
+
+                    <h4><i class="fas fa-route text-primary"></i> {{ trans('mining-manager::help.collect_timeline_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.collect_timeline_desc') }}</p>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.collect_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_4') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_5') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_6') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_7') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_step_8') }}</li>
+                    </ol>
+
+                    <h4><i class="fas fa-bullhorn text-danger"></i> {{ trans('mining-manager::help.collect_reminders_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.collect_reminders_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.collect_reminder_auto') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_reminder_individual') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_reminder_bulk') }}</li>
+                    </ul>
+
+                    <h4><i class="fas fa-search-dollar text-info"></i> {{ trans('mining-manager::help.collect_verify_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.collect_verify_desc') }}</p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.collect_verify_auto') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_verify_manual') }}</li>
+                        <li>{{ trans('mining-manager::help.collect_verify_reset') }}</li>
+                    </ul>
+
+                    <h4><i class="fas fa-stethoscope text-warning"></i> {{ trans('mining-manager::help.collect_troubleshoot_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.collect_troubleshoot_desc') }}</p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> {{ trans('mining-manager::help.collect_tip') }}
+                    </div>
+                </div>
+            </div>
+
+            {{-- Webhooks & Notifications --}}
+            <div id="webhooks-notifications" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-bell"></i>
+                        {{ trans('mining-manager::help.webhooks_notifications_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.webhooks_notifications_intro') }}</p>
+
+                    <h4><i class="fas fa-plug text-info"></i> {{ trans('mining-manager::help.webhook_setup_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.webhook_setup_desc') }}</p>
+                    <ol class="step-by-step">
+                        <li>{{ trans('mining-manager::help.webhook_setup_step_1') }}</li>
+                        <li>{{ trans('mining-manager::help.webhook_setup_step_2') }}</li>
+                        <li>{{ trans('mining-manager::help.webhook_setup_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.webhook_setup_step_4') }}</li>
+                    </ol>
+
+                    <h4><i class="fas fa-layer-group text-primary"></i> {{ trans('mining-manager::help.webhook_multiple_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.webhook_multiple_desc') }}</p>
+
+                    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
+                            <h5><i class="fas fa-hashtag text-danger"></i> {{ trans('mining-manager::help.webhook_example_theft') }}</h5>
+                            <p>{{ trans('mining-manager::help.webhook_example_theft_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><i class="fas fa-hashtag text-warning"></i> {{ trans('mining-manager::help.webhook_example_tax') }}</h5>
+                            <p>{{ trans('mining-manager::help.webhook_example_tax_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #17a2b8;">
+                            <h5><i class="fas fa-hashtag text-info"></i> {{ trans('mining-manager::help.webhook_example_officers') }}</h5>
+                            <p>{{ trans('mining-manager::help.webhook_example_officers_desc') }}</p>
+                        </div>
+                    </div>
+
+                    <h4><i class="fas fa-check-square text-success"></i> {{ trans('mining-manager::help.webhook_toggles_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.webhook_toggles_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <thead>
+                                <tr>
+                                    <th style="color: #9ca3af;">{{ trans('mining-manager::help.webhook_toggle_category') }}</th>
+                                    <th style="color: #9ca3af;">{{ trans('mining-manager::help.webhook_toggle_events') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><i class="fas fa-user-secret text-danger"></i> {{ trans('mining-manager::help.webhook_cat_theft') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_theft_events') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="fas fa-moon text-warning"></i> {{ trans('mining-manager::help.webhook_cat_moon') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_moon_events') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="fas fa-calendar-alt text-info"></i> {{ trans('mining-manager::help.webhook_cat_events') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_events_list') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="fas fa-coins text-success"></i> {{ trans('mining-manager::help.webhook_cat_tax') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_tax_events') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><i class="fas fa-chart-bar text-primary"></i> {{ trans('mining-manager::help.webhook_cat_reports') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_reports_events') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4><i class="fas fa-at text-warning"></i> {{ trans('mining-manager::help.webhook_role_ping_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.webhook_role_ping_desc') }}</p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.webhook_role_ping_note') }}
+                    </div>
+                </div>
+            </div>
+
             {{-- Mining Events Section --}}
             <div id="events" class="help-section">
                 <div class="help-card">
@@ -1277,7 +1481,7 @@
                                     <td><code>mining-manager:verify-payments</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
                                     <td>Scan corporation wallet journal and match payments against issued tax codes.<br>
-                                        <small class="text-muted">Options: <code>--days=7</code> days to check back, <code>--character_id=</code> specific character, <code>--auto-match</code> automatically match payments</small>
+                                        <small class="text-muted">Options: <code>--days=7</code> days to check back, <code>--character_id=</code> specific character, <code>--auto-match</code> automatically match payments, <code>--reset-month=2026-03</code> reset all payment data for a month and re-match from scratch</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1401,6 +1605,24 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    {{-- Diagnostic Page (Web UI) --}}
+                    <h4 class="mt-4"><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostic_page_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.diagnostic_page_desc') }}</p>
+
+                    <h5>{{ trans('mining-manager::help.tax_trace_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.tax_trace_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.tax_trace_section_1') }}</strong> — {{ trans('mining-manager::help.tax_trace_section_1_desc') }}</li>
+                        <li><strong>{{ trans('mining-manager::help.tax_trace_section_2') }}</strong> — {{ trans('mining-manager::help.tax_trace_section_2_desc') }}</li>
+                        <li><strong>{{ trans('mining-manager::help.tax_trace_section_3') }}</strong> — {{ trans('mining-manager::help.tax_trace_section_3_desc') }}</li>
+                        <li><strong>{{ trans('mining-manager::help.tax_trace_section_4') }}</strong> — {{ trans('mining-manager::help.tax_trace_section_4_desc') }}</li>
+                    </ul>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_trace_note') }}
                     </div>
 
                     {{-- Data Management Commands --}}

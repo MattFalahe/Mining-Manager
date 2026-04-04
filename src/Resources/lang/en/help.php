@@ -527,4 +527,151 @@ return [
     'schedule_twice_monthly' => '1st & 15th',
     'schedule_daily_smart' => 'Daily (smart)',
     'schedule_manual' => 'Manual',
+
+    // ================================================================
+    // Navigation - New Sections
+    // ================================================================
+    'how_to_pay' => 'How to Pay Taxes',
+    'how_to_collect' => 'How to Collect Taxes',
+    'webhooks_notifications' => 'Webhooks & Notifications',
+
+    // ================================================================
+    // How to Pay Your Taxes (Member Guide)
+    // ================================================================
+    'how_to_pay_title' => 'How to Pay Your Mining Taxes',
+    'how_to_pay_intro' => 'This is a step-by-step guide for corporation members on how the tax system works and how to pay your mining taxes. If you mine on corporation moons, you owe tax on what you mine. Here is exactly what happens and what you need to do.',
+
+    'pay_timeline_title' => 'What Happens (Timeline)',
+    'pay_step_1' => 'You mine ore on a corporation moon (or anywhere, depending on corp settings). The system automatically tracks what you mine via ESI data — you do not need to report anything.',
+    'pay_step_2' => 'Every day, the system calculates the value of what you mined and how much tax you owe based on the ore type and corporation tax rates. This is stored as a daily summary.',
+    'pay_step_3' => 'At the end of the tax period (monthly, biweekly, or weekly — depends on your corp settings), all your daily totals are added up into one tax bill.',
+    'pay_step_4' => 'You receive a notification (Discord, Slack, or EVE Mail depending on corp setup) with your tax amount and a link to the Tax page.',
+    'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see the amount owed, due date, and your unique tax code (e.g. TAX-A1B2C3).',
+    'pay_step_6' => 'Send ISK to your corporation wallet in-game with your tax code in the "reason" field. That is how the system matches your payment to your bill.',
+    'pay_step_7' => 'The system automatically scans wallet transactions every 6 hours. Once it finds your payment with the matching tax code, your status changes to "Paid". Done!',
+
+    'pay_ingame_title' => 'How to Send Payment In-Game',
+    'pay_ingame_step_1' => 'Open your wallet in EVE Online.',
+    'pay_ingame_step_2' => 'Click "Give Money" or use the corporation\'s "Deposit" option.',
+    'pay_ingame_step_3' => 'Set the recipient to your corporation.',
+    'pay_ingame_step_4' => 'Enter the exact amount shown on your tax bill (or a partial amount if paying in installments).',
+    'pay_ingame_step_5' => 'In the "Reason" field, paste your tax code exactly as shown (e.g. TAX-A1B2C3). This is the most important step — without the code, the system cannot match your payment.',
+
+    'pay_reason_warning' => 'The tax code MUST be in the "Reason" field of the wallet transfer, not the description or anywhere else. If you forget the code or type it wrong, your payment will not be automatically matched and a director will need to manually verify it.',
+
+    'pay_partial_title' => 'Can I Pay in Installments?',
+    'pay_partial_desc' => 'Yes. You can split your payment into multiple transfers using the same tax code each time. For example, if you owe 100M ISK, you can send 50M now and 50M later — both with the same tax code. The system tracks partial payments and updates your status accordingly (Partial → Paid once the full amount is received).',
+
+    'pay_verification_title' => 'How Do I Know My Payment Went Through?',
+    'pay_verification_desc' => 'Go to Mining Manager > My Taxes. Your tax status will update automatically: "Unpaid" means no payment detected yet, "Partial" means some amount received but not the full bill, "Paid" means you are all clear. The Wallet Verification page also shows your payment history. Payments are scanned every 6 hours, so it may take up to 6 hours for your status to update.',
+
+    'pay_tip' => 'If you have alt characters linked to your SeAT account, all their mining is combined into one tax bill under your main character. You only need to pay once for all your alts.',
+
+    // ================================================================
+    // How to Collect Taxes (Director Guide)
+    // ================================================================
+    'how_to_collect_title' => 'How to Collect Mining Taxes (Director Guide)',
+    'how_to_collect_intro' => 'This guide walks directors through the entire tax collection process — from initial setup to verifying payments and handling issues.',
+
+    'collect_setup_title' => 'One-Time Setup',
+    'collect_setup_desc' => 'Before taxes can be collected, an admin needs to configure these settings:',
+    'collect_setup_step_1' => 'Settings > Tax Rates — Set tax percentages for each ore type (moon R64-R4, regular ore, ice, gas). The tax selector controls which ore types are taxed.',
+    'collect_setup_step_2' => 'Settings > General — Set the moon owner corporation, price provider, and valuation method. This controls how ore values are calculated.',
+    'collect_setup_step_3' => 'Settings > Webhooks — Create webhook(s) for Discord/Slack notifications. Enable the tax-related toggles (Tax Generated, Tax Reminder, Tax Invoice, Tax Overdue) so members get notified.',
+    'collect_setup_step_4' => 'Settings > Features — Make sure "Wallet Verification" and "Notifications" are enabled.',
+
+    'collect_timeline_title' => 'The Tax Collection Timeline',
+    'collect_timeline_desc' => 'Here is what happens each month (or period), step by step:',
+    'collect_step_1' => 'Mining data flows in automatically via ESI. The system processes it every 30 minutes and updates daily summaries with current prices and tax rates.',
+    'collect_step_2' => 'On the 2nd of the month (or period boundary), the system automatically calculates taxes for the previous period. It sums up each character\'s daily summaries, groups alts under their main character, and creates tax bills.',
+    'collect_step_3' => 'Tax codes are automatically generated and assigned to each bill. These unique codes (e.g. TAX-A1B2C3) are how members identify their payments.',
+    'collect_step_4' => 'Notifications go out — members receive their tax bill amount, due date, and a link to the tax page. Check the Tax Overview page to see all generated bills.',
+    'collect_step_5' => 'Members pay by sending ISK to the corp wallet with their tax code in the "Reason" field.',
+    'collect_step_6' => 'Every 6 hours, the verify-payments command scans the corporation wallet journal and auto-matches payments using tax codes. Matched payments update the bill status.',
+    'collect_step_7' => 'Daily at 10:00 AM, the send-reminders command checks for unpaid taxes approaching their due date and sends reminder notifications to those members.',
+    'collect_step_8' => 'After the grace period, unpaid taxes are marked as "Overdue". You can view all overdue taxes on the Tax Overview page and take action.',
+
+    'collect_reminders_title' => 'Sending Reminders',
+    'collect_reminders_desc' => 'There are three ways to remind members about unpaid taxes:',
+    'collect_reminder_auto' => 'Automatic — The send-reminders command runs daily at 10:00 AM and notifies members with taxes due within the configured reminder window (default: 3 days before due date) or already overdue.',
+    'collect_reminder_individual' => 'Individual — On the Tax Overview page, click the bell icon next to any unpaid tax to send a reminder to that specific member.',
+    'collect_reminder_bulk' => 'Bulk — Click the "Remind All Unpaid" button on the Tax Overview page to send reminders to ALL members with unpaid, partial, or overdue taxes in one click. Personal reminders skip the general role ping to avoid spam.',
+
+    'collect_verify_title' => 'Verifying Payments',
+    'collect_verify_desc' => 'Payment verification happens automatically, but directors have additional tools:',
+    'collect_verify_auto' => 'Auto-match — Runs every 6 hours. Scans wallet journal for transfers containing tax codes and matches them to bills. Handles partial payments and prevents duplicate processing.',
+    'collect_verify_manual' => 'Manual verify — On the Wallet Verification page (visible to directors and admins), you can see all corporation wallet transactions and manually match payments that were not auto-detected.',
+    'collect_verify_reset' => 'Reset month — If payment data gets corrupted (e.g. double-counted transactions), run: docker exec -it seat-docker-front-1 php artisan mining-manager:verify-payments --reset-month=2026-03 — this resets all payment data for that month and re-matches everything from scratch.',
+
+    'collect_troubleshoot_title' => 'Troubleshooting Payments',
+    'collect_troubleshoot_desc' => 'If a member says they paid but it is not showing: check the Wallet Verification page to see if the transaction exists. Common issues include misspelled tax codes, missing "Reason" field, or sending to the wrong corp wallet. Directors can manually mark taxes as paid from the Tax Overview page if needed.',
+
+    'collect_tip' => 'Use the Diagnostic page > Tax Trace to investigate specific characters. It shows stored daily summaries, live recalculation comparison, account/alt info, and flags mismatches between the bill and what was calculated.',
+
+    // ================================================================
+    // Webhooks & Notifications
+    // ================================================================
+    'webhooks_notifications_title' => 'Webhooks & Notifications',
+    'webhooks_notifications_intro' => 'Mining Manager can send notifications to Discord and Slack via webhooks. Each webhook is independently configured with its own URL and event toggles, so you can route different notification types to different channels.',
+
+    'webhook_setup_title' => 'Setting Up a Webhook',
+    'webhook_setup_desc' => 'To create a new webhook:',
+    'webhook_setup_step_1' => 'Go to Settings > Webhooks tab and click "Add Webhook".',
+    'webhook_setup_step_2' => 'Enter a name (for your reference), select the type (Discord or Slack), and paste the webhook URL from your Discord/Slack channel settings.',
+    'webhook_setup_step_3' => 'Check the boxes for which notification types this webhook should receive. Each checkbox controls a specific event — only checked events are sent to this webhook.',
+    'webhook_setup_step_4' => 'Optionally set a Discord Role ID to ping that role on broadcast notifications (theft alerts, tax generated, reports). Save the webhook.',
+
+    'webhook_multiple_title' => 'Multiple Webhooks',
+    'webhook_multiple_desc' => 'You can create as many webhooks as you need. Each webhook works independently — when a notification fires, the system checks ALL enabled webhooks and sends to every one that has that event type toggled on. This lets you route notifications to different channels:',
+
+    'webhook_example_theft' => '#theft-alerts',
+    'webhook_example_theft_desc' => 'Webhook with only theft toggles enabled. Theft detected, critical theft, active theft, and incident resolved notifications go here.',
+    'webhook_example_tax' => '#tax-channel',
+    'webhook_example_tax_desc' => 'Webhook with only tax toggles enabled. Tax generated, reminders, invoices, and overdue notifications go here.',
+    'webhook_example_officers' => '#officers',
+    'webhook_example_officers_desc' => 'Webhook with everything enabled. All notifications go here for leadership visibility.',
+
+    'webhook_toggles_title' => 'Notification Event Toggles',
+    'webhook_toggles_desc' => 'Each webhook has independent toggles for every notification type. Only events with their checkbox enabled will be sent to that webhook:',
+
+    'webhook_toggle_category' => 'Category',
+    'webhook_toggle_events' => 'Events',
+    'webhook_cat_theft' => 'Theft',
+    'webhook_cat_theft_events' => 'Theft Detected, Critical Theft, Active Theft, Incident Resolved',
+    'webhook_cat_moon' => 'Moon',
+    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected',
+    'webhook_cat_events' => 'Mining Events',
+    'webhook_cat_events_list' => 'Event Created, Event Started, Event Completed',
+    'webhook_cat_tax' => 'Tax',
+    'webhook_cat_tax_events' => 'Tax Generated (broadcast when period taxes are calculated), Tax Reminder (personal to member), Tax Invoice (personal), Tax Overdue (personal)',
+    'webhook_cat_reports' => 'Reports',
+    'webhook_cat_reports_events' => 'Report Generated (when a scheduled report completes)',
+
+    'webhook_role_ping_title' => 'Discord Role Pinging',
+    'webhook_role_ping_desc' => 'If you set a Discord Role ID on a webhook, that role will be @mentioned on broadcast notifications like theft alerts, tax generated, event announcements, and reports. However, personal notifications (tax reminders, invoices, overdue notices sent to individual members) automatically skip the role ping to avoid spamming the entire role every time one person gets a reminder.',
+
+    'webhook_role_ping_note' => 'Personal notifications (reminders, invoices, overdue) never ping the role — even if one is configured. This is by design so that individual tax reminders do not spam your entire officer team or corporation.',
+
+    // ================================================================
+    // Diagnostic Page (Tax Trace)
+    // ================================================================
+    'diagnostic_page_title' => 'Diagnostic Page (Web UI)',
+    'diagnostic_page_desc' => 'The Diagnostic page (accessible to admins under Mining Manager > Diagnostic) provides web-based tools for troubleshooting. The most powerful tool is the Tax Trace.',
+
+    'tax_trace_title' => 'Tax Trace',
+    'tax_trace_desc' => 'Enter a character ID and month to get a comprehensive tax diagnostic. The trace shows four sections:',
+
+    'tax_trace_section_1' => 'Character & Account Info',
+    'tax_trace_section_1_desc' => 'Shows the character, their corporation, main account (which SeAT user they belong to), all alt characters under that account, and the tax bill for that month including status, amount, due date, and tax code.',
+
+    'tax_trace_section_2' => 'Stored Daily Summaries',
+    'tax_trace_section_2_desc' => 'Shows the actual data the system used to calculate the tax bill. Each day is expandable and shows every ore type with its quantity, unit price, total value, tax rate, event modifier, effective rate, and estimated tax. Warnings flag issues like zero prices or missing data.',
+
+    'tax_trace_section_3' => 'Live Recalculation',
+    'tax_trace_section_3_desc' => 'Recalculates the tax using current prices and rates (read-only, does not change anything). Useful for comparing against stored data — if prices changed since the bill was generated, you will see the difference here.',
+
+    'tax_trace_section_4' => 'Mismatch Detection',
+    'tax_trace_section_4_desc' => 'Automatically flags problems: stored vs live tax differences, daily summary total vs bill amount discrepancies, mining ledger dates missing daily summaries, and zero-priced ore entries.',
+
+    'tax_trace_note' => 'The live recalculation is read-only — it never changes any stored data. To actually update stored data, use the calculate-taxes or update-daily-summaries commands.',
 ];
