@@ -14,6 +14,7 @@ use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningLedgerDailySummary;
 use MiningManager\Models\Setting;
+use MiningManager\Models\MiningTax;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
@@ -1305,7 +1306,8 @@ class DiagnosticController extends Controller
 
     /**
      * Tax Calculation Trace
-     * Dry-run tax calculation showing the full decision chain for a character + month
+     * Tax Trace — comprehensive diagnostic showing stored daily summaries,
+     * live recalculation, account/bill info, and mismatch detection.
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -1327,12 +1329,13 @@ class DiagnosticController extends Controller
             $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
 
-            // Get character info (may not exist for guest miners not registered in SeAT)
+            // ================================================================
+            // SECTION 1: Character & Account Info
+            // ================================================================
             $character = DB::table('character_infos')
                 ->where('character_id', $characterId)
                 ->first();
 
-            // If character not in SeAT, check if they have mining ledger entries
             if (!$character) {
                 $hasMiningData = DB::table('mining_ledger')
                     ->where('character_id', $characterId)
@@ -1348,61 +1351,141 @@ class DiagnosticController extends Controller
 
             $characterName = $character->name ?? "Character {$characterId} (not in SeAT)";
 
-            // Get character's corporation
+            // Corporation
             $affiliation = DB::table('character_affiliations')
                 ->where('character_id', $characterId)
                 ->first();
-
             $corporationId = $affiliation->corporation_id ?? null;
-            $corporationName = null;
-            if ($corporationId) {
-                $corporationName = DB::table('corporation_infos')
-                    ->where('corporation_id', $corporationId)
-                    ->value('name');
+            $corporationName = $corporationId
+                ? DB::table('corporation_infos')->where('corporation_id', $corporationId)->value('name')
+                : null;
+
+            // Main account mapping: character -> refresh_tokens -> users -> main_character_id
+            $accountInfo = $this->resolveAccountInfo($characterId);
+
+            // Tax bill for this month (uses main character ID since taxes are grouped by main)
+            $billCharacterId = $accountInfo['main_character_id'] ?? $characterId;
+            $taxBill = MiningTax::where('character_id', $billCharacterId)
+                ->whereYear('month', $monthStart->year)
+                ->whereMonth('month', $monthStart->month)
+                ->first();
+
+            $taxBillData = null;
+            if ($taxBill) {
+                $taxCode = $taxBill->taxCodes()->latest()->first();
+                $taxBillData = [
+                    'id' => $taxBill->id,
+                    'character_id' => $taxBill->character_id,
+                    'amount_owed' => (float) $taxBill->amount_owed,
+                    'amount_paid' => (float) $taxBill->amount_paid,
+                    'status' => $taxBill->status,
+                    'due_date' => $taxBill->due_date ? $taxBill->due_date->format('Y-m-d') : null,
+                    'paid_at' => $taxBill->paid_at ? $taxBill->paid_at->format('Y-m-d H:i') : null,
+                    'tax_code' => $taxCode ? $taxCode->code : null,
+                    'period_type' => $taxBill->period_type ?? 'monthly',
+                ];
             }
 
-            // Get mining entries for this character in this month
+            // ================================================================
+            // SECTION 2: Daily Summaries (Stored Data)
+            // ================================================================
+            $dailySummaries = MiningLedgerDailySummary::where('character_id', $characterId)
+                ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
+                ->orderBy('date')
+                ->get();
+
+            $storedDays = [];
+            $storedTotalValue = 0;
+            $storedTotalTax = 0;
+            $storedTotalQuantity = 0;
+            $storedWarnings = [];
+
+            foreach ($dailySummaries as $summary) {
+                $oreEntries = $summary->ore_types ?? [];
+                $dayWarnings = [];
+
+                // Check for issues in ore entries
+                foreach ($oreEntries as &$ore) {
+                    $warnings = [];
+                    if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
+                        $warnings[] = 'Zero price — pricing may have failed';
+                    }
+                    if (($ore['is_taxable'] ?? false) && ($ore['effective_rate'] ?? 0) == 0) {
+                        $warnings[] = 'Taxable ore with 0% effective rate';
+                    }
+                    if (($ore['total_value'] ?? 0) > 0 && ($ore['estimated_tax'] ?? 0) == 0 && ($ore['is_taxable'] ?? true)) {
+                        $warnings[] = 'Has value but zero tax — check tax rate config';
+                    }
+                    $ore['warnings'] = $warnings;
+                    if (!empty($warnings)) {
+                        $dayWarnings = array_merge($dayWarnings, $warnings);
+                    }
+                }
+                unset($ore);
+
+                $dayValue = (float) $summary->total_value;
+                $dayTax = (float) $summary->total_tax;
+
+                $storedTotalValue += $dayValue;
+                $storedTotalTax += $dayTax;
+                $storedTotalQuantity += (float) $summary->total_quantity;
+
+                $storedDays[] = [
+                    'date' => $summary->date->format('Y-m-d'),
+                    'total_quantity' => (float) $summary->total_quantity,
+                    'total_value' => $dayValue,
+                    'total_tax' => $dayTax,
+                    'moon_ore_value' => (float) $summary->moon_ore_value,
+                    'regular_ore_value' => (float) $summary->regular_ore_value,
+                    'ice_value' => (float) $summary->ice_value,
+                    'gas_value' => (float) $summary->gas_value,
+                    'is_finalized' => $summary->is_finalized,
+                    'ore_count' => count($oreEntries),
+                    'ores' => $oreEntries,
+                    'warnings' => $dayWarnings,
+                ];
+
+                if (!empty($dayWarnings)) {
+                    $storedWarnings[] = [
+                        'date' => $summary->date->format('Y-m-d'),
+                        'issues' => $dayWarnings,
+                    ];
+                }
+            }
+
+            // ================================================================
+            // SECTION 3: Live Recalculation (current prices/rates)
+            // ================================================================
             $entries = DB::table('mining_ledger')
                 ->where('character_id', $characterId)
                 ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
                 ->orderBy('date')
                 ->get();
 
-            // Load settings
             $taxRates = $this->settingsService->getTaxRates();
             $pricingSettings = $this->settingsService->getPricingSettings();
             $generalSettings = $this->settingsService->getGeneralSettings();
 
-            // Check exemptions - get exemption settings (not a list of exempt IDs)
-            $exemptionSettings = $this->settingsService->getExemptions();
-            $isExempt = false;
-            // Note: Current exemption system is threshold-based, not ID-based
-            // Characters with mining value below threshold may be exempt
-
-            // Process each mining entry
-            $traceResults = [];
-            $totalTax = 0;
-            $totalValue = 0;
+            $liveResults = [];
+            $liveTotalTax = 0;
+            $liveTotalValue = 0;
 
             foreach ($entries as $entry) {
                 $typeId = $entry->type_id;
                 $quantity = $entry->quantity;
 
-                // Identify ore
                 $isMoonOre = TypeIdRegistry::isMoonOre($typeId);
                 $isIce = TypeIdRegistry::isIce($typeId);
                 $isGas = TypeIdRegistry::isGas($typeId);
                 $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
                 $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
 
-                // Determine category
                 $category = 'unknown';
                 if ($isMoonOre) $category = 'moon_ore';
                 elseif ($isIce) $category = 'ice';
                 elseif ($isGas) $category = 'gas';
                 elseif ($isRegularOre) $category = 'ore';
 
-                // Determine tax rate
                 $taxRate = 0;
                 if ($isMoonOre && $rarity) {
                     $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
@@ -1414,26 +1497,25 @@ class DiagnosticController extends Controller
                     $taxRate = $taxRates['ore'] ?? 0;
                 }
 
-                // Get valuation
                 $oreValue = 0;
+                $unitPrice = 0;
+                $pricingError = null;
                 try {
-                    $unitPrice = $this->priceService->getPrice($typeId);
-                    $oreValue = ($unitPrice ?? 0) * $quantity;
+                    $unitPrice = $this->priceService->getPrice($typeId) ?? 0;
+                    $oreValue = $unitPrice * $quantity;
                 } catch (\Exception $e) {
-                    // Price fetch failed, keep at 0
+                    $pricingError = $e->getMessage();
                 }
 
-                // Calculate tax
-                $taxAmount = $isExempt ? 0 : round($oreValue * ($taxRate / 100), 2);
-                $totalTax += $taxAmount;
-                $totalValue += $oreValue;
+                $taxAmount = round($oreValue * ($taxRate / 100), 2);
+                $liveTotalTax += $taxAmount;
+                $liveTotalValue += $oreValue;
 
-                // Get type name
                 $typeName = DB::table('invTypes')
                     ->where('typeID', $typeId)
                     ->value('typeName') ?? "Type {$typeId}";
 
-                $traceResults[] = [
+                $liveResults[] = [
                     'date' => $entry->date,
                     'type_id' => $typeId,
                     'type_name' => $typeName,
@@ -1441,49 +1523,211 @@ class DiagnosticController extends Controller
                     'category' => $category,
                     'rarity' => $rarity,
                     'tax_rate' => $taxRate,
-                    'unit_price' => round($oreValue / max($quantity, 1), 2),
+                    'unit_price' => round($unitPrice, 2),
                     'total_value' => round($oreValue, 2),
                     'tax_amount' => $taxAmount,
-                    'is_exempt' => $isExempt,
+                    'pricing_error' => $pricingError,
+                ];
+            }
+
+            // ================================================================
+            // SECTION 4: Mismatch Detection
+            // ================================================================
+            $mismatches = [];
+
+            // Compare stored summary total vs live recalculation
+            $storedVsLiveDiff = abs($storedTotalTax - $liveTotalTax);
+            if ($storedVsLiveDiff > 1) {
+                $mismatches[] = [
+                    'type' => 'stored_vs_live',
+                    'severity' => $storedVsLiveDiff > 1000000 ? 'high' : 'medium',
+                    'message' => sprintf(
+                        'Daily summary total tax (%.2f ISK) differs from live recalculation (%.2f ISK) by %.2f ISK — prices or rates may have changed since summaries were generated',
+                        $storedTotalTax, $liveTotalTax, $storedVsLiveDiff
+                    ),
+                ];
+            }
+
+            // Compare stored total vs tax bill amount
+            if ($taxBill) {
+                // For the bill comparison, we need to check ALL characters under this account
+                $allCharIds = $accountInfo['all_character_ids'] ?? [$characterId];
+                $accountStoredTax = 0;
+
+                if (count($allCharIds) > 1) {
+                    // Sum daily summaries across all alts
+                    $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
+                        ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
+                        ->sum('total_tax');
+                } else {
+                    $accountStoredTax = $storedTotalTax;
+                }
+
+                $billDiff = abs($accountStoredTax - (float) $taxBill->amount_owed);
+                if ($billDiff > 1) {
+                    $mismatches[] = [
+                        'type' => 'summary_vs_bill',
+                        'severity' => $billDiff > 1000000 ? 'high' : 'medium',
+                        'message' => sprintf(
+                            'Account daily summaries total (%.2f ISK across %d characters) differs from tax bill amount (%.2f ISK) by %.2f ISK',
+                            $accountStoredTax, count($allCharIds), (float) $taxBill->amount_owed, $billDiff
+                        ),
+                    ];
+                }
+            }
+
+            // Check for days with mining ledger data but no daily summary
+            $ledgerDates = $entries->pluck('date')->unique()->values()->toArray();
+            $summaryDates = $dailySummaries->map(fn($s) => $s->date->format('Y-m-d'))->toArray();
+            $missingSummaryDates = array_diff($ledgerDates, $summaryDates);
+            if (!empty($missingSummaryDates)) {
+                $mismatches[] = [
+                    'type' => 'missing_summaries',
+                    'severity' => 'high',
+                    'message' => sprintf(
+                        'Mining ledger has data for %d dates with no daily summary: %s — run calculate-taxes to regenerate',
+                        count($missingSummaryDates),
+                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? '...' : '')
+                    ),
+                ];
+            }
+
+            // Check for zero-priced ores
+            $zeroPricedCount = 0;
+            foreach ($storedDays as $day) {
+                foreach ($day['ores'] as $ore) {
+                    if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
+                        $zeroPricedCount++;
+                    }
+                }
+            }
+            if ($zeroPricedCount > 0) {
+                $mismatches[] = [
+                    'type' => 'zero_prices',
+                    'severity' => 'medium',
+                    'message' => sprintf(
+                        '%d ore entries in daily summaries have zero unit price — pricing provider may have failed for these items',
+                        $zeroPricedCount
+                    ),
                 ];
             }
 
             return response()->json([
                 'success' => true,
+
+                // Section 1: Character & Account
                 'character' => [
                     'id' => $characterId,
                     'name' => $characterName,
                     'corporation_id' => $corporationId,
                     'corporation_name' => $corporationName ?? 'Unknown (guest miner)',
                 ],
+                'account' => $accountInfo,
+                'tax_bill' => $taxBillData,
+
+                // Section 2: Stored Daily Summaries
                 'period' => [
                     'month' => $month,
                     'start' => $monthStart->format('Y-m-d'),
                     'end' => $monthEnd->format('Y-m-d'),
                 ],
-                'settings_used' => [
-                    'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
-                    'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
-                    'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
-                    'is_exempt' => $isExempt,
+                'stored_summaries' => [
+                    'days' => $storedDays,
+                    'totals' => [
+                        'total_quantity' => round($storedTotalQuantity, 2),
+                        'total_value' => round($storedTotalValue, 2),
+                        'total_tax' => round($storedTotalTax, 2),
+                        'effective_rate' => $storedTotalValue > 0 ? round(($storedTotalTax / $storedTotalValue) * 100, 2) : 0,
+                        'days_with_data' => count($storedDays),
+                    ],
+                    'warnings' => $storedWarnings,
                 ],
-                'tax_rates_applied' => $taxRates,
-                'summary' => [
-                    'total_entries' => count($entries),
-                    'total_value' => round($totalValue, 2),
-                    'total_tax' => round($totalTax, 2),
-                    'effective_rate' => $totalValue > 0 ? round(($totalTax / $totalValue) * 100, 2) : 0,
+
+                // Section 3: Live Recalculation
+                'live_recalculation' => [
+                    'settings_used' => [
+                        'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
+                        'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                        'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
+                    ],
+                    'tax_rates' => $taxRates,
+                    'totals' => [
+                        'total_entries' => count($entries),
+                        'total_value' => round($liveTotalValue, 2),
+                        'total_tax' => round($liveTotalTax, 2),
+                        'effective_rate' => $liveTotalValue > 0 ? round(($liveTotalTax / $liveTotalValue) * 100, 2) : 0,
+                    ],
+                    'entries' => $liveResults,
                 ],
-                'entries' => $traceResults,
+
+                // Section 4: Mismatches
+                'mismatches' => $mismatches,
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Tax diagnostic failed', ['error' => $e->getMessage()]);
+            Log::error('Tax diagnostic failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Resolve account info: main character, all alts under the same SeAT user account.
+     *
+     * @param int $characterId
+     * @return array
+     */
+    private function resolveAccountInfo(int $characterId): array
+    {
+        // Find user_id from refresh_tokens
+        $userId = DB::table('refresh_tokens')
+            ->where('character_id', $characterId)
+            ->value('user_id');
+
+        if (!$userId) {
+            return [
+                'main_character_id' => null,
+                'main_character_name' => null,
+                'all_character_ids' => [$characterId],
+                'all_characters' => [],
+                'is_registered' => false,
+            ];
+        }
+
+        // Get main character from users table
+        $mainCharacterId = DB::table('users')
+            ->where('id', $userId)
+            ->value('main_character_id');
+
+        $mainCharacterName = $mainCharacterId
+            ? DB::table('character_infos')->where('character_id', $mainCharacterId)->value('name')
+            : null;
+
+        // Get all characters under this user account
+        $allCharacterIds = DB::table('refresh_tokens')
+            ->where('user_id', $userId)
+            ->pluck('character_id')
+            ->toArray();
+
+        $allCharacters = DB::table('character_infos')
+            ->whereIn('character_id', $allCharacterIds)
+            ->get(['character_id', 'name'])
+            ->map(fn($c) => [
+                'character_id' => $c->character_id,
+                'name' => $c->name,
+                'is_main' => $c->character_id == $mainCharacterId,
+            ])
+            ->toArray();
+
+        return [
+            'main_character_id' => $mainCharacterId,
+            'main_character_name' => $mainCharacterName,
+            'all_character_ids' => $allCharacterIds,
+            'all_characters' => $allCharacters,
+            'is_registered' => true,
+        ];
     }
 
     /**

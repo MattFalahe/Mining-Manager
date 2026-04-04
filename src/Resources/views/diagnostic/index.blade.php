@@ -885,14 +885,14 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Trace the full tax calculation chain for a specific character and month. Shows every decision: ore category, rarity, tax rate, price, and final tax amount.</p>
+                            <p>Full diagnostic: stored daily summaries, live recalculation with current prices, account/bill info, and mismatch detection.</p>
 
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label>Character ID</label>
                                         <input type="number" id="taxTraceCharId" class="form-control" placeholder="e.g. 90000001">
-                                        <small class="form-text text-muted">Enter the character_id to trace</small>
+                                        <small class="form-text text-muted">Enter the character_id to trace (can be main or alt)</small>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
@@ -2103,46 +2103,264 @@ function runTaxTrace() {
         btnText.textContent = 'Trace Tax Calculation';
         spinner.style.display = 'none';
 
-        if (data.success) {
-            let html = `<div class="provider-test-result ${data.summary.total_entries > 0 ? 'success' : 'warning'}">
-                <h5><i class="fas fa-calculator"></i> Tax Trace: ${data.character.name}</h5>
-                <div class="row mb-2">
-                    <div class="col-md-4"><strong>Corporation:</strong> ${data.character.corporation_name || 'Unknown'}</div>
-                    <div class="col-md-4"><strong>Period:</strong> ${data.period.start} to ${data.period.end}</div>
-                    <div class="col-md-4"><strong>Exempt:</strong> ${data.settings_used.is_exempt ? '<span class="text-warning">YES</span>' : 'No'}</div>
+        if (!data.success) {
+            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+            return;
+        }
+
+        const fmtISK = (v) => Number(v || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+        const fmtNum = (v) => Number(v || 0).toLocaleString();
+        const oreIcon = (cat) => cat === 'moon_ore' ? 'fa-moon' : (cat === 'ice' ? 'fa-snowflake' : (cat === 'gas' ? 'fa-cloud' : 'fa-gem'));
+
+        let html = '';
+
+        // ================================================================
+        // SECTION 1: Character & Account Info
+        // ================================================================
+        const acc = data.account || {};
+        const bill = data.tax_bill;
+        const statusColors = { paid: 'success', unpaid: 'warning', overdue: 'danger', partial: 'info', waived: 'secondary' };
+
+        html += `<div class="provider-test-result ${data.stored_summaries.totals.days_with_data > 0 ? 'success' : 'warning'}">
+            <h5><i class="fas fa-user"></i> Character & Account Info</h5>
+            <div class="row mb-2">
+                <div class="col-md-4">
+                    <strong>Character:</strong> ${data.character.name} <small class="text-muted">(${data.character.id})</small>
                 </div>
-                <div class="row mb-2">
-                    <div class="col-md-3"><strong>Provider:</strong> ${data.settings_used.price_provider}</div>
-                    <div class="col-md-3"><strong>Method:</strong> ${data.settings_used.valuation_method}</div>
-                    <div class="col-md-3"><strong>Refining:</strong> ${data.settings_used.refining_efficiency}%</div>
-                    <div class="col-md-3"><strong>Entries:</strong> ${data.summary.total_entries}</div>
+                <div class="col-md-4">
+                    <strong>Corporation:</strong> ${data.character.corporation_name || 'Unknown'}
                 </div>
-                <hr>
-                <div class="row">
-                    <div class="col-md-4"><h6>Total Value: <strong>${Number(data.summary.total_value).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></h6></div>
-                    <div class="col-md-4"><h6>Total Tax: <strong>${Number(data.summary.total_tax).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></h6></div>
-                    <div class="col-md-4"><h6>Effective Rate: <strong>${data.summary.effective_rate}%</strong></h6></div>
+                <div class="col-md-4">
+                    <strong>Period:</strong> ${data.period.start} to ${data.period.end}
+                </div>
+            </div>`;
+
+        // Account info
+        if (acc.is_registered) {
+            html += `<div class="row mb-2">
+                <div class="col-md-4">
+                    <strong>Main Character:</strong> ${acc.main_character_name || 'N/A'} <small class="text-muted">(${acc.main_character_id || '?'})</small>
+                </div>
+                <div class="col-md-8">
+                    <strong>All Characters:</strong> `;
+            if (acc.all_characters && acc.all_characters.length > 0) {
+                html += acc.all_characters.map(c =>
+                    `${c.name}${c.is_main ? ' <span class="badge badge-primary">MAIN</span>' : ''}`
+                ).join(', ');
+            } else {
+                html += '<span class="text-muted">None found</span>';
+            }
+            html += `</div></div>`;
+        } else {
+            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT (guest miner)</span></div></div>`;
+        }
+
+        // Tax bill
+        if (bill) {
+            const statusColor = statusColors[bill.status] || 'secondary';
+            html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
+                <div class="col-md-3">
+                    <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
+                </div>
+                <div class="col-md-3">
+                    <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
+                </div>
+                <div class="col-md-3">
+                    <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
+                </div>
+                <div class="col-md-3">
+                    <strong>Due:</strong> ${bill.due_date || 'N/A'}
+                    ${bill.tax_code ? ' | <strong>Code:</strong> ' + bill.tax_code : ''}
+                </div>
+            </div>`;
+        } else {
+            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-muted"><i class="fas fa-info-circle"></i> No tax bill found for this period (taxes may not have been calculated yet)</span></div></div>`;
+        }
+
+        html += `</div>`;
+
+        // ================================================================
+        // SECTION 2: Mismatches / Warnings
+        // ================================================================
+        if (data.mismatches && data.mismatches.length > 0) {
+            html += `<div class="provider-test-result error" style="margin-top: 10px;">
+                <h5><i class="fas fa-exclamation-triangle text-warning"></i> Issues Detected (${data.mismatches.length})</h5>`;
+            data.mismatches.forEach(m => {
+                const sevColor = m.severity === 'high' ? 'danger' : (m.severity === 'medium' ? 'warning' : 'info');
+                const sevIcon = m.severity === 'high' ? 'fa-times-circle' : 'fa-exclamation-circle';
+                html += `<div style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span class="badge badge-${sevColor}"><i class="fas ${sevIcon}"></i> ${m.severity.toUpperCase()}</span>
+                    <span style="margin-left: 8px;">${m.message}</span>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        // ================================================================
+        // SECTION 3: Stored Daily Summaries
+        // ================================================================
+        const stored = data.stored_summaries;
+        html += `<div class="provider-test-result success" style="margin-top: 10px;">
+            <h5><i class="fas fa-database"></i> Stored Daily Summaries</h5>
+            <div class="row mb-2">
+                <div class="col-md-3"><strong>Days with data:</strong> ${stored.totals.days_with_data}</div>
+                <div class="col-md-3"><strong>Total Value:</strong> ${fmtISK(stored.totals.total_value)} ISK</div>
+                <div class="col-md-3"><strong>Total Tax:</strong> ${fmtISK(stored.totals.total_tax)} ISK</div>
+                <div class="col-md-3"><strong>Effective Rate:</strong> ${stored.totals.effective_rate}%</div>
+            </div>`;
+
+        if (stored.days.length > 0) {
+            html += `<div style="max-height: 600px; overflow-y: auto; margin-top: 10px;">`;
+
+            stored.days.forEach((day, dayIdx) => {
+                const hasWarnings = day.warnings && day.warnings.length > 0;
+                const dayId = 'day_' + dayIdx;
+
+                html += `<div style="border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; margin-bottom: 8px; overflow: hidden;">
+                    <div style="background: rgba(0,0,0,0.2); padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="document.getElementById('${dayId}').style.display = document.getElementById('${dayId}').style.display === 'none' ? 'block' : 'none'">
+                        <span>
+                            <i class="fas fa-calendar-day"></i> <strong>${day.date}</strong>
+                            <span class="text-muted ml-2">${day.ore_count} ore types</span>
+                            ${day.is_finalized ? '<span class="badge badge-success ml-2">FINALIZED</span>' : '<span class="badge badge-warning ml-2">PENDING</span>'}
+                            ${hasWarnings ? '<span class="badge badge-danger ml-2"><i class="fas fa-exclamation-triangle"></i> ' + day.warnings.length + ' issues</span>' : ''}
+                        </span>
+                        <span>
+                            <span class="text-muted">Value:</span> ${fmtISK(day.total_value)} ISK
+                            <span class="text-muted ml-3">Tax:</span> <strong>${fmtISK(day.total_tax)} ISK</strong>
+                            <i class="fas fa-chevron-down ml-2"></i>
+                        </span>
+                    </div>
+                    <div id="${dayId}" style="display: none; padding: 8px 12px;">`;
+
+                // Category breakdown
+                html += `<div class="row mb-2" style="font-size: 0.85em;">
+                    <div class="col-md-3"><i class="fas fa-moon text-warning"></i> Moon: ${fmtISK(day.moon_ore_value)} ISK</div>
+                    <div class="col-md-3"><i class="fas fa-gem text-info"></i> Ore: ${fmtISK(day.regular_ore_value)} ISK</div>
+                    <div class="col-md-3"><i class="fas fa-snowflake text-primary"></i> Ice: ${fmtISK(day.ice_value)} ISK</div>
+                    <div class="col-md-3"><i class="fas fa-cloud text-success"></i> Gas: ${fmtISK(day.gas_value)} ISK</div>
                 </div>`;
 
-            if (data.entries.length > 0) {
-                html += `<hr><h6>Entry Details (${data.entries.length} entries):</h6><div style="max-height: 400px; overflow-y: auto;">`;
-                data.entries.forEach(e => {
-                    const icon = e.category === 'moon_ore' ? 'fa-moon' : (e.category === 'ice' ? 'fa-snowflake' : (e.category === 'gas' ? 'fa-cloud' : 'fa-gem'));
-                    html += `<div class="price-item">
-                        <span><i class="fas ${icon}"></i> ${e.type_name} x${e.quantity.toLocaleString()} <small class="text-muted">[${e.category}${e.rarity ? '/' + e.rarity : ''}] @ ${e.tax_rate}%</small></span>
-                        <span><strong>${Number(e.tax_amount).toLocaleString('en-US', {minimumFractionDigits: 2})} ISK</strong></span>
-                    </div>`;
-                });
-                html += '</div>';
-            } else {
-                html += '<p class="text-muted mt-3">No mining entries found for this character in the selected month.</p>';
-            }
+                // Ore details table
+                if (day.ores && day.ores.length > 0) {
+                    html += `<table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
+                        <thead><tr>
+                            <th>Ore</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Unit Price</th>
+                            <th class="text-right">Total Value</th>
+                            <th class="text-center">Tax Rate</th>
+                            <th class="text-center">Event Mod</th>
+                            <th class="text-center">Eff. Rate</th>
+                            <th class="text-right">Est. Tax</th>
+                            <th class="text-center">Status</th>
+                        </tr></thead><tbody>`;
 
-            html += '</div>';
-            resultsDiv.innerHTML = html;
+                    day.ores.forEach(ore => {
+                        const hasOreWarning = ore.warnings && ore.warnings.length > 0;
+                        const rowClass = hasOreWarning ? 'style="background: rgba(255,0,0,0.1);"' : '';
+
+                        html += `<tr ${rowClass}>
+                            <td><i class="fas ${oreIcon(ore.category)}"></i> ${ore.ore_name || 'Type ' + ore.type_id}
+                                <small class="text-muted">[${ore.category}${ore.moon_rarity ? '/' + ore.moon_rarity : ''}]</small>
+                            </td>
+                            <td class="text-right">${fmtNum(ore.quantity)}</td>
+                            <td class="text-right">${ore.unit_price > 0 ? fmtISK(ore.unit_price) : '<span class="text-danger">0.00</span>'}</td>
+                            <td class="text-right">${fmtISK(ore.total_value)}</td>
+                            <td class="text-center">${ore.tax_rate || 0}%</td>
+                            <td class="text-center">${ore.event_modifier ? ore.event_modifier + '%' : '-'}</td>
+                            <td class="text-center">${ore.effective_rate || 0}%</td>
+                            <td class="text-right"><strong>${fmtISK(ore.estimated_tax)}</strong></td>
+                            <td class="text-center">
+                                ${ore.is_taxable ? '<span class="badge badge-success">Taxable</span>' : '<span class="badge badge-secondary">Exempt</span>'}
+                                ${hasOreWarning ? '<span class="badge badge-danger" title="' + ore.warnings.join('; ') + '"><i class="fas fa-exclamation-triangle"></i></span>' : ''}
+                            </td>
+                        </tr>`;
+                    });
+
+                    html += `</tbody></table>`;
+                }
+
+                html += `</div></div>`;
+            });
+
+            html += `</div>`;
         } else {
-            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
+            html += `<p class="text-muted mt-3">No daily summaries found for this character in the selected month. Run calculate-taxes to generate them.</p>`;
         }
+
+        html += `</div>`;
+
+        // ================================================================
+        // SECTION 4: Live Recalculation
+        // ================================================================
+        const live = data.live_recalculation;
+        html += `<div class="provider-test-result" style="margin-top: 10px; border-left: 3px solid #17a2b8;">
+            <h5><i class="fas fa-sync-alt"></i> Live Recalculation <small class="text-muted">(current prices & rates)</small></h5>
+            <div class="row mb-2">
+                <div class="col-md-3"><strong>Provider:</strong> ${live.settings_used.price_provider}</div>
+                <div class="col-md-3"><strong>Method:</strong> ${live.settings_used.valuation_method}</div>
+                <div class="col-md-3"><strong>Refining:</strong> ${live.settings_used.refining_efficiency}%</div>
+                <div class="col-md-3"><strong>Ledger Entries:</strong> ${live.totals.total_entries}</div>
+            </div>
+            <div class="row mb-2">
+                <div class="col-md-4"><strong>Total Value:</strong> ${fmtISK(live.totals.total_value)} ISK</div>
+                <div class="col-md-4"><strong>Total Tax:</strong> ${fmtISK(live.totals.total_tax)} ISK</div>
+                <div class="col-md-4"><strong>Effective Rate:</strong> ${live.totals.effective_rate}%</div>
+            </div>`;
+
+        // Comparison bar
+        if (stored.totals.days_with_data > 0) {
+            const diff = Math.abs(stored.totals.total_tax - live.totals.total_tax);
+            const diffPct = stored.totals.total_tax > 0 ? ((diff / stored.totals.total_tax) * 100).toFixed(1) : 0;
+            const diffColor = diff < 1 ? 'success' : (diff < 1000000 ? 'warning' : 'danger');
+            html += `<div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+                <strong>Stored vs Live Difference:</strong>
+                <span class="badge badge-${diffColor}" style="font-size: 0.9em;">
+                    ${diff < 1 ? 'MATCH' : fmtISK(diff) + ' ISK (' + diffPct + '%)'}
+                </span>
+                ${diff >= 1 ? ' <small class="text-muted">Prices or rates may have changed since summaries were generated</small>' : ''}
+            </div>`;
+        }
+
+        // Collapsible live entries
+        if (live.entries && live.entries.length > 0) {
+            html += `<div style="margin-top: 5px;">
+                <a href="#" onclick="event.preventDefault(); document.getElementById('liveEntriesTable').style.display = document.getElementById('liveEntriesTable').style.display === 'none' ? 'block' : 'none'">
+                    <i class="fas fa-chevron-down"></i> Show ${live.entries.length} ledger entries
+                </a>
+                <div id="liveEntriesTable" style="display: none; max-height: 400px; overflow-y: auto; margin-top: 8px;">
+                    <table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
+                        <thead><tr>
+                            <th>Date</th>
+                            <th>Ore</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Unit Price</th>
+                            <th class="text-right">Value</th>
+                            <th class="text-center">Rate</th>
+                            <th class="text-right">Tax</th>
+                        </tr></thead><tbody>`;
+
+            live.entries.forEach(e => {
+                const hasErr = e.pricing_error || e.unit_price == 0;
+                html += `<tr ${hasErr ? 'style="background: rgba(255,0,0,0.1);"' : ''}>
+                    <td>${e.date}</td>
+                    <td><i class="fas ${oreIcon(e.category)}"></i> ${e.type_name} <small class="text-muted">[${e.category}${e.rarity ? '/' + e.rarity : ''}]</small>
+                        ${e.pricing_error ? '<br><small class="text-danger"><i class="fas fa-times-circle"></i> ' + e.pricing_error + '</small>' : ''}
+                    </td>
+                    <td class="text-right">${fmtNum(e.quantity)}</td>
+                    <td class="text-right">${e.unit_price > 0 ? fmtISK(e.unit_price) : '<span class="text-danger">0.00</span>'}</td>
+                    <td class="text-right">${fmtISK(e.total_value)}</td>
+                    <td class="text-center">${e.tax_rate}%</td>
+                    <td class="text-right"><strong>${fmtISK(e.tax_amount)}</strong></td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div></div>`;
+        }
+
+        html += `</div>`;
+
+        resultsDiv.innerHTML = html;
     })
     .catch(error => {
         btnText.textContent = 'Trace Tax Calculation';
