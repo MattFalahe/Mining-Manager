@@ -152,7 +152,45 @@ class SettingsManagerService
             
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
+
+            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
+            // Read with Moon Owner Corp context since that's where they're stored
+            'guest_moon_ore_r64' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r64'),
+            'guest_moon_ore_r32' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r32'),
+            'guest_moon_ore_r16' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r16'),
+            'guest_moon_ore_r8' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r8'),
+            'guest_moon_ore_r4' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r4'),
+            'guest_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.ore'),
+            'guest_ice_tax' => $this->getGuestRateSetting('guest_tax_rates.ice'),
+            'guest_gas_tax' => $this->getGuestRateSetting('guest_tax_rates.gas'),
+            'guest_abyssal_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.abyssal_ore'),
         ];
+    }
+
+    /**
+     * Read a guest tax rate setting using Moon Owner Corp context.
+     *
+     * Guest rates are always stored under the Moon Owner Corporation's
+     * settings context, regardless of which corporation is currently active.
+     *
+     * @param string $key
+     * @return float
+     */
+    private function getGuestRateSetting(string $key): float
+    {
+        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
+        if (!$moonOwnerCorpId) {
+            return 0;
+        }
+
+        $savedContext = $this->activeCorporationId;
+        $this->activeCorporationId = (int) $moonOwnerCorpId;
+
+        $value = $this->getSetting($key);
+
+        $this->activeCorporationId = $savedContext;
+
+        return $value !== null ? (float) $value : 0;
     }
 
     /**
@@ -175,9 +213,36 @@ class SettingsManagerService
      */
     public function updateGeneralSettings(array $settings)
     {
+        // Map guest rate form field names to their guest_tax_rates.* setting keys
+        $guestRateKeyMap = [
+            'guest_moon_ore_r64' => 'guest_tax_rates.moon_ore.r64',
+            'guest_moon_ore_r32' => 'guest_tax_rates.moon_ore.r32',
+            'guest_moon_ore_r16' => 'guest_tax_rates.moon_ore.r16',
+            'guest_moon_ore_r8'  => 'guest_tax_rates.moon_ore.r8',
+            'guest_moon_ore_r4'  => 'guest_tax_rates.moon_ore.r4',
+            'guest_ore_tax'      => 'guest_tax_rates.ore',
+            'guest_ice_tax'      => 'guest_tax_rates.ice',
+            'guest_gas_tax'      => 'guest_tax_rates.gas',
+            'guest_abyssal_ore_tax' => 'guest_tax_rates.abyssal_ore',
+        ];
+
         DB::beginTransaction();
 
         try {
+            // Extract guest rates from settings before the main loop
+            $guestRates = [];
+            foreach ($guestRateKeyMap as $formKey => $settingKey) {
+                if (array_key_exists($formKey, $settings)) {
+                    $guestRates[$settingKey] = $settings[$formKey];
+                    unset($settings[$formKey]);
+                }
+            }
+
+            // Capture Moon Owner Corp ID before the loop (form value or existing DB value)
+            $moonOwnerCorpId = $settings['moon_owner_corporation_id']
+                ?? $this->getSetting('general.moon_owner_corporation_id');
+
+            // Save regular general settings
             foreach ($settings as $key => $value) {
                 // Payment settings use payment. prefix instead of general.
                 if (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours'])) {
@@ -185,6 +250,22 @@ class SettingsManagerService
                     $this->updateSetting($settingKey, $value);
                 } else {
                     $this->updateSetting('general.' . $key, $value);
+                }
+            }
+
+            // Save guest rates with Moon Owner Corp context
+            if (!empty($guestRates)) {
+                if ($moonOwnerCorpId) {
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = (int) $moonOwnerCorpId;
+
+                    foreach ($guestRates as $settingKey => $value) {
+                        $this->updateSetting($settingKey, $value, 'float');
+                    }
+
+                    $this->activeCorporationId = $savedContext;
+                } else {
+                    Log::warning('Mining Manager: Cannot save guest tax rates — no Moon Owner Corporation configured');
                 }
             }
 
@@ -455,35 +536,24 @@ class SettingsManagerService
                 $this->updateSetting('tax_rates.abyssal_ore', $rates['abyssal_ore_tax'], 'float');
             }
 
-            // Update guest miner tax settings - Moon ore rates
-            if (isset($rates['guest_moon_ore_r64'])) {
-                $this->updateSetting('guest_tax_rates.moon_ore.r64', $rates['guest_moon_ore_r64'], 'float');
-            }
-            if (isset($rates['guest_moon_ore_r32'])) {
-                $this->updateSetting('guest_tax_rates.moon_ore.r32', $rates['guest_moon_ore_r32'], 'float');
-            }
-            if (isset($rates['guest_moon_ore_r16'])) {
-                $this->updateSetting('guest_tax_rates.moon_ore.r16', $rates['guest_moon_ore_r16'], 'float');
-            }
-            if (isset($rates['guest_moon_ore_r8'])) {
-                $this->updateSetting('guest_tax_rates.moon_ore.r8', $rates['guest_moon_ore_r8'], 'float');
-            }
-            if (isset($rates['guest_moon_ore_r4'])) {
-                $this->updateSetting('guest_tax_rates.moon_ore.r4', $rates['guest_moon_ore_r4'], 'float');
-            }
-
-            // Update guest miner tax settings - Regular ore rates
-            if (isset($rates['guest_ore_tax'])) {
-                $this->updateSetting('guest_tax_rates.ore', $rates['guest_ore_tax'], 'float');
-            }
-            if (isset($rates['guest_ice_tax'])) {
-                $this->updateSetting('guest_tax_rates.ice', $rates['guest_ice_tax'], 'float');
-            }
-            if (isset($rates['guest_gas_tax'])) {
-                $this->updateSetting('guest_tax_rates.gas', $rates['guest_gas_tax'], 'float');
-            }
-            if (isset($rates['guest_abyssal_ore_tax'])) {
-                $this->updateSetting('guest_tax_rates.abyssal_ore', $rates['guest_abyssal_ore_tax'], 'float');
+            // Guest miner tax rates have moved to General Settings (tied to Moon Owner Corporation).
+            // See updateGeneralSettings() for the new save path.
+            // Legacy support: if guest rate keys are somehow present, still save them.
+            $guestKeys = [
+                'guest_moon_ore_r64' => 'guest_tax_rates.moon_ore.r64',
+                'guest_moon_ore_r32' => 'guest_tax_rates.moon_ore.r32',
+                'guest_moon_ore_r16' => 'guest_tax_rates.moon_ore.r16',
+                'guest_moon_ore_r8'  => 'guest_tax_rates.moon_ore.r8',
+                'guest_moon_ore_r4'  => 'guest_tax_rates.moon_ore.r4',
+                'guest_ore_tax'      => 'guest_tax_rates.ore',
+                'guest_ice_tax'      => 'guest_tax_rates.ice',
+                'guest_gas_tax'      => 'guest_tax_rates.gas',
+                'guest_abyssal_ore_tax' => 'guest_tax_rates.abyssal_ore',
+            ];
+            foreach ($guestKeys as $formKey => $settingKey) {
+                if (isset($rates[$formKey])) {
+                    $this->updateSetting($settingKey, $rates[$formKey], 'float');
+                }
             }
 
             // Update exemption settings

@@ -289,6 +289,17 @@ class SettingsController extends Controller
             // Payment Settings
             'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
+
+            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
+            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
+            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -442,18 +453,17 @@ class SettingsController extends Controller
             'gas_tax' => 'required|numeric|min:0|max:100',
             'abyssal_ore_tax' => 'required|numeric|min:0|max:100',
 
-            // Guest Miner Tax Settings - Moon Ore
-            'guest_moon_ore_r64' => 'required|numeric|min:0|max:100',
-            'guest_moon_ore_r32' => 'required|numeric|min:0|max:100',
-            'guest_moon_ore_r16' => 'required|numeric|min:0|max:100',
-            'guest_moon_ore_r8' => 'required|numeric|min:0|max:100',
-            'guest_moon_ore_r4' => 'required|numeric|min:0|max:100',
-
-            // Guest Miner Tax Settings - Regular Ore
-            'guest_ore_tax' => 'required|numeric|min:0|max:100',
-            'guest_ice_tax' => 'required|numeric|min:0|max:100',
-            'guest_gas_tax' => 'required|numeric|min:0|max:100',
-            'guest_abyssal_ore_tax' => 'required|numeric|min:0|max:100',
+            // Guest Miner Tax Settings — moved to General Settings tab.
+            // Kept as nullable for backward compatibility if submitted from legacy forms.
+            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
+            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
+            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
+            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
 
             // Tax Exemption Settings
             'exemption_enabled' => 'nullable|boolean',
