@@ -334,8 +334,9 @@ class SettingsManagerService
 
     /**
      * Get tax rates for a specific corporation.
-     * If the character is a guest miner (not from moon owner corporation),
-     * uses the configured guest miner tax rates (or falls back to corp rates if guest rate is 0).
+     * If the character is a guest miner (not from any configured corporation),
+     * uses guest miner tax rates from the Moon Owner Corp config.
+     * Guest rate = 0 means actual 0% tax (no fallback to corp rates).
      *
      * @param int|null $characterCorporationId The corporation ID of the character being taxed
      * @return array
@@ -364,38 +365,48 @@ class SettingsManagerService
             return $corpTaxRates;
         }
 
-        // Character is a guest miner - get guest tax rates
-        $guestRates = $corpTaxRates; // Start with corp rates as fallback
+        // Character is a guest miner — guest rates from Moon Owner Corp config
+        // Guest rate = 0 means actual 0% tax, NOT "use corp rate"
+        // Only falls back to corp rate if the guest rate setting does not exist (null)
+        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
+        $savedContext = $this->activeCorporationId;
+        if ($moonOwnerCorpId) {
+            $this->activeCorporationId = (int) $moonOwnerCorpId;
+        }
 
-        // Get guest moon ore rates (if 0, fallback to corp rate)
+        $guestRates = $corpTaxRates; // Start with corp rates as fallback for unconfigured fields
+
+        // Guest moon ore rates — null = not configured (use corp rate), 0 = actual 0%
         foreach (['r64', 'r32', 'r16', 'r8', 'r4'] as $rarity) {
-            $guestRate = $this->getSetting("guest_tax_rates.moon_ore.{$rarity}", 0);
-            if ($guestRate > 0) {
-                $guestRates['moon_ore'][$rarity] = $guestRate;
+            $guestRate = $this->getSetting("guest_tax_rates.moon_ore.{$rarity}");
+            if ($guestRate !== null) {
+                $guestRates['moon_ore'][$rarity] = (float) $guestRate;
             }
-            // If 0 or not set, keeps the corp rate from $corpTaxRates
         }
 
-        // Get guest regular ore rates (if 0, fallback to corp rate)
-        $guestIceRate = $this->getSetting('guest_tax_rates.ice', 0);
-        if ($guestIceRate > 0) {
-            $guestRates['ice'] = $guestIceRate;
+        // Guest regular ore/ice/gas/abyssal rates
+        $guestIceRate = $this->getSetting('guest_tax_rates.ice');
+        if ($guestIceRate !== null) {
+            $guestRates['ice'] = (float) $guestIceRate;
         }
 
-        $guestOreRate = $this->getSetting('guest_tax_rates.ore', 0);
-        if ($guestOreRate > 0) {
-            $guestRates['ore'] = $guestOreRate;
+        $guestOreRate = $this->getSetting('guest_tax_rates.ore');
+        if ($guestOreRate !== null) {
+            $guestRates['ore'] = (float) $guestOreRate;
         }
 
-        $guestGasRate = $this->getSetting('guest_tax_rates.gas', 0);
-        if ($guestGasRate > 0) {
-            $guestRates['gas'] = $guestGasRate;
+        $guestGasRate = $this->getSetting('guest_tax_rates.gas');
+        if ($guestGasRate !== null) {
+            $guestRates['gas'] = (float) $guestGasRate;
         }
 
-        $guestAbyssalRate = $this->getSetting('guest_tax_rates.abyssal_ore', 0);
-        if ($guestAbyssalRate > 0) {
-            $guestRates['abyssal_ore'] = $guestAbyssalRate;
+        $guestAbyssalRate = $this->getSetting('guest_tax_rates.abyssal_ore');
+        if ($guestAbyssalRate !== null) {
+            $guestRates['abyssal_ore'] = (float) $guestAbyssalRate;
         }
+
+        // Restore context
+        $this->activeCorporationId = $savedContext;
 
         return $guestRates;
     }

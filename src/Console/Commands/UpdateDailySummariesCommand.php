@@ -202,13 +202,23 @@ class UpdateDailySummariesCommand extends Command
         $adjusted = 0;
         $affectedPairs = collect();
 
+        // Only reconcile against Moon Owner Corp's observer data
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $moonOwnerCorpId = $settingsService->getSetting('general.moon_owner_corporation_id');
+
         foreach ($orphans as $orphan) {
             // Sum all observer quantities for same character+date+type
-            $observerQty = MiningLedger::where('character_id', $orphan->character_id)
+            // Only match against Moon Owner Corp's observers (not other corps)
+            $observerQuery = MiningLedger::where('character_id', $orphan->character_id)
                 ->whereDate('date', $orphan->date)
                 ->where('type_id', $orphan->type_id)
-                ->whereNotNull('observer_id')
-                ->sum('quantity');
+                ->whereNotNull('observer_id');
+
+            if ($moonOwnerCorpId) {
+                $observerQuery->where('corporation_id', $moonOwnerCorpId);
+            }
+
+            $observerQty = $observerQuery->sum('quantity');
 
             if ($observerQty <= 0) {
                 continue;

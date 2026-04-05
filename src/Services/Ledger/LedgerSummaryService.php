@@ -173,11 +173,6 @@ class LedgerSummaryService
         $character = CharacterInfo::find($characterId);
         $characterCorpId = $character ? $character->corporation_id : null;
 
-        // Get corporation_id from ledger data (structure owner)
-        $corporationId = (clone $baseQuery)
-            ->whereNotNull('corporation_id')
-            ->value('corporation_id');
-
         // Ensure corporation context is set for reading settings
         // Without this, commands running without web context won't find corp-scoped settings
         $configuredCorpId = $this->settingsService->getActiveCorporation();
@@ -191,8 +186,19 @@ class LedgerSummaryService
             }
         }
 
-        // Get moon owner corporation for only_corp_moon_ore check
+        // Get moon owner corporation for observer filtering and tax selector
         $moonOwnerCorpId = $this->settingsService->getGeneralSettings()['moon_owner_corporation_id'] ?? null;
+
+        // Get list of configured corporations (for character ledger tax filtering)
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+
+        // Get corporation_id for the summary — prefer Moon Owner Corp if entries exist
+        $corporationId = (clone $baseQuery)
+            ->whereNotNull('corporation_id')
+            ->when($moonOwnerCorpId, function ($q) use ($moonOwnerCorpId) {
+                return $q->where('corporation_id', $moonOwnerCorpId);
+            })
+            ->value('corporation_id');
 
         // Get event tax modifier for this character on this date
         $eventModifier = $this->getEventModifierForDate($characterId, $dateCarbon, $characterCorpId);
@@ -233,17 +239,44 @@ class LedgerSummaryService
                 ? TypeIdRegistry::getMoonOreRarity($typeId)
                 : null;
 
-            // Use moon owner corporation context for tax selector and rates
-            // The entry's corporation_id is the structure owner — used for comparison only
             $entryCorporationId = $entry->corporation_id;
-            if ($moonOwnerCorpId) {
-                $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
+
+            // ================================================================
+            // Corporation filtering: only process relevant entries
+            // ================================================================
+            if ($entryCorporationId !== null) {
+                // Observer data — ONLY process from Moon Owner Corp's structures
+                if ((int) $entryCorporationId !== (int) ($moonOwnerCorpId ?? 0)) {
+                    continue; // Skip entries from other corps' observers (e.g. Mount Othrys)
+                }
+                // Moon observer entry: use Moon Owner Corp context for settings
+                if ($moonOwnerCorpId) {
+                    $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
+                }
+            } else {
+                // Character ledger entry (NULL corporation_id)
+                // Only tax if the character belongs to a configured corporation
+                if (!$characterCorpId || (
+                    !empty($homeCorporationIds)
+                    && !in_array((int) $characterCorpId, $homeCorporationIds, true)
+                )) {
+                    continue; // Character not in SeAT or not in any configured corp — skip
+                }
+                // Use character's own corp context for rates
+                $this->settingsService->setActiveCorporation((int) $characterCorpId);
             }
 
-            // Always use current tax rates from settings (single source of truth)
-            $isTaxable = $entryCorporationId
-                ? $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId)
-                : false;
+            // Determine taxability based on ore type and tax selector settings
+            if ($entryCorporationId !== null) {
+                // Moon observer entry — use shouldTaxType (handles only_corp_moon_ore etc.)
+                $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
+            } else {
+                // Character ledger — moon ore without observer data is not taxable yet
+                // (it will become taxable when observer data arrives and reconciliation runs)
+                // Non-moon ore types are taxable based on tax selector
+                $isTaxable = !TypeIdRegistry::isMoonOre($typeId)
+                    && $this->shouldTaxType($typeId, null, $moonOwnerCorpId);
+            }
             $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
 
             // Apply event modifier

@@ -184,14 +184,33 @@ class TaxCalculationService
      */
     private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
     {
-        // Get all characters who mined at our corporation's structures this period
+        // Get all characters who should be taxed this period:
+        // 1. Characters with entries from Moon Owner Corp's observer (moon mining)
+        // 2. Characters with character ledger entries (NULL corp) who belong to a configured corp
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+
         $query = MiningLedger::whereBetween('date', [$startDate, $endDate])
             ->whereNotNull('processed_at');
 
-        if ($moonOwnerCorpId) {
-            $query->where('corporation_id', $moonOwnerCorpId);
-        }
+        $query->where(function ($q) use ($moonOwnerCorpId, $homeCorporationIds) {
+            // Moon observer entries from our structures
+            if ($moonOwnerCorpId) {
+                $q->where('corporation_id', $moonOwnerCorpId);
+            }
+
+            // Character ledger entries for configured corp members
+            if (!empty($homeCorporationIds)) {
+                $q->orWhere(function ($inner) use ($homeCorporationIds) {
+                    $inner->whereNull('corporation_id')
+                          ->whereIn('character_id', function ($sub) use ($homeCorporationIds) {
+                              $sub->select('character_id')
+                                  ->from('character_affiliations')
+                                  ->whereIn('corporation_id', $homeCorporationIds);
+                          });
+                });
+            }
+        });
 
         $characters = $query->distinct('character_id')
             ->pluck('character_id');
