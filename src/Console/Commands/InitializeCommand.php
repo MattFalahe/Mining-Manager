@@ -222,11 +222,13 @@ class InitializeCommand extends Command
             ['Backfill ore type flags', 'mining-manager:backfill-ore-types', []],
             ['Update mining entry prices', 'mining-manager:update-ledger-prices', ['--days' => 35]],
             ['Generate daily summaries', 'mining-manager:update-daily-summaries', ['--month' => $currentMonth]],
-            ['Calculate taxes', 'mining-manager:calculate-taxes', ['--month' => $currentMonth]],
             ['Update moon extractions', 'mining-manager:update-extractions', []],
             ['Detect jackpot extractions', 'mining-manager:detect-jackpots', ['--days' => 35]],
             ['Calculate dashboard statistics', 'mining-manager:calculate-monthly-stats', ['--current-month' => true]],
         ];
+
+        // Note: Tax records (MiningTax) and tax codes are NOT generated here.
+        // The admin should review data first, then use Calculate Taxes in the UI.
 
         $this->totalSteps = count($steps);
 
