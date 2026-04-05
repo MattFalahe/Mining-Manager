@@ -369,6 +369,24 @@ return [
     'moon_quality_average' => 'Average - Over 2 billion ISK',
     'moon_quality_poor' => 'Poor - Under 2 billion ISK',
 
+    // Jackpot Detection
+    'jackpot_title' => 'Jackpot Detection & Reporting',
+    'jackpot_intro' => 'Jackpot extractions contain +100% yield variant ores (e.g., Dazzling Monazite, Gleaming Carnotite). These are significantly more valuable than normal extractions. EVE Online\'s ESI API does not provide jackpot information directly, so the plugin detects jackpots through two methods:',
+    'jackpot_auto_title' => 'Automatic Detection',
+    'jackpot_auto_desc' => 'A scheduled command (mining-manager:detect-jackpots) runs daily at 6 AM. It scans the mining ledger for jackpot ore type IDs mined within each extraction\'s time window and solar system. When jackpot ores are found, the extraction is automatically marked as a verified jackpot and a webhook notification is sent. This method requires someone to have actually mined the jackpot ores first.',
+    'jackpot_manual_title' => 'Manual Reporting',
+    'jackpot_manual_desc' => 'Any member can report a jackpot by clicking the "Report Jackpot" button on an extraction that has arrived (status: Ready, Fractured, or Unstable). The button appears on both the extraction detail page and the active extractions list. When reported, a webhook notification is sent immediately with the reporter\'s name. The report is initially unverified and will be confirmed automatically when mining data arrives.',
+    'jackpot_verification_title' => 'Verification Status',
+    'jackpot_verification_desc' => 'Every jackpot has a verification status that indicates how confident the system is in the detection:',
+    'jackpot_status_verified' => 'Verified',
+    'jackpot_status_verified_desc' => 'Jackpot ores have been confirmed in the mining ledger data. This happens automatically for auto-detected jackpots, and when the daily scan confirms a manual report.',
+    'jackpot_status_awaiting' => 'Awaiting Verification',
+    'jackpot_status_awaiting_desc' => 'A member reported this jackpot manually, but no mining data has been processed yet to confirm it. The daily detect-jackpots command will verify it when observer data arrives.',
+    'jackpot_status_unverified' => 'Unverified',
+    'jackpot_status_unverified_desc' => 'The extraction expired and the daily scan found no jackpot ores in the mining data. This could mean the report was incorrect, or that no one mined the jackpot ores before the belt decayed.',
+    'jackpot_note_title' => 'Note',
+    'jackpot_note_desc' => 'Jackpot detection relies entirely on mining ledger data since ESI does not report jackpot status. If a jackpot chunk arrives but nobody mines the +100% ores before it decays, automatic detection cannot confirm it. Manual reporting allows fleet members to flag jackpots immediately when they see them in the belt.',
+
     // Theft Detection
     'theft_detection_guide' => 'Theft Detection Guide',
     'theft_detection_intro' => 'The theft detection system monitors your corporation\'s moon mining structures for unauthorized mining activity by non-corporation members.',
@@ -416,7 +434,7 @@ return [
     // Global Settings
     'settings_global_header' => 'Global Settings',
     'settings_general' => 'General',
-    'settings_general_desc' => 'Moon owner corporation, ore valuation method (ore price or mineral price), price provider (SeAT, Janice, Fuzzwork, Custom), price modifier percentage, and default region for market data.',
+    'settings_general_desc' => 'Moon owner corporation, ore valuation method (ore price or mineral price), price provider, default region, display settings, payment settings, and Guest Miner Tax Rates (global rates tied to Moon Owner Corporation — 0% means no tax).',
     'settings_pricing' => 'Pricing',
     'settings_pricing_desc' => 'Price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. Controls how ore values are calculated across the plugin.',
     'settings_features' => 'Features',
@@ -431,7 +449,7 @@ return [
     // Corporation-Specific Settings
     'settings_corp_header' => 'Corporation-Specific Settings',
     'settings_tax_rates' => 'Tax Rates',
-    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Guest tax rates apply different rates for characters not belonging to any configured corporation.',
+    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Switch corporation context to set different rates for each configured corporation. Guest Miner Tax Rates have moved to General Settings.',
 
     // System Settings
     'settings_system_header' => 'System Settings',

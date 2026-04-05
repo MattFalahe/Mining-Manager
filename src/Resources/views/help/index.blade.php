@@ -1336,6 +1336,44 @@
                         <li><span class="badge badge-secondary">Poor</span> {{ trans('mining-manager::help.moon_quality_poor') }}</li>
                     </ul>
                 </div>
+
+                {{-- Jackpot Detection --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-star" style="color: #ffd700;"></i>
+                        {{ trans('mining-manager::help.jackpot_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.jackpot_intro') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.jackpot_auto_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.jackpot_auto_desc') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.jackpot_manual_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.jackpot_manual_desc') }}</p>
+
+                    <h4>{{ trans('mining-manager::help.jackpot_verification_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.jackpot_verification_desc') }}</p>
+
+                    <div class="feature-grid">
+                        <div class="feature-item" style="border-left: 4px solid #28a745;">
+                            <h5><span class="badge badge-success"><i class="fas fa-check-circle"></i> {{ trans('mining-manager::help.jackpot_status_verified') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.jackpot_status_verified_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
+                            <h5><span class="badge badge-secondary"><i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::help.jackpot_status_awaiting') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.jackpot_status_awaiting_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #dc3545;">
+                            <h5><span class="badge badge-danger"><i class="fas fa-times-circle"></i> {{ trans('mining-manager::help.jackpot_status_unverified') }}</span></h5>
+                            <p>{{ trans('mining-manager::help.jackpot_status_unverified_desc') }}</p>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.jackpot_note_title') }}:</strong> {{ trans('mining-manager::help.jackpot_note_desc') }}
+                    </div>
+                </div>
             </div>
 
             {{-- Theft Detection Section --}}
@@ -1585,7 +1623,7 @@
                                 <tr>
                                     <td><code>mining-manager:detect-jackpots</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Detect jackpot moon extractions based on mining ledger data analysis.<br>
+                                    <td>Detect jackpot moon extractions from mining data and verify manual reports. Auto-detected jackpots are immediately verified. Manual reports are confirmed when jackpot ores appear in mining data, or marked unverified if the extraction expires with no data.<br>
                                         <small class="text-muted">Options: <code>--all</code> check all extractions, <code>--days=30</code> lookback period</small>
                                     </td>
                                 </tr>

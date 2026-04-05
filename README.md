@@ -8,13 +8,15 @@ A comprehensive mining management plugin for SeAT 5.x. Track mining operations, 
 
 ## Features
 
-- **Mining Ledger** — Automated processing of character and corporation mining data
-- **Moon Mining** — Extraction tracking, ore composition, jackpot detection, ready-to-fracture alerts
-- **Tax System** — Daily summary-based tax calculation, per-ore rates, guest mining support, wallet payment verification
-- **Mining Events** — Create events, track participants, leaderboards, bonus percentages
-- **Reports** — Daily/weekly/monthly reports with PDF/CSV/JSON export and Discord webhook notifications
-- **Theft Detection** — Detect unauthorized mining at corporation moons
-- **Dashboard** — Corporation-wide analytics with charts and statistics
+- **Mining Ledger** — Automated processing of character and corporation mining data with daily summary aggregation
+- **Moon Mining** — Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts
+- **Tax System** — Daily summary-based tax calculation with per-ore rates, multi-corporation support, guest mining rates, event modifiers, and wallet payment verification
+- **Mining Events** — Create events with tax modifiers, track participants, leaderboards
+- **Reports** — Daily/weekly/monthly reports with PDF/CSV/JSON export and scheduled Discord/Slack delivery
+- **Theft Detection** — Detect and monitor unauthorized mining with severity classification and incident tracking
+- **Dashboard** — Corporation-wide analytics with 12-month charts, leaderboards, and statistics
+- **Notifications** — 13 notification types via Discord webhooks, Slack, and EVE Mail with per-webhook event toggles
+- **Diagnostics** — Tax Trace, price cache health, character affiliation, and extraction debugging tools
 
 ## Requirements
 
@@ -32,6 +34,26 @@ php artisan db:seed --class=MiningManager\\Database\\Seeders\\ScheduleSeeder
 
 After installation, access Mining Manager from the SeAT sidebar. Configure your corporation in **Settings > General** and tax rates in **Settings > Tax Rates**.
 
+## Configuration
+
+### Key Settings
+
+| Setting | Location | Description |
+|---|---|---|
+| Moon Owner Corporation | Settings > General | Which corporation owns the moon structures — determines observer data scope |
+| Tax Rates | Settings > Tax Rates | Per-corporation rates for moon ore (R4-R64), regular ore, ice, gas, abyssal |
+| Guest Miner Tax Rates | Settings > General | Global rates for non-member miners on your moons (0% = no tax) |
+| Tax Selector | Settings > Tax Rates | Choose what ore types to tax (all moon ore / only corp moon ore / none + regular types) |
+| Price Provider | Settings > Pricing | Market data source (EVE Market or Janice API) |
+
+### Corporation Tax Model
+
+| Miner Type | Data Source | Tax Rate Applied |
+|---|---|---|
+| Member of configured corp | Moon observer + character ledger | That corp's tax rates |
+| Guest miner (not in any configured corp) | Moon observer only | Guest tax rates (from General Settings) |
+| Non-member mining elsewhere | Not processed | Not taxed |
+
 ## Permissions
 
 4-tier permission model — higher tiers inherit all lower tier access.
@@ -39,7 +61,7 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 | Permission | Tier | Description |
 |---|---|---|
 | `mining-manager.view` | Base | Help page access |
-| `mining-manager.member` | Member | View own mining data, join events, view moon schedules, reprocessing calculator |
+| `mining-manager.member` | Member | View own mining data, join events, view moon schedules, report jackpots, reprocessing calculator |
 | `mining-manager.director` | Director | View all corp data, manage operations, analytics, reports, theft detection |
 | `mining-manager.admin` | Admin | Full control: settings, tax management, delete actions, API, diagnostics |
 
@@ -65,7 +87,7 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 | `mining-manager:generate-reports` | Daily 4:00 AM | Generate daily reports and process scheduled reports |
 | `mining-manager:recalculate-extraction-values` | Twice daily (6AM/6PM) | Update moon extraction values with current prices |
 | `mining-manager:archive-extractions` | Daily 5:00 AM | Archive completed extractions older than 7 days |
-| `mining-manager:detect-jackpots` | Daily 6:00 AM | Identify high-value jackpot moon extractions |
+| `mining-manager:detect-jackpots` | Daily 6:00 AM | Detect jackpot extractions + verify manual reports |
 | `mining-manager:detect-theft` | 1st and 15th 1:00 AM | Full scan for unauthorized moon mining |
 | `mining-manager:monitor-active-thefts` | Every 6h | Monitor characters already on theft list |
 | `mining-manager:finalize-month` | 2nd of month 3:00 AM | Pre-calculate summaries for closed month |
@@ -84,10 +106,23 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 | `mining-manager:diagnose-extractions` | Debug moon extraction data and notifications |
 | `mining-manager:diagnose-type-ids` | Debug ore type ID classification |
 
+## Webhook Notifications
+
+13 notification types across 5 categories. Each webhook can independently toggle which events it receives.
+
+| Category | Events | Description |
+|---|---|---|
+| Tax | reminder, invoice, overdue, generated | Payment lifecycle notifications |
+| Moon | arrival, jackpot | Chunk ready and jackpot detection alerts |
+| Events | created, started, completed | Mining event lifecycle |
+| Theft | detected, critical, active, resolved | Security alerts |
+| Reports | generated | Scheduled report delivery |
+
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/MattFalahe/Mining-Manager/issues)
 - **Wiki**: [Documentation & Screenshots](https://github.com/MattFalahe/Mining-Manager/wiki)
+- **In-App Help**: Full documentation available at Settings > Help within the plugin
 
 ## License
 
