@@ -61,8 +61,8 @@
             </form>
             @endcan
 
-            {{-- Report Jackpot Button --}}
-            @if(!$extraction->is_jackpot)
+            {{-- Report Jackpot Button (only for ready/fractured extractions — chunk must have arrived) --}}
+            @if(!$extraction->is_jackpot && in_array($extraction->getEffectiveStatus(), ['ready', 'fractured', 'unstable']))
                 <form action="{{ route('mining-manager.moon.report-jackpot', $extraction->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure this is a jackpot extraction? This will notify all configured webhooks.');">
                     @csrf
                     <button type="submit" class="btn btn-warning" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; border: none;">

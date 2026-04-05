@@ -299,7 +299,7 @@
                                         <a href="{{ route('mining-manager.moon.show', $extraction->id) }}" class="btn btn-sm btn-info">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.details') }}
                                         </a>
-                                        @if(!$extraction->is_jackpot)
+                                        @if(!$extraction->is_jackpot && $extraction->chunk_arrival_time->isPast())
                                         <form action="{{ route('mining-manager.moon.report-jackpot', $extraction->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure this is a jackpot extraction?');">
                                             @csrf
                                             <button type="submit" class="btn btn-sm" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; border: none;">

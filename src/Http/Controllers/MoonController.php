@@ -639,6 +639,12 @@ class MoonController extends Controller
                     ->with('info', 'This extraction is already marked as a jackpot.');
             }
 
+            // Only allow reporting for extractions where the chunk has arrived
+            if ($extraction->chunk_arrival_time->isFuture()) {
+                return redirect()->route('mining-manager.moon.show', $extraction->id)
+                    ->with('error', 'Cannot report jackpot — the chunk has not arrived yet.');
+            }
+
             // Get the reporting character
             $characterId = auth()->user()->main_character_id ?? auth()->user()->id;
             $characterName = DB::table('character_infos')
