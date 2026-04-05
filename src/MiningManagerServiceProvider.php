@@ -14,6 +14,7 @@ use MiningManager\Console\Commands\VerifyWalletPaymentsCommand;
 use MiningManager\Console\Commands\SendTaxRemindersCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
 use MiningManager\Console\Commands\DetectJackpotsCommand;
+use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
 use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
@@ -119,6 +120,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 UpdateDailySummariesCommand::class,
                 ImportCharacterMiningCommand::class,
                 GenerateTaxCodesCommand::class,
+                InitializeCommand::class,
             ]);
         }
 
