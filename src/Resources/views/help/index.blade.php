@@ -833,6 +833,71 @@
                     </div>
                 </div>
 
+                {{-- Corporation Tax Model --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-sitemap"></i>
+                        {{ trans('mining-manager::help.corp_tax_model_title') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.corp_tax_model_intro') }}</p>
+
+                    <h4><i class="fas fa-building text-primary"></i> {{ trans('mining-manager::help.corp_model_moon_owner_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.corp_model_moon_owner_desc') }}</p>
+
+                    <h4><i class="fas fa-exchange-alt text-info"></i> {{ trans('mining-manager::help.corp_model_configured_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.corp_model_configured_desc') }}</p>
+
+                    <h4><i class="fas fa-route text-warning"></i> {{ trans('mining-manager::help.corp_model_flow_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.corp_model_flow_desc') }}</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <thead>
+                                <tr>
+                                    <th style="color: #9ca3af;">{{ trans('mining-manager::help.corp_model_col_situation') }}</th>
+                                    <th style="color: #9ca3af;">{{ trans('mining-manager::help.corp_model_col_source') }}</th>
+                                    <th style="color: #9ca3af;">{{ trans('mining-manager::help.corp_model_col_result') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>{{ trans('mining-manager::help.corp_model_row1_situation') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row1_source') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row1_result') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ trans('mining-manager::help.corp_model_row2_situation') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row2_source') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row2_result') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ trans('mining-manager::help.corp_model_row3_situation') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row3_source') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row3_result') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ trans('mining-manager::help.corp_model_row4_situation') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row4_source') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row4_result') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ trans('mining-manager::help.corp_model_row5_situation') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row5_source') }}</td>
+                                    <td>{{ trans('mining-manager::help.corp_model_row5_result') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4><i class="fas fa-puzzle-piece text-success"></i> {{ trans('mining-manager::help.corp_model_multicorp_title') }}</h4>
+                    <p>{{ trans('mining-manager::help.corp_model_multicorp_desc') }}</p>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.corp_model_observer_warning') }}
+                    </div>
+                </div>
+
                 {{-- Tax Rates & Categories --}}
                 <div class="help-card">
                     <h3>
@@ -866,6 +931,11 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.guest_mining_desc') }}</p>
                     <p>{{ trans('mining-manager::help.guest_rates_config') }}</p>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.guest_zero_rate') }}
+                    </div>
 
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>

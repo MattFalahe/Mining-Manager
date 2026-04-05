@@ -193,7 +193,51 @@ return [
     'daily_summaries_when_generated' => 'Summaries are generated automatically when mining data is processed and when prices are updated. They can also be regenerated on demand using the Recalculate button or the update-daily-summaries command.',
     'daily_summaries_settings' => 'Tax rates in daily summaries always reflect your current settings at the time of generation. If you change a tax rate mid-month, use Recalculate to regenerate all summaries for that month with the new rates.',
     'daily_summaries_reconciliation_title' => 'Observer Data Reconciliation:',
-    'daily_summaries_reconciliation_desc' => 'EVE ESI corporation observer data can lag 12-24 hours behind character mining data. The daily summary update command automatically reconciles the previous 2 days — matching character-imported moon ore entries against late-arriving observer data, removing duplicates, and adjusting quantities for characters who mined at both corp and non-corp moons. Affected daily summaries are regenerated automatically.',
+    'daily_summaries_reconciliation_desc' => 'EVE ESI corporation observer data can lag 12-24 hours behind character mining data. The daily summary update command automatically reconciles the previous 2 days — matching character-imported moon ore entries against late-arriving Moon Owner Corporation observer data, removing duplicates, and adjusting quantities. Only observer data from the configured Moon Owner Corporation is used for reconciliation — observer data from other corporations is ignored. Affected daily summaries are regenerated automatically.',
+
+    // ================================================================
+    // Corporation Tax Model
+    // ================================================================
+    'corp_tax_model_title' => 'Corporation Tax Model — How Corporations and Tax Rates Interact',
+    'corp_tax_model_intro' => 'Mining Manager uses two key settings to determine who gets taxed and at what rate. Understanding this model is essential for multi-corporation setups.',
+
+    'corp_model_moon_owner_title' => 'Moon/Structure Owner Corporation',
+    'corp_model_moon_owner_desc' => 'This is the corporation that owns the moon mining structures (configured in Settings > General). Only mining observer data from THIS corporation\'s structures is used for moon ore taxation. If someone else\'s corporation has a director in your SeAT, their observer data will flow into the database but will be completely ignored for tax purposes — you will never accidentally tax someone for mining on structures you don\'t own.',
+
+    'corp_model_configured_title' => 'Configured Corporations (Switch Corporation Context)',
+    'corp_model_configured_desc' => 'Each corporation in the "Switch Corporation Context" dropdown has its own tax rates. When a member of that corporation mines, they are taxed at their corporation\'s configured rates. Character ledger data (regular ore, ice, gas mined anywhere) is taxed based on which configured corporation the miner belongs to. If a character is not a member of any configured corporation, their character ledger mining is not taxed.',
+
+    'corp_model_flow_title' => 'How Mining Entries Are Processed',
+    'corp_model_flow_desc' => 'Every mining entry in the database has a corporation_id field. Here is how the system decides what to do with each entry:',
+
+    'corp_model_col_situation' => 'Situation',
+    'corp_model_col_source' => 'Data Source',
+    'corp_model_col_result' => 'Result',
+
+    'corp_model_row1_situation' => 'Corp A member mines on Moon Owner Corp\'s moon',
+    'corp_model_row1_source' => 'Observer (Moon Owner Corp)',
+    'corp_model_row1_result' => 'Taxed at Corp A\'s moon ore rates',
+
+    'corp_model_row2_situation' => 'Guest miner (no configured corp) mines on Moon Owner Corp\'s moon',
+    'corp_model_row2_source' => 'Observer (Moon Owner Corp)',
+    'corp_model_row2_result' => 'Taxed at guest rates (0% = no tax)',
+
+    'corp_model_row3_situation' => 'Anyone mines on another corp\'s moon (not Moon Owner)',
+    'corp_model_row3_source' => 'Observer (other corp)',
+    'corp_model_row3_result' => 'Skipped entirely — not your structure',
+
+    'corp_model_row4_situation' => 'Corp A member mines regular ore/ice/gas anywhere',
+    'corp_model_row4_source' => 'Character ledger (NULL corp)',
+    'corp_model_row4_result' => 'Taxed at Corp A\'s ore/ice/gas rates',
+
+    'corp_model_row5_situation' => 'Non-configured character mines ore anywhere',
+    'corp_model_row5_source' => 'Character ledger (NULL corp)',
+    'corp_model_row5_result' => 'Skipped — not a member of any configured corp',
+
+    'corp_model_multicorp_title' => 'Multi-Corporation / Alliance Setup',
+    'corp_model_multicorp_desc' => 'You can configure multiple corporations with different tax rates. For example, in an alliance: Corp A at 10% moon tax and Corp B at 15% moon tax. When Corp A members mine on the Moon Owner Corporation\'s moon, they pay Corp A\'s rates. Corp B members on the same moon pay Corp B\'s rates. If Corp B also has their own moons and a director in SeAT, that observer data flows in but is never used for your tax calculations — only Moon Owner Corporation observer data matters.',
+
+    'corp_model_observer_warning' => 'If a SeAT user has a director alt in another corporation, that corporation\'s mining observer data will be imported into your database. This is normal SeAT behavior. Mining Manager will ignore all observer data that does not come from your configured Moon Owner Corporation — those entries are skipped during daily summary generation and tax calculation.',
 
     // Tax Rates and Categories
     'tax_rates_explained' => 'Tax Rates and Ore Categories',
@@ -214,9 +258,10 @@ return [
 
     // Guest Mining
     'guest_mining_explained' => 'Guest Mining and Guest Tax Rates',
-    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of "home" corporations. The home corporation list includes all configured corporations (any corp with settings in the database) plus the Moon Owner Corporation. Guest miners are automatically detected and can have different tax rates:',
-    'guest_rates_config' => 'Guest tax rates are configured separately in Settings > Tax Rates under "Guest Miner Tax Rates". You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal). If a guest rate is set to 0, the system falls back to the regular member rate for that category.',
-    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against all home corporations (configured corporations + Moon Owner Corporation). Members of any configured corporation are taxed at that corporation\'s rates, not as guests.',
+    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of configured ("home") corporations. The home corporation list includes all corporations with settings configured (any corp in the "Switch Corporation Context" dropdown) plus the Moon Owner Corporation. Guest miners only appear via moon mining observer data — they are characters who mine on your Moon Owner Corporation\'s structures but are not members of any configured corporation.',
+    'guest_rates_config' => 'Guest tax rates are configured in Settings > Tax Rates under "Guest Miner Tax Rates" and are always tied to the Moon Owner Corporation\'s settings context. You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal).',
+    'guest_zero_rate' => 'Setting a guest rate to 0 means actual 0% tax (no tax charged). It does NOT fall back to the regular member rate. If you want guests to pay the same rate as members, enter the same percentage. If you want guests to mine for free, set it to 0.',
+    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against all configured corporations. Members of any configured corporation are taxed at that corporation\'s rates, not as guests. Guest miners\' character ledger data (non-moon mining) is not taxed — only their moon mining on your structures is subject to guest rates.',
 
     // Event Tax Modifiers
     'event_modifiers_explained' => 'Mining Event Tax Modifiers',
