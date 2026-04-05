@@ -414,7 +414,7 @@ class SettingsController extends Controller
 
             // Discord pinging
             $data['discord_pinging_enabled'] = $request->has('discord_pinging_enabled');
-            $data['discord_ping_show_amount'] = $request->has('discord_ping_show_amount');
+            $data['discord_ping_show_amount'] = (bool) $request->input('discord_ping_show_amount', true);
             $data['discord_ping_tax_page_url'] = $request->input('discord_ping_tax_page_url', '');
 
             $this->settingsService->updateNotificationSettings($data);
