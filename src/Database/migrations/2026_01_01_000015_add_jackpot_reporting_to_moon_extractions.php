@@ -4,9 +4,9 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class AddJackpotReportingToMoonExtractions extends Migration
 {
-    public function up()
+    public function up(): void
     {
         Schema::table('moon_extractions', function (Blueprint $table) {
             $table->unsignedBigInteger('jackpot_reported_by')->nullable()->after('jackpot_detected_at');
@@ -15,10 +15,10 @@ return new class extends Migration
         });
     }
 
-    public function down()
+    public function down(): void
     {
         Schema::table('moon_extractions', function (Blueprint $table) {
             $table->dropColumn(['jackpot_reported_by', 'jackpot_verified', 'jackpot_verified_at']);
         });
     }
-};
+}
