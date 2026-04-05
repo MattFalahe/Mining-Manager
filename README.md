@@ -32,7 +32,18 @@ php artisan migrate
 php artisan db:seed --class=MiningManager\\Database\\Seeders\\ScheduleSeeder
 ```
 
-After installation, access Mining Manager from the SeAT sidebar. Configure your corporation in **Settings > General** and tax rates in **Settings > Tax Rates**.
+After installation:
+
+1. Open SeAT and navigate to **Mining Manager > Settings > General**
+2. Set your **Moon Owner Corporation**
+3. Configure tax rates in **Settings > Tax Rates**
+4. Run the setup wizard to populate your data:
+
+```bash
+php artisan mining-manager:initialize
+```
+
+The wizard verifies your settings, populates current month data (prices, mining entries, summaries, extractions), and optionally backfills historical data for reports and analytics.
 
 ## Configuration
 
@@ -67,7 +78,7 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 
 ## Artisan Commands
 
-27 commands available, 21 run on automated schedules via SeAT's scheduler.
+28 commands available, 21 run on automated schedules via SeAT's scheduler.
 
 ### Operational Commands
 
@@ -97,6 +108,7 @@ After installation, access Mining Manager from the SeAT sidebar. Configure your 
 
 | Command | Description |
 |---|---|
+| `mining-manager:initialize` | Guided first-time setup wizard — verifies settings, populates current month, optional historical backfill |
 | `mining-manager:backfill-ore-types` | One-time backfill of ore type flags on existing data |
 | `mining-manager:backfill-extraction-notifications` | Backfill fractured_at from historical ESI notifications |
 | `mining-manager:generate-test-data` | Generate test data for development/testing |

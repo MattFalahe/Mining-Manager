@@ -82,7 +82,8 @@ All notable changes to Mining Manager will be documented in this file.
 - CLI commands reference
 
 **Technical**
-- 27 artisan commands with 21 automated scheduled tasks
+- First-time setup wizard (`mining-manager:initialize`) with settings verification, current month data population, and optional historical backfill
+- 28 artisan commands with 21 automated scheduled tasks
 - SeAT 5.x permission integration (4-tier: view, member, director, admin)
 - Reprocessing calculator with batch support for compressed ores
 - Full settings cache management with per-corporation context

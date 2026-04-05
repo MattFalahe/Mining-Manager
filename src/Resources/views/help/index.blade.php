@@ -1733,6 +1733,40 @@
                         <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_trace_note') }}
                     </div>
 
+                    {{-- Initialize Command --}}
+                    <h4 class="mt-4"><i class="fas fa-magic text-success"></i> {{ trans('mining-manager::help.cli_initialize') }}</h4>
+                    <div class="help-card" style="border-left: 4px solid #28a745;">
+                        <p>{{ trans('mining-manager::help.cli_initialize_desc') }}</p>
+                        <p><code>docker exec -it seat-docker-front-1 php artisan mining-manager:initialize</code></p>
+
+                        <h5>{{ trans('mining-manager::help.cli_initialize_phase1') }}</h5>
+                        <p>{{ trans('mining-manager::help.cli_initialize_phase1_desc') }}</p>
+
+                        <h5>{{ trans('mining-manager::help.cli_initialize_phase2') }}</h5>
+                        <p>{{ trans('mining-manager::help.cli_initialize_phase2_desc') }}</p>
+                        <ol>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_prices') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_observer') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_character') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_flags') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_price_entries') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_summaries') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_extractions') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_jackpots') }}</li>
+                            <li>{{ trans('mining-manager::help.cli_initialize_step_stats') }}</li>
+                        </ol>
+
+                        <h5>{{ trans('mining-manager::help.cli_initialize_phase3') }}</h5>
+                        <p>{{ trans('mining-manager::help.cli_initialize_phase3_desc') }}</p>
+
+                        <div class="warning-box">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>{{ trans('mining-manager::help.important') }}:</strong> {{ trans('mining-manager::help.cli_initialize_warning') }}
+                        </div>
+
+                        <p class="mt-2"><small class="text-muted">{{ trans('mining-manager::help.cli_initialize_options') }}</small></p>
+                    </div>
+
                     {{-- Data Management Commands --}}
                     <h4 class="mt-4"><i class="fas fa-database text-warning"></i> {{ trans('mining-manager::help.cli_data_management') }}</h4>
                     <p>{{ trans('mining-manager::help.cli_data_management_desc') }}</p>
