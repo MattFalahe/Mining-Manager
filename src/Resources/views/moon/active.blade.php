@@ -281,10 +281,32 @@
                                         <p class="text-muted">{{ trans('mining-manager::moons.value_unknown') }}</p>
                                     @endif
                                     
+                                    @if($extraction->is_jackpot)
+                                        <div class="mb-2">
+                                            <span class="badge" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.9em; padding: 4px 8px;">
+                                                <i class="fas fa-star"></i> JACKPOT
+                                                @if($extraction->jackpot_verified === true)
+                                                    <i class="fas fa-check-circle ml-1" title="Verified"></i>
+                                                @elseif($extraction->jackpot_verified === false)
+                                                    <i class="fas fa-times-circle ml-1 text-danger" title="Unverified"></i>
+                                                @elseif($extraction->jackpot_reported_by)
+                                                    <i class="fas fa-hourglass-half ml-1" title="Awaiting verification"></i>
+                                                @endif
+                                            </span>
+                                        </div>
+                                    @endif
                                     <div class="btn-group">
                                         <a href="{{ route('mining-manager.moon.show', $extraction->id) }}" class="btn btn-sm btn-info">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::moons.details') }}
                                         </a>
+                                        @if(!$extraction->is_jackpot)
+                                        <form action="{{ route('mining-manager.moon.report-jackpot', $extraction->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure this is a jackpot extraction?');">
+                                            @csrf
+                                            <button type="submit" class="btn btn-sm" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; border: none;">
+                                                <i class="fas fa-star"></i> Jackpot
+                                            </button>
+                                        </form>
+                                        @endif
                                         @can('mining-manager.director')
                                         <form action="{{ route('mining-manager.moon.update', $extraction->id) }}" method="POST" style="display: inline;">
                                             @csrf

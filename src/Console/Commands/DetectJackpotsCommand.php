@@ -58,14 +58,40 @@ class DetectJackpotsCommand extends Command
 
         $detected = 0;
         $alreadyMarked = 0;
-        $noData = 0;
+        $verified = 0;
+        $unverified = 0;
 
         $bar = $this->output->createProgressBar($total);
         $bar->start();
 
         foreach ($extractions as $extraction) {
-            // Check if extraction already marked as jackpot
+            // Already marked as jackpot — check if manual report needs verification
             if ($extraction->is_jackpot) {
+                if ($extraction->jackpot_reported_by && $extraction->jackpot_verified === null) {
+                    // Manual report awaiting verification
+                    $hasJackpot = $this->checkForJackpotOres($extraction);
+
+                    if ($hasJackpot) {
+                        $extraction->jackpot_verified = true;
+                        $extraction->jackpot_verified_at = now();
+                        $extraction->save();
+                        $verified++;
+
+                        $this->newLine();
+                        $this->info("  ✅ VERIFIED: {$extraction->moon_name} (reported by character {$extraction->jackpot_reported_by})");
+                    } elseif ($extraction->natural_decay_time && $extraction->natural_decay_time->isPast()) {
+                        // Extraction has expired and no jackpot ores found — mark as unverified
+                        $extraction->jackpot_verified = false;
+                        $extraction->jackpot_verified_at = now();
+                        $extraction->save();
+                        $unverified++;
+
+                        $this->newLine();
+                        $this->warn("  ❌ UNVERIFIED: {$extraction->moon_name} — no jackpot ores found in mining data");
+                    }
+                    // else: extraction not expired yet, data may still arrive — skip for now
+                }
+
                 $alreadyMarked++;
                 $bar->advance();
                 continue;
@@ -77,6 +103,8 @@ class DetectJackpotsCommand extends Command
             if ($hasJackpot) {
                 $extraction->is_jackpot = true;
                 $extraction->jackpot_detected_at = now();
+                $extraction->jackpot_verified = true;
+                $extraction->jackpot_verified_at = now();
                 $extraction->save();
                 $detected++;
 
@@ -120,13 +148,21 @@ class DetectJackpotsCommand extends Command
             ['Status', 'Count'],
             [
                 ['New jackpots detected', $detected],
-                ['Already marked as jackpot', $alreadyMarked],
+                ['Manual reports verified', $verified],
+                ['Manual reports unverified', $unverified],
+                ['Already marked as jackpot', $alreadyMarked - $verified - $unverified],
                 ['No jackpot', $total - $detected - $alreadyMarked],
             ]
         );
 
         if ($detected > 0) {
             $this->info("💎 Found {$detected} new jackpot extractions!");
+        }
+        if ($verified > 0) {
+            $this->info("✅ Verified {$verified} manually reported jackpots!");
+        }
+        if ($unverified > 0) {
+            $this->warn("❌ {$unverified} manual reports could not be verified (no jackpot ores found).");
         }
 
         return Command::SUCCESS;

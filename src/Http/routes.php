@@ -448,6 +448,13 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        // Member - report jackpot
+        Route::post('/{id}/report-jackpot', [
+            'as' => 'mining-manager.moon.report-jackpot',
+            'uses' => 'MoonController@reportJackpot',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         // Director - update
         Route::post('/{id}/update', [
             'as' => 'mining-manager.moon.update',

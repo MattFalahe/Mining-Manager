@@ -60,8 +60,56 @@
                 </button>
             </form>
             @endcan
+
+            {{-- Report Jackpot Button --}}
+            @if(!$extraction->is_jackpot)
+                <form action="{{ route('mining-manager.moon.report-jackpot', $extraction->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure this is a jackpot extraction? This will notify all configured webhooks.');">
+                    @csrf
+                    <button type="submit" class="btn btn-warning" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; border: none;">
+                        <i class="fas fa-star"></i> Report Jackpot
+                    </button>
+                </form>
+            @endif
         </div>
     </div>
+
+    {{-- Jackpot Status --}}
+    @if($extraction->is_jackpot)
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert mb-0" style="background: linear-gradient(135deg, #ffd700, #ffed4e); color: #000; border: 2px solid #daa520;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-star fa-2x mr-3"></i>
+                    <div>
+                        <h5 class="mb-1"><strong>JACKPOT EXTRACTION</strong></h5>
+                        @if($extraction->jackpot_reported_by)
+                            @php
+                                $reporterName = \DB::table('character_infos')
+                                    ->where('character_id', $extraction->jackpot_reported_by)
+                                    ->value('name') ?? 'Character #' . $extraction->jackpot_reported_by;
+                            @endphp
+                            <span>Reported by <strong>{{ $reporterName }}</strong>
+                            on {{ $extraction->jackpot_detected_at->format('M d, Y H:i') }}</span>
+                            <br>
+                            @if($extraction->jackpot_verified === true)
+                                <span class="badge badge-success mt-1"><i class="fas fa-check-circle"></i> Verified by mining data
+                                    {{ $extraction->jackpot_verified_at ? $extraction->jackpot_verified_at->format('M d, H:i') : '' }}
+                                </span>
+                            @elseif($extraction->jackpot_verified === false)
+                                <span class="badge badge-danger mt-1"><i class="fas fa-times-circle"></i> Could not verify — no jackpot ores found in mining data</span>
+                            @else
+                                <span class="badge badge-secondary mt-1"><i class="fas fa-hourglass-half"></i> Awaiting verification from mining data</span>
+                            @endif
+                        @else
+                            <span>Detected automatically on {{ $extraction->jackpot_detected_at->format('M d, Y H:i') }}</span>
+                            <span class="badge badge-success mt-1 ml-2"><i class="fas fa-check-circle"></i> Verified</span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- MAIN INFORMATION --}}
     <div class="row">

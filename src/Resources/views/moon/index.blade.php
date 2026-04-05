@@ -274,6 +274,13 @@
                                         @if($extraction->is_jackpot)
                                             <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
                                                 <i class="fas fa-star"></i> JACKPOT
+                                                @if($extraction->jackpot_verified === true)
+                                                    <i class="fas fa-check-circle ml-1" title="Verified by mining data"></i>
+                                                @elseif($extraction->jackpot_verified === false)
+                                                    <i class="fas fa-times-circle ml-1" style="color: #c00;" title="Could not verify"></i>
+                                                @elseif($extraction->jackpot_reported_by)
+                                                    <i class="fas fa-hourglass-half ml-1" title="Awaiting verification"></i>
+                                                @endif
                                             </span>
                                         @endif
                                     </div>

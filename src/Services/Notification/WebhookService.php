@@ -731,7 +731,7 @@ class WebhookService
                 ];
             }
 
-            if (isset($data['jackpot_percentage'])) {
+            if (isset($data['jackpot_percentage']) && $data['jackpot_percentage'] !== null) {
                 $embed['fields'][] = [
                     'name' => 'Jackpot %',
                     'value' => $data['jackpot_percentage'] . '% of ores are +100% variants',
@@ -739,7 +739,22 @@ class WebhookService
                 ];
             }
 
-            $embed['description'] = 'A jackpot moon extraction has been confirmed! Miners found +100% variant ores in the belt.';
+            // Manual report vs auto-detection
+            if (isset($data['reported_by'])) {
+                $embed['fields'][] = [
+                    'name' => '📝 Reported By',
+                    'value' => $data['reported_by'],
+                    'inline' => true,
+                ];
+                $embed['fields'][] = [
+                    'name' => '🔍 Status',
+                    'value' => '⏳ Awaiting Verification',
+                    'inline' => true,
+                ];
+                $embed['description'] = 'A jackpot moon extraction has been reported by a fleet member. Will be verified automatically when mining data arrives.';
+            } else {
+                $embed['description'] = 'A jackpot moon extraction has been confirmed! Miners found +100% variant ores in the belt.';
+            }
 
         } elseif ($eventType === 'moon_arrival') {
             if (isset($data['moon_name'])) {

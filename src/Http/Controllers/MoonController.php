@@ -622,4 +622,70 @@ class MoonController extends Controller
 
         return response()->json($result);
     }
+
+    /**
+     * Report a jackpot extraction (member-accessible)
+     *
+     * @param int $id
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function reportJackpot($id)
+    {
+        try {
+            $extraction = MoonExtraction::findOrFail($id);
+
+            if ($extraction->is_jackpot) {
+                return redirect()->route('mining-manager.moon.show', $extraction->id)
+                    ->with('info', 'This extraction is already marked as a jackpot.');
+            }
+
+            // Get the reporting character
+            $characterId = auth()->user()->main_character_id ?? auth()->user()->id;
+            $characterName = DB::table('character_infos')
+                ->where('character_id', $characterId)
+                ->value('name') ?? 'Unknown';
+
+            // Mark as jackpot (manual report — unverified)
+            $extraction->is_jackpot = true;
+            $extraction->jackpot_detected_at = now();
+            $extraction->jackpot_reported_by = $characterId;
+            $extraction->jackpot_verified = null; // null = not yet verified by mining data
+            $extraction->save();
+
+            // Send webhook notification
+            try {
+                $structure = DB::table('universe_structures')
+                    ->where('structure_id', $extraction->structure_id)
+                    ->first();
+
+                $systemName = $structure
+                    ? (DB::table('solar_systems')->where('system_id', $structure->solar_system_id)->value('name') ?? 'Unknown')
+                    : 'Unknown';
+
+                // Load display names for moon_name
+                MoonExtraction::loadDisplayNames(collect([$extraction]));
+
+                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+                $webhookService->sendMoonNotification('jackpot_detected', [
+                    'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                    'structure_name' => $structure->name ?? "Structure {$extraction->structure_id}",
+                    'system_name' => $systemName,
+                    'detected_by' => $characterName,
+                    'reported_by' => $characterName,
+                    'jackpot_ores' => [],
+                    'jackpot_percentage' => null,
+                    'extraction_id' => $extraction->id,
+                ], $extraction->corporation_id);
+            } catch (\Exception $e) {
+                \Log::warning("Mining Manager: Failed to send jackpot notification: {$e->getMessage()}");
+            }
+
+            return redirect()->route('mining-manager.moon.show', $extraction->id)
+                ->with('success', "Jackpot reported for {$extraction->moon_name}! It will be verified automatically when mining data arrives.");
+
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', 'Error reporting jackpot: ' . $e->getMessage());
+        }
+    }
 }
