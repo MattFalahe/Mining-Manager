@@ -123,8 +123,9 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="start_time">{{ trans('mining-manager::events.start_time') }} <span class="text-danger">*</span></label>
+                                    <label for="start_time">{{ trans('mining-manager::events.start_time') }} (EVE Time / UTC) <span class="text-danger">*</span></label>
                                     <input type="datetime-local" class="form-control @error('start_time') is-invalid @enderror" id="start_time" name="start_time" value="{{ old('start_time') }}" required>
+                                    <small class="form-text text-muted">All times are in EVE Time (UTC)</small>
                                     @error('start_time')
                                     <span class="invalid-feedback">{{ $message }}</span>
                                     @enderror
@@ -132,8 +133,9 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="end_time">{{ trans('mining-manager::events.end_time') }}</label>
+                                    <label for="end_time">{{ trans('mining-manager::events.end_time') }} (EVE Time / UTC)</label>
                                     <input type="datetime-local" class="form-control" id="end_time" name="end_time" value="{{ old('end_time') }}">
+                                    <small class="form-text text-muted">Leave empty for open-ended events</small>
                                 </div>
                             </div>
                         </div>

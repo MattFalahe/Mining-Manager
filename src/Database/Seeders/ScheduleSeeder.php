@@ -64,10 +64,15 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Update mining events - runs every 2 hours
+            // Update mining events — runs EVERY MINUTE.
+            // Status transitions (planned→active→completed) need to fire close
+            // to the configured start/end times so Discord notifications arrive
+            // promptly. Participant tracking is cheap for small event counts
+            // (simple ledger query filtered by time + location). allow_overlap=false
+            // prevents concurrent runs if a tick takes longer than 60s.
             [
                 'command' => 'mining-manager:update-events',
-                'expression' => '0 */2 * * *',
+                'expression' => '* * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
@@ -115,10 +120,13 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Generate reports - runs daily at 4:05 AM (staggered)
+            // Generate previous month's report — runs day 9 at 04:05 AM.
+            // Day 9 = ~7 days after `finalize-month` (day 2) and `calculate-monthly-stats` (day 2),
+            // giving miners time to pay invoices so the collection % in the report is meaningful.
+            // For ad-hoc/user-defined report cadences, use `report_schedules` (handled by cron below).
             [
                 'command' => 'mining-manager:generate-reports',
-                'expression' => '5 4 * * *',
+                'expression' => '5 4 9 * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,

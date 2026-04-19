@@ -88,11 +88,20 @@ class WebhookService
         $settings = app(SettingsManagerService::class);
         $typeSettings = $settings->getTypeNotificationSettings($settingsKey);
 
-        if ($typeSettings['ping_role'] && $typeSettings['role_id']) {
+        // Per-type notification settings are authoritative.
+        // If ping_role is OFF for this event type, NEVER ping — regardless of the
+        // webhook's legacy discord_role_id field. This prevents surprise role pings
+        // on events where the user explicitly disabled them in Notification Settings.
+        if (!$typeSettings['ping_role']) {
+            return null;
+        }
+
+        // ping_role is ON — prefer the role configured in per-type settings,
+        // otherwise fall back to the webhook's own discord_role_id (legacy field).
+        if ($typeSettings['role_id']) {
             return "<@&{$typeSettings['role_id']}>";
         }
 
-        // Fallback to webhook-level role (backward compat)
         if ($webhook->discord_role_id) {
             return $webhook->getDiscordRoleMention();
         }
@@ -101,7 +110,83 @@ class WebhookService
     }
 
     /**
+     * Resolve webhooks that should receive a notification scoped to the
+     * Moon Owner Corporation. Used by moon, theft, and tax dispatchers — these
+     * events always concern the moon owner's structures/operations, so we only
+     * notify webhooks that are global (corporation_id IS NULL) or explicitly
+     * assigned to the moon owner corp.
+     *
+     * Webhooks owned by other directors' corporations on the same SeAT install
+     * are excluded — those corps may have private moons/wallets not subject to
+     * this install's tracking.
+     *
+     * @param string $eventType Webhook subscription column key (e.g. 'moon_arrival')
+     * @return \Illuminate\Support\Collection<WebhookConfiguration>
+     */
+    protected function getMoonOwnerScopedWebhooks(string $eventType): \Illuminate\Support\Collection
+    {
+        $moonOwnerCorpId = (int) (app(SettingsManagerService::class)
+            ->getSetting('general.moon_owner_corporation_id') ?? 0) ?: null;
+
+        if ($moonOwnerCorpId === null) {
+            Log::warning("WebhookService: moon_owner_corporation_id is not configured — '{$eventType}' will only fire for global (NULL corp) webhooks");
+        }
+
+        return WebhookConfiguration::enabled()
+            ->forEvent($eventType)
+            ->get()
+            ->filter(function ($webhook) use ($moonOwnerCorpId) {
+                return $webhook->corporation_id === null
+                    || ($moonOwnerCorpId !== null && (int) $webhook->corporation_id === $moonOwnerCorpId);
+            });
+    }
+
+    /**
+     * Write a webhook dispatch result to the mining_notification_log audit trail.
+     *
+     * Normally NotificationService handles logging via its send() path, but
+     * moon/theft/report dispatch runs directly through this service and
+     * would otherwise never be logged. Call this at the end of each direct
+     * dispatch method for a consistent audit trail.
+     *
+     * @param string $eventType e.g. 'moon_arrival', 'theft_detected', 'report_generated'
+     * @param array $results Map of webhookId => ['success' => bool, 'error' => ?string]
+     * @return void
+     */
+    protected function logWebhookDispatch(string $eventType, array $results): void
+    {
+        try {
+            $sentIds = [];
+            $failedIds = [];
+            foreach ($results as $webhookId => $result) {
+                if (!empty($result['success'])) {
+                    $sentIds[] = $webhookId;
+                } else {
+                    $failedIds[] = $webhookId;
+                }
+            }
+
+            DB::table('mining_notification_log')->insert([
+                'type' => $eventType,
+                'recipients' => null,
+                'channels' => json_encode(['discord']),
+                'results' => json_encode([
+                    'discord' => [
+                        'sent' => $sentIds,
+                        'failed' => $failedIds,
+                    ],
+                ]),
+                'created_at' => Carbon::now(),
+            ]);
+        } catch (\Exception $e) {
+            Log::warning("WebhookService::logWebhookDispatch — failed to write audit row: " . $e->getMessage());
+        }
+    }
+
+    /**
      * Send a theft detection notification to all configured webhooks
+     *
+     * Scoped to the configured Moon Owner Corporation — see getMoonOwnerScopedWebhooks().
      *
      * @param TheftIncident $incident
      * @param string $eventType (theft_detected, critical_theft, active_theft, incident_resolved)
@@ -111,17 +196,14 @@ class WebhookService
     public function sendTheftNotification(TheftIncident $incident, string $eventType, array $additionalData = []): array
     {
         if (!$this->isEventTypeEnabled($eventType)) {
+            Log::debug("WebhookService: Event type {$eventType} is globally disabled in notification settings");
             return ['sent' => 0, 'failed' => 0, 'message' => 'Event type globally disabled'];
         }
 
-        // Get enabled webhooks for this event type
-        $webhooks = WebhookConfiguration::enabled()
-            ->forEvent($eventType)
-            ->forCorporation($incident->corporation_id)
-            ->get();
+        $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
 
         if ($webhooks->isEmpty()) {
-            Log::debug("WebhookService: No webhooks configured for event type: {$eventType}");
+            Log::info("WebhookService: Theft event '{$eventType}' fired but NO webhooks matched. Check that at least one webhook is enabled with notify_{$eventType}=true and corporation_id is NULL or matches moon_owner_corporation_id.");
             return [];
         }
 
@@ -150,6 +232,8 @@ class WebhookService
                 ];
             }
         }
+
+        $this->logWebhookDispatch($eventType, $results);
 
         return $results;
     }
@@ -601,29 +685,36 @@ class WebhookService
     /**
      * Send a moon-related notification to all configured webhooks
      *
+     * Webhook scoping rule: moon notifications fire ONLY for webhooks that are
+     * either global (corporation_id IS NULL) or explicitly assigned to the
+     * configured Moon Owner Corporation. Webhooks owned by other directors'
+     * corporations on the same SeAT install are excluded — those corps may
+     * have private moons that are not subject to this install's tracking/taxation.
+     *
+     * The $corporationId param is kept for backward compatibility but is
+     * deliberately ignored; the authoritative source is the
+     * `general.moon_owner_corporation_id` setting.
+     *
      * @param string $eventType (moon_arrival, jackpot_detected)
      * @param array $data Moon event data
-     * @param int|null $corporationId
+     * @param int|null $corporationId Deprecated/ignored — moon owner corp from settings is used instead
      * @return array Results for each webhook
      */
     public function sendMoonNotification(string $eventType, array $data, ?int $corporationId = null): array
     {
         if (!$this->isEventTypeEnabled($eventType)) {
+            Log::debug("WebhookService: Event type {$eventType} is globally disabled in notification settings");
             return ['sent' => 0, 'failed' => 0, 'message' => 'Event type globally disabled'];
         }
 
-        $webhooks = WebhookConfiguration::enabled()
-            ->forEvent($eventType)
-            ->get()
-            ->filter(function ($webhook) use ($corporationId) {
-                // Global webhooks (null corp) always match, corp-specific only match their corp
-                return $webhook->corporation_id === null || $webhook->corporation_id == $corporationId;
-            });
+        $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
 
         if ($webhooks->isEmpty()) {
-            Log::debug("WebhookService: No webhooks configured for moon event: {$eventType}");
+            Log::info("WebhookService: Moon event '{$eventType}' fired but NO webhooks matched. Check that at least one webhook is enabled with notify_{$eventType}=true and corporation_id is NULL or matches moon_owner_corporation_id.");
             return [];
         }
+
+        Log::debug("WebhookService: Dispatching moon event '{$eventType}' to {$webhooks->count()} webhook(s)");
 
         $results = [];
 
@@ -650,6 +741,8 @@ class WebhookService
                 ];
             }
         }
+
+        $this->logWebhookDispatch($eventType, $results);
 
         return $results;
     }
@@ -1265,18 +1358,18 @@ class WebhookService
     public function sendTaxNotification(string $eventType, array $data, ?int $corporationId = null): array
     {
         if (!$this->isEventTypeEnabled($eventType)) {
+            Log::debug("WebhookService: Event type {$eventType} is globally disabled in notification settings");
             return ['sent' => 0, 'failed' => 0, 'message' => 'Event type globally disabled'];
         }
 
-        $webhooks = WebhookConfiguration::enabled()
-            ->forEvent($eventType)
-            ->get()
-            ->filter(function ($webhook) use ($corporationId) {
-                return $webhook->corporation_id === null || $webhook->corporation_id == $corporationId;
-            });
+        // Tax notifications are scoped to the Moon Owner Corporation —
+        // taxes are collected by that corp regardless of which mining-group
+        // corp owns the individual tax codes. The $corporationId param is
+        // ignored; see getMoonOwnerScopedWebhooks().
+        $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
 
         if ($webhooks->isEmpty()) {
-            Log::debug("WebhookService: No webhooks configured for tax event: {$eventType}");
+            Log::info("WebhookService: Tax event '{$eventType}' fired but NO webhooks matched. Check that at least one webhook is enabled with notify_{$eventType}=true and corporation_id is NULL or matches moon_owner_corporation_id.");
             return [];
         }
 
@@ -1631,6 +1724,8 @@ class WebhookService
                 ];
             }
         }
+
+        $this->logWebhookDispatch('report_generated', $results);
 
         return $results;
     }
@@ -2011,12 +2106,7 @@ class WebhookService
      */
     protected function getCorpName(): string
     {
-        $settings = app(SettingsManagerService::class);
-
-        $corpId = $settings->getSetting('general.moon_owner_corporation_id');
-        if (!$corpId) {
-            $corpId = $settings->getSetting('general.corporation_id');
-        }
+        $corpId = app(SettingsManagerService::class)->getTaxProgramCorporationId();
 
         if (!$corpId) {
             return 'Corporation';

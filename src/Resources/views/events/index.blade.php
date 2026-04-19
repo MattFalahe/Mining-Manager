@@ -429,11 +429,17 @@ $(document).ready(function() {
     // Delete event
     $('.delete-event').on('click', function() {
         const eventId = $(this).data('event-id');
-        
+
+        if (!eventId) {
+            toastr.error('No event ID found');
+            return;
+        }
+
         if (confirm('{{ trans("mining-manager::events.confirm_delete") }}')) {
             $.ajax({
                 url: '{{ route("mining-manager.events.destroy", ":id") }}'.replace(':id', eventId),
-                method: 'DELETE',
+                method: 'POST',
+                data: { _method: 'DELETE' },
                 headers: {
                     'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
                 },

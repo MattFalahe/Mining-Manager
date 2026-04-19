@@ -247,6 +247,7 @@ class SettingsController extends Controller
         try {
             $divisions = DB::table('corporation_divisions')
                 ->where('corporation_id', $corporationId)
+                ->where('type', 'wallet')
                 ->pluck('name', 'division')
                 ->toArray();
 

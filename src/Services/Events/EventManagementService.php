@@ -6,6 +6,7 @@ use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -36,6 +37,88 @@ class EventManagementService
     {
         $this->trackingService = $trackingService;
         $this->settingsService = $settingsService;
+    }
+
+    /**
+     * Automatically transition event statuses and dispatch webhook notifications.
+     *
+     * Called by the `mining-manager:update-events` cron every 2 hours.
+     *
+     * Transitions:
+     *   planned → active   when start_time <= now  (fires 'event_started' notification)
+     *   active  → completed when end_time  <= now  (fires 'event_completed' notification)
+     *
+     * Cancelled events are never touched.
+     *
+     * @return array ['started' => int, 'completed' => int]
+     */
+    public function updateEventStatuses(): array
+    {
+        $now = Carbon::now();
+        $started = 0;
+        $completed = 0;
+
+        // 1. planned → active (start_time has passed)
+        $shouldStart = MiningEvent::where('status', 'planned')
+            ->where('start_time', '<=', $now)
+            ->get();
+
+        foreach ($shouldStart as $event) {
+            try {
+                $event->update(['status' => 'active']);
+
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-started");
+
+                // Dispatch 'event_started' notification
+                try {
+                    $participantIds = $event->participants()->pluck('character_id')->toArray();
+                    app(NotificationService::class)->sendEventStarted($event->fresh(), $participantIds);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send event_started notification for event {$event->id}: " . $e->getMessage());
+                }
+
+                $started++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to auto-start event {$event->id}: " . $e->getMessage());
+            }
+        }
+
+        // 2. active → completed (end_time has passed)
+        $shouldComplete = MiningEvent::where('status', 'active')
+            ->whereNotNull('end_time')
+            ->where('end_time', '<=', $now)
+            ->get();
+
+        foreach ($shouldComplete as $event) {
+            try {
+                // Final participant tracking update before closing
+                try {
+                    $this->trackingService->updateEventTracking($event);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Final tracking update failed for event {$event->id}: " . $e->getMessage());
+                }
+
+                $event->update([
+                    'status' => 'completed',
+                ]);
+
+                Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-completed");
+
+                // Dispatch 'event_completed' notification
+                try {
+                    $participantIds = $event->participants()->pluck('character_id')->toArray();
+                    app(NotificationService::class)->sendEventCompleted($event->fresh(), $participantIds);
+                } catch (\Exception $e) {
+                    Log::warning("Mining Manager: Failed to send event_completed notification for event {$event->id}: " . $e->getMessage());
+                }
+
+                $completed++;
+            } catch (\Exception $e) {
+                Log::error("Mining Manager: Failed to auto-complete event {$event->id}: " . $e->getMessage());
+            }
+        }
+
+        return ['started' => $started, 'completed' => $completed];
     }
 
     /**
@@ -123,7 +206,17 @@ class EventManagementService
             'start_time' => Carbon::now(),
         ]);
 
-        return $event->fresh();
+        $event = $event->fresh();
+
+        // Dispatch 'event_started' webhook notification
+        try {
+            $participantIds = $event->participants()->pluck('character_id')->toArray();
+            app(NotificationService::class)->sendEventStarted($event, $participantIds);
+        } catch (\Exception $e) {
+            Log::warning("Mining Manager: Failed to send event_started notification for event {$eventId}: " . $e->getMessage());
+        }
+
+        return $event;
     }
 
     /**
@@ -148,9 +241,19 @@ class EventManagementService
             ]);
         });
 
+        $event = $event->fresh();
+
         Log::info("Mining Manager: Event {$eventId} completed. Total mined: " . number_format($event->total_mined) . ", Participants: {$event->participant_count}, Tax Modifier: {$event->tax_modifier}%");
 
-        return $event->fresh();
+        // Dispatch 'event_completed' webhook notification
+        try {
+            $participantIds = $event->participants()->pluck('character_id')->toArray();
+            app(NotificationService::class)->sendEventCompleted($event, $participantIds);
+        } catch (\Exception $e) {
+            Log::warning("Mining Manager: Failed to send event_completed notification for event {$eventId}: " . $e->getMessage());
+        }
+
+        return $event;
     }
 
     /**

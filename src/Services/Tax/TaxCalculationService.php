@@ -516,8 +516,9 @@ class TaxCalculationService
         $appliedEvent = null;
 
         foreach ($events as $event) {
-            // If event is system-specific and entry is not in that system, skip
-            if ($event->solar_system_id && $event->solar_system_id != $entry->solar_system_id) {
+            // Check if the mining entry's system falls within the event's location scope.
+            // Resolves constellation/region scopes to system ID lists via mapDenormalize.
+            if (!$event->matchesSystem($entry->solar_system_id)) {
                 continue;
             }
 

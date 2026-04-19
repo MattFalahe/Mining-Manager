@@ -41,7 +41,7 @@ class ReportGenerationService
      * @param string $format
      * @return MiningReport
      */
-    public function generateReport(Carbon $startDate, Carbon $endDate, string $type = 'custom', string $format = 'json'): MiningReport
+    public function generateReport(Carbon $startDate, Carbon $endDate, string $type = 'custom', string $format = 'json', bool $dispatch = true): MiningReport
     {
         // Collect report data
         $reportData = $this->collectReportData($startDate, $endDate);
@@ -63,11 +63,16 @@ class ReportGenerationService
             $report->update(['file_path' => $filePath]);
         }
 
-        // Send webhook notification for report generation
-        try {
-            app(\MiningManager\Services\Notification\WebhookService::class)->sendReportNotification($report, $reportData);
-        } catch (\Exception $e) {
-            Log::warning("Failed to send report webhook: " . $e->getMessage());
+        // Auto-dispatch to subscribed webhooks. Callers that want to handle
+        // dispatch themselves (e.g. the manual UI path that sends to a single
+        // user-picked webhook) should pass $dispatch = false to avoid sending
+        // the report twice.
+        if ($dispatch) {
+            try {
+                app(\MiningManager\Services\Notification\WebhookService::class)->sendReportNotification($report, $reportData);
+            } catch (\Exception $e) {
+                Log::warning("Failed to send report webhook: " . $e->getMessage());
+            }
         }
 
         return $report;

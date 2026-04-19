@@ -57,7 +57,7 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <small class="form-text text-muted">
-                            The corporation that owns your moons and structures. Wallet payments are verified against this corp.
+                            The corporation that owns your moons/structures and runs the mining tax program. All tax invoices, theft detection, moon tracking, ledger data, and webhook notifications are scoped to this corporation — regardless of ore source (moon, belt, ice, gas).
                         </small>
                     </div>
                 </div>

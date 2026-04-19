@@ -20,7 +20,8 @@ class GenerateReportsCommand extends Command
                             {--start= : Start date for custom report (YYYY-MM-DD)}
                             {--end= : End date for custom report (YYYY-MM-DD)}
                             {--format=json : Output format (json|csv|pdf)}
-                            {--scheduled : Process all due scheduled reports}';
+                            {--scheduled : Process all due scheduled reports}
+                            {--force : Regenerate report even if one already exists for this period}';
 
     /**
      * The console command description.
@@ -78,6 +79,22 @@ class GenerateReportsCommand extends Command
         $this->info("Generating {$type} report");
         $this->info("Period: {$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')}");
         $this->info("Format: {$format}");
+
+        // Dedup guard: if a report for the exact same period+type already exists,
+        // skip regeneration unless --force is passed. Prevents the "daily duplicate"
+        // problem where a misconfigured cron silently re-dispatches the same report.
+        if (!$this->option('force')) {
+            $existing = MiningReport::where('report_type', $type)
+                ->whereDate('start_date', $startDate->toDateString())
+                ->whereDate('end_date', $endDate->toDateString())
+                ->orderBy('generated_at', 'desc')
+                ->first();
+
+            if ($existing) {
+                $this->warn("Report already exists for this period (id={$existing->id}, generated {$existing->generated_at}). Skipping. Use --force to regenerate.");
+                return Command::SUCCESS;
+            }
+        }
 
         try {
             // Generate report (this returns a MiningReport model)

@@ -3,6 +3,7 @@
 namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
@@ -373,5 +374,97 @@ class MiningEvent extends Model
             ->orderByDesc('quantity_mined')
             ->limit($limit)
             ->get();
+    }
+
+    /**
+     * Resolve the solar system IDs that fall within this event's location scope.
+     *
+     * EVE universe hierarchy: Region → Constellation → System.
+     * Mining ledger records contain solar_system_id (always a system).
+     * Events can scope to system, constellation, or region — so we need to
+     * expand constellation/region IDs into a list of system IDs for matching.
+     *
+     * Results are cached for 24 hours (static SDE data, never changes).
+     *
+     * @return array|null Array of solar system IDs, or null for 'any' (no filter needed)
+     */
+    public function getMatchingSystemIds(): ?array
+    {
+        // Global events match everything — no filter
+        if ($this->location_scope === 'any' || !$this->solar_system_id) {
+            return null;
+        }
+
+        // System scope — direct match (single ID)
+        if ($this->location_scope === 'system') {
+            return [$this->solar_system_id];
+        }
+
+        // Constellation/region scope — resolve hierarchy from mapDenormalize
+        $cacheKey = "mining-manager:event-systems:{$this->location_scope}:{$this->solar_system_id}";
+
+        return Cache::remember($cacheKey, 86400, function () {
+            if ($this->location_scope === 'constellation') {
+                return MapDenormalize::where('constellationID', $this->solar_system_id)
+                    ->where('groupID', 5) // Solar systems only
+                    ->pluck('itemID')
+                    ->toArray();
+            }
+
+            if ($this->location_scope === 'region') {
+                return MapDenormalize::where('regionID', $this->solar_system_id)
+                    ->where('groupID', 5)
+                    ->pluck('itemID')
+                    ->toArray();
+            }
+
+            return [$this->solar_system_id];
+        });
+    }
+
+    /**
+     * Apply this event's location filter to an Eloquent query.
+     *
+     * Usage: $event->applyLocationFilter($query, 'solar_system_id');
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param string $column The column name containing solar_system_id (default: 'solar_system_id')
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function applyLocationFilter($query, string $column = 'solar_system_id')
+    {
+        $systemIds = $this->getMatchingSystemIds();
+
+        if ($systemIds === null) {
+            return $query; // Global — no filter
+        }
+
+        if (count($systemIds) === 1) {
+            return $query->where($column, $systemIds[0]);
+        }
+
+        return $query->whereIn($column, $systemIds);
+    }
+
+    /**
+     * Check if a given solar system ID falls within this event's location scope.
+     *
+     * @param int|null $solarSystemId
+     * @return bool
+     */
+    public function matchesSystem(?int $solarSystemId): bool
+    {
+        if (!$solarSystemId) {
+            return false;
+        }
+
+        $systemIds = $this->getMatchingSystemIds();
+
+        // Global event matches everything
+        if ($systemIds === null) {
+            return true;
+        }
+
+        return in_array($solarSystemId, $systemIds);
     }
 }

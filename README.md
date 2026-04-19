@@ -11,7 +11,7 @@ A comprehensive mining management plugin for SeAT 5.x. Track mining operations, 
 - **Mining Ledger** -- Automated processing of character and corporation mining data with daily summary aggregation
 - **Moon Mining** -- Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts
 - **Tax System** -- Daily summary-based tax calculation with per-ore rates (moon R4-R64, regular ore, ice, gas, abyssal, triglavian), multi-corporation support, guest mining rates, event modifiers, configurable minimum tax amount with exempt/enforce behavior, wallet payment verification, and manual payment entry
-- **Mining Events** -- Create events with tax modifiers, track participants, leaderboards
+- **Mining Events** -- Create events with tax modifiers (tax-free to double-tax), auto-detect participants from mining ledger matching event time + location scope (system/constellation/region/global), leaderboards
 - **Reports** -- Daily/weekly/monthly reports with PDF/CSV/JSON export and scheduled Discord/Slack delivery
 - **Theft Detection** -- Detect and monitor unauthorized mining with severity classification and incident tracking
 - **Dashboard** -- Corporation-wide analytics with 12-month charts, leaderboards, and statistics
@@ -87,15 +87,15 @@ The wizard verifies your settings, populates current month data (prices, mining 
 | `mining-manager:process-ledger` | Every 30min (:15, :45) | Process corporation observer mining data |
 | `mining-manager:import-character-mining` | Every 30min (:20, :50) | Import character mining from SeAT ESI cache |
 | `mining-manager:update-extractions` | Every 2h | Refresh moon extraction data from ESI |
-| `mining-manager:update-events` | Every 2h | Update mining event status and participant data |
+| `mining-manager:update-events` | Every minute | Auto-transition event status (planned→active→completed) with notifications, update participant data |
 | `mining-manager:cache-prices` | Every 4h (:30) | Cache market prices from configured provider |
 | `mining-manager:update-ledger-prices` | Daily 1:00 AM | Lock in daily session prices for mining entries |
 | `mining-manager:update-daily-summaries` | Daily 1:30 AM | Safety net for non-observer mining data |
 | `mining-manager:calculate-taxes` | Daily 2:15 AM | Update running month-to-date tax totals |
-| `mining-manager:generate-invoices` | Daily 2:30 AM | Generate tax invoices for completed periods |
+| `mining-manager:generate-invoices` | Daily 2:30 AM | Generate tax invoices for completed periods with automatic tax code assignment |
 | `mining-manager:verify-payments` | Every 6h (:05) | Match wallet transfers against tax codes |
 | `mining-manager:send-reminders` | Daily 10:00 AM | Send tax payment reminders (if enabled in settings) |
-| `mining-manager:generate-reports` | Daily 4:05 AM + hourly (scheduled) | Generate daily reports and process scheduled reports |
+| `mining-manager:generate-reports` | Day 9 of month 4:05 AM + hourly (scheduled) | Generate monthly report (7 days after finalize-month for collection % to mature) and process user-defined scheduled reports. Dedup guard skips if same period+type exists (use `--force` to override) |
 | `mining-manager:recalculate-extraction-values` | Twice daily (6AM/6PM) | Update moon extraction values with current prices |
 | `mining-manager:archive-extractions` | Daily 5:05 AM | Archive completed extractions older than 7 days |
 | `mining-manager:detect-jackpots` | Daily 6:05 AM | Detect jackpot extractions + verify manual reports |
@@ -111,7 +111,7 @@ The wizard verifies your settings, populates current month data (prices, mining 
 | `mining-manager:initialize` | Guided first-time setup wizard -- verifies settings, populates current month, optional historical backfill |
 | `mining-manager:backfill-ore-types` | One-time backfill of ore type flags on existing data |
 | `mining-manager:backfill-extraction-notifications` | Backfill fractured_at from historical ESI notifications |
-| `mining-manager:generate-tax-codes` | Generate or regenerate tax codes for invoices |
+| `mining-manager:generate-tax-codes` | Generate tax codes for any unpaid taxes missing active codes (auto-generated on invoice creation, this is the manual fallback) |
 | `mining-manager:generate-test-data` | Generate test data for development/testing |
 | `mining-manager:backup-data` | Export Mining Manager data for backup or migration |
 | `mining-manager:restore-data` | Import Mining Manager data from a backup |

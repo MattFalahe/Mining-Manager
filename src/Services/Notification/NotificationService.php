@@ -391,11 +391,17 @@ class NotificationService
      */
     public function sendBroadcast(string $type, array $data): array
     {
-        $corpId = $this->settings->getSetting('general.corporation_id');
+        $corpId = $this->settings->getTaxProgramCorporationId();
 
         if (!$corpId) {
+            Log::warning("NotificationService::sendBroadcast — tax program corporation is not configured, type={$type}");
             return ['error' => 'Corporation ID not configured'];
         }
+
+        // Inject corporation_id into data so downstream webhook dispatch can
+        // scope correctly via sendViaWebhooks(). This was missing and caused
+        // the forCorporation() scope to never apply for broadcast notifications.
+        $data['corporation_id'] = $data['corporation_id'] ?? (int) $corpId;
 
         // Get all corp member character IDs from SeAT
         $memberIds = DB::table('corporation_members')
@@ -404,7 +410,10 @@ class NotificationService
             ->toArray();
 
         if (empty($memberIds)) {
-            return ['error' => 'No corporation members found'];
+            Log::warning("NotificationService::sendBroadcast — no members found in corporation_members for corp {$corpId}, type={$type}. Broadcasting to webhooks only.");
+            // Still dispatch to webhooks — they don't need member IDs.
+            // Passing an empty recipients array is fine; webhooks ignore it.
+            return $this->send($type, [], $data);
         }
 
         return $this->send($type, $memberIds, $data);
@@ -704,17 +713,36 @@ class NotificationService
             return ['error' => 'Unsupported notification type for Discord webhooks'];
         }
 
-        // Get webhooks that have this event type enabled
-        $corporationId = $data['corporation_id'] ?? null;
+        // Webhook scoping rules:
+        //  - Event notifications (event_created/started/completed): GLOBAL — any
+        //    enabled webhook subscribed to the event type receives it. Event
+        //    corporation_id is used only for tax modifier application, not
+        //    webhook routing. (Matt's decision 2026-04-16.)
+        //  - Everything else (tax_*, moon_*): scoped to the Tax Program /
+        //    Moon Owner Corporation. Other directors' corps on the same SeAT
+        //    install are excluded. See getMoonOwnerScopedWebhooks() in
+        //    WebhookService for the same pattern.
+        $eventTypesThatAreGlobal = ['event_created', 'event_started', 'event_completed'];
+
         $webhooks = \MiningManager\Models\WebhookConfiguration::enabled()
             ->forEvent($eventType)
-            ->when($corporationId, function ($query) use ($corporationId) {
-                return $query->forCorporation($corporationId);
-            })
             ->get();
 
+        if (!in_array($eventType, $eventTypesThatAreGlobal, true)) {
+            $moonOwnerCorpId = $this->settings->getTaxProgramCorporationId();
+
+            if ($moonOwnerCorpId === null) {
+                Log::warning("NotificationService::sendViaWebhooks — tax program corporation not configured, '{$eventType}' will only fire for global (NULL corp) webhooks");
+            }
+
+            $webhooks = $webhooks->filter(function ($webhook) use ($moonOwnerCorpId) {
+                return $webhook->corporation_id === null
+                    || ($moonOwnerCorpId !== null && (int) $webhook->corporation_id === $moonOwnerCorpId);
+            });
+        }
+
         if ($webhooks->isEmpty()) {
-            Log::debug("NotificationService: No webhooks configured for event: {$eventType}");
+            Log::info("NotificationService: No webhooks matched for event '{$eventType}' (check subscriptions + corporation_id scope)");
             return ['skipped' => true, 'reason' => 'No webhooks configured for this event type'];
         }
 
@@ -734,19 +762,25 @@ class NotificationService
                         $message['content'] = $pingContent;
                     }
 
-                    // Add role mention from per-type settings
+                    // Add role mention — per-type settings are authoritative.
+                    // If ping_role is OFF for this notification type, NEVER ping
+                    // regardless of the webhook's legacy discord_role_id field.
+                    // (Same fix as WebhookService::getDiscordRoleMention.)
                     $typeSettings = $this->settings->getTypeNotificationSettings($eventType);
-                    if ($typeSettings['ping_role'] && $typeSettings['role_id']) {
-                        $roleMention = "<@&{$typeSettings['role_id']}>";
-                        $message['content'] = ($message['content'] ?? '')
-                            ? $roleMention . ' ' . ($message['content'] ?? '')
-                            : $roleMention;
-                    } elseif ($webhook->discord_role_id) {
-                        $roleMention = $webhook->getDiscordRoleMention();
-                        $message['content'] = ($message['content'] ?? '')
-                            ? $roleMention . ' ' . ($message['content'] ?? '')
-                            : $roleMention;
+                    if ($typeSettings['ping_role']) {
+                        // ping_role is ON — use per-type role if configured,
+                        // otherwise fall back to webhook's own discord_role_id
+                        $roleId = $typeSettings['role_id'] ?? $webhook->discord_role_id;
+                        if ($roleId) {
+                            $roleMention = "<@&{$roleId}>";
+                            $message['content'] = ($message['content'] ?? '')
+                                ? $roleMention . ' ' . ($message['content'] ?? '')
+                                : $roleMention;
+                        }
                     }
+                    // If ping_role is OFF → no role mention at all, even if
+                    // webhook has discord_role_id set (that's for other event
+                    // types where ping IS enabled).
 
                     if ($webhook->discord_username) {
                         $message['username'] = $webhook->discord_username;
@@ -1277,13 +1311,7 @@ class NotificationService
 
     protected function getCorpName(): string
     {
-        // Use moon owner corporation (the structure-owning corp), not the tax context corporation
-        $corpId = $this->settings->getSetting('general.moon_owner_corporation_id');
-
-        if (!$corpId) {
-            // Fallback to main corporation_id if moon owner not set
-            $corpId = $this->settings->getSetting('general.corporation_id');
-        }
+        $corpId = $this->settings->getTaxProgramCorporationId();
 
         if (!$corpId) {
             return 'Corporation';

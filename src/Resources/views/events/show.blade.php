@@ -197,7 +197,7 @@ $(document).ready(function() {
             confirmMsg = '{{ trans("mining-manager::events.confirm_leave") }}';
         } else {
             route = '{{ route("mining-manager.events.destroy", ":id") }}'.replace(':id', eventId);
-            method = 'DELETE';
+            method = 'POST';
             confirmMsg = '{{ trans("mining-manager::events.confirm_delete") }}';
         }
 
@@ -206,9 +206,15 @@ $(document).ready(function() {
         // Disable button to prevent double-clicks
         btn.prop('disabled', true);
 
+        var ajaxData = {};
+        if (action === 'delete') {
+            ajaxData._method = 'DELETE';
+        }
+
         $.ajax({
             url: route,
             method: method,
+            data: ajaxData,
             headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
             success: function(response) {
                 if (typeof toastr !== 'undefined') {

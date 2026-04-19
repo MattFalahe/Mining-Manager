@@ -297,7 +297,11 @@
                         </div>
                         
                         {{-- Discord Send Option --}}
-                        @if(isset($webhooks) && $webhooks->count() > 0)
+                        @php
+                            $reportSubscribers = isset($webhooks)
+                                ? $webhooks->where('is_enabled', true)->where('notify_report_generated', true)
+                                : collect();
+                        @endphp
                         <div class="card card-outline card-primary mt-3">
                             <div class="card-body">
                                 <div class="form-check mb-2">
@@ -306,16 +310,21 @@
                                         <i class="fab fa-discord text-primary"></i> Send report to Discord after generation
                                     </label>
                                 </div>
-                                <div id="webhook_select" style="display:none;">
-                                    <select class="form-control" name="webhook_id">
-                                        @foreach($webhooks as $webhook)
-                                        <option value="{{ $webhook->id }}">{{ $webhook->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
+                                @if($reportSubscribers->isNotEmpty())
+                                    <small class="text-muted d-block">
+                                        <i class="fas fa-info-circle"></i>
+                                        Will be sent to webhooks subscribed to <strong>Report Generated</strong>:
+                                        {{ $reportSubscribers->pluck('name')->implode(', ') }}
+                                    </small>
+                                @else
+                                    <small class="text-warning d-block">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        No webhooks are subscribed to <strong>Report Generated</strong> events.
+                                        Configure subscriptions in <a href="{{ route('mining-manager.settings.index') }}#webhooks">Settings → Webhooks</a>.
+                                    </small>
+                                @endif
                             </div>
                         </div>
-                        @endif
 
                         <div class="alert alert-info mt-3">
                             <i class="fas fa-info-circle"></i>
@@ -470,11 +479,6 @@ $(document).ready(function() {
         }
     }
     
-    // Toggle Discord webhook select
-    $('#send_discord').on('change', function() {
-        $('#webhook_select').toggle($(this).is(':checked'));
-    });
-
     // Form submission
     $('#reportForm').on('submit', function() {
         $('#generateBtn').prop('disabled', true)

@@ -5,6 +5,7 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\TaxInvoice;
+use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use Carbon\Carbon;
 
 class GenerateTaxInvoicesCommand extends Command
@@ -115,6 +116,19 @@ class GenerateTaxInvoicesCommand extends Command
                     'status' => 'pending',
                     'generated_at' => Carbon::now(),
                 ]);
+
+                // Auto-generate tax code if the tax record doesn't have an active one.
+                // Previously this required a separate manual `generate-tax-codes` command.
+                if (!$tax->taxCodes()->where('status', 'active')->exists()) {
+                    try {
+                        $codeService = app(TaxCodeGeneratorService::class);
+                        $taxCode = $codeService->generateTaxCode($tax, $invoice);
+                        $this->line("  Tax code generated: {$taxCode->code}");
+                    } catch (\Exception $e) {
+                        $this->warn("  Failed to generate tax code for character {$tax->character_id}: {$e->getMessage()}");
+                        // Non-fatal — invoice was still created, code can be generated later
+                    }
+                }
 
                 $this->line("Generated invoice for character {$tax->character_id}: " . number_format($tax->amount_owed, 2) . " ISK");
                 $generated++;

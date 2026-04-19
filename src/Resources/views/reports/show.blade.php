@@ -448,10 +448,9 @@ $(document).ready(function() {
         });
     });
 
-    // Send to Discord via modal
+    // Send to Discord via modal — dispatches to all webhooks subscribed to
+    // 'Report Generated' (channel selection lives in webhook settings, not here).
     $('#sendDiscordBtn').on('click', function() {
-        const webhookId = $('#discord_webhook_select').val();
-        const reportId = {{ $report->id }};
         const $btn = $(this);
 
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Sending...');
@@ -462,7 +461,6 @@ $(document).ready(function() {
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
-            data: { webhook_id: webhookId },
             success: function(response) {
                 toastr.success(response.message || 'Report sent to Discord');
                 $btn.prop('disabled', false).html('<i class="fab fa-discord"></i> Send');
@@ -484,7 +482,11 @@ $(document).ready(function() {
 </div>{{-- /.mining-manager-wrapper --}}
 
 {{-- SEND TO DISCORD MODAL --}}
-@if(isset($webhooks) && $webhooks->count() > 0)
+@php
+    $reportSubscribers = isset($webhooks)
+        ? $webhooks->where('is_enabled', true)->where('notify_report_generated', true)
+        : collect();
+@endphp
 <div class="modal fade" id="sendDiscordModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
@@ -497,30 +499,35 @@ $(document).ready(function() {
                 </button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="discord_webhook_select">Select Webhook</label>
-                    <select class="form-control" id="discord_webhook_select">
-                        @foreach($webhooks as $webhook)
-                        <option value="{{ $webhook->id }}">
-                            {{ $webhook->name }}
-                            ({{ $webhook->type }})
-                        </option>
+                @if($reportSubscribers->isNotEmpty())
+                    <p>The report will be sent to all webhooks subscribed to the <strong>Report Generated</strong> event:</p>
+                    <ul>
+                        @foreach($reportSubscribers as $sub)
+                            <li><strong>{{ $sub->name }}</strong> <span class="text-muted">({{ $sub->type }})</span></li>
                         @endforeach
-                    </select>
-                </div>
-                <p class="text-muted mb-0">
-                    <i class="fas fa-info-circle"></i>
-                    The report summary will be sent as an embed to the selected webhook.
-                </p>
+                    </ul>
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        Channel selection is controlled by webhook subscriptions in
+                        <a href="{{ route('mining-manager.settings.index') }}#webhooks">Settings → Webhooks</a>.
+                    </p>
+                @else
+                    <div class="alert alert-warning mb-0">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        No webhooks are currently subscribed to <strong>Report Generated</strong>.
+                        Enable the subscription on at least one webhook in
+                        <a href="{{ route('mining-manager.settings.index') }}#webhooks">Settings → Webhooks</a>
+                        before sending.
+                    </div>
+                @endif
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="sendDiscordBtn">
+                <button type="button" class="btn btn-primary" id="sendDiscordBtn" @if($reportSubscribers->isEmpty()) disabled @endif>
                     <i class="fab fa-discord"></i> Send
                 </button>
             </div>
         </div>
     </div>
 </div>
-@endif
 @endsection

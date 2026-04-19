@@ -152,8 +152,12 @@ class UpdateMoonExtractionsCommand extends Command
             }
         }
 
-        // Update status of past extractions
-        $this->updatePastExtractions();
+        // Update status of past extractions — delegated to the service so that
+        // moon arrival notifications fire on the extracting → ready transition.
+        // (Previously this command had a private updatePastExtractions() that
+        // duplicated the status flip without calling the notification dispatcher,
+        // causing moon arrival notifications to silently never fire.)
+        $this->extractionService->updateExtractionStatuses();
 
         $this->info("\nMoon extraction update complete!");
         $this->info("Created: {$created} new extractions");
@@ -186,41 +190,4 @@ class UpdateMoonExtractionsCommand extends Command
         }
     }
 
-    /**
-     * Update status of past extractions
-     *
-     * @return void
-     */
-    private function updatePastExtractions(): void
-    {
-        $now = Carbon::now();
-
-        // Detect auto-fractures first (affects expiry timing)
-        $extractionService = app(\MiningManager\Services\Moon\MoonExtractionService::class);
-        $autoFractured = $extractionService->detectAutoFractures();
-        if ($autoFractured > 0) {
-            $this->info("Detected {$autoFractured} auto-fractured extractions");
-        }
-
-        // Mark as expired using fractured_at when available, legacy estimate otherwise
-        $expired = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
-
-        if ($expired > 0) {
-            $this->info("Marked {$expired} extractions as expired");
-        }
-
-        // Mark as ready if chunk has arrived but not yet expired
-        $ready = MoonExtraction::where('status', 'extracting')
-            ->where('chunk_arrival_time', '<=', $now)
-            ->get()
-            ->filter(function ($e) {
-                return !$e->isExpired();
-            });
-
-        if ($ready->isNotEmpty()) {
-            MoonExtraction::whereIn('id', $ready->pluck('id'))
-                ->update(['status' => 'ready']);
-            $this->info("Marked {$ready->count()} extractions as ready");
-        }
-    }
 }

@@ -35,24 +35,33 @@ class GenerateTaxCodesCommand extends Command
             $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
         }
 
-        // Determine month
+        // Determine scope — if --month is given, filter to that month.
+        // Otherwise find ALL unpaid taxes across any month/period that need codes.
+        // (The old default of subMonth() missed bi-weekly periods in the current month.)
         if ($this->option('month')) {
             $monthDate = Carbon::parse($this->option('month') . '-01')->startOfMonth();
+            $monthLabel = $monthDate->format('F Y');
+            $this->info("Generating tax codes for: {$monthLabel}");
+
+            $taxIds = MiningTax::where('month', $monthDate->format('Y-m-01'))
+                ->whereIn('status', ['unpaid', 'overdue'])
+                ->whereDoesntHave('taxCodes', function ($q) {
+                    $q->where('status', 'active');
+                })
+                ->pluck('id')
+                ->toArray();
         } else {
-            $monthDate = Carbon::now()->subMonth()->startOfMonth();
+            $this->info("Generating tax codes for ALL unpaid taxes missing active codes...");
+
+            // Find any unpaid/overdue tax without an active code, regardless of month.
+            // This covers monthly, biweekly, and weekly periods without assumptions.
+            $taxIds = MiningTax::whereIn('status', ['unpaid', 'overdue'])
+                ->whereDoesntHave('taxCodes', function ($q) {
+                    $q->where('status', 'active');
+                })
+                ->pluck('id')
+                ->toArray();
         }
-
-        $monthLabel = $monthDate->format('F Y');
-        $this->info("Generating tax codes for: {$monthLabel}");
-
-        // Get unpaid taxes without active codes
-        $taxIds = MiningTax::where('month', $monthDate->format('Y-m-01'))
-            ->whereIn('status', ['unpaid', 'overdue'])
-            ->whereDoesntHave('taxCodes', function ($q) {
-                $q->where('status', 'active');
-            })
-            ->pluck('id')
-            ->toArray();
 
         if (empty($taxIds)) {
             $this->info('No unpaid taxes found that need codes.');

@@ -107,13 +107,14 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="start_time">{{ trans('mining-manager::events.start_time') }}</label>
+                                    <label for="start_time">{{ trans('mining-manager::events.start_time') }} (EVE Time / UTC)</label>
                                     <input type="datetime-local" class="form-control" id="start_time" name="start_time" value="{{ old('start_time', $event->start_time->format('Y-m-d\TH:i')) }}" required>
+                                    <small class="form-text text-muted">All times are in EVE Time (UTC)</small>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="end_time">{{ trans('mining-manager::events.end_time') }}</label>
+                                    <label for="end_time">{{ trans('mining-manager::events.end_time') }} (EVE Time / UTC)</label>
                                     <input type="datetime-local" class="form-control" id="end_time" name="end_time" value="{{ old('end_time', $event->end_time ? $event->end_time->format('Y-m-d\TH:i') : '') }}">
                                 </div>
                             </div>

@@ -149,6 +149,13 @@ class SettingsManagerService
             'corporation_id' => $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id')),
             'corporation_name' => $this->getSetting('general.corporation_name', ''),
             'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
+            // NOTE: Despite the name, this is effectively the "Tax Program Corporation ID".
+            // This corp owns the moons/structures AND runs the mining tax program.
+            // All tax invoices, theft detection, moon notifications, and ledger tracking
+            // are scoped to this corp — regardless of ore source (moon, belt, ice, gas).
+            // Webhook notifications for moon/theft/tax events are also filtered to only
+            // reach webhooks tied to this corp (see WebhookService::getMoonOwnerScopedWebhooks).
+            // Other directors' corps on the same SeAT install are excluded from these notifications.
             'moon_owner_corporation_id' => $this->getSetting('general.moon_owner_corporation_id', config('mining-manager.general.moon_owner_corporation_id')),
 
             // Ore Refining Settings (unified: reads from pricing.refining_efficiency)
@@ -215,14 +222,17 @@ class SettingsManagerService
 
     /**
      * Get corporation ID (convenience method)
-     * Used throughout the plugin for tax calculations and data filtering
+     * Used throughout the plugin for tax calculations and data filtering.
      *
+     * @deprecated Use getTaxProgramCorporationId() instead. This alias is kept
+     *             for backward compatibility but delegates to the canonical
+     *             accessor. The legacy `general.corporation_id` setting is no
+     *             longer consulted.
      * @return int|null
      */
     public function getCorporationId(): ?int
     {
-        $corpId = $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id'));
-        return $corpId ? (int) $corpId : null;
+        return $this->getTaxProgramCorporationId();
     }
 
     /**
@@ -338,6 +348,29 @@ class SettingsManagerService
     }
 
     /**
+     * Get the Tax Program Corporation ID — the single source of truth for
+     * "which corporation runs this SeAT install's mining tax program".
+     *
+     * Historical note: this value lives in the `general.moon_owner_corporation_id`
+     * setting key (preserved to avoid migrations on released installs). The name
+     * `moon_owner_corporation_id` is legacy — it refers to the corp that owns
+     * the moons/structures, which in practice is also the corp collecting taxes
+     * from miners mining those structures. Use this accessor everywhere instead
+     * of reading the raw setting to make intent clear.
+     *
+     * The older `general.corporation_id` setting (used in early versions as a
+     * "currently selected" UI-state value) is no longer consulted — it was
+     * unreliable (often empty at global scope) and semantically redundant.
+     *
+     * @return int|null
+     */
+    public function getTaxProgramCorporationId(): ?int
+    {
+        $value = $this->getSetting('general.moon_owner_corporation_id');
+        return $value ? (int) $value : null;
+    }
+
+    /**
      * Get the display name for the configured wallet division.
      *
      * @return string
@@ -362,6 +395,7 @@ class SettingsManagerService
             try {
                 $name = DB::table('corporation_divisions')
                     ->where('corporation_id', $moonOwnerCorpId)
+                    ->where('type', 'wallet')
                     ->where('division', $division)
                     ->value('name');
 

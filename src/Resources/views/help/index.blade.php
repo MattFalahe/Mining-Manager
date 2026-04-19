@@ -1703,8 +1703,8 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-events</code></td>
-                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td>Update mining event participant data and statistics.<br>
+                                    <td><span class="badge badge-danger">Every minute</span></td>
+                                    <td>Auto-transition event status (planned &rarr; active &rarr; completed) with Discord/Slack notifications on each transition. Also updates participant data by auto-detecting miners from the mining ledger whose activity falls within the event's time window and location scope (system, constellation, region, or global).<br>
                                         <small class="text-muted">Options: <code>--event_id=</code> specific event, <code>--active</code> only active events</small>
                                     </td>
                                 </tr>
@@ -1766,9 +1766,9 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-reports</code></td>
-                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Generate mining reports and analytics summaries.<br>
-                                        <small class="text-muted">Options: <code>--type=monthly</code> (daily|weekly|monthly|custom), <code>--start=YYYY-MM-DD</code>, <code>--end=YYYY-MM-DD</code>, <code>--format=json</code> (json|csv|pdf)</small>
+                                    <td><span class="badge badge-success">{{ trans('mining-manager::help.schedule_monthly') }}</span> Day 9 @ 4:05 AM</td>
+                                    <td>Generate previous month's mining report. Runs on day 9 (7 days after finalize-month) so collection % is meaningful. Dedup guard: skips if a report for the same period+type already exists. Tax codes are auto-generated when invoices are created (separate command).<br>
+                                        <small class="text-muted">Options: <code>--type=monthly</code> (daily|weekly|monthly|custom), <code>--start=YYYY-MM-DD</code>, <code>--end=YYYY-MM-DD</code>, <code>--format=json</code> (json|csv|pdf), <code>--force</code> regenerate even if report exists, <code>--scheduled</code> process user-defined report schedules (runs hourly)</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1795,8 +1795,8 @@
                                 <tr>
                                     <td><code>mining-manager:generate-tax-codes</code></td>
                                     <td><span class="badge badge-warning">{{ trans('mining-manager::help.schedule_manual') }}</span></td>
-                                    <td>Generate payment codes for unpaid tax records without recalculating taxes. Use this to assign codes after running calculate-taxes, or via the "Assign Codes" button in the UI.<br>
-                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month (defaults to previous month)</small>
+                                    <td>Generate payment codes for unpaid tax records without recalculating taxes. <strong>Tax codes are now auto-generated when invoices are created</strong>, so this is a manual fallback for edge cases or to catch any invoices that were created before the auto-generation feature.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month. Without <code>--month</code>, scans ALL unpaid taxes missing active codes (any period).</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1957,7 +1957,7 @@
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:generate-tax-codes --month=2026-03</code></td>
-                                    <td>Generate payment codes for March 2026 unpaid taxes (without recalculation)</td>
+                                    <td>Generate payment codes for March 2026 unpaid taxes (manual fallback — codes are auto-generated on invoice creation)</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:import-character-mining --days=7</code></td>

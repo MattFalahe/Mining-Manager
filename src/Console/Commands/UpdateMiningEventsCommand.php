@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningEvent;
+use MiningManager\Services\Events\EventManagementService;
 use MiningManager\Services\Events\EventTrackingService;
 use Carbon\Carbon;
 
@@ -60,7 +61,20 @@ class UpdateMiningEventsCommand extends Command
 
         $this->info('Starting event update...');
 
-        // Build query for events
+        // Transition event statuses: planned → active → completed.
+        // This fires 'event_started' and 'event_completed' webhook notifications
+        // on each transition (see EventManagementService::updateEventStatuses).
+        $managementService = app(EventManagementService::class);
+        $statusResult = $managementService->updateEventStatuses();
+
+        if ($statusResult['started'] > 0) {
+            $this->info("Auto-started {$statusResult['started']} event(s)");
+        }
+        if ($statusResult['completed'] > 0) {
+            $this->info("Auto-completed {$statusResult['completed']} event(s)");
+        }
+
+        // Build query for participant tracking
         $query = MiningEvent::query();
 
         if ($eventId = $this->option('event_id')) {

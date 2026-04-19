@@ -59,28 +59,26 @@ class MoonExtractionService
      */
     protected function getMoonOwnerCorporationId(): ?int
     {
-        // Use the correct key with 'general.' prefix to match how settings are stored
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $corpId = $this->settingsService->getTaxProgramCorporationId();
 
-        if (!$moonOwnerCorpId) {
-            // Fallback to general.corporation_id (the currently selected corporation)
-            $moonOwnerCorpId = $this->settingsService->getSetting('general.corporation_id');
+        if ($corpId) {
+            return $corpId;
         }
 
-        if (!$moonOwnerCorpId) {
-            // Last resort: check corporation_industry_mining_extractions for any corporation
-            $firstExtraction = DB::table('corporation_industry_mining_extractions')
-                ->select('corporation_id')
-                ->first();
+        // Last-resort heuristic: if the tax program corp is not configured,
+        // try to pick up any corp that has extraction data in SeAT's tables.
+        // This keeps the plugin functional on a fresh install before the admin
+        // sets the setting; a warning is logged so the state is visible.
+        $firstExtraction = DB::table('corporation_industry_mining_extractions')
+            ->select('corporation_id')
+            ->first();
 
-            $moonOwnerCorpId = $firstExtraction?->corporation_id ?? null;
-
-            if ($moonOwnerCorpId) {
-                Log::warning("Mining Manager: moon_owner_corporation_id not configured, falling back to corporation {$moonOwnerCorpId} from extraction data");
-            }
+        if ($firstExtraction?->corporation_id) {
+            Log::warning("Mining Manager: tax program corporation not configured, falling back to corporation {$firstExtraction->corporation_id} from extraction data");
+            return (int) $firstExtraction->corporation_id;
         }
 
-        return $moonOwnerCorpId ? (int) $moonOwnerCorpId : null;
+        return null;
     }
 
     /**
@@ -670,7 +668,7 @@ class MoonExtractionService
      *
      * @return void
      */
-    private function updateExtractionStatuses()
+    public function updateExtractionStatuses()
     {
         $now = Carbon::now();
 

@@ -109,25 +109,25 @@ class ReportController extends Controller
                 [$startDate, $endDate] = $this->getDateRangeForType($type);
             }
 
-            // Generate report
-            $report = $this->reportService->generateReport($startDate, $endDate, $type, $format);
+            // The "Send to Discord" checkbox controls whether dispatch happens.
+            // When checked, generateReport()'s auto-dispatch sends to all webhooks
+            // subscribed to 'report_generated' (channel selection = webhook config).
+            // When unchecked, the report is saved without notifying any webhook.
+            $shouldDispatch = $request->boolean('send_to_discord');
 
-            // Send to Discord if requested
-            if ($request->has('send_to_discord') && $request->input('webhook_id')) {
-                try {
-                    $webhook = WebhookConfiguration::findOrFail($request->input('webhook_id'));
-                    $reportData = json_decode($report->data, true) ?? [];
-                    $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-                    $webhookService->sendReportToWebhook($webhook, $report, $reportData);
-                } catch (\Exception $e) {
-                    return redirect()->route('mining-manager.reports.show', $report->id)
-                        ->with('success', 'Report generated successfully')
-                        ->with('warning', 'Failed to send to Discord: ' . $e->getMessage());
-                }
-            }
+            $report = $this->reportService->generateReport(
+                $startDate,
+                $endDate,
+                $type,
+                $format,
+                dispatch: $shouldDispatch
+            );
+
+            $message = 'Report generated successfully'
+                . ($shouldDispatch ? ' and sent to subscribed Discord webhooks' : '');
 
             return redirect()->route('mining-manager.reports.show', $report->id)
-                ->with('success', 'Report generated successfully' . ($request->has('send_to_discord') ? ' and sent to Discord' : ''));
+                ->with('success', $message);
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
@@ -154,7 +154,9 @@ class ReportController extends Controller
     }
 
     /**
-     * Send an existing report to a Discord webhook
+     * Re-send an existing report to all webhooks subscribed to 'report_generated'.
+     * Channel selection is intentionally NOT exposed here — it's controlled by
+     * each webhook's own `notify_report_generated` subscription flag.
      *
      * @param Request $request
      * @param int $id
@@ -162,19 +164,26 @@ class ReportController extends Controller
      */
     public function sendToDiscord(Request $request, $id)
     {
-        $request->validate([
-            'webhook_id' => 'required|integer|exists:webhook_configurations,id',
-        ]);
-
         try {
             $report = MiningReport::findOrFail($id);
-            $webhook = WebhookConfiguration::findOrFail($request->input('webhook_id'));
-
             $reportData = json_decode($report->data, true) ?? [];
-            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-            $webhookService->sendReportToWebhook($webhook, $report, $reportData);
 
-            return response()->json(['success' => true, 'message' => 'Report sent to Discord successfully']);
+            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+            $results = $webhookService->sendReportNotification($report, $reportData);
+
+            $sentCount = is_array($results) ? count(array_filter($results, fn($r) => $r['success'] ?? false)) : 0;
+
+            if ($sentCount === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No webhooks are subscribed to "Report Generated". Configure subscriptions in Settings → Webhooks.',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Report sent to {$sentCount} subscribed webhook(s)",
+            ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => 'Failed to send: ' . $e->getMessage()], 500);
         }

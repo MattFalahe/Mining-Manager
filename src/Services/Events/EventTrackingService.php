@@ -77,10 +77,10 @@ class EventTrackingService
                 $event->end_time ?? Carbon::now()
             ]);
 
-        // Filter by location if specified
-        if ($event->solar_system_id) {
-            $query->where('solar_system_id', $event->solar_system_id);
-        }
+        // Filter by location scope — resolves constellation/region to system IDs.
+        // (Previously only did direct solar_system_id match which silently failed
+        // for constellation/region scopes since those IDs are not system IDs.)
+        $event->applyLocationFilter($query, 'solar_system_id');
 
         $newActivity = $query->get();
 
