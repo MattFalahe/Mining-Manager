@@ -73,9 +73,29 @@ class ArchiveOldExtractionsCommand extends Command
         }
 
         // Find extractions to archive
+        //
+        // Two pools with different age criteria:
+        //   1. Expired/fractured — normal lifecycle complete. Archive when
+        //      natural_decay_time is more than $daysOld in the past.
+        //   2. Cancelled — director cancelled before chunk arrival. The
+        //      originally planned natural_decay_time may still be in the
+        //      future, so we key off updated_at (set by detectCancellations
+        //      when the cancellation was detected).
+        //
+        // Without pool #2, cancelled extractions would accumulate in
+        // moon_extractions forever because natural_decay_time never
+        // becomes "past enough" relative to cancellation.
         $cutoffDate = Carbon::now()->subDays($daysOld);
-        $extractionsToArchive = MoonExtraction::where('natural_decay_time', '<', $cutoffDate)
-            ->whereIn('status', ['expired', 'fractured'])
+        $extractionsToArchive = MoonExtraction::where(function ($q) use ($cutoffDate) {
+                $q->where(function ($inner) use ($cutoffDate) {
+                    $inner->whereIn('status', ['expired', 'fractured'])
+                          ->where('natural_decay_time', '<', $cutoffDate);
+                })
+                ->orWhere(function ($inner) use ($cutoffDate) {
+                    $inner->where('status', 'cancelled')
+                          ->where('updated_at', '<', $cutoffDate);
+                });
+            })
             ->get();
 
         if ($extractionsToArchive->isEmpty()) {
@@ -172,17 +192,26 @@ class ArchiveOldExtractionsCommand extends Command
     private function calculateActualMinedValue(MoonExtraction $extraction): array
     {
         try {
-            // Get mining data for this extraction's timeframe
-            // Look for mining that happened between chunk arrival and natural decay
-            $miningData = MiningLedger::where('solar_system_id', function($query) use ($extraction) {
-                    $query->select('solar_system_id')
-                        ->from('universe_structures')
-                        ->where('structure_id', $extraction->structure_id)
-                        ->limit(1);
-                })
-                ->where('date', '>=', $extraction->chunk_arrival_time->format('Y-m-d'))
-                ->where('date', '<=', $extraction->natural_decay_time->format('Y-m-d'))
-                ->where('is_moon_ore', true)
+            // Cancelled extractions never had a chunk to mine. Any ledger
+            // activity in the window belongs to a different extraction.
+            if ($extraction->status === 'cancelled') {
+                return [
+                    'total_value' => 0,
+                    'total_miners' => 0,
+                    'completion_percentage' => 0,
+                ];
+            }
+
+            // Query by observer_id (the structure's moon drill) for precise
+            // attribution. Window: 72 hours from chunk_arrival_time — covers
+            // the full fracture + 48h mining lifecycle. Previously the window
+            // was chunk_arrival → natural_decay (only 3h pre-fracture), which
+            // missed all actual mining since chunks are mined AFTER fracture.
+            $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+
+            $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
+                ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())
+                ->where('date', '<=', $windowEnd->toDateString())
                 ->get();
 
             if ($miningData->isEmpty()) {
@@ -196,10 +225,18 @@ class ArchiveOldExtractionsCommand extends Command
             $totalValue = $miningData->sum('total_value');
             $totalMiners = $miningData->pluck('character_id')->unique()->count();
 
-            // Calculate completion percentage (actual mined vs estimated)
+            // Completion % compares actual mined against the value AT ARRIVAL
+            // (locked in when chunk became ready) rather than current running
+            // value. Preserves historical accuracy — the chunk had a specific
+            // ISK value at arrival, and we measure what fraction was actually
+            // captured before despawn. Falls back to estimated_value if the
+            // arrival snapshot isn't available.
             $completionPercentage = 0;
-            if ($extraction->estimated_value > 0) {
-                $completionPercentage = min(100, ($totalValue / $extraction->estimated_value) * 100);
+            $baseline = $extraction->estimated_value_pre_arrival
+                ?: $extraction->estimated_value
+                ?: 0;
+            if ($baseline > 0) {
+                $completionPercentage = min(100, ($totalValue / $baseline) * 100);
             }
 
             return [

@@ -356,6 +356,15 @@ class InitializeCommand extends Command
         $steps[] = ['Detect historical jackpots', 'mining-manager:detect-jackpots', ['--all' => true]];
         $steps[] = ['Backfill extraction notification data', 'mining-manager:backfill-extraction-notifications', ['--days' => $days]];
 
+        // Reconstruct moon extraction history rows from EVE character
+        // notifications (MoonminingExtractionStarted / Finished / LaserFired
+        // / AutomaticFracture / Cancelled). Produces rows in
+        // moon_extraction_history for completed cycles that pre-date the
+        // plugin install, so the moon show pages show full historical context.
+        // Note: historical ISK prices are unrecoverable — value_at_arrival
+        // will be NULL for these backfilled rows.
+        $steps[] = ['Reconstruct historical extraction records', 'mining-manager:backfill-extraction-history', ['--days' => $days]];
+
         $this->totalSteps = count($steps);
 
         foreach ($steps as $index => $step) {

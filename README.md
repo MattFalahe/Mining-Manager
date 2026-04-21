@@ -9,7 +9,7 @@ A comprehensive mining management plugin for SeAT 5.x. Track mining operations, 
 ## Features
 
 - **Mining Ledger** -- Automated processing of character and corporation mining data with daily summary aggregation
-- **Moon Mining** -- Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts
+- **Moon Mining** -- Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts. Past Extractions table with sortable/filterable DataTables view, structure column, status filter (expired/fractured/cancelled), and search — scoped to Moon Owner Corporation only
 - **Tax System** -- Daily summary-based tax calculation with per-ore rates (moon R4-R64, regular ore, ice, gas, abyssal, triglavian), multi-corporation support, guest mining rates, event modifiers, configurable minimum tax amount with exempt/enforce behavior, wallet payment verification, and manual payment entry
 - **Mining Events** -- Create events with tax modifiers (tax-free to double-tax), auto-detect participants from mining ledger matching event time + location scope (system/constellation/region/global), leaderboards
 - **Reports** -- Daily/weekly/monthly reports with PDF/CSV/JSON export and scheduled Discord/Slack delivery
@@ -65,6 +65,34 @@ The wizard verifies your settings, populates current month data (prices, mining 
 | Guest miner (not in any configured corp) | Moon observer only | Guest tax rates (from General Settings) |
 | Non-member mining elsewhere | Not processed | Not taxed |
 
+### Moon Arrival Notification Architecture
+
+Moon arrival notifications use two decoupled systems:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  STATE SYSTEM (ESI-driven)                                       │
+│  - update-extractions every 2h                                   │
+│  - Pulls ESI and writes chunk_arrival_time, natural_decay_time,  │
+│    fractured_at, status                                          │
+│  - Answers: "what does EVE say is happening?"                    │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  NOTIFICATION SYSTEM (time-driven)                               │
+│  - check-extraction-arrivals every 1 min                         │
+│  - Reads stored chunk_arrival_time, compares to now()            │
+│  - Answers: "has arrival time passed + unnotified?"              │
+│  - Idempotent via notification_sent flag                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Mental model: ESI tells us WHAT is happening. The clock tells us WHEN to notify.**
+
+This decoupling means arrivals notify within ~60 seconds of the actual chunk arrival time regardless of ESI refresh timing or outages. The chunk_arrival_time is known the moment an extraction is first imported (days or weeks before arrival); the notification watchdog just compares it to the current time.
+
+**Cancellation handling:** If a director cancels an extraction in-game before chunk arrival, EVE sends a `MoonminingExtractionCancelled` character notification. The state system detects this during its next ESI poll and marks the extraction as `cancelled`. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time.
+
 ## Permissions
 
 4-tier permission model -- higher tiers inherit all lower tier access.
@@ -78,7 +106,7 @@ The wizard verifies your settings, populates current month data (prices, mining 
 
 ## Artisan Commands
 
-31 commands available, 21 run on automated schedules via SeAT's scheduler.
+33 commands available, 22 run on automated schedules via SeAT's scheduler.
 
 ### Operational Commands
 
@@ -86,7 +114,8 @@ The wizard verifies your settings, populates current month data (prices, mining 
 |---|---|---|
 | `mining-manager:process-ledger` | Every 30min (:15, :45) | Process corporation observer mining data |
 | `mining-manager:import-character-mining` | Every 30min (:20, :50) | Import character mining from SeAT ESI cache |
-| `mining-manager:update-extractions` | Every 2h | Refresh moon extraction data from ESI |
+| `mining-manager:update-extractions` | Every 2h | Refresh moon extraction data from ESI (state system: what EVE says is happening) |
+| `mining-manager:check-extraction-arrivals` | Every minute | Fire moon_arrival notifications based on stored chunk_arrival_time (notification system: when to notify). Idempotent via notification_sent flag |
 | `mining-manager:update-events` | Every minute | Auto-transition event status (planned→active→completed) with notifications, update participant data |
 | `mining-manager:cache-prices` | Every 4h (:30) | Cache market prices from configured provider |
 | `mining-manager:update-ledger-prices` | Daily 1:00 AM | Lock in daily session prices for mining entries |
@@ -111,6 +140,7 @@ The wizard verifies your settings, populates current month data (prices, mining 
 | `mining-manager:initialize` | Guided first-time setup wizard -- verifies settings, populates current month, optional historical backfill |
 | `mining-manager:backfill-ore-types` | One-time backfill of ore type flags on existing data |
 | `mining-manager:backfill-extraction-notifications` | Backfill fractured_at from historical ESI notifications |
+| `mining-manager:backfill-extraction-history` | Reconstruct moon_extraction_history from `MoonminingExtractionStarted` notifications. Recovers past cycles for structures that pre-date plugin install. Progress bars for both dedup and processing passes. Use `--dry-run` to preview, `--structure=ID` to scope to one structure. Automatically invoked during `mining-manager:initialize` (Phase 3 historical backfill) |
 | `mining-manager:generate-tax-codes` | Generate tax codes for any unpaid taxes missing active codes (auto-generated on invoice creation, this is the manual fallback) |
 | `mining-manager:generate-test-data` | Generate test data for development/testing |
 | `mining-manager:backup-data` | Export Mining Manager data for backup or migration |

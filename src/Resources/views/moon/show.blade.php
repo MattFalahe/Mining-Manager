@@ -470,7 +470,7 @@
                                         <th>Extraction Date</th>
                                         <th>Duration</th>
                                         <th>Status</th>
-                                        <th class="text-right">Estimated Value</th>
+                                        <th class="text-right" title="Value of the chunk when it became ready to mine">Value at Arrival</th>
                                         <th class="text-right">Actual Mined</th>
                                         <th class="text-center">Completion</th>
                                         <th>Ore Composition</th>
@@ -490,13 +490,19 @@
                                             {{ $record->duration_days }} days
                                         </td>
                                         <td>
-                                            <span class="badge badge-{{
-                                                $record->final_status === 'ready' ? 'success' :
-                                                ($record->final_status === 'expired' ? 'secondary' :
-                                                ($record->final_status === 'fractured' ? 'danger' : 'warning'))
-                                            }}">
-                                                {{ ucfirst($record->final_status) }}
-                                            </span>
+                                            @if($record->final_status === 'cancelled')
+                                                <span class="badge badge-dark" title="Director cancelled this extraction before chunk arrival">
+                                                    <i class="fas fa-ban"></i> Cancelled
+                                                </span>
+                                            @else
+                                                <span class="badge badge-{{
+                                                    $record->final_status === 'ready' ? 'success' :
+                                                    ($record->final_status === 'expired' ? 'secondary' :
+                                                    ($record->final_status === 'fractured' ? 'danger' : 'warning'))
+                                                }}">
+                                                    {{ ucfirst($record->final_status) }}
+                                                </span>
+                                            @endif
                                             @if($record->is_jackpot)
                                             <span class="badge badge-warning ml-1">
                                                 <i class="fas fa-gem"></i> Jackpot
@@ -504,12 +510,21 @@
                                             @endif
                                         </td>
                                         <td class="text-right">
-                                            @if($record->final_estimated_value)
+                                            @php
+                                                // Prefer arrival-time snapshot over "value at archive time"
+                                                // Archive rows have estimated_value_at_arrival; live rows have estimated_value_pre_arrival
+                                                // Backfilled rows may have neither (historical prices unrecoverable) → N/A
+                                                $arrivalValue = $record->estimated_value_at_arrival
+                                                    ?? $record->estimated_value_pre_arrival
+                                                    ?? $record->final_estimated_value
+                                                    ?? null;
+                                            @endphp
+                                            @if($arrivalValue)
                                                 <span class="text-success font-weight-bold">
-                                                    {{ number_format($record->final_estimated_value, 0) }} ISK
+                                                    {{ number_format($arrivalValue, 0) }} ISK
                                                 </span>
                                             @else
-                                                <span class="text-muted">N/A</span>
+                                                <span class="text-muted" title="Historical price data unavailable">N/A</span>
                                             @endif
                                         </td>
                                         <td class="text-right">

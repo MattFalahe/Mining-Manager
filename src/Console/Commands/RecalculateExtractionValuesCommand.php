@@ -99,12 +99,22 @@ class RecalculateExtractionValuesCommand extends Command
                     continue;
                 }
 
-                // Update the extraction
-                $extraction->update([
+                // Update the extraction.
+                // estimated_value tracks current running value (keeps updating).
+                // estimated_value_pre_arrival should be a ONE-TIME snapshot at
+                // arrival — locked in by CheckExtractionArrivalsCommand when
+                // the chunk becomes ready. Only update it here while the chunk
+                // is STILL pre-arrival. Once chunk_arrival_time has passed,
+                // leave pre_arrival alone so historical "value at arrival"
+                // data is preserved accurately.
+                $updateData = [
                     'estimated_value' => $newValue,
-                    'estimated_value_pre_arrival' => $newValue,
                     'value_last_updated' => Carbon::now(),
-                ]);
+                ];
+                if ($extraction->chunk_arrival_time && $extraction->chunk_arrival_time->isFuture()) {
+                    $updateData['estimated_value_pre_arrival'] = $newValue;
+                }
+                $extraction->update($updateData);
 
                 // Calculate and display change
                 $change = 0;

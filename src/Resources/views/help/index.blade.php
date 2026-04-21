@@ -1243,6 +1243,44 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.webhooks_notifications_intro') }}</p>
 
+                    {{-- Architecture explanation: two decoupled systems --}}
+                    <h4><i class="fas fa-sitemap text-info"></i> How Moon Arrival Notifications Work</h4>
+                    <p>Mining Manager uses <strong>two decoupled systems</strong> for moon arrival notifications:</p>
+                    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+                        <div class="feature-item" style="border-left: 4px solid #17a2b8;">
+                            <h5><i class="fas fa-satellite-dish text-info"></i> State System (ESI-driven)</h5>
+                            <ul class="mb-2">
+                                <li><code>update-extractions</code> runs every 2h</li>
+                                <li>Pulls from ESI and updates <code>chunk_arrival_time</code>, <code>natural_decay_time</code>, <code>fractured_at</code>, status</li>
+                                <li>Answers: <em>"what does EVE say is happening?"</em></li>
+                            </ul>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #28a745;">
+                            <h5><i class="fas fa-clock text-success"></i> Notification System (time-driven)</h5>
+                            <ul class="mb-2">
+                                <li><code>check-extraction-arrivals</code> runs every 1 min</li>
+                                <li>Reads stored <code>chunk_arrival_time</code>, compares to <code>now()</code></li>
+                                <li>Answers: <em>"has arrival time passed and we haven't notified yet?"</em></li>
+                                <li>Idempotent via <code>notification_sent</code> flag</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Mental model:</strong> ESI tells us <em>what</em> is happening. The clock tells us <em>when</em> to notify.
+                        <br><small>Arrivals notify within ~60 seconds of actual chunk arrival, regardless of ESI refresh timing or outages. The <code>chunk_arrival_time</code> is known the moment an extraction is first imported (days or weeks before arrival); the notification watchdog just compares it to the current time.</small>
+                    </div>
+
+                    <div class="alert alert-secondary mt-2">
+                        <i class="fas fa-ban text-warning"></i>
+                        <strong>Cancellation handling:</strong> If a director cancels an extraction in-game before chunk arrival, EVE sends a <code>MoonminingExtractionCancelled</code> character notification. The state system picks this up on its next 2h ESI poll and marks the extraction as <code>cancelled</code>. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time. The canceller's name is recorded in the log entry when detectable.
+                    </div>
+
+                    <div class="alert alert-secondary mt-2">
+                        <i class="fas fa-archive text-info"></i>
+                        <strong>Past Extractions (Archived) table:</strong> The main Moon Extractions page shows a sortable/filterable DataTables view of all archived extraction cycles. Includes columns for Moon, Structure (station name), Chunk Arrival, Status, Value at Arrival, Actual Mined, Completion %, and Archived time. Scoped to the Moon Owner Corporation only — other corps' private moons on the same SeAT install are excluded. Use the Status filter dropdown to view only cancelled or expired/fractured cycles. Default sort: chunk arrival descending (newest first).
+                    </div>
+
                     <h4><i class="fas fa-plug text-info"></i> {{ trans('mining-manager::help.webhook_setup_title') }}</h4>
                     <p>{{ trans('mining-manager::help.webhook_setup_desc') }}</p>
                     <ol class="step-by-step">
@@ -1711,8 +1749,15 @@
                                 <tr>
                                     <td><code>mining-manager:update-extractions</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_2hours') }}</span></td>
-                                    <td>Update moon extraction data from corporation structure ESI endpoints. Also detects manual and auto-fracture notifications.<br>
+                                    <td><strong>State system</strong> — refreshes moon extraction data from corporation structure ESI endpoints. Detects manual and auto-fracture notifications (<code>MoonminingLaserFired</code>, <code>MoonminingAutomaticFracture</code>) and director cancellations (<code>MoonminingExtractionCancelled</code>) — cancelled extractions are flagged so the notification watchdog skips them. Answers the question "what does EVE say is happening?". Does <em>not</em> fire moon arrival notifications — that's the notification system below.<br>
                                         <small class="text-muted">Options: <code>--structure_id=</code> specific structure, <code>--corporation_id=</code> specific corp, <code>--active-only</code> only active extractions</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:check-extraction-arrivals</code></td>
+                                    <td><span class="badge badge-danger">Every minute</span></td>
+                                    <td><strong>Notification system</strong> — fires <code>moon_arrival</code> Discord/Slack notifications based on the stored <code>chunk_arrival_time</code>. Pure time arithmetic — does not call ESI. Answers the question "has arrival time passed and we haven't notified yet?". Idempotent via the <code>notification_sent</code> flag — safe to re-run, handles missed cron ticks, handles extractions imported directly as 'ready'.<br>
+                                        <small class="text-muted">Options: <code>--hours-back=72</code> only notify for arrivals within this window (safety on historical data), <code>--limit=50</code> max dispatches per run, <code>--dry-run</code> preview without firing</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1760,7 +1805,7 @@
                                 <tr>
                                     <td><code>mining-manager:archive-extractions</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span></td>
-                                    <td>Archive completed moon extractions to history table and calculate actual mined values.<br>
+                                    <td>Archive completed moon extractions to history table and calculate actual mined values. Handles three terminal states: <code>expired</code> and <code>fractured</code> extractions are archived 7 days after <code>natural_decay_time</code>; <code>cancelled</code> extractions are archived 7 days after <code>updated_at</code> (cancellation detection time), since their originally planned <code>natural_decay_time</code> may still be in the future.<br>
                                         <small class="text-muted">Options: <code>--days=7</code> archive older than N days, <code>--keep-months=12</code> keep history for N months, <code>--dry-run</code> preview without changes</small>
                                     </td>
                                 </tr>
@@ -1914,6 +1959,13 @@
                                     <td><code>mining-manager:backfill-extraction-notifications</code></td>
                                     <td>Backfill ore composition data from character notifications for existing moon extractions.<br>
                                         <small class="text-muted">Options: <code>--limit=100</code> max extractions, <code>--structure=</code> specific structure, <code>--days=90</code> lookback, <code>--dry-run</code> preview, <code>--force</code> overwrite existing</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:backfill-extraction-history</code></td>
+                                    <td><strong>Reconstruct historical extraction records</strong> from <code>MoonminingExtractionStarted</code> EVE notifications. When you install Mining Manager on a corp that already has months of mining history, ESI only returns active/upcoming extractions — completed cycles are not retrievable. But character notifications retain that history for as long as SeAT keeps them. This command parses those notifications, dedupes by (structure, ready time), matches each to its corresponding fracture/cancel notification, calculates actual mined values from <code>mining_ledger</code> where available, and inserts rows into <code>moon_extraction_history</code> so the moon detail pages show full historical context. <strong>Scoped to Moon Owner Corporation only</strong> — pre-loads the set of structures owned by MOC from <code>corporation_structures</code> and skips notifications for any other structure (reports the skipped count). Shows <strong>progress bars</strong> for both the dedup pass (YAML parsing) and the main processing pass (DB queries per extraction) — with thousands of notifications this can take a few minutes. Automatically invoked by <code>mining-manager:initialize</code> during Phase 3 historical backfill if the admin opts in.<br>
+                                        <small class="text-muted">Options: <code>--structure=ID</code> single structure scope (must belong to MOC), <code>--days=365</code> lookback window, <code>--limit=1000</code> max per run, <code>--dry-run</code> preview without writing, <code>--force</code> recreate existing history rows (destructive)</small>
+                                        <br><small class="text-warning"><i class="fas fa-info-circle"></i> Historical ISK prices are unknown, so <code>estimated_value_at_arrival</code> is left NULL for backfilled rows — new extractions going forward will have it populated properly. <code>actual_mined_value</code> is computed from <code>mining_ledger</code> where data exists for the structure during the extraction window.</small>
                                     </td>
                                 </tr>
                             </tbody>

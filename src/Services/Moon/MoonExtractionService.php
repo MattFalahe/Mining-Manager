@@ -596,6 +596,67 @@ class MoonExtractionService
     }
 
     /**
+     * Detect cancelled extractions by scanning EVE notifications.
+     *
+     * When a director cancels an extraction in-game, EVE sends a
+     * MoonminingExtractionCancelled notification to corporation members
+     * with the appropriate role. This method finds those notifications
+     * and marks the corresponding extraction as 'cancelled' so:
+     *   1. The time-based arrival notification watchdog
+     *      (check-extraction-arrivals) does NOT fire a false alert
+     *      at the original chunk_arrival_time
+     *   2. UI views can display the cancelled status correctly
+     *
+     * Matches by structure_id + timestamp window (cancellation must have
+     * happened after the extraction was imported and before the originally
+     * planned chunk arrival).
+     *
+     * @return int Number of extractions marked cancelled
+     */
+    public function detectCancellations(): int
+    {
+        $now = Carbon::now();
+
+        // Candidates: extractions still pending (chunk hasn't arrived yet).
+        // We don't cancel ones that already arrived — too late to matter,
+        // and the notification may already have fired correctly.
+        $pending = MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '>', $now)
+            ->get();
+
+        $cancelled = 0;
+        foreach ($pending as $extraction) {
+            // Look for a MoonminingExtractionCancelled notification for this
+            // structure within the extraction's lifetime (between import and
+            // originally scheduled arrival).
+            $cancelNotification = DB::table('character_notifications')
+                ->where('type', 'MoonminingExtractionCancelled')
+                ->where('text', 'LIKE', '%structureID: ' . $extraction->structure_id . '%')
+                ->where('timestamp', '>=', $extraction->created_at)
+                ->where('timestamp', '<=', $extraction->chunk_arrival_time)
+                ->orderBy('timestamp', 'desc')
+                ->first();
+
+            if ($cancelNotification) {
+                // Extract canceller name if present in the YAML-like text
+                $cancelledBy = null;
+                if (preg_match('/cancelledBy:\s*\[.*?,\s*"([^"]+)"\]/', $cancelNotification->text, $matches)) {
+                    $cancelledBy = $matches[1];
+                }
+
+                $extraction->update(['status' => 'cancelled']);
+                $cancelled++;
+
+                Log::info("Mining Manager: Extraction {$extraction->id} marked cancelled" .
+                    ($cancelledBy ? " (cancelled by {$cancelledBy})" : '') .
+                    " based on MoonminingExtractionCancelled notification at {$cancelNotification->timestamp}");
+            }
+        }
+
+        return $cancelled;
+    }
+
+    /**
      * Check for fracture notification for a single extraction and update fractured_at.
      * Lightweight version of detectAutoFractures() for use on page load (show page).
      * Handles late-arriving notifications: ESI may deliver the notification hours after the event.
@@ -671,8 +732,17 @@ class MoonExtractionService
     public function updateExtractionStatuses()
     {
         $now = Carbon::now();
+        Log::info("Mining Manager: updateExtractionStatuses() started at {$now->toIso8601String()}");
 
-        // Detect auto-fractures first (affects expiry timing)
+        // Detect cancellations first — any pending extraction whose director
+        // cancelled it (MoonminingExtractionCancelled notification) is marked
+        // 'cancelled' so downstream code (notifications, UI) skips it.
+        $cancelled = $this->detectCancellations();
+        if ($cancelled > 0) {
+            Log::info("Mining Manager: Marked {$cancelled} extractions as cancelled (director action detected via EVE notifications)");
+        }
+
+        // Detect auto-fractures (affects expiry timing)
         $this->detectAutoFractures();
 
         // Snapshot estimated_value for extractions about to expire that have 0 value
@@ -702,6 +772,14 @@ class MoonExtractionService
             Log::info("Mining Manager: Marked {$expired} extractions as expired");
         }
 
+        // Diagnostic: log all extractions currently in 'extracting' status
+        $extractingCount = MoonExtraction::where('status', 'extracting')->count();
+        $pastArrivalCount = MoonExtraction::where('status', 'extracting')
+            ->where('chunk_arrival_time', '<=', $now)
+            ->count();
+
+        Log::info("Mining Manager: Status check — {$extractingCount} extraction(s) in 'extracting' state, {$pastArrivalCount} with chunk_arrival_time <= now");
+
         // Mark as ready if chunk has arrived but not expired
         $readyExtractions = MoonExtraction::where('status', 'extracting')
             ->where('chunk_arrival_time', '<=', $now)
@@ -716,13 +794,35 @@ class MoonExtractionService
             MoonExtraction::whereIn('id', $readyIds)
                 ->update(['status' => 'ready']);
 
-            Log::info("Mining Manager: Marked {$readyIds->count()} extractions as ready");
+            Log::info("Mining Manager: Marked {$readyIds->count()} extractions as ready, IDs: " . $readyIds->implode(','));
 
             // Send moon arrival notifications
             foreach ($readyExtractions->whereIn('id', $readyIds) as $extraction) {
+                Log::info("Mining Manager: Firing moon arrival notification for extraction {$extraction->id} (moon: {$extraction->moon_name}, structure: {$extraction->structure_id}, corp: {$extraction->corporation_id})");
                 $this->sendMoonArrivalNotification($extraction);
             }
+        } else {
+            Log::info("Mining Manager: No extractions transitioned to 'ready' this cycle");
         }
+
+        // DIAGNOSTIC: Detect extractions that might have been imported directly as 'ready'
+        // (happens if import cron ran AFTER chunk_arrival_time — skips the transition path).
+        // notification_sent flag is for the hours-before alerts, but we re-use it here to
+        // avoid spamming. If an extraction is ready + recent arrival + never notified,
+        // log a warning so admin can investigate / manually notify.
+        $missedNotifications = MoonExtraction::where('status', 'ready')
+            ->where('chunk_arrival_time', '>=', $now->copy()->subHours(6))
+            ->where('chunk_arrival_time', '<=', $now)
+            ->whereNotIn('id', $readyIds ?? [])
+            ->get();
+
+        if ($missedNotifications->isNotEmpty()) {
+            foreach ($missedNotifications as $missed) {
+                Log::warning("Mining Manager: Extraction {$missed->id} (moon: {$missed->moon_name}) is 'ready' with chunk_arrival_time {$missed->chunk_arrival_time} but did NOT transition from 'extracting' this cycle. May have been imported directly as ready — no notification was fired. Check UpdateMoonExtractionsCommand import logic.");
+            }
+        }
+
+        Log::info("Mining Manager: updateExtractionStatuses() finished");
     }
 
     /**
@@ -733,6 +833,14 @@ class MoonExtractionService
      */
     private function sendMoonArrivalNotification(MoonExtraction $extraction)
     {
+        Log::info("Mining Manager: sendMoonArrivalNotification() called for extraction {$extraction->id}", [
+            'moon_id' => $extraction->moon_id,
+            'moon_name' => $extraction->moon_name,
+            'structure_id' => $extraction->structure_id,
+            'corporation_id' => $extraction->corporation_id,
+            'chunk_arrival_time' => $extraction->chunk_arrival_time?->toIso8601String(),
+        ]);
+
         try {
             // Get structure name
             $structure = DB::table('universe_structures')
@@ -764,8 +872,17 @@ class MoonExtractionService
 
             $baseUrl = rtrim(config('app.url', ''), '/');
 
+            // Dedup guard — skip if already notified. Both entry points
+            // (updateExtractionStatuses and the new check-extraction-arrivals
+            // cron) can call this method, so we check the flag inside the
+            // method itself rather than at every call site.
+            if ($extraction->notification_sent) {
+                Log::info("Mining Manager: Skipping moon arrival notification — already sent for extraction {$extraction->id}");
+                return;
+            }
+
             $webhookService = app(WebhookService::class);
-            $webhookService->sendMoonNotification('moon_arrival', [
+            $results = $webhookService->sendMoonNotification('moon_arrival', [
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
                 'chunk_arrival_time' => $extraction->chunk_arrival_time
@@ -778,13 +895,27 @@ class MoonExtractionService
                 'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
             ], $extraction->corporation_id);
 
-            Log::info("Mining Manager: Moon arrival notification sent for {$extraction->moon_name}");
+            // Mark as sent so subsequent cron ticks don't re-fire.
+            // Only mark if we actually reached the webhook dispatch (webhookService
+            // call returned without throwing — even if individual webhooks failed,
+            // the dispatch itself happened and retrying would just re-spam).
+            $extraction->update(['notification_sent' => true]);
+
+            Log::info("Mining Manager: sendMoonNotification() returned for extraction {$extraction->id}", [
+                'moon_name' => $extraction->moon_name,
+                'result_type' => gettype($results),
+                'webhook_count' => is_array($results) ? count($results) : 0,
+                'result_summary' => is_array($results) ? array_map(fn($r) => is_array($r) ? ['success' => $r['success'] ?? null, 'error' => $r['error'] ?? null] : $r, $results) : $results,
+                'notification_sent_flag_set' => true,
+            ]);
 
         } catch (\Exception $e) {
             Log::error("Mining Manager: Failed to send moon arrival notification", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
+            // Do NOT set notification_sent — so a later retry can attempt again
         }
     }
 

@@ -132,13 +132,29 @@ class WebhookService
             Log::warning("WebhookService: moon_owner_corporation_id is not configured — '{$eventType}' will only fire for global (NULL corp) webhooks");
         }
 
-        return WebhookConfiguration::enabled()
-            ->forEvent($eventType)
-            ->get()
-            ->filter(function ($webhook) use ($moonOwnerCorpId) {
-                return $webhook->corporation_id === null
-                    || ($moonOwnerCorpId !== null && (int) $webhook->corporation_id === $moonOwnerCorpId);
-            });
+        // Log the full resolution path for diagnostics
+        $allEnabled = WebhookConfiguration::enabled()->forEvent($eventType)->get();
+
+        Log::info("WebhookService::getMoonOwnerScopedWebhooks('{$eventType}')", [
+            'moon_owner_corp_id' => $moonOwnerCorpId,
+            'enabled_subscribed_count' => $allEnabled->count(),
+            'candidates' => $allEnabled->map(fn($w) => [
+                'id' => $w->id,
+                'name' => $w->name,
+                'corporation_id' => $w->corporation_id,
+            ])->toArray(),
+        ]);
+
+        $matched = $allEnabled->filter(function ($webhook) use ($moonOwnerCorpId) {
+            return $webhook->corporation_id === null
+                || ($moonOwnerCorpId !== null && (int) $webhook->corporation_id === $moonOwnerCorpId);
+        });
+
+        Log::info("WebhookService::getMoonOwnerScopedWebhooks('{$eventType}') matched " . $matched->count() . " webhook(s) after corp scope filter", [
+            'matched_ids' => $matched->pluck('id')->toArray(),
+        ]);
+
+        return $matched;
     }
 
     /**
@@ -702,8 +718,13 @@ class WebhookService
      */
     public function sendMoonNotification(string $eventType, array $data, ?int $corporationId = null): array
     {
+        Log::info("WebhookService::sendMoonNotification('{$eventType}') called", [
+            'passed_corporation_id' => $corporationId,
+            'data_keys' => array_keys($data),
+        ]);
+
         if (!$this->isEventTypeEnabled($eventType)) {
-            Log::debug("WebhookService: Event type {$eventType} is globally disabled in notification settings");
+            Log::warning("WebhookService: Moon notification ABORTED — event type '{$eventType}' is globally disabled in Notification Settings → master toggle is OFF");
             return ['sent' => 0, 'failed' => 0, 'message' => 'Event type globally disabled'];
         }
 

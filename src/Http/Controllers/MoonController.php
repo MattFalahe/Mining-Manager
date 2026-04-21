@@ -126,12 +126,32 @@ class MoonController extends Controller
                 ->count(),
         ];
 
-        // Get archived history for past extractions display
+        // Get archived history for past extractions display.
+        // Scoped to Moon Owner Corporation only — other directors' private
+        // moons on the same SeAT install are excluded here and from backfill.
+        // No limit: DataTables handles client-side pagination/filtering/sorting.
+        // For very large installs this could grow; if it becomes a perf concern,
+        // move to server-side DataTables (yajra/datatables) or a DB paginator.
         $historyExtractions = collect();
         if ($status === 'completed' || $status === 'all') {
-            $historyExtractions = MoonExtractionHistory::orderBy('chunk_arrival_time', 'desc')
-                ->limit(20)
-                ->get();
+            $moonOwnerCorpId = app(\MiningManager\Services\Configuration\SettingsManagerService::class)
+                ->getTaxProgramCorporationId();
+
+            $historyQuery = MoonExtractionHistory::orderBy('chunk_arrival_time', 'desc');
+
+            if ($moonOwnerCorpId !== null) {
+                $historyQuery->where('corporation_id', $moonOwnerCorpId);
+            }
+
+            $historyExtractions = $historyQuery->get();
+
+            // Batch-load moon + structure display names. loadDisplayNames() on
+            // MoonExtraction is generic — it reads structure_id/moon_id and
+            // sets moon_name/structure_name attributes. Works on any collection
+            // that has those fields, including MoonExtractionHistory rows.
+            if ($historyExtractions->isNotEmpty()) {
+                MoonExtraction::loadDisplayNames($historyExtractions);
+            }
         }
 
         return view('mining-manager::moon.index', compact('extractions', 'upcoming', 'status', 'stats', 'historyExtractions'));
@@ -180,37 +200,60 @@ class MoonController extends Controller
             $timeUntilUnstable = Carbon::now()->diffInHours($unstableStart);
         }
 
-        // Load extraction history for this structure
-        // First check archived history
-        $history = \MiningManager\Models\MoonExtractionHistory::where('structure_id', $extraction->structure_id)
-            ->orderBy('archived_at', 'desc')
+        // Load extraction history for this structure.
+        //
+        // Past extractions live in TWO tables depending on age:
+        //   - moon_extraction_history: permanent archive (moved here by
+        //     archive-extractions cron, ~7 days after natural_decay_time)
+        //   - moon_extractions: contains both live AND recently-terminal
+        //     extractions pending archival
+        //
+        // We merge both sources so recently-expired/fractured/cancelled
+        // extractions appear immediately, without waiting 7 days for the
+        // archive cron. The 7-day archive cooldown is kept intentionally
+        // to allow late ESI data (fracture notifications can lag hours).
+        $archivedHistory = \MiningManager\Models\MoonExtractionHistory::where('structure_id', $extraction->structure_id)
+            ->orderBy('chunk_arrival_time', 'desc')
             ->limit(10)
             ->get();
 
-        // If no archived history, show past extractions from the main table
-        if ($history->isEmpty()) {
-            $pastExtractions = MoonExtraction::where('structure_id', $extraction->structure_id)
-                ->where('id', '!=', $extraction->id)
-                ->orderBy('chunk_arrival_time', 'desc')
-                ->limit(10)
-                ->get();
+        // Pending-archive: terminal-state rows still in moon_extractions.
+        // Exclude the current extraction being viewed, and exclude rows
+        // that would duplicate an archived entry (matched on chunk_arrival_time).
+        $archivedArrivalTimes = $archivedHistory->pluck('chunk_arrival_time')->toArray();
 
-            // Map MoonExtraction fields to match MoonExtractionHistory fields for the view
-            foreach ($pastExtractions as $past) {
-                $past->final_status = $past->status;
+        $pendingExtractions = MoonExtraction::where('structure_id', $extraction->structure_id)
+            ->where('id', '!=', $extraction->id)
+            ->whereIn('status', ['expired', 'fractured', 'cancelled'])
+            ->whereNotIn('chunk_arrival_time', $archivedArrivalTimes)
+            ->orderBy('chunk_arrival_time', 'desc')
+            ->limit(10)
+            ->get();
 
-                // Use stored estimated_value (historical price at time of extraction)
-                $past->final_estimated_value = $past->estimated_value ?: null;
+        // Shape pending rows to match MoonExtractionHistory fields so the
+        // blade template can render both types uniformly.
+        foreach ($pendingExtractions as $past) {
+            $past->final_status = $past->status;
+            $past->final_estimated_value = $past->estimated_value ?: null;
 
-                // Calculate actual mined from ledger data (ledger prices are already historical)
-                $minedData = $this->calculateActualMined($past);
-                $past->actual_mined_value = $minedData['total_value'] ?: null;
-                $past->total_miners = $minedData['total_miners'];
-                $past->completion_percentage = $minedData['completion_percentage'];
-                $past->is_jackpot = $past->is_jackpot ?? false;
-            }
-            $history = $pastExtractions;
+            $minedData = $this->calculateActualMined($past);
+            $past->actual_mined_value = $minedData['total_value'] ?: null;
+            $past->total_miners = $minedData['total_miners'];
+            $past->completion_percentage = $minedData['completion_percentage'];
+            $past->is_jackpot = $past->is_jackpot ?? false;
         }
+
+        // Merge, sort by chunk_arrival_time (canonical ordering that works
+        // for both tables), cap at 10.
+        $history = $archivedHistory
+            ->concat($pendingExtractions)
+            ->sortByDesc(function ($record) {
+                return $record->chunk_arrival_time instanceof \Carbon\Carbon
+                    ? $record->chunk_arrival_time->timestamp
+                    : Carbon::parse($record->chunk_arrival_time)->timestamp;
+            })
+            ->take(10)
+            ->values();
 
         // Calculate duration in days for each historical extraction
         foreach ($history as $record) {
@@ -337,19 +380,28 @@ class MoonController extends Controller
                 return $default;
             }
 
-            // Get solar_system_id from structure
-            $solarSystemId = DB::table('universe_structures')
-                ->where('structure_id', $extraction->structure_id)
-                ->value('solar_system_id');
-
-            if (!$solarSystemId) {
+            // Cancelled extractions never had a chunk to mine. Any ledger
+            // activity in the window belongs to a different (typically
+            // rescheduled) extraction — don't attribute it to this one.
+            if ($extraction->status === 'cancelled') {
                 return $default;
             }
 
-            $miningData = MiningLedger::where('solar_system_id', $solarSystemId)
-                ->where('date', '>=', $extraction->chunk_arrival_time->format('Y-m-d'))
-                ->where('date', '<=', $extraction->natural_decay_time->format('Y-m-d'))
-                ->where('is_moon_ore', true)
+            // Query by observer_id (the moon drill's ID == structure_id).
+            // This is more precise than solar_system_id + is_moon_ore, since
+            // it only counts mining on THIS specific structure.
+            //
+            // Window: 72 hours from chunk_arrival_time. Covers the full
+            // lifecycle: up to 3h pre-fracture + 48h post-fracture mining
+            // window (roids despawn ~48h after fracture) + buffer for
+            // stragglers. Previously the window was chunk_arrival →
+            // natural_decay (only 3h pre-fracture), which missed virtually
+            // all actual mining since chunks are mined AFTER fracture.
+            $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+
+            $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
+                ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())
+                ->where('date', '<=', $windowEnd->toDateString())
                 ->get();
 
             if ($miningData->isEmpty()) {
@@ -359,10 +411,17 @@ class MoonController extends Controller
             $totalValue = $miningData->sum('total_value');
             $totalMiners = $miningData->pluck('character_id')->unique()->count();
 
+            // Completion % compares actual mined against the value AT ARRIVAL
+            // (locked in when chunk became ready), not against current running
+            // value which may have drifted with market prices. Preserves
+            // historical accuracy. Falls back to estimated_value if the
+            // arrival snapshot isn't available (old rows, backfilled rows).
             $completionPercentage = 0;
-            $estValue = $extraction->estimated_value ?: 0;
-            if ($estValue > 0) {
-                $completionPercentage = min(100, ($totalValue / $estValue) * 100);
+            $baseline = $extraction->estimated_value_pre_arrival
+                ?: $extraction->estimated_value
+                ?: 0;
+            if ($baseline > 0) {
+                $completionPercentage = min(100, ($totalValue / $baseline) * 100);
             }
 
             return [

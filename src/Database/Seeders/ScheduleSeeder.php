@@ -64,6 +64,18 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Fire moon_arrival notifications based on stored chunk_arrival_time.
+            // Runs every minute — notifications arrive within ~60s of actual
+            // chunk arrival, independent of ESI refresh timing. Idempotent via
+            // the notification_sent flag on moon_extractions.
+            [
+                'command' => 'mining-manager:check-extraction-arrivals',
+                'expression' => '* * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
             // Update mining events — runs EVERY MINUTE.
             // Status transitions (planned→active→completed) need to fire close
             // to the configured start/end times so Discord notifications arrive

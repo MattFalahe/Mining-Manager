@@ -375,15 +375,16 @@
                         <span class="badge badge-secondary">{{ $historyExtractions->count() }} archived</span>
                     </div>
                 </div>
-                <div class="card-body p-0">
+                <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-dark table-striped table-hover mb-0">
+                        <table id="archivedHistoryTable" class="table table-dark table-striped table-hover mb-0" style="width:100%">
                             <thead>
                                 <tr>
                                     <th>{{ trans('mining-manager::moons.moon') }}</th>
+                                    <th>Structure</th>
                                     <th>{{ trans('mining-manager::moons.chunk_arrival') }}</th>
                                     <th>{{ trans('mining-manager::moons.status') }}</th>
-                                    <th class="text-right">{{ trans('mining-manager::moons.estimated_value') }}</th>
+                                    <th class="text-right">Value at Arrival</th>
                                     <th class="text-right">Actual Mined</th>
                                     <th class="text-center">Completion</th>
                                     <th>Archived</th>
@@ -394,46 +395,55 @@
                                 <tr>
                                     <td>
                                         <i class="fas fa-moon text-secondary"></i>
-                                        @php
-                                            $moonName = 'Unknown Moon';
-                                            if ($history->moon_id) {
-                                                $moon = \DB::table('moons')->where('moon_id', $history->moon_id)->first();
-                                                $moonName = $moon ? $moon->name : "Moon {$history->moon_id}";
-                                            }
-                                        @endphp
-                                        {{ $moonName }}
+                                        {{ $history->moon_name ?? 'Unknown Moon' }}
                                     </td>
                                     <td>
+                                        <i class="fas fa-industry text-muted"></i>
+                                        {{ $history->structure_name ?? ('Structure ' . $history->structure_id) }}
+                                    </td>
+                                    <td data-order="{{ $history->chunk_arrival_time->timestamp }}">
                                         {{ $history->chunk_arrival_time->format('M d, Y H:i') }}
                                     </td>
                                     <td>
-                                        <span class="badge badge-{{
-                                            $history->final_status === 'fractured' ? 'success' :
-                                            ($history->final_status === 'expired' ? 'dark' : 'secondary')
-                                        }}">
-                                            {{ ucfirst($history->final_status) }}
-                                        </span>
+                                        @if($history->final_status === 'cancelled')
+                                            <span class="badge badge-dark" title="Director cancelled this extraction before chunk arrival">
+                                                <i class="fas fa-ban"></i> Cancelled
+                                            </span>
+                                        @else
+                                            <span class="badge badge-{{
+                                                $history->final_status === 'fractured' ? 'success' :
+                                                ($history->final_status === 'expired' ? 'dark' : 'secondary')
+                                            }}">
+                                                {{ ucfirst($history->final_status) }}
+                                            </span>
+                                        @endif
                                         @if($history->is_jackpot)
                                             <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
                                                 <i class="fas fa-star"></i> JACKPOT
                                             </span>
                                         @endif
                                     </td>
-                                    <td class="text-right">
-                                        @if($history->final_estimated_value)
-                                            <span class="text-success">{{ number_format($history->final_estimated_value, 0) }} ISK</span>
+                                    @php
+                                        // Prefer arrival-time snapshot; fall back to archive-time value; else N/A
+                                        $arrivalValue = $history->estimated_value_at_arrival
+                                            ?? $history->final_estimated_value
+                                            ?? null;
+                                    @endphp
+                                    <td class="text-right" data-order="{{ $arrivalValue ?? 0 }}">
+                                        @if($arrivalValue)
+                                            <span class="text-success">{{ number_format($arrivalValue, 0) }} ISK</span>
                                         @else
-                                            <span class="text-muted">N/A</span>
+                                            <span class="text-muted" title="Historical price data unavailable for this backfilled row">N/A</span>
                                         @endif
                                     </td>
-                                    <td class="text-right">
+                                    <td class="text-right" data-order="{{ $history->actual_mined_value ?? 0 }}">
                                         @if($history->actual_mined_value)
                                             <span class="text-info">{{ number_format($history->actual_mined_value, 0) }} ISK</span>
                                         @else
                                             <span class="text-muted">N/A</span>
                                         @endif
                                     </td>
-                                    <td class="text-center">
+                                    <td class="text-center" data-order="{{ $history->completion_percentage ?? 0 }}">
                                         @if($history->completion_percentage > 0)
                                             <div class="mm-progress-wrap">
                                                 <div class="progress" style="height: 18px; min-width: 60px;">
@@ -446,8 +456,8 @@
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
-                                    <td>
-                                        <small class="text-muted">{{ $history->archived_at->diffForHumans() }}</small>
+                                    <td data-order="{{ $history->archived_at ? $history->archived_at->timestamp : 0 }}">
+                                        <small class="text-muted">{{ $history->archived_at ? $history->archived_at->diffForHumans() : 'N/A' }}</small>
                                     </td>
                                 </tr>
                                 @endforeach
@@ -463,6 +473,7 @@
 </div>
 
 @push('javascript')
+<script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
 // Auto-refresh countdown timers
 setInterval(function() {
@@ -470,6 +481,56 @@ setInterval(function() {
         // Simple refresh - in production you might want to update via AJAX
     });
 }, 60000); // Update every minute
+
+$(document).ready(function() {
+    // Past Extractions (Archived) — DataTables with sorting + filtering
+    if ($('#archivedHistoryTable tbody tr').length > 0) {
+        var archivedTable = $('#archivedHistoryTable').DataTable({
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+            order: [[2, 'desc']],  // chunk arrival, newest first
+            dom: '<"row"<"col-md-4"l><"col-md-4 text-center"<"archivedStatusFilter">><"col-md-4"f>>tip',
+            language: {
+                search: 'Search all columns:',
+                lengthMenu: 'Show _MENU_ per page',
+                info: 'Showing _START_ to _END_ of _TOTAL_ archived extractions',
+                infoEmpty: 'No archived extractions found',
+                infoFiltered: '(filtered from _MAX_ total)',
+                paginate: { first: 'First', last: 'Last', next: 'Next', previous: 'Previous' }
+            },
+            columnDefs: [
+                { orderable: false, targets: [6] },  // completion bar not sortable by visual, uses data-order
+            ]
+        });
+
+        // Build and inject a Status filter dropdown
+        var statuses = archivedTable.column(3).data().unique().sort().toArray();
+        var cleanStatuses = [];
+        statuses.forEach(function(html) {
+            // Extract status name from badge HTML (Cancelled, Fractured, Expired)
+            var match = html.match(/>\s*([A-Za-z]+)\s*</);
+            if (match && cleanStatuses.indexOf(match[1]) === -1) {
+                cleanStatuses.push(match[1]);
+            }
+        });
+
+        var statusSelectHtml = '<div class="d-inline-block"><label class="mr-2">Status:</label>' +
+            '<select id="archivedStatusSelect" class="form-control form-control-sm d-inline-block" style="width:auto;">' +
+            '<option value="">All statuses</option>';
+        cleanStatuses.forEach(function(s) {
+            statusSelectHtml += '<option value="' + s + '">' + s + '</option>';
+        });
+        statusSelectHtml += '</select></div>';
+
+        $('.archivedStatusFilter').html(statusSelectHtml);
+
+        $('#archivedStatusSelect').on('change', function() {
+            var val = $(this).val();
+            // Regex-match the badge text content; empty value shows all
+            archivedTable.column(3).search(val ? val : '', true, false).draw();
+        });
+    }
+});
 </script>
 @endpush
 
