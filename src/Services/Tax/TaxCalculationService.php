@@ -522,6 +522,17 @@ class TaxCalculationService
                 continue;
             }
 
+            // Check if the event's type applies to this ore category.
+            // "special" events apply to everything; mining_op → ore,
+            // moon_extraction → moon_*, ice_mining → ice, gas_huffing → gas.
+            // $entry->ore_category is set by ProcessMiningLedgerCommand
+            // (corp observer path) and ImportCharacterMiningCommand
+            // (personal character mining path) at ingestion time.
+            $oreCategory = $entry->ore_category ?? null;
+            if ($oreCategory && !$event->appliesToOreCategory($oreCategory)) {
+                continue;
+            }
+
             // Take the most beneficial modifier (lowest value = most tax discount)
             if ($appliedEvent === null || $event->tax_modifier < $bestModifier) {
                 $bestModifier = $event->tax_modifier;
@@ -999,6 +1010,7 @@ class TaxCalculationService
         $breakdown = [];
         $totalValue = 0;
         $totalTax = 0;
+        $totalEventDiscount = 0;
 
         foreach ($summaries as $summary) {
             foreach ($summary->ore_types ?? [] as $ore) {
@@ -1014,6 +1026,8 @@ class TaxCalculationService
                         'value' => 0,
                         'tax_rate' => $ore['tax_rate'] ?? 0,
                         'event_modifier' => $ore['event_modifier'] ?? 0,
+                        'event_qualified_value' => 0,
+                        'event_discount_amount' => 0,
                         'effective_rate' => $ore['effective_rate'] ?? $ore['tax_rate'] ?? 0,
                         'tax' => 0,
                     ];
@@ -1022,13 +1036,26 @@ class TaxCalculationService
                 $quantity = (float) ($ore['quantity'] ?? 0);
                 $value = (float) ($ore['total_value'] ?? 0);
                 $tax = (float) ($ore['estimated_tax'] ?? 0);
+                $qualifiedValue = (float) ($ore['event_qualified_value'] ?? 0);
+                $discount = (float) ($ore['event_discount_amount'] ?? 0);
 
                 $breakdown[$key]['quantity'] += $quantity;
                 $breakdown[$key]['value'] += $value;
                 $breakdown[$key]['tax'] += $tax;
+                $breakdown[$key]['event_qualified_value'] += $qualifiedValue;
+                $breakdown[$key]['event_discount_amount'] += $discount;
+
+                // Keep the strongest event_modifier observed across the period
+                // so the UI's "(-50% event)" tag reflects the applicable rate.
+                $thisModifier = (int) ($ore['event_modifier'] ?? 0);
+                $currentModifier = (int) $breakdown[$key]['event_modifier'];
+                if ($thisModifier < $currentModifier) {
+                    $breakdown[$key]['event_modifier'] = $thisModifier;
+                }
 
                 $totalValue += $value;
                 $totalTax += $tax;
+                $totalEventDiscount += $discount;
             }
         }
 
@@ -1036,6 +1063,7 @@ class TaxCalculationService
             'breakdown' => array_values($breakdown),
             'total_value' => $totalValue,
             'total_tax' => $totalTax,
+            'event_discount_total' => $totalEventDiscount,
             'calculation_method' => 'daily_summaries',
         ];
     }

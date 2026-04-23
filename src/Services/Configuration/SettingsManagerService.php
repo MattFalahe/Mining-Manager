@@ -471,6 +471,8 @@ class SettingsManagerService
 
             // Tax Period Settings
             'tax_calculation_period' => $this->getSetting('tax_rates.tax_calculation_period', 'monthly'),
+            'tax_calculation_period_pending' => $this->getSetting('tax_rates.tax_calculation_period_pending', null),
+            'tax_calculation_period_effective_from' => $this->getSetting('tax_rates.tax_calculation_period_effective_from', null),
             'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
             'send_tax_reminders' => $this->getSetting('tax_rates.send_tax_reminders', true),
             'tax_reminder_days' => $this->getSetting('tax_rates.tax_reminder_days', 3),
@@ -695,9 +697,57 @@ class SettingsManagerService
                 $this->updateSetting('tax_rates.auto_generate_tax_codes', $rates['auto_generate_tax_codes'], 'boolean');
             }
 
-            // Update tax period settings
+            // Update tax period settings.
+            //
+            // Period-type changes are QUEUED to the first of the next calendar
+            // month instead of applied immediately. mining_taxes unique key is
+            // (character_id, period_start) — biweekly H1 and monthly April both
+            // target period_start = 2026-04-01, so switching mid-month can
+            // orphan rows or silently overwrite period_type on --force recalc.
+            // Deferring to a month boundary sidesteps both.
+            //
+            // The "apply now" path (for power users / fresh installs with no
+            // existing taxes) uses the tax_calculation_period_apply_now flag.
+            // That bypasses the queue and writes directly to the active slot.
             if (isset($rates['tax_calculation_period'])) {
-                $this->updateSetting('tax_rates.tax_calculation_period', $rates['tax_calculation_period'], 'string');
+                $requested = $rates['tax_calculation_period'];
+
+                // Defense in depth: weekly was removed as a selectable period
+                // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
+                // via a direct updateTaxRates() call or a bypassed form),
+                // coerce to 'monthly' and log it. Prevents the legacy value
+                // from being re-introduced into the settings store.
+                if ($requested === 'weekly') {
+                    \Illuminate\Support\Facades\Log::warning(
+                        'Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.'
+                    );
+                    $requested = 'monthly';
+                }
+
+                $currentActive = $this->getSetting('tax_rates.tax_calculation_period', 'monthly');
+                $applyNow = !empty($rates['tax_calculation_period_apply_now']);
+
+                if ($requested === $currentActive) {
+                    // No-op — also clear any stale pending queue.
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
+                } elseif ($applyNow) {
+                    // Power-user override: change takes effect immediately.
+                    $this->updateSetting('tax_rates.tax_calculation_period', $requested, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
+                } else {
+                    // Queue with a lookahead effective date that lets the old
+                    // scheme finish calculating the current month before the
+                    // new scheme takes over. See TaxPeriodHelper::nextSafeEffectiveDate
+                    // for the rationale — TL;DR: day 3 of next month, not day 1,
+                    // because day 2 is when both biweekly and monthly schedule
+                    // their previous-period calcs.
+                    $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+                    $effectiveFrom = $periodHelper->nextSafeEffectiveDate()->toDateString();
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', $requested, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', $effectiveFrom, 'string');
+                }
             }
             if (isset($rates['tax_payment_deadline_days'])) {
                 $this->updateSetting('tax_rates.tax_payment_deadline_days', $rates['tax_payment_deadline_days'], 'integer');

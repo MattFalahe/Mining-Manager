@@ -506,8 +506,10 @@ class SettingsController extends Controller
             'tax_code_length' => 'required|integer|min:4|max:20',
             'auto_generate_tax_codes' => 'nullable|boolean',
 
-            // Tax Period Settings
-            'tax_calculation_period' => 'required|in:monthly,weekly,biweekly',
+            // Tax Period Settings — weekly removed in v1.0.3+ (historical rows
+            // still render via MiningTax::formatted_period, but no new weekly
+            // rows can be created).
+            'tax_calculation_period' => 'required|in:monthly,biweekly',
             'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
             'send_tax_reminders' => 'nullable|boolean',
             'tax_reminder_days' => 'required|integer|min:1|max:30',
@@ -548,6 +550,12 @@ class SettingsController extends Controller
             // Convert other checkboxes
             $data['auto_generate_tax_codes'] = $request->has('auto_generate_tax_codes');
             $data['send_tax_reminders'] = $request->has('send_tax_reminders');
+
+            // Pass through the "apply period change immediately" override flag.
+            // When unchecked (default), the settings service queues any
+            // tax_calculation_period change to the first of next month
+            // to avoid mid-period collisions on mining_taxes rows.
+            $data['tax_calculation_period_apply_now'] = $request->has('tax_calculation_period_apply_now');
 
             // Update all settings via service
             $this->settingsService->updateTaxRates($data);

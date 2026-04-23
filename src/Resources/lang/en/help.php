@@ -153,13 +153,13 @@ return [
 
     // Tax Periods
     'tax_periods_title' => 'Tax Calculation Periods',
-    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Three period types are supported:',
+    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Two period types are supported:',
     'tax_period_monthly' => 'Monthly — One tax bill per calendar month (1st to last day). Calculated on the 2nd of the following month.',
     'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 2nd and 16th.',
-    'tax_period_weekly' => 'Weekly — One tax bill per ISO week (Monday to Sunday). Calculated every Tuesday.',
-    'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Multiple periods within the same month are aggregated into one data point.',
+    // tax_period_weekly removed in v1.0.3. Historical rows with period_type='weekly' still render via MiningTax::formatted_period.
+    'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Biweekly periods within the same month are aggregated into one data point.',
     'tax_periods_due_date' => 'Each tax record gets a due date calculated as: period end date + payment deadline days (configurable in settings, default 7 days). For example, a biweekly period ending March 14 would be due March 21.',
-    'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month, weekly members receive 4-5 codes per month.',
+    'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month.',
 
     // Nightly Pipeline
     'nightly_pipeline_title' => 'Behind the Scenes — Nightly Pipeline',

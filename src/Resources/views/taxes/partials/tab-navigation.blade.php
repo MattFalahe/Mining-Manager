@@ -1,3 +1,8 @@
+{{-- Pending tax period switch banner (renders only if a switch is queued).
+     Included here so every tax page gets the warning automatically via the
+     shared tab-navigation partial — no per-page include needed. --}}
+@include('mining-manager::taxes.partials._pending_period_switch_banner')
+
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">

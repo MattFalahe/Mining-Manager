@@ -413,6 +413,7 @@ class LedgerController extends Controller
                 SUM(total_quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(total_tax) as total_tax,
+                SUM(event_discount_total) as event_discount_total,
                 COUNT(DISTINCT date) as active_days,
                 MAX(total_value) as best_day_value
             ')
@@ -464,6 +465,13 @@ class LedgerController extends Controller
         // Use authoritative tax_owed if available, otherwise fall back to estimated
         $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
 
+        // All-time event tax savings — every discount the user has accrued
+        // from event participation, across all events the daily summaries
+        // have seen. Cheap one-column sum from mining_ledger_daily_summaries.
+        $eventSavingsAllTime = $this->summaryService->getTotalEventSavings(
+            is_array($characterIds) ? $characterIds : $characterIds->toArray()
+        );
+
         return [
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
@@ -476,6 +484,8 @@ class LedgerController extends Controller
             'total_tax_owed' => $effectiveTaxOwed,
             'total_tax_paid' => $paidTaxAmount,
             'tax_outstanding' => max(0, $effectiveTaxOwed - $paidTaxAmount),
+            'event_discount_total' => (float) ($agg->event_discount_total ?? 0),
+            'event_savings_all_time' => $eventSavingsAllTime,
             'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
             'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
@@ -610,6 +620,8 @@ class LedgerController extends Controller
             'total_tax_owed' => 0,
             'total_tax_paid' => 0,
             'tax_outstanding' => 0,
+            'event_discount_total' => 0,
+            'event_savings_all_time' => 0,
             'mining_days' => 0,
             'favorite_ore' => [
                 'name' => trans('mining-manager::ledger.no_data'),
@@ -1046,6 +1058,7 @@ class LedgerController extends Controller
         $totals = [
             'total_value' => $summaries->sum('total_value'),
             'total_tax' => $summaries->sum('total_tax'),
+            'event_discount_total' => $summaries->sum('event_discount_total'),
             'total_quantity' => $summaries->sum('total_quantity'),
             'total_volume_m3' => $summaries->sum('total_volume_m3'),
             'moon_ore_value' => $summaries->sum('moon_ore_value'),

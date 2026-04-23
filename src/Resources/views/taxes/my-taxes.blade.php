@@ -73,7 +73,10 @@
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.current_balance') }}</span>
                                     <span class="info-box-number">{{ number_format($currentTax->amount_owed ?? 0, 0) }}</span>
-                                    <small>ISK {{ trans('mining-manager::taxes.for') }} {{ now()->format('F Y') }}</small>
+                                    <small>
+                                        ISK {{ trans('mining-manager::taxes.for') }}
+                                        {{ $currentTax ? $currentTax->formatted_period : ($currentPeriodLabel ?? now()->format('F Y')) }}
+                                    </small>
                                 </div>
                             </div>
                         </div>
@@ -189,7 +192,70 @@
                     <div class="row mt-3">
                         <div class="col-12">
                             <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i> {{ trans('mining-manager::taxes.no_tax_this_month') }}
+                                <i class="fas fa-info-circle"></i>
+                                {{ trans('mining-manager::taxes.no_tax_this_month') }}
+                                @if(($periodType ?? 'monthly') !== 'monthly' && isset($currentPeriodLabel))
+                                    &mdash; <span class="text-muted">{{ $currentPeriodLabel }}</span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    @endif
+
+                    {{-- Multi-period unpaid list: bi-weekly or weekly setups
+                         often have more than one outstanding period. The
+                         Current Balance card above shows just the most
+                         urgent one; this block lists them all so the miner
+                         sees every period with an open balance. --}}
+                    @if(isset($unpaidTaxes) && $unpaidTaxes->count() > 1)
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card card-outline card-warning">
+                                <div class="card-header">
+                                    <h5 class="card-title mb-0">
+                                        <i class="fas fa-list-ul"></i>
+                                        All Unpaid Periods ({{ $unpaidTaxes->count() }})
+                                    </h5>
+                                </div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm table-dark mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Period</th>
+                                                <th class="text-right">Amount Owed</th>
+                                                <th>Due</th>
+                                                <th>Status</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($unpaidTaxes as $unpaidTax)
+                                            <tr>
+                                                <td>{{ $unpaidTax->formatted_period }}</td>
+                                                <td class="text-right">{{ number_format($unpaidTax->amount_owed, 0) }} ISK</td>
+                                                <td>
+                                                    @if($unpaidTax->due_date)
+                                                        {{ \Carbon\Carbon::parse($unpaidTax->due_date)->format('M d') }}
+                                                        <small class="text-muted">({{ \Carbon\Carbon::parse($unpaidTax->due_date)->diffForHumans() }})</small>
+                                                    @else
+                                                        &mdash;
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    <span class="badge badge-{{ $unpaidTax->status === 'overdue' ? 'danger' : 'warning' }}">
+                                                        {{ strtoupper($unpaidTax->status) }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <a href="{{ route('mining-manager.taxes.details', $unpaidTax->id) }}" class="btn btn-xs btn-info">
+                                                        <i class="fas fa-eye"></i> Details
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -199,7 +265,32 @@
         </div>
     </div>
 
-    {{-- CURRENT MONTH MINING BREAKDOWN --}}
+    {{-- EVENT DISCOUNT BANNER — matches whichever period the breakdown is showing --}}
+    @php
+        $monthEventDiscount = collect($currentMonthBreakdown)->sum('event_discount_total');
+    @endphp
+    @if($monthEventDiscount > 0)
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-success d-flex align-items-center" role="alert">
+                <i class="fas fa-gift fa-2x mr-3 text-warning"></i>
+                <div>
+                    <strong>Event discount applied this {{ ($periodType ?? 'monthly') === 'monthly' ? 'month' : 'period' }}
+                        @if(isset($currentPeriodLabel)) ({{ $currentPeriodLabel }}) @endif:
+                    </strong>
+                    <span class="h5 mb-0 ml-2">{{ number_format($monthEventDiscount, 0) }} ISK saved</span>
+                    <br>
+                    <small class="text-muted">
+                        Reduced tax from active mining events has already been subtracted from your tax bill below.
+                        Per-ore savings are shown in the breakdown table.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- CURRENT PERIOD MINING BREAKDOWN --}}
     @if(!empty($currentMonthBreakdown))
     <div class="row">
         <div class="col-12">
@@ -207,7 +298,12 @@
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-gem"></i>
-                        Mining Breakdown - {{ now()->format('F Y') }}
+                        Mining Breakdown &mdash; {{ $currentPeriodLabel ?? now()->format('F Y') }}
+                        @if(($periodType ?? 'monthly') !== 'monthly')
+                            <small class="text-muted">
+                                ({{ ucfirst($periodType) }} period)
+                            </small>
+                        @endif
                     </h3>
                     <div class="card-tools">
                         <button type="button" class="btn btn-tool" data-card-widget="collapse">
@@ -270,7 +366,15 @@
                                             </small>
                                         @endif
                                     </td>
-                                    <td class="text-right">{{ number_format($ore['tax'], 0) }}</td>
+                                    <td class="text-right">
+                                        {{ number_format($ore['tax'], 0) }}
+                                        @if(($ore['event_discount_amount'] ?? 0) > 0)
+                                            <br><small class="text-success" title="Tax saved from event modifier on qualifying mining">
+                                                <i class="fas fa-gift"></i>
+                                                saved {{ number_format($ore['event_discount_amount'], 0) }}
+                                            </small>
+                                        @endif
+                                    </td>
                                 </tr>
                                 @endforeach
                             </tbody>

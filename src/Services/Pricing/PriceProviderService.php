@@ -370,7 +370,7 @@ class PriceProviderService
         $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::get(self::FUZZWORK_MARKET_URL, [
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
             'region' => $regionId,
             'types' => $typeIdsString
         ]);
@@ -635,7 +635,7 @@ class PriceProviderService
         $priceMethod = $pricingSettings['price_type'] ?? 'sell';
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::get(self::FUZZWORK_MARKET_URL, [
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
             'region' => $regionId,
             'types' => $typeIdsString,
         ]);

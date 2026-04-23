@@ -108,11 +108,11 @@
                                         <tr>
                                             <td>
                                                 <img src="https://images.evetech.net/characters/{{ $participant->character_id }}/portrait?size=32" class="img-circle" style="width: 32px;">
-                                                {{ $participant->character_name }}
+                                                {{ $participant->character->name ?? 'Character ' . $participant->character_id }}
                                             </td>
-                                            <td class="text-right">{{ number_format($participant->total_mined ?? 0, 0) }} ISK</td>
+                                            <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
                                             <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
-                                            <td>{{ $participant->joined_at->diffForHumans() }}</td>
+                                            <td>{{ $participant->joined_at ? $participant->joined_at->diffForHumans() : '—' }}</td>
                                         </tr>
                                         @endforeach
                                     </tbody>
@@ -136,8 +136,8 @@
                                         </span>
                                         <div class="info-box-content">
                                             <span class="info-box-text">{{ ['1st Place', '2nd Place', '3rd Place'][$index] }}</span>
-                                            <span class="info-box-number">{{ ($features['show_character_names'] ?? true) ? $top->character_name : 'Miner #' . ($top->character_id ?? $index + 1) }}</span>
-                                            <small>{{ number_format($top->total_mined, 0) }} ISK</small>
+                                            <span class="info-box-number">{{ ($features['show_character_names'] ?? true) ? ($top->character->name ?? 'Character ' . $top->character_id) : 'Miner #' . ($top->character_id ?? $index + 1) }}</span>
+                                            <small>{{ number_format($top->value_mined ?? 0, 0) }} ISK</small>
                                         </div>
                                     </div>
                                 </div>

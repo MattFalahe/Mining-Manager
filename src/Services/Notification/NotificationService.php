@@ -664,8 +664,11 @@ class NotificationService
 
         try {
             $message = $this->formatMessageForSlack($type, $data);
-            
-            $response = Http::post($webhookUrl, $message);
+
+            // timeout(10) matches the pattern already used throughout
+            // WebhookService — prevents a hung or very slow Slack endpoint
+            // from blocking the notification pipeline indefinitely.
+            $response = Http::timeout(10)->post($webhookUrl, $message);
 
             if ($response->successful()) {
                 Log::info('Slack notification sent', ['type' => $type]);

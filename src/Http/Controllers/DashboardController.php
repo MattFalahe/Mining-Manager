@@ -1320,24 +1320,16 @@ class DashboardController extends Controller
                     ->sum('amount_paid');
             }
 
-            // Event bonus - calculate tax savings from events with negative tax modifiers
-            $eventBonusAmount = 0;
-            $characterEvents = MiningEvent::whereIn('status', ['completed', 'active'])
-                ->where(function($query) use ($month, $monthEnd) {
-                    $query->whereBetween('start_time', [$month, $monthEnd])
-                        ->orWhereBetween('end_time', [$month, $monthEnd]);
-                })
-                ->where('tax_modifier', '<', 0)
-                ->get();
-
-            foreach ($characterEvents as $event) {
-                if ($event->total_mined > 0) {
-                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
-                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
-                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
-                    $eventBonusAmount += $normalTax - $modifiedTax;
-                }
-            }
+            // Event bonus = ISK saved this month via event tax modifiers.
+            // Previously this computed $event->total_mined × hardcoded 10% ×
+            // modifier — but total_mined is a UNIT count, not ISK, and the
+            // hardcoded 10% ignored the actual per-ore-category tax rates.
+            // Authoritative source now lives in
+            // mining_ledger_daily_summaries.event_discount_total, populated
+            // per-row by Phase 2 attribution against event_mining_records.
+            $eventBonusAmount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$month->copy()->toDateString(), $monthEnd->copy()->toDateString()])
+                ->sum('event_discount_total');
 
             $months[] = $monthKey;
             $refinedValue[] = $value;
@@ -1521,6 +1513,14 @@ class DashboardController extends Controller
         $months = [];
         $data = [];
 
+        // Pre-compute the set of character IDs belonging to this corporation,
+        // so the discount total is scoped to members (daily summaries don't
+        // always carry a stable corp_id; character affiliation is the anchor).
+        $characterIds = \Illuminate\Support\Facades\DB::table('character_affiliations')
+            ->where('corporation_id', $corporationId)
+            ->pluck('character_id')
+            ->all();
+
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthEnd = $month->copy()->endOfMonth();
@@ -1529,32 +1529,29 @@ class DashboardController extends Controller
                 $monthEnd = Carbon::now();
             }
 
-            // Get completed and active events for this corporation in this month
-            $events = MiningEvent::where('corporation_id', $corporationId)
-                ->whereIn('status', ['completed', 'active'])
-                ->where(function($query) use ($month, $monthEnd) {
-                    $query->whereBetween('start_time', [$month, $monthEnd])
-                        ->orWhereBetween('end_time', [$month, $monthEnd]);
-                })
-                ->where('tax_modifier', '!=', 0)
-                ->get();
-
-            $eventTaxTotal = 0;
-            foreach ($events as $event) {
-                // Calculate the tax impact from this event's modifier
-                // total_mined is the ISK value mined during the event
-                // tax_modifier is the percentage adjustment (e.g. -50 = half tax, +100 = double tax)
-                if ($event->total_mined > 0) {
-                    // Get the base tax rate to calculate the modifier impact
-                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
-                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
-                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
-                    $eventTaxTotal += $modifiedTax - $normalTax;
-                }
+            // Pull the authoritative event-discount total straight from
+            // Phase 3's mining_ledger_daily_summaries.event_discount_total.
+            // That column is populated per-row by LedgerSummaryService as the
+            // sum of event_discount_amount across all ore entries that day,
+            // which in turn comes from the per-row Phase 2 attribution against
+            // event_mining_records. No hardcoded tax rate, no assumptions about
+            // which ore categories were in scope — all that math is already done.
+            //
+            // The chart label says "Event Tax Impact (ISK)" and the value is
+            // ISK waived / added by events this month. Positive modifiers
+            // (tax increases) show up as zero in event_discount_total by
+            // design; if you want to visualise those, wire up a separate
+            // "event_surcharge_total" field later.
+            if (empty($characterIds)) {
+                $eventDiscount = 0.0;
+            } else {
+                $eventDiscount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                    ->whereBetween('date', [$month->copy()->toDateString(), $monthEnd->copy()->toDateString()])
+                    ->sum('event_discount_total');
             }
 
             $months[] = $month->format('Y-m');
-            $data[] = abs($eventTaxTotal);
+            $data[] = $eventDiscount;
         }
 
         return [

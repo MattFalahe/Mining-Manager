@@ -2,6 +2,113 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [1.0.3] - Event Accuracy, Period Awareness, Weekly Removal
+
+Big release. Three parallel streams of work converged:
+
+1. **Event tracking rebuilt** from the ground up. A new `event_mining_records` table materialises the exact mining activity qualifying for each event with all four scope filters (corp, location, time, ore category) applied at populate time. Tax attribution is now per-row — the modifier applies only to the actual event-window slice, not the whole day's mining. ISK saved during events is surfaced to miners on their pages and to directors on the dashboard.
+2. **Bi-weekly tax period support matured.** The data layer already supported it; presentation and queries now do too. Period switches queue to a safe cutover date to prevent row collisions.
+3. **Weekly tax period removed.** ISO weeks don't align to calendar months; the straddling weeks caused double-tax and chart aggregation problems. Biweekly covers the sub-monthly use case cleanly.
+
+### Added
+
+**Event System Refactor (Phases 1–3)**
+- New `event_mining_records` table (migration `2026_01_01_000005`) — canonical record of which mining qualifies for each event. Populated by `EventMiningAggregator` with all filters baked in (corp + location + time + ore category). Moon events read `mining_ledger` (day-level observer data); belt/ice/gas events read SeAT's `character_minings` with datetime precision via `time` column.
+- New `event_discount_total` column on `mining_ledger_daily_summaries` (migration `2026_01_01_000006`) — daily sum of ISK waived by event modifiers.
+- New per-ore entries in `ore_types` JSON: `event_id`, `event_qualified_value`, `event_discount_amount`, blended `effective_rate`.
+- New `mining-manager:backfill-event-records` artisan command — `--event=ID` / `--status=active|completed|planned` / `--fresh` for one-off rebuild after deploy.
+- New `EventMiningAggregator` service — lazy-promoted via `MiningEvent::booted()` hook when any scope field (`type`, `corporation_id`, `solar_system_id`, `location_scope`, `start_time`, `end_time`) changes on save.
+- `LedgerSummaryService::getEventAttributionForLedgerRow()` — per-row tax attribution. Modifier applies to the exact slice of mining that overlapped the event window, not to the whole day.
+- Historical pricing preservation for non-moon events via proportional allocation from `mining_ledger.total_value` — backfilling an old event no longer rewrites ISK with today's prices.
+- Event form **tax-compatibility panel** — badge row showing currently-taxed categories, reactive status block (🟢 full / 🟡 partial / 🔴 empty) based on the chosen event type, and a suggested event types list. Prevents running a "gas_huffing" event on an install that isn't taxing gas.
+- Miner-facing event discount indicators:
+  - **My Mining** — green callout "Event Discount Applied: you saved X ISK this period" + new orange small-box "Total Event Savings (All Time)" showing the running ISK total of tax waived from event participation across every event the user's characters have ever joined
+  - **My Taxes** — top banner "Event discount applied this period: X ISK saved", plus per-ore "saved Y ISK" sub-line in the breakdown table
+  - **My Events** — new full-width banner "Total tax saved from event participation: X ISK" near the top, plus a "Your tax saved: X ISK" line on every event card (active + completed sections)
+  - **Ledger Summary** (director) — "incl. −X ISK event discount" under the Total Tax info-box
+  - **Calculate Taxes** (admin) — Event Tax column now shows the real per-row discount (previously always 0 — column read a non-existent `event_tax_amount`)
+  - **Director Dashboard charts** (Mining Tax, Event Tax) and **Member Dashboard** (Mining Income Last 12 Months) — gained a period-aware footnote under each chart when the install runs biweekly, clarifying that biweekly periods within each calendar month are summed into that month's bar.
+
+**Savings-attribution helpers**
+- `LedgerSummaryService::getTotalEventSavings($characterIds, $start = null, $end = null)` — fast sum of `mining_ledger_daily_summaries.event_discount_total` for a character set over an optional date range.
+- `LedgerSummaryService::getEventSavingsByEvent($characterIds, $start = null, $end = null)` — walks `ore_types` JSON and returns `[event_id => ISK saved]` for per-event attribution (used by the My Events per-card line).
+
+**Period Awareness (biweekly/weekly presentation)**
+- `TaxController::myTaxes` resolves the configured period, queries by `period_start` (exact), falls back to oldest unpaid tax when the current period hasn't been invoiced yet, exposes all unpaid taxes to the view.
+- My Taxes page uses period-aware labels everywhere — Current Balance card, Mining Breakdown header, Event Discount banner, "no tax this period" alert.
+- New **"All Unpaid Periods" table** on My Taxes when more than one tax is outstanding — shows every period with amount, due date, status badge, details link.
+- `TaxController::index` (director Tax Overview) shows period context in the summary header. On non-monthly setups: "Current Biweekly period: Apr 15-30, 2026" + an additional sub-line under "Collected" showing ISK attributable to the current active period specifically (vs. the existing calendar-month total).
+- `TaxController::myTaxBreakdown` AJAX returns period-bound slice (`period_type` / `period_start` / `period_end` / `period_label` in response; legacy `month` key kept for backward compat).
+- `getMyTaxBreakdownData` signature widened to `(array $characterIds, Carbon $start, Carbon $end)` — mining breakdown aligns with displayed period instead of calendar month.
+
+**Period Switch Safeguard**
+- New settings slots: `tax_rates.tax_calculation_period_pending` and `tax_rates.tax_calculation_period_effective_from`. Period-type changes queue instead of applying immediately — unless the admin checks a new "Apply immediately" override (intended for fresh installs).
+- Effective date defaults to **day 3 of next month** for monthly/biweekly — lets the current scheme's day-2 previous-period calc complete before promotion. Prevents H2 data loss on biweekly → monthly switches.
+- `TaxPeriodHelper::getPendingPeriodChange()` exposes the queued change; new partial `taxes/partials/_pending_period_switch_banner.blade.php` shows a yellow warning on every tax page while a switch is queued.
+- Lazy promotion in `getConfiguredPeriodType()` — no cron needed; first tax-page load or calculate-taxes run on or after the effective date auto-promotes and logs the transition.
+
+**Cleanups / Observability**
+- `Cache::lock()` added to `mining-manager:generate-reports` and `mining-manager:update-extractions` (matches the 8 other commands that already had it).
+- `Http::timeout(10)` added to the three previously-bare HTTP calls (Slack webhook + two Fuzzwork price GETs).
+- Security badge on analytics systems table now uses 0.45 (CCP's actual high-sec threshold) instead of 0.5 — Tasabeshi et al. now correctly green.
+- Log line on period promotion: `Mining Manager: Tax calculation period promoted biweekly → monthly (effective 2026-05-03, promoted on 2026-05-03)`.
+
+### Fixed
+
+- **Event tracking only counted 1 of 19 participants** — `EventTrackingService::updateEventTracking()` was comparing a DATE column against DateTime watermarks, silently excluding all rows after the first tick. Also dropped the self-defeating `last_updated` incremental watermark; method is now idempotent and runs the full event window every pass via `updateOrCreate`.
+- **Events showed "Total Mined: 0 ISK"** — `event_participants.value_mined` column added (migration `2026_01_01_000004`) alongside the existing `quantity_mined`. Event Tracking Service now populates both from `mining_ledger.total_value`.
+- **Event type didn't scope tax modifier to correct ore category** — added `EVENT_TYPE_ORE_CATEGORIES` constant on `MiningEvent` + `appliesToOreCategory()` helper. `mining_op` applies only to regular ore, `ice_mining` only to ice, etc. "Special Event" covers every currently-taxed category.
+- **`character_infos.corporation_id` reads returned null** — latent bug since SeAT's 2019 schema change dropped that column in favor of `character_affiliations`. Fixed in `LedgerSummaryService::generateDailySummary` (was silently breaking guest-mining detection and corp-scoped event attribution), `EventMiningAggregator`, `MiningTax::getCorporationIdAttribute`, and `CharacterInfoService`.
+- **Event charts displayed garbage (~92K ISK for a 3.87B event)** — three director/member dashboard charts computed event tax as `$event->total_mined × hardcoded 10% × modifier`, but `total_mined` is unit quantity not ISK. All three now read from the authoritative `event_discount_total` on daily summaries:
+  - Director "Event Tax (12 Months)" chart
+  - Member "Mining Income" chart `event_bonus` series
+  - Events index "Total Value" KPI
+  - My Events "Total Mined" / "Avg Per Event" stats
+- **my-events.blade.php crashed with "Attempt to read property 'id' on null"** — the view used `auth()->user()->id` (SeAT user ID) as a character_id filter, so `$myParticipation` was usually null. Refactored to aggregate across all of the user's characters via `$characterIds` passed from the controller; rank computed across top participants by `character_id` match rather than a brittle `$p->id === $myParticipation->id`.
+- **Events list showed "0 participants"** — `events/index.blade.php` used `$event->participants_count` (plural typo); column is `participant_count` (singular). Dropped the bogus `/ max_participants` suffix too (that column doesn't exist).
+- **Retroactive daily-summary rebuilds showed zero event discount** — `getEventAttributionForLedgerRow` filtered candidate events to `status='active'` only, so rebuilding a past day's summary after the event had transitioned to `completed` found nothing. Now accepts `active` and `completed` (excludes `planned` and `cancelled`).
+- **`event_discount_total` was zero for moon events — the actual root cause.** `LedgerSummaryService::getOreCategory()` returned generic strings (`'moon_ore'`, `'abyssal_ore'`, `'triglavian_ore'`) but `MiningEvent::EVENT_TYPE_ORE_CATEGORIES` (and `mining_ledger.ore_category`) use the specific-rarity values (`'moon_r4'`, `'moon_r8'`, ..., `'moon_r64'`, `'abyssal'`, `'triglavian'`). The ingestion commands (`ProcessMiningLedgerCommand`, `ImportCharacterMiningCommand`) already produced the correct specific values; only this view-layer helper drifted. Result: `MiningEvent::appliesToOreCategory('moon_ore')` always returned false, attribution lookup always returned null, and every daily summary had `event_discount_total = 0` regardless of event activity. Aligned the helper with the ingestion side. Verified on user's install: 31 daily summary rows now carry non-zero discounts totaling ~38.5M ISK across 19 miners for a single 48h moon event.
+- **Calculate Taxes Event Tax column always showed 0** — the attribution prefetch map keyed on `$row->mining_date` via `sprintf '%s'`, but `EventMiningRecord` casts `mining_date` to Carbon (`'date'` cast). Carbon's `__toString()` emits `"YYYY-MM-DD HH:MM:SS"` while the entry-side lookup used `Carbon::parse($entry->date)->toDateString()` → `"YYYY-MM-DD"`. Keys never matched. Explicit `->format('Y-m-d')` on both sides now.
+- **Wrongly-named migration file** — `2026_04_21_000001_add_value_tracking_to_events` renamed to `2026_01_01_000004_add_value_tracking_to_events` to match plugin's fixed-date-prefix + sequential-numbering convention. Also converted from anonymous class to named class (`AddValueTrackingToEvents`) matching the other 3 migrations.
+- **Dead code paths removed**:
+  - `ProcessMiningLedgerListener` (deprecated, never registered, never fired in SeAT v5)
+  - Dead `character_infos.corporation_id` fallback branches in `MiningTax` + `CharacterInfoService` (column dropped in 2019, branches unreachable)
+
+### Changed
+
+- **Weekly tax calculation period removed.**
+
+  *Why:* ISO weeks (Mon-Sun) don't align to calendar months. A week starting Apr 27 ends May 3, so the tax row covered mining from April 27-30 AND May 1-3. Three compounding problems followed: (1) straddling tax rows leaked accounting into the next month; (2) switching weekly → anything caused **double-tax** because the straddling row's May days overlapped with the first new-scheme row also covering May; (3) dashboard charts had to smear weekly row totals across adjacent months. Biweekly (1st-14th, 15th-end) covers the sub-monthly use case cleanly.
+
+  *If your install was running weekly — what happens on upgrade:*
+  1. **Auto-heal on first read.** The first tax-page load or `calculate-taxes` cron after the upgrade rewrites `tax_rates.tax_calculation_period` from `weekly` to `monthly` in the settings store, logging a warning: `Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly"...`. No admin action required.
+  2. **Historical weekly rows preserved.** Existing `mining_taxes` rows with `period_type='weekly'` stay in the database forever. They remain visible in Tax History, Tax Details, My Taxes breakdown, and CSV exports — rendered with their original weekly labels (e.g. "Mar 3-9, 2026") via `MiningTax::formatted_period`.
+  3. **No new weekly rows.** Going forward the plugin only writes `monthly` or `biweekly` rows.
+  4. **Switching to biweekly** (if the admin prefers sub-monthly over monthly): open Settings → Tax Rates and change the dropdown. The change queues to day 3 of next month via the new period-switch safeguard (no collision with the auto-migrated monthly setting).
+
+  *Defense in depth:* three layers of weekly coercion ensure no new weekly data can slip in:
+  - Settings form validation rejects `weekly` (`in:monthly,biweekly`)
+  - `SettingsManagerService::updateTaxRates` coerces `weekly` → `monthly` with a log warning if any caller bypasses the form
+  - `TaxPeriodHelper::normaliseLegacyWeekly()` coerces `weekly` passed to internal methods (period bounds, calc-day checks, etc.)
+
+  No schema migration required. `mining_taxes.period_type` is `string(20)`, not an enum.
+- **Moon event corp filter semantics** now documented and uniform:
+  - Miner's current corp must equal `event.corporation_id` for corp-scoped events (no miner-corp filter for global events)
+  - Observer row corp (moon owner) is NOT required to match miner corp — a Corp-B miner at a Corp-A moon legitimately counts for a Corp-B event and for any global event, provided the moon row is in the source pool per `tax_selector`
+  - Source pool for moon events follows `tax_selector`: `only_corp_moon_ore` → restrict to moon-owner corp's observers; `all_moon_ore` → any observer; `no_moon_ore` → no observer data
+- **Non-moon event participation narrowed by `tax_selector`** — a gas event on an install with `tax_selector.gas=false` now produces no records (previously it silently tracked zero-tax activity). Event form warns on mismatch.
+- **Event webhook includes ISK value mined** — previously moon-event notifications showed only quantity; now also reports ISK total where available.
+
+### Known Limitations
+
+- **Moon events stay day-level.** EVE's observer data is day-aggregated; the plugin cannot get sub-day precision on moon mining until CCP changes ESI. Documented in Help under Events → Time Granularity.
+- **Non-moon events use SeAT fetch time**, not literal EVE mining time (character_minings doesn't carry the moment of mining). Good enough for events spanning several hours; noisy for sub-hour events.
+- **Weekly removal does not delete historical rows.** They remain visible in Tax History and export reports forever (we don't touch released migrations).
+
+### Mental Model
+
+**ESI tells us WHAT is happening. The clock tells us WHEN to notify. `event_mining_records` tells us WHICH mining counts for which event.**
+
 ## [1.0.2] - Time-Based Moon Arrival Notifications
 
 ### Fixed

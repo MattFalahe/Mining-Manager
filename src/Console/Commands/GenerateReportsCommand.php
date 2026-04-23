@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningReport;
 use MiningManager\Models\ReportSchedule;
 use MiningManager\Services\Analytics\ReportGenerationService;
@@ -54,6 +55,25 @@ class GenerateReportsCommand extends Command
      * @return int
      */
     public function handle()
+    {
+        // Mutex lock to prevent concurrent invocations (schedule entries
+        // can overlap; manual artisan runs can coincide with cron). Same
+        // pattern as ProcessMiningLedgerCommand, DetectJackpotsCommand,
+        // CalculateMonthlyTaxesCommand, etc.
+        $lock = Cache::lock('mining-manager:generate-reports', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleWithLock();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleWithLock(): int
     {
         // Check feature flag
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);

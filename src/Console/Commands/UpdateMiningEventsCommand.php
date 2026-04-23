@@ -5,6 +5,7 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Events\EventManagementService;
+use MiningManager\Services\Events\EventMiningAggregator;
 use MiningManager\Services\Events\EventTrackingService;
 use Carbon\Carbon;
 
@@ -106,12 +107,27 @@ class UpdateMiningEventsCommand extends Command
         $updated = 0;
         $errors = 0;
 
+        $aggregator = app(EventMiningAggregator::class);
+
         foreach ($events as $event) {
             try {
                 $this->line("Processing event: {$event->name}");
 
-                // Delegate to EventTrackingService (handles DB::transaction, participant
-                // updates, and event statistics in a single atomic operation)
+                // For active events, re-run the aggregator so any mining
+                // activity that happened since the last tick gets materialised
+                // into event_mining_records. Completed events are frozen —
+                // their records don't change unless scope is edited (handled
+                // by the MiningEvent saved() hook).
+                if ($event->status === 'active') {
+                    $agg = $aggregator->aggregate($event);
+                    if (($agg['created'] ?? 0) > 0) {
+                        $this->line("  → aggregated {$agg['created']} new record(s)"
+                            . (($agg['updated'] ?? 0) > 0 ? ", refreshed {$agg['updated']}" : ''));
+                    }
+                }
+
+                // Roll event_mining_records into event_participants and
+                // event aggregate counters.
                 $result = $this->eventService->updateEventTracking($event);
 
                 $participants = ($result['new_participants'] ?? 0) + ($result['updated_participants'] ?? 0);

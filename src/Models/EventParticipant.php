@@ -23,6 +23,7 @@ class EventParticipant extends Model
         'event_id',
         'character_id',
         'quantity_mined',
+        'value_mined',
         'joined_at',
         'last_updated',
     ];
@@ -34,6 +35,7 @@ class EventParticipant extends Model
      */
     protected $casts = [
         'quantity_mined' => 'integer',
+        'value_mined' => 'integer',
         'joined_at' => 'datetime',
         'last_updated' => 'datetime',
     ];

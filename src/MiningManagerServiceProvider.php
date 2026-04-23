@@ -15,6 +15,7 @@ use MiningManager\Console\Commands\SendTaxRemindersCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
 use MiningManager\Console\Commands\CheckExtractionArrivalsCommand;
 use MiningManager\Console\Commands\BackfillExtractionHistoryCommand;
+use MiningManager\Console\Commands\BackfillEventRecordsCommand;
 use MiningManager\Console\Commands\DetectJackpotsCommand;
 use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
@@ -119,6 +120,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 ArchiveOldExtractionsCommand::class,
                 BackfillExtractionNotificationsCommand::class,
                 BackfillExtractionHistoryCommand::class,
+                BackfillEventRecordsCommand::class,
                 DetectMoonTheftCommand::class,
                 MonitorActiveTheftsCommand::class,
                 FinalizeMonthCommand::class,
