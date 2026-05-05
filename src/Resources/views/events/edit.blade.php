@@ -78,6 +78,12 @@
                                 <option value="gas_huffing" {{ old('type', $event->type) == 'gas_huffing' ? 'selected' : '' }}>{{ trans('mining-manager::events.gas_huffing') }}</option>
                                 <option value="special" {{ old('type', $event->type) == 'special' ? 'selected' : '' }}>{{ trans('mining-manager::events.special') }}</option>
                             </select>
+                            <small class="form-text text-info">
+                                <i class="fas fa-info-circle"></i>
+                                Tax modifier applies to: <strong>Mining Op</strong> = ore · <strong>Moon Extraction</strong> = moon ore · <strong>Ice Mining</strong> = ice · <strong>Gas Huffing</strong> = gas · <strong>Special Event</strong> = <em>all currently-taxed ore categories</em>.
+                            </small>
+
+                            @include('mining-manager::events._tax_compatibility_panel')
                         </div>
 
                         <div class="row">
@@ -196,7 +202,7 @@
                         <h3 class="card-title">{{ trans('mining-manager::events.event_statistics') }}</h3>
                     </div>
                     <div class="card-body">
-                        <p><strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participants_count ?? 0 }}</p>
+                        <p><strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participant_count ?? 0 }}</p>
                         <p><strong>{{ trans('mining-manager::events.total_mined') }}:</strong> {{ number_format($event->total_mined_value ?? 0, 0) }} ISK</p>
                         <p><strong>{{ trans('mining-manager::events.created') }}:</strong> {{ $event->created_at->diffForHumans() }}</p>
                         <p><strong>{{ trans('mining-manager::events.organizer') }}:</strong> {{ $event->organizer->name ?? 'N/A' }}</p>

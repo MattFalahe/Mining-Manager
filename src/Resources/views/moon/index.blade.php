@@ -149,6 +149,11 @@
                                     <td>
                                         @if($extraction->ore_composition)
                                             <span class="text-success">~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK</span>
+                                            @if($extraction->is_jackpot)
+                                                <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
+                                                    <i class="fas fa-star"></i>
+                                                </span>
+                                            @endif
                                         @else
                                             <span class="text-muted">N/A</span>
                                         @endif
@@ -321,6 +326,11 @@
                                     @if($extraction->ore_composition)
                                         <h4 class="mb-2 text-success">
                                             ~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
+                                            @if($extraction->is_jackpot)
+                                                <span class="badge align-middle" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
+                                                    <i class="fas fa-star"></i> 2x
+                                                </span>
+                                            @endif
                                         </h4>
                                         <p class="mb-2 text-muted small">{{ trans('mining-manager::moons.estimated_value') }}</p>
                                     @else

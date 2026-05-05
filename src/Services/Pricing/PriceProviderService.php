@@ -43,12 +43,35 @@ class PriceProviderService
     protected array $lastJitaFallbackTypeIds = [];
 
     /**
+     * Structured summary of the last Jita-fallback dispatch — null when the
+     * most recent getPrices() call didn't trigger a fallback. Schema in
+     * `getLastFallbackSummary()` docblock. Used by the diagnostic page to
+     * surface fallback health without parsing logs.
+     */
+    protected ?array $lastFallbackSummary = null;
+
+    /**
      * Price provider constants
      */
     const PROVIDER_SEAT = 'seat';
     const PROVIDER_JANICE = 'janice';
     const PROVIDER_FUZZWORK = 'fuzzwork';
     const PROVIDER_MANAGER_CORE = 'manager-core';
+
+    /**
+     * Threshold (in hours) beyond which a Manager Core price is considered
+     * stale and worthy of a warning log.
+     *
+     * MC's `manager-core:update-prices` cron runs every 4 hours by default.
+     * Any price older than 2× that interval (8 hours) almost certainly
+     * indicates MC's cron is broken or paused — operators should check.
+     *
+     * Stale prices are still RETURNED (we don't fail the read just because
+     * a price is old; the operator may want the stale value rather than
+     * a zero that triggers fallback-to-jita). The warning is observability
+     * only — surfaces in the log so an operator can spot and fix.
+     */
+    const MC_PRICE_STALENESS_HOURS = 8;
 
     /**
      * Default market hub for regional prices
@@ -370,7 +393,7 @@ class PriceProviderService
         $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::get(self::FUZZWORK_MARKET_URL, [
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
             'region' => $regionId,
             'types' => $typeIdsString
         ]);
@@ -429,59 +452,229 @@ class PriceProviderService
         $market = $pricingSettings['manager_core_market'] ?? 'jita';
         $variant = $pricingSettings['manager_core_variant'] ?? 'min';
 
-        $prices = [];
+        // For "average" we need both sides (we average buy.<variant> and
+        // sell.<variant> per type). MC's getPrice priceType='both' returns
+        // both at once in a single shot, so we ask for it here and combine
+        // in PHP rather than making 2× the calls.
+        $bridgePriceType = $priceType === 'average' ? 'both' : $priceType;
 
-        // Query Manager Core's market prices table
-        $marketPrices = DB::table('manager_core_market_prices')
-            ->whereIn('type_id', $typeIds)
-            ->where('market', $market)
-            ->where('price_type', $priceType === 'average' ? 'sell' : $priceType)
-            ->get();
-
-        foreach ($marketPrices as $item) {
-            // Select the price based on configured variant
-            $price = match ($variant) {
-                'min' => (float) ($item->price_min ?? 0),
-                'max' => (float) ($item->price_max ?? 0),
-                'avg' => (float) ($item->price_avg ?? 0),
-                'median' => (float) ($item->price_median ?? 0),
-                'percentile' => (float) ($item->price_percentile ?? 0),
-                default => (float) ($item->price_min ?? 0),
-            };
-
-            // For 'average' price type, average buy and sell
-            if ($priceType === 'average') {
-                $buyPrice = DB::table('manager_core_market_prices')
-                    ->where('type_id', $item->type_id)
-                    ->where('market', $market)
-                    ->where('price_type', 'buy')
-                    ->first();
-
-                if ($buyPrice) {
-                    $buyValue = match ($variant) {
-                        'min' => (float) ($buyPrice->price_min ?? 0),
-                        'max' => (float) ($buyPrice->price_max ?? 0),
-                        'avg' => (float) ($buyPrice->price_avg ?? 0),
-                        'median' => (float) ($buyPrice->price_median ?? 0),
-                        'percentile' => (float) ($buyPrice->price_percentile ?? 0),
-                        default => (float) ($buyPrice->price_min ?? 0),
-                    };
-                    $price = ($price + $buyValue) / 2;
-                }
-            }
-
-            $prices[$item->type_id] = $price;
+        // Cross-plugin call via the documented PluginBridge contract
+        // (pricing.getPrices). Pre-fix the implementation reached directly
+        // into manager_core_market_prices via DB::table — fragile under MC
+        // schema drift, bypassed MC's Cache::remember layer, and ignored the
+        // documented capability surface entirely.
+        //
+        // The bridge call uses MC's getPrice / fetchPriceForType / formatPriceStats
+        // pipeline, returning the per-type stats arrays:
+        //   ['buy'  => ['min','max','avg','median','percentile','stddev','volume','order_count','strategy','updated_at'],
+        //    'sell' => [ ... same shape ... ]]   (when $bridgePriceType = 'both')
+        //   or just one of the buy/sell sub-arrays directly (when 'buy' or 'sell')
+        //
+        // Quirk to handle: getPrice has a single-element collapse —
+        // `count($prices) === 1 ? reset($prices) : $prices`. So a call with
+        // exactly one type id wrapped in an array returns the inner shape
+        // (no typeId key). We canonicalise that below.
+        try {
+            $bridge = app(\ManagerCore\Services\PluginBridge::class);
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: pricing.getPrices bridge call failed; returning zeros', [
+                'error' => $e->getMessage(),
+                'count' => count($typeIds),
+                'market' => $market,
+            ]);
+            return array_fill_keys($typeIds, 0.0);
         }
 
-        // Fill missing prices with 0
+        if ($rawResult === null) {
+            // Capability not registered (MC version without pricing.getPrices)
+            // OR an error inside the call returned null — either way, fail
+            // safe with zeros so the fallback-to-jita layer can kick in.
+            Log::warning('Mining Manager: pricing.getPrices returned null', [
+                'count' => count($typeIds),
+                'market' => $market,
+            ]);
+            return array_fill_keys($typeIds, 0.0);
+        }
+
+        // Canonicalise the single-element collapse: if we asked for N typeIds
+        // but got back what looks like a stats array (no typeId int keys),
+        // re-wrap.
+        $resultByType = $this->normaliseBridgeGetPricesShape($rawResult, $typeIds);
+
+        $prices = [];
+        $stalenessThreshold = Carbon::now()->subHours(self::MC_PRICE_STALENESS_HOURS);
+        $staleCount = 0;
+        $staleSampleTypeIds = [];
+
         foreach ($typeIds as $typeId) {
-            if (!isset($prices[$typeId])) {
+            $entry = $resultByType[$typeId] ?? null;
+            if ($entry === null) {
                 $prices[$typeId] = 0;
                 Log::warning('Price not found in Manager Core', ['type_id' => $typeId, 'market' => $market]);
+                continue;
             }
+
+            // For priceType=buy/sell, MC returns the inner stats shape directly.
+            // For priceType=both, MC returns ['buy'=>stats, 'sell'=>stats].
+            // Detect which shape we're holding.
+            $hasBuySell = is_array($entry) && (array_key_exists('buy', $entry) || array_key_exists('sell', $entry));
+
+            if ($priceType === 'average') {
+                // Need both sides — must be 'both' shape.
+                $sellStats = $hasBuySell ? ($entry['sell'] ?? null) : null;
+                $buyStats  = $hasBuySell ? ($entry['buy']  ?? null) : null;
+
+                $sellValue = $sellStats ? $this->extractVariant($sellStats, $variant) : 0;
+                $buyValue  = $buyStats  ? $this->extractVariant($buyStats,  $variant) : 0;
+
+                if ($sellStats && $buyStats) {
+                    $prices[$typeId] = ($sellValue + $buyValue) / 2;
+                } elseif ($sellStats) {
+                    $prices[$typeId] = $sellValue;
+                } elseif ($buyStats) {
+                    $prices[$typeId] = $buyValue;
+                } else {
+                    $prices[$typeId] = 0;
+                }
+
+                // Staleness check — use the older of the two updated_at
+                // timestamps. If either side is stale, the merge is too.
+                $usedStats = $sellStats ?? $buyStats;
+                if ($usedStats && $this->isStatsStale($usedStats, $stalenessThreshold)) {
+                    $staleCount++;
+                    if (count($staleSampleTypeIds) < 5) {
+                        $staleSampleTypeIds[] = $typeId;
+                    }
+                }
+            } else {
+                // priceType is 'buy' or 'sell' — entry is the inner stats shape.
+                $stats = $hasBuySell ? ($entry[$priceType] ?? null) : $entry;
+                $prices[$typeId] = $stats ? $this->extractVariant($stats, $variant) : 0;
+
+                if ($stats && $this->isStatsStale($stats, $stalenessThreshold)) {
+                    $staleCount++;
+                    if (count($staleSampleTypeIds) < 5) {
+                        $staleSampleTypeIds[] = $typeId;
+                    }
+                }
+            }
+        }
+
+        // Single warning per call rather than per-type spam. If a significant
+        // fraction of returned prices are stale, MC's update-prices cron is
+        // probably broken or paused — operators see this in the log and can
+        // investigate. Stale prices are still RETURNED (the caller may
+        // prefer a stale price over a fallback-to-jita zero), this is
+        // observability only.
+        if ($staleCount > 0) {
+            Log::warning("Mining Manager: {$staleCount} of " . count($typeIds) . " prices from Manager Core are older than " . self::MC_PRICE_STALENESS_HOURS . "h", [
+                'market' => $market,
+                'price_type' => $priceType,
+                'stale_sample_type_ids' => $staleSampleTypeIds,
+                'hint' => 'Check that the manager-core:update-prices cron is running. Default schedule: every 4 hours.',
+            ]);
         }
 
         return $prices;
+    }
+
+    /**
+     * Determine whether a Manager Core formatPriceStats array represents
+     * a price older than the staleness threshold.
+     *
+     * MC includes `updated_at` in every formatPriceStats output (Carbon
+     * instance or ISO string depending on serialization path). Defensively
+     * handle both shapes plus unparseable values (treat as not-stale to
+     * avoid false-positive log spam from edge cases).
+     *
+     * @param array  $stats              MC formatPriceStats output
+     * @param Carbon $stalenessThreshold Carbon time before which prices are stale
+     * @return bool
+     */
+    protected function isStatsStale(array $stats, Carbon $stalenessThreshold): bool
+    {
+        $updatedAt = $stats['updated_at'] ?? null;
+        if ($updatedAt === null) {
+            return false;
+        }
+
+        try {
+            $updatedAtCarbon = $updatedAt instanceof Carbon
+                ? $updatedAt
+                : Carbon::parse((string) $updatedAt);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return $updatedAtCarbon->lt($stalenessThreshold);
+    }
+
+    /**
+     * Pull the configured variant (min/max/avg/median/percentile) value out of
+     * an MC price-stats array. Single source of truth so both sides of the
+     * 'average' merge path use the same selector.
+     *
+     * @param array  $stats  MC formatPriceStats output
+     * @param string $variant
+     * @return float
+     */
+    protected function extractVariant(array $stats, string $variant): float
+    {
+        return match ($variant) {
+            'min' => (float) ($stats['min'] ?? 0),
+            'max' => (float) ($stats['max'] ?? 0),
+            'avg' => (float) ($stats['avg'] ?? 0),
+            'median' => (float) ($stats['median'] ?? 0),
+            'percentile' => (float) ($stats['percentile'] ?? 0),
+            default => (float) ($stats['min'] ?? 0),
+        };
+    }
+
+    /**
+     * MC's getPrice has a single-element collapse: when called with exactly one
+     * typeId (or a 1-element array) it returns the inner price shape rather
+     * than a [typeId => shape] keyed array. This makes consumers handle two
+     * different shapes for what should be a uniform contract.
+     *
+     * Insulate ourselves from that quirk: if the result shape isn't already
+     * keyed by typeId, re-wrap it so downstream code sees the consistent
+     * [typeId => shape] form.
+     *
+     * @param mixed $result   Raw return from pricing.getPrices
+     * @param int[] $typeIds  The typeIds we asked for (in order)
+     * @return array          [typeId => priceShape]
+     */
+    protected function normaliseBridgeGetPricesShape($result, array $typeIds): array
+    {
+        if (!is_array($result)) {
+            return [];
+        }
+
+        // Already typeId-keyed if every key is numeric and a member of $typeIds.
+        $typeIdSet = array_flip($typeIds);
+        $allKeysAreTypeIds = !empty($result) && array_reduce(
+            array_keys($result),
+            fn($carry, $key) => $carry && isset($typeIdSet[$key]),
+            true
+        );
+
+        if ($allKeysAreTypeIds) {
+            return $result;
+        }
+
+        // Single-element collapse case: the only typeId we asked for IS the
+        // entire result. Re-wrap.
+        if (count($typeIds) === 1) {
+            return [$typeIds[0] => $result];
+        }
+
+        // Unknown shape — log and return empty so callers fall back to zeros.
+        Log::warning('Mining Manager: pricing.getPrices returned unexpected shape', [
+            'sample_keys' => array_slice(array_keys($result), 0, 5),
+            'requested_count' => count($typeIds),
+        ]);
+        return [];
     }
 
     /**
@@ -498,6 +691,7 @@ class PriceProviderService
     protected function applyJitaFallback(string $provider, array $prices, array $typeIds): array
     {
         $this->lastJitaFallbackTypeIds = [];
+        $this->lastFallbackSummary = null;
 
         $pricingSettings = $this->settingsService->getPricingSettings();
         $fallbackEnabled = $pricingSettings['fallback_to_jita'] ?? true;
@@ -518,14 +712,34 @@ class PriceProviderService
             return $prices;
         }
 
-        // Find items that returned 0
+        // Find items that returned 0 from the primary provider
         $zeroTypeIds = array_keys(array_filter($prices, fn($price) => $price <= 0));
+        $zeroCount = count($zeroTypeIds);
 
-        if (empty($zeroTypeIds)) {
+        if ($zeroCount === 0) {
             return $prices;
         }
 
-        Log::info("Jita fallback: {$currentMarket} returned 0 for " . count($zeroTypeIds) . " items, retrying with Jita");
+        // STRUCTURED METRIC: fallback fire detected.
+        //
+        // One INFO log per dispatch with the full context an operator (or a
+        // log-aggregation tool — Loki/ELK/Splunk) needs to spot patterns.
+        // Sampling type_ids so the log line stays scannable but we keep
+        // some signal for "which moon ores are missing prices?" debugging.
+        $totalRequested = count($typeIds);
+        $zeroFraction = $totalRequested > 0 ? round($zeroCount / $totalRequested, 3) : 0;
+
+        Log::info('Mining Manager: Jita fallback dispatched', [
+            'provider' => $provider,
+            'configured_market' => $currentMarket,
+            'requested_count' => $totalRequested,
+            'zero_count' => $zeroCount,
+            'zero_fraction' => $zeroFraction,
+            'sample_zero_type_ids' => array_slice($zeroTypeIds, 0, 10),
+        ]);
+
+        $fallbackCount = 0;
+        $fallbackError = null;
 
         try {
             $jitaPrices = match ($provider) {
@@ -535,7 +749,6 @@ class PriceProviderService
                 default => [],
             };
 
-            $fallbackCount = 0;
             foreach ($jitaPrices as $typeId => $price) {
                 if ($price > 0 && ($prices[$typeId] ?? 0) <= 0) {
                     $prices[$typeId] = $price;
@@ -543,15 +756,75 @@ class PriceProviderService
                     $fallbackCount++;
                 }
             }
-
-            if ($fallbackCount > 0) {
-                Log::info("Jita fallback: recovered prices for {$fallbackCount} items");
-            }
         } catch (Exception $e) {
-            Log::warning('Jita fallback failed: ' . $e->getMessage());
+            $fallbackError = $e->getMessage();
+        }
+
+        $unrecoveredCount = $zeroCount - $fallbackCount;
+        $recoveryPct = $zeroCount > 0 ? round($fallbackCount / $zeroCount * 100, 1) : 0;
+
+        // STRUCTURED METRIC: fallback completion summary.
+        //
+        // Tracked as instance state too (lastFallbackSummary) so a future
+        // diagnostic page can read it without log scraping. Operators can
+        // pivot from "I see N Jita fallback events per hour" in their log
+        // tool to "what fraction was MC actually serving?" by computing
+        // (1 - fallback_summary.zero_fraction) over a window.
+        $this->lastFallbackSummary = [
+            'provider' => $provider,
+            'configured_market' => $currentMarket,
+            'requested_count' => $totalRequested,
+            'zero_count' => $zeroCount,
+            'fallback_recovered_count' => $fallbackCount,
+            'fallback_unrecovered_count' => $unrecoveredCount,
+            'recovery_pct' => $recoveryPct,
+            'fallback_error' => $fallbackError,
+            'timestamp' => Carbon::now()->toIso8601String(),
+        ];
+
+        // Log level reflects severity:
+        //   - Error during the fallback request → warning (operator should investigate the second provider too)
+        //   - Recovered <50% → warning (the primary provider is broken AND Jita can't fully cover)
+        //   - Otherwise → info (typical operating mode for non-Jita primary)
+        $logContext = $this->lastFallbackSummary;
+
+        if ($fallbackError !== null) {
+            Log::warning('Mining Manager: Jita fallback request failed', $logContext);
+        } elseif ($zeroCount > 0 && $recoveryPct < 50) {
+            Log::warning('Mining Manager: Jita fallback recovered <50% of missing prices', $logContext);
+        } elseif ($fallbackCount > 0) {
+            Log::info('Mining Manager: Jita fallback completed', $logContext);
         }
 
         return $prices;
+    }
+
+    /**
+     * Read-only accessor for the last fallback dispatch summary.
+     *
+     * Returns null when the most recent `getPrices()` call did NOT trigger
+     * a fallback (either fallback disabled, market already Jita, or no
+     * zero prices). When non-null, contains the same structured context
+     * emitted in the fallback completion log line — useful for a
+     * diagnostic / admin page that wants to surface fallback health
+     * without parsing logs.
+     *
+     * Schema:
+     *   provider                     string
+     *   configured_market            string
+     *   requested_count              int
+     *   zero_count                   int    (returned 0 from primary)
+     *   fallback_recovered_count     int    (Jita filled in)
+     *   fallback_unrecovered_count   int    (even Jita couldn't price)
+     *   recovery_pct                 float  (0-100, percent of zeros that Jita recovered)
+     *   fallback_error               ?string  (Jita request exception, if any)
+     *   timestamp                    string ISO 8601
+     *
+     * @return array|null
+     */
+    public function getLastFallbackSummary(): ?array
+    {
+        return $this->lastFallbackSummary;
     }
 
     /**
@@ -583,11 +856,24 @@ class PriceProviderService
     }
 
     /**
-     * Fetch Manager Core prices with a specific market override
+     * Fetch Manager Core prices with a specific market override.
      *
-     * @param array $typeIds
+     * Used by `applyJitaFallback` when the configured market returned 0 for
+     * some type IDs and we want to retry against Jita before falling back
+     * to local zeros.
+     *
+     * Pre-fix this called `DB::table('manager_core_market_prices')`
+     * directly — the H7b PluginBridge migration missed this overload and
+     * left it schema-coupled to MC's table layout. Now goes through
+     * `pricing.getPrices` like the primary path, with the same defensive
+     * shape-handling (single-element-collapse normalization, buy/sell vs
+     * inner-stats variant detection, sane fallback to zeros on bridge
+     * failure).
+     *
+     * @param array  $typeIds
      * @param string $market
-     * @return array
+     * @return array  [typeId => float]  prices keyed by type id, zeros for
+     *                                   anything the bridge couldn't price
      */
     protected function getPricesFromManagerCoreWithMarket(array $typeIds, string $market): array
     {
@@ -595,28 +881,60 @@ class PriceProviderService
             return [];
         }
 
+        if (empty($typeIds)) {
+            return [];
+        }
+
         $pricingSettings = $this->settingsService->getPricingSettings();
         $priceType = $pricingSettings['price_type'] ?? 'sell';
         $variant = $pricingSettings['manager_core_variant'] ?? 'min';
 
+        // The Jita-fallback path doesn't try to be clever about 'average'
+        // — if the user picked 'average', we just use sell-side here. This
+        // matches the pre-fix behaviour and keeps the second-provider call
+        // bounded. The primary `getPricesFromManagerCore` does proper
+        // buy+sell averaging.
+        $bridgePriceType = $priceType === 'average' ? 'sell' : $priceType;
+
+        try {
+            $bridge = app(\ManagerCore\Services\PluginBridge::class);
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: pricing.getPrices bridge call failed in Jita-fallback path; returning zeros', [
+                'error' => $e->getMessage(),
+                'count' => count($typeIds),
+                'market' => $market,
+            ]);
+            return array_fill_keys($typeIds, 0.0);
+        }
+
+        if ($rawResult === null) {
+            // Capability not registered (older MC) or call returned null.
+            // Fail safe with zeros so the caller doesn't accidentally treat
+            // null as a price.
+            Log::warning('Mining Manager: pricing.getPrices returned null in Jita-fallback path', [
+                'count' => count($typeIds),
+                'market' => $market,
+            ]);
+            return array_fill_keys($typeIds, 0.0);
+        }
+
+        $resultByType = $this->normaliseBridgeGetPricesShape($rawResult, $typeIds);
+
         $prices = [];
+        foreach ($typeIds as $typeId) {
+            $entry = $resultByType[$typeId] ?? null;
+            if ($entry === null) {
+                $prices[$typeId] = 0;
+                continue;
+            }
 
-        $marketPrices = DB::table('manager_core_market_prices')
-            ->whereIn('type_id', $typeIds)
-            ->where('market', $market)
-            ->where('price_type', $priceType === 'average' ? 'sell' : $priceType)
-            ->get();
+            // For priceType=buy/sell, MC returns the inner stats shape.
+            // For priceType=both, MC returns ['buy'=>..., 'sell'=>...].
+            $hasBuySell = is_array($entry) && (array_key_exists('buy', $entry) || array_key_exists('sell', $entry));
+            $stats = $hasBuySell ? ($entry[$bridgePriceType] ?? null) : $entry;
 
-        foreach ($marketPrices as $item) {
-            $price = match ($variant) {
-                'min' => (float) ($item->price_min ?? 0),
-                'max' => (float) ($item->price_max ?? 0),
-                'avg' => (float) ($item->price_avg ?? 0),
-                'median' => (float) ($item->price_median ?? 0),
-                'percentile' => (float) ($item->price_percentile ?? 0),
-                default => (float) ($item->price_min ?? 0),
-            };
-            $prices[$item->type_id] = $price;
+            $prices[$typeId] = $stats ? $this->extractVariant($stats, $variant) : 0;
         }
 
         return $prices;
@@ -635,7 +953,7 @@ class PriceProviderService
         $priceMethod = $pricingSettings['price_type'] ?? 'sell';
         $typeIdsString = implode(',', $typeIds);
 
-        $response = Http::get(self::FUZZWORK_MARKET_URL, [
+        $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
             'region' => $regionId,
             'types' => $typeIdsString,
         ]);
@@ -680,7 +998,7 @@ class PriceProviderService
      * @param string $market Market to subscribe to (default: jita)
      * @return int Number of type IDs subscribed
      */
-    public function subscribeToManagerCore(string $market = 'jita'): int
+    public function subscribeToManagerCore(string $market = 'jita', bool $immediateRefresh = true): int
     {
         if (!self::isManagerCoreInstalled()) {
             throw new Exception('Manager Core is not installed.');
@@ -688,10 +1006,51 @@ class PriceProviderService
 
         $typeIds = \MiningManager\Services\TypeIdRegistry::getTypeIdsByCategory('all');
 
-        $pricingService = app('ManagerCore\Services\PricingService');
-        $pricingService->registerTypes('mining-manager', $typeIds, $market);
+        // Cross-plugin call via the documented PluginBridge contract
+        // (pricing.subscribeTypes). Pre-fix this called PricingService directly
+        // via service-locator (`app('ManagerCore\Services\PricingService')`) —
+        // works today but bypasses the documented capability surface and ties
+        // us to MC's concrete class name. The bridge call is forward-compat
+        // friendly: MC can rename the underlying class, restructure the
+        // service container, or add an audit middleware to capabilities, and
+        // MM keeps working.
+        //
+        // $immediateRefresh forwards to MC's registerTypes 5th arg via the
+        // (recently-extended) capability lambda. true = MC dispatches a
+        // RefreshMarketPricesJob to populate prices via the queue; false =
+        // MC persists the subscription and lets its 4-hourly cron pick up
+        // new types. Boot path passes false to avoid dispatching a job on
+        // every PHP request.
+        $bridge = app(\ManagerCore\Services\PluginBridge::class);
+        $bridgeResult = $bridge->call('ManagerCore', 'pricing.subscribeTypes', 'mining-manager', $typeIds, $market, 1, $immediateRefresh);
 
-        Log::info('Mining Manager: Subscribed ' . count($typeIds) . " type IDs to Manager Core for market '{$market}'");
+        // PluginBridge::call() returns null when the capability isn't
+        // registered (older MC version pre-`8381cc1` that didn't plumb
+        // immediateRefresh through, or a much older MC that didn't ship
+        // the capability at all). Pre-fix we ignored the return value and
+        // logged "Subscribed N type IDs" even when nothing was persisted —
+        // operators saw success in logs while MC's table stayed empty.
+        if ($bridgeResult === null) {
+            Log::warning('Mining Manager: pricing.subscribeTypes capability returned null. MC may be on an older version. Falling back to direct service call.', [
+                'market' => $market,
+                'count' => count($typeIds),
+            ]);
+
+            // Fallback: legacy service-locator path. Older MC versions
+            // expose PricingService::registerTypes directly (the bridge
+            // capability is just a thin wrapper around it). This keeps
+            // the subscription path working during MM-ahead-of-MC upgrade
+            // windows.
+            try {
+                $pricingService = app('ManagerCore\\Services\\PricingService');
+                $pricingService->registerTypes('mining-manager', $typeIds, $market, 1, $immediateRefresh);
+            } catch (\Throwable $e) {
+                Log::warning('Mining Manager: Legacy registerTypes fallback also failed: ' . $e->getMessage());
+                return 0;
+            }
+        }
+
+        Log::info('Mining Manager: Subscribed ' . count($typeIds) . " type IDs to Manager Core for market '{$market}' (immediate_refresh=" . ($immediateRefresh ? 'true' : 'false') . ')');
 
         return count($typeIds);
     }
@@ -712,13 +1071,33 @@ class PriceProviderService
         }
 
         try {
-            $count = DB::table('manager_core_type_subscriptions')
-                ->where('plugin_name', 'mining-manager')
-                ->delete();
+            // Cross-plugin call via PluginBridge (pricing.unsubscribeTypes,
+            // added in MC commit dd50b94). Pre-fix this did a raw
+            // DB::table('manager_core_type_subscriptions')->delete() which
+            // bypassed the documented capability surface and tied us to the
+            // MC schema. Through the bridge: MC controls the deletion shape
+            // and can add audit/observer logic in future without breaking us.
+            //
+            // Passing market=null removes ALL of mining-manager's
+            // subscriptions across every market — matches the previous
+            // wholesale-delete behaviour. Returns the deleted row count
+            // (capability returns int from PricingService::unregisterTypes).
+            $bridge = app(\ManagerCore\Services\PluginBridge::class);
+            $count = $bridge->call('ManagerCore', 'pricing.unsubscribeTypes', 'mining-manager', null);
+
+            // Capability returns null when not registered (older MC version
+            // without H7a). Safe fallback: legacy direct-DB delete so an
+            // upgrade path that updates MM before MC still works.
+            if ($count === null) {
+                Log::info('Mining Manager: pricing.unsubscribeTypes capability not registered (older MC); falling back to direct DB delete');
+                $count = DB::table('manager_core_type_subscriptions')
+                    ->where('plugin_name', 'mining-manager')
+                    ->delete();
+            }
 
             Log::info("Mining Manager: Unsubscribed {$count} type IDs from Manager Core");
 
-            return $count;
+            return (int) $count;
         } catch (Exception $e) {
             Log::warning('Mining Manager: Failed to unsubscribe from Manager Core: ' . $e->getMessage());
             return 0;
@@ -809,13 +1188,30 @@ class PriceProviderService
     public function validateProviderConfig(string $provider): bool
     {
         $providers = $this->getAvailableProviders();
-        
+
         if (!isset($providers[$provider])) {
             return false;
         }
 
+        // Manager Core has no `config_fields` (its only requirement is that
+        // the MC plugin itself is installed), so the `requires_config`
+        // branch falls straight through to `return true` — even when MC
+        // isn't installed. That's an early-return false-positive: any
+        // pricing call that goes through this validator says "OK", then
+        // `getPricesFromManagerCore` throws "Manager Core is not installed."
+        // Callers see a confusing two-step failure (validator says config
+        // is fine, then the read explodes).
+        //
+        // Special-case MC: its real precondition is the class existence
+        // probe `isManagerCoreInstalled()`. If MC's PricingService class
+        // isn't autoloadable, the provider is invalid regardless of what
+        // the descriptor in `getAvailableProviders()` says.
+        if ($provider === self::PROVIDER_MANAGER_CORE) {
+            return self::isManagerCoreInstalled();
+        }
+
         $providerConfig = $providers[$provider];
-        
+
         if (!$providerConfig['requires_config']) {
             return true;
         }

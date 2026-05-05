@@ -17,6 +17,8 @@ use MiningManager\Http\Controllers\Traits\EnrichesCharacterData;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningLedgerDailySummary;
+use MiningManager\Models\EventMiningRecord;
+use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\TaxInvoice;
 use MiningManager\Models\TaxCode;
@@ -324,6 +326,27 @@ class TaxController extends Controller
 
         $features = $this->getFeatureFlags();
 
+        // Period context for the view — non-monthly setups need a visible
+        // indicator so directors know which period length the rows below
+        // represent. 'F Y' alone on the header is misleading when the
+        // plugin is running biweekly or weekly.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->getConfiguredPeriodType();
+        [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
+        $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
+
+        // For non-monthly setups, also compute "collected this period"
+        // (cash tied to the current active period specifically) so the
+        // director has a metric that tracks the period, not just the
+        // calendar month.
+        $collectedThisPeriod = null;
+        if ($periodType !== 'monthly') {
+            $collectedThisPeriod = $scopeSummary(
+                MiningTax::where('status', 'paid')
+                    ->where('period_start', $currentPeriodStart->toDateString())
+            )->sum('amount_paid');
+        }
+
         return view('mining-manager::taxes.index', compact(
             'taxes',
             'summary',
@@ -337,7 +360,12 @@ class TaxController extends Controller
             'isAdmin',
             'isDirector',
             'viewAll',
-            'features'
+            'features',
+            'periodType',
+            'currentPeriodLabel',
+            'currentPeriodStart',
+            'currentPeriodEnd',
+            'collectedThisPeriod'
         ));
     }
 
@@ -485,6 +513,66 @@ class TaxController extends Controller
             ->limit(100);
         $entries = $entryQuery->get();
 
+        // Prefetch event attribution for these ledger rows so the "Event Tax"
+        // column can show the actual per-row discount. Previously that column
+        // read $entry->event_tax_amount, which is a non-existent mining_ledger
+        // attribute — so every row showed 0 ISK regardless of event activity.
+        //
+        // Build a map keyed by (character_id, mining_date, type_id, solar_system_id)
+        // holding SUM(value_isk) of event-qualified mining and the best
+        // (most negative) modifier across any covering event. We only
+        // consider active/completed events with a NEGATIVE modifier —
+        // positive modifiers (tax increases) wouldn't produce a "discount"
+        // so leaving them out keeps the column's meaning consistent with
+        // the per-ore "saved X ISK" indicators elsewhere.
+        $eventAttribution = collect();
+        if ($entries->isNotEmpty()) {
+            $entryCharIds = $entries->pluck('character_id')->unique()->values()->all();
+            $entryDates = $entries->pluck('date')->map(function ($d) {
+                return Carbon::parse($d)->toDateString();
+            })->unique()->values()->all();
+
+            $eventAttribution = EventMiningRecord::query()
+                ->whereIn('event_mining_records.character_id', $entryCharIds)
+                ->whereIn('event_mining_records.mining_date', $entryDates)
+                ->join('mining_events', 'event_mining_records.event_id', '=', 'mining_events.id')
+                ->whereIn('mining_events.status', ['active', 'completed'])
+                ->where('mining_events.tax_modifier', '<', 0)
+                ->selectRaw('
+                    event_mining_records.character_id,
+                    event_mining_records.mining_date,
+                    event_mining_records.type_id,
+                    event_mining_records.solar_system_id,
+                    SUM(event_mining_records.value_isk) as qualified_value,
+                    MIN(mining_events.tax_modifier) as best_modifier
+                ')
+                ->groupBy(
+                    'event_mining_records.character_id',
+                    'event_mining_records.mining_date',
+                    'event_mining_records.type_id',
+                    'event_mining_records.solar_system_id'
+                )
+                ->get()
+                ->keyBy(function ($row) {
+                    // EventMiningRecord casts mining_date to 'date', so $row->mining_date
+                    // is a Carbon instance. Carbon's __toString returns a full datetime
+                    // "YYYY-MM-DD 00:00:00", but the entry-side lookup key uses
+                    // toDateString() → "YYYY-MM-DD". Force the map-side format too so
+                    // the keys actually match. (Without this cast, every entry's
+                    // attribution lookup misses and Event Tax column reads 0 for every row.)
+                    $miningDate = $row->mining_date instanceof \DateTimeInterface
+                        ? $row->mining_date->format('Y-m-d')
+                        : (string) $row->mining_date;
+
+                    return sprintf('%d|%s|%d|%d',
+                        $row->character_id,
+                        $miningDate,
+                        $row->type_id,
+                        $row->solar_system_id ?? 0
+                    );
+                });
+        }
+
         // Batch-resolve character names — use ALL character IDs (from full aggregation), not just from limited entries
         $allCharIds = $perCharacterTotals->keys()->toArray();
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($allCharIds);
@@ -529,13 +617,36 @@ class TaxController extends Controller
         }
 
         // Map entries with enriched data
-        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $accountGroups, $typeNames, $typeVolumes) {
+        $mappedEntries = $entries->map(function($entry) use ($charactersInfo, $accountGroups, $typeNames, $typeVolumes, $eventAttribution) {
             $charInfo = $charactersInfo[$entry->character_id] ?? null;
             $mainId = $charInfo['main_character_id'] ?? $entry->character_id;
 
             // Calculate volume from quantity * type volume (invTypes)
             $unitVolume = (float) ($typeVolumes[$entry->type_id] ?? 0);
             $totalVolume = $entry->quantity * $unitVolume;
+
+            // Per-row event tax discount: look up the event attribution
+            // for this ledger slice. qualified_value is capped at the
+            // entry's own total_value (event_mining_records values are
+            // frozen-in-time proportional allocations and can drift
+            // slightly from the ledger aggregate under reconciliation).
+            $attrKey = sprintf('%d|%s|%d|%d',
+                $entry->character_id,
+                Carbon::parse($entry->date)->toDateString(),
+                $entry->type_id,
+                $entry->solar_system_id ?? 0
+            );
+            $attribution = $eventAttribution->get($attrKey);
+
+            $eventTax = 0.0;
+            if ($attribution && $entry->tax_rate > 0) {
+                $qualifiedValue = min((float) $attribution->qualified_value, (float) $entry->total_value);
+                if ($qualifiedValue > 0) {
+                    $baseRate = (float) $entry->tax_rate;
+                    $modifiedRate = max(0, $baseRate * (1 + ((int) $attribution->best_modifier / 100)));
+                    $eventTax = $qualifiedValue * (($baseRate - $modifiedRate) / 100);
+                }
+            }
 
             return [
                 'date' => $entry->date,
@@ -552,7 +663,7 @@ class TaxController extends Controller
                 'volume' => $totalVolume,
                 'total_value' => (float) ($entry->total_value ?? 0),
                 'tax_amount' => (float) ($entry->tax_amount ?? 0),
-                'event_tax' => (float) ($entry->event_tax_amount ?? 0),
+                'event_tax' => round($eventTax, 2),
             ];
         })->toArray();
 
@@ -957,55 +1068,75 @@ class TaxController extends Controller
     public function markPaid(Request $request)
     {
         try {
-            $taxId = $request->input('tax_id');
-            $amountPaid = (float) $request->input('amount_paid');
-            $paymentDate = $request->input('payment_date', Carbon::now());
-            $notes = $request->input('notes');
+            // Validate up front. Pre-fix this read raw input via
+            // $request->input() and relied on findOrFail($taxId) for
+            // existence — non-numeric tax_id values fell through to MySQL
+            // with soft type coercion, garbage payment_date strings would
+            // throw deep inside Carbon::parse and bubble as 500. Now
+            // failures surface as a 422 with field-level errors.
+            $validated = $request->validate([
+                'tax_id' => 'required|integer|exists:mining_taxes,id',
+                'amount_paid' => 'required|numeric|min:0',
+                'payment_date' => 'nullable|date',
+                'notes' => 'nullable|string|max:1000',
+            ]);
 
-            $tax = MiningTax::findOrFail($taxId);
-
-            // Accumulate partial payments
-            $previouslyPaid = (float) ($tax->amount_paid ?? 0);
-            $totalPaid = $previouslyPaid + $amountPaid;
-
-            if ($totalPaid >= (float) $tax->amount_owed) {
-                $tax->status = 'paid';
-                $tax->amount_paid = $totalPaid;
-            } else {
-                $tax->status = 'partial';
-                $tax->amount_paid = $totalPaid;
-            }
-            $tax->paid_at = Carbon::parse($paymentDate);
+            $taxId = (int) $validated['tax_id'];
+            $amountPaid = (float) $validated['amount_paid'];
+            $paymentDate = $validated['payment_date'] ?? Carbon::now();
+            $notes = $validated['notes'] ?? null;
 
             $user = auth()->user();
             $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
-            // Append payment note to existing notes
-            $paymentNote = "Marked as paid by {$userName} on " . Carbon::now()->format('Y-m-d H:i');
-            $paymentNote .= " — " . number_format($amountPaid, 0) . " ISK";
-            if ($previouslyPaid > 0) {
-                $paymentNote .= " (cumulative: " . number_format($totalPaid, 0) . " ISK)";
-            }
-            if ($notes) {
-                $paymentNote .= "\nReason: {$notes}";
-            }
-            $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $paymentNote : $paymentNote;
-            $tax->save();
+            // Wrap mining_taxes update + tax_codes update atomically so a partial
+            // failure can't leave active tax codes after a tax row is marked paid
+            // (which would cause the wallet listener to double-process).
+            $result = DB::transaction(function () use ($taxId, $amountPaid, $paymentDate, $notes, $userName) {
+                $tax = MiningTax::findOrFail($taxId);
 
-            // Mark any active tax codes as used to prevent wallet listener from double-processing
-            if ($tax->status === 'paid') {
-                $tax->taxCodes()->where('status', 'active')->update([
-                    'status' => 'used',
-                    'used_at' => Carbon::now(),
-                    'notes' => "Manually marked paid by {$userName}",
-                ]);
-            }
+                // Accumulate partial payments
+                $previouslyPaid = (float) ($tax->amount_paid ?? 0);
+                $totalPaid = $previouslyPaid + $amountPaid;
+
+                if ($totalPaid >= (float) $tax->amount_owed) {
+                    $tax->status = 'paid';
+                    $tax->amount_paid = $totalPaid;
+                } else {
+                    $tax->status = 'partial';
+                    $tax->amount_paid = $totalPaid;
+                }
+                $tax->paid_at = Carbon::parse($paymentDate);
+
+                // Append payment note to existing notes
+                $paymentNote = "Marked as paid by {$userName} on " . Carbon::now()->format('Y-m-d H:i');
+                $paymentNote .= " — " . number_format($amountPaid, 0) . " ISK";
+                if ($previouslyPaid > 0) {
+                    $paymentNote .= " (cumulative: " . number_format($totalPaid, 0) . " ISK)";
+                }
+                if ($notes) {
+                    $paymentNote .= "\nReason: {$notes}";
+                }
+                $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $paymentNote : $paymentNote;
+                $tax->save();
+
+                // Mark any active tax codes as used to prevent wallet listener from double-processing
+                if ($tax->status === 'paid') {
+                    $tax->taxCodes()->where('status', 'active')->update([
+                        'status' => 'used',
+                        'used_at' => Carbon::now(),
+                        'notes' => "Manually marked paid by {$userName}",
+                    ]);
+                }
+
+                return ['tax' => $tax, 'total_paid' => $totalPaid];
+            });
 
             Log::info('Tax manually marked as paid', [
                 'tax_id' => $taxId,
                 'amount' => $amountPaid,
-                'total_paid' => $totalPaid,
-                'status' => $tax->status,
+                'total_paid' => $result['total_paid'],
+                'status' => $result['tax']->status,
                 'marked_by' => $userName,
                 'notes' => $notes,
             ]);
@@ -1125,7 +1256,13 @@ class TaxController extends Controller
     public function sendReminder(Request $request)
     {
         try {
-            $taxId = $request->input('tax_id');
+            // Validate up front for parity with markPaid. Pre-fix
+            // non-integer tax_id fell through to MySQL with soft cast.
+            $validated = $request->validate([
+                'tax_id' => 'required|integer|exists:mining_taxes,id',
+            ]);
+
+            $taxId = (int) $validated['tax_id'];
             $tax = MiningTax::findOrFail($taxId);
 
             $dueDate = $tax->due_date ? Carbon::parse($tax->due_date) : Carbon::now();
@@ -1313,6 +1450,13 @@ class TaxController extends Controller
         $paymentMethod = $this->settingsService->getPaymentSettings()['method'];
 
         if (empty($characterIds)) {
+            // Even on the empty-state branch, resolve period metadata so
+            // the view's period-aware labels render sensibly instead of
+            // defaulting to "F Y".
+            $periodHelperEmpty = app(TaxPeriodHelper::class);
+            $periodTypeEmpty = $periodHelperEmpty->getConfiguredPeriodType();
+            [$periodStartEmpty, $periodEndEmpty] = $periodHelperEmpty->getPeriodBounds(Carbon::now(), $periodTypeEmpty);
+
             return view('mining-manager::taxes.my-taxes', [
                 'taxHistory' => collect(),
                 'summary' => [
@@ -1323,6 +1467,11 @@ class TaxController extends Controller
                     'overdue_count' => 0,
                 ],
                 'currentTax' => null,
+                'unpaidTaxes' => collect(),
+                'periodType' => $periodTypeEmpty,
+                'currentPeriodStart' => $periodStartEmpty,
+                'currentPeriodEnd' => $periodEndEmpty,
+                'currentPeriodLabel' => $periodHelperEmpty->formatPeriod($periodStartEmpty, $periodEndEmpty, $periodTypeEmpty),
                 'totalTaxPaid' => 0,
                 'onTimePayments' => 0,
                 'latePayments' => 0,
@@ -1401,15 +1550,53 @@ class TaxController extends Controller
             'overdue_count' => $overdueCount,
         ];
 
-        // Get current month's tax for display
-        $currentMonth = Carbon::now()->startOfMonth()->format('Y-m-01');
+        // Resolve the configured tax period (monthly / biweekly / weekly)
+        // and compute bounds for the CURRENT active period. The prior code
+        // assumed monthly and queried ->where('month', $firstOfMonth)->first(),
+        // which returned a non-deterministic row whenever two bi-weekly or
+        // four weekly tax rows existed for the same calendar month. Now we
+        // target the precise period the user is currently accumulating tax
+        // in via period_start / period_end.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->getConfiguredPeriodType();
+        [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
+        $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
+
+        // Pull the tax row that matches the current active period (may not
+        // exist yet — taxes are calculated after the period ends). Fall back
+        // to the most-recent UNPAID tax so the user sees a meaningful balance
+        // card when the current period hasn't been invoiced yet.
         $currentTax = MiningTax::with(['character', 'taxCodes'])
             ->whereIn('character_id', $taxCharacterIds)
-            ->where('month', $currentMonth)
+            ->where('period_start', $currentPeriodStart->toDateString())
             ->first();
 
-        // Get current month mining breakdown per character, per ore type
-        $currentMonthBreakdown = $this->getMyTaxBreakdownData($characterIds, Carbon::now()->startOfMonth());
+        if (!$currentTax) {
+            $currentTax = MiningTax::with(['character', 'taxCodes'])
+                ->whereIn('character_id', $taxCharacterIds)
+                ->whereIn('status', ['unpaid', 'overdue'])
+                ->orderBy('due_date', 'asc')
+                ->first();
+        }
+
+        // All unpaid/overdue taxes — used by the view to stack multiple
+        // period rows (bi-weekly with both halves unpaid, weekly with
+        // multiple open weeks, etc.) rather than silently showing only one.
+        $unpaidTaxes = MiningTax::with(['character', 'taxCodes'])
+            ->whereIn('character_id', $taxCharacterIds)
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->orderBy('due_date', 'asc')
+            ->get();
+
+        // Mining breakdown scoped to the current active period, so the
+        // "Mining Breakdown - {period}" section matches the tax row it's
+        // sitting next to. On bi-weekly this is half a calendar month;
+        // on weekly it's a single ISO week.
+        $currentMonthBreakdown = $this->getMyTaxBreakdownData(
+            $characterIds,
+            $currentPeriodStart,
+            $currentPeriodEnd
+        );
 
         // Get payment statistics (all time)
         $totalTaxPaid = MiningTax::whereIn('character_id', $taxCharacterIds)
@@ -1451,6 +1638,11 @@ class TaxController extends Controller
             'taxHistory',
             'summary',
             'currentTax',
+            'unpaidTaxes',
+            'periodType',
+            'currentPeriodStart',
+            'currentPeriodEnd',
+            'currentPeriodLabel',
             'totalTaxPaid',
             'onTimePayments',
             'latePayments',
@@ -1472,16 +1664,21 @@ class TaxController extends Controller
     }
 
     /**
-     * Get mining breakdown data for a user's characters for a given month.
+     * Get mining breakdown data for a user's characters across a date range.
+     *
+     * Accepts precise bounds so callers can pass any tax period — monthly,
+     * bi-weekly, or weekly — without leaking calendar-month assumptions
+     * into the aggregation. (Previously only took a month; bi-weekly
+     * callers ended up aggregating the whole calendar month regardless
+     * of the actual period being displayed.)
      *
      * @param array $characterIds
-     * @param Carbon $month
+     * @param Carbon $startDate Inclusive start of the period
+     * @param Carbon $endDate   Inclusive end of the period
      * @return array Grouped by character_id
      */
-    protected function getMyTaxBreakdownData(array $characterIds, Carbon $month): array
+    protected function getMyTaxBreakdownData(array $characterIds, Carbon $startDate, Carbon $endDate): array
     {
-        $startDate = $month->copy()->startOfMonth();
-        $endDate = $month->copy()->endOfMonth();
         $breakdowns = [];
 
         foreach ($characterIds as $characterId) {
@@ -1495,6 +1692,7 @@ class TaxController extends Controller
                         'breakdown' => $breakdown['breakdown'],
                         'total_value' => $breakdown['total_value'],
                         'total_tax' => $breakdown['total_tax'],
+                        'event_discount_total' => $breakdown['event_discount_total'] ?? 0,
                     ];
                 }
             } catch (\Exception $e) {
@@ -1521,13 +1719,32 @@ class TaxController extends Controller
             return response()->json(['status' => 'success', 'data' => []]);
         }
 
-        $monthDate = $month ? Carbon::parse($month)->startOfMonth() : Carbon::now()->startOfMonth();
-        $breakdowns = $this->getMyTaxBreakdownData($characterIds, $monthDate);
+        // The {$month} route parameter continues to accept a YYYY-MM string
+        // for backward compatibility — we derive the configured period's
+        // bounds for that month. If omitted, we return the current active
+        // period (not the whole calendar month) so bi-weekly/weekly calls
+        // get a meaningful slice.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->getConfiguredPeriodType();
+
+        if ($month) {
+            $anchor = Carbon::parse($month);
+        } else {
+            $anchor = Carbon::now();
+        }
+
+        [$periodStart, $periodEnd] = $periodHelper->getPeriodBounds($anchor, $periodType);
+        $breakdowns = $this->getMyTaxBreakdownData($characterIds, $periodStart, $periodEnd);
 
         return response()->json([
             'status' => 'success',
             'data' => $breakdowns,
-            'month' => $monthDate->format('F Y'),
+            'period_type' => $periodType,
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
+            'period_label' => $periodHelper->formatPeriod($periodStart, $periodEnd, $periodType),
+            // Legacy field kept for any callers still reading this key.
+            'month' => $anchor->format('F Y'),
         ]);
     }
 
@@ -1856,20 +2073,23 @@ class TaxController extends Controller
     public function dismissTransaction(Request $request)
     {
         try {
-            $transactionId = $request->input('transaction_id');
+            // Validate up front. Pre-fix any integer was accepted, even
+            // ones that didn't correspond to a real wallet journal entry,
+            // letting an admin (or compromised admin token) stuff the
+            // dismissal table with bogus IDs (storage waste). Existence
+            // check confirms the row is real before we permanently
+            // dismiss it.
+            $validated = $request->validate([
+                'transaction_id' => 'required|integer|exists:corporation_wallet_journals,id',
+            ]);
 
-            if (!$transactionId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No transaction ID provided',
-                ], 400);
-            }
+            $transactionId = (int) $validated['transaction_id'];
 
             $user = auth()->user();
             $dismissedBy = $user->main_character_id ?? $user->id;
 
             DB::table('mining_manager_dismissed_transactions')->updateOrInsert(
-                ['transaction_id' => (int) $transactionId],
+                ['transaction_id' => $transactionId],
                 [
                     'dismissed_by' => $dismissedBy,
                     'dismissed_at' => Carbon::now(),
@@ -2080,27 +2300,35 @@ class TaxController extends Controller
                 'status' => 'required|in:unpaid,paid,overdue,exempted',
             ]);
 
-            $tax = MiningTax::findOrFail($id);
-            $oldStatus = $tax->status;
-            $tax->status = $validated['status'];
+            $userName = auth()->user()->main_character->name ?? auth()->user()->name ?? 'Unknown';
 
-            // If marking as paid, set payment date and deactivate tax codes
-            if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
-                $tax->paid_at = Carbon::now();
-                $tax->amount_paid = $tax->amount_owed;
-            }
+            // Wrap mining_taxes update + tax_codes update atomically so a partial
+            // failure can't leave active tax codes after a tax row is marked paid
+            // (which would cause the wallet listener to double-process).
+            $oldStatus = DB::transaction(function () use ($id, $validated, $userName) {
+                $tax = MiningTax::findOrFail($id);
+                $oldStatus = $tax->status;
+                $tax->status = $validated['status'];
 
-            $tax->save();
+                // If marking as paid, set payment date and deactivate tax codes
+                if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
+                    $tax->paid_at = Carbon::now();
+                    $tax->amount_paid = $tax->amount_owed;
+                }
 
-            // When changing to paid, mark active tax codes as used
-            if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
-                $userName = auth()->user()->main_character->name ?? auth()->user()->name ?? 'Unknown';
-                $tax->taxCodes()->where('status', 'active')->update([
-                    'status' => 'used',
-                    'used_at' => Carbon::now(),
-                    'notes' => "Status changed to paid by {$userName}",
-                ]);
-            }
+                $tax->save();
+
+                // When changing to paid, mark active tax codes as used
+                if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
+                    $tax->taxCodes()->where('status', 'active')->update([
+                        'status' => 'used',
+                        'used_at' => Carbon::now(),
+                        'notes' => "Status changed to paid by {$userName}",
+                    ]);
+                }
+
+                return $oldStatus;
+            });
 
             Log::info('Tax status updated', [
                 'tax_id' => $id,

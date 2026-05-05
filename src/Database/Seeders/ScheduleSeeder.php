@@ -2,32 +2,36 @@
 
 namespace MiningManager\Database\Seeders;
 
-use Illuminate\Support\Facades\DB;
 use Seat\Services\Seeding\AbstractScheduleSeeder;
 
+/**
+ * SeAT v5 schedule seeder for Mining Manager's cron commands.
+ *
+ * Inherits the canonical `firstOrCreate` semantics from
+ * `AbstractScheduleSeeder::run()`: NEW installs get every schedule from
+ * `getSchedules()` inserted into `schedules`; existing installs keep
+ * whatever's already there. This is the pattern every SeAT plugin uses.
+ *
+ * Why we don't override `run()` to force-update existing rows:
+ *   - The schedules table is part of the operator's control surface.
+ *     Operators routinely customise cron expressions for their install
+ *     (different timezone, less aggressive ESI rate, paused commands by
+ *     setting expression='', etc.). Forcibly overwriting those on every
+ *     plugin boot is user-hostile and contrary to SeAT conventions.
+ *   - `AbstractScheduleSeeder` is explicit about the no-reconciliation
+ *     contract — see `reference_seat_v5_scheduling.md` in project memory.
+ *
+ * For deprecation (renaming/removing a command), use
+ * `getDeprecatedSchedules()` below — `AbstractScheduleSeeder::run()`
+ * deletes those rows during the seed pass.
+ *
+ * For changing an existing command's cron expression in a future release:
+ * the canonical pattern is "old → deprecated, new → fresh insert" via the
+ * two methods. The plugin SHOULD NOT silently rewrite cron rows that an
+ * operator may have intentionally customised.
+ */
 class ScheduleSeeder extends AbstractScheduleSeeder
 {
-    /**
-     * Override parent run() to update existing schedule expressions.
-     * AbstractScheduleSeeder only inserts new commands and skips existing ones,
-     * so changed cron expressions never get applied.
-     */
-    public function run(): void
-    {
-        foreach ($this->getSchedules() as $job) {
-            DB::table('schedules')->updateOrInsert(
-                ['command' => $job['command']],
-                $job
-            );
-        }
-
-        // Remove deprecated commands
-        $deprecated = $this->getDeprecatedSchedules();
-        if (! empty($deprecated)) {
-            DB::table('schedules')->whereIn('command', $deprecated)->delete();
-        }
-    }
-
     /**
      * Returns a list of schedules to be added to the schedule table.
      *

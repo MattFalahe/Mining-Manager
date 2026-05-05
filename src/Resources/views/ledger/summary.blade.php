@@ -218,6 +218,12 @@
                                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_tax') }}</span>
                                     <span class="info-box-number">{{ number_format($totals['total_tax'], 0) }}</span>
                                     <small>ISK</small>
+                                    @if(!empty($totals['event_discount_total']) && $totals['event_discount_total'] > 0)
+                                        <small class="d-block text-light" title="ISK waived this month due to active event modifiers. Already included in total_tax — shown here for transparency.">
+                                            <i class="fas fa-gift"></i>
+                                            incl. &minus;{{ number_format($totals['event_discount_total'], 0) }} ISK event discount
+                                        </small>
+                                    @endif
                                 </div>
                             </div>
                         </div>

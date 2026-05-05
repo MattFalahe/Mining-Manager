@@ -15,13 +15,13 @@ class CalculateMonthlyTaxesCommand extends Command
     protected $signature = 'mining-manager:calculate-taxes
                             {--month= : Month to calculate (YYYY-MM format, monthly period only)}
                             {--period-start= : Period start date (YYYY-MM-DD, for any period type)}
-                            {--period-type= : Override period type (monthly|biweekly|weekly)}
+                            {--period-type= : Override period type (monthly|biweekly; "weekly" is accepted but silently maps to monthly — legacy)}
                             {--character_id= : Calculate for specific character}
                             {--corporation_id= : Calculate for specific structure-owner corporation}
                             {--recalculate : Recalculate existing tax records}
                             {--force : Run even if today is not a period boundary}';
 
-    protected $description = 'Calculate mining taxes based on configured period (monthly, biweekly, or weekly)';
+    protected $description = 'Calculate mining taxes based on configured period (monthly or biweekly)';
 
     protected TaxCalculationService $taxService;
     protected SettingsManagerService $settingsService;

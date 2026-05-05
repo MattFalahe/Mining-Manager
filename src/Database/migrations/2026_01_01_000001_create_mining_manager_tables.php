@@ -119,7 +119,17 @@ class CreateMiningManagerTables extends Migration
             $table->timestamps();
             $table->softDeletes();
 
-            // Unique constraint to prevent duplicate entries
+            // Unique constraint to prevent duplicate entries.
+            //
+            // Known limitation: observer_id is nullable, and MySQL treats
+            // NULL as distinct from NULL in unique constraints (so two rows
+            // with observer_id=NULL don't conflict with each other). In
+            // practice this matters for rows imported from ESI personal
+            // mining ledger (which has no observer) vs rows from ESI
+            // observer data (which does). Different data sources → rare
+            // overlap. If duplicate-observer-NULL rows ever surface at
+            // scale, migrate to a generated-column unique that COALESCEs
+            // observer_id to 0 (requires MySQL 8+).
             $table->unique(
                 ['character_id', 'date', 'type_id', 'solar_system_id', 'observer_id'],
                 'unique_mining_entry'

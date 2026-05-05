@@ -221,6 +221,10 @@
                                             <span class="badge badge-info">{{ trans('mining-manager::ledger.ice') }}</span>
                                         @elseif($entry->is_gas)
                                             <span class="badge badge-success">{{ trans('mining-manager::ledger.gas') }}</span>
+                                        @elseif($entry->is_abyssal)
+                                            <span class="badge badge-danger">{{ trans('mining-manager::ledger.abyssal') }}</span>
+                                        @elseif($entry->is_triglavian)
+                                            <span class="badge badge-dark">{{ trans('mining-manager::ledger.triglavian') }}</span>
                                         @else
                                             <span class="badge badge-secondary">{{ trans('mining-manager::ledger.regular_ore') }}</span>
                                         @endif

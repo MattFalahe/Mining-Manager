@@ -59,13 +59,32 @@ class EventManagementService
         $completed = 0;
 
         // 1. planned → active (start_time has passed)
+        //
+        // ATOMIC CLAIM via compare-and-swap. Pre-fix: the cron read
+        // status='planned' rows then `$event->update(['status' => 'active'])`
+        // unconditionally. Manual start path (EventController::start) had
+        // the same shape — a director clicking "Start" the same minute the
+        // cron fires both passed their respective reads + writes, both
+        // dispatched event_started. Now: UPDATE WHERE status='planned'
+        // returns the count of rows updated. Only the path that flips
+        // planned→active gets back claimed=1 and proceeds to dispatch.
         $shouldStart = MiningEvent::where('status', 'planned')
             ->where('start_time', '<=', $now)
             ->get();
 
         foreach ($shouldStart as $event) {
             try {
-                $event->update(['status' => 'active']);
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', 'planned')
+                    ->update(['status' => 'active']);
+
+                if ($claimed === 0) {
+                    // Lost the race to a parallel manual start. Already-active
+                    // event would have fired its own notification on whichever
+                    // path won; skipping ours avoids the duplicate ping.
+                    Log::debug("Mining Manager: Event {$event->id} no longer planned at claim time; skipping cron start (already started by another path)");
+                    continue;
+                }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-started");
 
@@ -84,6 +103,10 @@ class EventManagementService
         }
 
         // 2. active → completed (end_time has passed)
+        //
+        // Same CAS pattern — UPDATE WHERE status='active' guarantees only one
+        // path (cron auto-complete OR manual EventController::complete) flips
+        // active→completed and fires the notification.
         $shouldComplete = MiningEvent::where('status', 'active')
             ->whereNotNull('end_time')
             ->where('end_time', '<=', $now)
@@ -98,9 +121,14 @@ class EventManagementService
                     Log::warning("Mining Manager: Final tracking update failed for event {$event->id}: " . $e->getMessage());
                 }
 
-                $event->update([
-                    'status' => 'completed',
-                ]);
+                $claimed = MiningEvent::where('id', $event->id)
+                    ->where('status', 'active')
+                    ->update(['status' => 'completed']);
+
+                if ($claimed === 0) {
+                    Log::debug("Mining Manager: Event {$event->id} no longer active at claim time; skipping cron complete (already completed by another path)");
+                    continue;
+                }
 
                 Log::info("Mining Manager: Event '{$event->name}' (id={$event->id}) auto-completed");
 

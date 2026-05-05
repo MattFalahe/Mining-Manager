@@ -413,6 +413,7 @@ class LedgerController extends Controller
                 SUM(total_quantity) as total_quantity,
                 SUM(total_value) as total_value,
                 SUM(total_tax) as total_tax,
+                SUM(event_discount_total) as event_discount_total,
                 COUNT(DISTINCT date) as active_days,
                 MAX(total_value) as best_day_value
             ')
@@ -464,6 +465,13 @@ class LedgerController extends Controller
         // Use authoritative tax_owed if available, otherwise fall back to estimated
         $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
 
+        // All-time event tax savings — every discount the user has accrued
+        // from event participation, across all events the daily summaries
+        // have seen. Cheap one-column sum from mining_ledger_daily_summaries.
+        $eventSavingsAllTime = $this->summaryService->getTotalEventSavings(
+            is_array($characterIds) ? $characterIds : $characterIds->toArray()
+        );
+
         return [
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
@@ -476,6 +484,8 @@ class LedgerController extends Controller
             'total_tax_owed' => $effectiveTaxOwed,
             'total_tax_paid' => $paidTaxAmount,
             'tax_outstanding' => max(0, $effectiveTaxOwed - $paidTaxAmount),
+            'event_discount_total' => (float) ($agg->event_discount_total ?? 0),
+            'event_savings_all_time' => $eventSavingsAllTime,
             'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
             'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
@@ -610,6 +620,8 @@ class LedgerController extends Controller
             'total_tax_owed' => 0,
             'total_tax_paid' => 0,
             'tax_outstanding' => 0,
+            'event_discount_total' => 0,
+            'event_savings_all_time' => 0,
             'mining_days' => 0,
             'favorite_ore' => [
                 'name' => trans('mining-manager::ledger.no_data'),
@@ -775,6 +787,21 @@ class LedgerController extends Controller
         $entry = MiningLedger::with(['character.user', 'solarSystem', 'type'])
             ->findOrFail($id);
 
+        // Authorization: route is gated by mining-manager.member, but the
+        // permission only checks the user is *some* member — not that this
+        // particular ledger row belongs to a character they're allowed to
+        // see. Without this check, a member can iterate $id values and view
+        // any character's per-row mining (system, ore, value, tax). Other
+        // character-scoped endpoints in this controller (showCharacterDetails,
+        // getCharacterDailySummary, getDetailedEntries, getCharacterSystemDetails)
+        // all call canViewCharacter() — this one was the lone outlier.
+        // canViewCharacter() returns true for directors/admins (they can
+        // view everyone) and for members iff the character is one of their
+        // own SeAT-linked characters.
+        if (!$this->canViewCharacter($entry->character_id)) {
+            abort(403, 'You do not have permission to view this character.');
+        }
+
         // Get related tax record if exists
         $taxRecord = MiningTax::where('character_id', $entry->character_id)
             ->whereYear('month', Carbon::parse($entry->date)->year)
@@ -881,11 +908,18 @@ class LedgerController extends Controller
             $query->whereIn('id', $entryIds);
         }
 
-        $entries = $query->orderBy('date', 'desc')->limit(10000)->get();
-
         $filename = 'mining_ledger_' . now()->format('Y-m-d_His') . '.csv';
 
-        return response()->streamDownload(function () use ($entries) {
+        // Stream the export in chunks so memory stays bounded regardless of
+        // dataset size. Previously this loaded up to 10,000 rows into PHP
+        // memory at once via ->limit(10000)->get() — fine for small corps,
+        // but a 100-character active corp could OOM the request.
+        //
+        // chunkByIdDesc uses cursor pagination (WHERE id < last_id LIMIT 500)
+        // which is stable across the iteration even if rows are inserted
+        // mid-stream. Relations specified by with() are eager-loaded per
+        // chunk, so no N+1.
+        return response()->streamDownload(function () use ($query) {
             $handle = fopen('php://output', 'w');
 
             // CSV Headers
@@ -901,20 +935,21 @@ class LedgerController extends Controller
                 'Tax Amount',
             ]);
 
-            // CSV Rows
-            foreach ($entries as $entry) {
-                fputcsv($handle, [
-                    Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
-                    $entry->character->name ?? 'Unknown',
-                    $entry->type->name ?? 'Unknown',
-                    $entry->solarSystem->name ?? 'Unknown',
-                    number_format($entry->quantity, 2),
-                    number_format($entry->price, 2),
-                    number_format($entry->total_value, 2),
-                    number_format($entry->tax_rate, 2) . '%',
-                    number_format($entry->tax_amount, 2),
-                ]);
-            }
+            $query->chunkByIdDesc(500, function ($entries) use ($handle) {
+                foreach ($entries as $entry) {
+                    fputcsv($handle, [
+                        Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
+                        $entry->character->name ?? 'Unknown',
+                        $entry->type->name ?? 'Unknown',
+                        $entry->solarSystem->name ?? 'Unknown',
+                        number_format($entry->quantity, 2),
+                        number_format($entry->price, 2),
+                        number_format($entry->total_value, 2),
+                        number_format($entry->tax_rate, 2) . '%',
+                        number_format($entry->tax_amount, 2),
+                    ]);
+                }
+            });
 
             fclose($handle);
         }, $filename, [
@@ -946,11 +981,10 @@ class LedgerController extends Controller
             $query->where('date', '<=', $request->input('end_date'));
         }
 
-        $entries = $query->orderBy('date', 'desc')->limit(10000)->get();
-
         $filename = 'my_mining_' . now()->format('Y-m-d_His') . '.csv';
 
-        return response()->streamDownload(function () use ($entries) {
+        // Stream in chunks — same rationale as exportLedger above.
+        return response()->streamDownload(function () use ($query) {
             $handle = fopen('php://output', 'w');
 
             // CSV Headers
@@ -966,20 +1000,21 @@ class LedgerController extends Controller
                 'Tax Amount',
             ]);
 
-            // CSV Rows
-            foreach ($entries as $entry) {
-                fputcsv($handle, [
-                    Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
-                    $entry->character->name ?? 'Unknown',
-                    $entry->type->name ?? 'Unknown',
-                    $entry->solarSystem->name ?? 'Unknown',
-                    number_format($entry->quantity, 2),
-                    number_format($entry->price, 2),
-                    number_format($entry->total_value, 2),
-                    number_format($entry->tax_rate, 2) . '%',
-                    number_format($entry->tax_amount, 2),
-                ]);
-            }
+            $query->chunkByIdDesc(500, function ($entries) use ($handle) {
+                foreach ($entries as $entry) {
+                    fputcsv($handle, [
+                        Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
+                        $entry->character->name ?? 'Unknown',
+                        $entry->type->name ?? 'Unknown',
+                        $entry->solarSystem->name ?? 'Unknown',
+                        number_format($entry->quantity, 2),
+                        number_format($entry->price, 2),
+                        number_format($entry->total_value, 2),
+                        number_format($entry->tax_rate, 2) . '%',
+                        number_format($entry->tax_amount, 2),
+                    ]);
+                }
+            });
 
             fclose($handle);
         }, $filename, [
@@ -1046,6 +1081,7 @@ class LedgerController extends Controller
         $totals = [
             'total_value' => $summaries->sum('total_value'),
             'total_tax' => $summaries->sum('total_tax'),
+            'event_discount_total' => $summaries->sum('event_discount_total'),
             'total_quantity' => $summaries->sum('total_quantity'),
             'total_volume_m3' => $summaries->sum('total_volume_m3'),
             'moon_ore_value' => $summaries->sum('moon_ore_value'),

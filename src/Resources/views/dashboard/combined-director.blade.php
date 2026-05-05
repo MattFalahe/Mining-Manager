@@ -609,6 +609,15 @@
                                 </div>
 
                                 {{-- CORPORATION CHARTS ROW 3: Tax + Event Tax --}}
+                                @php
+                                    // Read period type once for the chart footnotes below.
+                                    // Tax-related 12-month charts always aggregate by calendar
+                                    // month (x-axis labels are YYYY-MM). On biweekly setups
+                                    // that means both H1 and H2 tax rows contribute to the
+                                    // same month bar — which is correct, but worth calling
+                                    // out so directors know what they're seeing.
+                                    $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+                                @endphp
                                 <div class="row">
                                     <div class="col-lg-6">
                                         <div class="card card-dark">
@@ -618,6 +627,12 @@
                                             <div class="card-body">
                                                 <canvas id="corpTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                                 <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_tax') }}</small>
+                                                @if($__chartPeriodType !== 'monthly')
+                                                    <small class="text-muted d-block mt-1"><i class="fas fa-calendar-alt"></i>
+                                                        <strong>{{ ucfirst($__chartPeriodType) }} setup:</strong>
+                                                        both periods within each calendar month are summed into that month's bar.
+                                                    </small>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -629,6 +644,12 @@
                                             <div class="card-body">
                                                 <canvas id="corpEventTaxChart" style="min-height: 300px; height: 300px; max-height: 300px; max-width: 100%;"></canvas>
                                                 <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_corp_event_tax') }}</small>
+                                                @if($__chartPeriodType !== 'monthly')
+                                                    <small class="text-muted d-block mt-1"><i class="fas fa-calendar-alt"></i>
+                                                        <strong>{{ ucfirst($__chartPeriodType) }} setup:</strong>
+                                                        event discounts from all periods within each calendar month are summed into that month's bar.
+                                                    </small>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>

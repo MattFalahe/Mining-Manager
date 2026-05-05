@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use Carbon\Carbon;
@@ -52,120 +53,130 @@ class RecalculateExtractionValuesCommand extends Command
      */
     public function handle()
     {
-        $hours = $this->option('hours');
-        $force = $this->option('force');
-
-        $this->info("Mining Manager: Recalculating extraction values for chunks arriving within {$hours} hours...");
-
-        // Find extractions arriving soon
-        $now = Carbon::now();
-        $futureWindow = $now->copy()->addHours($hours);
-
-        $extractions = MoonExtraction::where('chunk_arrival_time', '>=', $now)
-            ->where('chunk_arrival_time', '<=', $futureWindow)
-            ->where('status', 'extracting')
-            ->whereNotNull('ore_composition')
-            ->get();
-
-        if ($extractions->isEmpty()) {
-            $this->info("No extractions found arriving within {$hours} hours");
-            return 0;
+        $lock = Cache::lock('mining-manager:recalculate-extraction-values', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+            return Command::SUCCESS;
         }
 
-        $this->info("Found {$extractions->count()} extractions to recalculate");
+        try {
+            $hours = $this->option('hours');
+            $force = $this->option('force');
 
-        $recalculated = 0;
-        $skipped = 0;
-        $failed = 0;
+            $this->info("Mining Manager: Recalculating extraction values for chunks arriving within {$hours} hours...");
 
-        foreach ($extractions as $extraction) {
-            try {
-                // Skip if already recalculated recently (within last hour), unless forced
-                if (!$force && $extraction->value_last_updated && $extraction->value_last_updated->gt(Carbon::now()->subHour())) {
-                    $this->line("  Skipped extraction {$extraction->id} (recently updated)");
-                    $skipped++;
-                    continue;
-                }
+            // Find extractions arriving soon
+            $now = Carbon::now();
+            $futureWindow = $now->copy()->addHours($hours);
 
-                // Store the old value for comparison
-                $oldValue = $extraction->estimated_value;
+            $extractions = MoonExtraction::where('chunk_arrival_time', '>=', $now)
+                ->where('chunk_arrival_time', '<=', $futureWindow)
+                ->where('status', 'extracting')
+                ->whereNotNull('ore_composition')
+                ->get();
 
-                // Recalculate value based on current prices
-                $newValue = $this->valueService->calculateExtractionValue($extraction);
-
-                if ($newValue === null) {
-                    $this->warn("  Could not calculate value for extraction {$extraction->id}");
-                    $failed++;
-                    continue;
-                }
-
-                // Update the extraction.
-                // estimated_value tracks current running value (keeps updating).
-                // estimated_value_pre_arrival should be a ONE-TIME snapshot at
-                // arrival — locked in by CheckExtractionArrivalsCommand when
-                // the chunk becomes ready. Only update it here while the chunk
-                // is STILL pre-arrival. Once chunk_arrival_time has passed,
-                // leave pre_arrival alone so historical "value at arrival"
-                // data is preserved accurately.
-                $updateData = [
-                    'estimated_value' => $newValue,
-                    'value_last_updated' => Carbon::now(),
-                ];
-                if ($extraction->chunk_arrival_time && $extraction->chunk_arrival_time->isFuture()) {
-                    $updateData['estimated_value_pre_arrival'] = $newValue;
-                }
-                $extraction->update($updateData);
-
-                // Calculate and display change
-                $change = 0;
-                $changePercent = 0;
-                if ($oldValue > 0) {
-                    $change = $newValue - $oldValue;
-                    $changePercent = ($change / $oldValue) * 100;
-                }
-
-                $changeIndicator = $change > 0 ? '↑' : ($change < 0 ? '↓' : '=');
-                $changeColor = $change > 0 ? 'green' : ($change < 0 ? 'red' : 'yellow');
-
-                $this->line(sprintf(
-                    "  ✓ Extraction %d: %s ISK → %s ISK %s %s (%+.2f%%)",
-                    $extraction->id,
-                    number_format($oldValue),
-                    number_format($newValue),
-                    $changeIndicator,
-                    number_format(abs($change)),
-                    $changePercent
-                ));
-
-                $recalculated++;
-
-                Log::info("Mining Manager: Recalculated pre-arrival value for extraction {$extraction->id}", [
-                    'old_value' => $oldValue,
-                    'new_value' => $newValue,
-                    'change' => $change,
-                    'change_percent' => $changePercent,
-                    'chunk_arrival' => $extraction->chunk_arrival_time->toDateTimeString(),
-                ]);
-
-            } catch (\Exception $e) {
-                $this->error("  ✗ Failed to recalculate extraction {$extraction->id}: " . $e->getMessage());
-                Log::error("Mining Manager: Failed to recalculate extraction {$extraction->id}", [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
-                $failed++;
+            if ($extractions->isEmpty()) {
+                $this->info("No extractions found arriving within {$hours} hours");
+                return 0;
             }
-        }
 
-        $this->info("\nRecalculation complete:");
-        $this->info("  Recalculated: {$recalculated}");
-        if ($skipped > 0) {
-            $this->info("  Skipped: {$skipped}");
-        }
-        if ($failed > 0) {
-            $this->error("  Failed: {$failed}");
-        }
+            $this->info("Found {$extractions->count()} extractions to recalculate");
 
-        return 0;
+            $recalculated = 0;
+            $skipped = 0;
+            $failed = 0;
+
+            foreach ($extractions as $extraction) {
+                try {
+                    // Skip if already recalculated recently (within last hour), unless forced
+                    if (!$force && $extraction->value_last_updated && $extraction->value_last_updated->gt(Carbon::now()->subHour())) {
+                        $this->line("  Skipped extraction {$extraction->id} (recently updated)");
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Store the old value for comparison
+                    $oldValue = $extraction->estimated_value;
+
+                    // Recalculate value based on current prices
+                    $newValue = $this->valueService->calculateExtractionValue($extraction);
+
+                    if ($newValue === null) {
+                        $this->warn("  Could not calculate value for extraction {$extraction->id}");
+                        $failed++;
+                        continue;
+                    }
+
+                    // Update the extraction.
+                    // estimated_value tracks current running value (keeps updating).
+                    // estimated_value_pre_arrival should be a ONE-TIME snapshot at
+                    // arrival — locked in by CheckExtractionArrivalsCommand when
+                    // the chunk becomes ready. Only update it here while the chunk
+                    // is STILL pre-arrival. Once chunk_arrival_time has passed,
+                    // leave pre_arrival alone so historical "value at arrival"
+                    // data is preserved accurately.
+                    $updateData = [
+                        'estimated_value' => $newValue,
+                        'value_last_updated' => Carbon::now(),
+                    ];
+                    if ($extraction->chunk_arrival_time && $extraction->chunk_arrival_time->isFuture()) {
+                        $updateData['estimated_value_pre_arrival'] = $newValue;
+                    }
+                    $extraction->update($updateData);
+
+                    // Calculate and display change
+                    $change = 0;
+                    $changePercent = 0;
+                    if ($oldValue > 0) {
+                        $change = $newValue - $oldValue;
+                        $changePercent = ($change / $oldValue) * 100;
+                    }
+
+                    $changeIndicator = $change > 0 ? '↑' : ($change < 0 ? '↓' : '=');
+                    $changeColor = $change > 0 ? 'green' : ($change < 0 ? 'red' : 'yellow');
+
+                    $this->line(sprintf(
+                        "  ✓ Extraction %d: %s ISK → %s ISK %s %s (%+.2f%%)",
+                        $extraction->id,
+                        number_format($oldValue),
+                        number_format($newValue),
+                        $changeIndicator,
+                        number_format(abs($change)),
+                        $changePercent
+                    ));
+
+                    $recalculated++;
+
+                    Log::info("Mining Manager: Recalculated pre-arrival value for extraction {$extraction->id}", [
+                        'old_value' => $oldValue,
+                        'new_value' => $newValue,
+                        'change' => $change,
+                        'change_percent' => $changePercent,
+                        'chunk_arrival' => $extraction->chunk_arrival_time->toDateTimeString(),
+                    ]);
+
+                } catch (\Exception $e) {
+                    $this->error("  ✗ Failed to recalculate extraction {$extraction->id}: " . $e->getMessage());
+                    Log::error("Mining Manager: Failed to recalculate extraction {$extraction->id}", [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    $failed++;
+                }
+            }
+
+            $this->info("\nRecalculation complete:");
+            $this->info("  Recalculated: {$recalculated}");
+            if ($skipped > 0) {
+                $this->info("  Skipped: {$skipped}");
+            }
+            if ($failed > 0) {
+                $this->error("  Failed: {$failed}");
+            }
+
+            return 0;
+        } finally {
+            $lock->release();
+        }
     }
 }

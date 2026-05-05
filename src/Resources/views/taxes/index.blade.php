@@ -23,7 +23,15 @@
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-chart-pie"></i>
-                        {{ trans('mining-manager::taxes.tax_summary') }} - {{ now()->format('F Y') }}
+                        {{ trans('mining-manager::taxes.tax_summary') }}
+                        @if(($periodType ?? 'monthly') !== 'monthly' && isset($currentPeriodLabel))
+                            <small class="text-muted ml-2">
+                                <i class="fas fa-calendar-alt"></i>
+                                Current {{ ucfirst($periodType) }} period: {{ $currentPeriodLabel }}
+                            </small>
+                        @else
+                            <small class="text-muted ml-2">{{ now()->format('F Y') }}</small>
+                        @endif
                     </h3>
                     <div class="card-tools">
                         <button type="button" class="btn btn-sm btn-primary" id="refreshStats">
@@ -61,16 +69,25 @@
                             </div>
                         </div>
 
-                        {{-- Collected This Month --}}
+                        {{-- Collected This Calendar Month --}}
                         <div class="col-lg-3 col-md-6">
                             <div class="info-box bg-gradient-success">
                                 <span class="info-box-icon">
                                     <i class="fas fa-check-circle"></i>
                                 </span>
                                 <div class="info-box-content">
-                                    <span class="info-box-text">{{ trans('mining-manager::taxes.collected') }}</span>
+                                    <span class="info-box-text">
+                                        {{ trans('mining-manager::taxes.collected') }}
+                                        <small class="text-white-50">&mdash; {{ now()->format('F') }}</small>
+                                    </span>
                                     <span class="info-box-number">{{ number_format($summary['collected'], 0) }}</span>
                                     <small>ISK ({{ $summary['paid_count'] }} {{ trans('mining-manager::taxes.payments') }})</small>
+                                    @if(isset($collectedThisPeriod) && ($periodType ?? 'monthly') !== 'monthly')
+                                        <small class="d-block text-white-75 mt-1" title="Payments tagged to the current {{ $periodType }} period (period_start match)">
+                                            <i class="fas fa-calendar-check"></i>
+                                            {{ number_format($collectedThisPeriod, 0) }} ISK for {{ $currentPeriodLabel }}
+                                        </small>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -84,7 +101,7 @@
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.collection_rate') }}</span>
                                     <span class="info-box-number">{{ number_format($summary['collection_rate'], 1) }}%</span>
-                                    <small>{{ trans('mining-manager::taxes.this_month') }}</small>
+                                    <small>{{ trans('mining-manager::taxes.this_month') }} ({{ now()->format('F') }})</small>
                                 </div>
                             </div>
                         </div>
@@ -236,7 +253,14 @@
                             {{-- Month Filter --}}
                             <div class="col-md-2">
                                 <div class="form-group">
-                                    <label for="monthFilter">{{ trans('mining-manager::taxes.month') }}</label>
+                                    <label for="monthFilter">
+                                        {{ trans('mining-manager::taxes.month') }}
+                                        @if(($periodType ?? 'monthly') !== 'monthly')
+                                            <small class="text-muted" title="Filtering by calendar month returns every {{ $periodType }} period that falls within the selected month.">
+                                                <i class="fas fa-info-circle"></i>
+                                            </small>
+                                        @endif
+                                    </label>
                                     <input type="month" class="form-control" id="monthFilter" name="month" value="{{ request('month', '') }}" placeholder="All Months">
                                 </div>
                             </div>

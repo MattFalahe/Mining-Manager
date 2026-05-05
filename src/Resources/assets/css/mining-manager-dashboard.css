@@ -3808,16 +3808,72 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     border-radius: var(--mm-radius-md);
 }
 
+/* ============================================================
+ * Timer box gradients — chunk lifecycle color cycle.
+ *
+ * Each lifecycle stage gets a distinct gradient so an operator can
+ * read the extraction's state from color at a glance, even before
+ * reading any text. The cycle progresses:
+ *
+ *     BLUE (extracting)
+ *       ↓ chunk arrives + fractures
+ *     PINK (ready to mine)
+ *       ↓ time passes, approaching final 2h
+ *     PINK→PURPLE (unstable-in countdown — transitional)
+ *       ↓ enters final 2h
+ *     PURPLE (unstable)
+ *       ↓ chunk expires, next extraction begins
+ *     BLUE (extracting again — cycle restarts)
+ *
+ * Same hue family within each gradient (blue family, pink family,
+ * pink-purple bridge, purple family) so each box reads as a unified
+ * color, while the cross-stage progression is unmistakable.
+ * ============================================================ */
+
+/* Stage 1: chunk on its way. Deep navy → soft pink gradient.
+ * - The deep navy start (#1e3c72) is purple-adjacent, visually echoing
+ *   the deep purple where the unstable phase ended last cycle. Reads
+ *   as "the chunk just emerged from the dark of expiry; new cycle
+ *   beginning."
+ * - The pink end (#f093fb) is the same hue as the ready phase's
+ *   START, so the page flows visually into stage 2 when the chunk
+ *   arrives. Each stage's gradient end matches the next stage's
+ *   gradient start — continuous color loop. */
 .mining-manager-wrapper .mm-timer-box.mm-timer-arrival {
+    background: linear-gradient(135deg, #1e3c72 0%, #f093fb 100%);
+}
+
+/* Stage 2: chunk fractured, miners can act. Vibrant pink — positive
+ * action-time. Companion to the Ready to Mine card (same gradient). */
+.mining-manager-wrapper .mm-timer-box.mm-timer-ready {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }
 
+/* Stage 2 → 3 transition: the "Unstable in N" countdown shown during
+ * the ready phase. Pink-to-purple bridge gradient that visually
+ * previews the next phase the chunk is heading toward. */
 .mining-manager-wrapper .mm-timer-box.mm-timer-fracture {
-    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    background: linear-gradient(135deg, #f5576c 0%, #8e2de2 100%);
 }
 
+/* Stage 3: final 2h before expiry. Deep purple — urgent, end-stage.
+ * Visually distinct from the warm pink ready phase so the transition
+ * into "act now or lose it" reads loud and clear. */
 .mining-manager-wrapper .mm-timer-box.mm-timer-unstable {
-    background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+    background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%);
+}
+
+/* Ready/timer box icon + heading get a slight glow to read clearly
+ * against the rich color backgrounds. Applies to all variants. */
+.mining-manager-wrapper .mm-timer-box .fa-gem,
+.mining-manager-wrapper .mm-timer-box h4 {
+    color: #fff !important;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.mining-manager-wrapper .mm-timer-box.mm-timer-ready p {
+    color: rgba(255, 255, 255, 0.9) !important;
+    margin-bottom: 0;
 }
 
 .mining-manager-wrapper .mm-timer-box h2 {

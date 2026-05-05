@@ -10,6 +10,7 @@ use MiningManager\Models\MonthlyStatistic;
 use MiningManager\Http\Controllers\DashboardController;
 use Seat\Web\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -50,78 +51,88 @@ class CalculateMonthlyStatisticsCommand extends Command
      */
     public function handle()
     {
-        // Check feature flag
-        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
-        $features = $settingsService->getFeatureFlags();
-        if (!($features['enable_analytics'] ?? true)) {
-            $this->info('Feature disabled in settings. Skipping.');
+        $lock = Cache::lock('mining-manager:calculate-monthly-stats', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
             return Command::SUCCESS;
         }
 
-        $this->info('🚀 Starting monthly statistics calculation...');
-
-        if ($this->option('all-history')) {
-            return $this->calculateAllHistory();
-        }
-
-        // Current month mode: fast path using pre-computed daily summaries
-        if ($this->option('current-month')) {
-            $month = Carbon::now();
-        } elseif ($this->option('month')) {
-            $month = Carbon::createFromFormat('Y-m', $this->option('month'));
-        } else {
-            $month = Carbon::now()->subMonth();
-        }
-
-        $userId = $this->option('user_id');
-
-        $this->info("📅 Calculating statistics for: {$month->format('F Y')}");
-
-        $userQuery = $userId ? User::where('id', $userId) : User::query();
-        $totalUsers = $userQuery->count();
-        $this->info("👥 Processing {$totalUsers} user(s)...\n");
-
-        $bar = $this->output->createProgressBar($totalUsers);
-        $bar->start();
-
-        $calculated = 0;
-        $skipped = 0;
-        $errors = 0;
-
-        $userQuery->chunk(100, function ($users) use ($month, &$calculated, &$skipped, &$errors, $bar) {
-            foreach ($users as $user) {
-                try {
-                    $result = $this->calculateForUser($user, $month);
-                    if ($result === 'calculated') {
-                        $calculated++;
-                    } elseif ($result === 'skipped') {
-                        $skipped++;
-                    }
-                } catch (\Exception $e) {
-                    $errors++;
-                    Log::error("Failed to calculate monthly stats for user {$user->id}: " . $e->getMessage());
-                    $this->error("\n❌ Error for user {$user->id}: " . $e->getMessage());
-                }
-
-                $bar->advance();
+        try {
+            // Check feature flag
+            $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $features = $settingsService->getFeatureFlags();
+            if (!($features['enable_analytics'] ?? true)) {
+                $this->info('Feature disabled in settings. Skipping.');
+                return Command::SUCCESS;
             }
-        });
 
-        $bar->finish();
+            $this->info('🚀 Starting monthly statistics calculation...');
 
-        $this->newLine(2);
-        $this->info("✅ Calculation complete!");
-        $this->info("   📊 Calculated: {$calculated}");
-        $this->info("   ⏭️  Skipped: {$skipped}");
-        if ($errors > 0) {
-            $this->error("   ❌ Errors: {$errors}");
+            if ($this->option('all-history')) {
+                return $this->calculateAllHistory();
+            }
+
+            // Current month mode: fast path using pre-computed daily summaries
+            if ($this->option('current-month')) {
+                $month = Carbon::now();
+            } elseif ($this->option('month')) {
+                $month = Carbon::createFromFormat('Y-m', $this->option('month'));
+            } else {
+                $month = Carbon::now()->subMonth();
+            }
+
+            $userId = $this->option('user_id');
+
+            $this->info("📅 Calculating statistics for: {$month->format('F Y')}");
+
+            $userQuery = $userId ? User::where('id', $userId) : User::query();
+            $totalUsers = $userQuery->count();
+            $this->info("👥 Processing {$totalUsers} user(s)...\n");
+
+            $bar = $this->output->createProgressBar($totalUsers);
+            $bar->start();
+
+            $calculated = 0;
+            $skipped = 0;
+            $errors = 0;
+
+            $userQuery->chunk(100, function ($users) use ($month, &$calculated, &$skipped, &$errors, $bar) {
+                foreach ($users as $user) {
+                    try {
+                        $result = $this->calculateForUser($user, $month);
+                        if ($result === 'calculated') {
+                            $calculated++;
+                        } elseif ($result === 'skipped') {
+                            $skipped++;
+                        }
+                    } catch (\Exception $e) {
+                        $errors++;
+                        Log::error("Failed to calculate monthly stats for user {$user->id}: " . $e->getMessage());
+                        $this->error("\n❌ Error for user {$user->id}: " . $e->getMessage());
+                    }
+
+                    $bar->advance();
+                }
+            });
+
+            $bar->finish();
+
+            $this->newLine(2);
+            $this->info("✅ Calculation complete!");
+            $this->info("   📊 Calculated: {$calculated}");
+            $this->info("   ⏭️  Skipped: {$skipped}");
+            if ($errors > 0) {
+                $this->error("   ❌ Errors: {$errors}");
+            }
+
+            // Clear dashboard cache
+            DashboardController::clearDashboardCache();
+            $this->info("\n🔄 Dashboard cache cleared!");
+
+            return Command::SUCCESS;
+        } finally {
+            $lock->release();
         }
-
-        // Clear dashboard cache
-        DashboardController::clearDashboardCache();
-        $this->info("\n🔄 Dashboard cache cleared!");
-
-        return Command::SUCCESS;
     }
 
     /**

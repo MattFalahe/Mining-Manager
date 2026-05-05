@@ -175,6 +175,27 @@
 @section('full')
 <div class="mining-manager-wrapper mining-dashboard diagnostic-page">
 
+    {{-- DEV banner — this page is intentionally NOT in the Mining Manager
+         sidebar. Admins reach it by manually navigating to
+         /mining-manager/diagnostic. Treat as an internal / dev tool, not a
+         user-facing feature. The Master Test tab + per-area tabs are safe
+         to run in production (read-only); the test-data generation tab
+         creates fake corps/characters/mining for testing and SHOULD NOT
+         be used on a live install. --}}
+    <div class="alert" style="background: linear-gradient(135deg, rgba(220, 53, 69, 0.15) 0%, rgba(220, 53, 69, 0.05) 100%); border-left: 4px solid #dc3545; color: #f8d7da;" role="alert">
+        <div class="d-flex align-items-center">
+            <span class="badge badge-danger mr-2" style="font-size: 0.85rem; padding: 0.4em 0.7em;">
+                <i class="fas fa-flask"></i> DEV
+            </span>
+            <div>
+                <strong>Diagnostic Tools — internal / dev page.</strong>
+                This page is intentionally not in the Mining Manager sidebar. Admins reach it by typing
+                <code style="background: rgba(0,0,0,0.3); color: #f8d7da; padding: 1px 6px; border-radius: 3px;">/mining-manager/diagnostic</code>
+                manually. The <strong>Master Test</strong> tab is safe to run anytime (read-only). The <strong>Test Data Generation</strong> tab creates fake corporations/characters/mining and is intended for development environments only — do not use on a live install.
+            </div>
+        </div>
+    </div>
+
     @if(session('success'))
     <div class="alert alert-success alert-dismissible fade show" role="alert">
         {{ session('success') }}
@@ -198,7 +219,12 @@
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link active" href="#test-data" data-toggle="tab">
+                <a class="nav-link active" href="#master-test" data-toggle="tab">
+                    <i class="fas fa-rocket"></i> Master Test
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#test-data" data-toggle="tab">
                     <i class="fas fa-database"></i> Test Data Generation
                 </a>
             </li>
@@ -277,8 +303,106 @@
     <div class="card-body">
       <div class="tab-content">
 
+        {{-- ==========================================================
+             Master Test Tab — one-click read-only smoke chain.
+             Exercises every major area of the plugin and shows a
+             pass/warn/fail/skip table grouped by category.
+             ========================================================== --}}
+        <div class="tab-pane active" id="master-test">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="alert alert-info">
+                        <h5><i class="fas fa-rocket"></i> What this is</h5>
+                        <p class="mb-2">A comprehensive read-only smoke check of every major area of the plugin — schema, settings, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security hardening. Click <em>Run Master Test</em> below to execute the full chain.</p>
+                        <p class="mb-0"><strong>Idempotent:</strong> never mutates production data. Safe to run anytime — including in production. Each test takes &lt;1 second; the full chain typically completes in under 30 seconds.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <button type="button" class="btn btn-lg btn-primary" id="master-test-run-btn">
+                        <i class="fas fa-rocket"></i> Run Master Test
+                    </button>
+                    <span id="master-test-spinner" class="ml-2" style="display:none;">
+                        <i class="fas fa-spinner fa-spin"></i> Running tests...
+                    </span>
+                </div>
+            </div>
+
+            {{-- Results panel — populated by JS --}}
+            <div id="master-test-results" class="row" style="display:none;">
+                <div class="col-md-12">
+                    {{-- Summary card --}}
+                    <div class="card card-dark mb-3" id="master-test-summary-card">
+                        <div class="card-header">
+                            <h3 class="card-title"><i class="fas fa-chart-pie"></i> Summary</h3>
+                            <div class="card-tools">
+                                <span id="master-test-overall-badge" class="badge badge-secondary">—</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-md-2">
+                                    <h4 class="text-success" id="master-test-pass-count">0</h4>
+                                    <small>Pass</small>
+                                </div>
+                                <div class="col-md-2">
+                                    <h4 class="text-warning" id="master-test-warn-count">0</h4>
+                                    <small>Warn</small>
+                                </div>
+                                <div class="col-md-2">
+                                    <h4 class="text-danger" id="master-test-fail-count">0</h4>
+                                    <small>Fail</small>
+                                </div>
+                                <div class="col-md-2">
+                                    <h4 class="text-muted" id="master-test-skip-count">0</h4>
+                                    <small>Skip</small>
+                                </div>
+                                <div class="col-md-2">
+                                    <h4 id="master-test-total-count">0</h4>
+                                    <small>Total</small>
+                                </div>
+                                <div class="col-md-2">
+                                    <h4 id="master-test-duration">0 ms</h4>
+                                    <small>Duration</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Per-test results table --}}
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title"><i class="fas fa-list-check"></i> Per-test results</h3>
+                            <div class="card-tools">
+                                <button type="button" class="btn btn-sm btn-outline-light" id="master-test-filter-issues">
+                                    <i class="fas fa-filter"></i> Show only issues
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-dark table-striped table-sm mb-0" id="master-test-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:80px;">Status</th>
+                                        <th style="width:140px;">Category</th>
+                                        <th>Test</th>
+                                        <th>Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="master-test-table-body">
+                                    {{-- Rows injected by JS --}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Test Data Generation Tab -->
-        <div class="tab-pane active" id="test-data">
+        <div class="tab-pane" id="test-data">
             <div class="row">
                 <div class="col-md-12">
                     <div class="warning-box">
@@ -946,6 +1070,9 @@
                                             <optgroup label="Moon Notifications">
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
+                                                <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
+                                                <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
+                                                <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
                                             </optgroup>
                                             <optgroup label="Theft Detection">
                                                 <option value="theft_detected">⚠️ Theft Detected</option>
@@ -1143,6 +1270,17 @@
                                                     <label class="small mb-1">Structure ID</label>
                                                     <input type="number" id="ntStructureId" class="form-control form-control-sm" value="1000000000001">
                                                 </div>
+                                                {{-- Flavor selector — only shown for extraction_at_risk (4 flavors) --}}
+                                                <div class="form-group mb-2" id="ntExtractionFlavorGroup" style="display:none;">
+                                                    <label class="small mb-1">Threat Flavor</label>
+                                                    <select id="ntExtractionFlavor" class="form-control form-control-sm">
+                                                        <option value="fuel_critical">🔥 Fuel Critical (MOON CHUNK COMPROMISED)</option>
+                                                        <option value="shield_reinforced">⚠️ Shield Reinforced (EXTRACTION IN DANGER)</option>
+                                                        <option value="armor_reinforced">🚨 Armor Reinforced (EXTRACTION IN DANGER)</option>
+                                                        <option value="hull_reinforced">💀 Hull Reinforced (MOON CHUNK DESTABILISED)</option>
+                                                    </select>
+                                                    <small class="form-text text-muted">Picks which flavor of extraction_at_risk to preview. Each flavor has its own Discord title + color + description.</small>
+                                                </div>
                                             </div>
                                             <!-- Theft fields -->
                                             <div id="ntTheftFields" style="display:none;">
@@ -1176,17 +1314,32 @@
                             <!-- Action Buttons -->
                             <div class="mt-3 mb-3">
                                 <button type="button" class="btn btn-mm-primary" onclick="runNotificationTest()">
-                                    <i class="fas fa-play"></i> <span id="ntRunBtnText">Run Test</span>
+                                    <i class="fas fa-play"></i> <span id="ntRunBtnText">Preview Test</span>
                                     <span id="ntRunSpinner" class="spinner-border spinner-border-sm ml-2" style="display:none;"></span>
+                                </button>
+                                <button type="button" class="btn btn-warning ml-2" onclick="runNotificationLiveFire()" title="Fire a REAL notification through the full NotificationService pipeline — hits every subscribed, enabled webhook (not just the selected one). Respects per-type toggles and corp scoping. Use to verify the end-to-end pipeline works without waiting for a natural trigger.">
+                                    <i class="fas fa-bolt"></i> <span id="ntFireBtnText">Fire Live Notification</span>
+                                    <span id="ntFireSpinner" class="spinner-border spinner-border-sm ml-2" style="display:none;"></span>
+                                </button>
+                                <button type="button" class="btn btn-danger ml-2" onclick="runFireAllNotifications()" title="Fire every notification type (all 18) sequentially through the full pipeline. 1.5s delay between each so Discord rate limits stay happy. Useful as a post-deploy end-to-end smoke test — every subscribed webhook will receive 18 messages in quick succession, so only run this when you want to QA the whole surface.">
+                                    <i class="fas fa-rocket"></i> <span id="ntFireAllBtnText">Fire ALL (Chain)</span>
+                                    <span id="ntFireAllSpinner" class="spinner-border spinner-border-sm ml-2" style="display:none;"></span>
                                 </button>
                                 <button type="button" class="btn btn-secondary ml-2" onclick="clearNotificationLog()">
                                     <i class="fas fa-trash-alt"></i> Clear Log
                                 </button>
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        <strong>Preview Test:</strong> renders + POSTs to one webhook (selected or custom URL). Best for checking embed layout + wiring.<br>
+                                        <strong>Fire Live Notification:</strong> routes through NotificationService wrappers. Fires the selected type to ALL subscribed webhooks with scope + type toggles applied. Writes to the audit log.<br>
+                                        <strong>Fire ALL (Chain):</strong> end-to-end QA pass — fires every notification type one after another with a 1.5s delay between each. Every subscribed webhook receives 15 messages. Use after a deploy to verify nothing regressed.
+                                    </small>
+                                </div>
                             </div>
 
                             <!-- Terminal Log View -->
                             <div class="notification-terminal" id="ntTerminal">
-                                <div class="log-line log-skip">[--:--:--.---] [INFO] Ready. Select options and click "Run Test" to begin.</div>
+                                <div class="log-line log-skip">[--:--:--.---] [INFO] Ready. "Preview Test" sends to one webhook. "Fire Live Notification" dispatches through the real pipeline. "Fire ALL" chains through all 15 types.</div>
                             </div>
 
                             <!-- Summary Card -->
@@ -1404,6 +1557,181 @@ $(document).ready(function() {
             eval($(this).attr('onclick'));
         }
     });
+
+    // ===========================================================
+    // MASTER TEST — one-click smoke chain runner
+    // ===========================================================
+    //
+    // Pure relative URL — fetch() resolves it against the current
+    // document's origin automatically. Three reasons for this rather
+    // than route('...') or config('app.url'):
+    //
+    //   1. route('mining-manager.diagnostic.master-test') at blade-
+    //      render time throws RouteNotFoundException if the route
+    //      cache is stale after a deploy that added the route.
+    //      That throw surfaces as 5xx (or 404 in some host configs),
+    //      breaking the entire diagnostic page render — not just
+    //      this button. Hardcoding the URL keeps the page renderable
+    //      when the route cache is stale; the AJAX call itself will
+    //      still 404 until the cache clears, but the rest of the
+    //      diagnostic tabs remain accessible.
+    //
+    //   2. config('app.url') defaults to 'http://localhost' if the
+    //      operator hasn't set APP_URL in their .env. A user on
+    //      https://their-domain.example would then trigger a mixed-
+    //      content block by Chrome (https page fetching http URL)
+    //      and the fetch rejects with "Failed to fetch" before
+    //      reaching the server. Pure relative URL dodges this
+    //      entirely.
+    //
+    //   3. The diagnostic prefix is locked at /mining-manager/
+    //      diagnostic/ in src/Http/routes.php and isn't going to
+    //      move, so hardcoding is safe.
+    const masterTestUrl = '/mining-manager/diagnostic/master-test';
+    const masterTestBtn = document.getElementById('master-test-run-btn');
+    const masterTestSpinner = document.getElementById('master-test-spinner');
+    const masterTestResults = document.getElementById('master-test-results');
+    const masterTestTableBody = document.getElementById('master-test-table-body');
+    const masterTestFilterBtn = document.getElementById('master-test-filter-issues');
+
+    let masterTestLastReport = null;
+    let masterTestShowOnlyIssues = false;
+
+    function masterTestStatusBadge(status) {
+        const map = {
+            pass: { cls: 'badge-success', icon: 'check', label: 'PASS' },
+            warn: { cls: 'badge-warning', icon: 'exclamation-triangle', label: 'WARN' },
+            fail: { cls: 'badge-danger', icon: 'times', label: 'FAIL' },
+            skip: { cls: 'badge-secondary', icon: 'minus', label: 'SKIP' },
+        };
+        const m = map[status] || map.skip;
+        return `<span class="badge ${m.cls}"><i class="fas fa-${m.icon}"></i> ${m.label}</span>`;
+    }
+
+    function masterTestEscape(s) {
+        if (s === null || s === undefined) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function masterTestRenderDetail(detail) {
+        if (detail === null || detail === undefined) return '';
+        if (typeof detail === 'string') {
+            return `<pre class="mb-0 mt-1 small text-muted" style="white-space:pre-wrap;">${masterTestEscape(detail)}</pre>`;
+        }
+        // Object/array — pretty-print as JSON.
+        try {
+            return `<pre class="mb-0 mt-1 small text-muted" style="white-space:pre-wrap;">${masterTestEscape(JSON.stringify(detail, null, 2))}</pre>`;
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function masterTestRenderRows() {
+        if (!masterTestLastReport) return;
+        const rows = masterTestLastReport.results || [];
+        const filtered = masterTestShowOnlyIssues
+            ? rows.filter(r => r.status === 'warn' || r.status === 'fail')
+            : rows;
+
+        if (filtered.length === 0) {
+            masterTestTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No rows to display.</td></tr>';
+            return;
+        }
+
+        const html = filtered.map((r, idx) => {
+            const detailHtml = masterTestRenderDetail(r.detail);
+            const detailRow = detailHtml
+                ? `<tr><td colspan="4" class="bg-dark">${detailHtml}</td></tr>`
+                : '';
+            return `
+                <tr class="master-test-row-${r.status}">
+                    <td>${masterTestStatusBadge(r.status)}</td>
+                    <td><span class="badge badge-info">${masterTestEscape(r.category)}</span></td>
+                    <td><strong>${masterTestEscape(r.name)}</strong></td>
+                    <td>${masterTestEscape(r.message)}</td>
+                </tr>
+                ${detailRow}
+            `;
+        }).join('');
+        masterTestTableBody.innerHTML = html;
+    }
+
+    function masterTestRender(report) {
+        masterTestLastReport = report;
+
+        // Summary
+        document.getElementById('master-test-pass-count').textContent = report.summary.pass;
+        document.getElementById('master-test-warn-count').textContent = report.summary.warn;
+        document.getElementById('master-test-fail-count').textContent = report.summary.fail;
+        document.getElementById('master-test-skip-count').textContent = report.summary.skip;
+        document.getElementById('master-test-total-count').textContent = report.summary.total;
+        document.getElementById('master-test-duration').textContent = report.duration_ms + ' ms';
+
+        const overallBadge = document.getElementById('master-test-overall-badge');
+        overallBadge.className = 'badge ';
+        if (report.overall_status === 'pass') {
+            overallBadge.className += 'badge-success';
+            overallBadge.innerHTML = '<i class="fas fa-check"></i> ALL CLEAR';
+        } else if (report.overall_status === 'warn') {
+            overallBadge.className += 'badge-warning';
+            overallBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> WARNINGS';
+        } else {
+            overallBadge.className += 'badge-danger';
+            overallBadge.innerHTML = '<i class="fas fa-times"></i> FAILURES';
+        }
+
+        masterTestRenderRows();
+        masterTestResults.style.display = '';
+    }
+
+    if (masterTestBtn) {
+        masterTestBtn.addEventListener('click', function () {
+            masterTestBtn.disabled = true;
+            masterTestSpinner.style.display = '';
+            masterTestResults.style.display = 'none';
+
+            fetch(masterTestUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json',
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                masterTestBtn.disabled = false;
+                masterTestSpinner.style.display = 'none';
+                if (data && data.success && data.report) {
+                    masterTestRender(data.report);
+                } else {
+                    alert('Master Test endpoint returned an unexpected response. Check the browser console / Laravel log.');
+                    console.error('Master Test response:', data);
+                }
+            })
+            .catch(err => {
+                masterTestBtn.disabled = false;
+                masterTestSpinner.style.display = 'none';
+                alert('Master Test request failed: ' + err.message);
+                console.error('Master Test fetch error:', err);
+            });
+        });
+    }
+
+    if (masterTestFilterBtn) {
+        masterTestFilterBtn.addEventListener('click', function () {
+            masterTestShowOnlyIssues = !masterTestShowOnlyIssues;
+            masterTestFilterBtn.innerHTML = masterTestShowOnlyIssues
+                ? '<i class="fas fa-list"></i> Show all'
+                : '<i class="fas fa-filter"></i> Show only issues';
+            masterTestRenderRows();
+        });
+    }
 });
 
 function testConnectivity() {
@@ -2721,6 +3049,8 @@ function runNotificationTest() {
         test_structure_id: parseInt(document.getElementById('ntStructureId').value) || 1000000000001,
         test_structure_name: document.getElementById('ntStructureName').value || 'Athanor - Test Moon',
         test_moon_name: document.getElementById('ntMoonName').value || 'Perimeter I - Moon 1',
+        // extraction_at_risk flavor — ignored by the server for other types
+        test_alert_flavor: document.getElementById('ntExtractionFlavor')?.value || 'fuel_critical',
         // Theft fields
         test_severity: document.getElementById('ntSeverity')?.value || 'medium',
         test_ore_value: parseFloat(document.getElementById('ntOreValue')?.value) || 50000000,
@@ -2750,7 +3080,7 @@ function runNotificationTest() {
     })
     .then(response => response.json())
     .then(data => {
-        btnText.textContent = 'Run Test';
+        btnText.textContent = 'Preview Test';
         spinner.style.display = 'none';
 
         // Clear and render all log lines
@@ -2772,10 +3102,268 @@ function runNotificationTest() {
         }
     })
     .catch(function(error) {
-        btnText.textContent = 'Run Test';
+        btnText.textContent = 'Preview Test';
         spinner.style.display = 'none';
         appendLogLine(getNow(), 'error', 'Request failed: ' + error.message);
     });
+}
+
+// ============================================================================
+// LIVE NOTIFICATION FIRE — routes through the full NotificationService pipeline
+// ============================================================================
+
+function runNotificationLiveFire() {
+    const terminal = document.getElementById('ntTerminal');
+    const btnText = document.getElementById('ntFireBtnText');
+    const spinner = document.getElementById('ntFireSpinner');
+    const summary = document.getElementById('ntSummary');
+    const notificationType = document.getElementById('ntNotificationType').value;
+
+    // Confirm before firing — this actually hits every subscribed webhook.
+    const typeLabel = document.getElementById('ntNotificationType').options[document.getElementById('ntNotificationType').selectedIndex].text;
+    if (!confirm('⚠️  Fire a LIVE ' + typeLabel + ' notification?\n\nThis will:\n  • Route through NotificationService\n  • Hit every subscribed, enabled webhook (not just the selected one)\n  • Apply corp scoping + per-type toggles\n  • Write to the audit log (mining_notification_log)\n\nContinue?')) {
+        return;
+    }
+
+    // Resolve character selection — reuse the same fields as Preview Test.
+    const charDropdownVisible = document.getElementById('ntCharDropdown').style.display !== 'none';
+    let characterId = 0;
+    let characterName = 'Test Character';
+    if (charDropdownVisible) {
+        const sel = document.getElementById('ntCharacterSelect');
+        characterId = parseInt(sel.value) || 0;
+        if (sel.selectedIndex > 0) {
+            characterName = sel.options[sel.selectedIndex].text.replace(/\s*\(\d+\)$/, '');
+        }
+    } else {
+        characterId = parseInt(document.getElementById('ntCharacterId').value) || 0;
+        characterName = document.getElementById('ntCharacterName').value || 'Test Character';
+    }
+
+    const postData = {
+        notification_type: notificationType,
+        character_id: characterId,
+        character_name: characterName,
+        // Same test data fields as Preview Test — buildTestNotificationData
+        // ingests these on the server side to shape $data for the wrapper.
+        test_amount: parseFloat(document.getElementById('ntAmount').value) || 5000000,
+        test_due_date: document.getElementById('ntDueDate').value,
+        test_days_remaining: parseInt(document.getElementById('ntDaysRemaining').value) || 7,
+        test_days_overdue: parseInt(document.getElementById('ntDaysOverdue').value) || 3,
+        test_event_name: document.getElementById('ntEventName').value || 'Test Mining Event',
+        test_location: document.getElementById('ntLocation').value || 'Jita',
+        test_structure_id: parseInt(document.getElementById('ntStructureId').value) || 1000000000001,
+        test_structure_name: document.getElementById('ntStructureName').value || 'Athanor - Test Moon',
+        test_moon_name: document.getElementById('ntMoonName').value || 'Perimeter I - Moon 1',
+        // extraction_at_risk flavor — ignored by the server for other types
+        test_alert_flavor: document.getElementById('ntExtractionFlavor')?.value || 'fuel_critical',
+        test_severity: document.getElementById('ntSeverity')?.value || 'medium',
+        test_ore_value: parseFloat(document.getElementById('ntOreValue')?.value) || 50000000,
+        test_tax_owed: parseFloat(document.getElementById('ntTaxOwed')?.value) || 5000000,
+        test_activity_count: parseInt(document.getElementById('ntActivityCount')?.value) || 3,
+    };
+
+    terminal.innerHTML = '';
+    summary.style.display = 'none';
+    btnText.textContent = 'Firing...';
+    spinner.style.display = 'inline-block';
+
+    appendLogLine(getNow(), 'info', 'Firing live notification through NotificationService pipeline...');
+
+    const url = '{{ route("mining-manager.diagnostic.fire-notification") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+
+    fetch(relativeUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(postData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnText.textContent = 'Fire Live Notification';
+        spinner.style.display = 'none';
+
+        terminal.innerHTML = '';
+        if (data.logs && data.logs.length > 0) {
+            data.logs.forEach(function(log) {
+                appendLogLine(log.time, log.level, log.message);
+            });
+        } else if (data.success) {
+            appendLogLine(getNow(), 'ok', 'Live fire completed with no log output.');
+        } else {
+            appendLogLine(getNow(), 'error', 'Live fire failed.');
+        }
+    })
+    .catch(function(error) {
+        btnText.textContent = 'Fire Live Notification';
+        spinner.style.display = 'none';
+        appendLogLine(getNow(), 'error', 'Request failed: ' + error.message);
+    });
+}
+
+// ============================================================================
+// FIRE ALL NOTIFICATIONS IN CHAIN — end-to-end QA smoke test
+// Fires every notification type sequentially with a 1.5s delay between each
+// so Discord's 45-req/min webhook rate limit stays comfortable.
+// ============================================================================
+
+function runFireAllNotifications() {
+    const terminal = document.getElementById('ntTerminal');
+    const btnText = document.getElementById('ntFireAllBtnText');
+    const spinner = document.getElementById('ntFireAllSpinner');
+    const summary = document.getElementById('ntSummary');
+
+    // All 15 notification types grouped by surface.
+    // Order: lightest first (tax/event) → moon/report → theft last
+    // so the user sees quick wins before the longer theft chain.
+    const allTypes = [
+        { type: 'tax_reminder',     label: '⏰ Tax Reminder' },
+        { type: 'tax_invoice',      label: '📧 Tax Invoice' },
+        { type: 'tax_overdue',      label: '❌ Tax Overdue' },
+        { type: 'tax_generated',    label: '📋 Mining Taxes Summary' },
+        { type: 'tax_announcement', label: '📢 Invoices Announcement' },
+        { type: 'event_created',    label: '📅 Event Created' },
+        { type: 'event_started',    label: '🚀 Event Started' },
+        { type: 'event_completed',  label: '🏁 Event Completed' },
+        { type: 'moon_ready',          label: '🌙 Moon Chunk Ready' },
+        { type: 'jackpot_detected',    label: '🎰 Jackpot Detected' },
+        { type: 'moon_chunk_unstable', label: '⚠️ Moon Chunk Unstable' },
+        { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
+        { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
+        { type: 'report_generated',    label: '📊 Report Generated' },
+        { type: 'theft_detected',   label: '⚠️ Theft Detected' },
+        { type: 'critical_theft',   label: '🔴 Critical Theft' },
+        { type: 'active_theft',     label: '🔥 Active Theft' },
+        { type: 'incident_resolved',label: '✅ Incident Resolved' },
+    ];
+
+    if (!confirm('⚠️  Fire ALL ' + allTypes.length + ' notification types through the full pipeline?\n\n' +
+        '  • One notification per type, chained 1.5s apart\n' +
+        '  • Every subscribed, enabled webhook receives each one\n' +
+        '  • Respects corp scoping + per-type toggles\n' +
+        '  • Writes ' + allTypes.length + ' audit-log rows\n' +
+        '  • Takes ~' + Math.ceil(allTypes.length * 1.5) + ' seconds to complete\n\n' +
+        'Continue?')) {
+        return;
+    }
+
+    // Resolve character selection (same as single-fire, re-used for the chain)
+    const charDropdownVisible = document.getElementById('ntCharDropdown').style.display !== 'none';
+    let characterId = 0;
+    let characterName = 'Test Character';
+    if (charDropdownVisible) {
+        const sel = document.getElementById('ntCharacterSelect');
+        characterId = parseInt(sel.value) || 0;
+        if (sel.selectedIndex > 0) {
+            characterName = sel.options[sel.selectedIndex].text.replace(/\s*\(\d+\)$/, '');
+        }
+    } else {
+        characterId = parseInt(document.getElementById('ntCharacterId').value) || 0;
+        characterName = document.getElementById('ntCharacterName').value || 'Test Character';
+    }
+
+    // Shared payload template — buildTestNotificationData on the server
+    // reads these per-type, so one snapshot of the form fields serves all 15.
+    const basePayload = {
+        character_id: characterId,
+        character_name: characterName,
+        test_amount: parseFloat(document.getElementById('ntAmount').value) || 5000000,
+        test_due_date: document.getElementById('ntDueDate').value,
+        test_days_remaining: parseInt(document.getElementById('ntDaysRemaining').value) || 7,
+        test_days_overdue: parseInt(document.getElementById('ntDaysOverdue').value) || 3,
+        test_event_name: document.getElementById('ntEventName').value || 'Test Mining Event',
+        test_location: document.getElementById('ntLocation').value || 'Jita',
+        test_structure_id: parseInt(document.getElementById('ntStructureId').value) || 1000000000001,
+        test_structure_name: document.getElementById('ntStructureName').value || 'Athanor - Test Moon',
+        test_moon_name: document.getElementById('ntMoonName').value || 'Perimeter I - Moon 1',
+        // extraction_at_risk flavor — ignored by the server for other types
+        test_alert_flavor: document.getElementById('ntExtractionFlavor')?.value || 'fuel_critical',
+        test_severity: document.getElementById('ntSeverity')?.value || 'medium',
+        test_ore_value: parseFloat(document.getElementById('ntOreValue')?.value) || 50000000,
+        test_tax_owed: parseFloat(document.getElementById('ntTaxOwed')?.value) || 5000000,
+        test_activity_count: parseInt(document.getElementById('ntActivityCount')?.value) || 3,
+    };
+
+    terminal.innerHTML = '';
+    summary.style.display = 'none';
+    btnText.textContent = 'Firing...';
+    spinner.style.display = 'inline-block';
+
+    appendLogLine(getNow(), 'info', '=== Fire ALL Chain Started — ' + allTypes.length + ' notification types ===');
+
+    const url = '{{ route("mining-manager.diagnostic.fire-notification") }}';
+    const relativeUrl = new URL(url, window.location.origin).pathname;
+    const delayMs = 1500;
+
+    const results = { success: 0, failed: 0 };
+    const startTime = Date.now();
+
+    // Sequential chain — each type's request waits for the previous to settle
+    // + a buffer delay before firing the next. Keeps Discord rate limits happy
+    // and makes the log easier to read (one block per type, in order).
+    function fireOne(index) {
+        if (index >= allTypes.length) {
+            // Chain finished
+            const totalMs = Date.now() - startTime;
+            appendLogLine(getNow(), 'info', '');
+            appendLogLine(getNow(), 'info', '=== Fire ALL Chain Complete (' + totalMs + 'ms total) ===');
+            appendLogLine(getNow(), results.failed === 0 ? 'ok' : 'warn',
+                'Summary: ' + results.success + ' succeeded, ' + results.failed + ' failed out of ' + allTypes.length);
+            btnText.textContent = 'Fire ALL (Chain)';
+            spinner.style.display = 'none';
+            return;
+        }
+
+        const entry = allTypes[index];
+        const postData = Object.assign({}, basePayload, { notification_type: entry.type });
+
+        appendLogLine(getNow(), 'info', '');
+        appendLogLine(getNow(), 'info', '▶ [' + (index + 1) + '/' + allTypes.length + '] Firing ' + entry.label + ' (' + entry.type + ')');
+
+        fetch(relativeUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(postData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.logs && data.logs.length > 0) {
+                // Only surface key ok/warn/error lines to keep the chain log
+                // readable. Full per-type logs are still available via single-fire.
+                data.logs.forEach(function(log) {
+                    if (log.level === 'ok' || log.level === 'warn' || log.level === 'error') {
+                        appendLogLine(log.time, log.level, '    ' + log.message);
+                    }
+                });
+            }
+
+            if (data.success) {
+                results.success++;
+                appendLogLine(getNow(), 'ok', '✓ ' + entry.label + ' dispatched');
+            } else {
+                results.failed++;
+                appendLogLine(getNow(), 'error', '✗ ' + entry.label + ' failed');
+            }
+
+            // Schedule the next one
+            setTimeout(function() { fireOne(index + 1); }, delayMs);
+        })
+        .catch(function(error) {
+            results.failed++;
+            appendLogLine(getNow(), 'error', '✗ ' + entry.label + ' request failed: ' + error.message);
+            setTimeout(function() { fireOne(index + 1); }, delayMs);
+        });
+    }
+
+    fireOne(0);
 }
 
 function appendLogLine(time, level, message) {
@@ -2821,6 +3409,10 @@ function updateNotifTestFields() {
     document.getElementById('ntDaysOverdueGroup').style.display = 'none';
     document.getElementById('ntActiveTheftFields').style.display = 'none';
 
+    // Flavor selector is extraction_at_risk-only — reset on every change
+    const flavorGroup = document.getElementById('ntExtractionFlavorGroup');
+    if (flavorGroup) flavorGroup.style.display = 'none';
+
     if (type === 'tax_reminder' || type === 'tax_invoice' || type === 'tax_overdue' || type === 'tax_generated' || type === 'tax_announcement') {
         document.getElementById('ntTaxFields').style.display = 'block';
         if (type === 'tax_reminder') {
@@ -2830,8 +3422,13 @@ function updateNotifTestFields() {
         }
     } else if (type === 'event_created' || type === 'event_started' || type === 'event_completed') {
         document.getElementById('ntEventFields').style.display = 'block';
-    } else if (type === 'moon_ready' || type === 'jackpot_detected') {
+    } else if (type === 'moon_ready' || type === 'jackpot_detected' || type === 'moon_chunk_unstable' || type === 'extraction_at_risk' || type === 'extraction_lost') {
+        // All five moon-category types reuse Structure Name / Moon Name / ID.
+        // Only extraction_at_risk exposes the flavor selector (4 flavors).
         document.getElementById('ntMoonFields').style.display = 'block';
+        if (type === 'extraction_at_risk' && flavorGroup) {
+            flavorGroup.style.display = 'block';
+        }
     } else if (type === 'theft_detected' || type === 'critical_theft' || type === 'active_theft' || type === 'incident_resolved') {
         document.getElementById('ntTheftFields').style.display = 'block';
         if (type === 'active_theft') {

@@ -168,10 +168,16 @@ class ReportController extends Controller
             $report = MiningReport::findOrFail($id);
             $reportData = json_decode($report->data, true) ?? [];
 
-            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-            $results = $webhookService->sendReportNotification($report, $reportData);
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $results = $notificationService->sendReportGenerated($report, $reportData);
 
-            $sentCount = is_array($results) ? count(array_filter($results, fn($r) => $r['success'] ?? false)) : 0;
+            // NotificationService::send() returns results keyed by channel,
+            // each Discord result having a {sent: [ids], failed: [{webhook_id,
+            // error}]} shape. Count successful webhooks across Discord + Slack
+            // + ESI so the UI confirms the report went *somewhere*.
+            $sentCount = count($results['discord']['sent'] ?? [])
+                + (isset($results['slack']['success']) && $results['slack']['success'] ? 1 : 0)
+                + count($results['esi']['sent'] ?? []);
 
             if ($sentCount === 0) {
                 return response()->json([

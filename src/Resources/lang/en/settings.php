@@ -200,8 +200,6 @@ return [
     'enable_events_help' => 'Allow creation and tracking of mining events',
     'allow_event_creation' => 'Allow Event Creation',
     'allow_event_creation_help' => 'Let directors create new mining events',
-    'auto_track_event_participation' => 'Auto-Track Participation',
-    'auto_track_event_participation_help' => 'Automatically track who participates in events',
     'event_bonus_multiplier' => 'Event Bonus Multiplier',
     'event_bonus_multiplier_help' => 'Bonus multiplier for mining during events',
     
@@ -209,15 +207,7 @@ return [
     'moon_mining' => 'Moon Mining',
     'enable_moon_tracking' => 'Enable Moon Tracking',
     'enable_moon_tracking_help' => 'Track moon mining extractions',
-    'track_moon_compositions' => 'Track Moon Compositions',
-    'track_moon_compositions_help' => 'Record moon ore compositions',
-    'calculate_moon_value' => 'Calculate Moon Value',
-    'calculate_moon_value_help' => 'Calculate estimated value of moon extractions',
-    'notify_extraction_ready' => 'Notify Extraction Ready',
-    'notify_extraction_ready_help' => 'Send notifications when extractions are ready',
-    'extraction_notification_hours' => 'Notification Timing',
-    'extraction_notification_hours_help' => 'Send notification this many hours before extraction',
-    
+
     // Permissions & Access
     'permissions_access' => 'Permissions & Access',
     'allow_public_stats' => 'Allow Public Statistics',
@@ -342,6 +332,9 @@ return [
     'webhook_type' => 'Webhook Type',
     'webhook_url' => 'Webhook URL',
     'discord_webhook_help' => 'Go to Discord Server Settings → Integrations → Webhooks to get your webhook URL',
+    'webhook_corporation' => 'Assign to Corporation',
+    'webhook_corporation_global' => 'Global (admin — sees all corps)',
+    'webhook_corporation_help' => 'Which corporation should this webhook receive notifications for? "Global" receives everything. The Tax Program Corp receives everything regardless. A specific corp receives: moon/theft/broadcast tax for its own operations, plus individual tax reminders / invoices / overdue only for miners who belong to that corp. Use this to let each mining-group director see only their own members\' tax activity.',
     'slack_webhook_help' => 'Go to Slack App Settings → Incoming Webhooks to get your webhook URL',
     'custom_webhook_help' => 'Enter your custom webhook endpoint URL',
     'notify_on_events' => 'Notify On Events',
@@ -356,8 +349,6 @@ return [
     'discord_role_id_help' => 'Enter a Discord role ID to ping when notifications are sent (enable Developer Mode in Discord, right-click role → Copy ID)',
     'discord_username' => 'Custom Username',
     'discord_username_help' => 'Override the webhook\'s username (optional)',
-    'discord_avatar_url' => 'Custom Avatar URL',
-    'discord_avatar_help' => 'URL to an image to use as the webhook avatar (optional)',
 
     // Slack Settings
     'slack_settings' => 'Slack Settings',

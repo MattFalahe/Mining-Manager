@@ -358,6 +358,14 @@
     </div>
 
     {{-- CHARTS ROW 3 --}}
+    @php
+        // Tax-related 12-month chart uses calendar-month aggregation regardless
+        // of period type. On biweekly setups the Event Bonus series sums both
+        // H1 and H2 event discounts for each month — which is correct, but
+        // worth flagging so miners don't wonder why a month has more than one
+        // period's worth of savings.
+        $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+    @endphp
     <div class="row">
         {{-- Mining Income Chart --}}
         <div class="col-lg-12">
@@ -373,6 +381,12 @@
                         <canvas id="miningIncomeChart"></canvas>
                     </div>
                     <small class="text-muted d-block mt-2"><i class="fas fa-info-circle"></i> {{ trans('mining-manager::dashboard.note_mining_income') }}</small>
+                    @if($__chartPeriodType !== 'monthly')
+                        <small class="text-muted d-block mt-1"><i class="fas fa-calendar-alt"></i>
+                            <strong>{{ ucfirst($__chartPeriodType) }} setup:</strong>
+                            taxes and event bonuses from all periods within each calendar month are summed into that month's bar.
+                        </small>
+                    @endif
                 </div>
             </div>
         </div>

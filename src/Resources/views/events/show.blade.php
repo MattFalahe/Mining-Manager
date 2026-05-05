@@ -85,7 +85,8 @@
                                 </div>
                                 <div class="col-md-6">
                                     <h5>{{ trans('mining-manager::events.statistics') }}</h5>
-                                    <p><i class="fas fa-users"></i> <strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participants_count ?? 0 }} / {{ $event->max_participants ?? '∞' }}</p>
+                                    <p><i class="fas fa-users"></i> <strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participant_count ?? 0 }}</p>
+                                    <p><i class="fas fa-cubes"></i> <strong>Total Quantity Mined:</strong> {{ number_format($event->total_mined ?? 0, 0) }} units</p>
                                     <p><i class="fas fa-coins"></i> <strong>{{ trans('mining-manager::events.total_mined') }}:</strong> {{ number_format($event->total_mined_value ?? 0, 0) }} ISK</p>
                                     <p><i class="fas fa-percentage"></i> <strong>{{ trans('mining-manager::events.tax_modifier') }}:</strong>
                                         <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
@@ -145,7 +146,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse($event->participants->sortByDesc('total_mined') as $index => $participant)
+                            @forelse($event->participants->sortByDesc('value_mined') as $index => $participant)
                             <tr>
                                 <td>
                                     @if($index < 3)
@@ -156,11 +157,11 @@
                                 </td>
                                 <td>
                                     <img src="https://images.evetech.net/characters/{{ $participant->character_id }}/portrait?size=32" class="img-circle" style="width: 32px;">
-                                    {{ $participant->character_name }}
+                                    {{ $participant->character_name ?? $participant->character->name ?? 'Character ' . $participant->character_id }}
                                 </td>
-                                <td class="text-right">{{ number_format($participant->total_mined ?? 0, 0) }} ISK</td>
+                                <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
                                 <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
-                                <td>{{ $participant->joined_at->diffForHumans() }}</td>
+                                <td>{{ $participant->joined_at ? $participant->joined_at->diffForHumans() : 'N/A' }}</td>
                             </tr>
                             @empty
                             <tr>

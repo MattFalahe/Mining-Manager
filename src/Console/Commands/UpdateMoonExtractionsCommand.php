@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
@@ -52,6 +53,26 @@ class UpdateMoonExtractionsCommand extends Command
      * @return int
      */
     public function handle()
+    {
+        // Mutex lock — schedule entry has allow_overlap: false but that
+        // only serialises the same schedule. Manual artisan runs or other
+        // invocation paths can still overlap a running cron. Cache::lock
+        // gives process-wide serialisation; matches the pattern used by
+        // ProcessMiningLedgerCommand, DetectJackpotsCommand, etc.
+        $lock = Cache::lock('mining-manager:update-extractions', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleWithLock();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleWithLock(): int
     {
         // Check feature flag
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);

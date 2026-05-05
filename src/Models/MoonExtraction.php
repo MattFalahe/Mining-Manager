@@ -32,6 +32,12 @@ class MoonExtraction extends Model
         'estimated_value',
         'ore_composition',
         'notification_sent',
+        'unstable_warning_sent',
+        'alert_fuel_critical_sent',
+        'alert_shield_reinforced_sent',
+        'alert_armor_reinforced_sent',
+        'alert_hull_reinforced_sent',
+        'alert_destroyed_sent',
         'is_jackpot',
         'jackpot_detected_at',
         'jackpot_reported_by',
@@ -58,10 +64,25 @@ class MoonExtraction extends Model
         'estimated_value' => 'integer',
         'ore_composition' => 'array',
         'notification_sent' => 'boolean',
+        'unstable_warning_sent' => 'boolean',
+        'alert_fuel_critical_sent' => 'boolean',
+        'alert_shield_reinforced_sent' => 'boolean',
+        'alert_armor_reinforced_sent' => 'boolean',
+        'alert_hull_reinforced_sent' => 'boolean',
+        'alert_destroyed_sent' => 'boolean',
         'is_jackpot' => 'boolean',
         'jackpot_detected_at' => 'datetime',
         'jackpot_reported_by' => 'integer',
-        'jackpot_verified' => 'boolean',
+        // jackpot_verified is DELIBERATELY not cast to 'boolean'.
+        // The column is nullable and used as a tri-state:
+        //   null  → not yet verified by mining data
+        //   true  → verified jackpot (miners actually found +100% ores)
+        //   false → verified NOT a jackpot (reported but not confirmed)
+        // Laravel's 'boolean' cast coerces NULL → false on hydration, which
+        // collapsed "not yet verified" into "verified not-jackpot". Multiple
+        // consumers (DetectJackpotsCommand, moon blades, isJackpot()) use
+        // `=== null` / `=== true` / `=== false` strict comparisons that
+        // silently misbehaved with the cast on.
         'jackpot_verified_at' => 'datetime',
         'estimated_value_at_start' => 'integer',
         'estimated_value_pre_arrival' => 'integer',
@@ -600,6 +621,74 @@ class MoonExtraction extends Model
         }
 
         return $isJackpot;
+    }
+
+    /**
+     * Display value for the estimated_value field — automatically applies the
+     * jackpot multiplier when is_jackpot=true.
+     *
+     * The stored `estimated_value` column is calculated at chunk arrival from
+     * ESI's ore_composition, which uses base ore type IDs only (Sylvite, not
+     * Glistening Sylvite). At that point the chunk's jackpot status is
+     * unknown, so the stored value is the BASE value — what the chunk is
+     * worth WITHOUT the +100% reprocessing bonus.
+     *
+     * Once the chunk is detected as a jackpot, the actual mined value is
+     * ~2x because every +100% variant reprocesses to ~2x mineral content.
+     * MoonOreHelper::calculateJackpotMultiplier returns 2.0 for a full
+     * jackpot (every real jackpot moon, since EVE makes jackpot binary).
+     *
+     * Use this accessor anywhere you want to show the operator-facing value
+     * — the value that reflects what the moon will actually yield. Use the
+     * raw `estimated_value` column only when you specifically need the
+     * pre-jackpot base (rare — almost no consumer wants that).
+     *
+     * @return int|float
+     */
+    public function getDisplayEstimatedValueAttribute()
+    {
+        $base = (float) ($this->estimated_value ?? 0);
+
+        if ($this->is_jackpot && $base > 0) {
+            return $this->calculateValueWithJackpotBonus($base);
+        }
+
+        return $base;
+    }
+
+    /**
+     * Build a human-readable summary of the chunk's ore composition.
+     *
+     * Format: one line per ore with percentage of chunk + total volume in m³.
+     * Example output:
+     *
+     *   Bright Spodumain: 45.0% (12,000 m³)
+     *   Lustrous Sylvite: 30.0% (8,000 m³)
+     *   Glistening Coesite: 25.0% (6,500 m³)
+     *
+     * Used by both moon_ready notifications (chunk just arrived) AND
+     * jackpot_detected notifications (entire chunk is +100% variants).
+     * Shape of `ore_composition` JSON: `[oreName => ['percentage' => N, 'volume_m3' => N]]`.
+     *
+     * @return string Empty string when no composition data is available.
+     */
+    public function buildOreSummary(): string
+    {
+        if (empty($this->ore_composition)) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($this->ore_composition as $oreName => $oreData) {
+            $percentage = $oreData['percentage'] ?? 0;
+            $volumeM3 = $oreData['volume_m3'] ?? 0;
+            $line = "{$oreName}: " . round($percentage, 1) . '%';
+            if ($volumeM3 > 0) {
+                $line .= ' (' . number_format($volumeM3) . ' m³)';
+            }
+            $lines[] = $line;
+        }
+        return implode("\n", $lines);
     }
 
     /**

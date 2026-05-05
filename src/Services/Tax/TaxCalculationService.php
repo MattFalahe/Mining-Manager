@@ -304,7 +304,7 @@ class TaxCalculationService
                         Log::info("Mining Manager: Recalculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
                     } else {
                         // Create new tax record
-                        MiningTax::create([
+                        $newTax = MiningTax::create([
                             'character_id' => $mainCharacterId,
                             'month' => $calendarMonth,
                             'period_type' => $periodType,
@@ -319,6 +319,27 @@ class TaxCalculationService
                             'triggered_by' => $triggeredBy,
                         ]);
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+
+                        // B1a: announce on the cross-plugin event bus so other
+                        // plugins (Discord Pings, HR Manager, etc.) can react.
+                        // Topics handles publisher attribution, idempotency-key
+                        // composition, and Discord sanitization. Standalone-safe:
+                        // when MC is not installed, the class_exists guard makes
+                        // this a complete no-op.
+                        if (class_exists(\ManagerCore\Topics::class)) {
+                            \ManagerCore\Topics::publish('mining.tax_created', [
+                                'tax_id'         => $newTax->id,
+                                'character_id'   => $mainCharacterId,
+                                'period'         => $calendarMonth,            // template uses {period}
+                                'period_type'    => $periodType,
+                                'period_start'   => $startDate->format('Y-m-d'),
+                                'period_end'     => $endDate->format('Y-m-d'),
+                                'amount_owed'    => round($combinedTaxAmount, 2),
+                                'due_date'       => $dueDate->format('Y-m-d'),
+                                'corporation_id' => null, // visibility scoping (subscriber may filter)
+                                'role_id'        => null,
+                            ]);
+                        }
                     }
 
                     $calculated++;
@@ -519,6 +540,17 @@ class TaxCalculationService
             // Check if the mining entry's system falls within the event's location scope.
             // Resolves constellation/region scopes to system ID lists via mapDenormalize.
             if (!$event->matchesSystem($entry->solar_system_id)) {
+                continue;
+            }
+
+            // Check if the event's type applies to this ore category.
+            // "special" events apply to everything; mining_op → ore,
+            // moon_extraction → moon_*, ice_mining → ice, gas_huffing → gas.
+            // $entry->ore_category is set by ProcessMiningLedgerCommand
+            // (corp observer path) and ImportCharacterMiningCommand
+            // (personal character mining path) at ingestion time.
+            $oreCategory = $entry->ore_category ?? null;
+            if ($oreCategory && !$event->appliesToOreCategory($oreCategory)) {
                 continue;
             }
 
@@ -908,39 +940,56 @@ class TaxCalculationService
     }
     
     /**
-     * Update overdue tax statuses.
+     * Update overdue tax statuses — flip 'unpaid' → 'overdue' when the
+     * due date has passed, but respect the ESI Wallet Lag Buffer setting
+     * (payment.grace_period_hours, default 24h) to avoid false-positive
+     * overdue flags when a payment might still be in-flight from ESI.
+     *
+     * Rationale for just the ESI buffer (not the longer grace_period_days):
+     *  - ESI wallet journal entries can lag CCP's servers by several hours.
+     *    A player who paid on their due date may not have their payment
+     *    visible in ESI for up to 24h. Flipping status before the buffer
+     *    elapses would cause false "overdue" notifications to legitimate
+     *    payers.
+     *  - `grace_period_days` (default 7) is a DIFFERENT concern used by
+     *    TheftDetectionService — it controls when an unpaid/overdue tax
+     *    escalates to a theft incident. Applying it here made the UI
+     *    show "UNPAID" for a week past the due date, contradicting the
+     *    red "N days ago" display next to the due date on the same page.
+     *  - Historical behaviour subtracted BOTH buffers, so a tax due
+     *    April 21 stayed 'unpaid' until April 28. That's fixed as of
+     *    2026-04-23: only the ESI buffer applies.
      *
      * @return int Number of taxes marked as overdue
      */
     public function updateOverdueTaxes(): int
     {
-        $exemptions = $this->settingsService->getExemptions();
-        $gracePeriod = $exemptions['grace_period_days'];
-        // Add ESI lag buffer (payment grace period hours) to allow wallet data to arrive
         $paymentSettings = $this->settingsService->getPaymentSettings();
-        $esiGraceHours = $paymentSettings['grace_period_hours'] ?? 24;
-        $overdueDate = Carbon::now()->subDays($gracePeriod)->subHours($esiGraceHours);
+        $esiGraceHours = (int) ($paymentSettings['grace_period_hours'] ?? 24);
+
+        $overdueThreshold = Carbon::now()->subHours($esiGraceHours);
 
         $updated = MiningTax::where('status', 'unpaid')
-            ->where(function ($q) use ($overdueDate) {
-                // Use due_date if set, otherwise fall back to period_end or month
-                $q->where(function ($inner) use ($overdueDate) {
+            ->where(function ($q) use ($overdueThreshold) {
+                // Prefer due_date. Fall back to period_end or month for
+                // historical records that don't have it populated.
+                $q->where(function ($inner) use ($overdueThreshold) {
                     $inner->whereNotNull('due_date')
-                          ->where('due_date', '<', $overdueDate);
-                })->orWhere(function ($inner) use ($overdueDate) {
+                          ->where('due_date', '<', $overdueThreshold);
+                })->orWhere(function ($inner) use ($overdueThreshold) {
                     $inner->whereNull('due_date')
                           ->whereNotNull('period_end')
-                          ->where('period_end', '<', $overdueDate->copy()->subDays($gracePeriod));
-                })->orWhere(function ($inner) use ($overdueDate) {
+                          ->where('period_end', '<', $overdueThreshold);
+                })->orWhere(function ($inner) use ($overdueThreshold) {
                     $inner->whereNull('due_date')
                           ->whereNull('period_end')
-                          ->where('month', '<', $overdueDate->startOfMonth());
+                          ->where('month', '<', $overdueThreshold->copy()->startOfMonth());
                 });
             })
             ->update(['status' => 'overdue']);
 
         if ($updated > 0) {
-            Log::info("Mining Manager: Marked {$updated} taxes as overdue");
+            Log::info("Mining Manager: Marked {$updated} taxes as overdue (ESI lag buffer: {$esiGraceHours}h)");
         }
 
         return $updated;
@@ -999,6 +1048,7 @@ class TaxCalculationService
         $breakdown = [];
         $totalValue = 0;
         $totalTax = 0;
+        $totalEventDiscount = 0;
 
         foreach ($summaries as $summary) {
             foreach ($summary->ore_types ?? [] as $ore) {
@@ -1014,6 +1064,8 @@ class TaxCalculationService
                         'value' => 0,
                         'tax_rate' => $ore['tax_rate'] ?? 0,
                         'event_modifier' => $ore['event_modifier'] ?? 0,
+                        'event_qualified_value' => 0,
+                        'event_discount_amount' => 0,
                         'effective_rate' => $ore['effective_rate'] ?? $ore['tax_rate'] ?? 0,
                         'tax' => 0,
                     ];
@@ -1022,13 +1074,26 @@ class TaxCalculationService
                 $quantity = (float) ($ore['quantity'] ?? 0);
                 $value = (float) ($ore['total_value'] ?? 0);
                 $tax = (float) ($ore['estimated_tax'] ?? 0);
+                $qualifiedValue = (float) ($ore['event_qualified_value'] ?? 0);
+                $discount = (float) ($ore['event_discount_amount'] ?? 0);
 
                 $breakdown[$key]['quantity'] += $quantity;
                 $breakdown[$key]['value'] += $value;
                 $breakdown[$key]['tax'] += $tax;
+                $breakdown[$key]['event_qualified_value'] += $qualifiedValue;
+                $breakdown[$key]['event_discount_amount'] += $discount;
+
+                // Keep the strongest event_modifier observed across the period
+                // so the UI's "(-50% event)" tag reflects the applicable rate.
+                $thisModifier = (int) ($ore['event_modifier'] ?? 0);
+                $currentModifier = (int) $breakdown[$key]['event_modifier'];
+                if ($thisModifier < $currentModifier) {
+                    $breakdown[$key]['event_modifier'] = $thisModifier;
+                }
 
                 $totalValue += $value;
                 $totalTax += $tax;
+                $totalEventDiscount += $discount;
             }
         }
 
@@ -1036,6 +1101,7 @@ class TaxCalculationService
             'breakdown' => array_values($breakdown),
             'total_value' => $totalValue,
             'total_tax' => $totalTax,
+            'event_discount_total' => $totalEventDiscount,
             'calculation_method' => 'daily_summaries',
         ];
     }

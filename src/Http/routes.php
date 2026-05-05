@@ -820,6 +820,15 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        // One-click "Master Test" — runs the full read-only smoke chain
+        // (schema, settings, cross-plugin integration, pricing, notifications,
+        // lifecycle, tax, security). Returns structured JSON for the UI.
+        Route::post('/master-test', [
+            'as' => 'mining-manager.diagnostic.master-test',
+            'uses' => 'DiagnosticController@runMasterTest',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/generate-corporations', [
             'as' => 'mining-manager.diagnostic.generate-corporations',
             'uses' => 'DiagnosticController@generateTestCorporations',
@@ -919,6 +928,12 @@ Route::group([
         Route::post('/test-notification', [
             'as' => 'mining-manager.diagnostic.test-notification',
             'uses' => 'DiagnosticController@testNotification',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/fire-notification', [
+            'as' => 'mining-manager.diagnostic.fire-notification',
+            'uses' => 'DiagnosticController@fireLiveNotification',
             'middleware' => 'can:mining-manager.admin',
         ]);
 

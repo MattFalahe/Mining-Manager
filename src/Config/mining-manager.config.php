@@ -138,10 +138,6 @@ return [
         // Adjust based on your corporation's moon sizes
         'estimated_chunk_size' => env('MOON_CHUNK_SIZE', 150000),
 
-        // Hours before extraction to send notifications
-        // Example: [24, 4, 1] sends at 24h, 4h, and 1h before chunk arrival
-        'notification_hours_before' => [24, 4, 1],
-
         // Auto-calculate extraction values
         'auto_calculate_values' => true,
 
@@ -165,14 +161,9 @@ return [
         // Events
         'enable_events' => true,
         'allow_event_creation' => true,
-        'auto_track_event_participation' => true,
 
         // Moon mining
         'enable_moon_tracking' => true,
-        'track_moon_compositions' => true,
-        'calculate_moon_value' => true,
-        'notify_extraction_ready' => true,
-        'extraction_notification_hours' => 24,
 
         // Permissions & access
         'allow_public_stats' => false,

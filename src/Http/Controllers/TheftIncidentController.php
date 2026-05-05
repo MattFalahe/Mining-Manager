@@ -152,15 +152,19 @@ class TheftIncidentController extends Controller
         $notes = $request->input('notes');
 
         try {
+            $shouldNotifyResolved = false;
+
             if ($status === 'investigating') {
                 $incident->markInvestigating($notes);
                 $message = 'Incident marked as under investigation.';
             } elseif ($status === 'resolved') {
                 $incident->resolve(Auth::id(), $notes);
                 $message = 'Incident marked as resolved.';
+                $shouldNotifyResolved = true;
             } elseif ($status === 'false_alarm') {
                 $incident->markFalseAlarm(Auth::id(), $notes);
                 $message = 'Incident marked as false alarm.';
+                $shouldNotifyResolved = true;
             } else {
                 $incident->status = $status;
                 if ($notes) {
@@ -175,6 +179,21 @@ class TheftIncidentController extends Controller
                 'new_status' => $status,
                 'user_id' => Auth::id()
             ]);
+
+            // Fire incident_resolved webhooks when the incident moves out of
+            // active status (either to 'resolved' or 'false_alarm'). Wired up
+            // as of Phase E of the notification consolidation.
+            if ($shouldNotifyResolved) {
+                try {
+                    app(\MiningManager\Services\Notification\TheftNotificationService::class)
+                        ->notifyIncidentResolved($incident->fresh());
+                } catch (\Exception $e) {
+                    Log::warning('TheftIncidentController: Failed to dispatch incident-resolved notification', [
+                        'incident_id' => $id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return redirect()->back()->with('success', $message);
 
@@ -220,6 +239,18 @@ class TheftIncidentController extends Controller
                 'resolution_type' => $resolutionType,
                 'user_id' => Auth::id()
             ]);
+
+            // Fire incident_resolved webhooks for either resolution type
+            // (Phase E of the notification consolidation).
+            try {
+                app(\MiningManager\Services\Notification\TheftNotificationService::class)
+                    ->notifyIncidentResolved($incident->fresh());
+            } catch (\Exception $e) {
+                Log::warning('TheftIncidentController: Failed to dispatch incident-resolved notification', [
+                    'incident_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return redirect()->route('mining-manager.theft.index')
                 ->with('success', $message);

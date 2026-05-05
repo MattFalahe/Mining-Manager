@@ -75,11 +75,12 @@ class CharacterInfoService
                 return null;
             }
             
-            // Get affiliation for corporation info (more reliable than character_infos)
+            // Get affiliation — the authoritative source for current corp.
+            // character_infos.corporation_id was removed from SeAT in 2019;
+            // any $character->corporation_id access returns null.
             $affiliation = CharacterAffiliation::where('character_id', $characterId)->first();
-            
-            // Use corporation_id from affiliation if character_infos doesn't have it
-            $corporationId = $character->corporation_id ?? ($affiliation->corporation_id ?? null);
+
+            $corporationId = $affiliation->corporation_id ?? null;
             
             // Get corporation name
             $corporationName = $this->getCorporationNameForCharacter($character, $affiliation);
@@ -114,8 +115,10 @@ class CharacterInfoService
      */
     protected function getCorporationNameForCharacter(CharacterInfo $character, ?CharacterAffiliation $affiliation = null): string
     {
-        // Try to get corporation_id from affiliation first, then character
-        $corporationId = $affiliation->corporation_id ?? $character->corporation_id ?? null;
+        // Corporation lives on the affiliation row. character_infos.corporation_id
+        // was dropped by SeAT in 2019 — reading $character->corporation_id always
+        // returned null through the ?? chain anyway.
+        $corporationId = $affiliation->corporation_id ?? null;
         
         if (!$corporationId) {
             Log::debug('CharacterInfoService: No corporation_id for character', [

@@ -22,6 +22,8 @@ use Carbon\Carbon;
  * @property float $regular_ore_value
  * @property float $ice_value
  * @property float $gas_value
+ * @property float $abyssal_ore_value
+ * @property float $triglavian_ore_value
  * @property array|null $ore_breakdown
  * @property bool $is_finalized
  * @property Carbon|null $finalized_at
@@ -43,6 +45,8 @@ class MiningLedgerMonthlySummary extends Model
         'regular_ore_value',
         'ice_value',
         'gas_value',
+        'abyssal_ore_value',
+        'triglavian_ore_value',
         'ore_breakdown',
         'is_finalized',
         'finalized_at',
@@ -57,6 +61,8 @@ class MiningLedgerMonthlySummary extends Model
         'regular_ore_value' => 'decimal:2',
         'ice_value' => 'decimal:2',
         'gas_value' => 'decimal:2',
+        'abyssal_ore_value' => 'decimal:2',
+        'triglavian_ore_value' => 'decimal:2',
         'ore_breakdown' => 'array',
         'is_finalized' => 'boolean',
         'finalized_at' => 'datetime',

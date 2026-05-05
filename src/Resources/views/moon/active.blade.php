@@ -160,6 +160,11 @@
                                         <span class="badge badge-warning">
                                             {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                         </span>
+                                        @if($extraction->is_jackpot)
+                                            <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Jackpot — value reflects 2x multiplier">
+                                                <i class="fas fa-star"></i> 2x
+                                            </span>
+                                        @endif
                                     </p>
                                 </div>
                             </div>
@@ -275,6 +280,11 @@
                                     @if($extraction->ore_composition)
                                         <h3 class="mb-1 text-success">
                                             {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }}
+                                            @if($extraction->is_jackpot)
+                                                <span class="badge align-middle" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
+                                                    <i class="fas fa-star"></i> 2x
+                                                </span>
+                                            @endif
                                         </h3>
                                         <p class="mb-2 text-muted small">ISK {{ trans('mining-manager::moons.estimated') }}</p>
                                     @else
@@ -397,6 +407,11 @@
                                     </td>
                                     <td class="text-right text-success">
                                         {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
+                                        @if($extraction->is_jackpot)
+                                            <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
+                                                <i class="fas fa-star"></i>
+                                            </span>
+                                        @endif
                                     </td>
                                 </tr>
                                 @endforeach

@@ -3,9 +3,11 @@
 namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningTax;
+use MiningManager\Models\ProcessedTransaction;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -75,9 +77,26 @@ class WalletTransferService
 
         $cutoffDate = Carbon::now()->subDays($days);
 
-        // Get potential tax payment transactions
+        // Get potential tax payment transactions, EXCLUDING those already
+        // processed (claimed in mining_manager_processed_transactions). Without
+        // this exclusion, every cron run (every 6h) re-processes the same
+        // transactions, and any tax that's only partially paid (status=partial,
+        // tax_codes.status=active) gets its amount_paid ratcheted up by the
+        // same payment over and over until it appears fully paid — silent
+        // double-credit on partial-payment scenarios.
+        //
+        // This mirrors the canonical filter pattern from
+        // ProcessWalletJournalListener (the listener that fires when wallet
+        // updates arrive). Defense-in-depth: applyPayment() also writes
+        // atomically to the dedup table inside its DB::transaction so a
+        // racy second worker can't credit the same transaction twice even
+        // if the filter slipped (replication lag, mid-cron insert, etc.).
         $transactions = CharacterWalletJournal::where('date', '>=', $cutoffDate)
             ->where('ref_type', 'player_donation')
+            ->whereNotIn('id', function ($query) {
+                $query->select('transaction_id')
+                    ->from('mining_manager_processed_transactions');
+            })
             ->get();
 
         if ($transactions->isEmpty()) {
@@ -172,7 +191,11 @@ class WalletTransferService
     }
 
     /**
-     * Apply payment to tax record.
+     * Apply payment to tax record from a CharacterWalletJournal model.
+     *
+     * Thin wrapper around `applyPaymentToTax()`; preserves the original
+     * signature for callers that already have a typed model instance
+     * (processTransaction, manualMatch).
      *
      * @param MiningTax $tax
      * @param TaxCode $taxCode
@@ -182,34 +205,135 @@ class WalletTransferService
      */
     private function applyPayment(MiningTax $tax, TaxCode $taxCode, CharacterWalletJournal $transaction, float $amount): void
     {
-        DB::transaction(function () use ($tax, $taxCode, $transaction, $amount) {
-            // Re-fetch with lock to prevent race conditions on concurrent payments
-            $tax = MiningTax::where('id', $tax->id)->lockForUpdate()->first();
-            if (!$tax) {
+        $this->applyPaymentToTax(
+            $tax,
+            $taxCode,
+            (int) $transaction->id,
+            $transaction->date,
+            (int) $tax->character_id,
+            $amount
+        );
+    }
+
+    /**
+     * Canonical payment-application core. Single source of truth for the
+     * "credit a payment to a tax" operation across all three entry paths:
+     *   1. WalletTransferService::processTransaction → applyPayment (model)
+     *   2. ProcessWalletJournalListener::handle (queued)
+     *   3. WalletTransferService::autoVerifyFromCorporationWallet
+     *
+     * Pre-fix C1+C2 (audit follow-up): paths 2 and 3 each had their own
+     * divergent write logic. Path 2 had the dedup-table insert AFTER the
+     * tax update (race window). Path 3 didn't write to the dedup table at
+     * all AND set status='paid' with replacement-not-accumulation
+     * semantics, bulldozing partial payments. Now all three paths funnel
+     * through this method so the atomic-claim + partial-payment semantics
+     * are guaranteed identical.
+     *
+     * Idempotency:
+     *   - Inserts the dedup row FIRST inside DB::transaction. The unique
+     *     constraint on `mining_manager_processed_transactions.transaction_id`
+     *     makes this the canonical "compare-and-swap on a unique row" — a
+     *     QueryException on insert means another path already credited
+     *     this transaction; we bail before touching the tax.
+     *
+     * Partial-payment support:
+     *   - Accumulates `amount_paid` rather than replacing it.
+     *   - Sets status='partial' until the running total covers
+     *     `amount_owed`, then 'paid'.
+     *   - Marks the TaxCode as 'used' only on full payment.
+     *
+     * @param MiningTax  $tax
+     * @param TaxCode    $taxCode
+     * @param int        $transactionId   wallet journal row id
+     * @param mixed      $transactionDate Carbon|string — paid_at value
+     * @param int        $characterId     paying character (for log context)
+     * @param float      $amount          payment amount in ISK
+     * @return bool   true if payment applied; false if dedup-claim collided
+     *                or the tax disappeared mid-flight
+     */
+    private function applyPaymentToTax(
+        MiningTax $tax,
+        TaxCode $taxCode,
+        int $transactionId,
+        $transactionDate,
+        int $characterId,
+        float $amount
+    ): bool {
+        // Track whether the inner transaction actually applied the payment so
+        // the post-transaction log line reflects reality. Closures need a
+        // reference variable to write back to the outer scope.
+        $applied = false;
+
+        DB::transaction(function () use ($tax, $taxCode, $transactionId, $transactionDate, $characterId, $amount, &$applied) {
+            // ATOMIC CLAIM via the dedup table: try to insert
+            // mining_manager_processed_transactions FIRST. The transaction_id
+            // column has a unique constraint — if another worker already
+            // processed this transaction, our insert throws a QueryException,
+            // we catch it, and bail before touching the tax. This is the
+            // canonical "compare-and-swap on a unique row" pattern; it's the
+            // only way to make payment application safe under concurrency
+            // without distributed locking.
+            //
+            // Why insert FIRST rather than after the tax update? If the tax
+            // update were to land before the dedup row, two parallel workers
+            // could both update amount_paid (each adding the same $amount)
+            // before either tried the unique insert — the second worker's
+            // unique violation would correctly roll back its own insert, but
+            // the inner DB::transaction rollback would also revert the tax
+            // update, leaving us with a tax that was net-zero changed despite
+            // two attempts (and one legit). By claiming the dedup row first,
+            // the second worker bails BEFORE touching the tax row at all.
+            try {
+                ProcessedTransaction::create([
+                    'transaction_id' => $transactionId,
+                    'character_id' => $characterId,
+                    'tax_id' => $tax->id,
+                    'matched_at' => Carbon::now(),
+                ]);
+            } catch (QueryException $e) {
+                // Unique violation = transaction already processed by another
+                // path. Not an error — bail silently. The tax row is untouched.
+                Log::info("Mining Manager: Transaction {$transactionId} already processed; skipping double-credit attempt for character {$characterId}");
                 return;
             }
 
-            // Support partial payments — accumulate amount_paid
-            $newPaid = ($tax->amount_paid ?? 0) + $amount;
+            // Re-fetch with lock to prevent race conditions on concurrent payments
+            $taxLocked = MiningTax::where('id', $tax->id)->lockForUpdate()->first();
+            if (!$taxLocked) {
+                // Tax disappeared mid-flight — let the dedup row stand so we
+                // don't loop on a missing tax, but log it as anomalous.
+                Log::warning("Mining Manager: Tax {$tax->id} not found during payment application for transaction {$transactionId}; dedup row inserted, no payment applied");
+                return;
+            }
 
-            $tax->update([
+            // Support partial payments — accumulate amount_paid.
+            $newPaid = ($taxLocked->amount_paid ?? 0) + $amount;
+
+            $taxLocked->update([
                 'amount_paid' => $newPaid,
-                'paid_at' => $transaction->date,
-                'status' => ($tax->amount_owed - $newPaid) < 1 ? 'paid' : 'partial',
-                'transaction_id' => $transaction->id,
+                'paid_at' => $transactionDate,
+                'status' => ($taxLocked->amount_owed - $newPaid) < 1 ? 'paid' : 'partial',
+                'transaction_id' => $transactionId,
             ]);
 
-            // Mark tax code as used only when fully paid
-            if (($tax->amount_owed - $newPaid) < 1) {
+            // Mark tax code as used only when fully paid.
+            if (($taxLocked->amount_owed - $newPaid) < 1) {
                 $taxCode->update([
                     'used_at' => Carbon::now(),
-                    'transaction_id' => $transaction->id,
+                    'transaction_id' => $transactionId,
                     'status' => 'used',
                 ]);
             }
+
+            $applied = true;
         });
 
-        Log::info("Mining Manager: Applied payment for character {$tax->character_id}: " . number_format($amount, 2) . " ISK (code: {$taxCode->code})");
+        if ($applied) {
+            Log::info("Mining Manager: Applied payment for character {$characterId}: " . number_format($amount, 2) . " ISK (code: {$taxCode->code})");
+        }
+
+        return $applied;
     }
 
     /**
@@ -389,13 +513,19 @@ class WalletTransferService
                 $query->where('corporation_id', $corporationId);
             }
 
-            // Exclude transactions already applied to any tax record
-            $appliedTransactionIds = MiningTax::whereNotNull('transaction_id')
-                ->pluck('transaction_id')
-                ->toArray();
-            if (!empty($appliedTransactionIds)) {
-                $query->whereNotIn('id', $appliedTransactionIds);
-            }
+            // Exclude transactions already applied. Use the canonical dedup
+            // table (mining_manager_processed_transactions) rather than
+            // mining_taxes.transaction_id — the latter is mutated per
+            // payment, so a partial-payment tax that gets a follow-up
+            // payment with the same wallet code would have its OLDER
+            // transaction_id overwritten and the older transaction would
+            // re-suggest itself on the next auto-verify run. The dedup
+            // table is append-only and is the single source of truth for
+            // "has this transaction been credited to anything yet?".
+            $query->whereNotIn('id', function ($sub) {
+                $sub->select('transaction_id')
+                    ->from('mining_manager_processed_transactions');
+            });
 
             // Get the most recent matching transaction (tax code match is primary identifier)
             $transaction = $query->orderBy('date', 'desc')->first();
@@ -481,7 +611,7 @@ class WalletTransferService
         $failed = 0;
         $errors = [];
 
-        // Get all unpaid/overdue/partial taxes
+        // Get all unpaid/overdue/partial taxes.
         $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
             ->get();
 
@@ -490,32 +620,54 @@ class WalletTransferService
                 $transaction = $this->verifyPaymentFromJournal($tax, $corporationId);
 
                 if ($transaction) {
-                    DB::transaction(function () use ($tax, $transaction) {
-                        // Mark tax as paid
-                        $tax->update([
-                            'status' => 'paid',
-                            'amount_paid' => $transaction['amount'],
-                            'paid_at' => Carbon::parse($transaction['date']),
+                    // Resolve the TaxCode that maps this tax → wallet code.
+                    // verifyPaymentFromJournal already proved one exists (the
+                    // journal-row lookup uses it). Re-fetch as a model so we
+                    // can pass it to applyPaymentToTax.
+                    $taxCode = TaxCode::where('mining_tax_id', $tax->id)
+                        ->where('status', '!=', 'cancelled')
+                        ->first();
+
+                    if (!$taxCode) {
+                        // Defensive — shouldn't happen since verifyPaymentFromJournal
+                        // returned non-null, but log and skip rather than crash.
+                        Log::warning("WalletTransferService: TaxCode disappeared between verifyPaymentFromJournal and apply for tax {$tax->id}");
+                        continue;
+                    }
+
+                    // Route through the canonical applyPaymentToTax helper —
+                    // same atomic-claim, partial-payment-accumulating
+                    // semantics as the listener and the manual paths.
+                    //
+                    // Pre-fix this method had its own divergent write logic:
+                    // (a) replaced amount_paid instead of accumulating
+                    //     (bulldozed partial payments to "fully paid" with
+                    //     the wrong amount), and (b) skipped the dedup-table
+                    //     insert entirely (allowing the same transaction to
+                    //     re-credit a tax on every cron run).
+                    $applied = $this->applyPaymentToTax(
+                        $tax,
+                        $taxCode,
+                        (int) $transaction['id'],
+                        Carbon::parse($transaction['date']),
+                        (int) $tax->character_id,
+                        (float) $transaction['amount']
+                    );
+
+                    if ($applied) {
+                        $verified++;
+
+                        Log::info("WalletTransferService: Auto-verified tax payment", [
+                            'tax_id' => $tax->id,
+                            'character_id' => $tax->character_id,
+                            'amount' => $transaction['amount'],
                             'transaction_id' => $transaction['id'],
                         ]);
-
-                        // Mark tax code as used
-                        TaxCode::where('mining_tax_id', $tax->id)
-                            ->update([
-                                'status' => 'used',
-                                'used_at' => Carbon::parse($transaction['date']),
-                                'transaction_id' => $transaction['id'],
-                            ]);
-                    });
-
-                    $verified++;
-
-                    Log::info("WalletTransferService: Auto-verified tax payment", [
-                        'tax_id' => $tax->id,
-                        'character_id' => $tax->character_id,
-                        'amount' => $transaction['amount'],
-                        'transaction_id' => $transaction['id'],
-                    ]);
+                    }
+                    // applied=false means dedup-claim collided (transaction
+                    // already credited by another path) or the tax row
+                    // disappeared mid-flight; both are non-error skips that
+                    // applyPaymentToTax already logged.
                 }
 
             } catch (\Exception $e) {

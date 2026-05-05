@@ -66,6 +66,25 @@ class DiagnosticController extends Controller
     }
 
     /**
+     * Run the Master Test — a one-click chain of read-only smoke checks
+     * exercising every major area of the plugin (schema, settings, cross-
+     * plugin integration, pricing, notifications, lifecycle, tax, security
+     * hardening). Returns a structured JSON report.
+     *
+     * Idempotent — never mutates production data. Heavier per-area
+     * diagnostics remain on their own dedicated tabs for deep-dive use.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function runMasterTest(\MiningManager\Services\Diagnostic\MasterTestRunner $runner)
+    {
+        return response()->json([
+            'success' => true,
+            'report' => $runner->runAll(),
+        ]);
+    }
+
+    /**
      * Display diagnostic page
      *
      * @return \Illuminate\View\View
@@ -1094,16 +1113,20 @@ class DiagnosticController extends Controller
             $severity = $request->input('severity', 'medium');
             $oreValue = $request->input('ore_value', 50000000);
             $taxOwed = $request->input('tax_owed', 5000000);
-            $tempRoleId = $request->input('temp_role_id');
 
-            // Temporarily override Discord role ID if provided
-            $originalRoleId = null;
-            $tempRoleUsed = false;
-            if ($tempRoleId && $webhook->type === 'discord') {
-                $originalRoleId = $webhook->discord_role_id;
-                $webhook->discord_role_id = $tempRoleId;
-                $tempRoleUsed = true;
-            }
+            // (Removed: temp_role_id override.)
+            //
+            // The diagnostic used to read a `temp_role_id` form field and
+            // mutate `$webhook->discord_role_id` in-memory before dispatch,
+            // intending to let the operator test "what happens with role X
+            // pinged" without persisting the change. The mutation never
+            // reached the actual dispatch though — sendViaWebhooks calls
+            // `WebhookConfiguration::enabled()->forEvent(...)->get()` which
+            // does a fresh DB read and ignores the in-memory model. So the
+            // feature lied: it reported "role X pinged" while the saved
+            // role got pinged instead. Removed entirely. Operators who
+            // want to test a different role should edit the webhook,
+            // save, test, then revert — same number of clicks, no lie.
 
             // Create simulated theft incident
             // Use the webhook's corporation_id (or moon owner corp) so the query matches this webhook
@@ -1138,13 +1161,25 @@ class DiagnosticController extends Controller
                 $testIncident->resolved_by = 'Test Admin';
             }
 
-            // Send notification
-            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-            $result = $webhookService->sendTheftNotification($testIncident, $eventType, $additionalData);
+            // Send notification via NotificationService (Phase D — was
+            // WebhookService::sendTheftNotification before consolidation).
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $nsResults = match ($eventType) {
+                'critical_theft' => $notificationService->sendCriticalTheft($testIncident, $additionalData),
+                'active_theft' => $notificationService->sendActiveTheft($testIncident, $additionalData),
+                'incident_resolved' => $notificationService->sendIncidentResolved($testIncident, $additionalData),
+                default => $notificationService->sendTheftDetected($testIncident, $additionalData),
+            };
 
-            // Restore original role ID if it was temporarily changed
-            if ($originalRoleId !== null) {
-                $webhook->discord_role_id = $originalRoleId;
+            // Unwrap to match the old per-webhook-id shape used by the
+            // success/failure counting below. send() returns a channel-keyed
+            // array; we want the Discord slot for diagnostic reporting.
+            $result = [];
+            foreach ($nsResults['discord']['sent'] ?? [] as $wid) {
+                $result[$wid] = ['success' => true];
+            }
+            foreach ($nsResults['discord']['failed'] ?? [] as $fail) {
+                $result[$fail['webhook_id'] ?? 'unknown'] = ['success' => false, 'error' => $fail['error'] ?? 'Unknown error'];
             }
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -1169,8 +1204,7 @@ class DiagnosticController extends Controller
                     'webhook_type' => $webhook->type,
                     'event_type' => $eventType,
                     'duration_ms' => $duration,
-                    'temp_role_used' => $tempRoleUsed,
-                    'role_mention' => $tempRoleUsed ? $tempRoleId : $webhook->discord_role_id,
+                    'role_mention' => $webhook->discord_role_id,
                 ]);
             } else {
                 return response()->json([
@@ -2875,6 +2909,339 @@ class DiagnosticController extends Controller
     // ========================================================================
 
     /**
+     * Fire a REAL notification through the full NotificationService pipeline.
+     *
+     * Unlike testNotification() which does a single-webhook preview POST,
+     * this routes through the actual convenience wrappers (sendTaxReminder,
+     * sendMoonArrival, sendTheftDetected, etc.) so everything gets exercised:
+     * per-type enable/disable toggles, corp-scoped webhook filtering, all
+     * subscribed webhooks (not just one), retry logic on transient failures,
+     * and the mining_notification_log audit trail.
+     *
+     * Useful for end-to-end verification without having to wait for a real
+     * tax calculation, moon extraction, theft detection, or report generation
+     * to happen organically.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function fireLiveNotification(Request $request)
+    {
+        $logs = [];
+        $startTime = microtime(true);
+        $this->addLog($logs, 'info', '=== Live Notification Fire Started ===');
+
+        $type = $request->input('notification_type', 'tax_reminder');
+        $characterId = (int) $request->input('character_id', 0);
+        $characterName = $request->input('character_name', 'Test Character');
+
+        if ($characterId === 0) {
+            $characterId = 123456789;
+            $this->addLog($logs, 'warn', 'No character_id provided — using fake ID 123456789. Tax-individual notifications may not ping a real user.');
+        } else {
+            $charInfo = DB::table('character_infos')->where('character_id', $characterId)->first();
+            if ($charInfo) {
+                $characterName = $charInfo->name;
+                $this->addLog($logs, 'ok', "Target character: {$characterName} ({$characterId})");
+            } else {
+                $this->addLog($logs, 'warn', "Character ID {$characterId} not found in character_infos — falling back to provided name: {$characterName}");
+            }
+        }
+
+        $this->addLog($logs, 'info', "Notification type: {$type}");
+        $this->addLog($logs, 'warn', '⚠️  This will fire through the FULL pipeline — every subscribed, enabled webhook will receive the notification. Scope filters apply.');
+
+        try {
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $testData = $this->buildTestNotificationData($request, $type, $characterId, $characterName);
+
+            $results = $this->dispatchLiveByType($notificationService, $type, $characterId, $characterName, $testData, $request);
+
+            $this->addLog($logs, 'ok', 'Wrapper returned: ' . json_encode($this->summariseLiveResults($results)));
+
+            $this->summariseLiveChannels($logs, $results);
+        } catch (\Exception $e) {
+            $this->addLog($logs, 'error', 'Live fire failed: ' . $e->getMessage());
+            $this->addLog($logs, 'error', 'Stack: ' . $e->getTraceAsString());
+        }
+
+        $duration = round((microtime(true) - $startTime) * 1000, 2);
+        $this->addLog($logs, 'info', "=== Live Fire Complete ({$duration}ms) ===");
+
+        return response()->json([
+            'success' => true,
+            'logs' => $logs,
+            'duration_ms' => $duration,
+        ]);
+    }
+
+    /**
+     * Route a live notification fire to the right NotificationService wrapper
+     * for its type. Builds the fake domain model where the wrapper needs one
+     * (MiningEvent / TheftIncident / MiningReport).
+     */
+    protected function dispatchLiveByType(
+        \MiningManager\Services\Notification\NotificationService $ns,
+        string $type,
+        int $characterId,
+        string $characterName,
+        array $data,
+        Request $request
+    ): array {
+        return match ($type) {
+            'tax_reminder' => $ns->sendTaxReminder(
+                $characterId,
+                (float) ($data['amount'] ?? 5000000),
+                \Carbon\Carbon::parse($data['due_date'] ?? now()->addDays(7)),
+                (int) ($data['days_remaining'] ?? 7)
+            ),
+            'tax_overdue' => $ns->sendTaxOverdue(
+                $characterId,
+                (float) ($data['amount'] ?? 5000000),
+                \Carbon\Carbon::parse($data['due_date'] ?? now()->subDays(3)),
+                (int) ($data['days_overdue'] ?? 3)
+            ),
+            'tax_generated' => $ns->sendTaxGenerated(
+                $data['period_label'] ?? now()->subMonth()->format('F Y'),
+                (int) ($data['tax_count'] ?? 15),
+                (float) ($data['total_amount'] ?? 75000000),
+                $data['period_type'] ?? 'monthly',
+                $data['due_date'] ?? null
+            ),
+            'tax_announcement' => $ns->sendTaxAnnouncement(
+                $data['period_label'] ?? now()->subMonth()->format('F Y'),
+                $data['period_type'] ?? 'monthly',
+                $data['due_date'] ?? null
+            ),
+            'tax_invoice' => $this->fireLiveTaxInvoice($ns, $characterId, $data),
+            'event_created' => $ns->sendEventCreated($this->buildFakeMiningEvent($data)),
+            'event_started' => $ns->sendEventStarted($this->buildFakeMiningEvent($data), []),
+            'event_completed' => $ns->sendEventCompleted($this->buildFakeMiningEvent($data), []),
+            'moon_ready' => $ns->sendMoonArrival($data),
+            'jackpot_detected' => $ns->sendJackpotDetected($data),
+            'moon_chunk_unstable' => $ns->sendMoonChunkUnstable($data),
+            'extraction_at_risk' => $ns->sendExtractionAtRisk(array_merge($data, [
+                'alert_flavor' => $data['alert_flavor'] ?? 'fuel_critical',
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'system_name' => $data['system_name'] ?? 'J-Space Test',
+                'days_remaining' => $data['days_remaining'] ?? 2.4,
+                'hours_remaining' => $data['hours_remaining'] ?? 57.6,
+                'fuel_expires' => $data['fuel_expires'] ?? now()->addDays(2)->addHours(14)->format('Y-m-d H:i') . ' UTC',
+                'estimated_value' => (int) ($data['estimated_value'] ?? 1200000000),
+                'structure_corporation_id' => (int) ($data['structure_corporation_id'] ?? 98000001),
+            ])),
+            'extraction_lost' => $ns->sendExtractionLost(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'system_name' => $data['system_name'] ?? 'J-Space Test',
+                'destroyed_at' => $data['destroyed_at'] ?? now()->subMinutes(30)->format('Y-m-d H:i') . ' UTC',
+                'detection_source' => $data['detection_source'] ?? 'notification',
+                'final_timer_result' => $data['final_timer_result'] ?? 'Defended and lost',
+                'chunk_value' => (int) ($data['chunk_value'] ?? 1200000000),
+                'killmail_url' => $data['killmail_url'] ?? 'https://zkillboard.com/',
+                'structure_corporation_id' => (int) ($data['structure_corporation_id'] ?? 98000001),
+            ])),
+            'theft_detected' => $ns->sendTheftDetected($this->buildFakeTheftIncident($data), [
+                'incident_url' => $data['incident_url'] ?? route('mining-manager.theft.index'),
+            ]),
+            'critical_theft' => $ns->sendCriticalTheft($this->buildFakeTheftIncident(array_merge($data, ['severity' => 'critical'])), [
+                'incident_url' => $data['incident_url'] ?? route('mining-manager.theft.index'),
+            ]),
+            'active_theft' => $ns->sendActiveTheft($this->buildFakeTheftIncident($data), [
+                'incident_url' => $data['incident_url'] ?? route('mining-manager.theft.index'),
+                'new_mining_value' => (float) ($data['new_mining_value'] ?? 10000000),
+                'last_activity' => $data['last_activity'] ?? now()->format('Y-m-d H:i:s'),
+            ]),
+            'incident_resolved' => $ns->sendIncidentResolved($this->buildFakeTheftIncident(array_merge($data, ['status' => 'resolved'])), [
+                'incident_url' => $data['incident_url'] ?? route('mining-manager.theft.index'),
+                'resolved_by' => $data['resolved_by'] ?? 'Diagnostic Test',
+            ]),
+            'report_generated' => $ns->sendReportGenerated($this->buildFakeMiningReport($data), $data),
+            default => ['error' => "Unknown notification type: {$type}"],
+        };
+    }
+
+    /**
+     * Tax invoice requires a TaxInvoice model — build a fake unsaved one
+     * and call sendTaxInvoice.
+     */
+    protected function fireLiveTaxInvoice(
+        \MiningManager\Services\Notification\NotificationService $ns,
+        int $characterId,
+        array $data
+    ): array {
+        // TaxInvoice uses `expires_at` as its deadline (no `due_date` column on
+        // the model — that lives on mining_taxes). `due_date` would be silently
+        // dropped by the mass-assignment filter since it's not in $fillable.
+        $invoice = new \MiningManager\Models\TaxInvoice([
+            'character_id' => $characterId,
+            'amount' => (float) ($data['amount'] ?? 5000000),
+            'expires_at' => \Carbon\Carbon::parse($data['due_date'] ?? now()->addDays(7)),
+        ]);
+        $invoice->id = 99999;
+        return $ns->sendTaxInvoice($invoice);
+    }
+
+    /**
+     * Build an unsaved MiningEvent model from test data for event_* dispatches.
+     */
+    protected function buildFakeMiningEvent(array $data): \MiningManager\Models\MiningEvent
+    {
+        $event = new \MiningManager\Models\MiningEvent([
+            'name' => $data['event_name'] ?? 'Diagnostic Test Event',
+            'type' => $data['event_type_key'] ?? 'mining_op',
+            'tax_modifier' => 1.0,
+            'location_scope' => 'any',
+            'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            'status' => 'active',
+            'total_mined' => (float) ($data['total_mined'] ?? 150000000),
+            'participant_count' => (int) ($data['participants'] ?? 12),
+            'start_time' => \Carbon\Carbon::parse($data['start_date'] ?? now()),
+            'end_time' => \Carbon\Carbon::parse($data['end_date'] ?? now()->addHours(4)),
+        ]);
+        $event->id = 99999;
+        return $event;
+    }
+
+    /**
+     * Build an unsaved TheftIncident for theft_* dispatches.
+     */
+    protected function buildFakeTheftIncident(array $data): \MiningManager\Models\TheftIncident
+    {
+        $incident = new \MiningManager\Models\TheftIncident([
+            'character_id' => (int) ($data['character_id'] ?? 123456789),
+            'character_name' => $data['character_name'] ?? 'Test Miner',
+            'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            'severity' => $data['severity'] ?? 'medium',
+            'ore_value' => (float) ($data['ore_value'] ?? 50000000),
+            'tax_owed' => (float) ($data['tax_owed'] ?? 5000000),
+            'status' => $data['status'] ?? 'detected',
+            'incident_date' => now(),
+            'activity_count' => (int) ($data['activity_count'] ?? 1),
+        ]);
+        $incident->id = 99999;
+        return $incident;
+    }
+
+    /**
+     * Build an unsaved MiningReport for report_generated dispatches.
+     */
+    protected function buildFakeMiningReport(array $data): \MiningManager\Models\MiningReport
+    {
+        $period = $data['period'] ?? [];
+        $start = isset($period['start']) ? \Carbon\Carbon::parse($period['start']) : now()->subMonth()->startOfMonth();
+        $end = isset($period['end']) ? \Carbon\Carbon::parse($period['end']) : now()->subMonth()->endOfMonth();
+
+        $report = new \MiningManager\Models\MiningReport([
+            'report_type' => $data['report_type'] ?? 'monthly',
+            'start_date' => $start,
+            'end_date' => $end,
+            'format' => $data['format'] ?? 'json',
+            'generated_at' => now(),
+            'generated_by' => $data['generated_by'] ?? 'Diagnostic Test',
+        ]);
+        $report->id = 99999;
+        return $report;
+    }
+
+    /**
+     * Compact the full channel-keyed result map into a logger-friendly shape.
+     */
+    protected function summariseLiveResults(array $results): array
+    {
+        if (isset($results['error'])) {
+            return ['error' => $results['error']];
+        }
+        if (isset($results['skipped'])) {
+            return ['skipped' => true, 'reason' => $results['reason'] ?? 'unknown'];
+        }
+
+        $summary = [];
+        foreach ($results as $channel => $channelResult) {
+            if (!is_array($channelResult)) {
+                $summary[$channel] = $channelResult;
+                continue;
+            }
+            if (isset($channelResult['skipped']) && $channelResult['skipped']) {
+                // Common cause: no webhook has notify_{type}=true yet.
+                // Surface the reason explicitly so the user knows this isn't
+                // a bug — they just need to subscribe a webhook.
+                $reason = $channelResult['reason'] ?? 'no subscribed webhooks';
+                $summary[$channel] = "skipped ({$reason})";
+                continue;
+            }
+            if (isset($channelResult['sent']) && is_array($channelResult['sent'])) {
+                $summary[$channel] = [
+                    'sent' => count($channelResult['sent']),
+                    'failed' => count($channelResult['failed'] ?? []),
+                ];
+            } elseif (isset($channelResult['success'])) {
+                $summary[$channel] = $channelResult['success'] ? 'ok' : 'failed';
+            } elseif (isset($channelResult['error'])) {
+                $summary[$channel] = 'error: ' . $channelResult['error'];
+            } else {
+                $summary[$channel] = 'unknown';
+            }
+        }
+        return $summary;
+    }
+
+    /**
+     * Emit per-channel + per-webhook log lines from a live-dispatch result map.
+     */
+    protected function summariseLiveChannels(array &$logs, array $results): void
+    {
+        if (isset($results['error'])) {
+            $this->addLog($logs, 'error', 'Dispatcher error: ' . $results['error']);
+            return;
+        }
+
+        if (isset($results['skipped'])) {
+            $reason = $results['reason'] ?? 'unknown';
+            $this->addLog($logs, 'warn', "Dispatcher SKIPPED the notification. Reason: {$reason}");
+            return;
+        }
+
+        foreach ($results as $channel => $channelResult) {
+            if (!is_array($channelResult)) continue;
+
+            $label = strtoupper($channel);
+
+            if (isset($channelResult['error'])) {
+                $this->addLog($logs, 'warn', "{$label}: {$channelResult['error']}");
+                continue;
+            }
+            if (isset($channelResult['skipped']) && $channelResult['skipped']) {
+                $this->addLog($logs, 'skip', "{$label}: skipped");
+                continue;
+            }
+
+            $sent = $channelResult['sent'] ?? [];
+            $failed = $channelResult['failed'] ?? [];
+
+            if (is_array($sent) && is_array($failed)) {
+                $this->addLog($logs, count($sent) > 0 ? 'ok' : 'warn',
+                    "{$label}: " . count($sent) . " sent, " . count($failed) . " failed"
+                );
+                foreach ($sent as $webhookId) {
+                    $this->addLog($logs, 'info', "  → webhook #{$webhookId}: delivered");
+                }
+                foreach ($failed as $fail) {
+                    $wid = $fail['webhook_id'] ?? 'unknown';
+                    $err = $fail['error'] ?? 'unknown error';
+                    $this->addLog($logs, 'warn', "  → webhook #{$wid}: {$err}");
+                }
+            } elseif (isset($channelResult['success'])) {
+                $ok = $channelResult['success'];
+                $this->addLog($logs, $ok ? 'ok' : 'warn',
+                    "{$label}: " . ($ok ? 'sent successfully' : ('failed — ' . ($channelResult['error'] ?? 'unknown')))
+                );
+            }
+        }
+    }
+
+    /**
      * Test notification pipeline with detailed step-by-step logging
      *
      * @param Request $request
@@ -2924,6 +3291,9 @@ class DiagnosticController extends Controller
             'event_completed' => 'Mining Event Completed',
             'moon_ready' => 'Moon Extraction Ready',
             'jackpot_detected' => 'Jackpot Detected',
+            'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
+            'extraction_at_risk' => 'Extraction at Risk (fuel / attack / reinforced)',
+            'extraction_lost' => 'Extraction Lost (structure destroyed)',
             'theft_detected' => 'Theft Detected',
             'critical_theft' => 'Critical Theft',
             'active_theft' => 'Active Theft in Progress',
@@ -3093,10 +3463,8 @@ class DiagnosticController extends Controller
         };
 
         try {
-            // Use reflection to call the protected formatMessageForESI
-            $reflection = new \ReflectionMethod($notificationService, 'formatMessageForESI');
-            $reflection->setAccessible(true);
-            $message = $reflection->invoke($notificationService, $typeConst, $data);
+            // formatMessageForESI is public — preview can call directly.
+            $message = $notificationService->formatMessageForESI($typeConst, $data);
 
             $this->addLog($logs, 'info', "Subject: {$message['subject']}");
             $this->addLog($logs, 'info', 'Body length: ' . strlen($message['body']) . ' characters');
@@ -3146,16 +3514,20 @@ class DiagnosticController extends Controller
             }
         }
 
-        // Format Discord embed — use WebhookService for moon/theft/report types (matches production), NotificationService for others
-        $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected']);
+        // Format Discord embed — all surfaces (theft/moon/report/tax/event)
+        // now live in NotificationService as of Phases B-D. We still reflect
+        // into the protected formatter to build the preview without actually
+        // sending to any webhook.
+        $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_at_risk', 'extraction_lost']);
         $isTheftType = in_array($type, ['theft_detected', 'critical_theft', 'active_theft', 'incident_resolved']);
         $isReportType = $type === 'report_generated';
         $message = null;
 
         if ($isTheftType) {
-            // Theft notifications use WebhookService with TheftIncident model in production
+            // Theft notifications live in NotificationService as of Phase D
+            // of the notification consolidation.
             try {
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
                 $testIncident = new \MiningManager\Models\TheftIncident([
                     'character_id' => $data['character_id'] ?? 123456789,
                     'character_name' => $data['character_name'] ?? 'Test Miner',
@@ -3163,7 +3535,7 @@ class DiagnosticController extends Controller
                     'ore_value' => $data['ore_value'] ?? 50000000,
                     'tax_owed' => $data['tax_owed'] ?? 5000000,
                     'status' => $type === 'incident_resolved' ? 'resolved' : 'open',
-                    'detected_at' => now(),
+                    'incident_date' => now(),
                 ]);
                 if ($type === 'active_theft') {
                     $testIncident->activity_count = $data['activity_count'] ?? 3;
@@ -3172,50 +3544,110 @@ class DiagnosticController extends Controller
                 $additionalData = array_intersect_key($data, array_flip([
                     'incident_url', 'test_mode', 'new_mining_value', 'last_activity', 'resolved_by',
                 ]));
-                $reflection = new \ReflectionMethod($webhookService, 'buildDiscordEmbed');
-                $reflection->setAccessible(true);
-                $embed = $reflection->invoke($webhookService, $testIncident, $type, $additionalData);
-                $message = ['embeds' => [$embed]];
 
-                // Add role mention
-                $roleReflection = new \ReflectionMethod($webhookService, 'getDiscordRoleMention');
-                $roleReflection->setAccessible(true);
+                // buildTheftData + formatMessageForDiscord + getDiscordRoleMention
+                // are all public on NotificationService — call directly.
+                $previewData = $notificationService->buildTheftData($testIncident, $additionalData);
+
+                $typeConst = match ($type) {
+                    'critical_theft' => \MiningManager\Services\Notification\NotificationService::TYPE_CRITICAL_THEFT,
+                    'active_theft' => \MiningManager\Services\Notification\NotificationService::TYPE_ACTIVE_THEFT,
+                    'incident_resolved' => \MiningManager\Services\Notification\NotificationService::TYPE_INCIDENT_RESOLVED,
+                    default => \MiningManager\Services\Notification\NotificationService::TYPE_THEFT_DETECTED,
+                };
+
+                $message = $notificationService->formatMessageForDiscord($typeConst, $previewData);
+                $embed = $message['embeds'][0] ?? [];
+
+                // Add role mention via the trait helper (also on NotificationService).
                 if ($webhook) {
-                    $roleMention = $roleReflection->invoke($webhookService, $type, $webhook);
+                    $roleMention = $notificationService->getDiscordRoleMention($type, $webhook);
                     if ($roleMention) {
                         $message['content'] = $roleMention;
                     }
                 }
 
-                $this->addLog($logs, 'ok', 'Discord theft embed formatted via WebhookService: ' . ($embed['title'] ?? 'N/A'));
+                $this->addLog($logs, 'ok', 'Discord theft embed formatted via NotificationService: ' . ($embed['title'] ?? 'N/A'));
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format theft Discord embed: ' . $e->getMessage());
             }
         } elseif ($isReportType) {
-            // Report notifications use WebhookService with MiningReport model in production
+            // Report notifications live in NotificationService as of Phase B
+            // of the notification consolidation. Build the same $data shape
+            // the consolidated formatter expects, then run it through the
+            // formatter for the preview. (formatMessageForDiscord is public.)
             try {
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-                $reflection = new \ReflectionMethod($webhookService, 'buildReportDiscordEmbed');
-                $reflection->setAccessible(true);
-                $testReport = new \MiningManager\Models\MiningReport();
-                $testReport->report_type = $data['report_type'] ?? 'monthly';
-                $testReport->id = 99999;
-                $embed = $reflection->invoke($webhookService, $testReport, $data);
-                $message = ['embeds' => [$embed]];
-                $this->addLog($logs, 'ok', 'Discord report embed formatted via WebhookService: ' . ($embed['title'] ?? 'N/A'));
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+
+                // Minimal $data compatible with the TYPE_REPORT_GENERATED
+                // branch of formatFieldsForDiscord / formatMessageForDiscord.
+                $previewData = array_merge([
+                    'report_id' => $data['report_id'] ?? 99999,
+                    'report_type' => $data['report_type'] ?? 'monthly',
+                    'period_str' => $data['period_str']
+                        ?? ((isset($data['period']['start'], $data['period']['end']))
+                            ? ($data['period']['start'] . ' to ' . $data['period']['end'])
+                            : 'N/A'),
+                    'period' => $data['period'] ?? [],
+                    'unique_miners' => $data['unique_miners'] ?? ($data['summary']['unique_miners'] ?? 0),
+                    'total_value' => $data['total_value'] ?? ($data['summary']['total_value'] ?? 0),
+                    'is_current_month' => $data['is_current_month'] ?? ($data['taxes']['is_current_month'] ?? false),
+                    'estimated_tax' => $data['estimated_tax'] ?? ($data['taxes']['estimated_tax'] ?? 0),
+                    'total_paid' => $data['total_paid'] ?? ($data['taxes']['total_paid'] ?? 0),
+                    'unpaid' => $data['unpaid'] ?? ($data['taxes']['unpaid'] ?? 0),
+                    'collection_rate' => $data['collection_rate'] ?? ($data['taxes']['collection_rate'] ?? null),
+                    'description' => $data['description'] ?? 'Preview: sample report notification.',
+                    'footer_extra' => $data['footer_extra'] ?? '',
+                ], $data);
+
+                $message = $notificationService->formatMessageForDiscord(\MiningManager\Services\Notification\NotificationService::TYPE_REPORT_GENERATED, $previewData);
+                $embed = $message['embeds'][0] ?? [];
+                $this->addLog($logs, 'ok', 'Discord report embed formatted via NotificationService: ' . ($embed['title'] ?? 'N/A'));
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format report Discord embed: ' . $e->getMessage());
             }
         } elseif ($isMoonType) {
-            // Moon notifications use WebhookService in production
+            // Moon notifications live in NotificationService as of Phase C
+            // of the notification consolidation. formatMessageForDiscord
+            // is public — call directly.
             try {
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-                $reflection = new \ReflectionMethod($webhookService, 'buildMoonDiscordEmbed');
-                $reflection->setAccessible(true);
-                $moonEventType = $type === 'jackpot_detected' ? 'jackpot_detected' : 'moon_arrival';
-                $embed = $reflection->invoke($webhookService, $moonEventType, $data);
-                $message = ['embeds' => [$embed]];
-                $this->addLog($logs, 'ok', 'Discord moon embed formatted via WebhookService: ' . ($embed['title'] ?? 'N/A'));
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+
+                $nsType = match ($type) {
+                    'jackpot_detected' => \MiningManager\Services\Notification\NotificationService::TYPE_JACKPOT_DETECTED,
+                    'moon_chunk_unstable' => \MiningManager\Services\Notification\NotificationService::TYPE_MOON_CHUNK_UNSTABLE,
+                    'extraction_at_risk' => \MiningManager\Services\Notification\NotificationService::TYPE_EXTRACTION_AT_RISK,
+                    'extraction_lost' => \MiningManager\Services\Notification\NotificationService::TYPE_EXTRACTION_LOST,
+                    default => \MiningManager\Services\Notification\NotificationService::TYPE_MOON_READY,
+                };
+
+                // Provide a sensible description for the preview when the
+                // caller didn't supply one.
+                $previewData = $data;
+                // Seed reasonable defaults for extraction_at_risk preview so
+                // the Discord embed title resolver can pick the right flavor.
+                if ($type === 'extraction_at_risk' && !isset($previewData['alert_flavor'])) {
+                    $previewData['alert_flavor'] = 'fuel_critical';
+                }
+                if (!isset($previewData['description'])) {
+                    $previewData['description'] = match ($nsType) {
+                        \MiningManager\Services\Notification\NotificationService::TYPE_JACKPOT_DETECTED
+                            => isset($previewData['reported_by'])
+                                ? 'A jackpot moon extraction has been reported by a fleet member. Will be verified automatically when mining data arrives.'
+                                : 'A jackpot moon extraction has been confirmed! Miners found +100% variant ores in the belt.',
+                        \MiningManager\Services\Notification\NotificationService::TYPE_MOON_CHUNK_UNSTABLE
+                            => '⚠️ This chunk will enter **unstable state** soon. Capital ship pilots (Rorquals, Orcas) should dock up or warp to safety — unstable chunks are known hotspots for hostile activity.',
+                        \MiningManager\Services\Notification\NotificationService::TYPE_EXTRACTION_AT_RISK
+                            => '🔥 **Preview** — refinery running an active extraction is under threat. Flavor can be fuel_critical / shield_reinforced / armor_reinforced / hull_reinforced.',
+                        \MiningManager\Services\Notification\NotificationService::TYPE_EXTRACTION_LOST
+                            => '☠️ **Preview** — refinery destroyed mid-extraction. Chunk lost. Tax reconciliation and miner comms recommended.',
+                        default => 'A moon chunk is ready for mining!',
+                    };
+                }
+
+                $message = $notificationService->formatMessageForDiscord($nsType, $previewData);
+                $embed = $message['embeds'][0] ?? [];
+                $this->addLog($logs, 'ok', 'Discord moon embed formatted via NotificationService: ' . ($embed['title'] ?? 'N/A'));
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format moon Discord embed: ' . $e->getMessage());
             }
@@ -3238,9 +3670,7 @@ class DiagnosticController extends Controller
             };
 
             try {
-                $reflection = new \ReflectionMethod($notificationService, 'formatMessageForDiscord');
-                $reflection->setAccessible(true);
-                $message = $reflection->invoke($notificationService, $typeConst, $data);
+                $message = $notificationService->formatMessageForDiscord($typeConst, $data);
                 $this->addLog($logs, 'ok', 'Discord embed formatted: ' . ($message['embeds'][0]['title'] ?? 'N/A'));
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format Discord embed: ' . $e->getMessage());
@@ -3372,16 +3802,22 @@ class DiagnosticController extends Controller
             $this->addLog($logs, 'warn', "Notification type '{$type}' is disabled for Slack, but sending test anyway");
         }
 
-        // Format message — use WebhookService for moon/theft/report types (matches production), NotificationService for others
-        $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected']);
+        // Format message — all surfaces now live in NotificationService as of
+        // Phases B-D. The branches below stay type-specialised because some
+        // surfaces (moon, report) build inline field layouts in this preview
+        // rather than reflecting into protected formatters.
+        $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_at_risk', 'extraction_lost']);
         $isTheftType = in_array($type, ['theft_detected', 'critical_theft', 'active_theft', 'incident_resolved']);
         $isReportType = $type === 'report_generated';
         $message = null;
 
         if ($isTheftType) {
-            // Theft notifications use WebhookService with TheftIncident model in production
+            // Theft Slack formatting now goes through NotificationService
+            // (Phase D). The rich Block Kit layout used by the old WebhookService
+            // has been replaced with the simpler attachments-style output that
+            // matches the other surfaces.
             try {
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
                 $testIncident = new \MiningManager\Models\TheftIncident([
                     'character_id' => $data['character_id'] ?? 123456789,
                     'character_name' => $data['character_name'] ?? 'Test Miner',
@@ -3389,7 +3825,7 @@ class DiagnosticController extends Controller
                     'ore_value' => $data['ore_value'] ?? 50000000,
                     'tax_owed' => $data['tax_owed'] ?? 5000000,
                     'status' => $type === 'incident_resolved' ? 'resolved' : 'open',
-                    'detected_at' => now(),
+                    'incident_date' => now(),
                 ]);
                 if ($type === 'active_theft') {
                     $testIncident->activity_count = $data['activity_count'] ?? 3;
@@ -3398,26 +3834,27 @@ class DiagnosticController extends Controller
                 $additionalData = array_intersect_key($data, array_flip([
                     'incident_url', 'test_mode', 'new_mining_value', 'last_activity', 'resolved_by',
                 ]));
-                $reflection = new \ReflectionMethod($webhookService, 'buildSlackBlocks');
-                $reflection->setAccessible(true);
-                $blocks = $reflection->invoke($webhookService, $testIncident, $type, $additionalData);
 
-                $titleReflection = new \ReflectionMethod($webhookService, 'getTitleForEventType');
-                $titleReflection->setAccessible(true);
-                $title = $titleReflection->invoke($webhookService, $type);
+                $previewData = $notificationService->buildTheftData($testIncident, $additionalData);
 
-                $message = ['text' => $title, 'blocks' => $blocks];
-                $this->addLog($logs, 'ok', "Slack theft message formatted via WebhookService: {$title}");
+                $typeConst = match ($type) {
+                    'critical_theft' => \MiningManager\Services\Notification\NotificationService::TYPE_CRITICAL_THEFT,
+                    'active_theft' => \MiningManager\Services\Notification\NotificationService::TYPE_ACTIVE_THEFT,
+                    'incident_resolved' => \MiningManager\Services\Notification\NotificationService::TYPE_INCIDENT_RESOLVED,
+                    default => \MiningManager\Services\Notification\NotificationService::TYPE_THEFT_DETECTED,
+                };
+
+                $message = $notificationService->formatMessageForSlack($typeConst, $previewData);
+                $title = $notificationService->getEventTitle($type);
+                $this->addLog($logs, 'ok', "Slack theft message formatted via NotificationService: {$title}");
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format theft Slack message: ' . $e->getMessage());
             }
         } elseif ($isReportType) {
-            // Report notifications use WebhookService in production
+            // Report notifications live in NotificationService (Phase B).
             try {
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-                $titleReflection = new \ReflectionMethod($webhookService, 'getTitleForEventType');
-                $titleReflection->setAccessible(true);
-                $title = $titleReflection->invoke($webhookService, 'report_generated');
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+                $title = $notificationService->getEventTitle('report_generated');
 
                 $summary_data = $data['summary'] ?? [];
                 $taxes = $data['taxes'] ?? [];
@@ -3443,7 +3880,10 @@ class DiagnosticController extends Controller
                 $this->addLog($logs, 'warn', 'Could not format report Slack message: ' . $e->getMessage());
             }
         } elseif ($isMoonType) {
-            // Build Slack moon payload matching production format from WebhookService::sendMoonToSlack
+            // Build Slack moon payload matching production format (previously in
+            // WebhookService, now ported into NotificationService::formatFieldsForSlack
+            // TYPE_MOON_READY / TYPE_JACKPOT_DETECTED branches — Phase C of the
+            // notification consolidation). Kept inline here to avoid reflection.
             $moonEventType = $type === 'jackpot_detected' ? 'jackpot_detected' : 'moon_arrival';
             $fields = [];
             if (isset($data['moon_name'])) {
@@ -3475,10 +3915,7 @@ class DiagnosticController extends Controller
                 }
             }
 
-            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-            $titleReflection = new \ReflectionMethod($webhookService, 'getTitleForEventType');
-            $titleReflection->setAccessible(true);
-            $title = $titleReflection->invoke($webhookService, $moonEventType);
+            $title = app(\MiningManager\Services\Notification\NotificationService::class)->getEventTitle($moonEventType);
 
             $message = [
                 'text' => $title,
@@ -3487,7 +3924,7 @@ class DiagnosticController extends Controller
                     ['type' => 'section', 'fields' => $fields],
                 ],
             ];
-            $this->addLog($logs, 'ok', "Slack moon message formatted (production format): {$title}");
+            $this->addLog($logs, 'ok', "Slack moon message formatted via NotificationService: {$title}");
         }
 
         if (!$message) {
@@ -3506,9 +3943,7 @@ class DiagnosticController extends Controller
             };
 
             try {
-                $reflection = new \ReflectionMethod($notificationService, 'formatMessageForSlack');
-                $reflection->setAccessible(true);
-                $message = $reflection->invoke($notificationService, $typeConst, $data);
+                $message = $notificationService->formatMessageForSlack($typeConst, $data);
                 $this->addLog($logs, 'ok', 'Slack message formatted');
             } catch (\Exception $e) {
                 $this->addLog($logs, 'warn', 'Could not format Slack message: ' . $e->getMessage());
@@ -3638,12 +4073,51 @@ class DiagnosticController extends Controller
                 'system_name' => 'Perimeter',
                 'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
                 'detected_by' => 'Mining Ledger Analysis',
-                'jackpot_percentage' => 100,
-                'jackpot_ores' => [
-                    ['name' => 'Brilliant Gneiss', 'quantity' => 12500],
-                    ['name' => 'Lustrous Hedbergite', 'quantity' => 8200],
-                ],
+                'estimated_value' => 2500000000,
+                'ore_summary' => "Glistening Sylvite: 45.0% (12,000 m³)\nShimmering Sperrylite: 30.0% (8,000 m³)\nGlistening Coesite: 25.0% (6,500 m³)",
                 'extraction_id' => 1,
+                'extraction_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/1',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'moon_chunk_unstable' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'natural_decay_time' => now()->addHours(2)->format('Y-m-d H:i') . ' UTC',
+                'time_until_unstable' => '1h 57m',
+                'estimated_value' => 250000000,
+                'extraction_id' => 1,
+                'extraction_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/1',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'extraction_at_risk' => [
+                // Default flavor for the Fire Live / Fire ALL preview. Operators
+                // can override via test_* inputs if they want to preview a
+                // specific threat flavor (shield_reinforced, armor_reinforced,
+                // hull_reinforced).
+                'alert_flavor' => $request->input('test_alert_flavor', 'fuel_critical'),
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'system_name' => $request->input('test_system_name', 'Perimeter'),
+                'days_remaining' => (float) $request->input('test_days_remaining', 2.4),
+                'hours_remaining' => (float) $request->input('test_hours_remaining', 57.6),
+                'fuel_expires' => now()->addDays(2)->addHours(14)->format('Y-m-d H:i') . ' UTC',
+                'timer_ends_at' => now()->addHours(24)->format('Y-m-d H:i') . ' UTC',
+                'estimated_value' => (int) $request->input('test_estimated_value', 1200000000),
+                'extraction_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/1',
+                'structure_corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'extraction_lost' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'system_name' => $request->input('test_system_name', 'Perimeter'),
+                'destroyed_at' => now()->subMinutes(30)->format('Y-m-d H:i') . ' UTC',
+                'detection_source' => $request->input('test_detection_source', 'notification'),
+                'final_timer_result' => $request->input('test_final_timer_result', 'Defended and lost'),
+                'chunk_value' => (int) $request->input('test_chunk_value', 1200000000),
+                'killmail_url' => 'https://zkillboard.com/',
+                'extraction_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/1',
+                'structure_corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
                 'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             ],
             'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved' => $this->buildTheftTestData($request, $type, $characterId, $characterName),

@@ -10,7 +10,6 @@ use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use MiningManager\Services\Notification\WebhookService;
 use Carbon\Carbon;
 use Symfony\Component\Yaml\Yaml;
 
@@ -831,7 +830,21 @@ class MoonExtractionService
      * @param MoonExtraction $extraction
      * @return void
      */
-    private function sendMoonArrivalNotification(MoonExtraction $extraction)
+    /**
+     * Send moon arrival webhook notification.
+     *
+     * Public so external callers (CheckExtractionArrivalsCommand) can invoke
+     * directly. Pre-fix this was private and the command reached it via
+     * `ReflectionClass::getMethod()->setAccessible(true)` — a code smell
+     * (breaks IDE refactor + bypasses PHP's accessibility model just to
+     * dodge writing a public entry point).
+     *
+     * Atomic claim is handled internally — see comments inside.
+     *
+     * @param MoonExtraction $extraction
+     * @return void
+     */
+    public function sendMoonArrivalNotification(MoonExtraction $extraction)
     {
         Log::info("Mining Manager: sendMoonArrivalNotification() called for extraction {$extraction->id}", [
             'moon_id' => $extraction->moon_id,
@@ -841,6 +854,41 @@ class MoonExtractionService
             'chunk_arrival_time' => $extraction->chunk_arrival_time?->toIso8601String(),
         ]);
 
+        // ATOMIC CLAIM via compare-and-swap on notification_sent.
+        //
+        // Two cron paths can hit this method for the same extraction:
+        //   1. UpdateMoonExtractionsCommand (every 2h) → updateExtractionStatuses
+        //   2. CheckExtractionArrivalsCommand (every minute)
+        // Each command has its own Cache::lock so it can't race itself, but
+        // the two commands have separate locks and can interleave on the
+        // same extraction within a 60-second overlap window.
+        //
+        // Pre-fix: an `if ($extraction->notification_sent) return` check at
+        // the bottom of the try block (after structure + ore lookups) read
+        // a stale model. Both workers passed the check, both dispatched,
+        // both flipped the flag. Duplicate Discord pings for one arrival.
+        //
+        // Now: UPDATE WHERE notification_sent=false returns the count of
+        // rows updated. Only the worker that flips false→true gets back
+        // claimed=1; everyone else gets 0 and bails. Same row-level pattern
+        // as StructureAlertHandler's dedup latches.
+        //
+        // On dispatch failure we roll the claim back so the next cron tick
+        // can retry. A permanently-broken webhook re-fires every tick
+        // until fixed — acceptable vs a stuck latch needing manual reset.
+        $claimed = MoonExtraction::where('id', $extraction->id)
+            ->where('notification_sent', false)
+            ->update(['notification_sent' => true]);
+
+        if ($claimed === 0) {
+            Log::info("Mining Manager: Skipping moon arrival notification — already claimed for extraction {$extraction->id}");
+            return;
+        }
+
+        // We won the claim — refresh local model so subsequent reads see
+        // the updated flag (defensive; nothing downstream reads it today).
+        $extraction->refresh();
+
         try {
             // Get structure name
             $structure = DB::table('universe_structures')
@@ -849,21 +897,10 @@ class MoonExtractionService
 
             $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
 
-            // Build ore composition summary with volume
-            $oreSummary = '';
-            if (!empty($extraction->ore_composition)) {
-                $oreLines = [];
-                foreach ($extraction->ore_composition as $oreName => $oreData) {
-                    $percentage = $oreData['percentage'] ?? 0;
-                    $volumeM3 = $oreData['volume_m3'] ?? 0;
-                    $line = "{$oreName}: " . round($percentage, 1) . '%';
-                    if ($volumeM3 > 0) {
-                        $line .= ' (' . number_format($volumeM3) . ' m³)';
-                    }
-                    $oreLines[] = $line;
-                }
-                $oreSummary = implode("\n", $oreLines);
-            }
+            // Build ore composition summary with volume.
+            // Logic moved to MoonExtraction::buildOreSummary() so the same
+            // format is reused by jackpot_detected notifications too.
+            $oreSummary = $extraction->buildOreSummary();
 
             // Auto fracture = chunk arrival + 3 hours
             $autoFractureTime = $extraction->chunk_arrival_time
@@ -872,17 +909,8 @@ class MoonExtractionService
 
             $baseUrl = rtrim(config('app.url', ''), '/');
 
-            // Dedup guard — skip if already notified. Both entry points
-            // (updateExtractionStatuses and the new check-extraction-arrivals
-            // cron) can call this method, so we check the flag inside the
-            // method itself rather than at every call site.
-            if ($extraction->notification_sent) {
-                Log::info("Mining Manager: Skipping moon arrival notification — already sent for extraction {$extraction->id}");
-                return;
-            }
-
-            $webhookService = app(WebhookService::class);
-            $results = $webhookService->sendMoonNotification('moon_arrival', [
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $results = $notificationService->sendMoonArrival([
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
                 'chunk_arrival_time' => $extraction->chunk_arrival_time
@@ -893,29 +921,137 @@ class MoonExtractionService
                 'ore_summary' => $oreSummary,
                 'extraction_id' => $extraction->id,
                 'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
-            ], $extraction->corporation_id);
+            ]);
 
-            // Mark as sent so subsequent cron ticks don't re-fire.
-            // Only mark if we actually reached the webhook dispatch (webhookService
-            // call returned without throwing — even if individual webhooks failed,
-            // the dispatch itself happened and retrying would just re-spam).
-            $extraction->update(['notification_sent' => true]);
-
-            Log::info("Mining Manager: sendMoonNotification() returned for extraction {$extraction->id}", [
+            Log::info("Mining Manager: sendMoonArrival() returned for extraction {$extraction->id}", [
                 'moon_name' => $extraction->moon_name,
                 'result_type' => gettype($results),
-                'webhook_count' => is_array($results) ? count($results) : 0,
-                'result_summary' => is_array($results) ? array_map(fn($r) => is_array($r) ? ['success' => $r['success'] ?? null, 'error' => $r['error'] ?? null] : $r, $results) : $results,
+                'channels' => is_array($results) ? array_keys($results) : [],
+                'discord_sent_count' => is_array($results) ? count($results['discord']['sent'] ?? []) : 0,
+                'discord_failed_count' => is_array($results) ? count($results['discord']['failed'] ?? []) : 0,
                 'notification_sent_flag_set' => true,
             ]);
 
         } catch (\Exception $e) {
-            Log::error("Mining Manager: Failed to send moon arrival notification", [
+            // Roll back the claim so a later cron tick can retry naturally.
+            MoonExtraction::where('id', $extraction->id)->update(['notification_sent' => false]);
+            Log::error("Mining Manager: Failed to send moon arrival notification — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            // Do NOT set notification_sent — so a later retry can attempt again
+        }
+    }
+
+    /**
+     * Send the "chunk going unstable soon" SAFETY warning for capital pilots.
+     *
+     * Fired ~2 hours before the chunk enters the plugin's UNSTABLE state
+     * (which is fractured_at + 48h, i.e. the last 2 hours of the 50-hour
+     * post-fracture lifecycle). Unstable chunks attract hostile activity —
+     * this gives Rorqual / Orca pilots time to dock up or warp to safety
+     * before the situation gets dangerous.
+     *
+     * IMPORTANT: this uses the PLUGIN's lifecycle model, not raw ESI data.
+     * The plugin's lifecycle is richer than CCP's:
+     *
+     *     chunk_arrival_time → fractured_at (manual laser fire OR auto +3h)
+     *                       → 48h READY window (stable)
+     *                       → 2h UNSTABLE window (getUnstableStartTime())
+     *                       → expired
+     *
+     * The unstable phase is what MoonExtraction::isUnstable() returns true
+     * for. We fire this warning 2h BEFORE that phase starts, which is
+     * fractured_at + 46h (= last 2 hours of the 48h stable window).
+     *
+     * ESI's `natural_decay_time` is the auto-fracture mark (~3h after
+     * chunk_arrival), which is much earlier in the lifecycle and NOT the
+     * right trigger here.
+     *
+     * Idempotent via the `unstable_warning_sent` flag on moon_extractions
+     * (set inside this method after a successful dispatch). The per-minute
+     * cron re-evaluates eligibility on every tick but skips rows where
+     * the flag is already true.
+     *
+     * @param MoonExtraction $extraction
+     * @return void
+     */
+    public function sendMoonChunkUnstableNotification(MoonExtraction $extraction): void
+    {
+        if ($extraction->unstable_warning_sent) {
+            Log::info("Mining Manager: Skipping moon_chunk_unstable — already sent for extraction {$extraction->id}");
+            return;
+        }
+
+        // Use the plugin's canonical lifecycle helpers — NOT raw ESI
+        // natural_decay_time. getUnstableStartTime() = fractured_at + 48h,
+        // falling back to a chunk_arrival-based estimate if fracture_at
+        // isn't populated yet.
+        $unstableStart = $extraction->getUnstableStartTime();
+        $fractureTime = $extraction->getFractureTime();
+
+        if (!$unstableStart) {
+            Log::warning("Mining Manager: Skipping moon_chunk_unstable for extraction {$extraction->id} — cannot compute unstable_start (missing fractured_at + chunk_arrival_time)");
+            return;
+        }
+
+        Log::info("Mining Manager: sendMoonChunkUnstableNotification() called for extraction {$extraction->id}", [
+            'moon_id' => $extraction->moon_id,
+            'moon_name' => $extraction->moon_name,
+            'structure_id' => $extraction->structure_id,
+            'corporation_id' => $extraction->corporation_id,
+            'fracture_time' => $fractureTime?->toIso8601String(),
+            'unstable_start' => $unstableStart->toIso8601String(),
+            'is_auto_fractured' => (bool) $extraction->auto_fractured,
+        ]);
+
+        try {
+            $structure = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->first();
+
+            $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
+            $baseUrl = rtrim(config('app.url', ''), '/');
+
+            $timeUntilUnstable = Carbon::now()->diffForHumans($unstableStart, [
+                'parts' => 2,
+                'syntax' => Carbon::DIFF_ABSOLUTE,
+            ]);
+
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $results = $notificationService->sendMoonChunkUnstable([
+                'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                'structure_name' => $structureName,
+                // Display the plugin's unstable_start time, not ESI natural_decay.
+                'natural_decay_time' => $unstableStart->format('Y-m-d H:i') . ' UTC',
+                'time_until_unstable' => $timeUntilUnstable,
+                'estimated_value' => $extraction->estimated_value ?? 0,
+                'extraction_id' => $extraction->id,
+                'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
+            ]);
+
+            // Mark as sent so subsequent cron ticks don't re-fire. Set only
+            // after a successful dispatch (webhookService call returned
+            // without throwing).
+            $extraction->update(['unstable_warning_sent' => true]);
+
+            Log::info("Mining Manager: sendMoonChunkUnstable() returned for extraction {$extraction->id}", [
+                'moon_name' => $extraction->moon_name,
+                'time_until_unstable' => $timeUntilUnstable,
+                'unstable_start' => $unstableStart->toIso8601String(),
+                'channels' => is_array($results) ? array_keys($results) : [],
+                'discord_sent_count' => is_array($results) ? count($results['discord']['sent'] ?? []) : 0,
+                'discord_failed_count' => is_array($results) ? count($results['discord']['failed'] ?? []) : 0,
+                'unstable_warning_sent_flag_set' => true,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Mining Manager: Failed to send moon chunk unstable notification", [
+                'extraction_id' => $extraction->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Do NOT set unstable_warning_sent — so a later retry can attempt again
         }
     }
 
@@ -1149,63 +1285,6 @@ class MoonExtractionService
         }
 
         return $deleted;
-    }
-
-    /**
-     * Get extraction alerts (for notifications).
-     * Now filters by moon owner corporation ID from settings.
-     *
-     * @return array
-     */
-    public function getExtractionAlerts(): array
-    {
-        $notificationHours = config('mining-manager.moon.notification_hours_before', [24, 4, 1]);
-        $alerts = [];
-
-        // Get moon owner corporation ID from settings
-        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
-
-        foreach ($notificationHours as $hours) {
-            $targetTime = Carbon::now()->addHours($hours);
-            $windowStart = $targetTime->copy()->subMinutes(15);
-            $windowEnd = $targetTime->copy()->addMinutes(15);
-
-            $query = MoonExtraction::with(['structure'])
-                ->where('status', 'extracting')
-                ->where('notification_sent', false)
-                ->whereBetween('chunk_arrival_time', [$windowStart, $windowEnd]);
-
-            // Filter by corporation if configured
-            if ($moonOwnerCorpId) {
-                $query->where('corporation_id', $moonOwnerCorpId);
-            }
-
-            $extractions = $query->get();
-
-            if ($extractions->isNotEmpty()) {
-                $alerts[$hours] = $extractions;
-            }
-        }
-
-        return $alerts;
-    }
-
-    /**
-     * Mark extraction notification as sent.
-     *
-     * @param int $extractionId
-     * @return bool
-     */
-    public function markNotificationSent(int $extractionId): bool
-    {
-        try {
-            $extraction = MoonExtraction::findOrFail($extractionId);
-            $extraction->update(['notification_sent' => true]);
-            return true;
-        } catch (\Exception $e) {
-            Log::error("Mining Manager: Error marking notification as sent: " . $e->getMessage());
-            return false;
-        }
     }
 
     /**

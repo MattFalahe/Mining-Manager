@@ -43,22 +43,46 @@ class SettingsController extends Controller
             Log::debug('Mining Manager: Cache driver does not support tags, clearing settings cache prefix');
         }
 
-        // Always clear the settings-level cache keys regardless of driver
         $prefix = SettingsManagerService::CACHE_PREFIX;
         $activeCorp = $this->settingsService->getActiveCorporation();
 
-        // Clear common setting group caches
-        $groups = [
-            'general', 'tax_rates', 'pricing', 'features', 'dashboard',
-            'tax_selector', 'exemptions', 'payment', 'notifications',
-            'price_provider', 'janice_api_key', 'janice_market', 'janice_price_method',
-        ];
+        // Pre-fix this iterated a list of GROUP names ('general', 'pricing',
+        // 'notifications', etc.) and called Cache::forget on
+        // `<prefix>global_<group>`. But the cache keys SettingsManagerService
+        // writes use the FULL dotted path (`<prefix>global_notifications.enabled_types`,
+        // `<prefix>global_pricing.cache_duration`, etc.), so the bulk-clear
+        // forgot non-existent keys and the actual cache entries persisted
+        // for up to CACHE_DURATION (60 minutes). Stale-cache risk after
+        // every settings save.
+        //
+        // Now: enumerate the actual setting keys from the DB and forget
+        // each. Both global rows (corporation_id IS NULL) and active-corp
+        // rows. Per-key Cache::forget is portable across all drivers
+        // (file/db/redis). The `updateSetting` method already does this
+        // for single-key writes; this bulk-clear extends the same pattern
+        // to all-keys-after-batch-save.
+        try {
+            $allKeys = \MiningManager\Models\Setting::query()
+                ->where(function ($q) use ($activeCorp) {
+                    $q->whereNull('corporation_id');
+                    if ($activeCorp) {
+                        $q->orWhere('corporation_id', $activeCorp);
+                    }
+                })
+                ->pluck('key')
+                ->unique();
 
-        foreach ($groups as $group) {
-            cache()->forget($prefix . 'global_' . $group);
-            if ($activeCorp) {
-                cache()->forget($prefix . $activeCorp . '_' . $group);
+            foreach ($allKeys as $key) {
+                cache()->forget($prefix . 'global_' . $key);
+                if ($activeCorp) {
+                    cache()->forget($prefix . $activeCorp . '_' . $key);
+                }
             }
+        } catch (\Throwable $e) {
+            // Defensive — settings table missing or query exploded. Logged
+            // at warning so a real schema issue surfaces rather than silently
+            // allowing stale-cache reads.
+            Log::warning('Mining Manager: Settings cache clear (per-key) failed: ' . $e->getMessage());
         }
 
         Log::debug('Mining Manager: Settings cache cleared');
@@ -111,6 +135,11 @@ class SettingsController extends Controller
             return $query->forCorporation($corporationId);
         })->get();
 
+        // Corps available for per-webhook routing — tax program corp + any
+        // corp with plugin settings. Used by the webhook create/edit modal's
+        // "Assign to Corporation" selector.
+        $webhookCorporations = $this->settingsService->getAllCorporations();
+
         // Get wallet division names for the tax wallet division dropdown
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $walletDivisions = $this->getWalletDivisionNames($moonOwnerCorpId);
@@ -127,6 +156,7 @@ class SettingsController extends Controller
             'hasCustomSettings',
             'isFirstTimeSetup',
             'webhooks',
+            'webhookCorporations',
             'walletDivisions',
             'mailScopeCharacters',
             'allTokenCharacters',
@@ -292,6 +322,7 @@ class SettingsController extends Controller
             // Payment Settings
             'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
+            'payment_auto_match_payments' => 'nullable|boolean',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
@@ -334,6 +365,12 @@ class SettingsController extends Controller
             // Convert boolean checkboxes (unchecked = not sent)
             $data['compact_mode'] = $request->has('compact_mode');
             $data['show_character_portraits'] = $request->has('show_character_portraits');
+            // payment_auto_match_payments uses the payment_* → payment.*
+            // mapping in updateGeneralSettings(). A checkbox is unchecked
+            // when the form omits the field; we must persist false in
+            // that case (otherwise the operator can never turn auto-match
+            // off — the listener default is true).
+            $data['payment_auto_match_payments'] = $request->has('payment_auto_match_payments');
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 
@@ -368,7 +405,24 @@ class SettingsController extends Controller
 
             // Slack
             'slack_enabled' => 'nullable|boolean',
-            'slack_webhook_url' => 'nullable|url',
+            // HTTPS-only — Slack webhooks are always served at https://hooks.slack.com.
+            // The starts_with rule blocks http://, file://, gopher://, ftp://, etc.,
+            // closing the SSRF vector that http://127.0.0.1:port and similar internal
+            // URLs would otherwise present. Symmetric with webhookValidationRules()
+            // which gates the per-webhook URLs the same way.
+            //
+            // Conditional `required_if`: if the operator turned slack_enabled
+            // ON, the URL must be present. Pre-fix an admin could save with
+            // slack_enabled=true and an empty URL — every notification
+            // dispatch would then return "Slack webhook URL not configured"
+            // with no save-time error to point them at the missing field.
+            'slack_webhook_url' => [
+                'nullable',
+                'required_if:slack_enabled,1',
+                'required_if:slack_enabled,true',
+                'url',
+                'starts_with:https://',
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -506,8 +560,10 @@ class SettingsController extends Controller
             'tax_code_length' => 'required|integer|min:4|max:20',
             'auto_generate_tax_codes' => 'nullable|boolean',
 
-            // Tax Period Settings
-            'tax_calculation_period' => 'required|in:monthly,weekly,biweekly',
+            // Tax Period Settings — weekly removed in v1.0.3+ (historical rows
+            // still render via MiningTax::formatted_period, but no new weekly
+            // rows can be created).
+            'tax_calculation_period' => 'required|in:monthly,biweekly',
             'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
             'send_tax_reminders' => 'nullable|boolean',
             'tax_reminder_days' => 'required|integer|min:1|max:30',
@@ -548,6 +604,12 @@ class SettingsController extends Controller
             // Convert other checkboxes
             $data['auto_generate_tax_codes'] = $request->has('auto_generate_tax_codes');
             $data['send_tax_reminders'] = $request->has('send_tax_reminders');
+
+            // Pass through the "apply period change immediately" override flag.
+            // When unchecked (default), the settings service queues any
+            // tax_calculation_period change to the first of next month
+            // to avoid mid-period collisions on mining_taxes rows.
+            $data['tax_calculation_period_apply_now'] = $request->has('tax_calculation_period_apply_now');
 
             // Update all settings via service
             $this->settingsService->updateTaxRates($data);
@@ -635,13 +697,14 @@ class SettingsController extends Controller
                 $this->settingsService->updateSetting('janice_price_method', $data['janice_price_method'], 'string');
             }
 
-            // Manager Core-specific settings
-            if (isset($data['manager_core_market'])) {
-                $this->settingsService->updateSetting('manager_core_market', $data['manager_core_market'], 'string');
-            }
-            if (isset($data['manager_core_variant'])) {
-                $this->settingsService->updateSetting('manager_core_variant', $data['manager_core_variant'], 'string');
-            }
+            // Manager Core-specific settings are persisted via
+            // updatePricingSettings() below (under the `pricing.` prefix)
+            // — the canonical reader (SettingsManagerService::getPricingSettings)
+            // looks them up there. Pre-fix this block ALSO wrote them at
+            // the top-level (`manager_core_market` / `manager_core_variant`
+            // unprefixed), creating orphan rows that were never read by
+            // anything. Removed for cleanliness — the prefixed write later
+            // is the single source of truth.
 
             // Auto-subscribe type IDs to Manager Core when selected as provider
             if (($data['price_provider'] ?? '') === 'manager-core') {
@@ -761,7 +824,6 @@ class SettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             // Number inputs
-            'extraction_notification_hours' => 'required|integer|min:1|max:168',
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
             'tax_record_retention_days' => 'required|integer|min:90|max:3650',
 
@@ -772,11 +834,7 @@ class SettingsController extends Controller
             'enable_reports' => 'nullable|boolean',
             'enable_events' => 'nullable|boolean',
             'allow_event_creation' => 'nullable|boolean',
-            'auto_track_event_participation' => 'nullable|boolean',
             'enable_moon_tracking' => 'nullable|boolean',
-            'track_moon_compositions' => 'nullable|boolean',
-            'calculate_moon_value' => 'nullable|boolean',
-            'notify_extraction_ready' => 'nullable|boolean',
             'allow_public_stats' => 'nullable|boolean',
             'allow_member_leaderboard' => 'nullable|boolean',
             'show_character_names' => 'nullable|boolean',
@@ -809,14 +867,9 @@ class SettingsController extends Controller
                 // Events
                 'enable_events' => $request->has('enable_events'),
                 'allow_event_creation' => $request->has('allow_event_creation'),
-                'auto_track_event_participation' => $request->has('auto_track_event_participation'),
 
                 // Moon mining
                 'enable_moon_tracking' => $request->has('enable_moon_tracking'),
-                'track_moon_compositions' => $request->has('track_moon_compositions'),
-                'calculate_moon_value' => $request->has('calculate_moon_value'),
-                'notify_extraction_ready' => $request->has('notify_extraction_ready'),
-                'extraction_notification_hours' => $data['extraction_notification_hours'],
 
                 // Permissions & access
                 'allow_public_stats' => $request->has('allow_public_stats'),
@@ -1046,32 +1099,7 @@ class SettingsController extends Controller
      */
     public function storeWebhook(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'type' => 'required|in:discord,slack,custom',
-            'webhook_url' => 'required|url',
-            'notify_theft_detected' => 'nullable|boolean',
-            'notify_critical_theft' => 'nullable|boolean',
-            'notify_active_theft' => 'nullable|boolean',
-            'notify_incident_resolved' => 'nullable|boolean',
-            'notify_moon_arrival' => 'nullable|boolean',
-            'notify_jackpot_detected' => 'nullable|boolean',
-            'notify_event_created' => 'nullable|boolean',
-            'notify_event_started' => 'nullable|boolean',
-            'notify_event_completed' => 'nullable|boolean',
-            'notify_tax_generated' => 'nullable|boolean',
-            'notify_tax_announcement' => 'nullable|boolean',
-            'notify_tax_reminder' => 'nullable|boolean',
-            'notify_tax_invoice' => 'nullable|boolean',
-            'notify_tax_overdue' => 'nullable|boolean',
-            'notify_report_generated' => 'nullable|boolean',
-            'discord_role_id' => 'nullable|string|max:255',
-            'discord_username' => 'nullable|string|max:255',
-            'slack_channel' => 'nullable|string|max:255',
-            'slack_username' => 'nullable|string|max:255',
-            'custom_payload_template' => 'nullable|string',
-            'corporation_id' => 'nullable|integer',
-        ]);
+        $validator = Validator::make($request->all(), $this->webhookValidationRules());
 
         if ($validator->fails()) {
             return response()->json([
@@ -1085,12 +1113,19 @@ class SettingsController extends Controller
             $data = $validator->validated();
 
             // Convert checkboxes to booleans (boolean() checks actual value, not just key existence)
+            // is_enabled honours form input. If the form omits the field
+            // (checkbox unchecked), default to true to match the historical
+            // behaviour of "new webhooks come up live".
+            $data['is_enabled'] = $request->has('is_enabled') ? $request->boolean('is_enabled') : true;
             $data['notify_theft_detected'] = $request->boolean('notify_theft_detected');
             $data['notify_critical_theft'] = $request->boolean('notify_critical_theft');
             $data['notify_active_theft'] = $request->boolean('notify_active_theft');
             $data['notify_incident_resolved'] = $request->boolean('notify_incident_resolved');
             $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
+            $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
+            $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
+            $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1128,31 +1163,7 @@ class SettingsController extends Controller
         try {
             $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
 
-            $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
-                'type' => 'required|in:discord,slack,custom',
-                'webhook_url' => 'required|url',
-                'notify_theft_detected' => 'nullable|boolean',
-                'notify_critical_theft' => 'nullable|boolean',
-                'notify_active_theft' => 'nullable|boolean',
-                'notify_incident_resolved' => 'nullable|boolean',
-                'notify_moon_arrival' => 'nullable|boolean',
-                'notify_jackpot_detected' => 'nullable|boolean',
-                'notify_event_created' => 'nullable|boolean',
-                'notify_event_started' => 'nullable|boolean',
-                'notify_event_completed' => 'nullable|boolean',
-                'notify_tax_generated' => 'nullable|boolean',
-                'notify_tax_announcement' => 'nullable|boolean',
-                'notify_tax_reminder' => 'nullable|boolean',
-                'notify_tax_invoice' => 'nullable|boolean',
-                'notify_tax_overdue' => 'nullable|boolean',
-                'notify_report_generated' => 'nullable|boolean',
-                'discord_role_id' => 'nullable|string|max:255',
-                'discord_username' => 'nullable|string|max:255',
-                'slack_channel' => 'nullable|string|max:255',
-                'slack_username' => 'nullable|string|max:255',
-                'custom_payload_template' => 'nullable|string',
-            ]);
+            $validator = Validator::make($request->all(), $this->webhookValidationRules());
 
             if ($validator->fails()) {
                 return response()->json([
@@ -1165,12 +1176,24 @@ class SettingsController extends Controller
             $data = $validator->validated();
 
             // Convert checkboxes to booleans (boolean() checks actual value, not just key existence)
+            // is_enabled: only update when the form actually submits the
+            // field. Edits made via the "edit webhook" modal include
+            // is_enabled; the standalone toggle endpoint (toggleWebhook)
+            // owns flips made from the table row's switch. Skipping the
+            // assignment when the field isn't present preserves whatever
+            // the toggle last set.
+            if ($request->has('is_enabled')) {
+                $data['is_enabled'] = $request->boolean('is_enabled');
+            }
             $data['notify_theft_detected'] = $request->boolean('notify_theft_detected');
             $data['notify_critical_theft'] = $request->boolean('notify_critical_theft');
             $data['notify_active_theft'] = $request->boolean('notify_active_theft');
             $data['notify_incident_resolved'] = $request->boolean('notify_incident_resolved');
             $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
+            $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
+            $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
+            $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1235,8 +1258,8 @@ class SettingsController extends Controller
         try {
             $webhook = \MiningManager\Models\WebhookConfiguration::findOrFail($id);
 
-            $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-            $result = $webhookService->testWebhook($webhook);
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $result = $notificationService->testWebhook($webhook);
 
             if ($result['success']) {
                 $webhook->recordSuccess();
@@ -1281,5 +1304,101 @@ class SettingsController extends Controller
                 'message' => 'Error deleting webhook: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Validation rules shared by storeWebhook + updateWebhook.
+     *
+     * Centralised so the two endpoints can't drift — historically the
+     * update endpoint missed several newer notify_* fields (moon_chunk_unstable,
+     * extraction_at_risk, extraction_lost) which meant operators couldn't
+     * edit those toggles after the initial create.
+     *
+     * Two cross-cutting safety rules applied to specific fields:
+     *
+     *  - `webhook_url` requires `https://` prefix in addition to URL format.
+     *    Discord/Slack webhooks are always HTTPS so this loses no functionality.
+     *    Closes a small SSRF surface where a malicious or compromised admin
+     *    could register `http://127.0.0.1:port` to probe internal services.
+     *
+     *  - `notify_extraction_at_risk` and `notify_extraction_lost` are
+     *    cross-plugin notifications that require Manager Core's EventBus +
+     *    Structure Manager's FuelCalculator at runtime. The UI greys these
+     *    out when either plugin is missing, but a direct API POST or stale
+     *    form replay can bypass the UI gate. The closure validator below
+     *    rejects toggle=true on the backend if either plugin is absent so
+     *    the persisted state can't drift from the runtime capability.
+     *
+     * @return array<string, mixed>
+     */
+    private function webhookValidationRules(): array
+    {
+        $crossPluginRule = function ($attribute, $value, $fail) {
+            if (!$value) {
+                return; // not enabling — no plugin requirement
+            }
+            $hasMC = class_exists('ManagerCore\\Services\\EventBus');
+            $hasSM = class_exists('StructureManager\\Helpers\\FuelCalculator');
+            if (!$hasMC || !$hasSM) {
+                $missing = [];
+                if (!$hasMC) $missing[] = 'Manager Core';
+                if (!$hasSM) $missing[] = 'Structure Manager';
+                $fail("Cannot enable {$attribute}: requires " . implode(' + ', $missing) . ' to be installed.');
+            }
+        };
+
+        return [
+            'name' => 'required|string|max:255',
+            'type' => 'required|in:discord,slack,custom',
+            // HTTPS-only — Discord/Slack/standard webhooks are always HTTPS.
+            // The starts_with rule blocks http://, file://, gopher://, etc.
+            'webhook_url' => ['required', 'url', 'starts_with:https://'],
+            // is_enabled — explicit boolean validation. Pre-fix the field
+            // was silently coerced via $request->boolean() in the
+            // controller without going through the validator at all,
+            // meaning a form payload of `is_enabled=banana` would just
+            // become false instead of triggering a validation error.
+            'is_enabled' => 'nullable|boolean',
+            'notify_theft_detected' => 'nullable|boolean',
+            'notify_critical_theft' => 'nullable|boolean',
+            'notify_active_theft' => 'nullable|boolean',
+            'notify_incident_resolved' => 'nullable|boolean',
+            'notify_moon_arrival' => 'nullable|boolean',
+            'notify_jackpot_detected' => 'nullable|boolean',
+            'notify_moon_chunk_unstable' => 'nullable|boolean',
+            'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
+            'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
+            'notify_event_created' => 'nullable|boolean',
+            'notify_event_started' => 'nullable|boolean',
+            'notify_event_completed' => 'nullable|boolean',
+            'notify_tax_generated' => 'nullable|boolean',
+            'notify_tax_announcement' => 'nullable|boolean',
+            'notify_tax_reminder' => 'nullable|boolean',
+            'notify_tax_invoice' => 'nullable|boolean',
+            'notify_tax_overdue' => 'nullable|boolean',
+            'notify_report_generated' => 'nullable|boolean',
+            // Discord role IDs are snowflakes — 64-bit integers serialized
+            // as strings. They're 17-20 digits in practice (Discord's
+            // snowflake epoch + the bit allocation guarantees this range).
+            // Pre-fix this was just `string|max:255` so an operator who
+            // pasted a role NAME instead of an ID got accepted, then their
+            // role-ping tag rendered as `<@&MyRole>` in Discord — a literal
+            // string that doesn't ping anyone. Now we reject non-numeric
+            // values up-front so the operator sees the issue at save time.
+            'discord_role_id' => ['nullable', 'string', 'regex:/^\d{17,20}$/'],
+            'discord_username' => 'nullable|string|max:255',
+            'slack_channel' => 'nullable|string|max:255',
+            'slack_username' => 'nullable|string|max:255',
+            'custom_payload_template' => 'nullable|string',
+            // custom_headers is a JSON object on the model (cast='array').
+            // Validate the shape so a malformed POST doesn't blow up at
+            // the json_encode path during dispatch. Each value must be a
+            // string (Discord/Slack/HTTP headers are string-typed) — block
+            // arbitrary array/object values that would serialize as JSON
+            // inside an HTTP header line and break parsers downstream.
+            'custom_headers' => 'nullable|array',
+            'custom_headers.*' => 'string|max:1024',
+            'corporation_id' => 'nullable|integer',
+        ];
     }
 }

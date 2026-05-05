@@ -80,20 +80,19 @@ class MiningTax extends Model
 
     /**
      * Get the corporation ID for this tax record's character.
-     * Uses affiliation table which is more reliable than character_infos.
+     *
+     * Current corporation lives in character_affiliations — SeAT dropped
+     * the corporation_id column from character_infos in 2019, so any
+     * previous fallback reading $this->character->corporation_id was a
+     * dead branch (isset() on an Eloquent dynamic attribute with no
+     * backing column is always false).
      *
      * @return int|null
      */
     public function getCorporationIdAttribute(): ?int
     {
-        // Try affiliation first (more reliable)
         if ($this->affiliation && $this->affiliation->corporation_id) {
             return $this->affiliation->corporation_id;
-        }
-
-        // Fallback to character_infos if it has corporation_id
-        if ($this->character && isset($this->character->corporation_id)) {
-            return $this->character->corporation_id;
         }
 
         return null;

@@ -18,10 +18,13 @@ use Carbon\Carbon;
  * @property float $total_quantity
  * @property float $total_value
  * @property float $total_tax
+ * @property float $event_discount_total
  * @property float $moon_ore_value
  * @property float $regular_ore_value
  * @property float $ice_value
  * @property float $gas_value
+ * @property float $abyssal_ore_value
+ * @property float $triglavian_ore_value
  * @property array|null $ore_types
  * @property bool $is_finalized
  * @property Carbon $created_at
@@ -38,10 +41,13 @@ class MiningLedgerDailySummary extends Model
         'total_quantity',
         'total_value',
         'total_tax',
+        'event_discount_total',
         'moon_ore_value',
         'regular_ore_value',
         'ice_value',
         'gas_value',
+        'abyssal_ore_value',
+        'triglavian_ore_value',
         'ore_types',
         'is_finalized',
     ];
@@ -51,10 +57,13 @@ class MiningLedgerDailySummary extends Model
         'total_quantity' => 'decimal:2',
         'total_value' => 'decimal:2',
         'total_tax' => 'decimal:2',
+        'event_discount_total' => 'decimal:2',
         'moon_ore_value' => 'decimal:2',
         'regular_ore_value' => 'decimal:2',
         'ice_value' => 'decimal:2',
         'gas_value' => 'decimal:2',
+        'abyssal_ore_value' => 'decimal:2',
+        'triglavian_ore_value' => 'decimal:2',
         'ore_types' => 'array',
         'is_finalized' => 'boolean',
     ];

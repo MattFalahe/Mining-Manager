@@ -153,13 +153,13 @@ return [
 
     // Tax Periods
     'tax_periods_title' => 'Tax Calculation Periods',
-    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Three period types are supported:',
+    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Two period types are supported:',
     'tax_period_monthly' => 'Monthly — One tax bill per calendar month (1st to last day). Calculated on the 2nd of the following month.',
     'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 2nd and 16th.',
-    'tax_period_weekly' => 'Weekly — One tax bill per ISO week (Monday to Sunday). Calculated every Tuesday.',
-    'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Multiple periods within the same month are aggregated into one data point.',
+    // tax_period_weekly removed in v1.0.3. Historical rows with period_type='weekly' still render via MiningTax::formatted_period.
+    'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Biweekly periods within the same month are aggregated into one data point.',
     'tax_periods_due_date' => 'Each tax record gets a due date calculated as: period end date + payment deadline days (configurable in settings, default 7 days). For example, a biweekly period ending March 14 would be due March 21.',
-    'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month, weekly members receive 4-5 codes per month.',
+    'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month.',
 
     // Nightly Pipeline
     'nightly_pipeline_title' => 'Behind the Scenes — Nightly Pipeline',
@@ -361,7 +361,7 @@ return [
     'moon_compositions' => 'Moon Compositions',
     'moon_compositions_desc' => 'Record and analyze the ore composition of each moon. View ore percentages, rarity classification (R4-R64), and estimated extraction values based on current market prices.',
     'extraction_notifications' => 'Extraction Notifications',
-    'extraction_notifications_desc' => 'Enable notifications to remind members when moon extractions are ready for mining. Configure how many hours before chunk arrival to send the reminder.',
+    'extraction_notifications_desc' => 'A moon-arrival notification fires once, the moment a chunk actually becomes minable (within ~60s of arrival time). Enable / disable per channel and configure target webhooks under Settings → Notifications — the "moon_arrival" event type controls the master toggle, role ping, and per-webhook subscriptions.',
     'moon_value' => 'Moon Value Calculator',
     'moon_value_desc' => 'The system estimates the ISK value of each extraction based on current market prices, ore compositions, and estimated chunk sizes.',
 
@@ -460,7 +460,7 @@ return [
     'settings_general' => 'General',
     'settings_general_desc' => 'Moon owner corporation, payment settings (match tolerance, grace period), and Guest Miner Tax Rates (global rates tied to Moon Owner Corporation — 0% means no tax).',
     'settings_pricing' => 'Pricing',
-    'settings_pricing_desc' => 'Price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. Controls how ore values are calculated across the plugin.',
+    'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. When Manager Core is the provider, additional controls expose the MC market (Jita / Amarr / Dodixie / Hek / Rens) and price-statistic variant (min / max / avg / median / percentile). Controls how ore values are calculated across the plugin. Fallback-to-Jita auto-fills any zero-priced types from Jita as a safety net.',
     'settings_features' => 'Features',
     'settings_features_desc' => 'Toggle individual plugin features on/off: wallet verification, mining events, theft detection, moon analytics, notifications, reports, and diagnostics. Disabled features are hidden from the UI.',
     'settings_webhooks' => 'Webhooks',
@@ -541,6 +541,15 @@ return [
     'faq_a11' => 'EVE ESI corporation mining observer data can lag 12-24 hours behind the actual mining. Tax calculation, monthly finalization, and stats are shifted to the 2nd of the month (or Tuesday for weekly, 2nd/16th for biweekly) to allow this late-arriving data to settle. Additionally, the daily summary update command runs a reconciliation step on the previous 2 days, matching character-imported entries against observer data that arrived late.',
     'faq_q12' => 'Why does some moon ore show 0% tax?',
     'faq_a12' => 'If you use the "Only Corp Moon Ore" tax selector, moon ore must have observer data (corporation_id) to be taxed. Character mining ESI data arrives without corporation_id — it only gets linked when corporation observer data arrives (up to 24h later). The daily reconciliation process matches these entries automatically. If you see 0% tax, wait for the next update-daily-summaries run or manually trigger it.',
+
+    'faq_q13' => 'How do I get cross-plugin alerts for fuel critical / shield reinforced / refinery destroyed?',
+    'faq_a13' => 'Install both Manager Core (mattfalahe/manager-core) and Structure Manager (mattfalahe/structure-manager). When both plugins are present, the extraction_at_risk and extraction_lost webhook toggles become available in Settings → Notifications. Structure Manager publishes the threat events; Mining Manager subscribes via Manager Core\'s EventBus and dispatches notifications with attacker info, fuel/timer details, severity-aware embed colors, and a one-click Structure Board deeplink. The toggles auto-disable when either plugin is missing — no operator action needed to handle the standalone case.',
+
+    'faq_q14' => 'What is the Master Test diagnostic and when should I run it?',
+    'faq_a14' => 'Master Test is the default tab on the internal Diagnostic page. The Diagnostic page is admin-only and intentionally NOT in the sidebar — navigate to it manually at /mining-manager/diagnostic. The Master Test runs a one-click read-only smoke chain of ~26 checks across schema integrity, settings consistency, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security hardening — typically completing in under 30 seconds. Idempotent (never mutates production data) so you can run it anytime. Recommended after every plugin upgrade, settings change, or when you suspect something\'s broken — it catches stale route caches, missing migrations, broken cross-plugin links, and partial deploys before they cause real-world dispatch failures. Pass/warn/fail/skip results are grouped by category with a "Show only issues" filter for noisy reports.',
+
+    'faq_q15' => 'What does the "Auto-match wallet payments" toggle do?',
+    'faq_a15' => 'On Settings → General → Payment Settings. When ON (default), the wallet listener applies matched payments to taxes automatically as ESI wallet updates arrive — operators see paid taxes appear in real time. When OFF, matches are detected and listed on the Wallet Verification page but require manual confirmation before any tax row updates. Useful for installs that want a human-review step before any tax balance moves on the books — multi-corp setups where the director wants to verify each match, or environments with strict audit requirements. Even with auto-match OFF, the dedup tracking still records every match so the same transaction never re-credits.',
 
     // Troubleshooting
     'troubleshooting_guide' => 'Troubleshooting Guide',
@@ -714,7 +723,7 @@ return [
     'collect_troubleshoot_title' => 'Troubleshooting Payments',
     'collect_troubleshoot_desc' => 'If a member says they paid but it is not showing: check the Wallet Verification page to see if the transaction exists. Common issues include misspelled tax codes, missing "Reason" field, or sending to the wrong corp wallet. Directors can manually mark taxes as paid from the Tax Overview page if needed.',
 
-    'collect_tip' => 'Use the Diagnostic page > Tax Trace to investigate specific characters. It shows stored daily summaries, live recalculation comparison, account/alt info, and flags mismatches between the bill and what was calculated.',
+    'collect_tip' => 'Use the internal Diagnostic page (manually navigate to /mining-manager/diagnostic — it is not in the sidebar) > Tax Trace tab to investigate specific characters. It shows stored daily summaries, live recalculation comparison, account/alt info, and flags mismatches between the bill and what was calculated.',
 
     // ================================================================
     // Webhooks & Notifications
@@ -747,7 +756,9 @@ return [
     'webhook_cat_theft' => 'Theft',
     'webhook_cat_theft_events' => 'Theft Detected, Critical Theft, Active Theft, Incident Resolved',
     'webhook_cat_moon' => 'Moon',
-    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected',
+    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected, Moon Chunk Unstable (capital-pilots safety warning fired ~2h before the chunk enters the unstable phase)',
+    'webhook_cat_structure_alerts' => 'Structure Alerts (cross-plugin)',
+    'webhook_cat_structure_alerts_events' => 'Extraction At Risk (fuel critical or shield/armor/hull reinforced), Extraction Lost (refinery destroyed). Requires Manager Core + Structure Manager — toggles auto-disable when either plugin is missing. SM publishes the events; MM dispatches notifications with attacker info, system security, fuel/timer details, and a one-click Structure Board deeplink.',
     'webhook_cat_events' => 'Mining Events',
     'webhook_cat_events_list' => 'Event Created, Event Started, Event Completed',
     'webhook_cat_tax' => 'Tax',
@@ -763,8 +774,8 @@ return [
     // ================================================================
     // Diagnostic Page (Tax Trace)
     // ================================================================
-    'diagnostic_page_title' => 'Diagnostic Page (Web UI)',
-    'diagnostic_page_desc' => 'The Diagnostic page (accessible to admins under Mining Manager > Diagnostic) provides web-based tools for troubleshooting. The most powerful tool is the Tax Trace.',
+    'diagnostic_page_title' => 'Diagnostic Page (Web UI) — internal / dev only',
+    'diagnostic_page_desc' => 'Internal admin-only tooling for troubleshooting. Intentionally NOT linked from the Mining Manager sidebar — admins reach it by typing /mining-manager/diagnostic in the address bar. Default tab is the Master Test (read-only smoke chain, safe to run anytime). The legacy Tax Trace tab + per-area diagnostics remain for deep-dive debugging. The Test Data Generation tab creates fake corps/characters/mining for development environments only — do not use on a live install.',
 
     'tax_trace_title' => 'Tax Trace',
     'tax_trace_desc' => 'Enter a character ID and month to get a comprehensive tax diagnostic. The trace shows four sections:',
@@ -782,6 +793,17 @@ return [
     'tax_trace_section_4_desc' => 'Automatically flags problems: stored vs live tax differences, daily summary total vs bill amount discrepancies, mining ledger dates missing daily summaries, and zero-priced ore entries.',
 
     'tax_trace_note' => 'The live recalculation is read-only — it never changes any stored data. To actually update stored data, use the calculate-taxes or update-daily-summaries commands.',
+
+    // Diagnostic → Notification Testing
+    'notif_test_title' => 'Notification Testing',
+    'notif_test_desc' => 'End-to-end testing for the 15 notification types the plugin can dispatch. Three modes of increasing scope:',
+    'notif_test_preview' => 'Preview Test',
+    'notif_test_preview_desc' => 'Renders the selected notification type + POSTs it to one webhook (either selected from the dropdown or a custom URL you paste in). Best for checking embed layout, colors, role pings, and single-webhook wiring. Does not write to the audit log.',
+    'notif_test_live' => 'Fire Live Notification',
+    'notif_test_live_desc' => 'Routes the selected type through the full NotificationService pipeline — fires to every subscribed, enabled webhook (respecting corp scoping + per-type toggles) and writes to the audit log. Use to verify one specific notification surface works end-to-end without waiting for a real triggering event.',
+    'notif_test_chain' => 'Fire ALL (Chain)',
+    'notif_test_chain_desc' => 'Sequentially fires every notification type (all 15) through the full pipeline with a 1.5s delay between each. Takes ~22 seconds. Every subscribed webhook receives 15 messages in quick succession. Post-deploy smoke test — confirms the consolidated pipeline still works for every surface end-to-end.',
+    'notif_test_chain_tip' => 'Fire ALL is the fastest way to verify all notification types after a deploy. If any type fails, its specific error is highlighted in the log so you can drill into it with Fire Live Notification.',
 
     // ================================================================
     // Custom Webhooks

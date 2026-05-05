@@ -229,7 +229,7 @@
 
                     {{-- Webhooks Tab --}}
                     <div id="webhooks" class="settings-section">
-                        @include('mining-manager::settings.tabs.webhooks', ['webhooks' => $webhooks ?? collect()])
+                        @include('mining-manager::settings.tabs.webhooks', ['webhooks' => $webhooks ?? collect(), 'webhookCorporations' => $webhookCorporations ?? collect()])
                     </div>
 
                     {{-- Notifications Tab --}}

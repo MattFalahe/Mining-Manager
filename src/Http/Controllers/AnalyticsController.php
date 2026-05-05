@@ -747,19 +747,28 @@ class AnalyticsController extends Controller
                 return response()->json(['data' => $data]);
             }
 
-            // CSV export
+            // CSV export — streamed via php://output rather than building
+            // the full string in memory. Pre-fix the export concatenated
+            // every row into a single PHP string before returning, which
+            // could hit hundreds of MB for active corps with months of
+            // mining data. The audit-driven cycle 1 fixed the equivalent
+            // pattern on the ledger export path; this is the same fix
+            // applied to analytics.
             $headers = ['Character', 'Ore Type', 'Quantity', 'Value', 'System', 'Date'];
+            $filename = 'mining_analytics_' . $startDate->format('Y-m-d') . '_' . $endDate->format('Y-m-d') . '.csv';
 
-            $csv = implode(',', $headers) . "\n";
-            foreach ($data as $row) {
-                $csv .= implode(',', array_map(function ($field) {
-                    return '"' . str_replace('"', '""', $field) . '"';
-                }, $row)) . "\n";
-            }
-
-            return response($csv)
-                ->header('Content-Type', 'text/csv')
-                ->header('Content-Disposition', 'attachment; filename="mining_analytics_' . $startDate->format('Y-m-d') . '_' . $endDate->format('Y-m-d') . '.csv"');
+            return response()->streamDownload(function () use ($headers, $data) {
+                $out = fopen('php://output', 'w');
+                // fputcsv handles RFC 4180 quoting / escaping for us;
+                // safer than the manual str_replace approach below.
+                fputcsv($out, $headers);
+                foreach ($data as $row) {
+                    fputcsv($out, $row);
+                }
+                fclose($out);
+            }, $filename, [
+                'Content-Type' => 'text/csv',
+            ]);
         } catch (\Exception $e) {
             Log::error('Mining Manager: Analytics error: ' . $e->getMessage());
             return back()->with('error', 'An error occurred loading analytics data.');

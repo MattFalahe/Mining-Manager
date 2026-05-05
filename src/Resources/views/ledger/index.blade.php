@@ -330,13 +330,24 @@
                                              style="width: 32px; height: 32px;">
                                         {{ $entry->type_name ?? trans('mining-manager::ledger.unknown') }}
                                         @if($entry->is_moon_ore)
-                                            <span class="badge badge-secondary">
+                                            <span class="badge badge-warning" title="Moon Ore">
                                                 <i class="fas fa-moon"></i>
                                             </span>
-                                        @endif
-                                        @if($entry->is_ice)
-                                            <span class="badge badge-info">
+                                        @elseif($entry->is_ice)
+                                            <span class="badge badge-info" title="Ice">
                                                 <i class="fas fa-snowflake"></i>
+                                            </span>
+                                        @elseif($entry->is_gas)
+                                            <span class="badge badge-success" title="Gas">
+                                                <i class="fas fa-cloud"></i>
+                                            </span>
+                                        @elseif($entry->is_abyssal)
+                                            <span class="badge badge-danger" title="Abyssal">
+                                                <i class="fas fa-fire"></i>
+                                            </span>
+                                        @elseif($entry->is_triglavian)
+                                            <span class="badge badge-dark" title="Triglavian">
+                                                <i class="fas fa-bolt"></i>
                                             </span>
                                         @endif
                                     </td>

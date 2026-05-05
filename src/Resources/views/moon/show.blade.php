@@ -121,6 +121,11 @@
                         {{ trans('mining-manager::moons.extraction_information') }}
                     </h3>
                     <div class="card-tools">
+                        @if($extraction->is_jackpot)
+                            <span class="badge mr-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-weight: bold;" title="Confirmed jackpot moon — all moon ore in this chunk is the +100% variant">
+                                <i class="fas fa-star"></i> JACKPOT
+                            </span>
+                        @endif
                         @php $effectiveStatus = $extraction->getEffectiveStatus(); @endphp
                         <span class="badge badge-{{
                             $effectiveStatus === 'extracting' ? 'warning' :
@@ -216,9 +221,19 @@
                             @endif
 
                             @if($estimatedValue)
-                            <p><strong>{{ trans('mining-manager::moons.estimated_value') }}:</strong></p>
+                            <p><strong>{{ trans('mining-manager::moons.estimated_value') }}:</strong>
+                                @if($extraction->is_jackpot)
+                                    <span class="badge ml-2" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Value doubled because this chunk's +100% variants reprocess to ~2x minerals">
+                                        <i class="fas fa-star"></i> 2x JACKPOT
+                                    </span>
+                                @endif
+                            </p>
                             <p class="ml-3 mb-3">
                                 <span class="h4 text-success">{{ number_format($estimatedValue, 0) }} ISK</span>
+                                @if($extraction->is_jackpot && $extraction->estimated_value > 0)
+                                    <br>
+                                    <small class="text-muted">Base: {{ number_format($extraction->estimated_value, 0) }} ISK × 2.0 jackpot multiplier</small>
+                                @endif
                             </p>
                             @endif
                         </div>
@@ -236,6 +251,27 @@
                         <p class="mb-2">{{ trans('mining-manager::moons.chunk_arrives_in') }}</p>
                         <h2>{{ floor($timeUntilArrival / 24) }}d {{ $timeUntilArrival % 24 }}h</h2>
                         <small>{{ $extraction->chunk_arrival_time->format('M d, H:i') }}</small>
+                    </div>
+                </div>
+            </div>
+            @endif
+
+            {{-- Order during ready phase: "Ready to Mine!" first (current state),
+                 then "Unstable in N" countdown (future warning). The current
+                 state is the most actionable info — operator immediately knows
+                 they can mine. The countdown below tells them how long that
+                 window stays open.
+
+                 During unstable phase, the Ready card is hidden and the
+                 mm-timer-unstable box renders alone (deep purple urgency). --}}
+
+            @if($extraction->getEffectiveStatus() === 'ready')
+            <div class="card card-success card-outline mb-3">
+                <div class="card-body p-0">
+                    <div class="mm-timer-box mm-timer-ready">
+                        <i class="fas fa-gem fa-3x mb-2"></i>
+                        <h4 class="mb-2">{{ trans('mining-manager::moons.ready_to_mine') }}!</h4>
+                        <p>{{ trans('mining-manager::moons.chunk_available') }}</p>
                     </div>
                 </div>
             </div>
@@ -273,16 +309,6 @@
                 </div>
             </div>
             @endif
-
-            @if($extraction->getEffectiveStatus() === 'ready')
-            <div class="card card-success">
-                <div class="card-body text-center">
-                    <i class="fas fa-gem fa-3x mb-2 text-success"></i>
-                    <h4>{{ trans('mining-manager::moons.ready_to_mine') }}!</h4>
-                    <p class="text-muted">{{ trans('mining-manager::moons.chunk_available') }}</p>
-                </div>
-            </div>
-            @endif
         </div>
     </div>
 
@@ -295,9 +321,23 @@
                     <h3 class="card-title">
                         <i class="fas fa-gem"></i>
                         {{ trans('mining-manager::moons.ore_composition') }}
+                        @if($extraction->is_jackpot)
+                            <span class="badge ml-2" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-weight: bold;" title="This is a jackpot moon — every moon ore shown is the +100% variant, even though ESI stores the base ore type IDs (which is why the names below say e.g. 'Sylvite' rather than 'Glistening Sylvite')">
+                                <i class="fas fa-star"></i> JACKPOT
+                            </span>
+                        @endif
                     </h3>
                 </div>
                 <div class="card-body">
+                    @if($extraction->is_jackpot)
+                        <div class="alert mb-3" style="background: rgba(255, 215, 0, 0.1); border-left: 4px solid #ffd700; color: #ffd700;">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Jackpot moon —</strong> values shown below already include the 2.0× jackpot multiplier.
+                            ESI stores the base ore type IDs in the chunk's predicted composition, so you'll see names
+                            like "Sylvite" rather than "Glistening Sylvite", but every unit mined here will be the
+                            +100% variant.
+                        </div>
+                    @endif
                     <div class="table-responsive">
                         <table class="table table-dark table-striped">
                             <thead>
@@ -306,7 +346,12 @@
                                     <th style="width: 35%;">{{ trans('mining-manager::moons.percentage') }}</th>
                                     <th class="text-right">Quantity (Units)</th>
                                     <th class="text-right">Volume (m³)</th>
-                                    <th class="text-right">{{ trans('mining-manager::moons.value') }}</th>
+                                    <th class="text-right">
+                                        {{ trans('mining-manager::moons.value') }}
+                                        @if($extraction->is_jackpot)
+                                            <small class="text-warning d-block" style="font-size: 0.7em;"><i class="fas fa-star"></i> 2x jackpot</small>
+                                        @endif
+                                    </th>
                                     <th class="text-center">Refines To</th>
                                 </tr>
                             </thead>
@@ -340,7 +385,18 @@
                                         {{ number_format($data['volume_m3'] ?? 0, 0) }} m³
                                     </td>
                                     <td class="text-right text-success">
-                                        {{ number_format($data['value'] ?? 0, 0) }} ISK
+                                        @php
+                                            // Apply jackpot multiplier per-row so the column sums
+                                            // match the jackpot-adjusted Total Value in the footer.
+                                            // ore_composition JSON stores base values from the ESI
+                                            // prediction at chunk arrival; jackpot status is unknown
+                                            // at that point, so the +100% bonus is applied here.
+                                            $rowValue = (float) ($data['value'] ?? 0);
+                                            if ($extraction->is_jackpot && $rowValue > 0) {
+                                                $rowValue = $extraction->calculateValueWithJackpotBonus($rowValue);
+                                            }
+                                        @endphp
+                                        {{ number_format($rowValue, 0) }} ISK
                                     </td>
                                     <td class="text-center">
                                         <button class="btn btn-xs btn-outline-warning"

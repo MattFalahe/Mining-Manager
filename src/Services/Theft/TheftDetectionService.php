@@ -245,6 +245,25 @@ class TheftDetectionService
             'tax_owed' => $totalTaxOwed
         ]);
 
+        // B1b: announce on the cross-plugin event bus so Discord Pings,
+        // HR Manager, and other subscribers can react to theft incidents.
+        // Topics handles publisher attribution + idempotency_key composition
+        // (theft_detected:{incident_id}). Standalone-safe via class_exists.
+        if (class_exists(\ManagerCore\Topics::class)) {
+            \ManagerCore\Topics::publish('mining.theft_detected', [
+                'incident_id'    => $incident->id,
+                'character_id'   => $characterId,
+                'severity'       => $severity,
+                'tax_owed'       => $totalTaxOwed,
+                'ore_value'      => $oreValue,
+                'quantity_mined' => $totalQuantity,
+                'period_start'   => $startDate->toDateString(),
+                'period_end'     => $endDate->toDateString(),
+                'corporation_id' => null, // visibility scoping
+                'role_id'        => null,
+            ]);
+        }
+
         return ['incident_created' => true, 'incident_updated' => false, 'incident' => $incident];
     }
 

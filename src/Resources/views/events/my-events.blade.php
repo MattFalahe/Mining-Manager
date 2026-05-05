@@ -141,6 +141,30 @@
         </div>
     </div>
 
+    {{-- Total Event Savings — second row, full-width prominent box --}}
+    @if(($stats['total_event_savings'] ?? 0) > 0)
+    <div class="row">
+        <div class="col-12">
+            <div class="small-box bg-gradient-warning">
+                <div class="inner d-flex align-items-center justify-content-between">
+                    <div>
+                        <h3 class="mb-0">
+                            <i class="fas fa-piggy-bank"></i>
+                            {{ number_format($stats['total_event_savings'], 0) }} ISK
+                        </h3>
+                        <p class="mb-0">
+                            <strong>Total tax saved from event participation</strong>
+                            <br>
+                            <small>Across every mining event your characters have participated in. Already applied to your tax bills &mdash; this is the running total of ISK kept in your pocket because of events.</small>
+                        </p>
+                    </div>
+                    <i class="fas fa-gift" style="font-size: 3rem; opacity: 0.5;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- FILTER TABS --}}
     <div class="row">
         <div class="col-12">
@@ -200,20 +224,32 @@
                                             <p><strong>{{ trans('mining-manager::events.participants') }}:</strong> {{ $event->participants->count() }}</p>
                                             <p><strong>{{ trans('mining-manager::events.your_contribution') }}:</strong></p>
                                             @php
-                                                $myParticipation = $event->participants->where('character_id', auth()->user()->id)->first();
+                                                // Sum across all the viewing user's characters so alts roll up.
+                                                $myParticipations = $event->participants->whereIn('character_id', $characterIds ?? []);
+                                                $myQuantity = $myParticipations->sum('quantity_mined');
+                                                $myValue = $myParticipations->sum('value_mined');
+                                                // Tax saved from this specific event, summed from ore_types JSON.
+                                                $mySavings = (float) ($eventSavingsMap[$event->id] ?? 0);
                                             @endphp
                                             <div class="ml-3">
-                                                <p class="mb-1">{{ trans('mining-manager::events.mined') }}: 
-                                                    <strong class="text-warning">{{ number_format($myParticipation->total_mined ?? 0, 0) }} ISK</strong>
+                                                <p class="mb-1">{{ trans('mining-manager::events.mined') }}:
+                                                    <strong class="text-warning">{{ number_format($myValue, 0) }} ISK</strong>
                                                 </p>
-                                                <p class="mb-1">{{ trans('mining-manager::events.quantity') }}: 
-                                                    <strong>{{ number_format($myParticipation->quantity_mined ?? 0, 0) }}</strong>
+                                                <p class="mb-1">{{ trans('mining-manager::events.quantity') }}:
+                                                    <strong>{{ number_format($myQuantity, 0) }}</strong>
                                                 </p>
                                                 <p class="mb-1">{{ trans('mining-manager::events.tax_modifier') }}:
                                                     <span class="badge badge-{{ $event->tax_modifier < 0 ? 'success' : ($event->tax_modifier > 0 ? 'warning' : 'secondary') }}">
                                                         {{ $event->getTaxModifierLabel() }}
                                                     </span>
                                                 </p>
+                                                @if($mySavings > 0)
+                                                <p class="mb-1">
+                                                    <i class="fas fa-piggy-bank text-warning"></i>
+                                                    <strong>Your tax saved:</strong>
+                                                    <strong class="text-success">{{ number_format($mySavings, 0) }} ISK</strong>
+                                                </p>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -330,24 +366,44 @@
                                             <p><strong>{{ trans('mining-manager::events.total_participants') }}:</strong> {{ $event->participants->count() }}</p>
                                             <p><strong>{{ trans('mining-manager::events.your_performance') }}:</strong></p>
                                             @php
-                                                $myParticipation = $event->participants->where('character_id', auth()->user()->id)->first();
+                                                // Aggregate across all user's characters.
+                                                $myParticipations = $event->participants->whereIn('character_id', $characterIds ?? []);
+                                                $myQuantity = $myParticipations->sum('quantity_mined');
+                                                $myValue = $myParticipations->sum('value_mined');
+                                                $mySavings = (float) ($eventSavingsMap[$event->id] ?? 0);
+
+                                                // Rank = best rank among the user's characters (lowest number).
                                                 $topParticipants = $event->topParticipants(10);
-                                                $myRank = $topParticipants->search(function($p) use ($myParticipation) {
-                                                    return $p->id === $myParticipation->id;
-                                                });
+                                                $myRank = false;
+                                                if ($myParticipations->isNotEmpty()) {
+                                                    $myCharIds = $myParticipations->pluck('character_id')->all();
+                                                    foreach ($topParticipants as $idx => $tp) {
+                                                        if (in_array($tp->character_id, $myCharIds, true)) {
+                                                            $myRank = $idx;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
                                             @endphp
                                             <div class="ml-3">
-                                                <p class="mb-1">{{ trans('mining-manager::events.mined') }}: 
-                                                    <strong class="text-warning">{{ number_format($myParticipation->total_mined ?? 0, 0) }} ISK</strong>
+                                                <p class="mb-1">{{ trans('mining-manager::events.mined') }}:
+                                                    <strong class="text-warning">{{ number_format($myValue, 0) }} ISK</strong>
                                                 </p>
-                                                <p class="mb-1">{{ trans('mining-manager::events.quantity') }}: 
-                                                    <strong>{{ number_format($myParticipation->quantity_mined ?? 0, 0) }}</strong>
+                                                <p class="mb-1">{{ trans('mining-manager::events.quantity') }}:
+                                                    <strong>{{ number_format($myQuantity, 0) }}</strong>
                                                 </p>
                                                 @if($myRank !== false)
-                                                <p class="mb-1">{{ trans('mining-manager::events.ranking') }}: 
+                                                <p class="mb-1">{{ trans('mining-manager::events.ranking') }}:
                                                     <span class="badge badge-{{ $myRank < 3 ? 'success' : 'info' }}">
                                                         #{{ $myRank + 1 }}
                                                     </span>
+                                                </p>
+                                                @endif
+                                                @if($mySavings > 0)
+                                                <p class="mb-1">
+                                                    <i class="fas fa-piggy-bank text-warning"></i>
+                                                    <strong>Tax saved from this event:</strong>
+                                                    <strong class="text-success">{{ number_format($mySavings, 0) }} ISK</strong>
                                                 </p>
                                                 @endif
                                             </div>

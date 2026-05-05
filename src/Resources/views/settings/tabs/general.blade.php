@@ -312,6 +312,39 @@
                     </div>
                 </div>
             </div>
+
+            {{-- Auto-match toggle. When ON (default), the wallet listener
+                 applies matched payments to taxes automatically as ESI
+                 wallet updates arrive. When OFF, matches are detected
+                 and listed on the wallet-verification page but the
+                 operator must manually confirm before the tax row
+                 updates. Useful for installs that want a human-review
+                 step before any money moves on the books. --}}
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_auto_match_payments"
+                                   name="payment_auto_match_payments"
+                                   value="1"
+                                   {{ old('payment_auto_match_payments', $settings->auto_match_payments ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_auto_match_payments">
+                                <i class="fas fa-bolt"></i>
+                                Auto-match wallet payments
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), the wallet listener applies matched payments
+                            to taxes automatically as ESI wallet updates arrive. When OFF,
+                            matches are detected and listed on the Wallet Verification page
+                            but require manual confirmation before any tax row updates.
+                            Recommended for most installs to leave ON.
+                        </small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -203,6 +203,46 @@
                         </div>
                     </div>
 
+                    {{-- EVENT DISCOUNT CALLOUT — shown only if any event waived tax this month OR all-time --}}
+                    @if(($stats['event_discount_total'] ?? 0) > 0 || ($stats['event_savings_all_time'] ?? 0) > 0)
+                    <div class="row mt-2">
+                        @if(($stats['event_discount_total'] ?? 0) > 0)
+                        <div class="col-md-8">
+                            <div class="callout callout-success">
+                                <h5><i class="fas fa-gift text-warning"></i> Event Discount Applied</h5>
+                                <p class="mb-0">
+                                    You saved <strong>{{ number_format($stats['event_discount_total'], 0) }} ISK</strong>
+                                    in taxes this period thanks to active mining events.
+                                    <small class="text-muted d-block mt-1">
+                                        The discount is already applied to your "Estimated Tax This Month" figure above.
+                                        <a href="{{ route('mining-manager.events.my-events') }}">View your events</a>
+                                        to see which ones contributed.
+                                    </small>
+                                </p>
+                            </div>
+                        </div>
+                        @endif
+
+                        {{-- All-time event savings card — shown whenever user has ever saved anything --}}
+                        @if(($stats['event_savings_all_time'] ?? 0) > 0)
+                        <div class="col-md-4">
+                            <div class="small-box bg-gradient-warning">
+                                <div class="inner">
+                                    <h3>{{ number_format($stats['event_savings_all_time'], 0) }}</h3>
+                                    <p>Total Event Savings (All Time)<br><small>ISK saved from event participation</small></p>
+                                </div>
+                                <div class="icon">
+                                    <i class="fas fa-piggy-bank"></i>
+                                </div>
+                                <a href="{{ route('mining-manager.events.my-events') }}" class="small-box-footer">
+                                    View events <i class="fas fa-arrow-circle-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        @endif
+                    </div>
+                    @endif
+
                     {{-- TAX TRANSPARENCY NOTICE --}}
                     @if(($stats['estimated_tax_this_month'] ?? 0) > 0)
                     <div class="row mt-2">
@@ -362,8 +402,24 @@
                                              style="width: 32px; height: 32px;">
                                         {{ $activity->type->typeName ?? 'Unknown' }}
                                         @if($activity->is_moon_ore)
-                                            <span class="badge badge-secondary">
+                                            <span class="badge badge-warning" title="Moon Ore">
                                                 <i class="fas fa-moon"></i>
+                                            </span>
+                                        @elseif($activity->is_ice)
+                                            <span class="badge badge-info" title="Ice">
+                                                <i class="fas fa-snowflake"></i>
+                                            </span>
+                                        @elseif($activity->is_gas)
+                                            <span class="badge badge-success" title="Gas">
+                                                <i class="fas fa-cloud"></i>
+                                            </span>
+                                        @elseif($activity->is_abyssal)
+                                            <span class="badge badge-danger" title="Abyssal">
+                                                <i class="fas fa-fire"></i>
+                                            </span>
+                                        @elseif($activity->is_triglavian)
+                                            <span class="badge badge-dark" title="Triglavian">
+                                                <i class="fas fa-bolt"></i>
                                             </span>
                                         @endif
                                     </td>

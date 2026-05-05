@@ -22,6 +22,9 @@ use Carbon\Carbon;
  * @property bool $notify_incident_resolved
  * @property bool $notify_moon_arrival
  * @property bool $notify_jackpot_detected
+ * @property bool $notify_moon_chunk_unstable
+ * @property bool $notify_extraction_at_risk
+ * @property bool $notify_extraction_lost
  * @property bool $notify_event_created
  * @property bool $notify_event_started
  * @property bool $notify_event_completed
@@ -71,6 +74,9 @@ class WebhookConfiguration extends Model
         'notify_incident_resolved',
         'notify_moon_arrival',
         'notify_jackpot_detected',
+        'notify_moon_chunk_unstable',
+        'notify_extraction_at_risk',
+        'notify_extraction_lost',
         'notify_event_created',
         'notify_event_started',
         'notify_event_completed',
@@ -102,6 +108,9 @@ class WebhookConfiguration extends Model
         'notify_incident_resolved' => 'boolean',
         'notify_moon_arrival' => 'boolean',
         'notify_jackpot_detected' => 'boolean',
+        'notify_moon_chunk_unstable' => 'boolean',
+        'notify_extraction_at_risk' => 'boolean',
+        'notify_extraction_lost' => 'boolean',
         'notify_event_created' => 'boolean',
         'notify_event_started' => 'boolean',
         'notify_event_completed' => 'boolean',
@@ -184,6 +193,9 @@ class WebhookConfiguration extends Model
             'incident_resolved' => 'notify_incident_resolved',
             'moon_arrival' => 'notify_moon_arrival',
             'jackpot_detected' => 'notify_jackpot_detected',
+            'moon_chunk_unstable' => 'notify_moon_chunk_unstable',
+            'extraction_at_risk' => 'notify_extraction_at_risk',
+            'extraction_lost' => 'notify_extraction_lost',
             'event_created' => 'notify_event_created',
             'event_started' => 'notify_event_started',
             'event_completed' => 'notify_event_completed',
@@ -211,12 +223,20 @@ class WebhookConfiguration extends Model
      */
     public function recordSuccess(): void
     {
+        // Bump the counter + timestamp + clear last_error in one round-trip,
+        // then mirror the new values onto $this so callers reading the
+        // model post-call see the updated state without a separate
+        // refresh() query. Pre-fix this did UPDATE + refresh() = 2 RTT;
+        // now 1 RTT.
+        $now = now();
         self::where('id', $this->id)->update([
             'success_count' => DB::raw('success_count + 1'),
-            'last_success_at' => now(),
+            'last_success_at' => $now,
             'last_error' => null,
         ]);
-        $this->refresh();
+        $this->success_count = (int) $this->success_count + 1;
+        $this->last_success_at = $now;
+        $this->last_error = null;
     }
 
     /**
@@ -227,12 +247,15 @@ class WebhookConfiguration extends Model
      */
     public function recordFailure(?string $error = null): void
     {
+        $now = now();
         self::where('id', $this->id)->update([
             'failure_count' => DB::raw('failure_count + 1'),
-            'last_failure_at' => now(),
+            'last_failure_at' => $now,
             'last_error' => $error,
         ]);
-        $this->refresh();
+        $this->failure_count = (int) $this->failure_count + 1;
+        $this->last_failure_at = $now;
+        $this->last_error = $error;
     }
 
     /**
@@ -297,6 +320,9 @@ class WebhookConfiguration extends Model
             'incident_resolved' => $this->notify_incident_resolved,
             'moon_arrival' => $this->notify_moon_arrival,
             'jackpot_detected' => $this->notify_jackpot_detected,
+            'moon_chunk_unstable' => $this->notify_moon_chunk_unstable,
+            'extraction_at_risk' => $this->notify_extraction_at_risk,
+            'extraction_lost' => $this->notify_extraction_lost,
             'event_created' => $this->notify_event_created,
             'event_started' => $this->notify_event_started,
             'event_completed' => $this->notify_event_completed,

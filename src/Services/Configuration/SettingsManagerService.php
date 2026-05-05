@@ -124,16 +124,39 @@ class SettingsManagerService
             $type = $this->detectType($value);
         }
 
-        Setting::setValue($key, $value, $type, $this->activeCorporationId);
+        // Clear cache BEFORE writing — if another process reads between our
+        // DB write and a post-write cache clear, it would populate the cache
+        // with the old value (a second's worth of stale reads). Clearing
+        // before write means the worst case is a cache miss that re-reads
+        // fresh from DB.
+        $globalCacheKey = self::CACHE_PREFIX . 'global_' . $key;
+        $corpCacheKey = $this->activeCorporationId
+            ? self::CACHE_PREFIX . $this->activeCorporationId . '_' . $key
+            : null;
 
-        // Clear cache for both global and corporation-specific
-        Cache::forget(self::CACHE_PREFIX . 'global_' . $key);
-        if ($this->activeCorporationId) {
-            Cache::forget(self::CACHE_PREFIX . $this->activeCorporationId . '_' . $key);
+        Cache::forget($globalCacheKey);
+        if ($corpCacheKey) {
+            Cache::forget($corpCacheKey);
         }
 
+        Setting::setValue($key, $value, $type, $this->activeCorporationId);
+
+        // Clear again AFTER the write as belt-and-suspenders — covers the
+        // (unlikely) case where another process read+cached during the
+        // brief window between pre-clear and write. Idempotent, negligible
+        // cost for a setting update.
+        Cache::forget($globalCacheKey);
+        if ($corpCacheKey) {
+            Cache::forget($corpCacheKey);
+        }
+
+        // Demoted from info to debug — bulk saves (saveTaxRates,
+        // saveGeneralSettings) emit dozens of nearly-identical lines per
+        // request. The controller-level batch-complete log line is what
+        // operators actually want to see at info; per-key writes are
+        // diagnostic-only.
         $corpContext = $this->activeCorporationId ? " (Corp ID: {$this->activeCorporationId})" : " (Global)";
-        Log::info("Mining Manager: Setting updated - {$key}{$corpContext}");
+        Log::debug("Mining Manager: Setting updated - {$key}{$corpContext}");
     }
 
     /**
@@ -154,7 +177,7 @@ class SettingsManagerService
             // All tax invoices, theft detection, moon notifications, and ledger tracking
             // are scoped to this corp — regardless of ore source (moon, belt, ice, gas).
             // Webhook notifications for moon/theft/tax events are also filtered to only
-            // reach webhooks tied to this corp (see WebhookService::getMoonOwnerScopedWebhooks).
+            // reach webhooks tied to this corp (see WebhookDispatchTrait::getMoonOwnerScopedWebhooks).
             // Other directors' corps on the same SeAT install are excluded from these notifications.
             'moon_owner_corporation_id' => $this->getSetting('general.moon_owner_corporation_id', config('mining-manager.general.moon_owner_corporation_id')),
 
@@ -181,6 +204,14 @@ class SettingsManagerService
             'items_per_page' => $this->getSetting('general.items_per_page', 25),
             'compact_mode' => $this->getSetting('general.compact_mode', false),
             'show_character_portraits' => $this->getSetting('general.show_character_portraits', true),
+
+            // Payment auto-match toggle. Surfaced here so the General settings
+            // blade can render the checkbox's current state. The canonical
+            // read site for runtime gating is `getPaymentSettings()` /
+            // `getSetting('payment.auto_match_payments')` — see
+            // ProcessWalletJournalListener for how the listener consults it
+            // before applying a matched payment.
+            'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
             
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
@@ -283,8 +314,9 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
-                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours'])) {
+                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours', 'payment_auto_match_payments'])) {
                     // Payment settings use payment. prefix instead of general.
+                    // form input `payment_<x>` → setting key `payment.<x>`.
                     $settingKey = str_replace('payment_', 'payment.', $key);
                     $this->updateSetting($settingKey, $value);
                 } else {
@@ -344,6 +376,15 @@ class SettingsManagerService
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
             'minimum_tax_amount' => (float) $this->getSetting('payment.minimum_tax_amount',
                 config('mining-manager.tax_payment.minimum_tax_amount', 1000000)),
+            // Auto-match toggle. Read by ProcessWalletJournalListener (the
+            // queued listener that fires per CharacterWalletJournalUpdated
+            // event) to decide whether to apply matched payments
+            // automatically. true (default) = listener applies the payment
+            // immediately; false = match is detected and shown on the
+            // wallet-verification page but the operator must manually
+            // confirm. Useful for installs that want a human-review step
+            // before any tax row is updated.
+            'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
         ];
     }
 
@@ -471,6 +512,8 @@ class SettingsManagerService
 
             // Tax Period Settings
             'tax_calculation_period' => $this->getSetting('tax_rates.tax_calculation_period', 'monthly'),
+            'tax_calculation_period_pending' => $this->getSetting('tax_rates.tax_calculation_period_pending', null),
+            'tax_calculation_period_effective_from' => $this->getSetting('tax_rates.tax_calculation_period_effective_from', null),
             'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
             'send_tax_reminders' => $this->getSetting('tax_rates.send_tax_reminders', true),
             'tax_reminder_days' => $this->getSetting('tax_rates.tax_reminder_days', 3),
@@ -695,9 +738,57 @@ class SettingsManagerService
                 $this->updateSetting('tax_rates.auto_generate_tax_codes', $rates['auto_generate_tax_codes'], 'boolean');
             }
 
-            // Update tax period settings
+            // Update tax period settings.
+            //
+            // Period-type changes are QUEUED to the first of the next calendar
+            // month instead of applied immediately. mining_taxes unique key is
+            // (character_id, period_start) — biweekly H1 and monthly April both
+            // target period_start = 2026-04-01, so switching mid-month can
+            // orphan rows or silently overwrite period_type on --force recalc.
+            // Deferring to a month boundary sidesteps both.
+            //
+            // The "apply now" path (for power users / fresh installs with no
+            // existing taxes) uses the tax_calculation_period_apply_now flag.
+            // That bypasses the queue and writes directly to the active slot.
             if (isset($rates['tax_calculation_period'])) {
-                $this->updateSetting('tax_rates.tax_calculation_period', $rates['tax_calculation_period'], 'string');
+                $requested = $rates['tax_calculation_period'];
+
+                // Defense in depth: weekly was removed as a selectable period
+                // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
+                // via a direct updateTaxRates() call or a bypassed form),
+                // coerce to 'monthly' and log it. Prevents the legacy value
+                // from being re-introduced into the settings store.
+                if ($requested === 'weekly') {
+                    \Illuminate\Support\Facades\Log::warning(
+                        'Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.'
+                    );
+                    $requested = 'monthly';
+                }
+
+                $currentActive = $this->getSetting('tax_rates.tax_calculation_period', 'monthly');
+                $applyNow = !empty($rates['tax_calculation_period_apply_now']);
+
+                if ($requested === $currentActive) {
+                    // No-op — also clear any stale pending queue.
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
+                } elseif ($applyNow) {
+                    // Power-user override: change takes effect immediately.
+                    $this->updateSetting('tax_rates.tax_calculation_period', $requested, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
+                } else {
+                    // Queue with a lookahead effective date that lets the old
+                    // scheme finish calculating the current month before the
+                    // new scheme takes over. See TaxPeriodHelper::nextSafeEffectiveDate
+                    // for the rationale — TL;DR: day 3 of next month, not day 1,
+                    // because day 2 is when both biweekly and monthly schedule
+                    // their previous-period calcs.
+                    $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+                    $effectiveFrom = $periodHelper->nextSafeEffectiveDate()->toDateString();
+                    $this->updateSetting('tax_rates.tax_calculation_period_pending', $requested, 'string');
+                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', $effectiveFrom, 'string');
+                }
             }
             if (isset($rates['tax_payment_deadline_days'])) {
                 $this->updateSetting('tax_rates.tax_payment_deadline_days', $rates['tax_payment_deadline_days'], 'integer');
@@ -810,13 +901,28 @@ class SettingsManagerService
             'price_type' => $this->getSetting('pricing.price_type', 'sell'),
             'cache_duration' => $this->getSetting('pricing.cache_duration', 240),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
-            
+
             // Janice settings (checks settings first, then falls back to ENV)
-            'janice_api_key' => $this->getSetting('janice_api_key') 
+            'janice_api_key' => $this->getSetting('janice_api_key')
                 ?: config('mining-manager.general.price_provider_api_key', ''),
             'janice_market' => $this->getSetting('janice_market', 'jita'),
             'janice_price_method' => $this->getSetting('janice_price_method', 'buy'),
-            
+
+            // Manager Core settings — the user's market (jita/amarr/dodixie/...)
+            // and price-statistic variant (min/max/avg/median/percentile) selections
+            // from the pricing tab. Without these reads, the user's choice was
+            // silently swallowed: SettingsController writes them via
+            // updatePricingSettings() (with 'pricing.' prefix), and consumers
+            // (PriceProviderService, CachePriceDataCommand, DiagnosticController)
+            // all look them up by these exact keys on the returned array. Pre-fix,
+            // every lookup hit the `?? 'jita'/'min'` fallbacks regardless of UI.
+            //
+            // NOTE: A duplicate top-level write also exists at SettingsController
+            // lines 653-658 (orphan data — never read). That cleanup is queued
+            // separately to keep this fix surgical.
+            'manager_core_market' => $this->getSetting('pricing.manager_core_market', 'jita'),
+            'manager_core_variant' => $this->getSetting('pricing.manager_core_variant', 'min'),
+
             // Refining settings
             'use_refined_value' => $this->getSetting('pricing.use_refined_value', false),
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
@@ -864,7 +970,6 @@ class SettingsManagerService
     {
         return [
             'estimated_chunk_size' => $this->getSetting('moon.estimated_chunk_size', config('mining-manager.moon.estimated_chunk_size', 150000)),
-            'notification_hours_before' => $this->getSetting('moon.notification_hours_before', config('mining-manager.moon.notification_hours_before', [24, 4, 1])),
             'auto_calculate_values' => $this->getSetting('moon.auto_calculate_values', config('mining-manager.moon.auto_calculate_values', true)),
             'show_unscanned_moons' => $this->getSetting('moon.show_unscanned_moons', config('mining-manager.moon.show_unscanned_moons', true)),
         ];
@@ -925,6 +1030,18 @@ class SettingsManagerService
             'slack_enabled' => (bool) $this->getSetting('notifications.slack_enabled', false),
             'slack_webhook_url' => $this->getSetting('notifications.slack_webhook_url', ''),
             'slack_types' => $this->getSetting('notifications.slack_types', $defaultEnabled),
+            // Legacy global Slack health metrics. Per-webhook rows in
+            // webhook_configurations track success/failure/last_error on
+            // the model itself; the legacy global path (single URL stored
+            // in `notifications.slack_webhook_url`) had no equivalent
+            // until the M7 fix wired up persistent counters via
+            // recordLegacySlackSuccess / recordLegacySlackFailure in
+            // NotificationService::sendViaSlack.
+            'slack_legacy_success_count' => (int) $this->getSetting('notifications.slack_legacy_success_count', 0),
+            'slack_legacy_failure_count' => (int) $this->getSetting('notifications.slack_legacy_failure_count', 0),
+            'slack_legacy_last_success_at' => $this->getSetting('notifications.slack_legacy_last_success_at', null),
+            'slack_legacy_last_failure_at' => $this->getSetting('notifications.slack_legacy_last_failure_at', null),
+            'slack_legacy_last_error' => $this->getSetting('notifications.slack_legacy_last_error', ''),
 
             // Legacy discord pinging (kept for backward compat during transition)
             'discord_pinging_enabled' => (bool) $this->getSetting('notifications.discord_pinging_enabled', false),
@@ -1042,14 +1159,9 @@ class SettingsManagerService
             // Events
             'enable_events' => (bool) $this->getSetting('features.enable_events', true),
             'allow_event_creation' => (bool) $this->getSetting('features.allow_event_creation', true),
-            'auto_track_event_participation' => (bool) $this->getSetting('features.auto_track_event_participation', true),
 
             // Moon mining
             'enable_moon_tracking' => (bool) $this->getSetting('features.enable_moon_tracking', true),
-            'track_moon_compositions' => (bool) $this->getSetting('features.track_moon_compositions', true),
-            'calculate_moon_value' => (bool) $this->getSetting('features.calculate_moon_value', true),
-            'notify_extraction_ready' => (bool) $this->getSetting('features.notify_extraction_ready', true),
-            'extraction_notification_hours' => (int) $this->getSetting('features.extraction_notification_hours', 24),
 
             // Permissions & access
             'allow_public_stats' => (bool) $this->getSetting('features.allow_public_stats', false),

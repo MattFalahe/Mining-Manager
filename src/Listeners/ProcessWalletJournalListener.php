@@ -3,6 +3,7 @@
 namespace MiningManager\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\QueryException;
 use Illuminate\Queue\InteractsWithQueue;
 use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
 use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
@@ -104,12 +105,52 @@ class ProcessWalletJournalListener implements ShouldQueue
                     continue;
                 }
 
-                // Auto-match if enabled in config
-                if ($this->settingsService->getSetting('tax_payment.auto_match_payments', true)) {
+                // Auto-match if enabled (settings → General → Payment Settings).
+                //
+                // Canonical key is `payment.auto_match_payments` to match the
+                // sibling payment.* setting keys (match_tolerance,
+                // grace_period_hours, minimum_tax_amount). Default is true
+                // — operator can turn it off for installs that want a
+                // human-review step before any tax row is updated.
+                if ($this->settingsService->getSetting('payment.auto_match_payments', true)) {
                     DB::transaction(function () use ($tax, $taxCodeRecord, $transaction, $amount, $characterId, $taxCode, &$matched) {
+                        // ATOMIC CLAIM via the dedup table — same canonical
+                        // pattern as WalletTransferService::applyPayment (H1
+                        // fix, commit 27cf560). The transaction_id column on
+                        // mining_manager_processed_transactions is unique;
+                        // attempting a duplicate insert throws QueryException
+                        // and we bail before touching the tax row.
+                        //
+                        // Why FIRST and not last (the previous order):
+                        //   Two queue workers (Laravel queue retry, parallel
+                        //   workers, deadlock-retry) processing the same
+                        //   CharacterWalletJournalUpdated event both reach
+                        //   this method with the same $transaction->id. With
+                        //   the old "insert last" order, both workers locked
+                        //   the tax row sequentially, both accumulated
+                        //   amount_paid (double-credit), and only the second
+                        //   worker's dedup-table insert failed. Insert FIRST
+                        //   → only one worker wins the claim; the loser bails
+                        //   before any tax mutation.
+                        try {
+                            ProcessedTransaction::create([
+                                'transaction_id' => $transaction->id,
+                                'character_id' => $characterId,
+                                'tax_id' => $tax->id,
+                                'matched_at' => now(),
+                            ]);
+                        } catch (QueryException $e) {
+                            Log::info("Mining Manager: Transaction {$transaction->id} already processed; skipping double-credit attempt for character {$characterId}");
+                            return;
+                        }
+
                         // Re-fetch with lock to prevent race conditions
                         $tax = MiningTax::where('id', $tax->id)->lockForUpdate()->first();
                         if (!$tax) {
+                            // Tax disappeared between the lookup above and
+                            // here — let the dedup row stand so we don't loop,
+                            // but log it as anomalous.
+                            Log::warning("Mining Manager: Tax not found during auto-match for transaction {$transaction->id}; dedup row inserted, no payment applied");
                             return;
                         }
 
@@ -131,14 +172,6 @@ class ProcessWalletJournalListener implements ShouldQueue
                                 'status' => 'used',
                             ]);
                         }
-
-                        // Track processed transaction in our own table
-                        ProcessedTransaction::create([
-                            'transaction_id' => $transaction->id,
-                            'character_id' => $characterId,
-                            'tax_id' => $tax->id,
-                            'matched_at' => now(),
-                        ]);
 
                         Log::info("Mining Manager: Auto-matched payment for character {$characterId}: " . number_format($amount, 2) . " ISK (code: {$taxCode}), total paid: " . number_format($newPaid, 2));
                         $matched++;

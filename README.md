@@ -6,17 +6,19 @@
 
 A comprehensive mining management plugin for SeAT 5.x. Track mining operations, manage moon extractions, calculate taxes, and generate detailed reports for your corporation.
 
+**v2.0.0 highlights** — Mining Manager works perfectly fine on its own (every existing v1.0.x install upgrades cleanly without changing a thing). When **Manager Core** is also installed, MM consumes centralised market pricing via the documented PluginBridge contract. When **Structure Manager** is also installed, MM subscribes to SM's structure-threat events and dispatches *Extraction At Risk* (fuel critical, shield/armor/hull reinforced) and *Extraction Lost* (refinery destroyed) notifications with attacker info and a one-click Structure Board deeplink. Both cross-plugin integrations are optional — toggles auto-disable when either plugin is absent.
+
 ## Features
 
 - **Mining Ledger** -- Automated processing of character and corporation mining data with daily summary aggregation
 - **Moon Mining** -- Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts. Past Extractions table with sortable/filterable DataTables view, structure column, status filter (expired/fractured/cancelled), and search — scoped to Moon Owner Corporation only
-- **Tax System** -- Daily summary-based tax calculation with per-ore rates (moon R4-R64, regular ore, ice, gas, abyssal, triglavian), multi-corporation support, guest mining rates, event modifiers, configurable minimum tax amount with exempt/enforce behavior, wallet payment verification, and manual payment entry
-- **Mining Events** -- Create events with tax modifiers (tax-free to double-tax), auto-detect participants from mining ledger matching event time + location scope (system/constellation/region/global), leaderboards
+- **Tax System** -- Daily summary-based tax calculation with per-ore rates (moon R4-R64, regular ore, ice, gas, abyssal, triglavian), multi-corporation support, guest mining rates, event modifiers (per-row attribution), configurable minimum tax amount with exempt/enforce behavior, wallet payment verification, and manual payment entry. Supports **monthly** and **biweekly** tax periods with a safe queued-switch mechanism (effective day 3 of next month to prevent row collisions). Weekly period type removed in v2.0.0 &mdash; historical weekly rows still render correctly.
+- **Mining Events** -- Create events with tax modifiers (tax-free to double-tax). Dedicated `event_mining_records` table materialises the exact mining activity qualifying for each event, with all four scope filters (corporation, location, time, ore category) applied at populate time. Per-row tax attribution: the modifier applies only to mining that actually overlaps the event window, not the whole day. Historical pricing preserved via proportional allocation from the mining ledger. Event form surfaces a live tax-compatibility panel so organisers know which event types are meaningful given current tax settings. Miners see their event discount ("saved X ISK") on My Mining and My Taxes; directors see an Event Tax column + 12-month chart. Auto-detects participants, supports system/constellation/region/global location scope, shows leaderboards. Time precision: day-level for moon events (ESI limitation), sub-day for belt/ice/gas events via SeAT's fetch time.
 - **Reports** -- Daily/weekly/monthly reports with PDF/CSV/JSON export and scheduled Discord/Slack delivery
 - **Theft Detection** -- Detect and monitor unauthorized mining with severity classification and incident tracking
 - **Dashboard** -- Corporation-wide analytics with 12-month charts, leaderboards, and statistics
-- **Notifications** -- 15 notification types via Discord webhooks and Slack with per-webhook event toggles
-- **Diagnostics** -- 15-tab diagnostic suite: test data, price provider, cache health, system validation, settings health, tax trace, data integrity, valuation test, system status, notification testing, moon extractions, tax pipeline, theft detection, event lifecycle, analytics and reports
+- **Notifications** -- 19 notification types via Discord webhooks, Slack, EVE Mail, or custom JSON endpoints, with per-webhook event toggles. Cross-plugin alerts for fuel/shield/armor/hull/destroyed events when Manager Core + Structure Manager are installed.
+- **Diagnostics** -- 16-tab diagnostic suite (default tab: Master Test, a one-click read-only smoke chain that verifies schema, settings, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security hardening in under 30 seconds). Plus per-area tabs: test data, price provider, cache health, system validation, settings health, tax trace, data integrity, valuation test, system status, notification testing, moon extractions, tax pipeline, theft detection, event lifecycle, analytics and reports.
 
 ## Requirements
 
@@ -52,7 +54,7 @@ The wizard verifies your settings, populates current month data (prices, mining 
 | Setting | Location | Description |
 |---|---|---|
 | Moon Owner Corporation | Settings > General | Which corporation owns the moon structures -- determines observer data scope |
-| Tax Rates | Settings > Tax Rates | Per-corporation rates for moon ore (R4-R64), regular ore, ice, gas, abyssal, triglavian |
+| Tax Rates | Settings > Tax Rates | Per-corporation rates for moon ore (R4-R64), regular ore, ice, gas, abyssal, triglavian. Period type (monthly / biweekly) and the queued-switch safeguard configured here too. |
 | Guest Miner Tax Rates | Settings > General | Global rates for non-member miners on your moons (0% = no tax) |
 | Tax Selector | Settings > Tax Rates | Choose what ore types to tax (all moon ore / only corp moon ore / none + regular types) |
 | Price Provider | Settings > Pricing | Market data source (SeAT, Fuzzwork, Janice, or Manager Core) |
@@ -153,17 +155,31 @@ This decoupling means arrivals notify within ~60 seconds of the actual chunk arr
 
 ## Webhook Notifications
 
-15 notification types across 5 categories. Each webhook can independently toggle which events it receives.
+16 notification types across 5 categories. Each webhook can independently toggle which events it receives.
 
-Supported channels: Discord webhooks and Slack.
+Supported channels: Discord webhooks, Slack, and ESI in-game mail (for tax reminders/invoices/overdue notices).
 
 | Category | Events | Description |
 |---|---|---|
 | Tax | generated, announcement, reminder, invoice, overdue | Payment lifecycle notifications |
-| Moon | arrival, jackpot | Chunk ready and jackpot detection alerts |
+| Moon | arrival, jackpot, chunk-unstable | Chunk ready, jackpot detection, capital safety warnings (~2h before chunk goes unstable) |
 | Events | created, started, completed | Mining event lifecycle |
 | Theft | detected, critical, active, resolved | Security alerts |
 | Reports | generated | Scheduled report delivery |
+
+All dispatch goes through a single `NotificationService` (consolidated from the previous two-dispatcher design) with 5xx/429 retry, per-type master toggles, per-channel filters, and per-webhook subscription gating. Webhooks are routable to the Tax Program Corporation (moon/theft/tax) or global (events/reports).
+
+### Diagnostic Testing
+
+**Mining Manager → Diagnostic → Notification Testing** provides three test modes for verifying webhook configuration:
+
+| Mode | Scope | Purpose |
+|---|---|---|
+| **Preview Test** | One webhook (selected or custom URL) | Check embed layout + single-webhook wiring — renders without writing to audit log |
+| **Fire Live Notification** | Full pipeline, one type, all subscribed webhooks | End-to-end verification for one specific surface. Respects corp scoping + all gates. Writes audit log. |
+| **Fire ALL (Chain)** | Full pipeline, all 16 types sequentially | Post-deploy smoke test — every subscribed webhook receives every type in ~24 seconds |
+
+Settings → Webhooks → **Test** button sends a minimal "✅ Webhook Active" ping for wiring verification.
 
 ## Support
 

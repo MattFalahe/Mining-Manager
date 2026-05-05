@@ -104,6 +104,18 @@
                                     </td>
                                     <td>
                                         <strong>{{ $webhook->name }}</strong>
+                                        @php
+                                            $webhookCorpName = null;
+                                            if ($webhook->corporation_id && isset($webhookCorporations)) {
+                                                $match = $webhookCorporations->firstWhere('corporation_id', (int) $webhook->corporation_id);
+                                                $webhookCorpName = $match?->name;
+                                            }
+                                        @endphp
+                                        @if($webhook->corporation_id === null)
+                                            <br><small class="text-muted"><i class="fas fa-globe"></i> Global (all corps)</small>
+                                        @else
+                                            <br><small class="text-info"><i class="fas fa-building"></i> {{ $webhookCorpName ?? ('Corp #' . $webhook->corporation_id) }}</small>
+                                        @endif
                                     </td>
                                     <td>
                                         @if($webhook->type === 'discord')
@@ -144,6 +156,21 @@
                                             @if($webhook->notify_jackpot_detected)
                                                 <span class="badge" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Jackpot Detected">
                                                     <i class="fas fa-star"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_moon_chunk_unstable ?? false)
+                                                <span class="badge badge-warning" title="Moon Chunk Unstable (capital safety)">
+                                                    <i class="fas fa-exclamation-triangle"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_extraction_at_risk ?? false)
+                                                <span class="badge badge-danger" title="Extraction at Risk (fuel / attack / reinforced)">
+                                                    <i class="fas fa-fire"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_extraction_lost ?? false)
+                                                <span class="badge" style="background: #1f0000; color: #fff;" title="Extraction Lost (structure destroyed)">
+                                                    <i class="fas fa-skull"></i>
                                                 </span>
                                             @endif
                                             @if($webhook->notify_event_created)
@@ -316,6 +343,27 @@
                         </small>
                     </div>
 
+                    {{-- Assign to Corporation --}}
+                    <div class="form-group">
+                        <label for="webhook-corporation-id">
+                            <i class="fas fa-building"></i>
+                            {{ trans('mining-manager::settings.webhook_corporation') }}
+                        </label>
+                        <select class="form-control" id="webhook-corporation-id" name="corporation_id">
+                            <option value="">{{ trans('mining-manager::settings.webhook_corporation_global') }}</option>
+                            @if(isset($webhookCorporations))
+                                @foreach($webhookCorporations as $corp)
+                                    <option value="{{ $corp->corporation_id }}">
+                                        {{ $corp->name }}@if(!empty($corp->ticker)) [{{ $corp->ticker }}]@endif
+                                    </option>
+                                @endforeach
+                            @endif
+                        </select>
+                        <small class="form-text text-muted">
+                            {{ trans('mining-manager::settings.webhook_corporation_help') }}
+                        </small>
+                    </div>
+
                     {{-- Event Selection --}}
                     <div class="form-group">
                         <label>{{ trans('mining-manager::settings.notify_on_events') }}</label>
@@ -363,6 +411,46 @@
                             <label class="custom-control-label" for="notify-jackpot-detected">
                                 <i class="fas fa-star" style="color: #ffd700;"></i>
                                 Jackpot Detected
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-chunk-unstable" name="notify_moon_chunk_unstable" value="1">
+                            <label class="custom-control-label" for="notify-moon-chunk-unstable">
+                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                                Moon Chunk Unstable (capital safety)
+                            </label>
+                        </div>
+
+                        @php
+                            // Cross-plugin checks for extraction_at_risk + extraction_lost.
+                            // Disabled with tooltip when either MC or SM is missing — keeps
+                            // stale toggles from firing no-ops in the backend.
+                            $mmMcInstalled = class_exists('ManagerCore\\Services\\EventBus');
+                            $mmSmInstalled = class_exists('StructureManager\\Helpers\\FuelCalculator');
+                            $mmCrossReady = $mmMcInstalled && $mmSmInstalled;
+                            $mmMissingTip = $mmCrossReady ? ''
+                                : 'Requires ' . (!$mmMcInstalled ? 'Manager Core' : '')
+                                . (!$mmMcInstalled && !$mmSmInstalled ? ' + ' : '')
+                                . (!$mmSmInstalled ? 'Structure Manager' : '');
+                        @endphp
+                        <div class="custom-control custom-checkbox" title="{{ $mmMissingTip }}">
+                            <input type="checkbox" class="custom-control-input" id="notify-extraction-at-risk" name="notify_extraction_at_risk" value="1" {{ !$mmCrossReady ? 'disabled' : '' }}>
+                            <label class="custom-control-label{{ !$mmCrossReady ? ' text-muted' : '' }}" for="notify-extraction-at-risk">
+                                <i class="fas fa-fire text-danger"></i>
+                                Extraction at Risk
+                                @if(!$mmCrossReady)
+                                    <small class="badge badge-secondary ml-1">Plugin required</small>
+                                @endif
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox" title="{{ $mmMissingTip }}">
+                            <input type="checkbox" class="custom-control-input" id="notify-extraction-lost" name="notify_extraction_lost" value="1" {{ !$mmCrossReady ? 'disabled' : '' }}>
+                            <label class="custom-control-label{{ !$mmCrossReady ? ' text-muted' : '' }}" for="notify-extraction-lost">
+                                <i class="fas fa-skull text-danger"></i>
+                                Extraction Lost
+                                @if(!$mmCrossReady)
+                                    <small class="badge badge-secondary ml-1">Plugin required</small>
+                                @endif
                             </label>
                         </div>
 

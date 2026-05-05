@@ -95,7 +95,7 @@ class MoonController extends Controller
         // Calculate values for each extraction (respects current refined value setting)
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
-                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+                $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
         }
 
@@ -112,7 +112,7 @@ class MoonController extends Controller
         // Calculate values for upcoming extractions too
         foreach ($upcoming as $extraction) {
             if ($extraction->ore_composition) {
-                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+                $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
         }
 
@@ -173,10 +173,17 @@ class MoonController extends Controller
             $extraction->refresh(); // Reload with updated fractured_at
         }
 
-        // Calculate estimated value if ore composition available
+        // Calculate estimated value if ore composition available.
+        // For jackpot extractions, apply the ~2.0x multiplier so the
+        // operator sees the true post-reprocessing value rather than the
+        // ESI-predicted base. Pre-jackpot extractions show the base value
+        // directly.
         $estimatedValue = null;
         if ($extraction->ore_composition) {
-            $estimatedValue = $this->valueService->calculateExtractionValue($extraction);
+            $baseValue = $this->valueService->calculateExtractionValue($extraction);
+            $estimatedValue = $extraction->is_jackpot
+                ? $extraction->calculateValueWithJackpotBonus((float) $baseValue)
+                : $baseValue;
         }
 
         // Calculate time until chunk arrival
@@ -306,7 +313,7 @@ class MoonController extends Controller
         // Calculate values for each extraction
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
-                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+                $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
         }
 
@@ -363,6 +370,31 @@ class MoonController extends Controller
         }
 
         return view('mining-manager::moon.calendar', compact('calendar', 'month'));
+    }
+
+    /**
+     * Compute the operator-facing extraction value with the jackpot
+     * multiplier applied when applicable.
+     *
+     * Equivalent to calling MoonOreValueCalculationService::calculateExtractionValue
+     * directly, except wraps the result through MoonExtraction::calculateValueWithJackpotBonus
+     * if the extraction is flagged as jackpot. Use this anywhere a controller
+     * needs to set `$extraction->calculated_value` for view rendering — every
+     * view downstream then displays the jackpot-adjusted value automatically
+     * without each one having to remember the multiplier.
+     *
+     * Pre-jackpot (is_jackpot=false) extractions get the raw base value, same
+     * as before. Behavioural change is only on confirmed jackpots.
+     *
+     * @param MoonExtraction $extraction
+     * @return float
+     */
+    private function computeDisplayValue(MoonExtraction $extraction): float
+    {
+        $base = (float) $this->valueService->calculateExtractionValue($extraction);
+        return $extraction->is_jackpot
+            ? $extraction->calculateValueWithJackpotBonus($base)
+            : $base;
     }
 
     /**
@@ -453,7 +485,7 @@ class MoonController extends Controller
 
         // Calculate values
         foreach ($extractions as $extraction) {
-            $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            $extraction->calculated_value = $this->computeDisplayValue($extraction);
         }
 
         // Group by moon
@@ -543,9 +575,10 @@ class MoonController extends Controller
             'status' => $extraction->status,
             'chunk_arrival_time' => $extraction->chunk_arrival_time->toIso8601String(),
             'natural_decay_time' => $extraction->natural_decay_time->toIso8601String(),
-            'estimated_value' => $extraction->ore_composition 
-                ? $this->valueService->calculateExtractionValue($extraction)
+            'estimated_value' => $extraction->ore_composition
+                ? $this->computeDisplayValue($extraction)
                 : null,
+            'is_jackpot' => (bool) $extraction->is_jackpot,
             'ore_composition' => $extraction->ore_composition,
         ];
 
@@ -560,6 +593,16 @@ class MoonController extends Controller
      */
     public function extractions($structureId)
     {
+        // Reject obviously-bad URLs up front. Pre-fix a non-numeric
+        // structureId (typo'd link, paste error) reached the query and
+        // silently returned an empty paginated result rendered as a blank
+        // page. Now we 404 with a clear server-side signal.
+        if (!is_numeric($structureId) || (int) $structureId <= 0) {
+            abort(404);
+        }
+
+        $structureId = (int) $structureId;
+
         $extractions = MoonExtraction::where('structure_id', $structureId)
             ->with(['structure'])
             ->orderBy('extraction_start_time', 'desc')
@@ -571,11 +614,25 @@ class MoonController extends Controller
         // Calculate values for each extraction
         foreach ($extractions as $extraction) {
             if ($extraction->ore_composition) {
-                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+                $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
         }
 
+        // If the page returns zero extractions AND no row exists in
+        // `corporation_structures` for this id, we're looking at an
+        // unknown / never-tracked structure → 404. Otherwise (no
+        // extractions but the structure DOES exist in SeAT, e.g. one
+        // with no mining cycle yet) render the page with empty results
+        // and the structure name so the operator gets context.
         $structure = $extractions->first()?->structure ?? null;
+        if (!$structure && $extractions->isEmpty()) {
+            $structureExists = DB::table('corporation_structures')
+                ->where('structure_id', $structureId)
+                ->exists();
+            if (!$structureExists) {
+                abort(404);
+            }
+        }
 
         return view('mining-manager::moon.extractions', compact('extractions', 'structure'));
     }
@@ -608,7 +665,7 @@ class MoonController extends Controller
         foreach ($activeExtractions as $extraction) {
             // Calculate estimated value if ore composition available
             if ($extraction->ore_composition) {
-                $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+                $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
 
             // Calculate time until chunk arrival
@@ -664,7 +721,7 @@ class MoonController extends Controller
             ->get();
 
         foreach ($recentExtractions as $extraction) {
-            $extraction->calculated_value = $this->valueService->calculateExtractionValue($extraction);
+            $extraction->calculated_value = $this->computeDisplayValue($extraction);
         }
 
         return view('mining-manager::moon.calculator', compact('scannedMoons', 'recentExtractions'));
@@ -708,6 +765,10 @@ class MoonController extends Controller
         try {
             $extraction = MoonExtraction::findOrFail($id);
 
+            // Pre-check: short-circuit on an already-jackpot extraction so we
+            // can show the friendlier "already marked" message instead of
+            // the "race lost" path below. This is racy on its own, but the
+            // atomic claim further down is the actual correctness guard.
             if ($extraction->is_jackpot) {
                 return redirect()->route('mining-manager.moon.show', $extraction->id)
                     ->with('info', 'This extraction is already marked as a jackpot.');
@@ -725,12 +786,42 @@ class MoonController extends Controller
                 ->where('character_id', $characterId)
                 ->value('name') ?? 'Unknown';
 
-            // Mark as jackpot (manual report — unverified)
-            $extraction->is_jackpot = true;
-            $extraction->jackpot_detected_at = now();
-            $extraction->jackpot_reported_by = $characterId;
-            $extraction->jackpot_verified = null; // null = not yet verified by mining data
-            $extraction->save();
+            // ATOMIC CLAIM: flip is_jackpot from false→true via compare-and-swap.
+            // Without this, two members hitting "Report Jackpot" within the same
+            // request window both pass the check above, both save, both fire
+            // sendJackpotDetected — duplicate Discord pings for one real event.
+            //
+            // The where('is_jackpot', false) clause makes this row-level safe:
+            // only the worker that flips the flag from false→true gets back
+            // claimed=1; everyone else gets 0 and bails. The other jackpot_*
+            // metadata columns (detected_at, reported_by, verified) ride along
+            // in the same UPDATE so they're consistent with the flag state.
+            //
+            // Same shape as the StructureAlertHandler dedup latch from the
+            // 2026-04-28 audit pass.
+            $claimed = MoonExtraction::where('id', $extraction->id)
+                ->where('is_jackpot', false)
+                ->update([
+                    'is_jackpot' => true,
+                    'jackpot_detected_at' => now(),
+                    'jackpot_reported_by' => $characterId,
+                    // null = not yet verified by mining data; verified by
+                    // DetectJackpotsCommand once enough mining is observed.
+                    'jackpot_verified' => null,
+                ]);
+
+            if ($claimed === 0) {
+                // Lost the race — another member's request flipped the flag
+                // between our pre-check and the atomic UPDATE. Show the same
+                // friendly message as the pre-check path.
+                return redirect()->route('mining-manager.moon.show', $extraction->id)
+                    ->with('info', 'This extraction is already marked as a jackpot.');
+            }
+
+            // Refresh local model so the notification dispatch path sees the
+            // updated is_jackpot=true (calculateValueWithJackpotBonus depends
+            // on the flag being set on the in-memory model).
+            $extraction->refresh();
 
             // Send webhook notification
             try {
@@ -745,17 +836,27 @@ class MoonController extends Controller
                 // Load display names for moon_name
                 MoonExtraction::loadDisplayNames(collect([$extraction]));
 
-                $webhookService = app(\MiningManager\Services\Notification\WebhookService::class);
-                $webhookService->sendMoonNotification('jackpot_detected', [
+                $baseUrl = rtrim(config('app.url', ''), '/');
+
+                // Apply ~2.0x jackpot multiplier so the notification reflects
+                // the post-reprocessing value rather than the ESI-predicted base.
+                // is_jackpot was just set to true above so the multiplier kicks in.
+                $jackpotValue = (int) round(
+                    $extraction->calculateValueWithJackpotBonus((float) ($extraction->estimated_value ?? 0))
+                );
+
+                $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+                $notificationService->sendJackpotDetected([
                     'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                     'structure_name' => $structure->name ?? "Structure {$extraction->structure_id}",
                     'system_name' => $systemName,
                     'detected_by' => $characterName,
                     'reported_by' => $characterName,
-                    'jackpot_ores' => [],
-                    'jackpot_percentage' => null,
+                    'estimated_value' => $jackpotValue,
+                    'ore_summary' => $extraction->buildOreSummary(),
                     'extraction_id' => $extraction->id,
-                ], $extraction->corporation_id);
+                    'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
+                ]);
             } catch (\Exception $e) {
                 \Log::warning("Mining Manager: Failed to send jackpot notification: {$e->getMessage()}");
             }

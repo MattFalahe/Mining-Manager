@@ -272,7 +272,7 @@
                         <p class="mb-1">
                             <i class="fas fa-users text-success"></i>
                             <strong>{{ trans('mining-manager::events.participants') }}:</strong>
-                            {{ $event->participants_count ?? 0 }} / {{ $event->max_participants ?? '∞' }}
+                            {{ $event->participant_count ?? 0 }}
                         </p>
                         @if($event->getLocationName())
                         <p class="mb-1">

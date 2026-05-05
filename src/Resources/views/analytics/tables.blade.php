@@ -291,8 +291,13 @@
                                     <td>{{ $system->region_name ?? 'N/A' }}</td>
                                     <td>
                                         @php
+                                            // 0.45 is CCP's actual high-sec threshold (matches
+                                            // invControlTowerResources.minSecurityLevel). Systems like
+                                            // Tasabeshi (truesec 0.459) display as "0.5" after
+                                            // number_format(..., 1) but raw truesec fails a >= 0.5
+                                            // comparison — a >= 0.45 test catches them correctly.
                                             $security = $system->security_status ?? 0;
-                                            $secColor = $security >= 0.5 ? 'success' : ($security > 0 ? 'warning' : 'danger');
+                                            $secColor = $security >= 0.45 ? 'success' : ($security > 0 ? 'warning' : 'danger');
                                         @endphp
                                         <span class="badge badge-{{ $secColor }}">
                                             {{ number_format($security, 1) }}

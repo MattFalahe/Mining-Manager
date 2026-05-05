@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -73,39 +74,49 @@ class CachePriceDataCommand extends Command
      */
     public function handle()
     {
-        $this->info('Starting price cache update...');
-
-        $type = $this->option('type');
-        $regionId = $this->option('region');
-        $force = $this->option('force');
-
-        $this->info("Caching prices for: {$type}");
-        $this->info("Region ID: {$regionId}");
-
-        // Get type IDs to cache
-        $typeIds = $this->getTypeIdsForCategory($type);
-
-        if (empty($typeIds)) {
-            $this->error("No type IDs found for category: {$type}");
-            return Command::FAILURE;
+        $lock = Cache::lock('mining-manager:cache-prices', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+            return Command::SUCCESS;
         }
 
-        $this->info("Found " . count($typeIds) . " items to cache");
+        try {
+            $this->info('Starting price cache update...');
 
-        // Check if Manager Core is the active provider — use fast DB sync path
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $provider = $pricingSettings['price_provider'] ?? 'seat';
+            $type = $this->option('type');
+            $regionId = $this->option('region');
+            $force = $this->option('force');
 
-        if ($provider === 'manager-core' && PriceProviderService::isManagerCoreInstalled()) {
-            $this->syncFromManagerCore($typeIds, $regionId);
-        } else {
-            $this->fetchFromProvider($typeIds, $regionId, $force);
+            $this->info("Caching prices for: {$type}");
+            $this->info("Region ID: {$regionId}");
+
+            // Get type IDs to cache
+            $typeIds = $this->getTypeIdsForCategory($type);
+
+            if (empty($typeIds)) {
+                $this->error("No type IDs found for category: {$type}");
+                return Command::FAILURE;
+            }
+
+            $this->info("Found " . count($typeIds) . " items to cache");
+
+            // Check if Manager Core is the active provider — use fast DB sync path
+            $pricingSettings = $this->settingsService->getPricingSettings();
+            $provider = $pricingSettings['price_provider'] ?? 'seat';
+
+            if ($provider === 'manager-core' && PriceProviderService::isManagerCoreInstalled()) {
+                $this->syncFromManagerCore($typeIds, $regionId);
+            } else {
+                $this->fetchFromProvider($typeIds, $regionId, $force);
+            }
+
+            // Clean up old cache entries
+            $this->cleanupOldCache();
+
+            return Command::SUCCESS;
+        } finally {
+            $lock->release();
         }
-
-        // Clean up old cache entries
-        $this->cleanupOldCache();
-
-        return Command::SUCCESS;
     }
 
     /**
@@ -125,12 +136,47 @@ class CachePriceDataCommand extends Command
 
         $this->info("Syncing from Manager Core (market: {$market}, variant: {$variant})...");
 
-        // Fetch all matching prices from Manager Core in one query
-        $mcPrices = DB::table('manager_core_market_prices')
-            ->whereIn('type_id', $typeIds)
-            ->where('market', $market)
-            ->get()
-            ->groupBy('type_id');
+        // Pre-fix this used `DB::table('manager_core_market_prices')`
+        // directly — schema-coupled to MC's table layout, exactly the
+        // class of issue the H7b PluginBridge migration set out to
+        // eliminate. Now goes through `pricing.getPrices` which returns
+        // the documented `[typeId => ['buy' => stats, 'sell' => stats]]`
+        // shape regardless of MC's underlying column names.
+        $mcPrices = [];
+        try {
+            $bridge = app(\ManagerCore\Services\PluginBridge::class);
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, 'both');
+
+            if (is_array($rawResult)) {
+                // Handle the single-element-collapse quirk: 1-element
+                // arrays return the inner shape directly. Re-wrap by
+                // detecting whether the keys are typeIds.
+                $keys = array_keys($rawResult);
+                $allKeysAreTypeIds = !empty($keys) && array_reduce(
+                    $keys,
+                    fn($carry, $k) => $carry && in_array($k, $typeIds, true),
+                    true
+                );
+
+                if ($allKeysAreTypeIds) {
+                    $mcPrices = $rawResult;
+                } elseif (count($typeIds) === 1) {
+                    $mcPrices = [$typeIds[0] => $rawResult];
+                } else {
+                    $this->warn('Manager Core returned an unexpected response shape; treating as empty.');
+                    Log::warning('CachePriceDataCommand: pricing.getPrices unexpected shape', [
+                        'sample_keys' => array_slice($keys, 0, 5),
+                        'requested_count' => count($typeIds),
+                    ]);
+                }
+            } elseif ($rawResult === null) {
+                $this->warn('Manager Core capability pricing.getPrices not registered; nothing to sync.');
+            }
+        } catch (\Throwable $e) {
+            $this->error('Manager Core bridge call failed: ' . $e->getMessage());
+            Log::warning('CachePriceDataCommand: pricing.getPrices threw', ['error' => $e->getMessage()]);
+            return;
+        }
 
         $synced = 0;
         $missing = 0;
@@ -139,22 +185,23 @@ class CachePriceDataCommand extends Command
         $bar->start();
 
         foreach ($typeIds as $typeId) {
-            $typePrices = $mcPrices->get($typeId);
+            $entry = $mcPrices[$typeId] ?? null;
 
-            if (!$typePrices || $typePrices->isEmpty()) {
+            if (!is_array($entry)) {
                 $missing++;
                 $bar->advance();
                 continue;
             }
 
-            $sellRow = $typePrices->firstWhere('price_type', 'sell');
-            $buyRow = $typePrices->firstWhere('price_type', 'buy');
+            // 'both' priceType returns ['buy' => stats, 'sell' => stats].
+            // Each `stats` is the formatPriceStats array with keys min,
+            // max, avg, median, percentile, stddev, volume, order_count,
+            // strategy, updated_at.
+            $sellStats = is_array($entry['sell'] ?? null) ? $entry['sell'] : null;
+            $buyStats  = is_array($entry['buy']  ?? null) ? $entry['buy']  : null;
 
-            // Extract the configured variant price
-            $variantField = "price_{$variant}";
-
-            $sellPrice = $sellRow ? (float) ($sellRow->$variantField ?? $sellRow->price_min ?? 0) : 0;
-            $buyPrice = $buyRow ? (float) ($buyRow->$variantField ?? $buyRow->price_min ?? 0) : 0;
+            $sellPrice = $sellStats ? $this->extractMcVariant($sellStats, $variant) : 0;
+            $buyPrice  = $buyStats  ? $this->extractMcVariant($buyStats,  $variant) : 0;
             $avgPrice = ($sellPrice + $buyPrice) / 2;
 
             if ($sellPrice > 0 || $buyPrice > 0) {
@@ -179,6 +226,23 @@ class CachePriceDataCommand extends Command
         if ($missing > 0) {
             $this->warn("Missing in Manager Core: {$missing} items");
         }
+    }
+
+    /**
+     * Pull the configured variant value out of an MC formatPriceStats
+     * array. Mirrors PriceProviderService::extractVariant so this command
+     * doesn't need to know about MC's storage column names.
+     */
+    private function extractMcVariant(array $stats, string $variant): float
+    {
+        return match ($variant) {
+            'min' => (float) ($stats['min'] ?? 0),
+            'max' => (float) ($stats['max'] ?? 0),
+            'avg' => (float) ($stats['avg'] ?? 0),
+            'median' => (float) ($stats['median'] ?? 0),
+            'percentile' => (float) ($stats['percentile'] ?? 0),
+            default => (float) ($stats['min'] ?? 0),
+        };
     }
 
     /**

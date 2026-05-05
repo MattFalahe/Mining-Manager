@@ -88,6 +88,19 @@
                             @error('type')
                             <span class="invalid-feedback">{{ $message }}</span>
                             @enderror
+                            <small class="form-text text-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>Tax modifier scope depends on event type:</strong>
+                                <ul class="mb-0 mt-1">
+                                    <li><strong>Mining Operation</strong> — applies to <em>regular asteroid ore</em> only</li>
+                                    <li><strong>Moon Extraction</strong> — applies to <em>moon ore</em> (R4 through R64) only</li>
+                                    <li><strong>Ice Mining</strong> — applies to <em>ice</em> only</li>
+                                    <li><strong>Gas Huffing</strong> — applies to <em>gas</em> only</li>
+                                    <li><strong>Special Event</strong> — applies to <em>all currently-taxed ore categories</em> (whichever of ore, moon, ice, gas, abyssal, triglavian your plugin is set to tax). Use for incentives, holidays, or competitions.</li>
+                                </ul>
+                            </small>
+
+                            @include('mining-manager::events._tax_compatibility_panel')
                         </div>
 
                         <div class="row">

@@ -4,6 +4,8 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Events\EventMiningAggregator;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\MapDenormalize;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
@@ -34,6 +36,7 @@ class MiningEvent extends Model
         'status',
         'participant_count',
         'total_mined',
+        'total_mined_value',
         'tax_modifier',
         'corporation_id',
         'created_by',
@@ -50,6 +53,7 @@ class MiningEvent extends Model
         'end_time' => 'datetime',
         'participant_count' => 'integer',
         'total_mined' => 'integer',
+        'total_mined_value' => 'integer',
         'tax_modifier' => 'integer',
         'corporation_id' => 'integer',
         'last_updated' => 'datetime',
@@ -64,6 +68,29 @@ class MiningEvent extends Model
         'ice_mining' => 'Ice Mining',
         'gas_huffing' => 'Gas Huffing',
         'special' => 'Special Event',
+    ];
+
+    /**
+     * Mapping from event type to the ore categories its tax modifier applies to.
+     *
+     * mining_op       → regular asteroid ore (belt mining)
+     * moon_extraction → all moon ore rarities (R4 through R64)
+     * ice_mining      → ice
+     * gas_huffing     → gas
+     * special         → EVERYTHING (all taxable categories including abyssal + triglavian)
+     *
+     * The 'special' event type is intended for special occasions (holidays,
+     * competitions, incentives) where the organiser wants the modifier to
+     * apply regardless of what ore miners are extracting. Everything else
+     * is scoped so a "Moon Extraction" event doesn't accidentally discount
+     * belt mining or vice versa.
+     */
+    public const EVENT_TYPE_ORE_CATEGORIES = [
+        'mining_op' => ['ore'],
+        'moon_extraction' => ['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64'],
+        'ice_mining' => ['ice'],
+        'gas_huffing' => ['gas'],
+        'special' => ['ore', 'moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64', 'ice', 'gas', 'abyssal', 'triglavian'],
     ];
 
     /**
@@ -466,5 +493,81 @@ class MiningEvent extends Model
         }
 
         return in_array($solarSystemId, $systemIds);
+    }
+
+    /**
+     * Check if this event's tax modifier applies to the given ore category.
+     *
+     * Returns true when the event's type includes the ore category in
+     * EVENT_TYPE_ORE_CATEGORIES. "special" events apply to everything;
+     * other types apply only to their matching category (ice/gas/moon/ore).
+     *
+     * @param string|null $oreCategory Value from mining_ledger.ore_category
+     *                                 e.g. 'ore', 'ice', 'gas', 'moon_r64',
+     *                                 'abyssal', 'triglavian', or null
+     * @return bool
+     */
+    public function appliesToOreCategory(?string $oreCategory): bool
+    {
+        if (!$oreCategory) {
+            return false;
+        }
+
+        $allowedCategories = self::EVENT_TYPE_ORE_CATEGORIES[$this->type] ?? [];
+
+        return in_array($oreCategory, $allowedCategories, true);
+    }
+
+    /**
+     * List of attribute names that, if modified, invalidate the
+     * event_mining_records materialisation for this event.
+     */
+    protected const SCOPE_AFFECTING_FIELDS = [
+        'type',
+        'corporation_id',
+        'solar_system_id',
+        'location_scope',
+        'start_time',
+        'end_time',
+    ];
+
+    /**
+     * Hook: when any scope-affecting field changes, rebuild the event's
+     * materialised records from source tables.
+     *
+     * Rationale
+     * =========
+     * event_mining_records is populated with all four filters baked in
+     * (corp, location, time, ore category). If the user edits the event
+     * in the UI — e.g. narrows the location scope or flips from
+     * moon_extraction to special — the prior materialisation is now
+     * wrong and downstream participant / tax attribution would be stale.
+     *
+     * A full refresh (delete-then-rebuild) is the safest path because
+     * it's hard to surgically undo filter changes incrementally.
+     *
+     * We ignore non-scope saves (stats updates from EventTrackingService
+     * rolling up event_participants into total_mined, participant_count,
+     * etc.) to avoid an infinite aggregate ⇄ save loop.
+     *
+     * Failures are logged but do NOT propagate — a controller save
+     * shouldn't fail because a background aggregation had a hiccup. The
+     * cron will re-try on its next tick.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (self $event) {
+            if (!$event->wasChanged(self::SCOPE_AFFECTING_FIELDS)) {
+                return;
+            }
+
+            try {
+                app(EventMiningAggregator::class)->aggregate($event, true);
+            } catch (\Throwable $e) {
+                Log::error(
+                    "Mining Manager: Re-aggregation failed for event {$event->id} after scope edit: {$e->getMessage()}"
+                );
+            }
+        });
     }
 }

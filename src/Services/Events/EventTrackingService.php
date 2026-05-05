@@ -4,10 +4,12 @@ namespace MiningManager\Services\Events;
 
 use MiningManager\Models\MiningEvent;
 use MiningManager\Models\EventParticipant;
+use MiningManager\Models\EventMiningRecord;
 use MiningManager\Models\MiningLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Seat\Eveapi\Models\Sde\InvType;
 use Carbon\Carbon;
 
 class EventTrackingService
@@ -61,30 +63,34 @@ class EventTrackingService
     /**
      * Update tracking data for a specific event.
      *
+     * Rolls up event_mining_records (populated by EventMiningAggregator) into
+     * event_participants rows and refreshes aggregate counters on the event
+     * itself. All filtering — corporation, location, ore category, time
+     * window — has already been applied at aggregation time, so this method
+     * does a plain per-character sum and nothing else.
+     *
+     * Idempotent via updateOrCreate — re-runs don't double-count.
+     *
      * @param MiningEvent $event
-     * @return array
+     * @return array ['new_participants' => int, 'updated_participants' => int]
      */
     public function updateEventTracking(MiningEvent $event): array
     {
         Log::debug("Mining Manager: Updating tracking for event {$event->id}");
 
-        // Get recent mining activity (since last update or event start)
-        $lastUpdate = $event->last_updated ?? $event->start_time;
+        $records = EventMiningRecord::where('event_id', $event->id)->get();
 
-        $query = MiningLedger::where('date', '>=', $lastUpdate)
-            ->whereBetween('date', [
-                $event->start_time,
-                $event->end_time ?? Carbon::now()
-            ]);
+        if ($records->isEmpty()) {
+            Log::info("Mining Manager: Event {$event->id} tracking run — no event_mining_records present (run EventMiningAggregator first)");
 
-        // Filter by location scope — resolves constellation/region to system IDs.
-        // (Previously only did direct solar_system_id match which silently failed
-        // for constellation/region scopes since those IDs are not system IDs.)
-        $event->applyLocationFilter($query, 'solar_system_id');
+            // Even with no records, refresh the event's aggregate counters
+            // so stale totals get zeroed out (e.g. after a scope edit).
+            $event->participant_count = $event->participants()->count();
+            $event->total_mined = $event->participants()->sum('quantity_mined');
+            $event->total_mined_value = $event->participants()->sum('value_mined');
+            $event->last_updated = Carbon::now();
+            $event->save();
 
-        $newActivity = $query->get();
-
-        if ($newActivity->isEmpty()) {
             return [
                 'new_participants' => 0,
                 'updated_participants' => 0,
@@ -94,40 +100,61 @@ class EventTrackingService
         $newParticipants = 0;
         $updatedParticipants = 0;
 
-        DB::transaction(function () use ($event, $newActivity, &$newParticipants, &$updatedParticipants) {
-            foreach ($newActivity->groupBy('character_id') as $characterId => $records) {
-                $quantity = $records->sum('quantity');
+        DB::transaction(function () use ($event, $records, &$newParticipants, &$updatedParticipants) {
+            foreach ($records->groupBy('character_id') as $characterId => $charRecords) {
+                // Sums for this character across all their event-qualifying records.
+                // updateOrCreate SETS these totals (not increments), so rerunning
+                // the tracker is safe.
+                $quantity = (int) $charRecords->sum('quantity');
+                $valueIsk = $charRecords->sum('value_isk'); // decimal
+                $earliestMining = $charRecords->min('mining_date');
 
-                $participant = EventParticipant::where('event_id', $event->id)
+                $existed = EventParticipant::where('event_id', $event->id)
                     ->where('character_id', $characterId)
-                    ->first();
+                    ->exists();
 
-                if ($participant) {
-                    // Update existing participant
-                    $participant->increment('quantity_mined', $quantity);
-                    $participant->update(['last_updated' => Carbon::now()]);
-                    $updatedParticipants++;
-                } else {
-                    // Create new participant
-                    EventParticipant::create([
+                $participant = EventParticipant::updateOrCreate(
+                    [
                         'event_id' => $event->id,
                         'character_id' => $characterId,
+                    ],
+                    [
                         'quantity_mined' => $quantity,
-                        'joined_at' => $records->min('date'),
+                        'value_mined' => (int) round($valueIsk),
                         'last_updated' => Carbon::now(),
-                    ]);
-                    $newParticipants++;
+                    ]
+                );
+
+                // Preserve joined_at for pre-existing participants — manual
+                // join via the UI sets it to click time; only stamp it on
+                // freshly auto-detected rows.
+                if (!$existed && $participant->joined_at === null) {
+                    $participant->update(['joined_at' => $earliestMining]);
                 }
+
+                $existed ? $updatedParticipants++ : $newParticipants++;
             }
 
-            // Update event statistics
+            // Prune participants who no longer have any qualifying records
+            // (e.g. after a scope edit that narrowed the event). This only
+            // removes AUTO-detected participants — anyone who clicked "Join
+            // Event" has joined_at set from the UI and should be preserved
+            // so their opt-in isn't silently revoked.
+            $currentCharIds = $records->pluck('character_id')->unique()->values();
+            EventParticipant::where('event_id', $event->id)
+                ->whereNotIn('character_id', $currentCharIds)
+                ->whereNull('joined_at')
+                ->delete();
+
+            // Recompute event-level aggregates from participant rows.
             $event->participant_count = $event->participants()->count();
             $event->total_mined = $event->participants()->sum('quantity_mined');
+            $event->total_mined_value = $event->participants()->sum('value_mined');
             $event->last_updated = Carbon::now();
             $event->save();
         });
 
-        Log::debug("Mining Manager: Event {$event->id} tracking updated: {$newParticipants} new, {$updatedParticipants} updated");
+        Log::info("Mining Manager: Event {$event->id} tracking updated: {$newParticipants} new, {$updatedParticipants} refreshed from " . $records->count() . ' records');
 
         return [
             'new_participants' => $newParticipants,

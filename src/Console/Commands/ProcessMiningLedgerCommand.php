@@ -12,7 +12,6 @@ use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
-use MiningManager\Services\Notification\WebhookService;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -127,8 +126,44 @@ class ProcessMiningLedgerCommand extends Command
         $progressBar = $this->output->createProgressBar($totalEntries);
         $progressBar->start();
 
-        DB::beginTransaction();
-
+        // No outer DB::beginTransaction.
+        //
+        // Pre-fix this command wrapped the entire chunk loop in a single
+        // transaction. For active corps that's tens of thousands of observer
+        // records — the transaction held row-level locks on `mining_ledger`
+        // for minutes. With Cache::lock=900s on this command and ESI
+        // refreshes happening on their own schedules, any concurrent writer
+        // (the import-character-mining cron at :20/:50 vs this one at :15/:45,
+        // or the dashboard's auto-refresh queries) could hit MySQL's
+        // innodb_lock_wait_timeout (default 50s) and fail with confusing
+        // deadlock errors.
+        //
+        // The inner per-entry work is naturally idempotent:
+        //   - `MiningLedger::updateOrCreate` is the canonical Eloquent
+        //     idempotent insert/update.
+        //   - `$existing->update` only fires when the observer quantity
+        //     grows (cumulative semantics) or `--recalculate` is set.
+        //   - The personal-ESI dedup (`$personalDupe->update/delete`) is
+        //     idempotent on its own.
+        //
+        // A partial failure mid-chunk leaves the DB consistent: the rows
+        // that did update have valid data, the rows that didn't get picked
+        // up by the next cron run (every 30min). The inner try/catch on
+        // line ~286 already handles per-entry failures by incrementing
+        // $errors and continuing.
+        //
+        // The fatal-error catch block at the bottom is preserved (without
+        // the now-meaningless DB::rollBack) so a crashing chunk callback
+        // still cleanly releases the Cache::lock and reports the error.
+        //
+        // Capture the singleton's active corp BEFORE the loop so we can
+        // restore it in `finally` regardless of how this method exits.
+        // Pre-fix the loop's setActiveCorporation calls leaked context to
+        // the next caller in the same PHP process — invisible on web
+        // requests (each request gets a fresh container) but real on
+        // queue workers (Laravel's persistent worker reuses the process
+        // across many jobs sequentially).
+        $previousActiveCorp = $settingsService->getActiveCorporation();
         try {
             // Process entries in chunks, grouped by observer within each chunk
             $query->orderBy('observer_id')->chunk(500, function ($chunk) use (
@@ -293,7 +328,10 @@ class ProcessMiningLedgerCommand extends Command
             } // end outer foreach (observers in chunk)
             }); // end chunk callback
 
-            DB::commit();
+            // (No DB::commit — per the no-outer-transaction comment above,
+            // each per-entry write committed independently as it ran. The
+            // inner per-entry try/catch already prevented any single failure
+            // from poisoning the rest of the chunk.)
             $progressBar->finish();
 
             $this->line('');
@@ -336,8 +374,22 @@ class ProcessMiningLedgerCommand extends Command
                 return Command::FAILURE;
             }
 
-            // Check for jackpot ores in processed entries
-            if ($processed > 0 && $jackpotCheckEntries->isNotEmpty()) {
+            // Check for jackpot ores in observer entries.
+            //
+            // BUG FIX 2026-04-27: previously gated on `$processed > 0` which
+            // only counted brand-new mining_ledger inserts. After the first
+            // run that ingests a chunk's mining, every subsequent run sees
+            // the same cumulative observer quantities and takes the "skipped"
+            // path → $processed stays 0 → checkForJackpotOres never ran →
+            // jackpot alerts never fired even though jackpot ore type IDs
+            // were sitting right there in $jackpotCheckEntries.
+            //
+            // The check function is idempotent (only marks not-yet-flagged
+            // extractions, only verifies pending manual reports), so re-running
+            // it on every cron tick is safe and free. Cost: one query per
+            // unique observer in the entries collection, only when jackpot
+            // type IDs are actually present.
+            if ($jackpotCheckEntries->isNotEmpty()) {
                 $this->checkForJackpotOres($jackpotCheckEntries);
             }
 
@@ -431,13 +483,25 @@ class ProcessMiningLedgerCommand extends Command
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            // No DB::rollBack — there's no outer transaction to roll back
+            // (see the no-outer-transaction comment above). Per-entry writes
+            // that succeeded before this fatal error stay committed; the
+            // next cron tick will re-process anything that didn't land
+            // (updateOrCreate is idempotent).
             $progressBar->finish();
             $this->line('');
             $this->line('');
             $this->error("❌ Fatal error: {$e->getMessage()}");
             $this->error($e->getTraceAsString());
             return Command::FAILURE;
+        } finally {
+            // Restore the previous singleton context regardless of how the
+            // try block exited. Without this, Laravel's persistent queue
+            // worker (which reuses the same PHP process across multiple
+            // jobs) would carry the last observer's corp context into the
+            // next job, causing settings reads in subsequent jobs to
+            // return the wrong corp's values.
+            $settingsService->setActiveCorporation($previousActiveCorp);
         }
         } finally {
             $lock->release();
@@ -553,6 +617,31 @@ class ProcessMiningLedgerCommand extends Command
      * @param \Illuminate\Support\Collection $observerEntries
      * @return void
      */
+    /**
+     * Real-time jackpot detection hook — runs at the tail of every
+     * process-ledger run (every 30 minutes via the cron).
+     *
+     * Two paths, same data check:
+     *
+     *   AUTO-DETECT — extraction was not yet flagged as jackpot. Mark it
+     *                 jackpot, mark verified, fire the jackpot_detected
+     *                 notification.
+     *
+     *   USER-REPORT VERIFICATION — extraction was manually reported via the
+     *                              "Report Jackpot" button (is_jackpot=true,
+     *                              jackpot_verified=null). Real mining data
+     *                              IS the verification — flip verified to
+     *                              true silently. The user's report already
+     *                              fired its own notification when submitted.
+     *
+     * Window matching (BUG FIX 2026-04-24): uses the plugin's full mining-
+     * window expiry (MoonExtraction::getExpiryTime() = fractured_at + 50h,
+     * with chunk_arrival + 53h fallback). The previous implementation used
+     * natural_decay_time which is the auto-fracture mark (~3h after chunk
+     * arrival), so the lookup missed essentially every chunk where mining
+     * happened on a day other than chunk-arrival day — including all the
+     * normal cases where mining starts after fracture.
+     */
     private function checkForJackpotOres($observerEntries)
     {
         try {
@@ -572,27 +661,133 @@ class ProcessMiningLedgerCommand extends Command
             // Group by observer/structure
             $byObserver = $jackpotEntries->groupBy('observer_id');
             $jackpotsFound = 0;
+            $reportsVerified = 0;
 
             foreach ($byObserver as $observerId => $entries) {
-                // Find extraction for this structure
-                $entryDate = Carbon::parse($entries->first()->last_updated);
+                // Find extraction for this structure whose mining window
+                // includes the entry's date.
+                //
+                // Loose SQL bound: chunk_arrival within the last 56h of the
+                // entry date (max possible window is ~53h: chunk_arrival
+                // + 3h auto-fracture + 48h ready + 2h unstable). Tight PHP
+                // filter then uses the model's getExpiryTime() helper for
+                // the canonical lifecycle-aware end-of-window check.
+                //
+                // Match BOTH paths in one query:
+                //   - is_jackpot=false                    → auto-detect
+                //   - is_jackpot=true + verified=null +
+                //     jackpot_reported_by set             → user-report verify
+                // Use the LATEST mining day at this observer instead of an
+                // arbitrary first() pick. Corp observer entries are keyed
+                // (character_id, observer_id, type_id, last_updated) — when
+                // a structure has mining across multiple days (e.g. continuing
+                // through midnight UTC), groupBy('observer_id') merges all
+                // those days into one collection. first() returned whichever
+                // row happened to be first in iteration order; if that was an
+                // older day, the SQL filter `chunk_arrival_time <= entryDate->endOfDay()`
+                // could exclude today's chunk and the match silently failed.
+                //
+                // Using max() guarantees we always anchor on the most recent
+                // mining day at this structure, which is the day most likely
+                // to fall within the currently-active chunk's window. Same
+                // semantics as first() in the simple case (single date),
+                // strictly better in the multi-date case.
+                $entryDate = $entries->max(fn($e) => Carbon::parse($e->last_updated));
+                if (!$entryDate) {
+                    continue; // defensive — shouldn't happen with valid data
+                }
 
-                $extraction = MoonExtraction::where('structure_id', $observerId)
-                    ->where('chunk_arrival_time', '<=', $entryDate->endOfDay())
-                    ->where('natural_decay_time', '>=', $entryDate->startOfDay())
-                    ->where('is_jackpot', false)
-                    ->first();
+                $candidates = MoonExtraction::where('structure_id', $observerId)
+                    ->where('chunk_arrival_time', '<=', $entryDate->copy()->endOfDay())
+                    ->where('chunk_arrival_time', '>=', $entryDate->copy()->subHours(56)->startOfDay())
+                    ->whereNotIn('status', ['cancelled', 'expired'])
+                    ->where(function ($q) {
+                        $q->where('is_jackpot', false)
+                          ->orWhere(function ($q2) {
+                              $q2->where('is_jackpot', true)
+                                 ->whereNull('jackpot_verified')
+                                 ->whereNotNull('jackpot_reported_by');
+                          });
+                    })
+                    ->orderBy('chunk_arrival_time', 'desc')
+                    ->get();
+
+                $extraction = $candidates->first(function (MoonExtraction $e) use ($entryDate) {
+                    $expiry = $e->getExpiryTime();
+                    return $expiry && $entryDate->lessThanOrEqualTo($expiry);
+                });
 
                 if (!$extraction) {
+                    // Diagnostic: jackpot ores detected in observer data but no
+                    // matching MoonExtraction. Run a broader query to figure out
+                    // WHY the match failed so the operator can correct the
+                    // underlying state issue (most common: extraction not yet
+                    // imported, chunk arrived outside the 56h window, or the
+                    // chunk is already flagged + verified).
+                    $diag = MoonExtraction::where('structure_id', $observerId)
+                        ->orderByDesc('chunk_arrival_time')
+                        ->limit(3)
+                        ->get(['id', 'chunk_arrival_time', 'fractured_at', 'status', 'is_jackpot', 'jackpot_verified', 'jackpot_reported_by']);
+
+                    if ($diag->isEmpty()) {
+                        $this->warn("  ⚠️  Jackpot ores at structure {$observerId} but NO MoonExtraction row exists for this structure. Run mining-manager:update-extractions to import it.");
+                        Log::warning("ProcessMiningLedgerCommand: jackpot ores detected at structure {$observerId} but no MoonExtraction tracked for it");
+                    } else {
+                        $latest = $diag->first();
+                        $reason = match (true) {
+                            in_array($latest->status, ['cancelled', 'expired'], true)
+                                => "latest extraction status={$latest->status} (chunk_arrival={$latest->chunk_arrival_time})",
+                            $latest->is_jackpot && $latest->jackpot_verified === true
+                                => "already flagged + verified jackpot — no re-broadcast",
+                            $latest->is_jackpot && $latest->jackpot_verified === false
+                                => "previously marked as not-jackpot via DetectJackpotsCommand — run --rerun-failed if this is wrong",
+                            ($entryDate->copy()->subHours(56)->startOfDay()->gt($latest->chunk_arrival_time))
+                                => "latest chunk_arrival ({$latest->chunk_arrival_time}) is older than 56h window from entry date ({$entryDate->toDateString()})",
+                            default => "no extraction within active mining window for this entry date",
+                        };
+                        $this->warn("  ⚠️  Jackpot ores at structure {$observerId} but no auto-detect match: {$reason}");
+                        Log::info("ProcessMiningLedgerCommand: jackpot ores at structure {$observerId} but no match — {$reason}", [
+                            'observer_id' => $observerId,
+                            'entry_date' => $entryDate->toIso8601String(),
+                            'window_start' => $entryDate->copy()->subHours(56)->startOfDay()->toIso8601String(),
+                            'window_end' => $entryDate->copy()->endOfDay()->toIso8601String(),
+                            'latest_extraction' => $latest?->only(['id', 'chunk_arrival_time', 'status', 'is_jackpot', 'jackpot_verified']),
+                        ]);
+                    }
+
                     continue;
                 }
 
-                $extraction->is_jackpot = true;
-                $extraction->jackpot_detected_at = now();
-                $extraction->save();
-                $jackpotsFound++;
+                // Distinguish auto-detect (was not jackpot) from user-report
+                // verification (was already jackpot via manual report).
+                $wasAutoDetected = !$extraction->is_jackpot;
 
-                $this->info("  ⭐ JACKPOT: {$extraction->moon_name} (Structure {$observerId})");
+                $extraction->is_jackpot = true;
+                if (!$extraction->jackpot_detected_at) {
+                    $extraction->jackpot_detected_at = now();
+                }
+                // Real mining data IS the verification. Both paths land here
+                // so the daily DetectJackpotsCommand backstop has nothing to
+                // do for this extraction.
+                $extraction->jackpot_verified = true;
+                $extraction->jackpot_verified_at = now();
+                $extraction->save();
+
+                if ($wasAutoDetected) {
+                    $jackpotsFound++;
+                    $this->info("  ⭐ JACKPOT (auto-detected): {$extraction->moon_name} (Structure {$observerId})");
+                } else {
+                    $reportsVerified++;
+                    $this->info("  ✅ JACKPOT (user-report verified): {$extraction->moon_name} (Structure {$observerId})");
+                }
+
+                // Notification fires for AUTO-DETECT only. User-reported jackpots
+                // already triggered sendJackpotDetected when the user clicked
+                // "Report Jackpot" — re-firing here would double-notify the
+                // channel for the same chunk.
+                if (!$wasAutoDetected) {
+                    continue;
+                }
 
                 // Get details for notification
                 $structureName = DB::table('universe_structures')
@@ -604,33 +799,41 @@ class ProcessMiningLedgerCommand extends Command
                     ->where('universe_structures.structure_id', $observerId)
                     ->value('solar_systems.name') ?? 'Unknown System';
 
-                $jackpotOreDetails = [];
-                foreach ($entries->unique('type_id') as $entry) {
-                    $oreName = $entry->type->typeName ?? "Type {$entry->type_id}";
-                    $totalQty = $entries->where('type_id', $entry->type_id)->sum('quantity');
-                    $jackpotOreDetails[] = [
-                        'name' => $oreName,
-                        'type_id' => $entry->type_id,
-                        'quantity' => $totalQty,
-                    ];
-                }
-
                 // First miner who mined jackpot ore
                 $firstEntry = $entries->first();
                 $detectedBy = $firstEntry->character_name ?? "Character {$firstEntry->character_id}";
 
+                // Build the same ore-summary format used by moon_ready
+                // notifications. Since a jackpot chunk has +100% variants
+                // for ALL its moon ore (binary, not partial), showing the
+                // full chunk composition is more useful than showing only
+                // mined-so-far quantities.
+                $oreSummary = $extraction->buildOreSummary();
+
+                $baseUrl = rtrim(config('app.url', ''), '/');
+                $extractionUrl = $baseUrl . '/mining-manager/moon/' . $extraction->id;
+
                 // Send webhook notification
                 try {
-                    $webhookService = app(WebhookService::class);
-                    $webhookService->sendMoonNotification('jackpot_detected', [
+                    $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+                    // Jackpot-adjusted value — base estimated_value is computed
+                    // from ESI's pre-jackpot ore_composition. calculateValueWithJackpotBonus
+                    // applies the ~2.0x multiplier for a confirmed jackpot
+                    // (every +100% variant reprocesses to ~2x mineral content).
+                    $jackpotValue = (int) round(
+                        $extraction->calculateValueWithJackpotBonus((float) ($extraction->estimated_value ?? 0))
+                    );
+
+                    $notificationService->sendJackpotDetected([
                         'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                         'structure_name' => $structureName,
                         'system_name' => $systemName,
                         'detected_by' => $detectedBy,
-                        'jackpot_ores' => $jackpotOreDetails,
-                        'jackpot_percentage' => 100,
+                        'estimated_value' => $jackpotValue,
+                        'ore_summary' => $oreSummary,
                         'extraction_id' => $extraction->id,
-                    ], $extraction->corporation_id);
+                        'extraction_url' => $extractionUrl,
+                    ]);
 
                     $this->info("  📡 Jackpot notification sent!");
                 } catch (\Exception $e) {
@@ -639,7 +842,10 @@ class ProcessMiningLedgerCommand extends Command
             }
 
             if ($jackpotsFound > 0) {
-                $this->info("💎 Found {$jackpotsFound} new jackpot extraction(s)!");
+                $this->info("💎 Found {$jackpotsFound} new auto-detected jackpot(s)!");
+            }
+            if ($reportsVerified > 0) {
+                $this->info("✅ Verified {$reportsVerified} user-reported jackpot(s) in real-time!");
             }
         } catch (\Exception $e) {
             $this->warn("⚠️ Error checking for jackpot ores: {$e->getMessage()}");

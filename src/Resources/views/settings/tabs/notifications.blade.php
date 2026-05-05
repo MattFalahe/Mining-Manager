@@ -55,9 +55,9 @@
                     'tax_invoice' => [
                         'label' => 'Tax Invoice Created',
                         'icon' => 'fas fa-file-invoice text-info',
-                        'desc' => 'Sent to the individual miner when a tax invoice is generated',
+                        'desc' => 'Sent to the individual miner when a tax invoice is generated (one notification per invoice — role pings are intentionally disabled for this type to avoid spam during batched invoice generation)',
                         'scope' => 'individual',
-                        'has_role_ping' => true,
+                        'has_role_ping' => false,
                         'has_user_ping' => true,
                         'has_show_amount' => true,
                     ],
@@ -124,6 +124,37 @@
                         'has_role_ping' => true,
                         'has_user_ping' => false,
                         'has_show_amount' => false,
+                    ],
+                    'moon_chunk_unstable' => [
+                        'label' => 'Moon Chunk Unstable (Capital Safety)',
+                        'icon' => 'fas fa-exclamation-triangle text-warning',
+                        'desc' => 'Safety warning fired ~2h before a chunk enters EVE\'s unstable state. Capital pilots (Rorquals, Orcas) should dock up or warp to safety — unstable chunks historically attract hostile gangs.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
+                    'extraction_at_risk' => [
+                        'label' => 'Extraction at Risk',
+                        'icon' => 'fas fa-fire text-danger',
+                        'desc' => 'Moon chunk is in danger — refinery running out of fuel, or structure is under attack / in a reinforcement timer. Uses Structure Manager data for accurate fuel math and combat state. Requires Manager Core + Structure Manager.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                        'requires_plugins' => ['ManagerCore\\Services\\EventBus', 'StructureManager\\Helpers\\FuelCalculator'],
+                        'required_plugin_labels' => ['Manager Core', 'Structure Manager'],
+                    ],
+                    'extraction_lost' => [
+                        'label' => 'Extraction Lost',
+                        'icon' => 'fas fa-skull text-danger',
+                        'desc' => 'Post-mortem — the refinery running an active extraction has been destroyed. Chunk is gone for good. Separate from "at risk" so management / finance channels can opt into only the post-mortem, not live threat pings. Requires Manager Core + Structure Manager.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                        'requires_plugins' => ['ManagerCore\\Services\\EventBus', 'StructureManager\\Helpers\\FuelCalculator'],
+                        'required_plugin_labels' => ['Manager Core', 'Structure Manager'],
                     ],
                 ],
             ],
@@ -212,17 +243,56 @@
                         $roleId = $ts['role_id'] ?? '';
                         $pingUser = $ts['ping_user'] ?? false;
                         $showAmount = $ts['show_amount'] ?? true;
+
+                        // Cross-plugin dependency check (e.g. extraction_at_risk, extraction_lost
+                        // require Manager Core + Structure Manager). If any required plugin is
+                        // missing we grey out the whole card and show a banner explaining which.
+                        $missingPlugins = [];
+                        if (!empty($typeInfo['requires_plugins'])) {
+                            $labels = $typeInfo['required_plugin_labels'] ?? $typeInfo['requires_plugins'];
+                            foreach ($typeInfo['requires_plugins'] as $idx => $reqClass) {
+                                if (!class_exists($reqClass)) {
+                                    $missingPlugins[] = $labels[$idx] ?? $reqClass;
+                                }
+                            }
+                        }
+                        $crossPluginReady = empty($missingPlugins);
                     @endphp
 
-                    <div class="card mb-2 ml-3" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                    <div class="card mb-2 ml-3" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);{{ !$crossPluginReady ? ' opacity: 0.6;' : '' }}">
                         <div class="card-body py-2 px-3">
+                            @if(!$crossPluginReady)
+                                <div class="alert alert-warning py-2 mb-2" style="font-size: 0.85em;">
+                                    <i class="fas fa-plug"></i>
+                                    <strong>Cross-plugin notification</strong> — requires:
+                                    <ul class="mb-0 mt-1" style="padding-left: 1.5em;">
+                                        @foreach($typeInfo['requires_plugins'] as $idx => $reqClass)
+                                            @php
+                                                $label = ($typeInfo['required_plugin_labels'] ?? $typeInfo['requires_plugins'])[$idx];
+                                                $installed = class_exists($reqClass);
+                                            @endphp
+                                            <li class="{{ $installed ? 'text-success' : 'text-danger' }}">
+                                                <i class="fas {{ $installed ? 'fa-check' : 'fa-times' }}"></i>
+                                                {{ $label }}
+                                                <small class="text-muted">({{ $installed ? 'installed' : 'not installed' }})</small>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                    <small class="text-muted d-block mt-1">
+                                        Install the missing plugin(s) to enable this notification.
+                                        The toggle below is disabled until then.
+                                    </small>
+                                </div>
+                            @endif
+
                             {{-- Master toggle row --}}
                             <div class="d-flex align-items-center justify-content-between">
                                 <div class="custom-control custom-switch">
                                     <input type="checkbox" class="custom-control-input notify-master-toggle"
                                            id="notify_global_{{ $typeKey }}" name="notify_global_{{ $typeKey }}" value="1"
                                            data-type="{{ $typeKey }}"
-                                           {{ $isEnabled ? 'checked' : '' }}>
+                                           {{ $isEnabled ? 'checked' : '' }}
+                                           {{ !$crossPluginReady ? 'disabled' : '' }}>
                                     <label class="custom-control-label" for="notify_global_{{ $typeKey }}">
                                         <i class="{{ $typeInfo['icon'] }}"></i> <strong>{{ $typeInfo['label'] }}</strong>
                                         @if(($typeInfo['scope'] ?? '') === 'individual')
@@ -248,7 +318,7 @@
                                 <div id="typeSettings_{{ $typeKey }}" class="mt-2 pl-4 pr-2 pb-2"
                                      style="display: {{ ($pingRole || $pingUser || !$showAmount) ? 'block' : 'none' }};
                                             border-left: 3px solid rgba(88,166,255,0.3); margin-left: 10px;
-                                            {{ !$isEnabled ? 'opacity: 0.5; pointer-events: none;' : '' }}">
+                                            {{ (!$isEnabled || !$crossPluginReady) ? 'opacity: 0.5; pointer-events: none;' : '' }}">
 
                                     {{-- Role Ping --}}
                                     @if($typeInfo['has_role_ping'])
@@ -412,7 +482,8 @@
                                     <td class="text-center">
                                         @if($wh->notify_moon_arrival) <span class="badge badge-warning" title="Moon Arrival"><i class="fas fa-moon"></i></span> @endif
                                         @if($wh->notify_jackpot_detected) <span class="badge badge-info" title="Jackpot"><i class="fas fa-star"></i></span> @endif
-                                        @if(!$wh->notify_moon_arrival && !$wh->notify_jackpot_detected)
+                                        @if($wh->notify_moon_chunk_unstable ?? false) <span class="badge badge-warning" title="Chunk Unstable (capital safety)"><i class="fas fa-exclamation-triangle"></i></span> @endif
+                                        @if(!$wh->notify_moon_arrival && !$wh->notify_jackpot_detected && !($wh->notify_moon_chunk_unstable ?? false))
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
@@ -481,6 +552,7 @@
                         'event_completed' => ['label' => 'Event Completed', 'icon' => 'fas fa-flag-checkered text-secondary'],
                         'moon_ready' => ['label' => 'Moon Chunk Ready', 'icon' => 'fas fa-moon text-warning'],
                         'jackpot_detected' => ['label' => 'Jackpot Detected', 'icon' => 'fas fa-star text-warning'],
+                        'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'theft_detected' => ['label' => 'Theft Detected', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'critical_theft' => ['label' => 'Critical Theft', 'icon' => 'fas fa-skull-crossbones text-danger'],
                         'active_theft' => ['label' => 'Active Theft', 'icon' => 'fas fa-bolt text-danger'],

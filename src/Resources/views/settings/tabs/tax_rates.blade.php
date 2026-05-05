@@ -691,18 +691,33 @@
                     <i class="fas fa-calendar-check"></i>
                     {{ trans('mining-manager::settings.tax_calculation_period') }}
                 </label>
+                @php
+                    $__currentPeriod = $settings->tax_calculation_period ?? 'monthly';
+                    $__pendingPeriod = $settings->tax_calculation_period_pending ?? null;
+                    $__pendingEffective = $settings->tax_calculation_period_effective_from ?? null;
+                    $__periodLabels = [
+                        'monthly' => 'Monthly',
+                        'biweekly' => 'Bi-weekly',
+                        'weekly' => 'Weekly',
+                    ];
+                    // Dropdown selection: the PENDING value when a switch is queued
+                    // (so the user sees what they've already scheduled), otherwise
+                    // the active value.
+                    $__selectedValue = $__pendingPeriod && $__pendingEffective ? $__pendingPeriod : $__currentPeriod;
+                @endphp
                 <select class="form-control @error('tax_calculation_period') is-invalid @enderror"
                         id="tax_calculation_period"
                         name="tax_calculation_period">
-                    <option value="monthly" {{ ($settings->tax_calculation_period ?? 'monthly') == 'monthly' ? 'selected' : '' }}>
+                    <option value="monthly" {{ $__selectedValue == 'monthly' ? 'selected' : '' }}>
                         {{ trans('mining-manager::settings.monthly') }}
                     </option>
-                    <option value="weekly" {{ ($settings->tax_calculation_period ?? '') == 'weekly' ? 'selected' : '' }}>
-                        {{ trans('mining-manager::settings.weekly') }}
-                    </option>
-                    <option value="biweekly" {{ ($settings->tax_calculation_period ?? '') == 'biweekly' ? 'selected' : '' }}>
+                    <option value="biweekly" {{ $__selectedValue == 'biweekly' ? 'selected' : '' }}>
                         {{ trans('mining-manager::settings.biweekly') }}
                     </option>
+                    {{-- 'weekly' was removed in v1.0.3+. Historical rows with
+                         period_type='weekly' still display correctly via
+                         MiningTax::formatted_period. The legacy value in the
+                         settings store is auto-healed to 'monthly' on read. --}}
                 </select>
                 @error('tax_calculation_period')
                     <div class="invalid-feedback">{{ $message }}</div>
@@ -710,6 +725,37 @@
                 <small class="form-text text-muted">
                     {{ trans('mining-manager::settings.tax_calculation_period_help') }}
                 </small>
+
+                {{-- Pending / active status + safety notice --}}
+                @if($__pendingPeriod && $__pendingEffective)
+                    <div class="alert alert-warning mt-2 py-2 px-3 mb-0">
+                        <i class="fas fa-clock"></i>
+                        <strong>Switch scheduled:</strong>
+                        Currently active:
+                        <span class="badge badge-secondary">{{ $__periodLabels[$__currentPeriod] ?? $__currentPeriod }}</span>
+                        &rarr; switching to
+                        <span class="badge badge-primary">{{ $__periodLabels[$__pendingPeriod] ?? $__pendingPeriod }}</span>
+                        on
+                        <strong>{{ \Carbon\Carbon::parse($__pendingEffective)->format('F j, Y') }}</strong>.
+                        <br>
+                        <small class="text-muted">
+                            Choose a different value to replace the queued switch, or the same as "currently active" to cancel it.
+                        </small>
+                    </div>
+                @else
+                    <div class="alert alert-info mt-2 py-2 px-3 mb-0">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>Safe mode:</strong>
+                        Period changes take effect on the <strong>first of the next calendar month</strong>
+                        to avoid colliding with tax rows already calculated under the current scheme.
+                        <br>
+                        <label class="mb-0 mt-1">
+                            <input type="checkbox" name="tax_calculation_period_apply_now" value="1">
+                            Apply immediately instead
+                            <small class="text-muted">(only safe on fresh installs with no taxes yet calculated this month)</small>
+                        </label>
+                    </div>
+                @endif
             </div>
 
             <div class="form-group">

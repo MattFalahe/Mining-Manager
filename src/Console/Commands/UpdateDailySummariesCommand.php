@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Pricing\OreValuationService;
@@ -33,140 +34,150 @@ class UpdateDailySummariesCommand extends Command
 
     public function handle(LedgerSummaryService $summaryService)
     {
-        $this->info('Mining Manager - Daily Summary Update');
-        $this->info('=====================================');
-        $this->line('');
-
-        $days = (int) $this->option('days');
-        $date = $this->option('date');
-        $month = $this->option('month');
-        $characterId = $this->option('character_id');
-
-        // Determine date range
-        if ($this->option('today-only')) {
-            // Fast mode: only rebuild today (used by frequent cron runs after process-ledger)
-            $startDate = Carbon::today();
-            $endDate = Carbon::today();
-            $this->info("Mode: Today only ({$startDate->format('Y-m-d')})");
-        } elseif ($date) {
-            // Single specific date
-            try {
-                $startDate = Carbon::parse($date)->startOfDay();
-                $endDate = $startDate->copy();
-            } catch (\Exception $e) {
-                $this->error("Invalid date format. Use YYYY-MM-DD (e.g. 2026-02-15)");
-                return Command::FAILURE;
-            }
-
-            $this->info("Mode: Rebuilding single date {$date}");
-        } elseif ($month) {
-            try {
-                $monthDate = Carbon::parse($month . '-01');
-            } catch (\Exception $e) {
-                $this->error("Invalid month format. Use YYYY-MM (e.g. 2026-02)");
-                return Command::FAILURE;
-            }
-
-            $startDate = $monthDate->copy()->startOfMonth();
-            $endDate = $monthDate->copy()->endOfMonth();
-
-            // Don't go past today
-            if ($endDate->isFuture()) {
-                $endDate = Carbon::today();
-            }
-
-            $this->info("Mode: Rebuilding entire month {$month}");
-        } else {
-            $endDate = Carbon::today();
-            $startDate = Carbon::today()->subDays($days - 1);
-            $this->info("Mode: Rebuilding last {$days} day(s) ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})");
-        }
-
-        if ($characterId) {
-            $this->info("Filtering for character ID: {$characterId}");
-        }
-
-        // Find all characters with mining data in the date range
-        $query = MiningLedger::whereBetween('date', [$startDate, $endDate]);
-
-        if ($characterId) {
-            $query->where('character_id', $characterId);
-        }
-
-        $characters = $query->distinct()->pluck('character_id');
-
-        if ($characters->isEmpty()) {
-            $this->info('No mining data found in date range.');
+        $lock = Cache::lock('mining-manager:update-daily-summaries', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
             return Command::SUCCESS;
         }
 
-        $this->info("Found {$characters->count()} character(s) with mining data");
-        $this->line('');
+        try {
+            $this->info('Mining Manager - Daily Summary Update');
+            $this->info('=====================================');
+            $this->line('');
 
-        // Build list of dates to process
-        $dates = [];
-        for ($d = $startDate->copy(); $d->lte($endDate); $d->addDay()) {
-            $dates[] = $d->format('Y-m-d');
-        }
+            $days = (int) $this->option('days');
+            $date = $this->option('date');
+            $month = $this->option('month');
+            $characterId = $this->option('character_id');
 
-        $totalTasks = $characters->count() * count($dates);
-        $bar = $this->output->createProgressBar($totalTasks);
-        $bar->start();
-
-        $generated = 0;
-        $skipped = 0;
-        $errors = 0;
-
-        foreach ($characters as $charId) {
-            foreach ($dates as $dateStr) {
+            // Determine date range
+            if ($this->option('today-only')) {
+                // Fast mode: only rebuild today (used by frequent cron runs after process-ledger)
+                $startDate = Carbon::today();
+                $endDate = Carbon::today();
+                $this->info("Mode: Today only ({$startDate->format('Y-m-d')})");
+            } elseif ($date) {
+                // Single specific date
                 try {
-                    // Check if this character has mining data for this date
-                    $hasData = MiningLedger::where('character_id', $charId)
-                        ->whereDate('date', $dateStr)
-                        ->exists();
-
-                    if (!$hasData) {
-                        $skipped++;
-                        $bar->advance();
-                        continue;
-                    }
-
-                    $summaryService->generateDailySummary($charId, $dateStr);
-                    $generated++;
+                    $startDate = Carbon::parse($date)->startOfDay();
+                    $endDate = $startDate->copy();
                 } catch (\Exception $e) {
-                    Log::error("Mining Manager: Failed to generate daily summary for character {$charId} on {$dateStr}: {$e->getMessage()}");
-                    $errors++;
+                    $this->error("Invalid date format. Use YYYY-MM-DD (e.g. 2026-02-15)");
+                    return Command::FAILURE;
                 }
 
-                $bar->advance();
+                $this->info("Mode: Rebuilding single date {$date}");
+            } elseif ($month) {
+                try {
+                    $monthDate = Carbon::parse($month . '-01');
+                } catch (\Exception $e) {
+                    $this->error("Invalid month format. Use YYYY-MM (e.g. 2026-02)");
+                    return Command::FAILURE;
+                }
+
+                $startDate = $monthDate->copy()->startOfMonth();
+                $endDate = $monthDate->copy()->endOfMonth();
+
+                // Don't go past today
+                if ($endDate->isFuture()) {
+                    $endDate = Carbon::today();
+                }
+
+                $this->info("Mode: Rebuilding entire month {$month}");
+            } else {
+                $endDate = Carbon::today();
+                $startDate = Carbon::today()->subDays($days - 1);
+                $this->info("Mode: Rebuilding last {$days} day(s) ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})");
             }
+
+            if ($characterId) {
+                $this->info("Filtering for character ID: {$characterId}");
+            }
+
+            // Find all characters with mining data in the date range
+            $query = MiningLedger::whereBetween('date', [$startDate, $endDate]);
+
+            if ($characterId) {
+                $query->where('character_id', $characterId);
+            }
+
+            $characters = $query->distinct()->pluck('character_id');
+
+            if ($characters->isEmpty()) {
+                $this->info('No mining data found in date range.');
+                return Command::SUCCESS;
+            }
+
+            $this->info("Found {$characters->count()} character(s) with mining data");
+            $this->line('');
+
+            // Build list of dates to process
+            $dates = [];
+            for ($d = $startDate->copy(); $d->lte($endDate); $d->addDay()) {
+                $dates[] = $d->format('Y-m-d');
+            }
+
+            $totalTasks = $characters->count() * count($dates);
+            $bar = $this->output->createProgressBar($totalTasks);
+            $bar->start();
+
+            $generated = 0;
+            $skipped = 0;
+            $errors = 0;
+
+            foreach ($characters as $charId) {
+                foreach ($dates as $dateStr) {
+                    try {
+                        // Check if this character has mining data for this date
+                        $hasData = MiningLedger::where('character_id', $charId)
+                            ->whereDate('date', $dateStr)
+                            ->exists();
+
+                        if (!$hasData) {
+                            $skipped++;
+                            $bar->advance();
+                            continue;
+                        }
+
+                        $summaryService->generateDailySummary($charId, $dateStr);
+                        $generated++;
+                    } catch (\Exception $e) {
+                        Log::error("Mining Manager: Failed to generate daily summary for character {$charId} on {$dateStr}: {$e->getMessage()}");
+                        $errors++;
+                    }
+
+                    $bar->advance();
+                }
+            }
+
+            $bar->finish();
+            $this->line('');
+            $this->line('');
+
+            $this->table(
+                ['Status', 'Count'],
+                [
+                    ['Generated/Updated', $generated],
+                    ['Skipped (no data)', $skipped],
+                    ['Errors', $errors],
+                ]
+            );
+
+            if ($generated > 0) {
+                Log::info("Mining Manager: Updated {$generated} daily summaries for {$characters->count()} character(s)");
+            }
+
+            // Reconciliation: check previous 2 days for character-imported moon ore
+            // entries that now have matching observer data. Observer data can arrive
+            // 12-24h late from ESI, so we retroactively clean up and regenerate.
+            if (!$date && !$month && !$characterId) {
+                $this->reconcileLateObserverData($summaryService);
+            }
+
+            return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
+        } finally {
+            $lock->release();
         }
-
-        $bar->finish();
-        $this->line('');
-        $this->line('');
-
-        $this->table(
-            ['Status', 'Count'],
-            [
-                ['Generated/Updated', $generated],
-                ['Skipped (no data)', $skipped],
-                ['Errors', $errors],
-            ]
-        );
-
-        if ($generated > 0) {
-            Log::info("Mining Manager: Updated {$generated} daily summaries for {$characters->count()} character(s)");
-        }
-
-        // Reconciliation: check previous 2 days for character-imported moon ore
-        // entries that now have matching observer data. Observer data can arrive
-        // 12-24h late from ESI, so we retroactively clean up and regenerate.
-        if (!$date && !$month && !$characterId) {
-            $this->reconcileLateObserverData($summaryService);
-        }
-
-        return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 
     /**

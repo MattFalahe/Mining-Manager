@@ -377,7 +377,20 @@ class DashboardController extends Controller
                 ->pluck('character_id')
                 ->toArray();
             $allMinerIds = array_merge($allMinerIds, $ids);
-        } catch (\Exception $e) {}
+        } catch (\Exception $e) {
+            // mining_ledger query failed — log so the operator can debug
+            // why the dashboard shows partial data. We don't rethrow because
+            // the corp-observer query below can still produce useful results;
+            // partial data beats a 500 error for a director's dashboard.
+            \Illuminate\Support\Facades\Log::warning(
+                'DashboardController: mining_ledger miner-id query failed',
+                [
+                    'corporation_id' => $corporationId,
+                    'month' => $monthDate?->toDateString(),
+                    'error' => $e->getMessage(),
+                ]
+            );
+        }
 
         try {
             $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
@@ -394,7 +407,21 @@ class DashboardController extends Controller
                 ->pluck('d.character_id')
                 ->toArray();
             $allMinerIds = array_merge($allMinerIds, $ids);
-        } catch (\Exception $e) {}
+        } catch (\Exception $e) {
+            // Corp observer query failed — same partial-data tolerance as
+            // above. Common cause: SeAT's corp-observer tables don't exist
+            // (very old SeAT install) or the joined observer registry row
+            // is missing. Logged so operators can spot the underlying issue.
+            \Illuminate\Support\Facades\Log::warning(
+                'DashboardController: corp observer miner-id query failed',
+                [
+                    'corporation_id' => $corporationId,
+                    'observer_corp_id' => $observerCorpId ?? null,
+                    'month' => $monthDate?->toDateString(),
+                    'error' => $e->getMessage(),
+                ]
+            );
+        }
 
         $allMinerIds = array_values(array_unique($allMinerIds));
 
@@ -1119,15 +1146,24 @@ class DashboardController extends Controller
                 SUM(moon_ore_value) as moon,
                 SUM(regular_ore_value) as regular,
                 SUM(ice_value) as ice,
-                SUM(gas_value) as gas
+                SUM(gas_value) as gas,
+                SUM(abyssal_ore_value) as abyssal,
+                SUM(triglavian_ore_value) as triglavian
             ')
             ->first();
 
+        // Six categories matching the chart `groupColors` map in
+        // dashboard/member.blade.php and dashboard/combined-director.blade.php.
+        // Abyssal and Triglavian got dedicated summary columns in migration
+        // 000009 — before that they were silently rolled into regular_ore_value
+        // and never showed as separate slices.
         $groups = [
             'Moon Ore' => $breakdown->moon ?? 0,
             'Regular Ore' => $breakdown->regular ?? 0,
             'Ice' => $breakdown->ice ?? 0,
             'Gas' => $breakdown->gas ?? 0,
+            'Abyssal' => $breakdown->abyssal ?? 0,
+            'Triglavian' => $breakdown->triglavian ?? 0,
         ];
 
         $labels = [];
@@ -1247,13 +1283,29 @@ class DashboardController extends Controller
 
     /**
      * Map ore_types JSON category to chart group name.
+     *
+     * The category string comes from LedgerSummaryService — values are
+     * `moon_r4`/`moon_r8`/`moon_r16`/`moon_r32`/`moon_r64` (rarity-specific),
+     * `ice`, `gas`, `abyssal`, `triglavian`, or `ore` (true regular).
+     *
+     * Returns the chart group name matching the `groupColors` map in
+     * dashboard/member.blade.php + combined-director.blade.php — keep these
+     * strings in sync with that map.
      */
     private function getOreGroupFromCategory(?string $category, int $typeId): string
     {
+        // Moon rarities all map to a single "Moon" slice. str_starts_with
+        // covers moon_r4..moon_r64 plus the legacy 'moon_ore' value some
+        // historical rows might still have.
+        if ($category && (str_starts_with($category, 'moon_') || $category === 'moon_ore')) {
+            return 'Moon';
+        }
+
         switch ($category) {
-            case 'moon_ore': return 'Moon';
             case 'ice': return 'Ice';
             case 'gas': return 'Gas';
+            case 'abyssal': return 'Abyssal';
+            case 'triglavian': return 'Triglavian';
             default: return $this->getOreGroup($typeId);
         }
     }
@@ -1320,24 +1372,16 @@ class DashboardController extends Controller
                     ->sum('amount_paid');
             }
 
-            // Event bonus - calculate tax savings from events with negative tax modifiers
-            $eventBonusAmount = 0;
-            $characterEvents = MiningEvent::whereIn('status', ['completed', 'active'])
-                ->where(function($query) use ($month, $monthEnd) {
-                    $query->whereBetween('start_time', [$month, $monthEnd])
-                        ->orWhereBetween('end_time', [$month, $monthEnd]);
-                })
-                ->where('tax_modifier', '<', 0)
-                ->get();
-
-            foreach ($characterEvents as $event) {
-                if ($event->total_mined > 0) {
-                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
-                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
-                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
-                    $eventBonusAmount += $normalTax - $modifiedTax;
-                }
-            }
+            // Event bonus = ISK saved this month via event tax modifiers.
+            // Previously this computed $event->total_mined × hardcoded 10% ×
+            // modifier — but total_mined is a UNIT count, not ISK, and the
+            // hardcoded 10% ignored the actual per-ore-category tax rates.
+            // Authoritative source now lives in
+            // mining_ledger_daily_summaries.event_discount_total, populated
+            // per-row by Phase 2 attribution against event_mining_records.
+            $eventBonusAmount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                ->whereBetween('date', [$month->copy()->toDateString(), $monthEnd->copy()->toDateString()])
+                ->sum('event_discount_total');
 
             $months[] = $monthKey;
             $refinedValue[] = $value;
@@ -1521,6 +1565,14 @@ class DashboardController extends Controller
         $months = [];
         $data = [];
 
+        // Pre-compute the set of character IDs belonging to this corporation,
+        // so the discount total is scoped to members (daily summaries don't
+        // always carry a stable corp_id; character affiliation is the anchor).
+        $characterIds = \Illuminate\Support\Facades\DB::table('character_affiliations')
+            ->where('corporation_id', $corporationId)
+            ->pluck('character_id')
+            ->all();
+
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->startOfMonth()->subMonths($i);
             $monthEnd = $month->copy()->endOfMonth();
@@ -1529,32 +1581,29 @@ class DashboardController extends Controller
                 $monthEnd = Carbon::now();
             }
 
-            // Get completed and active events for this corporation in this month
-            $events = MiningEvent::where('corporation_id', $corporationId)
-                ->whereIn('status', ['completed', 'active'])
-                ->where(function($query) use ($month, $monthEnd) {
-                    $query->whereBetween('start_time', [$month, $monthEnd])
-                        ->orWhereBetween('end_time', [$month, $monthEnd]);
-                })
-                ->where('tax_modifier', '!=', 0)
-                ->get();
-
-            $eventTaxTotal = 0;
-            foreach ($events as $event) {
-                // Calculate the tax impact from this event's modifier
-                // total_mined is the ISK value mined during the event
-                // tax_modifier is the percentage adjustment (e.g. -50 = half tax, +100 = double tax)
-                if ($event->total_mined > 0) {
-                    // Get the base tax rate to calculate the modifier impact
-                    $baseTaxRate = (float) $this->settingsService->getSetting('tax_rates.ore', 10);
-                    $normalTax = $event->total_mined * ($baseTaxRate / 100);
-                    $modifiedTax = $normalTax * (1 + ($event->tax_modifier / 100));
-                    $eventTaxTotal += $modifiedTax - $normalTax;
-                }
+            // Pull the authoritative event-discount total straight from
+            // Phase 3's mining_ledger_daily_summaries.event_discount_total.
+            // That column is populated per-row by LedgerSummaryService as the
+            // sum of event_discount_amount across all ore entries that day,
+            // which in turn comes from the per-row Phase 2 attribution against
+            // event_mining_records. No hardcoded tax rate, no assumptions about
+            // which ore categories were in scope — all that math is already done.
+            //
+            // The chart label says "Event Tax Impact (ISK)" and the value is
+            // ISK waived / added by events this month. Positive modifiers
+            // (tax increases) show up as zero in event_discount_total by
+            // design; if you want to visualise those, wire up a separate
+            // "event_surcharge_total" field later.
+            if (empty($characterIds)) {
+                $eventDiscount = 0.0;
+            } else {
+                $eventDiscount = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+                    ->whereBetween('date', [$month->copy()->toDateString(), $monthEnd->copy()->toDateString()])
+                    ->sum('event_discount_total');
             }
 
             $months[] = $month->format('Y-m');
-            $data[] = abs($eventTaxTotal);
+            $data[] = $eventDiscount;
         }
 
         return [

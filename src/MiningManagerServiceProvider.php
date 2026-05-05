@@ -15,6 +15,7 @@ use MiningManager\Console\Commands\SendTaxRemindersCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
 use MiningManager\Console\Commands\CheckExtractionArrivalsCommand;
 use MiningManager\Console\Commands\BackfillExtractionHistoryCommand;
+use MiningManager\Console\Commands\BackfillEventRecordsCommand;
 use MiningManager\Console\Commands\DetectJackpotsCommand;
 use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
@@ -93,6 +94,20 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // Register event listeners
         $this->registerEventListeners();
 
+        // Register Manager Core capability + EventBus subscription for
+        // Structure Manager's `structure.alert.*` threat events. No-op if
+        // either MC or SM is missing — plugin still works standalone.
+        $this->registerCrossPluginStructureAlerts();
+
+        // Idempotently re-register MM's pricing type subscriptions with
+        // Manager Core when MC is the chosen provider. Without this,
+        // subscriptions only ever happen on the settings-save path, so
+        // installing MC AFTER MM (a common ops sequence) leaves MC's
+        // scheduler with zero MM type IDs to fetch. No-op when MC is
+        // absent, when the chosen provider isn't 'manager-core', or when
+        // anything throws — the plugin continues to function standalone.
+        $this->registerCrossPluginPricingSubscription();
+
         // Register commands
         if ($this->app->runningInConsole()) {
             $this->commands([
@@ -119,6 +134,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 ArchiveOldExtractionsCommand::class,
                 BackfillExtractionNotificationsCommand::class,
                 BackfillExtractionHistoryCommand::class,
+                BackfillEventRecordsCommand::class,
                 DetectMoonTheftCommand::class,
                 MonitorActiveTheftsCommand::class,
                 FinalizeMonthCommand::class,
@@ -230,6 +246,271 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             CharacterWalletJournalUpdated::class,
             ProcessWalletJournalListener::class
         );
+    }
+
+    /**
+     * Register Mining Manager as a subscriber to Structure Manager's
+     * `structure.alert.*` events via Manager Core's EventBus. Powers the
+     * extraction_at_risk + extraction_lost notifications.
+     *
+     * No-op if either Manager Core or Structure Manager is missing —
+     * Mining Manager continues to function standalone; the relevant
+     * notification toggles in settings/webhooks just grey out with a
+     * banner so users know what's required.
+     *
+     * Idempotent: registerCapability is per-request (in-memory), subscribe
+     * is persistent via updateOrCreate so repeated boots don't duplicate.
+     *
+     * @return void
+     */
+    private function registerCrossPluginStructureAlerts()
+    {
+        if (!class_exists('ManagerCore\\Services\\PluginBridge')
+            || !class_exists('ManagerCore\\Services\\EventBus')
+            || !class_exists('StructureManager\\Helpers\\FuelCalculator')) {
+            // Silent no-op — not an error, just means the feature isn't available
+            return;
+        }
+
+        try {
+            $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
+
+            // B6: log a clear warning if the installed Manager Core is older
+            // than the version that introduced features MM uses (Topics +
+            // publishSanitized landed in MC 1.5.0). Doesn't abort — older MC
+            // versions still mostly work, the version gate is for diagnostics.
+            try {
+                $bridge->call('ManagerCore', 'bridge.requireMinimumVersion', '1.5.0', false);
+            } catch (\Throwable $e) {
+                // bridge.requireMinimumVersion not available on this MC version
+                // (added in 1.4.2). Older MC = older features; not fatal.
+            }
+
+            // Expose our handler as a PluginBridge capability so MC's
+            // EventBus can dispatch to it via the standard capability
+            // resolution path. Handler is resolved via service container
+            // (auto-wires NotificationService dep).
+            $bridge->registerCapability(
+                'mining-manager',
+                'structure.notify_alert',
+                function (string $eventName, string $publisher, array $payload) {
+                    $handler = $this->app->make(\MiningManager\Services\Structure\StructureAlertHandler::class);
+                    $handler->handle($eventName, $publisher, $payload);
+                }
+            );
+
+            // B4: expose 2 read-only query capabilities so other plugins
+            // (HR Manager, Pings, Buyback Manager, etc.) can ask MM for
+            // mining/tax data WITHOUT coupling to MM's DB schema. Returns
+            // small DTOs with stable field names so MM can refactor models
+            // without breaking consumers.
+
+            $bridge->registerCapability(
+                'mining-manager',
+                'mining.getCharacterTaxStatus',
+                function (int $characterId, ?string $period = null): ?array {
+                    try {
+                        $query = \MiningManager\Models\MiningTax::where('character_id', $characterId);
+                        if ($period !== null) {
+                            // Accept 'YYYY-MM' or 'YYYY-MM-DD' or any string Carbon can parse;
+                            // store by canonical first-of-month for the comparison.
+                            try {
+                                $monthDate = \Carbon\Carbon::parse($period)->startOfMonth()->toDateString();
+                                $query->whereDate('month', $monthDate);
+                            } catch (\Throwable $e) {
+                                $query->where('month', $period); // fallback to literal match
+                            }
+                        } else {
+                            $query->orderBy('period_end', 'desc');
+                        }
+                        $tax = $query->first();
+                        if (!$tax) {
+                            return null;
+                        }
+                        return [
+                            'character_id' => (int) $tax->character_id,
+                            'period'       => optional($tax->month)->toDateString(),
+                            'period_start' => optional($tax->period_start)->toDateString(),
+                            'period_end'   => optional($tax->period_end)->toDateString(),
+                            'amount_owed'  => (float) $tax->amount_owed,
+                            'amount_paid'  => (float) $tax->amount_paid,
+                            'status'       => $tax->status,
+                            'due_date'     => optional($tax->due_date)->toDateString(),
+                        ];
+                    } catch (\Throwable $e) {
+                        return null;
+                    }
+                }
+            );
+
+            $bridge->registerCapability(
+                'mining-manager',
+                'mining.getCharacterRecentMining',
+                function (int $characterId, int $daysBack = 30): array {
+                    try {
+                        $cutoff = now()->subDays(max(1, min(365, $daysBack)));
+                        $row = \MiningManager\Models\MiningLedger::where('character_id', $characterId)
+                            ->where('date', '>=', $cutoff->toDateString())
+                            ->selectRaw('SUM(quantity) as total_quantity, SUM(total_value) as total_isk_value, COUNT(DISTINCT date) as session_days')
+                            ->first();
+                        return [
+                            'character_id'    => $characterId,
+                            'days_back'       => (int) $daysBack,
+                            'since'           => $cutoff->toDateString(),
+                            'total_quantity'  => (int) ($row->total_quantity ?? 0),
+                            'total_isk_value' => (float) ($row->total_isk_value ?? 0),
+                            'session_days'    => (int) ($row->session_days ?? 0),
+                        ];
+                    } catch (\Throwable $e) {
+                        return [
+                            'character_id' => $characterId,
+                            'days_back'    => (int) $daysBack,
+                            'error'        => 'unavailable',
+                        ];
+                    }
+                }
+            );
+
+            // Persistent subscription — survives restarts. updateOrCreate
+            // semantics so repeated boots are safe.
+            $eventBus = $this->app->make(\ManagerCore\Services\EventBus::class);
+            $eventBus->subscribe(
+                'mining-manager',
+                'structure.alert.*',
+                'structure.notify_alert',
+                [
+                    'queued' => false,    // Sync dispatch — event volume is tiny (per-structure poll)
+                    'priority' => 10,     // Above default 0; threat alerts should fire early
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                '[MM] Cross-plugin structure alert subscription failed: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Boot-time idempotent re-subscribe of MM's mining-related type IDs to
+     * Manager Core's pricing service.
+     *
+     * Why this is needed:
+     *
+     *   Pre-fix the only place that called `subscribeToManagerCore()` was
+     *   `SettingsController::updatePricing()` — i.e. when the admin clicked
+     *   "Save" on the pricing tab with provider=manager-core. That meant:
+     *
+     *     - Installing MC AFTER MM was already configured with provider=
+     *       manager-core left MC with zero MM subscriptions. MC's
+     *       update-prices cron had nothing to fetch for moon ores / fuel
+     *       / ice, and MM's reads from `manager_core_market_prices` came
+     *       back empty (cascading to all-zero prices in tax invoices,
+     *       payouts, ledger valuations).
+     *
+     *     - Restoring MC's database from a backup older than the last
+     *       MM settings-save silently dropped the subscription rows
+     *       and the same failure mode kicked in.
+     *
+     *   Now: every boot, if MC is installed AND the configured provider is
+     *   'manager-core', we call `subscribeToManagerCore` with
+     *   `$immediateRefresh = false`. The MC-side persistence is
+     *   `updateOrCreate` keyed on (plugin_name, type_id, market) so this is
+     *   safe to run on every request — duplicate inserts can't happen, and
+     *   the cost is one DB write per type per boot which is negligible.
+     *
+     * Why $immediateRefresh = false here specifically:
+     *
+     *   With true, MC synchronously fetches prices for any newly-subscribed
+     *   types at the moment the registerTypes call returns. For the boot
+     *   path (every PHP-FPM request that touches the plugin), that would
+     *   mean N synchronous HTTP calls to ESI on every page load. We pick
+     *   up new prices via MC's existing 4-hourly `manager-core:update-prices`
+     *   cron instead. The settings-save path keeps `$immediateRefresh = true`
+     *   so admins clicking "Save" get prices populated by the time the
+     *   pricing tab reloads.
+     *
+     * Failure mode: any exception is caught and logged at warning. The
+     * plugin continues to function — the worst case is that we fall back
+     * to whichever provider the user has Jita-fallback configured for
+     * (typically Fuzzwork or SeAT's own market_prices table).
+     *
+     * @return void
+     */
+    private function registerCrossPluginPricingSubscription()
+    {
+        if (!class_exists('ManagerCore\\Services\\PricingService')) {
+            return;
+        }
+
+        try {
+            $settingsService = $this->app->make(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $pricingSettings = $settingsService->getPricingSettings();
+
+            $provider = $pricingSettings['price_provider'] ?? null;
+            if ($provider !== \MiningManager\Services\Pricing\PriceProviderService::PROVIDER_MANAGER_CORE) {
+                // Not using MC for pricing — nothing to re-subscribe.
+                return;
+            }
+
+            $market = $pricingSettings['manager_core_market'] ?? 'jita';
+
+            // Pre-compute a stable signature of "what we'd subscribe right
+            // now" and short-circuit when the MC table already matches.
+            //
+            // Pre-fix this method called subscribeToManagerCore on EVERY
+            // boot (every PHP-FPM request), which UPSERTs hundreds of rows
+            // into manager_core_type_subscriptions every single time.
+            // Even with $immediateRefresh=false (so MC doesn't dispatch a
+            // refresh job), that's N row-existence DB writes per request
+            // — 50-300ms of extra work for active corps with config-tab
+            // loads, dashboard loads, every "view my taxes" page, etc.
+            //
+            // Now: signature is `<market>:<count>:<hash of typeIds>`. If
+            // the cached signature matches what's already in the DB,
+            // skip the per-row UPSERT entirely. Re-validates once per
+            // hour (Cache TTL) so stale-cache risk is bounded — if MC's
+            // table got reset or a registry change shipped that changed
+            // the typeId list, the next run after the cache window will
+            // re-subscribe naturally.
+            $typeIds = \MiningManager\Services\TypeIdRegistry::getTypeIdsByCategory('all');
+            $signature = $market . ':' . count($typeIds) . ':' . md5(implode(',', $typeIds));
+            $cacheKey = 'mining-manager:mc-subscription-signature';
+
+            if (\Illuminate\Support\Facades\Cache::get($cacheKey) === $signature) {
+                // Signature cached and matches → MC table is in sync,
+                // no work to do. Cheapest fast-path on every request.
+                return;
+            }
+
+            // Defensive: also verify the actual count matches what we'd
+            // expect, in case MC's table got reset since we cached. This
+            // catches the "operator wiped MC and reinstalled with empty
+            // table" scenario without waiting an hour for the cache TTL.
+            $actualCount = \Illuminate\Support\Facades\DB::table('manager_core_type_subscriptions')
+                ->where('plugin_name', 'mining-manager')
+                ->where('market', $market)
+                ->count();
+
+            if ($actualCount === count($typeIds)) {
+                // Counts match — assume the rows are in sync (we don't
+                // hash every row's typeId on every request; the upstream
+                // signature check + the periodic full re-subscribe via
+                // the settings save path catch any drift).
+                \Illuminate\Support\Facades\Cache::put($cacheKey, $signature, 3600);
+                return;
+            }
+
+            // Drift detected (or first boot after install) — do the full
+            // subscribe and cache the signature for the next hour.
+            $priceProvider = $this->app->make(\MiningManager\Services\Pricing\PriceProviderService::class);
+            $priceProvider->subscribeToManagerCore($market, false); // false = no synchronous refresh
+
+            \Illuminate\Support\Facades\Cache::put($cacheKey, $signature, 3600);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                '[MM] Boot-time MC pricing subscription failed: ' . $e->getMessage()
+            );
+        }
     }
 
     /**

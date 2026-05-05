@@ -95,7 +95,10 @@ class EventController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Calculate event statistics for summary boxes
+        // Calculate event statistics for summary boxes.
+        // total_value must sum total_mined_value (ISK) — total_mined is the
+        // quantity in units and would display as nonsense when the view labels
+        // the number as ISK.
         $stats = [
             'active' => MiningEvent::where('status', 'active')->count(),
             'upcoming' => MiningEvent::where('status', 'planned')
@@ -105,7 +108,7 @@ class EventController extends Controller
             'participants' => DB::table('event_participants')->distinct('character_id')->count('character_id'),
             'total_value' => MiningEvent::whereMonth('start_time', now()->month)
                 ->whereYear('start_time', now()->year)
-                ->sum('total_mined'),
+                ->sum('total_mined_value'),
         ];
 
         return view('mining-manager::events.index', compact('events', 'status', 'corporationId', 'corporations', 'stats'));
@@ -124,13 +127,18 @@ class EventController extends Controller
                 ->with('warning', 'Event creation is currently disabled. Enable it in Settings > Features.');
         }
 
-        // Get configured corporations for the dropdown
-        $corporations = DB::table('corporation_infos')
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
+        // Get the dropdown corp set: corps with MM settings + the moon
+        // owner corp (always included). Pre-fix this loaded the entire
+        // `corporation_infos` table — on a multi-corp shared SeAT install,
+        // hundreds of unrelated corps could appear in the dropdown,
+        // causing UI bloat and letting an admin pick a corp that has
+        // nothing to do with this MM install. The new scope matches what
+        // operators can actually meaningfully assign events to.
+        $corporations = $this->getEventDropdownCorporations();
 
-        return view('mining-manager::events.create', compact('corporations'));
+        $taxCompat = $this->buildTaxCompatibilityMap();
+
+        return view('mining-manager::events.create', compact('corporations', 'taxCompat'));
     }
 
     /**
@@ -148,9 +156,14 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'location_scope' => 'required|string|in:any,system,constellation,region',
-            'solar_system_id' => 'nullable|integer',
+            // Reference checks: pre-fix any integer was accepted, so a
+            // typo or stale form replay could persist a row that points
+            // at a non-existent system or corp. Display code joins
+            // `solar_systems` later and silently renders "Unknown" —
+            // confusing reports / charts. Now we reject at save time.
+            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
             'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer',
+            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
         ]);
 
         try {
@@ -245,13 +258,71 @@ class EventController extends Controller
     {
         $event = MiningEvent::findOrFail($id);
 
-        // Get configured corporations for the dropdown
-        $corporations = DB::table('corporation_infos')
+        // Same scoped dropdown as create() — corps with MM settings +
+        // moon owner. Plus, defensively, the event's currently-assigned
+        // corp_id (if any) so an event tied to a corp that's no longer
+        // in the dropdown set still renders correctly.
+        $corporations = $this->getEventDropdownCorporations((int) ($event->corporation_id ?? 0));
+
+        $taxCompat = $this->buildTaxCompatibilityMap();
+
+        return view('mining-manager::events.edit', compact('event', 'corporations', 'taxCompat'));
+    }
+
+    /**
+     * Build the corporation dropdown for event create/edit forms.
+     *
+     * Scope: any corp that has MM settings configured + the moon owner
+     * corp. Optionally include a specific corp by ID (used by edit() so
+     * an event tied to a corp that's no longer in the active set still
+     * renders its current value correctly).
+     *
+     * Pre-fix the create/edit forms loaded the entire `corporation_infos`
+     * table with no filter — on a shared SeAT install with many
+     * historical corps, the dropdown could have hundreds of entries.
+     *
+     * @param int $alwaysIncludeCorpId  Optional corp id to include even
+     *                                  if it's not in the active set
+     * @return \Illuminate\Support\Collection
+     */
+    protected function getEventDropdownCorporations(int $alwaysIncludeCorpId = 0)
+    {
+        $corpIds = collect();
+
+        // Corps that have any MM setting persisted (per-corp tax rates,
+        // per-corp tax program corporation, etc.)
+        $settingsCorpIds = DB::table('mining_manager_settings')
+            ->whereNotNull('corporation_id')
+            ->distinct()
+            ->pluck('corporation_id');
+        $corpIds = $corpIds->merge($settingsCorpIds);
+
+        // Moon owner corp (single source of truth — separate setting,
+        // not a per-corp scope so it lives at corporation_id IS NULL).
+        $moonOwnerCorpId = (int) DB::table('mining_manager_settings')
+            ->whereNull('corporation_id')
+            ->where('key', 'general.moon_owner_corporation_id')
+            ->value('value');
+        if ($moonOwnerCorpId > 0) {
+            $corpIds->push($moonOwnerCorpId);
+        }
+
+        // Optional pin (edit form's currently-assigned corp).
+        if ($alwaysIncludeCorpId > 0) {
+            $corpIds->push($alwaysIncludeCorpId);
+        }
+
+        $corpIds = $corpIds->filter()->unique()->values();
+
+        if ($corpIds->isEmpty()) {
+            return collect();
+        }
+
+        return DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corpIds)
             ->select('corporation_id', 'name', 'ticker')
             ->orderBy('name')
             ->get();
-
-        return view('mining-manager::events.edit', compact('event', 'corporations'));
     }
 
     /**
@@ -270,9 +341,12 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'location_scope' => 'required|string|in:any,system,constellation,region',
-            'solar_system_id' => 'nullable|integer',
+            // Existence checks — symmetric with store(). Pre-fix accepted
+            // any integer; stale form replays / typos could persist
+            // pointers to non-existent systems / corps.
+            'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
             'tax_modifier' => 'required|integer|min:-100|max:100',
-            'corporation_id' => 'nullable|integer',
+            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
             'status' => 'required|in:planned,active,completed,cancelled',
         ]);
 
@@ -342,10 +416,30 @@ class EventController extends Controller
         try {
             $event = MiningEvent::findOrFail($id);
 
-            $event->update([
-                'status' => 'active',
-                'start_time' => Carbon::now(),
-            ]);
+            // ATOMIC CLAIM — flip planned→active in a single UPDATE WHERE.
+            // The cron path (EventManagementService::updateEventStatuses) uses
+            // the same pattern, so when both fire near-simultaneously on the
+            // same event only one wins the flip and only one notification
+            // dispatches. start_time is locked to the moment of the manual
+            // click (existing behaviour preserved).
+            $claimed = MiningEvent::where('id', $event->id)
+                ->where('status', 'planned')
+                ->update([
+                    'status' => 'active',
+                    'start_time' => Carbon::now(),
+                ]);
+
+            if ($claimed === 0) {
+                $event->refresh();
+                if ($event->status === 'active') {
+                    return redirect()->route('mining-manager.events.show', $event->id)
+                        ->with('info', 'Event was already started.');
+                }
+                return redirect()->back()
+                    ->with('error', "Cannot start an event with status '{$event->status}'.");
+            }
+
+            $event->refresh();
 
             // Send event started notification
             try {
@@ -384,10 +478,24 @@ class EventController extends Controller
             // Update event data one final time before completing
             $this->eventService->updateEventData($event);
 
-            $event->update([
-                'status' => 'completed',
-                'end_time' => Carbon::now(),
-            ]);
+            // ATOMIC CLAIM — same pattern as start(). Only the path that
+            // flips active→completed dispatches event_completed.
+            $claimed = MiningEvent::where('id', $event->id)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'completed',
+                    'end_time' => Carbon::now(),
+                ]);
+
+            if ($claimed === 0) {
+                $event->refresh();
+                if ($event->status === 'completed') {
+                    return redirect()->route('mining-manager.events.show', $event->id)
+                        ->with('info', 'Event was already completed.');
+                }
+                return redirect()->back()
+                    ->with('error', "Cannot complete an event with status '{$event->status}'.");
+            }
 
             // Refresh the event to get updated totals
             $event->refresh();
@@ -492,11 +600,14 @@ class EventController extends Controller
                 'activeEvents' => collect([]),
                 'upcomingEvents' => collect([]),
                 'completedEvents' => collect([]),
+                'characterIds' => [],
+                'eventSavingsMap' => [],
                 'stats' => [
                     'total' => 0,
                     'active' => 0,
                     'total_mined' => 0,
                     'avg_per_event' => 0,
+                    'total_event_savings' => 0,
                 ]
             ]);
         }
@@ -526,22 +637,38 @@ class EventController extends Controller
             ->limit(20)
             ->get();
         
-        // Calculate statistics
+        // Calculate statistics. The view labels these as "ISK" (my-events
+        // info-boxes), so they MUST aggregate value_mined (ISK) — not
+        // quantity_mined (units). Previously this summed quantity_mined,
+        // producing wildly wrong "ISK" numbers that were actually unit
+        // counts.
         $allParticipations = EventParticipant::whereIn('character_id', $characterIds)->get();
+
+        // Per-event savings map — {event_id => total tax saved}. Walks
+        // ore_types JSON on the user's daily summaries and attributes
+        // event_discount_amount by event_id. Used for per-event card
+        // sub-lines and for the grand-total stat box.
+        $eventSavingsMap = app(\MiningManager\Services\Ledger\LedgerSummaryService::class)
+            ->getEventSavingsByEvent($characterIds);
+        $totalEventSavings = array_sum($eventSavingsMap);
+
         $stats = [
             'total' => $allParticipations->count(),
             'active' => $activeEvents->count(),
-            'total_mined' => $allParticipations->sum('quantity_mined'),
+            'total_mined' => $allParticipations->sum('value_mined'),
             'avg_per_event' => $allParticipations->count() > 0
-                ? $allParticipations->avg('quantity_mined')
+                ? $allParticipations->avg('value_mined')
                 : 0,
+            'total_event_savings' => $totalEventSavings,
         ];
-        
+
         return view('mining-manager::events.my-events', compact(
-            'activeEvents', 
-            'upcomingEvents', 
-            'completedEvents', 
-            'stats'
+            'activeEvents',
+            'upcomingEvents',
+            'completedEvents',
+            'stats',
+            'characterIds',
+            'eventSavingsMap'
         ));
     }
 
@@ -709,6 +836,87 @@ class EventController extends Controller
     }
 
     // ==================== HELPER METHODS (SeAT v5.x COMPATIBLE) ====================
+
+    /**
+     * Build a tax-scope compatibility map for the event form.
+     *
+     * Produces a data structure the create/edit views render as:
+     *   - a "current tax settings" badge row
+     *   - a per-event-type compatibility hint (full / partial / empty)
+     *   - a "suggested event types" list based on what's taxed
+     *
+     * The map is serialised to JSON and read by event-tax-compat.js so
+     * the warning panel updates immediately when the user changes the
+     * event type dropdown — no submit-then-see-error loop.
+     *
+     * @return array{
+     *   category_taxed: array<string, bool>,
+     *   moon_mode: string,
+     *   event_type_compat: array<string, array{
+     *       taxed: int, untaxed: int, total: int, status: string,
+     *       taxed_categories: array<string>, untaxed_categories: array<string>
+     *   }>
+     * }
+     */
+    private function buildTaxCompatibilityMap(): array
+    {
+        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $taxSelector = $settingsService->getTaxSelector();
+
+        $categoryTaxed = [
+            'ore' => !empty($taxSelector['ore']),
+            'ice' => !empty($taxSelector['ice']),
+            'gas' => !empty($taxSelector['gas']),
+            'abyssal' => !empty($taxSelector['abyssal_ore']),
+            'triglavian' => !empty($taxSelector['triglavian_ore']),
+        ];
+
+        // Moon is tri-state: 'none' | 'corp_only' | 'all'
+        $moonMode = 'none';
+        if (empty($taxSelector['no_moon_ore'])) {
+            if (!empty($taxSelector['only_corp_moon_ore'])) {
+                $moonMode = 'corp_only';
+            } elseif (!empty($taxSelector['all_moon_ore'])) {
+                $moonMode = 'all';
+            }
+        }
+
+        $eventTypeCompat = [];
+        foreach (MiningEvent::EVENT_TYPE_ORE_CATEGORIES as $eventType => $categories) {
+            $taxedList = [];
+            $untaxedList = [];
+
+            foreach ($categories as $category) {
+                $isTaxed = str_starts_with($category, 'moon_')
+                    ? $moonMode !== 'none'
+                    : ($categoryTaxed[$category] ?? false);
+
+                $isTaxed ? $taxedList[] = $category : $untaxedList[] = $category;
+            }
+
+            $total = count($categories);
+            $taxedCount = count($taxedList);
+            $untaxedCount = count($untaxedList);
+            $status = $taxedCount === 0
+                ? 'empty'
+                : ($untaxedCount === 0 ? 'full' : 'partial');
+
+            $eventTypeCompat[$eventType] = [
+                'taxed' => $taxedCount,
+                'untaxed' => $untaxedCount,
+                'total' => $total,
+                'status' => $status,
+                'taxed_categories' => $taxedList,
+                'untaxed_categories' => $untaxedList,
+            ];
+        }
+
+        return [
+            'category_taxed' => $categoryTaxed,
+            'moon_mode' => $moonMode,
+            'event_type_compat' => $eventTypeCompat,
+        ];
+    }
 
     /**
      * FIXED: Get user's character IDs with multiple fallback methods

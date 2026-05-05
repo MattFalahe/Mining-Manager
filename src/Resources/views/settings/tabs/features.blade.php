@@ -129,21 +129,6 @@
                 </small>
             </div>
 
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="auto_track_event_participation" 
-                       name="auto_track_event_participation" 
-                       value="1"
-                       {{ old('auto_track_event_participation', $settings->auto_track_event_participation ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="auto_track_event_participation">
-                    <i class="fas fa-users"></i>
-                    <strong>{{ trans('mining-manager::settings.auto_track_event_participation') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.auto_track_event_participation_help') }}
-                </small>
-            </div>
 
         </div>
     </div>
@@ -158,10 +143,10 @@
         </div>
         <div class="card-body">
             <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="enable_moon_tracking" 
-                       name="enable_moon_tracking" 
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="enable_moon_tracking"
+                       name="enable_moon_tracking"
                        value="1"
                        {{ old('enable_moon_tracking', $settings->enable_moon_tracking ?? true) ? 'checked' : '' }}>
                 <label class="custom-control-label" for="enable_moon_tracking">
@@ -170,79 +155,6 @@
                 </label>
                 <small class="form-text text-muted">
                     {{ trans('mining-manager::settings.enable_moon_tracking_help') }}
-                </small>
-            </div>
-
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="track_moon_compositions" 
-                       name="track_moon_compositions" 
-                       value="1"
-                       {{ old('track_moon_compositions', $settings->track_moon_compositions ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="track_moon_compositions">
-                    <i class="fas fa-atom"></i>
-                    <strong>{{ trans('mining-manager::settings.track_moon_compositions') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.track_moon_compositions_help') }}
-                </small>
-            </div>
-
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="calculate_moon_value" 
-                       name="calculate_moon_value" 
-                       value="1"
-                       {{ old('calculate_moon_value', $settings->calculate_moon_value ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="calculate_moon_value">
-                    <i class="fas fa-calculator"></i>
-                    <strong>{{ trans('mining-manager::settings.calculate_moon_value') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.calculate_moon_value_help') }}
-                </small>
-            </div>
-
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
-                       id="notify_extraction_ready" 
-                       name="notify_extraction_ready" 
-                       value="1"
-                       {{ old('notify_extraction_ready', $settings->notify_extraction_ready ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="notify_extraction_ready">
-                    <i class="fas fa-bell"></i>
-                    <strong>{{ trans('mining-manager::settings.notify_extraction_ready') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.notify_extraction_ready_help') }}
-                </small>
-            </div>
-
-            <div class="form-group">
-                <label for="extraction_notification_hours">
-                    <i class="fas fa-clock"></i>
-                    {{ trans('mining-manager::settings.extraction_notification_hours') }}
-                </label>
-                <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('extraction_notification_hours') is-invalid @enderror" 
-                           id="extraction_notification_hours" 
-                           name="extraction_notification_hours" 
-                           value="{{ old('extraction_notification_hours', $settings->extraction_notification_hours ?? 24) }}"
-                           min="1" 
-                           max="168">
-                    <div class="input-group-append">
-                        <span class="input-group-text">{{ trans('mining-manager::settings.hours') }}</span>
-                    </div>
-                    @error('extraction_notification_hours')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.extraction_notification_hours_help') }}
                 </small>
             </div>
         </div>

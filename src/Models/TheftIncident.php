@@ -389,8 +389,6 @@ class TheftIncident extends Model
         $updateData = [
             'is_active_theft' => true,
             'last_activity_at' => now(),
-            'activity_count' => DB::raw('activity_count + 1'),
-            'ore_value' => DB::raw("ore_value + {$newMiningValue}"),
             'severity' => $newSeverity,
         ];
 
@@ -398,7 +396,30 @@ class TheftIncident extends Model
             $updateData['notes'] = $notes;
         }
 
+        // Atomically apply non-incrementing field updates plus the two
+        // counter increments. Two queries here instead of one because
+        // Eloquent's incrementEach() doesn't accept the $extra array
+        // that single-column increment() does.
+        //
+        // Previously this used a single update() with DB::raw string
+        // interpolation:
+        //
+        //     'ore_value' => DB::raw("ore_value + {$newMiningValue}")
+        //
+        // which is functionally safe given the float type hint, but is
+        // (a) locale-fragile — PHP's float-to-string conversion uses the
+        //     locale's decimal separator, so a server with German locale
+        //     would produce "ore_value + 1234,56" → SQL syntax error,
+        // (b) brittle to refactoring — if someone removes the type hint
+        //     or passes a string-cast value, it becomes injectable.
+        //
+        // incrementEach uses bound parameters via the query builder, so
+        // both concerns are gone.
         self::where('id', $this->id)->update($updateData);
+        self::where('id', $this->id)->incrementEach([
+            'activity_count' => 1,
+            'ore_value' => $newMiningValue,
+        ]);
 
         $this->refresh();
     }

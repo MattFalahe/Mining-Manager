@@ -50,6 +50,14 @@ function loadWebhookData(webhookId) {
                 document.getElementById('webhook-type').value = webhook.type;
                 document.getElementById('webhook-url').value = webhook.webhook_url;
 
+                // Assigned corporation (empty string = Global/NULL)
+                const corpSelect = document.getElementById('webhook-corporation-id');
+                if (corpSelect) {
+                    corpSelect.value = webhook.corporation_id !== null && webhook.corporation_id !== undefined
+                        ? String(webhook.corporation_id)
+                        : '';
+                }
+
                 // Event checkboxes
                 document.getElementById('notify-theft-detected').checked = webhook.notify_theft_detected;
                 document.getElementById('notify-critical-theft').checked = webhook.notify_critical_theft;
@@ -57,6 +65,8 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-incident-resolved').checked = webhook.notify_incident_resolved;
                 document.getElementById('notify-moon-arrival').checked = webhook.notify_moon_arrival;
                 document.getElementById('notify-jackpot-detected').checked = webhook.notify_jackpot_detected;
+                const unstableField = document.getElementById('notify-moon-chunk-unstable');
+                if (unstableField) unstableField.checked = !!webhook.notify_moon_chunk_unstable;
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
@@ -98,17 +108,23 @@ function saveWebhook() {
     const webhookId = document.getElementById('webhook-id').value;
     const isUpdate = webhookId !== '';
 
+    // Empty-string corp = Global (send as null). Converts to int otherwise.
+    const corpSelectVal = document.getElementById('webhook-corporation-id')?.value || '';
+    const corpForPayload = corpSelectVal === '' ? null : parseInt(corpSelectVal, 10);
+
     const formData = {
         _token: $('meta[name="csrf-token"]').attr('content'),
         name: document.getElementById('webhook-name').value,
         type: document.getElementById('webhook-type').value,
         webhook_url: document.getElementById('webhook-url').value,
+        corporation_id: corpForPayload,
         notify_theft_detected: document.getElementById('notify-theft-detected').checked ? 1 : 0,
         notify_critical_theft: document.getElementById('notify-critical-theft').checked ? 1 : 0,
         notify_active_theft: document.getElementById('notify-active-theft').checked ? 1 : 0,
         notify_incident_resolved: document.getElementById('notify-incident-resolved').checked ? 1 : 0,
         notify_moon_arrival: document.getElementById('notify-moon-arrival').checked ? 1 : 0,
         notify_jackpot_detected: document.getElementById('notify-jackpot-detected').checked ? 1 : 0,
+        notify_moon_chunk_unstable: document.getElementById('notify-moon-chunk-unstable')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,

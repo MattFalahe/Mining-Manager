@@ -69,7 +69,7 @@ class ReportGenerationService
         // the report twice.
         if ($dispatch) {
             try {
-                app(\MiningManager\Services\Notification\WebhookService::class)->sendReportNotification($report, $reportData);
+                app(\MiningManager\Services\Notification\NotificationService::class)->sendReportGenerated($report, $reportData);
             } catch (\Exception $e) {
                 Log::warning("Failed to send report webhook: " . $e->getMessage());
             }

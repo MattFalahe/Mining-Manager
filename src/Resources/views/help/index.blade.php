@@ -196,6 +196,48 @@
     .warning-box > i { color: #ffc107; }
     .success-box > i { color: #1cc88a; }
 
+    /* Override the inherited .help-card h4/h5/p/ul/ol/small/strong colours
+       so text inside a tinted box has high contrast. The default
+       .help-card h4 (#9ca3af medium grey) is barely readable on a
+       green/blue/yellow 15%-opacity tint background; this lifts every
+       text element inside a tinted box to a near-white that pops against
+       any of the three background tints uniformly.
+       NB: covers BOTH our custom .info-box/.warning-box/.success-box
+       classes AND Bootstrap's .alert.alert-info/.alert-secondary/etc.
+       (the help blade uses both patterns in practice). */
+    .info-box h3, .info-box h4, .info-box h5,
+    .warning-box h3, .warning-box h4, .warning-box h5,
+    .success-box h3, .success-box h4, .success-box h5,
+    .alert h3, .alert h4, .alert h5 {
+        color: #f9fafb !important;
+    }
+    .info-box p, .info-box ul, .info-box ol, .info-box li, .info-box small,
+    .warning-box p, .warning-box ul, .warning-box ol, .warning-box li, .warning-box small,
+    .success-box p, .success-box ul, .success-box ol, .success-box li, .success-box small,
+    .alert p, .alert ul, .alert ol, .alert li, .alert small {
+        color: #f3f4f6 !important;
+    }
+    .info-box strong, .warning-box strong, .success-box strong,
+    .alert strong {
+        color: #ffffff !important;
+    }
+    /* Bootstrap's `.text-muted` is `color: #6c757d !important` and ties
+       on specificity with the box overrides above, so cascade order
+       decides which wins — and Bootstrap usually loads later. Force
+       text-muted inside tinted boxes to respect the box's contrast
+       baseline by bumping specificity (chained class selector). */
+    .info-box .text-muted,
+    .warning-box .text-muted,
+    .success-box .text-muted,
+    .alert .text-muted,
+    .info-box small.text-muted,
+    .warning-box small.text-muted,
+    .success-box small.text-muted,
+    .alert small.text-muted {
+        color: #d1d5db !important;
+        opacity: 0.95;
+    }
+
     .feature-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -210,7 +252,15 @@
         border: 1px solid rgba(102, 126, 234, 0.3);
     }
 
-    .feature-item i {
+    /* Scoped to direct-child icons only (the big feature-card top icon).
+       Pre-fix this selector hit ALL nested icons too — including <i>
+       elements inside badges — which forced badge icons to render in
+       indigo regardless of the badge background. On a green
+       badge-success or red badge-danger the indigo icon was barely
+       visible. The "> i" direct-child combinator leaves badge / inline
+       icons alone so they inherit the badge's white text colour as
+       intended. */
+    .feature-item > i {
         font-size: 2rem;
         color: #667eea;
         margin-bottom: 10px;
@@ -505,7 +555,7 @@
                     </p>
                     <p>License: {{ trans('mining-manager::help.plugin_license') }}</p>
                     <p>
-                        <i class="fas fa-user"></i> {{ trans('mining-manager::help.plugin_author') }}<br>
+                        <i class="fas fa-user"></i> Author: {{ trans('mining-manager::help.plugin_author') }}<br>
                         <i class="fas fa-envelope"></i> <a href="mailto:{{ trans('mining-manager::help.plugin_author_email') }}" style="color: #667eea;">{{ trans('mining-manager::help.plugin_author_email') }}</a>
                     </p>
 
@@ -602,6 +652,16 @@
                             <i class="fas fa-user-secret"></i>
                             <h5>{{ trans('mining-manager::help.feature_theft') }}</h5>
                             <p>{{ trans('mining-manager::help.feature_theft_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-shield-alt"></i>
+                            <h5>Cross-Plugin Alerts</h5>
+                            <p>When Manager Core and Structure Manager are installed, MM subscribes to Structure Manager's threat events and dispatches <strong>Extraction At Risk</strong> (fuel critical, shield/armor/hull reinforced) and <strong>Extraction Lost</strong> (refinery destroyed) notifications with attacker info and Structure Board deeplinks. Toggles auto-disable when either plugin is missing.</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-rocket"></i>
+                            <h5>Master Test Diagnostic</h5>
+                            <p>One-click read-only smoke chain on the Diagnostic page that runs ~26 checks across schema, settings, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security in under 30 seconds. Verify everything's healthy after upgrades or settings changes without grepping logs.</p>
                         </div>
                     </div>
                 </div>
@@ -754,8 +814,36 @@
                     <ul>
                         <li><strong>{{ trans('mining-manager::help.tax_period_monthly') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.tax_period_biweekly') }}</strong></li>
-                        <li><strong>{{ trans('mining-manager::help.tax_period_weekly') }}</strong></li>
                     </ul>
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong>
+                        Period changes are <strong>queued to take effect on day 3 of the next calendar month</strong> &mdash; this lets the current scheme's final calculation run under the old rules before the new scheme takes over, avoiding collisions on <code>mining_taxes (character_id, period_start)</code>. A yellow banner appears on every tax page while a switch is pending.
+                    </div>
+                    <div class="alert alert-secondary">
+                        <h5><i class="fas fa-archive"></i> Weekly period type &mdash; <span class="text-muted">legacy, removed in v2.0.0</span></h5>
+                        <p class="mb-2">
+                            Weekly (one tax bill per ISO Mon&ndash;Sun week) used to be a supported option. It was removed because:
+                        </p>
+                        <ul class="mb-2">
+                            <li><strong>Weeks don't align to calendar months.</strong> A week starting Apr 27 ends May 3, so its tax row covered mining from April 27&ndash;30 AND May 1&ndash;3.</li>
+                            <li><strong>Double-tax at the boundary.</strong> When switching weekly &rarr; anything, the straddling row's May days overlapped with the first new-scheme row covering May.</li>
+                            <li><strong>Charts were distorted.</strong> Monthly dashboards had to smear weekly row totals across adjacent months.</li>
+                        </ul>
+                        <p class="mb-2"><strong>Biweekly</strong> (1st&ndash;14th, 15th&ndash;end) covers the sub-monthly use case cleanly without any of these issues.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-life-ring"></i> If your install was previously running weekly</h6>
+                        <p class="mb-2">Upgrading is automatic and non-destructive:</p>
+                        <ol class="mb-2">
+                            <li>On the first tax-page load or daily cron after upgrading, the <code>tax_calculation_period</code> setting is rewritten from <code>weekly</code> to <code>monthly</code> automatically. A warning line is written to the log explaining why.</li>
+                            <li>Any <strong>historical</strong> <code>mining_taxes</code> rows with <code>period_type='weekly'</code> stay in the database forever. They remain visible in Tax History, Tax Details, My Taxes breakdown, and CSV exports &mdash; rendered with their original weekly labels (e.g. "Mar 3&ndash;9, 2026").</li>
+                            <li>Going forward, the plugin writes only <code>monthly</code> or <code>biweekly</code> rows. No new weekly rows are created.</li>
+                            <li>If you want biweekly instead of monthly, open <em>Settings &rarr; Tax Rates</em> and change the dropdown. The switch will queue to day 3 of next month (safe cutover to avoid collisions with the auto-migrated monthly setting).</li>
+                        </ol>
+                        <p class="mb-0 text-muted small">
+                            No database migration, no data loss, no downtime &mdash; the settings key-value store handles the legacy value at read time.
+                        </p>
+                    </div>
 
                     <div class="info-box">
                         <i class="fas fa-chart-bar"></i>
@@ -1049,6 +1137,14 @@
                         <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_code_prefix_note') }}
                     </div>
 
+                    <h5 class="mt-3"><i class="fas fa-bolt text-warning"></i> Auto-match Wallet Payments</h5>
+                    <p>The "Auto-match wallet payments" toggle on Settings &rarr; General &rarr; Payment Settings controls how the wallet listener handles matched payments. When <strong>ON</strong> (default), the listener applies matched payments to taxes automatically as ESI wallet updates arrive — operators see paid taxes appear in real time without intervention. When <strong>OFF</strong>, matches are detected and listed on the Wallet Verification page but require manual confirmation before any tax row updates.</p>
+                    <p>Useful for installs that want a human-review step before any tax balance moves on the books — for example, multi-corp setups where the director wants to verify each match before crediting, or environments with strict audit requirements. Recommended for most installs to leave ON.</p>
+                    <div class="info-box">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>{{ trans('mining-manager::help.note') }}:</strong> Even with auto-match OFF, the wallet listener still runs and detects matches. The toggle only controls whether the matched payment is APPLIED automatically — the dedup tracking (<code>mining_manager_processed_transactions</code>) still records every match so the same transaction never re-credits.
+                    </div>
+
                     <h4><i class="fas fa-ruler-horizontal"></i> {{ trans('mining-manager::help.tax_code_length_title') }}</h4>
                     <p>{{ trans('mining-manager::help.tax_code_length_desc') }}</p>
 
@@ -1329,6 +1425,10 @@
                                     <td>{{ trans('mining-manager::help.webhook_cat_moon_events') }}</td>
                                 </tr>
                                 <tr>
+                                    <td><i class="fas fa-shield-alt text-danger"></i> {{ trans('mining-manager::help.webhook_cat_structure_alerts') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_structure_alerts_events') }}</td>
+                                </tr>
+                                <tr>
                                     <td><i class="fas fa-calendar-alt text-info"></i> {{ trans('mining-manager::help.webhook_cat_events') }}</td>
                                     <td>{{ trans('mining-manager::help.webhook_cat_events_list') }}</td>
                                 </tr>
@@ -1424,6 +1524,135 @@
                         <i class="fas fa-gift"></i>
                         <strong>{{ trans('mining-manager::help.bonus_tip') }}:</strong> {{ trans('mining-manager::help.event_bonus_desc') }}
                     </div>
+
+                    <h4><i class="fas fa-filter text-warning"></i> Event Type &rarr; Tax Modifier Scope</h4>
+                    <p>The event type controls <strong>which ore categories</strong> the tax modifier applies to. This prevents accidental scope creep &mdash; a "Moon Extraction" event won't silently discount belt mining too.</p>
+                    <table class="table table-dark table-bordered table-sm">
+                        <thead>
+                            <tr>
+                                <th width="25%">Event Type</th>
+                                <th>Modifier Applies To</th>
+                                <th width="15%">Use For</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Mining Operation</strong></td>
+                                <td><code>ore</code> &mdash; regular asteroid ore (belt mining)</td>
+                                <td>Belt ops</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Moon Extraction</strong></td>
+                                <td><code>moon_r4</code>, <code>moon_r8</code>, <code>moon_r16</code>, <code>moon_r32</code>, <code>moon_r64</code> &mdash; all moon ore rarities</td>
+                                <td>Moon chunk fractures</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Ice Mining</strong></td>
+                                <td><code>ice</code> only</td>
+                                <td>Ice belt ops</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Gas Huffing</strong></td>
+                                <td><code>gas</code> only</td>
+                                <td>Gas site ops</td>
+                            </tr>
+                            <tr class="bg-dark">
+                                <td><strong class="text-warning">Special Event</strong></td>
+                                <td><strong>Every currently-taxed ore category</strong> &mdash; intersects with your <code>tax_selector</code>. If the plugin doesn't tax gas, a Special Event won't credit gas mining either.</td>
+                                <td>Holidays, incentives, tax-free weekends, competitions</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="text-muted">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Example:</strong> Setting up a "Tax-Free Friday" where everything's free? Use <strong>Special Event</strong> with <code>-100%</code> tax modifier. A moon chunk is fracturing and you want to incentivise full participation? Use <strong>Moon Extraction</strong> &mdash; miners who also do belt mining that day still pay normal tax on their belt ore.
+                    </p>
+
+                    <div class="alert alert-info">
+                        <strong><i class="fas fa-bullseye"></i> How narrowly the tax modifier applies (per-row attribution):</strong>
+                        <p class="mb-2 mt-2">The event modifier applies <em>only to mining that actually overlaps the event window</em> &mdash; not to the participant's entire day.</p>
+                        <p class="mb-2"><strong>Example:</strong> A 2-hour gas event from 19:00 to 21:00 UTC. Miner X does 10 hours of gas mining that day &mdash; 1 hour before the event, 2 hours during, 7 hours after.</p>
+                        <ul class="mb-2">
+                            <li>Only the 2h during the event gets the tax discount.</li>
+                            <li>The other 8h pays normal base tax.</li>
+                            <li>The daily tax summary shows a blended effective rate and a line item "incl. &minus;X ISK event discount" so the organiser and miner can see what got waived.</li>
+                        </ul>
+                        <p class="mb-0 small text-muted">This is powered by the <code>event_mining_records</code> table, which captures the exact subset of mining that qualifies for each event. For moon events the slice is day-level (per ESI); for belt/ice/gas events the slice is time-precise.</p>
+                    </div>
+
+                    <h4 class="mt-4"><i class="fas fa-link text-info"></i> Events mirror your Tax Settings</h4>
+                    <p>Event participation tracks only ore categories the plugin is <em>currently taxing</em>. This keeps events meaningful &mdash; there's no point running a "Gas Huffing" event if your plugin isn't configured to tax gas, because the tax modifier would have a 0% rate to modify.</p>
+
+                    <div class="alert alert-info">
+                        <strong>The Event Creation / Edit form now shows this coupling live:</strong>
+                        <ul class="mb-0 mt-1">
+                            <li>A <span class="badge badge-secondary">grey badge row</span> lists which ore categories you're currently taxing.</li>
+                            <li>A dynamic status block reacts as you change the event type:
+                                <ul>
+                                    <li><span class="badge badge-success">All set</span> &mdash; every category in scope is taxed.</li>
+                                    <li><span class="badge badge-warning">Partial</span> &mdash; some categories in scope are taxed; others are not (Special Event typically falls here).</li>
+                                    <li><span class="badge badge-danger">Empty</span> &mdash; none of the scope categories are taxed; event will produce no participant data.</li>
+                                </ul>
+                            </li>
+                            <li>A "Suggested event types" list ranks event types by how well they fit your current tax settings.</li>
+                        </ul>
+                    </div>
+
+                    <h5>Moon-specific tax coupling</h5>
+                    <p>Moon events follow the three-way moon toggle in tax settings:</p>
+                    <table class="table table-dark table-sm">
+                        <thead>
+                            <tr><th>Tax setting</th><th>Moon event data pool</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>no_moon_ore</code></td>
+                                <td><span class="badge badge-danger">Empty</span> &mdash; plugin doesn't tax moon ore, so moon events produce nothing.</td>
+                            </tr>
+                            <tr>
+                                <td><code>only_corp_moon_ore</code></td>
+                                <td>Only observer rows from the configured moon-owner corporation. Matches what the tax engine uses.</td>
+                            </tr>
+                            <tr>
+                                <td><code>all_moon_ore</code> (default)</td>
+                                <td>Every observer row from every corp's moons the plugin has data for.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h5 class="mt-3">Corporation scoping on events</h5>
+                    <p>The event form's <strong>Corporation Scope</strong> field gates <em>which miners</em> the event counts, independent of the ore data pool:</p>
+                    <ul>
+                        <li><strong>Corp-scoped event</strong> &mdash; only miners whose current corp matches the selected corp get credited. A miner from a different corp mining the same ore is excluded.</li>
+                        <li><strong>Global event</strong> &mdash; any miner in your plugin's data gets credited, regardless of their corp.</li>
+                    </ul>
+                    <p class="text-muted small">Cross-corp moon mining is allowed: a Corp B miner mining at Corp A's moon counts for a Corp B event (because the miner is in Corp B) and for any global event. Corp A's ownership of the moon doesn't block that &mdash; the filter is on who mined, not on whose moon.</p>
+
+                    <h4 class="mt-4"><i class="fas fa-clock text-warning"></i> Time Granularity</h4>
+                    <p>How precisely the plugin can attribute mining activity to an event window depends on the source table each event type reads from:</p>
+                    <table class="table table-dark table-sm mb-2">
+                        <thead>
+                            <tr><th>Event Type</th><th>Source</th><th>Precision</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Moon Extraction</strong><br><em>(and moon half of Special)</em></td>
+                                <td><code>corporation_industry_mining_observer_data</code><br>→ stored in <code>mining_ledger</code></td>
+                                <td><span class="badge badge-warning">Day only</span> &mdash; EVE aggregates moon drill observer data per calendar day. Fundamental ESI limitation; cannot be improved on our side.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Mining Operation</strong><br><strong>Ice Mining</strong><br><strong>Gas Huffing</strong><br><em>(and non-moon half of Special)</em></td>
+                                <td>SeAT's <code>character_minings</code> table</td>
+                                <td><span class="badge badge-success">Sub-day (fetch time)</span> &mdash; uses SeAT's <code>time</code> column as a proxy for when mining happened. This reflects when SeAT <em>fetched</em> the data, not the literal EVE moment, but it's usable for events spanning several hours within a day.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="mb-0"><strong>Practical guidance:</strong></p>
+                    <ul class="mb-2">
+                        <li><strong>Moon events shorter than 24h</strong> capture all of the overlapping day's moon mining. For precise tracking, align moon events to UTC day boundaries or multiples of 24h.</li>
+                        <li><strong>Non-moon events</strong> benefit from SeAT's fetch-time granularity &mdash; a 4-hour gas event won't pull in gas mining from the same day that happened before or after the window (provided SeAT fetched within a reasonable cadence).</li>
+                        <li>For competitive/incentive events where "did you participate?" matters more than exact timing, use the manual <strong>Join Event</strong> button as an opt-in filter &mdash; only characters who clicked Join get counted regardless of mining data.</li>
+                    </ul>
                 </div>
             </div>
 
@@ -1476,6 +1705,52 @@
                             <h5><span class="badge badge-secondary">{{ trans('mining-manager::help.moon_status_expired') }}</span></h5>
                             <p>{{ trans('mining-manager::help.moon_status_expired_desc') }}</p>
                         </div>
+                    </div>
+                </div>
+
+                {{-- Cross-Plugin Threat Alerts (v2.0.0+) --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-shield-alt text-danger"></i>
+                        Cross-Plugin Threat Alerts
+                    </h3>
+                    <p>When <strong>Manager Core</strong> and <strong>Structure Manager</strong> are both installed, Mining Manager subscribes to SM's <code>structure.alert.*</code> event family via MC's EventBus and dispatches notifications when an active extraction's refinery is at risk or destroyed. The relevant webhook toggles auto-disable when either plugin is missing — no operator action needed.</p>
+
+                    <div class="feature-grid">
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><i class="fas fa-fire"></i> Extraction At Risk &mdash; Fuel Critical</h5>
+                            <p>Refinery has &lt;48h of fuel remaining. Embed shows days remaining + fuel-expires timestamp. Severity-aware embed color (info/warning/critical based on SM's severity field).</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #e67e22;">
+                            <h5><i class="fas fa-bolt"></i> Extraction At Risk &mdash; Shield Reinforced</h5>
+                            <p>Refinery shield went down (early warning). Embed shows timer end + hostile force corp name when SM resolved one. Operators can mobilise a defense fleet before the strategic timer.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #c0392b;">
+                            <h5><i class="fas fa-exclamation-triangle"></i> Extraction At Risk &mdash; Armor Reinforced</h5>
+                            <p>Strategic timer started. Same data shape as Shield, different embed color tier. Final-stage warning before potential destruction.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #8e44ad;">
+                            <h5><i class="fas fa-skull"></i> Extraction At Risk &mdash; Hull Reinforced</h5>
+                            <p>Final timer. The refinery will be destroyed at timer end if not defended. Most urgent variant.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #2c3e50;">
+                            <h5><i class="fas fa-skull-crossbones"></i> Extraction Lost &mdash; Destroyed</h5>
+                            <p>Refinery destroyed. Embed shows destroyed-at timestamp, outcome, chunk value lost (using <code>estimated_value_pre_arrival</code> snapshot when available), killer attribution, and killmail link if SM resolved one.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #27ae60;">
+                            <h5><i class="fas fa-thumbs-up"></i> Fuel Recovered (silent state cleanup)</h5>
+                            <p>SM detects an operator topped off the refinery. MM clears its <code>alert_fuel_critical_sent</code> dedup latch so a future re-critical event fires fresh. No notification dispatched on this flavor — pure state hygiene.</p>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Idempotent dispatch:</strong> each extraction has 5 boolean dedup columns (<code>alert_fuel_critical_sent</code>, <code>alert_shield_reinforced_sent</code>, <code>alert_armor_reinforced_sent</code>, <code>alert_hull_reinforced_sent</code>, <code>alert_destroyed_sent</code>) latched via atomic compare-and-swap. SM polls every 10 minutes; without the latch every poll would re-fire the notification until fuel/timer cleared.
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-link"></i>
+                        <strong>Structure Board deeplink:</strong> every embed includes a one-click "Open in Structure Manager" link to SM's Structure Board scoped to the affected refinery. Operators pivot from the Discord ping straight to SM's full structure context (timers, fuel curve, history) without searching.
                     </div>
                 </div>
 
@@ -1784,8 +2059,8 @@
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:15 AM</td>
-                                    <td>Calculate tax obligations by summing daily summaries. Creates MiningTax records per main character for the previous completed period. <strong>Smart scheduling:</strong> only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly, Tuesdays for weekly). The 1-day shift allows late-arriving observer data to settle before calculating. Skips silently on other days.<br>
-                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> legacy monthly, <code>--period-start=YYYY-MM-DD</code> specific period, <code>--period-type=</code> override (monthly|biweekly|weekly), <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> overwrite existing, <code>--force</code> run even if not a boundary day</small>
+                                    <td>Calculate tax obligations by summing daily summaries. Creates MiningTax records per main character for the previous completed period. <strong>Smart scheduling:</strong> only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly). The 1-day shift allows late-arriving observer data to settle before calculating. Skips silently on other days.<br>
+                                        <small class="text-muted">Options: <code>--month=YYYY-MM</code> legacy monthly, <code>--period-start=YYYY-MM-DD</code> specific period, <code>--period-type=</code> override (monthly|biweekly), <code>--character_id=</code> specific character, <code>--corporation_id=</code> specific corp, <code>--recalculate</code> overwrite existing, <code>--force</code> run even if not a boundary day</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1833,7 +2108,7 @@
                                 <tr>
                                     <td><code>mining-manager:generate-invoices</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:30 AM</td>
-                                    <td>Generate invoice records for unpaid taxes with completed periods. Smart: only creates invoices for taxes that don't already have one. Runs daily so biweekly/weekly periods get invoices promptly after each period ends.<br>
+                                    <td>Generate invoice records for unpaid taxes with completed periods. Smart: only creates invoices for taxes that don't already have one. Runs daily so biweekly periods get invoices promptly after each period ends.<br>
                                         <small class="text-muted">Options: <code>--month=YYYY-MM</code> specific month, <code>--character_id=</code> specific character, <code>--dry-run</code> preview without creating</small>
                                     </td>
                                 </tr>
@@ -1890,9 +2165,30 @@
                         </table>
                     </div>
 
-                    {{-- Diagnostic Page (Web UI) --}}
-                    <h4 class="mt-4"><i class="fas fa-stethoscope text-info"></i> {{ trans('mining-manager::help.diagnostic_page_title') }}</h4>
+                    {{-- Diagnostic Page (Web UI) — internal / dev only --}}
+                    <h4 class="mt-4">
+                        <i class="fas fa-stethoscope text-info"></i>
+                        {{ trans('mining-manager::help.diagnostic_page_title') }}
+                        <span class="badge badge-danger ml-2" style="font-size: 0.75rem; vertical-align: middle;">
+                            <i class="fas fa-flask"></i> DEV
+                        </span>
+                    </h4>
                     <p>{{ trans('mining-manager::help.diagnostic_page_desc') }}</p>
+
+                    <div class="warning-box">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>How to access:</strong> The Diagnostic page is intentionally NOT linked from the Mining Manager sidebar. Admins navigate to it manually by typing
+                        <code>/mining-manager/diagnostic</code>
+                        in the address bar (relative to your SeAT install root). Treat as an internal/dev tool, not a user-facing feature. The Master Test tab is safe to run on production (read-only); the Test Data Generation tab creates fake corps/characters/mining and is for development environments only.
+                    </div>
+
+                    <h5><i class="fas fa-rocket text-primary"></i> Master Test (default tab)</h5>
+                    <p>One-click read-only smoke chain that runs ~26 checks covering every major area of the plugin: schema integrity (every migration applied, every expected column present, every index in place), settings consistency (pricing/notification/feature flags load with the expected shape), cross-plugin integration (Manager Core + Structure Manager detection, EventBus subscription registered, MC pricing subscription rows present, MC price freshness vs the 8-hour staleness threshold), pricing path (`validateProviderConfig` passes, in-process Tritanium roundtrip), notifications (webhooks HTTPS-only, custom-template injection-safety live-verified by feeding hostile input through the template engine), lifecycle (cron schedules present, moon extractions populated), tax pipeline (no orphan tax codes), security hardening (CAS target columns, ScheduleSeeder firstOrCreate inheritance), and infra (cache put/get roundtrip).</p>
+                    <p>Tests are idempotent (read-only — never mutates production data), fast (sub-second per test, full chain typically completes in under 30 seconds), and self-contained (per-test try/catch — a single broken test can't crash the run). Click <em>Run Master Test</em>, get a pass/warn/fail/skip table grouped by category. Use the "Show only issues" filter when something needs attention.</p>
+                    <div class="info-box">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> Run the Master Test after every plugin upgrade or settings change. It catches stale route caches, missing migrations, broken cross-plugin links, and partial deploys before they cause real-world dispatch failures.
+                    </div>
 
                     <h5>{{ trans('mining-manager::help.tax_trace_title') }}</h5>
                     <p>{{ trans('mining-manager::help.tax_trace_desc') }}</p>
@@ -1906,6 +2202,18 @@
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.note') }}:</strong> {{ trans('mining-manager::help.tax_trace_note') }}
+                    </div>
+
+                    <h5 class="mt-3">{{ trans('mining-manager::help.notif_test_title') }}</h5>
+                    <p>{{ trans('mining-manager::help.notif_test_desc') }}</p>
+                    <ul>
+                        <li><strong>{{ trans('mining-manager::help.notif_test_preview') }}</strong> — {{ trans('mining-manager::help.notif_test_preview_desc') }}</li>
+                        <li><strong>{{ trans('mining-manager::help.notif_test_live') }}</strong> — {{ trans('mining-manager::help.notif_test_live_desc') }}</li>
+                        <li><strong>{{ trans('mining-manager::help.notif_test_chain') }}</strong> — {{ trans('mining-manager::help.notif_test_chain_desc') }}</li>
+                    </ul>
+                    <div class="info-box">
+                        <i class="fas fa-bolt"></i>
+                        <strong>{{ trans('mining-manager::help.tip') }}:</strong> {{ trans('mining-manager::help.notif_test_chain_tip') }}
                     </div>
 
                     {{-- Initialize Command --}}
@@ -1966,6 +2274,18 @@
                                     <td><strong>Reconstruct historical extraction records</strong> from <code>MoonminingExtractionStarted</code> EVE notifications. When you install Mining Manager on a corp that already has months of mining history, ESI only returns active/upcoming extractions — completed cycles are not retrievable. But character notifications retain that history for as long as SeAT keeps them. This command parses those notifications, dedupes by (structure, ready time), matches each to its corresponding fracture/cancel notification, calculates actual mined values from <code>mining_ledger</code> where available, and inserts rows into <code>moon_extraction_history</code> so the moon detail pages show full historical context. <strong>Scoped to Moon Owner Corporation only</strong> — pre-loads the set of structures owned by MOC from <code>corporation_structures</code> and skips notifications for any other structure (reports the skipped count). Shows <strong>progress bars</strong> for both the dedup pass (YAML parsing) and the main processing pass (DB queries per extraction) — with thousands of notifications this can take a few minutes. Automatically invoked by <code>mining-manager:initialize</code> during Phase 3 historical backfill if the admin opts in.<br>
                                         <small class="text-muted">Options: <code>--structure=ID</code> single structure scope (must belong to MOC), <code>--days=365</code> lookback window, <code>--limit=1000</code> max per run, <code>--dry-run</code> preview without writing, <code>--force</code> recreate existing history rows (destructive)</small>
                                         <br><small class="text-warning"><i class="fas fa-info-circle"></i> Historical ISK prices are unknown, so <code>estimated_value_at_arrival</code> is left NULL for backfilled rows — new extractions going forward will have it populated properly. <code>actual_mined_value</code> is computed from <code>mining_ledger</code> where data exists for the structure during the extraction window.</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:backup-data</code></td>
+                                    <td><strong>Export plugin data to JSON</strong> for offline backup, migration to another SeAT install, or disaster recovery. Writes one JSON file per plugin-owned table (settings, webhook configs, events, moon extractions + history, mining ledger + summaries, taxes, tax codes, theft incidents, processed transactions, etc.) into a timestamped backup directory. Run before major version upgrades or settings changes you want to be able to undo. Companion to <code>restore-data</code> below.<br>
+                                        <small class="text-muted">Options: <code>--path=</code> custom backup directory (defaults to <code>/opt/seat-docker/mining-manager-backup/</code>), <code>--tables=a,b,c</code> backup only specific tables, <code>--no-ledger</code> skip <code>mining_ledger</code> (the largest table; can be regenerated from observer data)</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>mining-manager:restore-data</code></td>
+                                    <td><strong>Restore plugin data from a <code>backup-data</code> export</strong>. Reads JSON files from a backup directory and re-creates rows in the right order to satisfy foreign-key constraints. Useful for moving the plugin between SeAT installs, recovering from a bad settings change, or seeding a development environment from production data. Auto-detects the latest backup if no path is given; truncates each target table before restore unless <code>--no-truncate</code> is passed.<br>
+                                        <small class="text-muted">Options: <code>path</code> (positional argument — backup directory; defaults to latest in <code>/opt/seat-docker/mining-manager-backup/</code>), <code>--tables=a,b,c</code> restore only specific tables, <code>--force</code> skip confirmation prompts, <code>--no-truncate</code> append rather than replace (use with caution — can cause unique-constraint violations)</small>
                                     </td>
                                 </tr>
                             </tbody>
@@ -2103,7 +2423,7 @@
                         {{ trans('mining-manager::help.frequently_asked') }}
                     </h3>
 
-                    @foreach(range(1, 12) as $i)
+                    @foreach(range(1, 15) as $i)
                     <div class="faq-item">
                         <div class="faq-question">
                             <strong>{{ trans("mining-manager::help.faq_q{$i}") }}</strong>

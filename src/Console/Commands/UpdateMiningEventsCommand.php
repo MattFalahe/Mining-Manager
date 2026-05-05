@@ -3,8 +3,10 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Events\EventManagementService;
+use MiningManager\Services\Events\EventMiningAggregator;
 use MiningManager\Services\Events\EventTrackingService;
 use Carbon\Carbon;
 
@@ -51,85 +53,110 @@ class UpdateMiningEventsCommand extends Command
      */
     public function handle()
     {
-        // Check feature flag
-        $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
-        $features = $settingsService->getFeatureFlags();
-        if (!($features['enable_events'] ?? true)) {
-            $this->info('Feature disabled in settings. Skipping.');
+        $lock = Cache::lock('mining-manager:update-events', 600);
+        if (!$lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
             return Command::SUCCESS;
         }
 
-        $this->info('Starting event update...');
-
-        // Transition event statuses: planned → active → completed.
-        // This fires 'event_started' and 'event_completed' webhook notifications
-        // on each transition (see EventManagementService::updateEventStatuses).
-        $managementService = app(EventManagementService::class);
-        $statusResult = $managementService->updateEventStatuses();
-
-        if ($statusResult['started'] > 0) {
-            $this->info("Auto-started {$statusResult['started']} event(s)");
-        }
-        if ($statusResult['completed'] > 0) {
-            $this->info("Auto-completed {$statusResult['completed']} event(s)");
-        }
-
-        // Build query for participant tracking
-        $query = MiningEvent::query();
-
-        if ($eventId = $this->option('event_id')) {
-            $query->where('id', $eventId);
-            $this->info("Updating event ID: {$eventId}");
-        } elseif ($this->option('active')) {
-            $query->where('status', 'active')
-                ->where('start_time', '<=', Carbon::now())
-                ->where(function ($q) {
-                    $q->whereNull('end_time')
-                        ->orWhere('end_time', '>=', Carbon::now());
-                });
-            $this->info("Updating active events");
-        } else {
-            // Update events from last 30 days by default
-            $query->where('created_at', '>=', Carbon::now()->subDays(30));
-            $this->info("Updating events from last 30 days");
-        }
-
-        $events = $query->get();
-
-        if ($events->isEmpty()) {
-            $this->warn('No events found to update');
-            return Command::SUCCESS;
-        }
-
-        $this->info("Found {$events->count()} events to update");
-
-        $updated = 0;
-        $errors = 0;
-
-        foreach ($events as $event) {
-            try {
-                $this->line("Processing event: {$event->name}");
-
-                // Delegate to EventTrackingService (handles DB::transaction, participant
-                // updates, and event statistics in a single atomic operation)
-                $result = $this->eventService->updateEventTracking($event);
-
-                $participants = ($result['new_participants'] ?? 0) + ($result['updated_participants'] ?? 0);
-                $this->info("Updated event '{$event->name}': {$participants} participants tracked");
-                $updated++;
-
-            } catch (\Exception $e) {
-                $this->error("Error updating event '{$event->name}': {$e->getMessage()}");
-                $errors++;
+        try {
+            // Check feature flag
+            $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $features = $settingsService->getFeatureFlags();
+            if (!($features['enable_events'] ?? true)) {
+                $this->info('Feature disabled in settings. Skipping.');
+                return Command::SUCCESS;
             }
-        }
 
-        $this->info("Event update complete!");
-        $this->info("Updated: {$updated} events");
-        if ($errors > 0) {
-            $this->warn("Errors: {$errors}");
-        }
+            $this->info('Starting event update...');
 
-        return Command::SUCCESS;
+            // Transition event statuses: planned → active → completed.
+            // This fires 'event_started' and 'event_completed' webhook notifications
+            // on each transition (see EventManagementService::updateEventStatuses).
+            $managementService = app(EventManagementService::class);
+            $statusResult = $managementService->updateEventStatuses();
+
+            if ($statusResult['started'] > 0) {
+                $this->info("Auto-started {$statusResult['started']} event(s)");
+            }
+            if ($statusResult['completed'] > 0) {
+                $this->info("Auto-completed {$statusResult['completed']} event(s)");
+            }
+
+            // Build query for participant tracking
+            $query = MiningEvent::query();
+
+            if ($eventId = $this->option('event_id')) {
+                $query->where('id', $eventId);
+                $this->info("Updating event ID: {$eventId}");
+            } elseif ($this->option('active')) {
+                $query->where('status', 'active')
+                    ->where('start_time', '<=', Carbon::now())
+                    ->where(function ($q) {
+                        $q->whereNull('end_time')
+                            ->orWhere('end_time', '>=', Carbon::now());
+                    });
+                $this->info("Updating active events");
+            } else {
+                // Update events from last 30 days by default
+                $query->where('created_at', '>=', Carbon::now()->subDays(30));
+                $this->info("Updating events from last 30 days");
+            }
+
+            $events = $query->get();
+
+            if ($events->isEmpty()) {
+                $this->warn('No events found to update');
+                return Command::SUCCESS;
+            }
+
+            $this->info("Found {$events->count()} events to update");
+
+            $updated = 0;
+            $errors = 0;
+
+            $aggregator = app(EventMiningAggregator::class);
+
+            foreach ($events as $event) {
+                try {
+                    $this->line("Processing event: {$event->name}");
+
+                    // For active events, re-run the aggregator so any mining
+                    // activity that happened since the last tick gets materialised
+                    // into event_mining_records. Completed events are frozen —
+                    // their records don't change unless scope is edited (handled
+                    // by the MiningEvent saved() hook).
+                    if ($event->status === 'active') {
+                        $agg = $aggregator->aggregate($event);
+                        if (($agg['created'] ?? 0) > 0) {
+                            $this->line("  → aggregated {$agg['created']} new record(s)"
+                                . (($agg['updated'] ?? 0) > 0 ? ", refreshed {$agg['updated']}" : ''));
+                        }
+                    }
+
+                    // Roll event_mining_records into event_participants and
+                    // event aggregate counters.
+                    $result = $this->eventService->updateEventTracking($event);
+
+                    $participants = ($result['new_participants'] ?? 0) + ($result['updated_participants'] ?? 0);
+                    $this->info("Updated event '{$event->name}': {$participants} participants tracked");
+                    $updated++;
+
+                } catch (\Exception $e) {
+                    $this->error("Error updating event '{$event->name}': {$e->getMessage()}");
+                    $errors++;
+                }
+            }
+
+            $this->info("Event update complete!");
+            $this->info("Updated: {$updated} events");
+            if ($errors > 0) {
+                $this->warn("Errors: {$errors}");
+            }
+
+            return Command::SUCCESS;
+        } finally {
+            $lock->release();
+        }
     }
 }
