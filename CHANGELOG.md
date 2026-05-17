@@ -2,6 +2,34 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [2.0.1] — 2026-05-17 — Discord Role Picker
+
+> **Mental model:** Configuring per-notification-type Discord role pings is now a one-click pick instead of a 17-trips-to-Discord-Developer-Mode marathon. Everything else is unchanged from v2.0.0.
+
+### 🎉 Headline feature
+
+- **Inline Discord role picker on every per-type role-id input.** Each of the 17 notification types with `has_role_ping: true` (tax / event / moon / theft / report families) now has a "Pick" button next to its Discord Role ID input. Click it → an inline list of every Discord role known to your SeAT install slides down. Pick one → the Discord snowflake fills the input → done. No more "enable Developer Mode in Discord, right-click role, Copy ID, paste here, repeat × 17".
+
+### 🔄 How it works
+
+- **Detects all installed providers via table presence** (not `class_exists`): `discord_roles` (SeAT Broadcast), `seat_connector_sets` (warlof/seat-connector + warlof/seat-discord-connector), legacy `warlof_discord_connector_roles`. Any combination is supported and the role lists are merged + deduped by Discord snowflake.
+- **One AJAX fetch per page load**, shared cache across all 17 pickers. Opening the second/third/...17th picker after the first is instant.
+- **Multi-instance design** — each picker has its own `data-picker-id` + `data-input-id` so the same JS handler routes correctly without per-type code.
+- **Black-text badges** with 7:1 contrast (vs 3:1 white-on-bright) — source labels stay readable on the bright accent colors that identify each provider.
+- **Picker buttons render conditionally** on detected providers. Installs with no Discord plugin keep the existing plain text input as the always-functional fallback.
+
+### ⚠️ Compatibility
+
+- **No data changes.** Existing role IDs are preserved. The picker just provides a faster way to populate the existing `discord_role_id` column on `WebhookConfiguration` (validated against `^\d{17,20}$` as before).
+- **No schema changes, no migrations.**
+- **Zero impact on the rest of the plugin** — tax calculation, extraction tracking, theft detection, jackpot detection, pricing integration all unchanged.
+
+### 🔗 Related work
+
+The same pattern shipped in Structure Manager v2.0.0 (commits `0a12a9c` webhook modal, `7c39a84` Events tab). Pattern documented in shared memory: `feedback_plugin_role_picker_pattern.md`. Future work will consolidate `DiscordRoleResolver` into Manager Core (`\ManagerCore\Services\DiscordRoleResolver`) exposed via PluginBridge capability `discord.listRoles` — both SM and MM will then import the canonical resolver instead of carrying per-plugin copies.
+
+---
+
 ## [2.0.0] — 2026-05-03 — The Ecosystem Era
 
 > **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.2 install upgrades cleanly without changing a thing.
