@@ -723,6 +723,12 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::get('/notifications/roles', [
+            'as' => 'mining-manager.settings.notifications.roles',
+            'uses' => 'SettingsController@listDiscordRoles',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/reset', [
             'as' => 'mining-manager.settings.reset',
             'uses' => 'SettingsController@reset',

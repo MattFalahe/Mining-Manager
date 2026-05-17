@@ -241,6 +241,8 @@
                             'seatConnectorAvailable' => $seatConnectorAvailable ?? false,
                             'webhooks' => $webhooks ?? collect(),
                             'settings' => $settings ?? [],
+                            'roleProviderAvailable' => $roleProviderAvailable ?? false,
+                            'roleProviderLabel' => $roleProviderLabel ?? 'Manual input only',
                         ])
                     </div>
 

@@ -332,12 +332,44 @@
                                                     <i class="fas fa-at text-info"></i> Ping Role
                                                 </label>
                                             </div>
-                                            <input type="text" class="form-control form-control-sm role-id-input"
-                                                   id="type_{{ $typeKey }}_role_id" name="type_{{ $typeKey }}_role_id"
-                                                   value="{{ $roleId }}"
-                                                   placeholder="Discord Role ID"
-                                                   style="max-width: 220px; {{ !$pingRole ? 'opacity: 0.4;' : '' }}">
+                                            <div style="display:flex; gap:6px; align-items:stretch; flex:1;">
+                                                <input type="text" class="form-control form-control-sm role-id-input"
+                                                       id="type_{{ $typeKey }}_role_id" name="type_{{ $typeKey }}_role_id"
+                                                       value="{{ $roleId }}"
+                                                       placeholder="Discord Role ID"
+                                                       style="max-width: 220px; {{ !$pingRole ? 'opacity: 0.4;' : '' }}">
+                                                @if($roleProviderAvailable ?? false)
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-secondary js-toggle-inline-role-picker"
+                                                            data-picker-id="inlineRolePicker_{{ $typeKey }}"
+                                                            data-input-id="type_{{ $typeKey }}_role_id"
+                                                            title="Pick from {{ $roleProviderLabel ?? 'Discord' }}"
+                                                            style="white-space:nowrap; {{ !$pingRole ? 'opacity: 0.4;' : '' }}">
+                                                        <i class="fas fa-tag"></i> Pick
+                                                    </button>
+                                                @endif
+                                            </div>
                                         </div>
+
+                                        {{-- Inline role picker for this notification type. Hidden by default,
+                                             toggles on the Pick button. Pattern documented in memory:
+                                             feedback_plugin_role_picker_pattern.md. One picker div per type
+                                             keeps the JS handler dumb (data attributes route the click to
+                                             the right input + picker). AJAX-loaded role list cached across
+                                             ALL pickers on the page, so opening any of them after the first
+                                             is instant. --}}
+                                        @if($roleProviderAvailable ?? false)
+                                            <div id="inlineRolePicker_{{ $typeKey }}" class="inline-role-picker"
+                                                 style="display:none; margin-top:8px; padding:10px; background:#1e222b;
+                                                        border:1px solid #454d55; border-radius:4px; max-height:340px;
+                                                        overflow-y:auto;">
+                                                <div class="inline-role-picker-body">
+                                                    <div style="text-align:center; color:#8b95a5; padding:0.8rem;">
+                                                        <i class="fas fa-spinner fa-spin"></i> Loading roles...
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endif
                                     @endif
 
                                     {{-- User Ping (tax types only) --}}
@@ -611,13 +643,186 @@ $(document).ready(function() {
         }
     });
 
-    // Role ping toggle enables/disables the role ID input
+    // Role ping toggle enables/disables the role ID input + picker button
     $('.role-ping-toggle').on('change', function() {
         const type = $(this).data('type');
         const input = document.getElementById('type_' + type + '_role_id');
         if (input) {
             input.style.opacity = this.checked ? '1' : '0.4';
         }
+        // Mirror the picker button opacity so the whole row dims/brightens
+        // together. Each type has at most one .js-toggle-inline-role-picker
+        // button with data-input-id matching this type's role_id input.
+        const $btn = $('.js-toggle-inline-role-picker[data-input-id="type_' + type + '_role_id"]');
+        if ($btn.length) {
+            $btn[0].style.opacity = this.checked ? '1' : '0.4';
+        }
+    });
+
+    // ============================================================
+    // INLINE DISCORD ROLE PICKER — multi-instance (one per type with
+    // has_role_ping=true). Pattern documented in memory:
+    // feedback_plugin_role_picker_pattern.md
+    //
+    // Each picker button carries data-picker-id (the inline picker div
+    // to toggle) and data-input-id (the role-id input to receive the
+    // mention). One handler covers all 17 type pickers. The role list
+    // is AJAX-fetched once and cached in inlineRolesCache, then rendered
+    // into each picker's body on first open. Subsequent opens reuse the
+    // cache instantly.
+    //
+    // The picker UI deliberately mirrors Structure Manager's webhook
+    // modal picker so SM and MM operators get the same experience.
+    // ============================================================
+    let inlineRolesCache = null;
+    const inlineRolesLoadedFor = {};
+
+    @if($roleProviderAvailable ?? false)
+    const ROLE_LIST_URL = '{{ route('mining-manager.settings.notifications.roles') }}';
+    @endif
+
+    $(document).on('click', '.js-toggle-inline-role-picker', function () {
+        const pickerId = $(this).data('picker-id');
+        const inputId  = $(this).data('input-id');
+        const $picker  = $('#' + pickerId);
+        if (!$picker.length) return;
+
+        if ($picker.is(':visible')) { $picker.slideUp(150); return; }
+
+        // Stash target input so the .js-role-pick-btn handler writes to
+        // the right field. Same activeRoleTarget mechanism as SM.
+        window.activeRoleTarget = $('#' + inputId);
+
+        $picker.slideDown(150);
+
+        if (inlineRolesLoadedFor[pickerId]) return;
+        if (inlineRolesCache) {
+            renderInlineRolePickerBody($picker.find('.inline-role-picker-body'), inlineRolesCache, pickerId);
+            inlineRolesLoadedFor[pickerId] = true;
+            return;
+        }
+        loadInlineRolePicker(pickerId);
+    });
+
+    function loadInlineRolePicker(pickerId) {
+        @if($roleProviderAvailable ?? false)
+        const $picker = $('#' + pickerId);
+        const $body   = $picker.find('.inline-role-picker-body');
+        $body.html('<div style="text-align:center; color:#8b95a5; padding:0.8rem;"><i class="fas fa-spinner fa-spin"></i> Loading roles...</div>');
+
+        $.getJSON(ROLE_LIST_URL, function (res) {
+            inlineRolesCache = res;
+            renderInlineRolePickerBody($body, res, pickerId);
+            inlineRolesLoadedFor[pickerId] = true;
+        }).fail(function () {
+            $body.html('<div class="alert alert-danger mb-0" style="font-size:0.85em;">Failed to load roles from Discord provider(s).</div>');
+        });
+        @endif
+    }
+
+    function renderInlineRolePickerBody($body, res, pickerId) {
+        if (!res.roles || res.roles.length === 0) {
+            $body.html(`
+                <div class="alert alert-warning mb-0" style="font-size:0.85em;">
+                    <strong>No roles returned from ${res.label || 'provider'}.</strong><br>
+                    Enter the mention manually as <code>&lt;@&amp;ROLE_ID&gt;</code> or raw role ID.
+                </div>`);
+            return;
+        }
+
+        const perSource = {};
+        res.roles.forEach(function (r) { perSource[r.source] = (perSource[r.source] || 0) + 1; });
+        const sourceLabels = {
+            'discord-roles-table':  'SeAT Broadcast',
+            'seat-connector':       'SeAT Connector',
+            'warlof-discord':       'Warlof (legacy)',
+        };
+        const sourceColors = {
+            'discord-roles-table':  '#28a745',
+            'seat-connector':       '#3498db',
+            'warlof-discord':       '#95a5a6',
+        };
+        const badgeStyle = 'color:#000; font-weight:700; font-size:0.7rem; padding:2px 6px;';
+
+        const filterId = pickerId + '-filter';
+        const sourceFilterId = pickerId + '-source-filter';
+        const listId = pickerId + '-list';
+
+        let html = '';
+        html += '<div style="font-size:0.78rem; color:#8b95a5; margin-bottom:0.5rem;">';
+        html += `${res.roles.length} unique role(s) from ${Object.keys(perSource).length} source(s): `;
+        html += Object.keys(perSource).map(function (s) {
+            return `<span class="badge" style="background:${sourceColors[s]||'#666'}; ${badgeStyle} margin-left:3px;">${sourceLabels[s]||s}: ${perSource[s]}</span>`;
+        }).join(' ');
+        html += '</div>';
+
+        html += '<div style="display:flex; gap:0.4rem; margin-bottom:0.6rem;">';
+        html += `<input type="text" id="${filterId}" class="form-control form-control-sm" placeholder="Search roles..." style="background:#1e222b; border:1px solid #454d55; color:#fff; flex:1;">`;
+        if (Object.keys(perSource).length > 1) {
+            html += `<select id="${sourceFilterId}" class="form-control form-control-sm" style="background:#1e222b; border:1px solid #454d55; color:#fff; max-width:160px;">`;
+            html += '<option value="">All sources</option>';
+            Object.keys(perSource).forEach(function (s) {
+                html += `<option value="${s}">${sourceLabels[s]||s}</option>`;
+            });
+            html += '</select>';
+        }
+        html += '</div>';
+
+        html += `<div id="${listId}" style="display:flex; flex-wrap:wrap; gap:4px;">`;
+        res.roles.forEach(function (r) {
+            const hex = r.color && /^#[0-9a-f]{6}$/i.test(r.color) ? r.color : '';
+            const dot = hex
+                ? `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${hex}; margin-right:6px; vertical-align:middle;"></span>`
+                : '';
+            // MM stores raw Discord IDs (not <@&ID> format). When a role is
+            // picked we write JUST the snowflake to the input, not the
+            // mention format — matches MM's existing column semantics +
+            // regex validation (^\d{17,20}$).
+            const primarySrc = r.source;
+            const alsoIn = (r.sources || []).filter(s => s !== primarySrc);
+            const primaryBadge = `<span class="badge" style="background:${sourceColors[primarySrc]||'#666'}; color:#000; font-weight:700; font-size:0.65rem; padding:2px 6px; margin-left:4px; vertical-align:middle;">${sourceLabels[primarySrc]||primarySrc}</span>`;
+            const extraBadge = alsoIn.length > 0
+                ? `<span class="badge badge-secondary" style="color:#fff; font-weight:600; font-size:0.65rem; padding:2px 6px; margin-left:2px;" title="Also in: ${alsoIn.map(s => sourceLabels[s]||s).join(', ')}">+${alsoIn.length}</span>`
+                : '';
+            html += `<button type="button" class="btn btn-sm btn-outline-primary js-mm-role-pick-btn"
+                data-role-id="${r.id}"
+                data-role-name="${r.name}"
+                data-source="${primarySrc}"
+                style="text-align:left;">
+                ${dot}${r.name}
+                <small style="opacity:0.55; margin-left:4px;">#${r.id.slice(-6)}</small>
+                ${primaryBadge}${extraBadge}
+            </button>`;
+        });
+        html += '</div>';
+
+        $body.html(html);
+
+        const applyFilter = function () {
+            const textV = ($('#' + filterId).val() || '').toLowerCase();
+            const srcV  = $('#' + sourceFilterId).val() || '';
+            $('#' + listId + ' .js-mm-role-pick-btn').each(function () {
+                const n = ($(this).data('role-name') + ' ' + $(this).data('role-id')).toLowerCase();
+                const s = $(this).data('source');
+                $(this).toggle(n.includes(textV) && (!srcV || s === srcV));
+            });
+        };
+        $('#' + filterId).on('input', applyFilter);
+        $('#' + sourceFilterId).on('change', applyFilter);
+    }
+
+    // Role-pick handler — writes the raw Discord snowflake to the active
+    // target input (MM stores raw IDs, validated via regex ^\d{17,20}$,
+    // unlike SM which stores the full <@&ID> mention format). Then
+    // slide-up any visible inline picker. Class is .js-mm-role-pick-btn
+    // (mm-prefixed) so it doesn't collide with any SM picker buttons
+    // that might be on the same SeAT page if both plugins are open.
+    $(document).on('click', '.js-mm-role-pick-btn', function () {
+        const roleId = $(this).data('role-id');
+        if (window.activeRoleTarget) {
+            window.activeRoleTarget.val(roleId).trigger('blur');
+        }
+        $('.inline-role-picker:visible').slideUp(150);
     });
 });
 

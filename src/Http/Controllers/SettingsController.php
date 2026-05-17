@@ -5,6 +5,7 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\DiscordRoleResolver;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -149,6 +150,17 @@ class SettingsController extends Controller
         $allTokenCharacters = $this->settingsService->getAllTokenCharacters();
         $seatConnectorAvailable = Schema::hasTable('seat_connector_users');
 
+        // Discord role provider detection — used by the per-notification-type
+        // role-id picker buttons in the notifications tab. When at least one
+        // provider is detected (SeAT Broadcast / SeAT Connector / legacy
+        // warlof), each role-id input gets a "Pick from Discord" button +
+        // collapsible inline picker. Pattern documented in memory:
+        // feedback_plugin_role_picker_pattern.md. Source-of-truth implementation:
+        // structure-manager/src/Services/DiscordRoleResolver.php (copied here
+        // verbatim with namespace change).
+        $roleProviderAvailable = DiscordRoleResolver::isAvailable();
+        $roleProviderLabel     = DiscordRoleResolver::providerLabel();
+
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
@@ -160,8 +172,30 @@ class SettingsController extends Controller
             'walletDivisions',
             'mailScopeCharacters',
             'allTokenCharacters',
-            'seatConnectorAvailable'
+            'seatConnectorAvailable',
+            'roleProviderAvailable',
+            'roleProviderLabel'
         ));
+    }
+
+    /**
+     * AJAX endpoint for the inline Discord role picker.
+     *
+     * Returns the merged + deduped role list from all detected providers
+     * (SeAT Broadcast curated, SeAT Connector synced, legacy warlof). The
+     * notifications tab JS calls this once per page load and caches the
+     * response across all per-type pickers — so opening any of the 17
+     * role-id pickers on the page incurs at most one round-trip total.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function listDiscordRoles()
+    {
+        return response()->json([
+            'available' => DiscordRoleResolver::isAvailable(),
+            'label'     => DiscordRoleResolver::providerLabel(),
+            'roles'     => DiscordRoleResolver::listRoles(),
+        ]);
     }
 
     /**
