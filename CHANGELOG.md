@@ -32,7 +32,7 @@ The same pattern shipped in Structure Manager v2.0.0 (commits `0a12a9c` webhook 
 
 ## [2.0.0] — 2026-05-03 — The Ecosystem Era
 
-> **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.2 install upgrades cleanly without changing a thing.
+> **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.3 install upgrades cleanly without changing a thing.
 
 ### 🎉 Headline features
 
