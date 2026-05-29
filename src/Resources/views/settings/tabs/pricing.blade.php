@@ -144,86 +144,120 @@
                 </div>
             </div>
 
-            {{-- Manager Core Configuration --}}
+            {{-- Manager Core configuration — centralized in MC, not MM.
+
+                 The market + price-type choice for Mining Manager lives in
+                 MC's Pricing Preferences (one row per consumer plugin).
+                 Showing a duplicate market dropdown here would lie: MC's
+                 admin-overridden row always wins. Instead we surface a
+                 read-only status readout of what MC currently has set for
+                 MM + a deep-link button into MC's Pricing Preferences page.
+
+                 The previous "Price Variant" dropdown (min/max/avg/median/
+                 percentile) is gone — variant=min is the only one that
+                 makes sense for tax + payout calculation (lowest sell =
+                 actual market price for an instant buy). Hard-coded to
+                 'min' in CachePriceDataCommand. --}}
             <div id="manager-core-config" style="display: none;" class="mt-4 p-3 bg-secondary rounded border border-info">
                 <h6 class="text-info mb-3">
                     <i class="fas fa-cubes"></i> Manager Core Configuration
                 </h6>
 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="manager_core_market">
-                                <i class="fas fa-map-marker-alt"></i>
-                                Market
-                            </label>
-                            <select class="form-control @error('manager_core_market') is-invalid @enderror"
-                                    id="manager_core_market"
-                                    name="manager_core_market">
-                                <option value="jita" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'jita') || !isset($settings['pricing']['manager_core_market']) ? 'selected' : '' }}>
-                                    Jita
-                                </option>
-                                <option value="amarr" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'amarr') ? 'selected' : '' }}>
-                                    Amarr
-                                </option>
-                                <option value="dodixie" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'dodixie') ? 'selected' : '' }}>
-                                    Dodixie
-                                </option>
-                                <option value="hek" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'hek') ? 'selected' : '' }}>
-                                    Hek
-                                </option>
-                                <option value="rens" {{ (isset($settings['pricing']['manager_core_market']) && $settings['pricing']['manager_core_market'] == 'rens') ? 'selected' : '' }}>
-                                    Rens
-                                </option>
-                            </select>
-                            @error('manager_core_market')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                            <small class="form-text text-muted">
-                                Which market hub to read prices from (must be enabled in Manager Core)
-                            </small>
+                @php
+                    // Pull MM's current preference from MC via the bridge.
+                    // Returns null if MC isn't loaded or hasn't been seeded
+                    // with a row yet — first save will seed it.
+                    $mcPref = null;
+                    $mcPrefsUrl = null;
+                    try {
+                        if (class_exists(\ManagerCore\Services\PluginBridge::class)) {
+                            $bridge = app(\ManagerCore\Services\PluginBridge::class);
+                            $mcPref = $bridge->call('ManagerCore', 'pricing.getPreferenceForPlugin', 'mining-manager');
+                            $mcPrefsUrl = $bridge->call('ManagerCore', 'pricing.preferencesUrl');
+                        }
+                    } catch (\Throwable $e) {
+                        // Bridge call failed (older MC version, etc.) — fall
+                        // through to the "not configured yet" panel
+                    }
+                @endphp
+
+                @if($mcPref)
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label class="text-muted small mb-1">
+                                    <i class="fas fa-map-marker-alt"></i> Market
+                                </label>
+                                <div class="font-weight-bold">{{ $mcPref['market_name'] }}</div>
+                                <div class="text-muted small">key: <code>{{ $mcPref['market'] }}</code></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label class="text-muted small mb-1">
+                                    <i class="fas fa-chart-line"></i> Price Type
+                                </label>
+                                <div class="font-weight-bold">
+                                    @if($mcPref['price_type'] === 'sell')
+                                        Sell orders (lowest sell)
+                                    @elseif($mcPref['price_type'] === 'buy')
+                                        Buy orders (highest buy)
+                                    @else
+                                        Average (mean of buy + sell)
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label class="text-muted small mb-1">
+                                    <i class="fas fa-database"></i> Provider routing
+                                </label>
+                                <div class="font-weight-bold">{{ $mcPref['provider_label'] }}</div>
+                                <div class="text-muted small">
+                                    @if(!empty($mcPref['provider_override']))
+                                        {{-- Per-plugin provider override active —
+                                             MC bypasses its cache and live-fetches
+                                             via this provider on every MM read. --}}
+                                        <span class="badge badge-info" title="MC routes MM's reads through this provider regardless of what the market is configured for">per-plugin override</span>
+                                    @elseif(!empty($mcPref['market_provider']))
+                                        <span class="badge badge-secondary" title="Following the market's configured provider">market default ({{ $mcPref['market_provider'] }})</span>
+                                    @endif
+                                    @if($mcPref['admin_overridden'])
+                                        <span class="badge badge-warning">admin-overridden</span>
+                                    @else
+                                        <span class="badge badge-secondary">plugin default</span>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     </div>
+                @else
+                    <div class="alert alert-secondary mb-3">
+                        <i class="fas fa-info-circle"></i>
+                        Mining Manager hasn't registered a preference with Manager Core yet — click <strong>Save Pricing Settings</strong> below to seed it (defaults to Jita + Sell orders), then configure further in Manager Core.
+                    </div>
+                @endif
 
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="manager_core_variant">
-                                <i class="fas fa-calculator"></i>
-                                Price Variant
-                            </label>
-                            <select class="form-control @error('manager_core_variant') is-invalid @enderror"
-                                    id="manager_core_variant"
-                                    name="manager_core_variant">
-                                <option value="min" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'min') || !isset($settings['pricing']['manager_core_variant']) ? 'selected' : '' }}>
-                                    Minimum
-                                </option>
-                                <option value="max" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'max') ? 'selected' : '' }}>
-                                    Maximum
-                                </option>
-                                <option value="avg" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'avg') ? 'selected' : '' }}>
-                                    Average (Weighted)
-                                </option>
-                                <option value="median" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'median') ? 'selected' : '' }}>
-                                    Median
-                                </option>
-                                <option value="percentile" {{ (isset($settings['pricing']['manager_core_variant']) && $settings['pricing']['manager_core_variant'] == 'percentile') ? 'selected' : '' }}>
-                                    Percentile (5th)
-                                </option>
-                            </select>
-                            @error('manager_core_variant')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                            <small class="form-text text-muted">
-                                Which price statistic to use for tax and value calculations
-                            </small>
-                        </div>
+                <div class="text-center mt-2">
+                    @if($mcPrefsUrl)
+                        <a href="{{ $mcPrefsUrl }}" class="btn btn-info btn-lg">
+                            <i class="fas fa-external-link-alt"></i> Configure pricing in Manager Core
+                        </a>
+                    @else
+                        <button type="button" class="btn btn-secondary btn-lg" disabled>
+                            <i class="fas fa-external-link-alt"></i> Manager Core preferences URL unavailable
+                        </button>
+                    @endif
+                    <div class="text-muted small mt-2">
+                        Open <strong>Manager Core → Pricing Preferences</strong> to change market or price type for Mining Manager. Saving in MC takes effect immediately.
                     </div>
                 </div>
 
+                <hr class="my-3">
                 <div class="alert alert-info mb-0">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Auto-Subscribe:</strong> When you save with Manager Core selected, all mining-related type IDs (ores, minerals, moon materials, ice, gas) will be automatically subscribed to Manager Core's price tracking.
-                    Prices are updated on Manager Core's schedule and shared across all plugins.
+                    <strong>How Manager Core integration works:</strong> Mining Manager subscribes all mining-related type IDs (ores, minerals, moon materials, ice, gas) to MC at boot. MC's per-market provider routing decides where prices come from (Fuzzwork for hubs by default; Goonpraisal for the 7 pre-seeded nullsec citadels). The price refresh runs on MC's 4-hour cron — shared across every plugin that subscribes.
                 </div>
             </div>
 
@@ -455,8 +489,11 @@ $(document).ready(function() {
             $('#manager-core-config').slideUp(300);
         }
 
-        // Hide Price Type when Janice is selected (Janice uses its own Price Method)
-        if (provider === 'janice') {
+        // Hide Price Type when Janice OR Manager Core is selected.
+        //  - Janice uses its own Price Method dropdown
+        //  - Manager Core has its own price_type in MC's Pricing Preferences;
+        //    surfacing a duplicate here would lie (MC's value always wins)
+        if (provider === 'janice' || provider === 'manager-core') {
             $('#price-type-group').slideUp(300);
         } else {
             $('#price-type-group').slideDown(300);

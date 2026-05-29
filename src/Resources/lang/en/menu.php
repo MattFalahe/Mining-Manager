@@ -36,7 +36,8 @@ return [
     'extraction_calendar' => 'Extraction Calendar',
     'moon_compositions' => 'Moon Compositions',
     'moon_value_calculator' => 'Extraction Simulator',
-    
+    'metenox_cargo' => 'Metenox Cargo',
+
     // Analytics
     'analytics' => 'Analytics',
     'analytics_overview' => 'Overview',

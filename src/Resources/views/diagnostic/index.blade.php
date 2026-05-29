@@ -4,9 +4,46 @@
 @section('page_header', 'Mining Manager - Diagnostic Tools')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
 <style>
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
+
+/* === Per-tab intro box ===========================================
+   Required on every diagnostic tab per
+   feedback_plugin_diagnostic_standard.md. The diagnostic page is
+   admin-only and intentionally NOT linked from Help & Documentation,
+   so this box is where operators learn each tab's purpose.
+
+   Template: three short paragraphs labelled "What this tab does",
+   "When to use", and (optional) "Heads up". Indigo tint + 3px left
+   border to read distinctly from the rest of the tab chrome. */
+.mining-manager-wrapper.diagnostic-page .diag-tab-intro {
+    background: rgba(99, 102, 241, 0.08) !important;
+    border-left: 3px solid #6366f1 !important;
+    padding: 12px 16px !important;
+    border-radius: 0 6px 6px 0 !important;
+    margin: 0 0 20px !important;
+    color: #d1d5db !important;
+    font-size: 0.88rem !important;
+}
+.mining-manager-wrapper.diagnostic-page .diag-tab-intro p {
+    margin: 0 0 6px !important;
+    color: #d1d5db !important;
+}
+.mining-manager-wrapper.diagnostic-page .diag-tab-intro p:last-child {
+    margin-bottom: 0 !important;
+}
+.mining-manager-wrapper.diagnostic-page .diag-tab-intro strong {
+    color: #fff !important;
+}
+.mining-manager-wrapper.diagnostic-page .diag-tab-intro code {
+    background: rgba(0, 0, 0, 0.25) !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    color: #fbbf24 !important;
+    font-size: 0.85em !important;
+}
+
 .mining-manager-wrapper.diagnostic-page .warning-box {
     background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.05) 100%) !important;
     border-left: 4px solid #ffc107 !important;
@@ -218,24 +255,15 @@
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
+            {{-- Tier 1 — Universal (per feedback_plugin_diagnostic_standard.md) --}}
             <li class="nav-item">
-                <a class="nav-link active" href="#master-test" data-toggle="tab">
+                <a class="nav-link active" href="#health-checks" data-toggle="tab" onclick="loadSystemStatus()">
+                    <i class="fas fa-heartbeat"></i> Health Checks
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#master-test" data-toggle="tab">
                     <i class="fas fa-rocket"></i> Master Test
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#test-data" data-toggle="tab">
-                    <i class="fas fa-database"></i> Test Data Generation
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#price-provider" data-toggle="tab">
-                    <i class="fas fa-dollar-sign"></i> Price Provider Testing
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#cache-health" data-toggle="tab" onclick="loadCacheHealth()">
-                    <i class="fas fa-heartbeat"></i> Price Cache Health
                 </a>
             </li>
             <li class="nav-item">
@@ -249,38 +277,30 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#tax-trace" data-toggle="tab">
-                    <i class="fas fa-calculator"></i> Tax Trace
-                </a>
-            </li>
-            <li class="nav-item">
                 <a class="nav-link" href="#data-integrity" data-toggle="tab">
                     <i class="fas fa-shield-alt"></i> Data Integrity
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#valuation-test" data-toggle="tab">
-                    <i class="fas fa-search-dollar"></i> Valuation Test
+                <a class="nav-link" href="#tax-trace" data-toggle="tab">
+                    <i class="fas fa-calculator"></i> Tax Trace
                 </a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#system-status" data-toggle="tab" onclick="loadSystemStatus()">
-                    <i class="fas fa-heartbeat"></i> System Status
-                </a>
-            </li>
+            {{-- Tier 2 — Notification surface --}}
             <li class="nav-item">
                 <a class="nav-link" href="#notification-testing" data-toggle="tab">
                     <i class="fas fa-bell"></i> Notification Testing
                 </a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link" href="#moon-diagnostic" data-toggle="tab">
-                    <i class="fas fa-moon"></i> Moon Extractions
-                </a>
-            </li>
+            {{-- Plugin-specific traces + helpers --}}
             <li class="nav-item">
                 <a class="nav-link" href="#tax-pipeline" data-toggle="tab">
                     <i class="fas fa-file-invoice-dollar"></i> Tax Pipeline
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#moon-diagnostic" data-toggle="tab">
+                    <i class="fas fa-moon"></i> Moon Extractions
                 </a>
             </li>
             <li class="nav-item">
@@ -295,7 +315,29 @@
             </li>
             <li class="nav-item">
                 <a class="nav-link" href="#analytics-diagnostic" data-toggle="tab">
-                    <i class="fas fa-chart-bar"></i> Analytics & Reports
+                    <i class="fas fa-chart-bar"></i> Analytics &amp; Reports
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#price-provider" data-toggle="tab">
+                    <i class="fas fa-dollar-sign"></i> Price Provider
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#cache-health" data-toggle="tab" onclick="loadCacheHealth()">
+                    <i class="fas fa-database"></i> Price Cache Health
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#valuation-test" data-toggle="tab">
+                    <i class="fas fa-search-dollar"></i> Valuation Test
+                </a>
+            </li>
+            {{-- Tier 3 — DEV-only --}}
+            <li class="nav-item">
+                <a class="nav-link" href="#test-data" data-toggle="tab">
+                    <i class="fas fa-flask"></i> Test Data
+                    <span class="badge badge-danger ml-1" style="font-size: 0.6em;">DEV</span>
                 </a>
             </li>
         </ul>
@@ -308,7 +350,27 @@
              Exercises every major area of the plugin and shows a
              pass/warn/fail/skip table grouped by category.
              ========================================================== --}}
-        <div class="tab-pane active" id="master-test">
+        <div class="tab-pane" id="master-test">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> One-click read-only smoke chain. Runs
+                    ~26 checks across schema integrity, settings consistency, cross-plugin
+                    integration (MC pricing + SM event subscription), pricing path, notification
+                    surface coverage, lifecycle, tax pipeline, and security hardening. Sub-30s
+                    runtime. No writes anywhere.
+                </p>
+                <p>
+                    <strong>When to use:</strong> After a deploy, after upgrading Manager Core
+                    or Structure Manager, after changing webhook routing, or when triaging
+                    "something feels off". Use <code>Show only issues</code> to focus on the
+                    warnings/failures.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Master Test is read-only but the underlying checks
+                    DO query the database and external APIs (MC PricingService, SM availability
+                    probe). Don't fire it in a loop &mdash; once per investigation is plenty.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="alert alert-info">
@@ -790,6 +852,25 @@
 
         <!-- System Validation Tab -->
         <div class="tab-pane" id="system-validation" >
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Verifies the <em>hardcoded</em> parts of
+                    the plugin are still valid. Distinct from Master Test (which checks runtime
+                    state), this surface checks constants and dependencies: hardcoded type IDs
+                    (ore variants, jackpot multipliers, fuel reagents), SDE table presence,
+                    required SeAT version, required Manager Core capability surface.
+                </p>
+                <p>
+                    <strong>When to use:</strong> After CCP renames a type ID, after a SeAT
+                    upgrade that might have dropped columns, or after Manager Core ships a
+                    capability change. Also during initial install troubleshooting.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> System Validation does NOT fire jobs &mdash; it's a
+                    pure read pass. Safe to refresh as often as needed. Failed checks here
+                    usually indicate an upstream issue (SDE/SeAT/MC) rather than MM itself.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -829,6 +910,68 @@
                         </div>
                     </div>
 
+                    {{-- Metenox Cargo Subsystem Validation (v2.0.1) =====================
+                         Server-side rendered — results computed in the index() action
+                         via buildMetenoxCargoValidation(). Read-only health probe
+                         covering SDE deps, migration state, scheduler registration,
+                         and operator settings for the cargo-full subsystem. ============= --}}
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-box-open"></i> Metenox Cargo Subsystem
+                                @if(isset($metenoxValidation['overall']))
+                                    @if($metenoxValidation['overall'] === 'ok')
+                                        <span class="badge badge-success ml-2">Healthy</span>
+                                    @elseif($metenoxValidation['overall'] === 'warn')
+                                        <span class="badge badge-warning ml-2">Warnings</span>
+                                    @else
+                                        <span class="badge badge-danger ml-2">Critical</span>
+                                    @endif
+                                @endif
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">
+                                Verifies the cargo readout + cargo-full notification subsystem
+                                shipped in v2.0.1. Read-only — each check is a single
+                                <code>SELECT</code> or <code>Schema::hasX</code> probe.
+                            </p>
+                            @if(isset($metenoxValidation['summary']))
+                                <div class="alert {{ $metenoxValidation['overall'] === 'ok' ? 'alert-success' : ($metenoxValidation['overall'] === 'warn' ? 'alert-warning' : 'alert-danger') }} py-2 mb-3">
+                                    {{ $metenoxValidation['summary'] }}
+                                </div>
+                            @endif
+                            @if(!empty($metenoxValidation['checks']))
+                                <table class="table table-sm table-dark mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 70px;">Status</th>
+                                            <th>Check</th>
+                                            <th>Detail</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($metenoxValidation['checks'] as $check)
+                                            <tr>
+                                                <td>
+                                                    @if($check['status'] === 'ok')
+                                                        <span class="badge badge-success"><i class="fas fa-check"></i> OK</span>
+                                                    @elseif($check['status'] === 'warn')
+                                                        <span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> WARN</span>
+                                                    @else
+                                                        <span class="badge badge-danger"><i class="fas fa-times"></i> FAIL</span>
+                                                    @endif
+                                                </td>
+                                                <td><strong>{{ $check['label'] }}</strong></td>
+                                                <td class="text-muted" style="font-size: 0.88em;">{{ $check['message'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            @endif
+                        </div>
+                    </div>
+
                     <div class="card card-dark">
                         <div class="card-header">
                             <h3 class="card-title">
@@ -865,6 +1008,27 @@
 
         <!-- Settings Health Tab -->
         <div class="tab-pane" id="settings-health">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> Audits every plugin setting. Shows the
+                    current value, default value, whether it's been changed from default,
+                    whether it's actually respected by the code that should read it, and whether
+                    the value is valid (e.g. webhook URLs parse, tax rates in range). Catches
+                    drift between the Settings UI and the runtime that bit Structure Manager
+                    multiple times.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When a setting toggle "doesn't seem to do
+                    anything", when investigating why a notification didn't fire, or before
+                    upgrading to a new plugin version where setting keys may have changed.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Orphaned setting keys (rows the code no longer
+                    reads) are listed here too. They're safe to leave but can be cleaned up via
+                    Data Integrity. Settings changes you make in the Settings UI are reflected
+                    here on the next tab click.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -890,6 +1054,27 @@
 
         <!-- Tax Trace Tab -->
         <div class="tab-pane" id="tax-trace">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> The most powerful debugging surface.
+                    Takes a single character ID + month, walks the entire tax-calculation
+                    pipeline for that miner, and shows what each step does: raw
+                    <code>mining_ledger</code> rows in scope, daily summary aggregation, ore
+                    composition, applied tax rate(s), event participation and discount math,
+                    final invoice computation, payment matching.
+                </p>
+                <p>
+                    <strong>When to use:</strong> When a specific miner says "my tax is wrong",
+                    or when reconciling a discrepancy between dashboard totals and an invoice.
+                    Picks one row and explains every cent.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Read-only &mdash; the trace does not mutate any
+                    rows. It compares "what the system would calculate now" against "what's
+                    currently stored", so the explanation reflects current settings + tax rates,
+                    not historical ones. For pipeline-level debugging see Tax Pipeline.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -931,6 +1116,26 @@
 
         <!-- Data Integrity Tab -->
         <div class="tab-pane" id="data-integrity">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> DB-level consistency checks across MM's
+                    tables. Looks for orphan rows (FK references to missing parents), stale
+                    dedup-latch rows past their retention window, queue jobs piled up with the
+                    same payload, soft-deleted vs hard-deleted inconsistencies, duplicate
+                    setting keys, and NULL columns where NOT NULL is implied.
+                </p>
+                <p>
+                    <strong>When to use:</strong> Periodically (monthly is plenty), after a
+                    failed migration, or when something looks visibly inconsistent in the UI.
+                    Each issue shows a row count plus a cleanup button where the fix is safe.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> Cleanup buttons here DO mutate the database
+                    &mdash; they're guarded by transactions and only act on rows the check
+                    flagged. Read the issue description before clicking. For diagnostic
+                    investigation without writes, use Tax Trace or Health Checks instead.
+                </p>
+            </div>
             <div class="row">
                 <div class="col-md-12">
                     <div class="card card-dark">
@@ -996,9 +1201,28 @@
         </div>
 
         <!-- System Status Tab -->
-        <div class="tab-pane" id="system-status">
+        <div class="tab-pane active" id="health-checks">
+            <div class="diag-tab-intro">
+                <p>
+                    <strong>What this tab does:</strong> At-a-glance dashboard of the plugin's runtime
+                    state. Loads daily-summary freshness, multi-corp settings sanity, price-cache
+                    freshness, scheduled-job last activity, and per-table row counts. All read-only.
+                    Data is fetched fresh each time you click the tab (no caching).
+                </p>
+                <p>
+                    <strong>When to use:</strong> First place to look daily. If anything here is red or
+                    showing a stale "last run", that's where to start troubleshooting. Pairs with
+                    <code>Master Test</code> (deeper validation) and <code>Data Integrity</code>
+                    (DB-level checks) for a full triage.
+                </p>
+                <p>
+                    <strong>Heads up:</strong> The default landing tab when you open the Diagnostic
+                    page. Lazy-loads on first click of the tab (the <code>loadSystemStatus()</code>
+                    handler), so the initial page render stays fast.
+                </p>
+            </div>
             <div id="system-status-loading" class="text-center py-5">
-                <p class="text-muted"><i class="fas fa-heartbeat"></i> Click the tab to load system status...</p>
+                <p class="text-muted"><i class="fas fa-heartbeat"></i> Loading health checks...</p>
             </div>
             <div id="system-status-content" style="display: none;">
 
@@ -1071,6 +1295,7 @@
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
                                                 <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
+                                                <option value="metenox_cargo_full">📦 Metenox Cargo Bay Full (v2.0.1, yield-stopping)</option>
                                                 <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
                                                 <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
                                             </optgroup>
@@ -2969,6 +3194,10 @@ function renderDataCounts(target, dc) {
         '<tr><td>Price cache entries</td><td>' + (dc.price_cache || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>Moon extractions</td><td>' + (dc.moon_extractions || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>Webhooks</td><td>' + (dc.webhooks || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td colspan="2" class="text-muted small pt-2"><i class="fas fa-box-open"></i> Metenox Cargo (v2.0.1)</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Metenox structures (type 81826)</td><td>' + (dc.metenox_structures || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;MoonMaterialBay asset rows</td><td>' + (dc.metenox_cargo_rows || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Cargo-full alert latches</td><td>' + (dc.metenox_alert_latches || 0).toLocaleString() + '</td></tr>' +
         '</table>'
     );
 }
@@ -4325,6 +4554,13 @@ $(document).ready(function() {
     document.querySelectorAll('input[name="ntSenderMode"]').forEach(function(radio) {
         radio.addEventListener('change', updateNtSenderMode);
     });
+
+    // Default landing tab is now Health Checks — fire the lazy-load eagerly
+    // on first page load. The function itself is idempotent (guarded by
+    // systemStatusLoaded flag), so this matches the click behaviour.
+    if (typeof loadSystemStatus === 'function') {
+        loadSystemStatus();
+    }
 });
 </script>
 @endpush

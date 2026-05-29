@@ -2,9 +2,144 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [2.0.1] — 2026-05-26 — The Ecosystem Era: Polish Pass
+
+> **Mental model:** v2.0.0 opened the Ecosystem Era (Manager Core pricing + Structure Manager threat alerts). **v2.0.1 is the Polish Pass on the same era** — same arc, deeper craft: faster director workflows (role picker, routing map, Metenox cargo readout), cross-plugin publishing (MM joins the EventBus producer side), and per-surface quality lifts (live local-time conversion, jackpot rendering hardened against custom SeAT themes, diagnostic page aligned to the suite-wide standard). Every item is additive. No breaking changes. No new ESI scopes.
+
+### 🎉 Headline features
+
+**Inline Discord Role Picker** — Each of the 17 notification types with `has_role_ping: true` (tax / event / moon / theft / report families) now has a "Pick" button next to its Discord Role ID input. Click it → an inline list of every Discord role known to your SeAT install slides down. Pick one → the snowflake fills the input → done. No more "enable Developer Mode in Discord, right-click role, Copy ID, paste here, repeat × 17". Detects all installed providers via table presence (`discord_roles` for SeAT Broadcast, `seat_connector_sets` for warlof/seat-connector, legacy `warlof_discord_connector_roles`). Any combination is supported; role lists merged + deduped by Discord snowflake. One AJAX fetch per page load, shared cache across all pickers. Picker buttons render conditionally on detected providers — installs with no Discord plugin keep the plain text input as the fallback.
+
+**Moon Extraction EventBus Publishing** — Three new events published via Manager Core's Topics facade, fired exactly once per extraction per lifecycle stage:
+- **`mining.extraction_ready`** — chunk has fractured, 48h fleet-able mining window opens
+- **`mining.extraction_unstable`** — final 2h capital-safety window before expiry (48-50h after fracture)
+- **`mining.extraction_expired`** — window closed, no more mining
+
+Rich payload per event: extraction_id, moon_id/name, structure_id/name, corporation_id (for visibility scoping), full lifecycle timestamps, auto_fractured / is_jackpot flags, estimated_value, effective status, `schema_version=1`, plus a `url` field deeplinking to MM's per-extraction detail page so subscribers can pivot operators straight there. New cron `mining-manager:scan-extraction-events` runs every 5 minutes and uses per-stage latches in the new `moon_extraction_event_log` table to publish only stages not yet latched. Catch-up logic backfills earlier stages if a drill is first observed in `unstable`/`expired`. Standalone-safe via `class_exists` guard on `\ManagerCore\Topics`.
+
+**Notification Routing Map** (Settings → Routing Map) — Read-only delivery snapshot showing every notification type, the webhooks it fires through, the corp scope, and the Discord role that will actually be mentioned at send time. Resolved with the same precedence the dispatcher uses (L1 per-type role / L2 webhook legacy role; tax_invoice hard-blocked from role pings). Summary chips: total / globally enabled / delivering / "enabled but firing nowhere" (warning). Flags `extraction_at_risk` / `extraction_lost` as dormant when Manager Core or Structure Manager is missing. Resolved role pills show the role NAME + colour from the Discord provider, not the raw snowflake ID. Mirrors Structure Manager v2.0.0's pattern.
+
+**Metenox Drill Cargo readout** (Director-only, with admin scope picker) — New sidebar page `Mining Manager → Metenox Cargo` (also as a tab on the Moon Extractions section). One card per Metenox Moon Drill, showing what's currently in the drill's `MoonMaterialBay` — every ore stack with quantity, **m³ volume**, ISK value at current market prices, and percent-of-cargo bars. Per-drill **bay fill indicator** with a color-graded progress bar (green/yellow/red) showing `X / 500,000 m³ · YZ% full`. Header chips: drill count · ISK in cargo · **Avg bay fill % (with critical-bay warning)** · oldest data sample. Drills sorted by ISK descending so the most valuable cargo shows first. ISK valuation uses MM's existing `PriceProviderService` (Manager Core's pricing when configured; Jita / Fuzzwork fallback), batched into one round-trip per page render. Cross-plugin contract: PluginBridge capability `mining.metenox.cargoSnapshot($structureId)` returns `[type_id => quantity]` for any Metenox. Data source is SeAT's existing `corporation_assets` table (~1h ESI cache). No new ESI scopes. **System labels** show solar-system names (joined from `solar_systems.name`) with the numeric id as a small muted suffix; falls back to id-only when the SDE row is missing.
+
+**Scope model:** Directors see only the **Moon Owner Corporation**'s drills (matches the Past Extractions table convention — keeps the page and the `metenox_cargo_full` notification aligned). Operators with `mining-manager.admin` land on the same Moon Owner Corp default but get a **corp scope bar** above the chips: a dropdown of every corp with at least one Metenox plus an "All corps" aggregate option, a one-click "Back to Moon Owner" shortcut whenever they're off the default scope, and a hint that the picker only affects this page (notifications still scope to Moon Owner Corp). If the Moon Owner Corp isn't configured, directors see a warning with a one-click link to Settings; admins fall back automatically to the All corps view so they can still browse drills.
+
+**Metenox Cargo Bay Full notification** — New `metenox_cargo_full` notification type fires when a drill owned by the Moon Owner Corporation crosses the configured fill-% threshold going up (default 85%, operator-configurable 50-99%). Yield-stopping warning specifically — drilling stops when the bay caps out but the structure itself stays safe (different from `extraction_at_risk` which is structure-safety). New cron `mining-manager:scan-metenox-cargo-fill` runs every 5 minutes, scoped to Moon Owner Corp only so the scanner and the page show the same set of drills. Dedup latch in the new `metenox_cargo_alert_state` table prevents repeat fires while still over threshold; resets implicitly when cargo is pulled (fill drops back below threshold). Includes ISK valuation of cargo in the bay + deeplink to the Metenox Cargo page. Standalone — no Manager Core or Structure Manager required (works on bare-MM installs).
+
+Bay capacity is **500,000 m³** for every Metenox, sourced from `dgmTypeAttributes` (attribute 5693, Metenox-only) and cross-verified against EVE Ref's published value at https://everef.net/types/81826 ("Moon Material Output Bay Capacity: 500,000 m³"). At typical Metenox production rates (~1,500-2,000 m³/hour) the bay fills in ~10-14 days, so the default 85% threshold gives operators ~2 days of lead time before the bay caps and drilling stops.
+
+**Local time auto-conversion + live countdowns** — New `eve-time.js` (copy from SeAT Broadcast v2.0.0 canonical) wraps every server-rendered EVE timestamp. Hover any timestamp → tooltip with full local time formatted via `Intl.DateTimeFormat` against the browser-detected IANA timezone (same mechanism Discord / Google Calendar / GitHub use; DST handled automatically). High-priority surfaces (active extractions, upcoming events, calendar, my-events) opt into an inline " · HH:MM local" pill via `data-show-local` for at-a-glance reading. New `eve-countdown.js` (MM original, ~80 LOC) replaces `Carbon::diffForHumans()` text with a 1-second tick loop. Color-graded: green (>1d), yellow (1d-1h), red+bold (<1h), muted grey (past target). Event create / edit forms gained an `Enter time in: [EVE/UTC | My local]` toggle. Live confirmation box shows both interpretations as the operator types. On submit JS rewrites the value to UTC-as-datetime-local so the server receives canonical UTC regardless of mode. DST-safe via the browser's IANA timezone.
+
+**Diagnostic page aligned to the suite-wide standard** — Default landing tab is now **Health Checks** (renamed from "System Status" to match the diagnostic-page standard from `feedback_plugin_diagnostic_standard.md`). Nav reordered: Tier 1 universal tabs first (Health Checks → Master Test → System Validation → Settings Health → Data Integrity → Tax Trace), then Notification Testing, then plugin-specific traces, then DEV-only "Test Data" (with red `DEV` badge). Every Tier 1 tab opens with a `.diag-tab-intro` box following the "What this tab does / When to use / Heads up" template. New CSS primitive `.diag-tab-intro` (indigo tint, 3px left border) styled to match SM's canonical implementation. Default landing eager-loads Health Checks data on page open (idempotent — doesn't double-fire if you click the tab).
+
+**Diagnostic page covers the new Metenox cargo subsystem** — Health Checks lists the scanner cron under a new `metenox` category and reports drill / MoonMaterialBay / alert-latch row counts in Data Counts. System Validation gets a dedicated "Metenox Cargo Subsystem" card with seven server-side health probes (type 81826 in invTypes, migration 000017 schema bits, solar_systems populated, threshold setting in 50-99 range, scanner cron registered, Moon Owner Corp set) plus an overall Healthy/Warnings/Critical pill. Settings Health now iterates the Notifications group so the new `notifications.metenox_cargo_full_threshold_pct` setting surfaces. Data Integrity gets three Metenox-specific checks: stale latch rows (alerted > 60 days ago), orphan latches (referencing structures no longer in corporation_structures), and orphan MoonMaterialBay asset rows (parent missing or wrong type). Notification Testing gains a `metenox_cargo_full` entry in the dropdown with realistic default test data (92.4% fill, 450k m³, 850M ISK) so operators can smoke-test the new alert end-to-end without waiting for a real drill to fill.
+
+### 🎨 Quality of life
+
+**Jackpot rendering hardened against custom SeAT themes** — 18 inline-styled jackpot elements across 6 blades (Report Jackpot button, JACKPOT banners, every "2x multiplier" indicator badge) converted to override-resistant `.mm-jackpot` / `.mm-jackpot-badge` / `.mm-jackpot-alert` CSS classes with `!important` on background/color/border + nested icon colour. Custom SeAT theme installs (`custom-layout.css`) that use `!important` on `.btn-warning` no longer wash the black text out, leaving "yellow text on yellow button" invisible-on-hover renderings. Pattern documented as rule #5 in shared memory `feedback_help_docs_visual_design.md`.
+
+**Help & Documentation refreshed** — New "Time display & timezones" section under Events with live browser-TZ readout. New "Metenox cargo readout" section under Moon Mining covering data source, refresh cadence, permission model, ISK valuation, cross-plugin contract. "What's New in v2.0.1" section on the Overview page so operators upgrading from v2.0.0 land on the feature summary first. Diagnostic page intro paragraphs on every Tier 1 tab.
+
+### 📦 New files
+
+- `src/Services/Events/MoonExtractionEventPublisher.php` — EventBus publisher
+- `src/Console/Commands/ScanMoonExtractionEventsCommand.php` — scanner cron
+- `src/Console/Commands/ScanMetenoxCargoFillCommand.php` — Metenox bay-fill scanner cron
+- `src/database/migrations/2026_01_01_000016_create_moon_extraction_event_log_table.php` — per-extraction dedup latch
+- `src/Database/migrations/2026_01_01_000017_add_metenox_cargo_full_notification.php` — `notify_metenox_cargo_full` column + `metenox_cargo_alert_state` dedup table
+- `src/Services/DiscordRoleResolver.php` — role-source detector + lookup map
+- `src/Services/Moon/MetenoxCargoService.php` — Metenox cargo reader + PluginBridge backing + fill % math
+- `src/Resources/views/moon/metenox-cargo.blade.php` — director-only Metenox page
+- `src/Resources/views/settings/partials/_routing_map.blade.php` — routing-map partial
+- `src/Resources/views/settings/partials/_role_pill.blade.php` — resolved-role pill
+- `src/Resources/assets/js/eve-time.js` — EVE → local tooltip / pill converter
+- `src/Resources/assets/js/eve-countdown.js` — live-tick countdown widget
+
+### ⚙️ Modified surfaces
+
+- `MoonController` — new `metenoxCargo()` action gated on `mining-manager.director`
+- `MiningManagerServiceProvider` — registers `ScanMoonExtractionEventsCommand` + new PluginBridge capability `mining.metenox.cargoSnapshot`
+- `Database/Seeders/ScheduleSeeder` — wires the scanner cron (firstOrCreate)
+- `Http/routes.php` — `/mining-manager/moon/metenox-cargo` placed before the `/{id}` catch-all
+- `Config/Menu/package.sidebar.php` + `Resources/lang/en/menu.php` — Metenox Cargo sidebar entry
+- `Resources/views/settings/{sidebar,index}.blade.php` — Routing Map tab
+- `Resources/views/diagnostic/index.blade.php` — Health Checks renamed + default + 6 Tier-1 intro boxes
+- ~10 events/* and moon/* blades — `.eve-time` + `.eve-countdown` wrap on every absolute time + live countdown surface
+- `Resources/views/moon/{show,active,extractions,index}.blade.php` + `analytics/partials/moon-extraction.blade.php` + `settings/tabs/webhooks.blade.php` — 18 inline jackpot styles converted to `.mm-jackpot*` classes
+- `Resources/views/help/index.blade.php` — three new sections (What's New, Time display, Metenox cargo)
+- `Resources/assets/css/mining-manager-dashboard.css` — `.mm-jackpot*` + `.eve-countdown-*` + `.eve-time-local` + `.diag-tab-intro` primitives
+
+### 🎯 Manager Core pricing centralization (added 2026-05-28)
+
+Late addition to v2.0.1 closing the **"MC config lives in two places"** gap that v2.0.0 left behind. Single source of truth for which market + price type Mining Manager reads from is now Manager Core's `manager_core_pricing_preferences` table — operator changes in MC's UI propagate to MM's actual price reads within one cache flush cycle, not on the 4-hour scheduled refresh boundary.
+
+**Pricing settings tab rewrite.** When `provider=manager-core` is selected, the "Manager Core Configuration" panel is now a **read-only status readout** pulling MM's current preference from MC via the new `pricing.getPreferenceForPlugin` bridge capability (Market / Price Type / Provider routing / admin-overridden flag), plus a prominent **"Configure pricing in Manager Core →"** deep-link button resolved via `pricing.preferencesUrl`. The Variant dropdown (min/max/avg/median/percentile) is gone entirely — only variant=min produces meaningful tax + payout values (lowest sell = real buy price for an instant market buy), now hardcoded in `CachePriceDataCommand`. The page-level Price Type dropdown is hidden via JS when `provider=manager-core` (MC's pref owns it).
+
+**Boot-time preference seeding.** `MiningManagerServiceProvider::registerCrossPluginPricingSubscription` now also calls `pricing.registerPreference('mining-manager', $market, $priceType, ...)` when MC is the configured provider. Idempotent on MC side via the `admin_overridden` flag — operator edits in MC's UI are never trampled by this boot call. Same call fires on save-path via `SettingsController::updatePricing` so first save populates MC's table.
+
+**Live cache invalidation via EventBus.** New `PricingPreferenceChangedHandler` (in `src/Services/Pricing/`) subscribes to MC's new `pricing.preference_changed` topic via `registerPricingPreferenceSubscription` boot method. Filters payload for `plugin_key='mining-manager'` (no-op for other plugins) and flushes `mining-manager:prices` + `mining-manager:moon-values` cache tags so the next read goes fresh through the bridge. Subscribed UNCONDITIONALLY when MC is installed — handler filters internally so a later operator switch to MC works without container restart.
+
+**Centralized market resolver.** New `SettingsManagerService::resolveMcMarket()` is the single point of bridge integration for "where does MM look up its MC market?". Calls `pricing.getPreferenceForPlugin` once per request (static method-var cache) and falls back to `'jita'` literal on bridge-call failure. `getPricingSettings()['manager_core_market']` now transparently returns this value, so every downstream caller (`PriceProviderService`, `CachePriceDataCommand`, `DiagnosticController`, `MasterTestRunner`) sees MC's authoritative market without code changes. Closes a real consistency gap from earlier work where the cache populate honored MC's pref but the LIVE read path still used the stale local default.
+
+**Jita fallback now actually works on the MC path.** Was effectively dead code before — `$currentMarket` always equalled `'jita'` from the stale local default, so the `if ($currentMarket === 'jita') return $prices;` early-return at `PriceProviderService.php:711` was always hit. With the new resolver returning MC's actual market, items that come back as 0 from a non-Jita market correctly retry through Jita as a per-item safety net.
+
+**Dead local state cleanup.** Migration `2026_01_01_000018_drop_unused_mc_pricing_settings` deletes `pricing.manager_core_market` + `pricing.manager_core_variant` rows from `mining_manager_settings`. `SettingsController::updatePricing` stops writing them. Both were dropped from the UI in this same v2.0.1 cycle and the only remaining reader was switched to MC's bridge.
+
+**Bridge version-check call removed.** `bridge.requireMinimumVersion('1.5.0')` had no signal — MC starts at 1.0.0, no older MC version exists, so the version comparison always passed. The `class_exists` guard at the top of `registerCrossPluginStructureAlerts` is the actual "is MC available?" gate. MC keeps the capability registered for any future major-rework scenario; MM just doesn't call it anymore.
+
+**Per-plugin provider override consumer (added 2026-05-29).** Companion to MC's Option B work — Mining Manager now passes its plugin key (`'mining-manager'`) as the optional 4th arg to `pricing.getPrices` on every MC bridge call. When the operator sets a `provider_override` on Mining Manager's row in MC's Pricing Preferences page (e.g. routing MM through Janice for Jita while Structure Manager continues through Fuzzwork for the same Jita), MC consults the override and does a live upstream fetch through that provider instead of reading its local cache. Three call sites updated:
+- `CachePriceDataCommand::syncFromManagerCore` (scheduled cache refresh, every 4h)
+- `PriceProviderService::getPricesFromManagerCore` (live read path used by moon-value / tax / payout)
+- `PriceProviderService::applyJitaFallback` (per-item Jita retry — uses the same override so the fallback is consistent with the primary read)
+
+The MC Configuration status panel on Settings → Pricing also grows two new badges showing "per-plugin override" vs "market default (provider)" so the operator can see at a glance which routing is in effect. Reads the new `provider_override` + `market_provider` fields from MC's `pricing.getPreferenceForPlugin` response, with a defensive fall-through to the existing display if those fields are ever absent from MC's payload.
+
+**Cache impact when override is set:** every MM cache refresh hits the override provider live (one batch upstream call per refresh cycle, every 4 hours via the scheduled cron). Acceptable bandwidth even with strict-rate-limit providers like Janice. When no override is set, MC reads its local cache (current behavior, unchanged).
+
+**Operator workflow:** MC → Settings (set Janice API key) → MC → Pricing Preferences → find Mining Manager row → change "Provider Override" dropdown from "Use market's provider (Fuzzwork)" to "Janice" → Save → MC publishes `pricing.preference_changed` → MM's handler flushes the local cache → next cache refresh fetches through Janice. End-to-end self-serving — no MM-side restart required.
+
+**Files added in this section:**
+- `Services/Pricing/PricingPreferenceChangedHandler.php` (new, ~90 lines)
+- `Database/migrations/2026_01_01_000018_drop_unused_mc_pricing_settings.php`
+
+**Files modified in this section:**
+- `Resources/views/settings/tabs/pricing.blade.php` — MC Configuration panel rewrite
+- `Http/Controllers/SettingsController.php` — drops variant/market writes; new `pricing.registerPreference` call on save
+- `MiningManagerServiceProvider.php` — new `registerPricingPreferenceSubscription` method; boot adds `pricing.registerPreference` call; `bridge.requireMinimumVersion` call removed
+- `Services/Configuration/SettingsManagerService.php` — new `resolveMcMarket()` helper; `getPricingSettings()['manager_core_market']` now consults MC via bridge
+- `Console/Commands/CachePriceDataCommand.php` — variant hardcoded to 'min'; market read via `getPricingSettings()`
+- `Http/Controllers/DiagnosticController.php` — uses `getPricingSettings()` market resolver
+
+**Requires Manager Core v1.0.0** (Manager Core's first stable release) with the new pricing capabilities (`pricing.getPreferenceForPlugin`, `pricing.preferencesUrl`, and the `pricing.preference_changed` topic published from `PricingPreferencesController`). Defensive try/catch on every bridge call — `resolveMcMarket()` falls back to `'jita'` literal if the capability call ever fails, so the Help page and pricing reads never error out.
+
+### ⚠️ Compatibility
+
+- **Fully additive.** No existing schema changes, no released migration touched, no public API change, no breaking setting changes.
+- New `moon_extraction_event_log` table created on plugin boot via migration `000016`. Additive.
+- New `metenox_cargo_alert_state` table + column on `mining_manager_settings` via migration `000017`. Additive.
+- Migration `000018` deletes two now-unused settings rows (`pricing.manager_core_market`, `pricing.manager_core_variant`) — was operator-configurable in the UI in v2.0.0 but those dropdowns are gone in v2.0.1. Forward-only, idempotent.
+- New schedule rows added once via `ScheduleSeeder` (`firstOrCreate` semantics — existing cron customisations preserved).
+- Without Manager Core installed, the extraction scanner is a no-op and nothing changes from v2.0.0 behaviour. MM falls back to its own provider stack (SeAT / Fuzzwork / Janice).
+- Metenox Cargo page is gated by `mining-manager.director`. No backfill required.
+- Routing Map is read-only.
+- Subscribers of the extraction events honour visibility scoping via the `corporation_id` field on each event payload.
+- The MC pricing centralization is **transparent to existing installs** — first boot after upgrade calls `pricing.registerPreference` to seed MC's row from MM's existing settings; subsequent operator changes flow through MC's UI. Pre-existing operator MC-side preferences (if any) are preserved via the `admin_overridden` flag.
+- **Zero impact on the rest of the plugin** — tax calculation, extraction tracking, theft detection, jackpot detection all unchanged.
+
+### 🔗 Related work in the suite
+
+- Role-picker pattern documented in shared memory `feedback_plugin_role_picker_pattern.md`. SM v2.0.0 ships the same pattern. The `discord.listRoles` MC-consolidation idea was rejected 2026-05-22 — each plugin keeps its own resolver because the picker is a setup-time feature and consolidating it would degrade standalone behaviour.
+- Notification Routing Map pattern is the same one SM v2.0.0 ships (`feedback_plugin_routing_map.md`); adapted to MM's per-webhook-boolean schema vs SM's category/bindings model.
+- Manager Core registers the three new `mining.extraction_*` topics in `Topics.php` with composed idempotency keys; SeAT Broadcast v2.0.0 ships the consumer side (FC Opportunities mining category, mining icon, pre-expiry reminder pings).
+- Local-time conversion pattern (`eve-time.js`) is portable verbatim — shipped first in SeAT Broadcast (`feedback_local_time_pattern.md`).
+- Jackpot-rendering hardening is the canonical example for rule #5 in `feedback_help_docs_visual_design.md`.
+- Diagnostic-page tab structure follows `feedback_plugin_diagnostic_standard.md`'s Tier 1 baseline.
+- **MC pricing centralization (2026-05-28)** depends on MC's Third-Party Provider Pivot (citadel ESI scrape removed, MC reshaped as price-provider orchestrator with 5 providers + 12 pre-seeded markets including 7 Goonpraisal-backed nullsec hubs). Companion MC commits: `320defc` adds the new bridge capabilities; `ae67f7b` registers the `pricing.preference_changed` topic + publishes from the controller. See MC's CHANGELOG.MD for the full provider-orchestrator narrative.
+
+---
+
 ## [2.0.0] — 2026-05-03 — The Ecosystem Era
 
-> **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.2 install upgrades cleanly without changing a thing.
+> **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.3 install upgrades cleanly without changing a thing.
 
 ### 🎉 Headline features
 

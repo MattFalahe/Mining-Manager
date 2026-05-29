@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 @endpush
 
@@ -40,6 +40,14 @@
                     <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
                 </a>
             </li>
+            @can('mining-manager.director')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">
+                    <i class="fas fa-box-open"></i> {{ trans('mining-manager::menu.metenox_cargo') }}
+                    <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
+                </a>
+            </li>
+            @endcan
         </ul>
     </div>
     <div class="card-body">

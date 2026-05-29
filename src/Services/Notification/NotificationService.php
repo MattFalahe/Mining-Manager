@@ -63,6 +63,7 @@ class NotificationService
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
+    const TYPE_METENOX_CARGO_FULL = 'metenox_cargo_full';
     const TYPE_MOON_READY = 'moon_ready';
     const TYPE_JACKPOT_DETECTED = 'jackpot_detected';
     const TYPE_MOON_CHUNK_UNSTABLE = 'moon_chunk_unstable';
@@ -628,6 +629,45 @@ class NotificationService
     }
 
     /**
+     * Send a `metenox_cargo_full` notification — fires when a Metenox Moon
+     * Drill's MoonMaterialBay crosses the configured fill-% threshold going
+     * up. The bay sits at 32,000 m³ capacity for every Metenox (CCP fixed),
+     * so "85%" is roughly 27,200 m³ = ~5,000 m³ remaining = ~2 days of
+     * accumulation at typical drill rates.
+     *
+     * Standalone notification — no cross-plugin dependencies. Data comes
+     * from SeAT's existing corporation_assets table (no new ESI scopes).
+     * Triggered by ScanMetenoxCargoFillCommand on cross-up transitions
+     * across the threshold (dedup latch in metenox_cargo_alert_state
+     * prevents repeat fires; latch resets when cargo is pulled).
+     *
+     * Expected $data fields:
+     *   - structure_name
+     *   - structure_id
+     *   - corporation_name
+     *   - corporation_id
+     *   - fill_pct          float, current fill % (e.g. 87.3)
+     *   - bay_used_m3       float, current cargo m³
+     *   - bay_capacity_m3   float, total bay m³ (32,000 for Metenox)
+     *   - estimated_isk     float|null, market value of cargo
+     *   - cargo_url         string, deeplink to /mining-manager/moon/metenox-cargo
+     *
+     * @param array $data
+     * @return array
+     */
+    public function sendMetenoxCargoFull(array $data): array
+    {
+        $fillPct = round((float) ($data['fill_pct'] ?? 0), 1);
+        $data['description'] = $data['description']
+            ?? sprintf(
+                '**Metenox Cargo Bay is %s%% full.** The drill stops producing when the bay is completely full — pull cargo before it caps out. No structure risk; this is a yield-stopping warning, not a safety alert.',
+                $fillPct
+            );
+
+        return $this->send(self::TYPE_METENOX_CARGO_FULL, [], $data);
+    }
+
+    /**
      * Resolve the default description text for an extraction_at_risk alert
      * based on the flavor (fuel_critical, shield_reinforced, armor_reinforced,
      * hull_reinforced). Used when the caller didn't supply a description.
@@ -725,6 +765,7 @@ class NotificationService
             'moon_chunk_unstable' => self::TYPE_MOON_CHUNK_UNSTABLE,
             'extraction_at_risk' => self::TYPE_EXTRACTION_AT_RISK,
             'extraction_lost' => self::TYPE_EXTRACTION_LOST,
+            'metenox_cargo_full' => self::TYPE_METENOX_CARGO_FULL,
             'theft_detected' => self::TYPE_THEFT_DETECTED,
             'critical_theft' => self::TYPE_CRITICAL_THEFT,
             'active_theft' => self::TYPE_ACTIVE_THEFT,
@@ -1178,6 +1219,7 @@ class NotificationService
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
             self::TYPE_EXTRACTION_AT_RISK => 'extraction_at_risk',
             self::TYPE_EXTRACTION_LOST => 'extraction_lost',
+            self::TYPE_METENOX_CARGO_FULL => 'metenox_cargo_full',
             self::TYPE_THEFT_DETECTED => 'theft_detected',
             self::TYPE_CRITICAL_THEFT => 'critical_theft',
             self::TYPE_ACTIVE_THEFT => 'active_theft',
@@ -1209,6 +1251,7 @@ class NotificationService
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
             self::TYPE_EXTRACTION_AT_RISK => 'extraction_at_risk',
             self::TYPE_EXTRACTION_LOST => 'extraction_lost',
+            self::TYPE_METENOX_CARGO_FULL => 'metenox_cargo_full',
             self::TYPE_THEFT_DETECTED => 'theft_detected',
             self::TYPE_CRITICAL_THEFT => 'critical_theft',
             self::TYPE_ACTIVE_THEFT => 'active_theft',
@@ -1361,6 +1404,7 @@ class NotificationService
             self::TYPE_MOON_CHUNK_UNSTABLE => 'moon_chunk_unstable',
             self::TYPE_EXTRACTION_AT_RISK => 'extraction_at_risk',
             self::TYPE_EXTRACTION_LOST => 'extraction_lost',
+            self::TYPE_METENOX_CARGO_FULL => 'metenox_cargo_full',
             self::TYPE_THEFT_DETECTED => 'theft_detected',
             self::TYPE_CRITICAL_THEFT => 'critical_theft',
             self::TYPE_ACTIVE_THEFT => 'active_theft',
@@ -1791,6 +1835,27 @@ class NotificationService
                     isset($data['chunk_value']) ? number_format((float) $data['chunk_value'], 0) : 'Unknown',
                     !empty($data['attacker_summary']) ? "Destroyed By: {$data['attacker_summary']}\n" : '',
                     !empty($data['killmail_url']) ? "Killmail: {$data['killmail_url']}\n" : '',
+                    $this->getCorpName()
+                )
+            ],
+            self::TYPE_METENOX_CARGO_FULL => [
+                'subject' => sprintf(
+                    'METENOX BAY %s%% FULL: %s',
+                    number_format((float) ($data['fill_pct'] ?? 0), 0),
+                    $data['structure_name'] ?? 'Unknown Drill'
+                ),
+                'body' => sprintf(
+                    "A Metenox Moon Drill's Cargo Bay is approaching capacity.\n\n" .
+                    "Drill: %s\nFill: %s%% (%s / %s m³)\n%s\n" .
+                    "When the bay fills completely, the drill stops producing moon material until cargo is pulled.\n" .
+                    "Cargo in the bay stays safe — this is a yield-stopping warning, not a structure-safety alert.\n\n" .
+                    "Pull the cargo at your convenience before it caps out.\n\n" .
+                    "%s Management",
+                    $data['structure_name'] ?? 'Unknown Drill',
+                    number_format((float) ($data['fill_pct'] ?? 0), 1),
+                    number_format((float) ($data['bay_used_m3'] ?? 0), 0),
+                    number_format((float) ($data['bay_capacity_m3'] ?? 500000), 0),
+                    isset($data['estimated_isk']) ? "Estimated value in bay: " . number_format((float) $data['estimated_isk'], 0) . " ISK" : '',
                     $this->getCorpName()
                 )
             ],
@@ -2261,6 +2326,7 @@ class NotificationService
             // shield = orange, armor = red, hull = dark red. Resolved by helper.
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskColor($data),
             self::TYPE_EXTRACTION_LOST => 0x1F0000, // Near-black / very dark red — post-mortem
+            self::TYPE_METENOX_CARGO_FULL => 0xFF9800, // Orange — yield-stopping warning, not safety
             self::TYPE_THEFT_DETECTED => 0xFFA500, // Orange
             self::TYPE_CRITICAL_THEFT => 0xFF0000, // Red
             self::TYPE_ACTIVE_THEFT => 0xFF6B00, // Orange-red
@@ -2284,6 +2350,7 @@ class NotificationService
             // Extraction at-risk title depends on flavor — see helper.
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskTitle($data),
             self::TYPE_EXTRACTION_LOST => '☠️ MOON CHUNK DESTROYED',
+            self::TYPE_METENOX_CARGO_FULL => 'Metenox Cargo Bay Filling Up — Pull Soon',
             self::TYPE_THEFT_DETECTED => 'Theft Incident Detected',
             self::TYPE_CRITICAL_THEFT => 'CRITICAL THEFT DETECTED',
             self::TYPE_ACTIVE_THEFT => 'ACTIVE THEFT IN PROGRESS',
@@ -2455,6 +2522,17 @@ class NotificationService
                 // Structure Board deeplink (archival forensics — SM keeps the
                 // board entry post-destruction for last-known state lookups).
                 !empty($data['structure_board_url']) ? ['title' => 'Structure Board', 'value' => '<' . $data['structure_board_url'] . '|Open in Structure Manager>', 'short' => false] : null,
+            ])),
+            self::TYPE_METENOX_CARGO_FULL => array_values(array_filter([
+                isset($data['structure_name']) ? ['title' => 'Drill', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['system_name']) ? ['title' => 'System', 'value' => $data['system_name'], 'short' => true] : null,
+                isset($data['fill_pct']) ? ['title' => 'Bay Fill', 'value' => number_format((float) $data['fill_pct'], 1) . '%', 'short' => true] : null,
+                (isset($data['bay_used_m3']) && isset($data['bay_capacity_m3']))
+                    ? ['title' => 'Volume', 'value' => number_format((float) $data['bay_used_m3'], 0) . ' / ' . number_format((float) $data['bay_capacity_m3'], 0) . ' m³', 'short' => true]
+                    : null,
+                (isset($data['estimated_isk']) && $data['estimated_isk'] > 0)
+                    ? ['title' => 'Cargo Value', 'value' => number_format((float) $data['estimated_isk'], 0) . ' ISK', 'short' => true] : null,
+                !empty($data['cargo_url']) ? ['title' => 'Details', 'value' => '<' . $data['cargo_url'] . '|Open in Mining Manager>', 'short' => false] : null,
             ])),
             self::TYPE_THEFT_DETECTED,
             self::TYPE_CRITICAL_THEFT,
@@ -2647,6 +2725,17 @@ class NotificationService
                 // destroyed, SM keeps the board entry for archival/forensic
                 // purposes (last-known fuel, timers, history). One-click pivot.
                 !empty($data['structure_board_url']) ? ['name' => '🛰️ Structure Board', 'value' => '[Open in Structure Manager](' . $data['structure_board_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_METENOX_CARGO_FULL => array_values(array_filter([
+                isset($data['structure_name']) ? ['name' => 'Drill', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['system_name']) ? ['name' => 'System', 'value' => $data['system_name'], 'inline' => true] : null,
+                isset($data['fill_pct']) ? ['name' => 'Bay Fill', 'value' => number_format((float) $data['fill_pct'], 1) . '%', 'inline' => true] : null,
+                (isset($data['bay_used_m3']) && isset($data['bay_capacity_m3']))
+                    ? ['name' => 'Volume', 'value' => number_format((float) $data['bay_used_m3'], 0) . ' / ' . number_format((float) $data['bay_capacity_m3'], 0) . ' m³', 'inline' => true]
+                    : null,
+                (isset($data['estimated_isk']) && $data['estimated_isk'] > 0)
+                    ? ['name' => 'Cargo Value', 'value' => number_format((float) $data['estimated_isk'], 0) . ' ISK', 'inline' => true] : null,
+                !empty($data['cargo_url']) ? ['name' => 'Details', 'value' => '[Open in Mining Manager](' . $data['cargo_url'] . ')', 'inline' => false] : null,
             ])),
             // All 4 theft variants share the same field set — only color, title
             // and description change per subtype. Active-theft additionally

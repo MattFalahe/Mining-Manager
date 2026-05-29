@@ -9,7 +9,7 @@
                     <i class="fas fa-moon"></i>
                     {{ $data['moon_name'] }}
                     @if($data['extraction']->is_jackpot ?? false)
-                        <span class="badge badge-warning ml-2" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
+                        <span class="badge ml-2 mm-jackpot-badge">
                             <i class="fas fa-star"></i> JACKPOT
                         </span>
                     @endif

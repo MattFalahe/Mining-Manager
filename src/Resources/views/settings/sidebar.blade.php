@@ -59,6 +59,15 @@
             <li class="nav-item">
                 <a href="#"
                    class="nav-link"
+                   data-tab="routing-map">
+                    <i class="fas fa-project-diagram"></i>
+                    Routing Map
+                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
                    data-tab="dashboard">
                     <i class="fas fa-tachometer-alt"></i>
                     Dashboard

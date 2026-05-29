@@ -131,7 +131,134 @@ class DiagnosticController extends Controller
         // Get notification settings for default values
         $notificationSettings = $this->settingsService->getNotificationSettings();
 
-        return view('mining-manager::diagnostic.index', compact('testDataCounts', 'webhooks', 'seatCharacters', 'notificationSettings'));
+        // System Validation: Metenox Cargo Subsystem health probe (v2.0.1).
+        // Server-side rendered so the operator sees results immediately when
+        // they click the System Validation tab (no extra AJAX round-trip).
+        // Every check is read-only and tolerant of missing tables/columns.
+        $metenoxValidation = $this->buildMetenoxCargoValidation();
+
+        return view('mining-manager::diagnostic.index', compact(
+            'testDataCounts',
+            'webhooks',
+            'seatCharacters',
+            'notificationSettings',
+            'metenoxValidation'
+        ));
+    }
+
+    /**
+     * Build the Metenox Cargo Subsystem validation result set for the
+     * System Validation tab. Each check returns ['status' => ok|warn|fail,
+     * 'message' => ...] so the blade can render uniform pills.
+     *
+     * Checks (v2.0.1):
+     *   - Metenox type ID 81826 present in invTypes (SDE dependency)
+     *   - Migration 000017 applied: notify_metenox_cargo_full column exists
+     *   - Migration 000017 applied: metenox_cargo_alert_state table exists
+     *   - solar_systems table has rows (for the system-name display)
+     *   - Threshold setting in expected range (50-99)
+     *   - Scanner cron registered in `schedules`
+     */
+    private function buildMetenoxCargoValidation(): array
+    {
+        $checks = [];
+
+        // 1. SDE: Metenox type ID exists
+        $hasType = DB::table('invTypes')
+            ->where('typeID', \MiningManager\Services\Moon\MetenoxCargoService::METENOX_TYPE_ID)
+            ->exists();
+        $checks[] = [
+            'label'   => 'SDE: Metenox Moon Drill (type 81826) present in invTypes',
+            'status'  => $hasType ? 'ok' : 'fail',
+            'message' => $hasType
+                ? 'Type ID 81826 resolved from the SDE.'
+                : 'Type ID 81826 missing — operator needs to re-import the SDE. The cargo readout cannot resolve the structure type without this row.',
+        ];
+
+        // 2. Migration 000017: column on webhook_configurations
+        $hasColumn = \Schema::hasColumn('webhook_configurations', 'notify_metenox_cargo_full');
+        $checks[] = [
+            'label'   => 'Migration 000017: notify_metenox_cargo_full column',
+            'status'  => $hasColumn ? 'ok' : 'fail',
+            'message' => $hasColumn
+                ? 'webhook_configurations.notify_metenox_cargo_full present.'
+                : 'Column missing — run migrations. Without it, webhooks cannot opt in/out of the cargo-full notification.',
+        ];
+
+        // 3. Migration 000017: latch table
+        $hasLatchTable = \Schema::hasTable('metenox_cargo_alert_state');
+        $checks[] = [
+            'label'   => 'Migration 000017: metenox_cargo_alert_state table',
+            'status'  => $hasLatchTable ? 'ok' : 'fail',
+            'message' => $hasLatchTable
+                ? 'Dedup latch table present.'
+                : 'Table missing — run migrations. Without it, the cargo-full scanner cannot dedup and will spam on every run.',
+        ];
+
+        // 4. solar_systems populated (system-name display)
+        $solarSystemsCount = \Schema::hasTable('solar_systems')
+            ? DB::table('solar_systems')->count()
+            : 0;
+        $checks[] = [
+            'label'   => 'SeAT sync: solar_systems table populated',
+            'status'  => $solarSystemsCount > 0 ? 'ok' : 'warn',
+            'message' => $solarSystemsCount > 0
+                ? "solar_systems has {$solarSystemsCount} rows — system names will resolve on the cargo page."
+                : 'solar_systems empty or missing. Cargo page will show numeric system IDs only until SeAT seeds this.',
+        ];
+
+        // 5. Threshold setting in expected range (50-99)
+        $threshold = $this->settingsService->getSetting('notifications.metenox_cargo_full_threshold_pct', 85);
+        $thresholdInt = (int) $threshold;
+        $thresholdOk = $thresholdInt >= 50 && $thresholdInt <= 99;
+        $checks[] = [
+            'label'   => 'Settings: notifications.metenox_cargo_full_threshold_pct',
+            'status'  => $thresholdOk ? 'ok' : 'warn',
+            'message' => $thresholdOk
+                ? "Threshold = {$thresholdInt}% (in valid 50-99 range)."
+                : "Threshold = {$threshold} — outside the expected 50-99 range. Update via Settings → Notifications.",
+        ];
+
+        // 6. Scanner cron registered
+        $cronExists = DB::table('schedules')
+            ->where('command', 'mining-manager:scan-metenox-cargo-fill')
+            ->exists();
+        $checks[] = [
+            'label'   => 'Scheduler: mining-manager:scan-metenox-cargo-fill registered',
+            'status'  => $cronExists ? 'ok' : 'warn',
+            'message' => $cronExists
+                ? 'Scanner cron is in the schedules table (default cadence */5 * * * *).'
+                : 'Cron not registered. Re-seed via ScheduleSeeder so the cargo-full check actually fires.',
+        ];
+
+        // 7. Moon Owner Corp set (cron + page both depend on this)
+        $moonOwnerCorpId = (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0);
+        $checks[] = [
+            'label'   => 'Settings: general.moon_owner_corporation_id',
+            'status'  => $moonOwnerCorpId > 0 ? 'ok' : 'warn',
+            'message' => $moonOwnerCorpId > 0
+                ? "Moon Owner Corp set ({$moonOwnerCorpId}). Cargo page and scanner share this scope."
+                : 'Moon Owner Corp unset. Cargo page shows empty state for directors; scanner is a no-op until configured.',
+        ];
+
+        // Overall summary pill (worst-status wins).
+        $hasFailure = false;
+        $hasWarning = false;
+        foreach ($checks as $c) {
+            if ($c['status'] === 'fail') $hasFailure = true;
+            if ($c['status'] === 'warn') $hasWarning = true;
+        }
+        $overall = $hasFailure ? 'fail' : ($hasWarning ? 'warn' : 'ok');
+
+        return [
+            'checks'  => $checks,
+            'overall' => $overall,
+            'summary' => $hasFailure
+                ? 'One or more critical checks failed — the cargo subsystem will not work correctly until these are resolved.'
+                : ($hasWarning
+                    ? 'Subsystem is functional but has configuration gaps. Review the warnings below.'
+                    : 'All cargo-subsystem checks passed. Notifications and page reads should work normally.'),
+        ];
     }
 
     /**
@@ -1243,12 +1370,20 @@ class DiagnosticController extends Controller
         try {
             $results = [];
 
-            // Define all setting groups to check
+            // Define all setting groups to check.
+            //
+            // Notifications was added in v2.0.1 so the new
+            // `notifications.metenox_cargo_full_threshold_pct` setting (and
+            // any future notification-level operator knobs) surface in
+            // Settings Health alongside the other groups.
             $settingGroups = [
                 'General' => $this->settingsService->getGeneralSettings(),
                 'Tax Rates' => $this->settingsService->getTaxRates(),
                 'Pricing' => $this->settingsService->getPricingSettings(),
                 'Payment' => $this->settingsService->getPaymentSettings(),
+                'Notifications' => method_exists($this->settingsService, 'getNotificationSettings')
+                    ? $this->settingsService->getNotificationSettings()
+                    : [],
             ];
 
             foreach ($settingGroups as $groupName => $settings) {
@@ -2466,6 +2601,64 @@ class DiagnosticController extends Controller
                 ];
             }
 
+            // 9. Metenox cargo subsystem (v2.0.1) — only run when the latch
+            // table exists. Missing table = migration 000017 hasn't run yet;
+            // that's a System Validation finding, not a Data Integrity one.
+            if (\Schema::hasTable('metenox_cargo_alert_state')) {
+                // Stale alert latches: rows where the drill was alerted more
+                // than 60 days ago. Typically means the drill was deleted or
+                // is permanently empty post-pull; the row is harmless but
+                // worth flagging so operators can prune if they want.
+                $staleLatches = DB::table('metenox_cargo_alert_state')
+                    ->where('last_alerted_at', '<', Carbon::now()->subDays(60))
+                    ->count();
+                if ($staleLatches > 0) {
+                    $issues[] = [
+                        'category' => 'Stale Metenox Cargo Alert Latches',
+                        'severity' => 'warning',
+                        'count' => $staleLatches,
+                        'message' => 'Cargo-full alert latch rows older than 60 days. Safe to leave; consider pruning if the drill was decommissioned.',
+                    ];
+                }
+
+                // Orphan latches: rows referencing structures no longer in
+                // corporation_structures (Metenox unanchored, scope dropped,
+                // etc). These never re-fire so they're cosmetic clutter.
+                $orphanLatches = DB::table('metenox_cargo_alert_state as mas')
+                    ->leftJoin('corporation_structures as cs', 'cs.structure_id', '=', 'mas.structure_id')
+                    ->whereNull('cs.structure_id')
+                    ->count();
+                if ($orphanLatches > 0) {
+                    $issues[] = [
+                        'category' => 'Orphan Metenox Cargo Alert Latches',
+                        'severity' => 'warning',
+                        'count' => $orphanLatches,
+                        'message' => 'Latch rows for structures no longer present in corporation_structures (drill unanchored or scope dropped).',
+                    ];
+                }
+            }
+
+            // 10. MoonMaterialBay assets pointing at non-Metenox structures.
+            // Shouldn't happen given CCP's location_flag semantics, but a
+            // good sanity probe (catches SeAT corp-assets poll bugs or
+            // operator data-import accidents).
+            $orphanCargoRows = DB::table('corporation_assets as ca')
+                ->leftJoin('corporation_structures as cs', 'cs.structure_id', '=', 'ca.location_id')
+                ->where('ca.location_flag', \MiningManager\Services\Moon\MetenoxCargoService::MOON_MATERIAL_BAY_FLAG)
+                ->where(function ($q) {
+                    $q->whereNull('cs.structure_id')
+                      ->orWhere('cs.type_id', '!=', \MiningManager\Services\Moon\MetenoxCargoService::METENOX_TYPE_ID);
+                })
+                ->count();
+            if ($orphanCargoRows > 0) {
+                $issues[] = [
+                    'category' => 'Orphan MoonMaterialBay Asset Rows',
+                    'severity' => 'warning',
+                    'count' => $orphanCargoRows,
+                    'message' => 'corporation_assets rows with location_flag=MoonMaterialBay but the parent structure is missing or not a Metenox (type 81826).',
+                ];
+            }
+
             $duration = round((microtime(true) - $startTime) * 1000, 2);
 
             // Summary
@@ -2822,7 +3015,11 @@ class DiagnosticController extends Controller
         if (($pricingSettings['price_provider'] ?? 'seat') === 'manager-core'
             && \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled()) {
             try {
-                $mcMarket = $pricingSettings['manager_core_market'] ?? 'jita';
+                // Source of truth for MM's market is MC's per-plugin pricing
+                // preference. SettingsManagerService::getPricingSettings()
+                // already resolves this via the bridge — see
+                // SettingsManagerService::resolveMcMarket.
+                $mcMarket = $pricingSettings['manager_core_market'];
                 $result['manager_core'] = [
                     'market' => $mcMarket,
                     'total_prices' => DB::table('manager_core_market_prices')->where('market', $mcMarket)->count(),
@@ -2863,6 +3060,12 @@ class DiagnosticController extends Controller
                 $category = 'data';
             } elseif (str_contains($cmd, 'calculate-taxes') || str_contains($cmd, 'generate-invoices') || str_contains($cmd, 'verify-payments') || str_contains($cmd, 'send-reminders') || str_contains($cmd, 'generate-tax') || str_contains($cmd, 'finalize')) {
                 $category = 'tax';
+            } elseif (str_contains($cmd, 'metenox')) {
+                // v2.0.1 — metenox cargo scanner cron. Separate category so
+                // it stands out in the Scheduled Jobs list (not just lumped
+                // under "moon"), since the Metenox cargo subsystem is its
+                // own pipeline (alert state + threshold + dedup latch).
+                $category = 'metenox';
             } elseif (str_contains($cmd, 'extract') || str_contains($cmd, 'jackpot') || str_contains($cmd, 'archive')) {
                 $category = 'moon';
             } elseif (str_contains($cmd, 'theft') || str_contains($cmd, 'detect-theft')) {
@@ -2893,6 +3096,19 @@ class DiagnosticController extends Controller
 
     private function systemStatusDataCounts(): array
     {
+        // Metenox cargo subsystem counts (v2.0.1). Guarded against schema
+        // skew on installs that haven't yet run migration 000017 — the
+        // latch table won't exist, so we probe Schema::hasTable first.
+        $metenoxStructures   = DB::table('corporation_structures')
+            ->where('type_id', \MiningManager\Services\Moon\MetenoxCargoService::METENOX_TYPE_ID)
+            ->count();
+        $metenoxCargoRows    = DB::table('corporation_assets')
+            ->where('location_flag', \MiningManager\Services\Moon\MetenoxCargoService::MOON_MATERIAL_BAY_FLAG)
+            ->count();
+        $metenoxAlertLatches = \Schema::hasTable('metenox_cargo_alert_state')
+            ? DB::table('metenox_cargo_alert_state')->count()
+            : 0;
+
         return [
             'mining_ledger' => DB::table('mining_ledger')->count(),
             'mining_taxes' => DB::table('mining_taxes')->count(),
@@ -2901,6 +3117,9 @@ class DiagnosticController extends Controller
             'price_cache' => MiningPriceCache::count(),
             'moon_extractions' => DB::table('moon_extractions')->count(),
             'webhooks' => DB::table('webhook_configurations')->count(),
+            'metenox_structures'    => $metenoxStructures,
+            'metenox_cargo_rows'    => $metenoxCargoRows,
+            'metenox_alert_latches' => $metenoxAlertLatches,
         ];
     }
 
@@ -3020,6 +3239,18 @@ class DiagnosticController extends Controller
             'moon_ready' => $ns->sendMoonArrival($data),
             'jackpot_detected' => $ns->sendJackpotDetected($data),
             'moon_chunk_unstable' => $ns->sendMoonChunkUnstable($data),
+            'metenox_cargo_full' => $ns->sendMetenoxCargoFull(array_merge($data, [
+                'structure_id'   => $data['structure_id']   ?? 1041000000001,
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Metenox',
+                'system_name'    => $data['system_name']    ?? 'Jita',
+                'corporation_id' => (int) ($data['corporation_id']
+                    ?? $this->settingsService->getSetting('general.moon_owner_corporation_id', 0)),
+                'fill_pct'       => $data['fill_pct']    ?? 92.4,
+                'total_units'    => $data['total_units'] ?? 9000000,
+                'total_m3'       => $data['total_m3']    ?? 450000,
+                'capacity_m3'    => $data['capacity_m3'] ?? 500000,
+                'estimated_value' => (int) ($data['estimated_value'] ?? 850000000),
+            ])),
             'extraction_at_risk' => $ns->sendExtractionAtRisk(array_merge($data, [
                 'alert_flavor' => $data['alert_flavor'] ?? 'fuel_critical',
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
@@ -3292,6 +3523,7 @@ class DiagnosticController extends Controller
             'moon_ready' => 'Moon Extraction Ready',
             'jackpot_detected' => 'Jackpot Detected',
             'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
+            'metenox_cargo_full' => 'Metenox Cargo Bay Full (yield-stopping)',
             'extraction_at_risk' => 'Extraction at Risk (fuel / attack / reinforced)',
             'extraction_lost' => 'Extraction Lost (structure destroyed)',
             'theft_detected' => 'Theft Detected',
@@ -3459,6 +3691,7 @@ class DiagnosticController extends Controller
             'event_started' => NotificationService::TYPE_EVENT_STARTED,
             'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
             'moon_ready' => NotificationService::TYPE_MOON_READY,
+            'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
             default => NotificationService::TYPE_CUSTOM,
         };
 
@@ -3666,6 +3899,7 @@ class DiagnosticController extends Controller
                 'event_started' => NotificationService::TYPE_EVENT_STARTED,
                 'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
                 'moon_ready' => NotificationService::TYPE_MOON_READY,
+                'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
 
@@ -3939,6 +4173,7 @@ class DiagnosticController extends Controller
                 'event_started' => NotificationService::TYPE_EVENT_STARTED,
                 'event_completed' => NotificationService::TYPE_EVENT_COMPLETED,
                 'moon_ready' => NotificationService::TYPE_MOON_READY,
+                'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
 
@@ -4087,6 +4322,22 @@ class DiagnosticController extends Controller
                 'estimated_value' => 250000000,
                 'extraction_id' => 1,
                 'extraction_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/1',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'metenox_cargo_full' => [
+                // Default sample for the metenox_cargo_full live-fire preview.
+                // Operators can override via test_* inputs to preview a
+                // specific drill or fill state. Defaults assume the test
+                // data SM's CreateTestMetenoxCommand creates (~90% fill).
+                'structure_id'   => (int) $request->input('test_structure_id', 9999999999),
+                'structure_name' => $request->input('test_structure_name', 'Diagnostic Metenox - Test Moon'),
+                'system_name'    => $request->input('test_system_name', 'Jita'),
+                'fill_pct'       => (float) $request->input('test_fill_pct', 92.4),
+                'total_units'    => (int) $request->input('test_total_units', 9000000),
+                'total_m3'       => (int) $request->input('test_total_m3', 450000),
+                'capacity_m3'    => 500000,
+                'estimated_value' => (int) $request->input('test_estimated_value', 850000000),
+                'cargo_url'      => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/metenox-cargo',
                 'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             ],
             'extraction_at_risk' => [

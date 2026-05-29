@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
 <style>
     .export-option-card { cursor: pointer; border: 2px solid transparent !important; transition: all 0.3s ease; position: relative; }
     .export-option-card:hover { border-color: rgba(102, 126, 234, 0.5) !important; transform: translateY(-2px); }

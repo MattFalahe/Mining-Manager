@@ -17,6 +17,8 @@ use MiningManager\Console\Commands\CheckExtractionArrivalsCommand;
 use MiningManager\Console\Commands\BackfillExtractionHistoryCommand;
 use MiningManager\Console\Commands\BackfillEventRecordsCommand;
 use MiningManager\Console\Commands\DetectJackpotsCommand;
+use MiningManager\Console\Commands\ScanMoonExtractionEventsCommand;
+use MiningManager\Console\Commands\ScanMetenoxCargoFillCommand;
 use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
@@ -99,6 +101,15 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // either MC or SM is missing — plugin still works standalone.
         $this->registerCrossPluginStructureAlerts();
 
+        // Subscribe to MC's pricing.preference_changed event so an
+        // operator's change in MC's Pricing Preferences UI invalidates
+        // MM's local price cache immediately. Without this subscription,
+        // operator changes propagate only after MM's next scheduled
+        // cache cycle (up to 4h). Subscribed unconditionally when MC is
+        // installed — the handler short-circuits internally for events
+        // with plugin_key != 'mining-manager'.
+        $this->registerPricingPreferenceSubscription();
+
         // Idempotently re-register MM's pricing type subscriptions with
         // Manager Core when MC is the chosen provider. Without this,
         // subscriptions only ever happen on the settings-save path, so
@@ -123,6 +134,8 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 UpdateMoonExtractionsCommand::class,
                 CheckExtractionArrivalsCommand::class,
                 DetectJackpotsCommand::class,
+                ScanMoonExtractionEventsCommand::class,
+                ScanMetenoxCargoFillCommand::class,
                 CachePriceDataCommand::class,
                 DiagnosePricesCommand::class,
                 DiagnoseAffiliationCommand::class,
@@ -275,16 +288,13 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         try {
             $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
 
-            // B6: log a clear warning if the installed Manager Core is older
-            // than the version that introduced features MM uses (Topics +
-            // publishSanitized landed in MC 1.5.0). Doesn't abort — older MC
-            // versions still mostly work, the version gate is for diagnostics.
-            try {
-                $bridge->call('ManagerCore', 'bridge.requireMinimumVersion', '1.5.0', false);
-            } catch (\Throwable $e) {
-                // bridge.requireMinimumVersion not available on this MC version
-                // (added in 1.4.2). Older MC = older features; not fatal.
-            }
+            // Note: previously called bridge.requireMinimumVersion('1.0.0')
+            // here as a diagnostic warning. Removed because the check has no
+            // signal — MC starts at 1.0.0, no older version exists, so the
+            // check always passes. The class_exists() guard at the top of
+            // this method is the real "is MC available?" gate. MC's
+            // bridge.requireMinimumVersion capability is still registered
+            // for any future major-rework scenario where it becomes useful.
 
             // Expose our handler as a PluginBridge capability so MC's
             // EventBus can dispatch to it via the standard capability
@@ -371,6 +381,42 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 }
             );
 
+            // Metenox drill cargo readout — exposed for cross-plugin use so
+            // Structure Manager (or future consumers) can render the moon-ore
+            // sitting in a Metenox's MoonMaterialBay on its structure detail
+            // page without having to round-trip through MM's UI.
+            //
+            // Contract: $structureId is the Metenox's structure_id.
+            // Returns array<int,int> mapping type_id => quantity for every
+            // moon ore stack in the bay. Returns:
+            //   - []     when the structure is a known Metenox but the bay
+            //            is empty (caller can distinguish "drill just pulled"
+            //            from "unknown structure")
+            //   - null   when the structure is not a Metenox (type_id != 81826)
+            //            or doesn't exist in corporation_structures at all
+            //
+            // No corp permission gate here — capability resolution is
+            // peer-plugin level. The caller is expected to enforce its own
+            // visibility before invoking (the same way HR's tax-status
+            // capability call assumes HR's middleware vetted the request).
+            $bridge->registerCapability(
+                'mining-manager',
+                'mining.metenox.cargoSnapshot',
+                function (int $structureId): ?array {
+                    try {
+                        return $this->app
+                            ->make(\MiningManager\Services\Moon\MetenoxCargoService::class)
+                            ->cargoSnapshot($structureId);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning(
+                            '[MM] mining.metenox.cargoSnapshot failed',
+                            ['structure_id' => $structureId, 'error' => $e->getMessage()]
+                        );
+                        return null;
+                    }
+                }
+            );
+
             // Persistent subscription — survives restarts. updateOrCreate
             // semantics so repeated boots are safe.
             $eventBus = $this->app->make(\ManagerCore\Services\EventBus::class);
@@ -386,6 +432,69 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning(
                 '[MM] Cross-plugin structure alert subscription failed: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Subscribe to MC's `pricing.preference_changed` event so an operator
+     * change in MC's Pricing Preferences UI invalidates MM's local price
+     * cache immediately, rather than waiting up to 4 hours for MM's next
+     * scheduled refresh cycle.
+     *
+     * Subscribed unconditionally when MC is installed — the
+     * PricingPreferenceChangedHandler filters internally for events whose
+     * plugin_key payload field equals 'mining-manager'. This keeps the
+     * subscription wired even when MM is currently using a non-MC provider
+     * (Fuzzwork etc.), so a later operator switch to MC takes effect
+     * without requiring a container restart.
+     *
+     * Persistence: EventBus::subscribe is updateOrCreate keyed on
+     * (subscriber_plugin, event_pattern), safe to run on every boot.
+     *
+     * Failure mode: any exception is caught and logged at warning. No-op
+     * gracefully — worst case operator sees stale prices until next
+     * scheduled refresh.
+     */
+    private function registerPricingPreferenceSubscription()
+    {
+        if (!class_exists('ManagerCore\\Services\\PluginBridge')
+            || !class_exists('ManagerCore\\Services\\EventBus')) {
+            return;
+        }
+
+        try {
+            $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
+
+            // Register the handler as a PluginBridge capability so MC's
+            // EventBus can dispatch to it via the standard capability
+            // resolution path. The closure is a one-line bounce into the
+            // PricingPreferenceChangedHandler service-container binding so
+            // the handler stays testable in isolation.
+            $bridge->registerCapability(
+                'mining-manager',
+                'pricing.preference_changed_handler',
+                function (string $eventName, string $publisher, array $payload) {
+                    $handler = $this->app->make(\MiningManager\Services\Pricing\PricingPreferenceChangedHandler::class);
+                    $handler->handle($eventName, $publisher, $payload);
+                }
+            );
+
+            // Persistent subscription — survives restarts. updateOrCreate
+            // semantics so repeated boots are safe.
+            $eventBus = $this->app->make(\ManagerCore\Services\EventBus::class);
+            $eventBus->subscribe(
+                'mining-manager',
+                'pricing.preference_changed',
+                'pricing.preference_changed_handler',
+                [
+                    'queued' => false,    // Sync dispatch — single payload cache flush is fast
+                    'priority' => 5,      // Above default 0; cache flush should happen before any downstream listeners
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                '[MM] pricing.preference_changed subscription failed: ' . $e->getMessage()
             );
         }
     }
@@ -504,6 +613,42 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             // subscribe and cache the signature for the next hour.
             $priceProvider = $this->app->make(\MiningManager\Services\Pricing\PriceProviderService::class);
             $priceProvider->subscribeToManagerCore($market, false); // false = no synchronous refresh
+
+            // Also seed MM's pricing preference into MC's
+            // manager_core_pricing_preferences table. The preference is the
+            // single source of truth for "what market + price_type does MM
+            // want" — the operator changes it in MC's Pricing Preferences
+            // page and MM's reads (CachePriceDataCommand) honor the change
+            // automatically.
+            //
+            // pricing.registerPreference is registerDefault on the MC side
+            // — it respects admin_overridden=true so operator edits never
+            // get trampled by this boot-time call. The price_type comes
+            // from MM's existing local setting so an install that was
+            // configured with 'buy' before this code shipped doesn't
+            // silently switch to 'sell'.
+            try {
+                if (class_exists(\ManagerCore\Services\PluginBridge::class)) {
+                    $priceType = $pricingSettings['price_type'] ?? 'sell';
+                    $bridge = $this->app->make(\ManagerCore\Services\PluginBridge::class);
+                    $bridge->call(
+                        'ManagerCore',
+                        'pricing.registerPreference',
+                        'mining-manager',
+                        $market,
+                        $priceType,
+                        'Mining Manager — tax + payout calculations'
+                    );
+                }
+            } catch (\Throwable $prefEx) {
+                // Older MC version that doesn't have registerPreference, or
+                // bridge call failed for some other reason. Not fatal —
+                // operator can manually configure via MC's Pricing
+                // Preferences page.
+                \Illuminate\Support\Facades\Log::warning(
+                    '[MM] Boot-time MC preference seeding failed: ' . $prefEx->getMessage()
+                );
+            }
 
             \Illuminate\Support\Facades\Cache::put($cacheKey, $signature, 3600);
         } catch (\Throwable $e) {

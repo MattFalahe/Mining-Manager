@@ -45,6 +45,13 @@ return [
                 'permission' => 'mining-manager.member',
             ],
             [
+                'name'       => 'Metenox Cargo',
+                'label'      => 'mining-manager::menu.metenox_cargo',
+                'icon'       => 'fas fa-box-open',
+                'route'      => 'mining-manager.moon.metenox-cargo',
+                'permission' => 'mining-manager.director',
+            ],
+            [
                 'name'       => 'Analytics',
                 'label'      => 'mining-manager::menu.analytics',
                 'icon'       => 'fas fa-chart-line',

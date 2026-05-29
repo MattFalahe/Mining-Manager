@@ -442,6 +442,16 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        // Director - Metenox cargo readout (per-drill MoonMaterialBay contents).
+        // MUST be registered BEFORE the `/{id}` catch-all below so Laravel
+        // matches the literal path before treating "metenox-cargo" as a
+        // numeric extraction ID.
+        Route::get('/metenox-cargo', [
+            'as' => 'mining-manager.moon.metenox-cargo',
+            'uses' => 'MoonController@metenoxCargo',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/{id}', [
             'as' => 'mining-manager.moon.show',
             'uses' => 'MoonController@show',
@@ -720,6 +730,12 @@ Route::group([
         Route::post('/notifications', [
             'as' => 'mining-manager.settings.update-notifications',
             'uses' => 'SettingsController@updateNotifications',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::get('/notifications/roles', [
+            'as' => 'mining-manager.settings.notifications.roles',
+            'uses' => 'SettingsController@listDiscordRoles',
             'middleware' => 'can:mining-manager.admin',
         ]);
 

@@ -4,8 +4,10 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <style>
     .fc {
         background: #343a40;
@@ -202,8 +204,17 @@
                                     </a>
                                 </h5>
                                 <p class="mb-1 text-muted">
-                                    <i class="fas fa-calendar"></i> 
-                                    {{ $event->start_time->format('M d, Y H:i') }} - {{ $event->end_time->format('H:i') }}
+                                    <i class="fas fa-calendar"></i>
+                                    <span class="eve-time" data-eve-time="{{ $event->start_time->toIso8601String() }}" data-show-local>
+                                        {{ $event->start_time->format('M d, Y H:i') }} EVE
+                                    </span>
+                                    -
+                                    <span class="eve-time" data-eve-time="{{ $event->end_time->toIso8601String() }}">
+                                        {{ $event->end_time->format('H:i') }}
+                                    </span>
+                                    <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
+                                        ({{ $event->start_time->diffForHumans() }})
+                                    </span>
                                 </p>
                                 @if($event->location)
                                 <p class="mb-1 text-muted">

@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::settings.settings'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
 <style>
     .settings-wrapper {
         display: flex;
@@ -241,6 +241,17 @@
                             'seatConnectorAvailable' => $seatConnectorAvailable ?? false,
                             'webhooks' => $webhooks ?? collect(),
                             'settings' => $settings ?? [],
+                            'roleProviderAvailable' => $roleProviderAvailable ?? false,
+                            'roleProviderLabel' => $roleProviderLabel ?? 'Manual input only',
+                        ])
+                    </div>
+
+                    {{-- Notification Routing Map (read-only delivery snapshot) --}}
+                    <div id="routing-map" class="settings-section">
+                        @include('mining-manager::settings.partials._routing_map', [
+                            'webhooks' => $webhooks ?? collect(),
+                            'notificationSettings' => $settings['notifications'] ?? [],
+                            'roleProviderAvailable' => $roleProviderAvailable ?? false,
                         ])
                     </div>
 

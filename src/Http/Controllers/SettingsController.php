@@ -5,6 +5,7 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\DiscordRoleResolver;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -149,6 +150,17 @@ class SettingsController extends Controller
         $allTokenCharacters = $this->settingsService->getAllTokenCharacters();
         $seatConnectorAvailable = Schema::hasTable('seat_connector_users');
 
+        // Discord role provider detection — used by the per-notification-type
+        // role-id picker buttons in the notifications tab. When at least one
+        // provider is detected (SeAT Broadcast / SeAT Connector / legacy
+        // warlof), each role-id input gets a "Pick from Discord" button +
+        // collapsible inline picker. Pattern documented in memory:
+        // feedback_plugin_role_picker_pattern.md. Source-of-truth implementation:
+        // structure-manager/src/Services/DiscordRoleResolver.php (copied here
+        // verbatim with namespace change).
+        $roleProviderAvailable = DiscordRoleResolver::isAvailable();
+        $roleProviderLabel     = DiscordRoleResolver::providerLabel();
+
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
@@ -160,8 +172,30 @@ class SettingsController extends Controller
             'walletDivisions',
             'mailScopeCharacters',
             'allTokenCharacters',
-            'seatConnectorAvailable'
+            'seatConnectorAvailable',
+            'roleProviderAvailable',
+            'roleProviderLabel'
         ));
+    }
+
+    /**
+     * AJAX endpoint for the inline Discord role picker.
+     *
+     * Returns the merged + deduped role list from all detected providers
+     * (SeAT Broadcast curated, SeAT Connector synced, legacy warlof). The
+     * notifications tab JS calls this once per page load and caches the
+     * response across all per-type pickers — so opening any of the 17
+     * role-id pickers on the page incurs at most one round-trip total.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function listDiscordRoles()
+    {
+        return response()->json([
+            'available' => DiscordRoleResolver::isAvailable(),
+            'label'     => DiscordRoleResolver::providerLabel(),
+            'roles'     => DiscordRoleResolver::listRoles(),
+        ]);
     }
 
     /**
@@ -423,6 +457,19 @@ class SettingsController extends Controller
                 'url',
                 'starts_with:https://',
             ],
+
+            // Metenox cargo full threshold — clamped to a sane range so an
+            // operator can't accidentally disable the alert (0%) or set it
+            // so tight the cron never observes a crossing (100% is unreachable
+            // due to rounding). The scanner re-clamps server-side too, but
+            // catching invalid values at save time gives the operator a
+            // proper error rather than a silent floor/ceiling at runtime.
+            'metenox_cargo_full_threshold_pct' => [
+                'nullable',
+                'numeric',
+                'min:50',
+                'max:99',
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -483,6 +530,13 @@ class SettingsController extends Controller
             $data['discord_pinging_enabled'] = collect(['tax_reminder', 'tax_invoice', 'tax_overdue'])
                 ->contains(fn ($t) => $typeSettings[$t]['ping_user'] ?? false);
             $data['discord_ping_show_amount'] = $typeSettings['tax_reminder']['show_amount'] ?? true;
+
+            // Metenox cargo full threshold (default 85). Operator-configurable
+            // via the input below the metenox_cargo_full type card.
+            $thresholdInput = $request->input('metenox_cargo_full_threshold_pct');
+            $data['metenox_cargo_full_threshold_pct'] = ($thresholdInput !== null && $thresholdInput !== '')
+                ? (float) $thresholdInput
+                : 85;
 
             $this->settingsService->updateNotificationSettings($data);
             $this->clearSettingsCache();
@@ -650,10 +704,16 @@ class SettingsController extends Controller
             'janice_market' => 'nullable|in:jita,amarr',
             'janice_price_method' => 'nullable|in:buy,sell,split',
 
-            // Manager Core-specific settings
-            'manager_core_market' => 'nullable|string|max:50',
-            'manager_core_variant' => 'nullable|in:min,max,avg,median,percentile',
-            
+            // Manager Core-specific settings: market + price_type are now
+            // configured centrally in MC's Pricing Preferences page, not
+            // duplicated here. The form panel shows a read-only status
+            // readout + deep-link instead. The local manager_core_market
+            // setting is kept for the auto-subscribe call below (it's just
+            // the bootstrap default — MC's preference wins on read).
+            // manager_core_variant dropped entirely; hardcoded to 'min' in
+            // CachePriceDataCommand because that's the only variant that
+            // makes sense for tax + payout (lowest sell = real buy price).
+
             // Refining settings
             'use_refined_value' => 'nullable|boolean',
             'refining_efficiency' => 'required|numeric|min:0|max:100',
@@ -706,19 +766,53 @@ class SettingsController extends Controller
             // anything. Removed for cleanliness — the prefixed write later
             // is the single source of truth.
 
-            // Auto-subscribe type IDs to Manager Core when selected as provider
+            // Auto-subscribe type IDs to Manager Core when selected as
+            // provider, AND register MM's default preference into MC's
+            // Pricing Preferences table. The preference is what MC's
+            // pricing.priceForPlugin / pricesForPlugin reads back; without
+            // this seed call, the operator would have to manually create
+            // the row in MC's UI before MC could answer for MM.
+            //
+            // Both calls are idempotent on the MC side — subscribeToManagerCore
+            // uses updateOrInsert, registerPreference is registerDefault
+            // which respects admin_overridden=true so it never trampling
+            // operator edits.
             if (($data['price_provider'] ?? '') === 'manager-core') {
                 try {
                     $priceProviderService = app(\MiningManager\Services\Pricing\PriceProviderService::class);
-                    $market = $data['manager_core_market'] ?? 'jita';
+                    $market = 'jita'; // bootstrap default; MC's preference takes over after
                     $count = $priceProviderService->subscribeToManagerCore($market);
                     Log::info("Mining Manager: Auto-subscribed {$count} type IDs to Manager Core");
+
+                    // Seed MM's pricing preference in MC (idempotent — no-op if
+                    // admin has overridden it). market + price_type both reach
+                    // MC via the bridge so MC owns the source of truth.
+                    try {
+                        $bridge = app(\ManagerCore\Services\PluginBridge::class);
+                        $bridge->call(
+                            'ManagerCore',
+                            'pricing.registerPreference',
+                            'mining-manager',
+                            $market,
+                            $data['price_type'] ?? 'sell',
+                            'Mining Manager — tax + payout calculations'
+                        );
+                    } catch (\Throwable $prefEx) {
+                        Log::warning('Mining Manager: Failed to seed MC pricing preference: ' . $prefEx->getMessage());
+                    }
                 } catch (\Exception $subEx) {
                     Log::warning('Mining Manager: Failed to subscribe to Manager Core: ' . $subEx->getMessage());
                 }
             }
 
-            // Update other pricing settings via service (these use 'pricing.' prefix)
+            // Update other pricing settings via service (these use 'pricing.' prefix).
+            //
+            // Note: the pricing.manager_core_market + pricing.manager_core_variant
+            // writes that used to live here are gone — those settings were
+            // dropped from the pricing tab UI in commit 583ea48 and the
+            // last remaining reader was switched to MC's getPreferenceForPlugin
+            // bridge call in commit d61e9e9. The forward-only migration
+            // 000018 cleans up the legacy rows on existing installs.
             $this->settingsService->updatePricingSettings([
                 'price_type' => $data['price_type'],
                 'cache_duration' => $data['cache_duration'],
@@ -726,9 +820,6 @@ class SettingsController extends Controller
                 // Refining settings
                 'use_refined_value' => $request->has('use_refined_value'),
                 'refining_efficiency' => $data['refining_efficiency'],
-                // Manager Core settings
-                'manager_core_market' => $data['manager_core_market'] ?? 'jita',
-                'manager_core_variant' => $data['manager_core_variant'] ?? 'min',
             ]);
 
             // Clear all settings + price caches
@@ -995,13 +1086,21 @@ class SettingsController extends Controller
     }
 
     /**
-     * Display help page
+     * Display help page.
+     *
+     * Passes a `$versionStatus` array (from VersionChecker) so the
+     * Overview page's Version Status card can show installed vs latest
+     * Packagist tag with an "Up to date / Update available / Pre-release
+     * / Dev branch / Unknown" pill. Cached 6h on the service side so
+     * each Help visit doesn't hit Packagist.
      *
      * @return \Illuminate\View\View
      */
     public function help()
     {
-        return view('mining-manager::help.index');
+        $versionStatus = app(\MiningManager\Services\VersionChecker::class)->getStatus();
+
+        return view('mining-manager::help.index', compact('versionStatus'));
     }
 
     /**

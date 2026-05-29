@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.mining_events')) . ' - ' . $event->name)
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
@@ -113,15 +115,53 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="start_time">{{ trans('mining-manager::events.start_time') }} (EVE Time / UTC)</label>
+                                    <label for="start_time">
+                                        {{ trans('mining-manager::events.start_time') }}
+                                        <span class="text-muted" id="startModeHint">(EVE Time / UTC)</span>
+                                    </label>
                                     <input type="datetime-local" class="form-control" id="start_time" name="start_time" value="{{ old('start_time', $event->start_time->format('Y-m-d\TH:i')) }}" required>
-                                    <small class="form-text text-muted">All times are in EVE Time (UTC)</small>
+                                    <small class="form-text text-muted" id="startModeHelp">All times are in EVE Time (UTC)</small>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="end_time">{{ trans('mining-manager::events.end_time') }} (EVE Time / UTC)</label>
+                                    <label for="end_time">
+                                        {{ trans('mining-manager::events.end_time') }}
+                                        <span class="text-muted" id="endModeHint">(EVE Time / UTC)</span>
+                                    </label>
                                     <input type="datetime-local" class="form-control" id="end_time" name="end_time" value="{{ old('end_time', $event->end_time ? $event->end_time->format('Y-m-d\TH:i') : '') }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Time input mode toggle: EVE/UTC (default) vs Local --}}
+                        <div class="form-group">
+                            <div class="time-mode-toggle">
+                                <label style="font-size: 0.9em; margin-right: 0.5rem;">Enter time in:</label>
+                                <div class="btn-group btn-group-toggle btn-group-sm" data-toggle="buttons">
+                                    <label class="btn btn-outline-secondary active">
+                                        <input type="radio" name="time_input_mode" value="eve" checked> EVE / UTC
+                                    </label>
+                                    <label class="btn btn-outline-secondary">
+                                        <input type="radio" name="time_input_mode" value="local"> My local time
+                                    </label>
+                                </div>
+                                <small class="form-text text-muted" style="margin-top: 0.35rem;">
+                                    <i class="fas fa-globe"></i>
+                                    Browser timezone: <code id="detected-tz">detecting&hellip;</code>
+                                </small>
+                            </div>
+
+                            <div class="card card-dark mt-2" id="time-confirmation" style="display: none;">
+                                <div class="card-body py-2 px-3" style="font-size: 0.9em;">
+                                    <strong><i class="fas fa-calendar-check"></i> Time confirmation:</strong><br>
+                                    <span><strong>EVE Time:</strong> <span id="eve-time-display">--</span></span><br>
+                                    <span><strong>Your Local Time:</strong> <span id="local-time-display">--</span></span>
+                                    <span id="end-confirmation" style="display: none;">
+                                        <hr class="my-1">
+                                        <span><strong>Ends EVE:</strong> <span id="end-eve-display">--</span></span><br>
+                                        <span><strong>Ends Local:</strong> <span id="end-local-display">--</span></span>
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -325,6 +365,142 @@ $(document).ready(function() {
                 }
             });
         }
+    });
+
+    // ============================================================
+    // Time input mode: EVE/UTC (default) vs Local
+    //
+    // The visible datetime-local input is interpreted differently
+    // based on the toggle:
+    //   - EVE mode (default): value is UTC ("18:00" means 18:00 EVE)
+    //   - Local mode: value is browser-local ("18:00" means 18:00
+    //     in whatever timezone the browser is set to)
+    //
+    // On submit, JS rewrites the input value to its UTC datetime-local
+    // equivalent so the server (which expects UTC) sees the right
+    // instant regardless of mode. DST-safe via Intl.DateTimeFormat
+    // against the browser-detected IANA timezone.
+    // ============================================================
+
+    try {
+        $('#detected-tz').text(Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown');
+    } catch (e) {
+        $('#detected-tz').text('unknown');
+    }
+
+    function getInputMode() {
+        var checked = document.querySelector('input[name="time_input_mode"]:checked');
+        return checked ? checked.value : 'eve';
+    }
+
+    function parseAsUTC(value) {
+        if (!value) return null;
+        var parts = value.split('T');
+        if (parts.length !== 2) return null;
+        var d = parts[0].split('-').map(Number);
+        var t = parts[1].split(':').map(Number);
+        return new Date(Date.UTC(d[0], d[1] - 1, d[2], t[0] || 0, t[1] || 0, 0, 0));
+    }
+
+    function parseByMode(value) {
+        if (!value) return null;
+        if (getInputMode() === 'local') {
+            var d = new Date(value);
+            return isNaN(d.getTime()) ? null : d;
+        }
+        return parseAsUTC(value);
+    }
+
+    function toUtcDatetimeLocal(date) {
+        return date.getUTCFullYear() + '-' +
+            String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
+            String(date.getUTCDate()).padStart(2, '0') + 'T' +
+            String(date.getUTCHours()).padStart(2, '0') + ':' +
+            String(date.getUTCMinutes()).padStart(2, '0');
+    }
+
+    function formatLocal(date) {
+        try {
+            return new Intl.DateTimeFormat(undefined, {
+                year:   'numeric',
+                month:  '2-digit',
+                day:    '2-digit',
+                hour:   '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short',
+            }).format(date);
+        } catch (e) {
+            return date.toString();
+        }
+    }
+
+    function formatEve(date) {
+        return toUtcDatetimeLocal(date).replace('T', ' ') + ' EVE';
+    }
+
+    function applyModeLabels() {
+        var mode = getInputMode();
+        if (mode === 'local') {
+            $('#startModeHint, #endModeHint').text('(your local time)');
+            $('#startModeHelp').html('<i class="fas fa-info-circle"></i> Enter the time in <strong>your local time</strong> &mdash; we convert to EVE on submit.');
+        } else {
+            $('#startModeHint, #endModeHint').text('(EVE Time / UTC)');
+            $('#startModeHelp').html('<i class="fas fa-info-circle"></i> All times are in EVE Time (UTC).');
+        }
+    }
+
+    function updateConfirmation() {
+        var startVal = $('#start_time').val();
+        var endVal   = $('#end_time').val();
+
+        if (!startVal) {
+            $('#time-confirmation').hide();
+            return;
+        }
+        $('#time-confirmation').show();
+
+        var startDate = parseByMode(startVal);
+        if (startDate && !isNaN(startDate.getTime())) {
+            $('#eve-time-display').text(formatEve(startDate));
+            $('#local-time-display').text(formatLocal(startDate));
+        } else {
+            $('#eve-time-display, #local-time-display').text('Invalid date');
+        }
+
+        if (endVal) {
+            $('#end-confirmation').show();
+            var endDate = parseByMode(endVal);
+            if (endDate && !isNaN(endDate.getTime())) {
+                $('#end-eve-display').text(formatEve(endDate));
+                $('#end-local-display').text(formatLocal(endDate));
+            } else {
+                $('#end-eve-display, #end-local-display').text('Invalid date');
+            }
+        } else {
+            $('#end-confirmation').hide();
+        }
+    }
+
+    $('#start_time, #end_time').on('change input', updateConfirmation);
+    $('input[name="time_input_mode"]').on('change', function () {
+        applyModeLabels();
+        updateConfirmation();
+    });
+    applyModeLabels();
+    updateConfirmation();
+
+    // On submit, rewrite the input values to UTC-as-datetime-local so the
+    // server (which expects UTC) sees the right instant regardless of mode.
+    $('#eventForm').on('submit', function () {
+        $('#start_time, #end_time').each(function () {
+            var $input = $(this);
+            var value  = $input.val();
+            if (!value) return;
+            var d = parseByMode(value);
+            if (d && !isNaN(d.getTime())) {
+                $input.val(toUtcDatetimeLocal(d));
+            }
+        });
     });
 });
 </script>

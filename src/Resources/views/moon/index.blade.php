@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
@@ -39,6 +41,14 @@
                     <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
                 </a>
             </li>
+            @can('mining-manager.director')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">
+                    <i class="fas fa-box-open"></i> {{ trans('mining-manager::menu.metenox_cargo') }}
+                    <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
+                </a>
+            </li>
+            @endcan
         </ul>
     </div>
     <div class="card-body">
@@ -139,18 +149,22 @@
                                         {{ $extraction->moon_name ?? 'N/A' }}
                                     </td>
                                     <td>
-                                        {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }}
+                                        <span class="eve-time" data-eve-time="{{ $extraction->chunk_arrival_time->toIso8601String() }}" data-show-local>
+                                            {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }} EVE
+                                        </span>
                                     </td>
                                     <td>
-                                        <span class="countdown text-warning">
-                                            {{ $extraction->chunk_arrival_time->diffForHumans() }}
+                                        <span class="countdown">
+                                            <span class="eve-countdown" data-target="{{ $extraction->chunk_arrival_time->toIso8601String() }}">
+                                                {{ $extraction->chunk_arrival_time->diffForHumans() }}
+                                            </span>
                                         </span>
                                     </td>
                                     <td>
                                         @if($extraction->ore_composition)
                                             <span class="text-success">~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK</span>
                                             @if($extraction->is_jackpot)
-                                                <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
+                                                <span class="badge ml-1 mm-jackpot-badge" style="font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
                                                     <i class="fas fa-star"></i>
                                                 </span>
                                             @endif
@@ -277,12 +291,12 @@
                                             {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                         </span>
                                         @if($extraction->is_jackpot)
-                                            <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
+                                            <span class="badge ml-1 mm-jackpot-badge">
                                                 <i class="fas fa-star"></i> JACKPOT
                                                 @if($extraction->jackpot_verified === true)
                                                     <i class="fas fa-check-circle ml-1" title="Verified by mining data"></i>
                                                 @elseif($extraction->jackpot_verified === false)
-                                                    <i class="fas fa-times-circle ml-1" style="color: #c00;" title="Could not verify"></i>
+                                                    <i class="fas fa-times-circle ml-1" style="color: #c00 !important;" title="Could not verify"></i>
                                                 @elseif($extraction->jackpot_reported_by)
                                                     <i class="fas fa-hourglass-half ml-1" title="Awaiting verification"></i>
                                                 @endif
@@ -291,14 +305,21 @@
                                     </div>
                                     <p class="mb-1">
                                         <strong>{{ trans('mining-manager::moons.chunk_arrival') }}:</strong><br>
-                                        {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }}
+                                        <span class="eve-time" data-eve-time="{{ $extraction->chunk_arrival_time->toIso8601String() }}" data-show-local>
+                                            {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }} EVE
+                                        </span>
                                         @if($extraction->chunk_arrival_time->isFuture())
-                                            <span class="text-warning">({{ $extraction->chunk_arrival_time->diffForHumans() }})</span>
+                                            <span class="eve-countdown" data-target="{{ $extraction->chunk_arrival_time->toIso8601String() }}">
+                                                ({{ $extraction->chunk_arrival_time->diffForHumans() }})
+                                            </span>
                                         @endif
                                     </p>
                                     @if($extraction->fractured_at)
                                     <p class="mb-0 text-muted small">
-                                        <strong>Fractured:</strong> {{ $extraction->fractured_at->format('M d, H:i') }}
+                                        <strong>Fractured:</strong>
+                                        <span class="eve-time" data-eve-time="{{ $extraction->fractured_at->toIso8601String() }}">
+                                            {{ $extraction->fractured_at->format('M d, H:i') }} EVE
+                                        </span>
                                         @if($extraction->fractured_by)
                                             by {{ $extraction->fractured_by }}
                                         @elseif($extraction->auto_fractured)
@@ -312,8 +333,14 @@
                                         @endif
                                     </p>
                                     @elseif($extraction->natural_decay_time)
+                                    @php
+                                        $expiryTime = $extraction->getExpiryTime() ?? $extraction->natural_decay_time;
+                                    @endphp
                                     <p class="mb-0 text-muted small">
-                                        <strong>Expires:</strong> {{ $extraction->getExpiryTime() ? $extraction->getExpiryTime()->format('M d, H:i') : $extraction->natural_decay_time->format('M d, H:i') }}
+                                        <strong>Expires:</strong>
+                                        <span class="eve-time" data-eve-time="{{ $expiryTime->toIso8601String() }}">
+                                            {{ $expiryTime->format('M d, H:i') }} EVE
+                                        </span>
                                         @if($extraction->isUnstable())
                                             <span class="badge badge-warning ml-1">{{ trans('mining-manager::moons.unstable') }}</span>
                                         @endif
@@ -327,7 +354,7 @@
                                         <h4 class="mb-2 text-success">
                                             ~{{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                             @if($extraction->is_jackpot)
-                                                <span class="badge align-middle" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
+                                                <span class="badge align-middle mm-jackpot-badge" style="font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
                                                     <i class="fas fa-star"></i> 2x
                                                 </span>
                                             @endif
@@ -412,7 +439,7 @@
                                         {{ $history->structure_name ?? ('Structure ' . $history->structure_id) }}
                                     </td>
                                     <td data-order="{{ $history->chunk_arrival_time->timestamp }}">
-                                        {{ $history->chunk_arrival_time->format('M d, Y H:i') }}
+                                        <span class="eve-time" data-eve-time="{{ $history->chunk_arrival_time->toIso8601String() }}">{{ $history->chunk_arrival_time->format('M d, Y H:i') }} EVE</span>
                                     </td>
                                     <td>
                                         @if($history->final_status === 'cancelled')
@@ -428,7 +455,7 @@
                                             </span>
                                         @endif
                                         @if($history->is_jackpot)
-                                            <span class="badge badge-warning ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;">
+                                            <span class="badge ml-1 mm-jackpot-badge">
                                                 <i class="fas fa-star"></i> JACKPOT
                                             </span>
                                         @endif
@@ -467,7 +494,17 @@
                                         @endif
                                     </td>
                                     <td data-order="{{ $history->archived_at ? $history->archived_at->timestamp : 0 }}">
-                                        <small class="text-muted">{{ $history->archived_at ? $history->archived_at->diffForHumans() : 'N/A' }}</small>
+                                        <small class="text-muted">
+                                            @if($history->archived_at)
+                                                <span class="eve-time" data-eve-time="{{ $history->archived_at->toIso8601String() }}">
+                                                    <span class="eve-countdown" data-target="{{ $history->archived_at->toIso8601String() }}">
+                                                        {{ $history->archived_at->diffForHumans() }}
+                                                    </span>
+                                                </span>
+                                            @else
+                                                N/A
+                                            @endif
+                                        </small>
                                     </td>
                                 </tr>
                                 @endforeach

@@ -476,7 +476,12 @@ class PriceProviderService
         // (no typeId key). We canonicalise that below.
         try {
             $bridge = app(\ManagerCore\Services\PluginBridge::class);
-            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType);
+            // 4th arg 'mining-manager' (MC Option B, 2026-05-29): tells MC
+            // to consult MM's provider_override pref before reading cache.
+            // When set (e.g. operator routed MM through Janice), MC does
+            // a live upstream fetch via the override. When null/empty
+            // (default), MC reads its cache populated by per-market routing.
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType, 'mining-manager');
         } catch (\Throwable $e) {
             Log::warning('Mining Manager: pricing.getPrices bridge call failed; returning zeros', [
                 'error' => $e->getMessage(),
@@ -898,7 +903,11 @@ class PriceProviderService
 
         try {
             $bridge = app(\ManagerCore\Services\PluginBridge::class);
-            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType);
+            // 4th arg 'mining-manager' (MC Option B, 2026-05-29): consult
+            // the provider_override on MM's pref row for the Jita-fallback
+            // path too — if MM's primary read went through Janice, the
+            // fallback should also go through Janice for consistency.
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType, 'mining-manager');
         } catch (\Throwable $e) {
             Log::warning('Mining Manager: pricing.getPrices bridge call failed in Jita-fallback path; returning zeros', [
                 'error' => $e->getMessage(),
@@ -1085,11 +1094,13 @@ class PriceProviderService
             $bridge = app(\ManagerCore\Services\PluginBridge::class);
             $count = $bridge->call('ManagerCore', 'pricing.unsubscribeTypes', 'mining-manager', null);
 
-            // Capability returns null when not registered (older MC version
-            // without H7a). Safe fallback: legacy direct-DB delete so an
-            // upgrade path that updates MM before MC still works.
+            // Capability returns null when not registered (e.g. capability
+            // surface changed in a future MC version, or MC's bridge boot
+            // failed silently). Safe fallback: legacy direct-DB delete so
+            // an unexpected null response never leaves orphan subscription
+            // rows behind.
             if ($count === null) {
-                Log::info('Mining Manager: pricing.unsubscribeTypes capability not registered (older MC); falling back to direct DB delete');
+                Log::info('Mining Manager: pricing.unsubscribeTypes capability not registered; falling back to direct DB delete');
                 $count = DB::table('manager_core_type_subscriptions')
                     ->where('plugin_name', 'mining-manager')
                     ->delete();

@@ -154,7 +154,7 @@
                                                 </span>
                                             @endif
                                             @if($webhook->notify_jackpot_detected)
-                                                <span class="badge" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Jackpot Detected">
+                                                <span class="badge mm-jackpot-badge" title="Jackpot Detected">
                                                     <i class="fas fa-star"></i>
                                                 </span>
                                             @endif

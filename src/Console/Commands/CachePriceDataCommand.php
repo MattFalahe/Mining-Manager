@@ -130,22 +130,47 @@ class CachePriceDataCommand extends Command
      */
     private function syncFromManagerCore(array $typeIds, int $regionId): void
     {
+        // Both market and variant come from SettingsManagerService now —
+        // which resolves manager_core_market by calling MC's
+        // pricing.getPreferenceForPlugin bridge capability under the hood
+        // (see SettingsManagerService::resolveMcMarket). So the operator's
+        // change in MC's Pricing Preferences UI propagates here
+        // automatically without any direct bridge call in this command.
+        //
+        // variant=min is hardcoded by SettingsManagerService — the only
+        // variant that produces meaningful tax + payout values (lowest
+        // sell = real buy price for an instant market buy).
+        //
+        // Why not pricing.pricesForPlugin: that returns ONE value per
+        // type (the configured price_type), but MM needs BOTH buy + sell
+        // stats to populate prices_buy_price / prices_sell_price /
+        // prices_average_price columns. So we keep pricing.getPrices
+        // (full stats both sides) but pass it MC's market.
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $market = $pricingSettings['manager_core_market'] ?? 'jita';
-        $variant = $pricingSettings['manager_core_variant'] ?? 'min';
+        $market = $pricingSettings['manager_core_market'];
+        $variant = $pricingSettings['manager_core_variant'];
 
         $this->info("Syncing from Manager Core (market: {$market}, variant: {$variant})...");
 
-        // Pre-fix this used `DB::table('manager_core_market_prices')`
-        // directly — schema-coupled to MC's table layout, exactly the
-        // class of issue the H7b PluginBridge migration set out to
-        // eliminate. Now goes through `pricing.getPrices` which returns
-        // the documented `[typeId => ['buy' => stats, 'sell' => stats]]`
-        // shape regardless of MC's underlying column names.
+        // Goes through `pricing.getPrices` which returns the documented
+        // `[typeId => ['buy' => stats, 'sell' => stats]]` shape regardless
+        // of MC's underlying column names. Pre-fix this used
+        // `DB::table('manager_core_market_prices')` directly — schema-coupled
+        // to MC's table layout, exactly the class of issue the H7b
+        // PluginBridge migration set out to eliminate.
+        //
+        // 4th arg 'mining-manager' (added 2026-05-29 for MC Option B): when
+        // MC sees a per-plugin provider_override on MM's row in
+        // manager_core_pricing_preferences, MC bypasses its local cache and
+        // does a live upstream fetch via the override provider. Lets MM
+        // route through Janice for Jita while other plugins reading the
+        // same market continue through Fuzzwork (the per-market provider).
+        // Without the 4th arg, MC ignores the override and reads cache.
+        // Graceful degradation on older MC: extra arg is silently ignored.
         $mcPrices = [];
         try {
             $bridge = app(\ManagerCore\Services\PluginBridge::class);
-            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, 'both');
+            $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, 'both', 'mining-manager');
 
             if (is_array($rawResult)) {
                 // Handle the single-element-collapse quirk: 1-element

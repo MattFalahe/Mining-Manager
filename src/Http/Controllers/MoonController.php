@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonValueCalculationService;
+use MiningManager\Services\Moon\MetenoxCargoService;
+use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MiningLedger;
@@ -868,5 +870,269 @@ class MoonController extends Controller
             return redirect()->back()
                 ->with('error', 'Error reporting jackpot: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Director-only Metenox cargo readout page.
+     *
+     * Lists every Metenox Moon Drill in scope, with its current
+     * MoonMaterialBay contents and a "last polled" timestamp. Uses
+     * SeAT's existing corporation_assets mirror — no new ESI calls.
+     *
+     * Scope model (2026-05-27 admin-picker rev):
+     *   - Director (mining-manager.director, non-admin): locked to the
+     *     **Moon Owner Corporation** (Settings → General →
+     *     `general.moon_owner_corporation_id`). Matches the Past
+     *     Extractions table convention and the scanner notification
+     *     scope, so what they see = what gets alerted.
+     *   - Admin (mining-manager.admin): sees ALL corps with at least one
+     *     Metenox by default, AND gets a corp-picker dropdown to narrow
+     *     to one corp (via `?corporation_id=X`). Lets multi-corp installs
+     *     diagnose drills across the whole alliance without losing the
+     *     deterministic single-corp default.
+     *
+     * The scanner notification (ScanMetenoxCargoFillCommand) stays Moon
+     * Owner Corp only by design — alerts should fire for the operator's
+     * primary scope, not every admin-visible corp.
+     *
+     * Route is gated by `can:mining-manager.director` middleware. When
+     * a non-admin operator hasn't configured a Moon Owner Corp yet, the
+     * page renders an empty-state explaining how to fix it.
+     *
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    public function metenoxCargo(Request $request)
+    {
+        $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+        $cargoService = app(MetenoxCargoService::class);
+
+        // Permission split: admins get the picker. Directors stay locked
+        // to Moon Owner Corp.
+        $isAdmin = auth()->user()?->can('mining-manager.admin') ?? false;
+
+        // Moon Owner Corp is the universal default for both roles. Admin's
+        // picker can switch to any other Metenox-owning corp, or the
+        // aggregate "all corps" view via the `all` sentinel.
+        $moonOwnerCorpId = $settings->getSetting('general.moon_owner_corporation_id');
+        $moonOwnerCorpId = $moonOwnerCorpId !== null ? (int) $moonOwnerCorpId : null;
+
+        // Picker dataset: every corp SeAT has Metenoxes for, ordered by
+        // name. Only populated for admins (saves the lookup for directors
+        // who can't use the picker anyway).
+        $availableCorps = $isAdmin
+            ? $cargoService->corporationsWithMetenoxes()
+            : collect();
+
+        // Parse the admin's `?corporation_id=` selection:
+        //   absent     → default (Moon Owner Corp, or all-corps if unset)
+        //   "all"      → aggregate view across every corp with a drill
+        //   numeric    → narrow to that corp (whitelisted)
+        //   invalid    → silently fall back to default
+        $requestedScope = $request->query('corporation_id');
+        $showAllCorps   = false;
+        $requestedCorpId = null;
+
+        if ($isAdmin && $requestedScope !== null && $requestedScope !== '') {
+            if ($requestedScope === 'all') {
+                $showAllCorps = true;
+            } else {
+                $candidate = (int) $requestedScope;
+                $isValid = $availableCorps->contains(function ($row) use ($candidate) {
+                    return (int) $row->corporation_id === $candidate;
+                });
+                if ($isValid) {
+                    $requestedCorpId = $candidate;
+                }
+                // unknown corp_id → ignore, drop to default below
+            }
+        }
+
+        // Resolve final scope.
+        if ($isAdmin) {
+            if ($requestedCorpId !== null) {
+                // Admin picked a specific corp.
+                $corpIdsToShow = [$requestedCorpId];
+                $filterCorpId  = $requestedCorpId;
+            } elseif ($showAllCorps) {
+                // Admin chose the aggregate view explicitly.
+                $corpIdsToShow = $availableCorps->pluck('corporation_id')
+                    ->map(fn ($id) => (int) $id)->all();
+                $filterCorpId  = null;
+            } elseif ($moonOwnerCorpId !== null) {
+                // Admin default: Moon Owner Corp (matches director view so
+                // the page looks the same regardless of who's logged in).
+                $corpIdsToShow = [$moonOwnerCorpId];
+                $filterCorpId  = $moonOwnerCorpId;
+            } else {
+                // Moon Owner Corp isn't set — admin needs SOMETHING to look
+                // at, so fall back to all-corps aggregate. The view shows
+                // a hint badge so the admin knows this isn't the normal
+                // landing scope.
+                $corpIdsToShow = $availableCorps->pluck('corporation_id')
+                    ->map(fn ($id) => (int) $id)->all();
+                $filterCorpId  = null;
+                $showAllCorps  = true;
+            }
+        } else {
+            // Director: Moon Owner Corp only.
+            $corpIdsToShow = $moonOwnerCorpId !== null ? [$moonOwnerCorpId] : [];
+            $filterCorpId  = $moonOwnerCorpId;
+        }
+
+        // Resolve corp names for every corp shown + every corp in the
+        // picker (so the dropdown labels resolve even before selection).
+        $namesNeeded = array_unique(array_merge(
+            $corpIdsToShow,
+            $availableCorps->pluck('corporation_id')->map(fn ($id) => (int) $id)->all(),
+            $moonOwnerCorpId !== null ? [$moonOwnerCorpId] : []
+        ));
+        $corpNames = !empty($namesNeeded)
+            ? DB::table('corporation_infos')
+                ->whereIn('corporation_id', $namesNeeded)
+                ->pluck('name', 'corporation_id')
+                ->all()
+            : [];
+
+        // homeCorpIds = the list the picker iterates over (admin: all
+        // metenox-owning corps; director: just the one or none).
+        $homeCorpIds = $isAdmin
+            ? $availableCorps->pluck('corporation_id')->map(fn ($id) => (int) $id)->all()
+            : $corpIdsToShow;
+
+        // Build the page-level data structure: one entry for the single
+        // moon-owner corp (or empty if it's not configured).
+        $perCorp = [];
+        foreach ($corpIdsToShow as $corpId) {
+            $perCorp[$corpId] = [
+                'corporation_id'    => $corpId,
+                'corporation_name'  => $corpNames[$corpId] ?? ('Corporation #' . $corpId),
+                'summaries'         => $cargoService->summaryForCorporation($corpId),
+                'cargo_rows'        => $cargoService->forCorporation($corpId),
+                'known_structures'  => $cargoService->knownStructuresForCorporation($corpId),
+            ];
+        }
+
+        // ISK valuation pass. Collect every unique type_id across every drill
+        // visible on the page, then ask PriceProviderService once for the
+        // whole batch (MC PricingService is the primary; Jita/Fuzzwork is
+        // the fallback chain MM already configured). Computing prices in one
+        // shot avoids N round-trips per type when rendering.
+        //
+        // Failure modes are tolerated: if pricing fails, $prices ends up
+        // empty and the page renders qty-only (no "≈ X.X B ISK" subtitle).
+        // This matches the pattern other MM pages use for non-fatal pricing.
+        $allTypeIds = [];
+        foreach ($perCorp as $entry) {
+            foreach ($entry['cargo_rows'] as $row) {
+                $allTypeIds[(int) $row->type_id] = true;
+            }
+        }
+        $prices = [];
+        if (!empty($allTypeIds)) {
+            try {
+                $prices = app(PriceProviderService::class)->getPrices(array_keys($allTypeIds));
+            } catch (\Exception $e) {
+                \Log::warning('Metenox cargo: failed to fetch prices, rendering quantity-only', [
+                    'error' => $e->getMessage(),
+                    'type_count' => count($allTypeIds),
+                ]);
+                $prices = [];
+            }
+        }
+
+        // Now annotate each cargo row with its computed ISK value and each
+        // summary row with the drill-level total. The blade reads these
+        // directly without having to know about pricing at all.
+        $perDrillIsk = [];                   // structure_id => total ISK in that bay
+        $totalIsk    = 0.0;                  // page-wide sum (visible scope only)
+        foreach ($perCorp as $corpId => $entry) {
+            foreach ($entry['cargo_rows'] as $row) {
+                $unitPrice = $prices[(int) $row->type_id] ?? null;
+                $rowValue  = $unitPrice !== null ? ($unitPrice * (float) $row->total_quantity) : null;
+                // Decorate the row in place (stdClass from DB::table()->get()).
+                $row->unit_price = $unitPrice;
+                $row->isk_value  = $rowValue;
+                if ($rowValue !== null) {
+                    $perDrillIsk[(int) $row->structure_id] =
+                        ($perDrillIsk[(int) $row->structure_id] ?? 0.0) + $rowValue;
+                    $totalIsk += $rowValue;
+                }
+            }
+        }
+
+        // Page-wide stats for the header chips. Counts the visible scope,
+        // not the entire install, so the chip numbers match what the user
+        // actually sees below.
+        $totalDrills    = 0;
+        $totalUnits     = 0;
+        $totalM3        = 0.0;
+        $emptyDrills    = 0;
+        $fillPctSum     = 0.0;
+        $fillPctCount   = 0;
+        $criticalCount  = 0;          // drills at >= 85% full
+        $oldestPollAt   = null;
+        foreach ($perCorp as $entry) {
+            $totalDrills += $entry['known_structures']->count();
+            foreach ($entry['summaries'] as $row) {
+                $totalUnits += (int) $row->total_units;
+                $totalM3    += (float) ($row->total_m3 ?? 0);
+                $fillPctSum += (float) ($row->fill_pct ?? 0);
+                $fillPctCount++;
+                if (($row->fill_state ?? '') === 'critical') {
+                    $criticalCount++;
+                }
+                if ($row->last_polled_at !== null) {
+                    $rowPoll = Carbon::parse($row->last_polled_at);
+                    if ($oldestPollAt === null || $rowPoll->lt($oldestPollAt)) {
+                        $oldestPollAt = $rowPoll;
+                    }
+                }
+            }
+            // Drills with no cargo rows at all = empty bays. Count by
+            // subtracting "drills with cargo" from "all known drills".
+            $emptyDrills += $entry['known_structures']->count() - $entry['summaries']->count();
+        }
+        // Average fill % across visible drills. Empty drills count as 0%
+        // toward the average (they're real drills sitting at 0% full),
+        // which is what an operator wants to see at a glance.
+        $avgFillPct = $totalDrills > 0
+            ? round(($fillPctSum / max(1, $totalDrills)), 1)
+            : null;
+
+        // Sort drills by per-drill ISK descending within each corp so the
+        // most-valuable cargo shows first. Falls back to total_units when
+        // pricing is unavailable.
+        foreach ($perCorp as $corpId => &$entry) {
+            $entry['summaries'] = $entry['summaries']->sortByDesc(function ($row) use ($perDrillIsk) {
+                return $perDrillIsk[(int) $row->structure_id] ?? (int) $row->total_units;
+            })->values();
+        }
+        unset($entry);
+
+        return view('mining-manager::moon.metenox-cargo', [
+            'perCorp'          => $perCorp,
+            'homeCorpIds'      => $homeCorpIds,
+            'homeCorpNames'    => $corpNames,
+            'filterCorpId'     => $filterCorpId,
+            'isAdmin'          => $isAdmin,
+            'availableCorps'   => $availableCorps,
+            'showAllCorps'     => $showAllCorps,
+            'moonOwnerCorpId'  => $moonOwnerCorpId,
+            'moonOwnerCorpName' => $moonOwnerCorpId !== null
+                ? ($corpNames[$moonOwnerCorpId] ?? ('Corporation #' . $moonOwnerCorpId))
+                : null,
+            'totalDrills'      => $totalDrills,
+            'totalUnits'       => $totalUnits,
+            'totalM3'          => $totalM3,
+            'emptyDrills'      => $emptyDrills,
+            'oldestPollAt'     => $oldestPollAt,
+            'perDrillIsk'      => $perDrillIsk,
+            'totalIsk'         => $totalIsk,
+            'pricingAvailable' => !empty($prices),
+            'avgFillPct'       => $avgFillPct,
+            'criticalCount'    => $criticalCount,
+            'bayCapacityM3'    => \MiningManager\Services\Moon\MetenoxCargoService::MOON_MATERIAL_BAY_CAPACITY_M3,
+        ]);
     }
 }

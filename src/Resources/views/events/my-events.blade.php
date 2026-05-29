@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <style>
     .event-card {
         transition: transform 0.2s, box-shadow 0.2s;
@@ -214,8 +216,16 @@
                                     <div class="row">
                                         <div class="col-md-6">
                                             <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ trans('mining-manager::events.' . $event->type) }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.started') }}:</strong> {{ $event->start_time->diffForHumans() }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.ends') }}:</strong> {{ $event->end_time->format('M d, Y H:i') }}</p>
+                                            <p><strong>{{ trans('mining-manager::events.started') }}:</strong>
+                                                <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
+                                                    {{ $event->start_time->diffForHumans() }}
+                                                </span>
+                                            </p>
+                                            <p><strong>{{ trans('mining-manager::events.ends') }}:</strong>
+                                                <span class="eve-time" data-eve-time="{{ $event->end_time->toIso8601String() }}" data-show-local>
+                                                    {{ $event->end_time->format('M d, Y H:i') }} EVE
+                                                </span>
+                                            </p>
                                             @if($event->location)
                                             <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location }}</p>
                                             @endif
@@ -294,8 +304,16 @@
                                     <div class="row">
                                         <div class="col-md-6">
                                             <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ trans('mining-manager::events.' . $event->type) }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.starts') }}:</strong> {{ $event->start_time->format('M d, Y H:i') }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.starts_in') }}:</strong> {{ $event->start_time->diffForHumans() }}</p>
+                                            <p><strong>{{ trans('mining-manager::events.starts') }}:</strong>
+                                                <span class="eve-time" data-eve-time="{{ $event->start_time->toIso8601String() }}" data-show-local>
+                                                    {{ $event->start_time->format('M d, Y H:i') }} EVE
+                                                </span>
+                                            </p>
+                                            <p><strong>{{ trans('mining-manager::events.starts_in') }}:</strong>
+                                                <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
+                                                    {{ $event->start_time->diffForHumans() }}
+                                                </span>
+                                            </p>
                                             @if($event->location)
                                             <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location }}</p>
                                             @endif
@@ -356,8 +374,16 @@
                                     <div class="row">
                                         <div class="col-md-6">
                                             <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ trans('mining-manager::events.' . $event->type) }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.completed_on') }}:</strong> {{ $event->end_time->format('M d, Y H:i') }}</p>
-                                            <p><strong>{{ trans('mining-manager::events.completed') }}:</strong> {{ $event->end_time->diffForHumans() }}</p>
+                                            <p><strong>{{ trans('mining-manager::events.completed_on') }}:</strong>
+                                                <span class="eve-time" data-eve-time="{{ $event->end_time->toIso8601String() }}">
+                                                    {{ $event->end_time->format('M d, Y H:i') }} EVE
+                                                </span>
+                                            </p>
+                                            <p><strong>{{ trans('mining-manager::events.completed') }}:</strong>
+                                                <span class="eve-countdown" data-target="{{ $event->end_time->toIso8601String() }}">
+                                                    {{ $event->end_time->diffForHumans() }}
+                                                </span>
+                                            </p>
                                             @if($event->location)
                                             <p><strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->location }}</p>
                                             @endif

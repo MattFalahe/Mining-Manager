@@ -270,6 +270,36 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Scan moon extractions and publish lifecycle events to Manager Core
+            // EventBus. Runs every 5 minutes (5-min latency floor is plenty for
+            // FC formup planning — these are not tick-accurate alarms).
+            // Idempotent per extraction per stage via the moon_extraction_event_log
+            // latches; standalone-safe when Manager Core is absent (no-op).
+            [
+                'command' => 'mining-manager:scan-extraction-events',
+                'expression' => '*/5 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Scan Metenox MoonMaterialBays for cross-up transitions above the
+            // configurable fill-% threshold (default 85). Fires the
+            // metenox_cargo_full notification once per crossing; latch in
+            // metenox_cargo_alert_state prevents repeats while still over
+            // threshold. 5-min cadence matches the corp-assets ESI cache
+            // (operator's perceived latency is ~5min from threshold-cross to
+            // ping). Standalone-safe (no Manager Core or Structure Manager
+            // required — purely reads corporation_assets which SeAT itself
+            // populates).
+            [
+                'command' => 'mining-manager:scan-metenox-cargo-fill',
+                'expression' => '*/5 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
         ];
     }
 

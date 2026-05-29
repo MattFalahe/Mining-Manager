@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <meta http-equiv="refresh" content="30">
 @endpush
 
@@ -77,7 +79,14 @@
                         <div class="col-md-4">
                             <h5>{{ trans('mining-manager::events.event_information') }}</h5>
                             <p><strong>{{ trans('mining-manager::events.type') }}:</strong> {{ $event->getTypeLabel() }}</p>
-                            <p><strong>{{ trans('mining-manager::events.started') }}:</strong> {{ $event->start_time->diffForHumans() }}</p>
+                            <p><strong>{{ trans('mining-manager::events.started') }}:</strong>
+                                <span class="eve-time" data-eve-time="{{ $event->start_time->toIso8601String() }}" data-show-local>
+                                    {{ $event->start_time->format('M d, Y H:i') }} EVE
+                                </span>
+                                <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
+                                    ({{ $event->start_time->diffForHumans() }})
+                                </span>
+                            </p>
                             @if($event->end_time)
                             <p><strong>{{ trans('mining-manager::events.duration') }}:</strong> {{ $event->start_time->diff($event->end_time)->format('%h hours %i minutes') }}</p>
                             @endif
@@ -112,7 +121,17 @@
                                             </td>
                                             <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
                                             <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
-                                            <td>{{ $participant->joined_at ? $participant->joined_at->diffForHumans() : '—' }}</td>
+                                            <td>
+                                                @if($participant->joined_at)
+                                                    <span class="eve-time" data-eve-time="{{ $participant->joined_at->toIso8601String() }}">
+                                                        <span class="eve-countdown" data-target="{{ $participant->joined_at->toIso8601String() }}">
+                                                            {{ $participant->joined_at->diffForHumans() }}
+                                                        </span>
+                                                    </span>
+                                                @else
+                                                    &mdash;
+                                                @endif
+                                            </td>
                                         </tr>
                                         @endforeach
                                     </tbody>

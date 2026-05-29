@@ -460,7 +460,7 @@ return [
     'settings_general' => 'General',
     'settings_general_desc' => 'Moon owner corporation, payment settings (match tolerance, grace period), and Guest Miner Tax Rates (global rates tied to Moon Owner Corporation — 0% means no tax).',
     'settings_pricing' => 'Pricing',
-    'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, cache duration, and market hub selection. When Manager Core is the provider, additional controls expose the MC market (Jita / Amarr / Dodixie / Hek / Rens) and price-statistic variant (min / max / avg / median / percentile). Controls how ore values are calculated across the plugin. Fallback-to-Jita auto-fills any zero-priced types from Jita as a safety net.',
+    'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, and cache duration. When Manager Core is the provider, the market + price-type lookup is centralized in MC (single source of truth) — the panel becomes a read-only status readout plus a "Configure pricing in Manager Core →" deep-link that lands you on MC\'s Pricing Preferences page with Mining Manager\'s row in view. MC routes the lookup through whichever provider is configured per market (Fuzzwork for hubs by default; Goonpraisal for the 7 pre-seeded nullsec markets) so changing your market in MC also switches the upstream silently. <strong>Per-plugin provider override</strong> on MC\'s Pricing Preferences page lets you route Mining Manager specifically through a different provider than the market\'s default (e.g. Janice for Jita tax accuracy) without affecting other plugins reading the same market. Fallback-to-Jita auto-fills any zero-priced types from Jita as a per-item safety net.',
     'settings_features' => 'Features',
     'settings_features_desc' => 'Toggle individual plugin features on/off: wallet verification, mining events, theft detection, moon analytics, notifications, reports, and diagnostics. Disabled features are hidden from the UI.',
     'settings_webhooks' => 'Webhooks',
@@ -513,7 +513,7 @@ return [
     'css_example_all' => '/* Add custom background to all plugin pages */',
     'css_example_all_code' => '.mining-manager-wrapper { background-color: #1a1a2e; }',
     'css_where_to_add' => 'Where to Add Custom CSS',
-    'css_where_to_add_desc' => 'Add your CSS overrides in SeAT\'s custom CSS section (Administration > SeAT Settings > Custom CSS) or in your own theme stylesheet. This way your customizations survive plugin updates.',
+    'css_where_to_add_desc' => 'SeAT auto-loads a global custom stylesheet, custom-layout.css, if it exists (plus custom-layout-mini.css for the sign-in page). On a bare-metal install, place custom-layout.css in SeAT\'s public/ directory (e.g. /var/www/seat/public/custom-layout.css). On SeAT Docker, put it in /opt/seat-docker/custom/ and mount it to /var/www/seat/public/ via docker-compose.override.yml, then bring the stack back up. It is detected automatically — there is no SeAT setting to toggle. Keep your overrides there, never in the plugin files, so they survive plugin updates. Reference: https://eveseat.github.io/docs/styling/',
 
     // FAQ
     'frequently_asked' => 'Frequently Asked Questions',

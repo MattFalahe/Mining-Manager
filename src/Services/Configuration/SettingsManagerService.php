@@ -908,25 +908,86 @@ class SettingsManagerService
             'janice_market' => $this->getSetting('janice_market', 'jita'),
             'janice_price_method' => $this->getSetting('janice_price_method', 'buy'),
 
-            // Manager Core settings — the user's market (jita/amarr/dodixie/...)
-            // and price-statistic variant (min/max/avg/median/percentile) selections
-            // from the pricing tab. Without these reads, the user's choice was
-            // silently swallowed: SettingsController writes them via
-            // updatePricingSettings() (with 'pricing.' prefix), and consumers
-            // (PriceProviderService, CachePriceDataCommand, DiagnosticController)
-            // all look them up by these exact keys on the returned array. Pre-fix,
-            // every lookup hit the `?? 'jita'/'min'` fallbacks regardless of UI.
+            // Manager Core settings.
             //
-            // NOTE: A duplicate top-level write also exists at SettingsController
-            // lines 653-658 (orphan data — never read). That cleanup is queued
-            // separately to keep this fix surgical.
-            'manager_core_market' => $this->getSetting('pricing.manager_core_market', 'jita'),
-            'manager_core_variant' => $this->getSetting('pricing.manager_core_variant', 'min'),
+            // manager_core_market: source of truth is MC's per-plugin
+            // pricing preference (manager_core_pricing_preferences table).
+            // We pull it via the pricing.getPreferenceForPlugin bridge
+            // capability so the operator's MC-side change in the Pricing
+            // Preferences UI immediately propagates to MM's reads — no
+            // restart, no double-config-write, no drift between MM's
+            // local copy and MC's authoritative row.
+            //
+            // Fallback chain (in order):
+            //   1. MC bridge call returns a pref row → use pref['market']
+            //   2. MC bridge call fails (older MC, bridge boot failure) →
+            //      'jita' as last-resort literal
+            //
+            // Note: the local 'pricing.manager_core_market' row was dropped
+            // from mining_manager_settings in migration 000018. Even on
+            // installs that hadn't run the migration yet, the row is
+            // unused — this method is the only reader and it now consults
+            // MC's pref first.
+            //
+            // manager_core_variant: hardcoded to 'min' because that's the
+            // only variant that produces meaningful tax + payout values
+            // (lowest sell = real buy price). Operator-selectable variant
+            // was removed from MM's UI in commit 583ea48.
+            'manager_core_market' => $this->resolveMcMarket(),
+            'manager_core_variant' => 'min',
 
             // Refining settings
             'use_refined_value' => $this->getSetting('pricing.use_refined_value', false),
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
         ];
+    }
+
+    /**
+     * Resolve the market MM should read prices at, when the price provider
+     * is set to Manager Core.
+     *
+     * Single point of bridge integration so every consumer of
+     * getPricingSettings()['manager_core_market'] transparently sees the
+     * operator-configured market without each one calling the bridge
+     * independently.
+     *
+     * Cached for the request (one bridge call max per HTTP request) since
+     * getPricingSettings() can be invoked many times during a single page
+     * render (Dashboard / Diagnostic / Moon views all touch it). The
+     * pricing.preference_changed EventBus subscription flushes downstream
+     * caches when the operator saves a change in MC; this in-request
+     * memo is just to avoid hammering the bridge.
+     *
+     * @return string Market key (e.g. 'jita', 'c-j6mt'). Falls back to
+     *                'jita' if MC's bridge call fails for any reason
+     *                (older MC version without the capability, bridge
+     *                boot failure, no preference row registered yet).
+     */
+    protected function resolveMcMarket(): string
+    {
+        // Static cache for the request — avoids N bridge calls per page
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $market = 'jita';
+
+        try {
+            if (class_exists('ManagerCore\\Services\\PluginBridge')) {
+                $bridge = app(\ManagerCore\Services\PluginBridge::class);
+                $pref = $bridge->call('ManagerCore', 'pricing.getPreferenceForPlugin', 'mining-manager');
+                if (is_array($pref) && !empty($pref['market'])) {
+                    $market = (string) $pref['market'];
+                }
+            }
+        } catch (\Throwable $e) {
+            // Bridge call failed — keep the 'jita' literal. No log spam;
+            // this is expected on older MC versions without the capability.
+        }
+
+        $cached = $market;
+        return $cached;
     }
 
     /**
@@ -1000,6 +1061,8 @@ class SettingsManagerService
         'event_created', 'event_started', 'event_completed',
         // Moon
         'moon_ready', 'jackpot_detected',
+        // Metenox (v2.0.1) — bay-full warning, standalone (no cross-plugin deps)
+        'metenox_cargo_full',
         // Theft
         'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved',
         // Reports
@@ -1046,6 +1109,11 @@ class SettingsManagerService
             // Legacy discord pinging (kept for backward compat during transition)
             'discord_pinging_enabled' => (bool) $this->getSetting('notifications.discord_pinging_enabled', false),
             'discord_ping_show_amount' => (bool) $this->getSetting('notifications.discord_ping_show_amount', true),
+
+            // Metenox cargo-full notification threshold (default 85%, clamped
+            // [50, 99] both client-side via the UI input + server-side in the
+            // scanner). Read here so the settings view can prefill the input.
+            'metenox_cargo_full_threshold_pct' => (float) $this->getSetting('notifications.metenox_cargo_full_threshold_pct', 85),
 
             // seat-connector availability (runtime)
             'seat_connector_available' => \Illuminate\Support\Facades\Schema::hasTable('seat_connector_users'),

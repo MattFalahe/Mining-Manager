@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
@@ -39,6 +41,14 @@
                     <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
                 </a>
             </li>
+            @can('mining-manager.director')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">
+                    <i class="fas fa-box-open"></i> {{ trans('mining-manager::menu.metenox_cargo') }}
+                    <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
+                </a>
+            </li>
+            @endcan
         </ul>
     </div>
     <div class="card-body">
@@ -216,18 +226,22 @@
                                         </span>
                                     </td>
                                     <td>
-                                        {{ $extraction->extraction_start_time->format('M d, Y') }}<br>
+                                        <span class="eve-time" data-eve-time="{{ $extraction->extraction_start_time->toIso8601String() }}">{{ $extraction->extraction_start_time->format('M d, Y') }} EVE</span><br>
                                         <small class="text-muted">{{ $extraction->extraction_start_time->format('H:i') }}</small>
                                     </td>
                                     <td>
-                                        {{ $extraction->chunk_arrival_time->format('M d, Y') }}<br>
+                                        <span class="eve-time" data-eve-time="{{ $extraction->chunk_arrival_time->toIso8601String() }}">{{ $extraction->chunk_arrival_time->format('M d, Y') }} EVE</span><br>
                                         <small class="text-muted">{{ $extraction->chunk_arrival_time->format('H:i') }}</small>
                                         @if($extraction->chunk_arrival_time->isFuture())
-                                            <br><span class="badge badge-warning">{{ $extraction->chunk_arrival_time->diffForHumans() }}</span>
+                                            <br><span class="badge">
+                                                <span class="eve-countdown" data-target="{{ $extraction->chunk_arrival_time->toIso8601String() }}">
+                                                    {{ $extraction->chunk_arrival_time->diffForHumans() }}
+                                                </span>
+                                            </span>
                                         @endif
                                     </td>
                                     <td>
-                                        {{ $extraction->natural_decay_time->format('M d, Y') }}<br>
+                                        <span class="eve-time" data-eve-time="{{ $extraction->natural_decay_time->toIso8601String() }}">{{ $extraction->natural_decay_time->format('M d, Y') }} EVE</span><br>
                                         <small class="text-muted">{{ $extraction->natural_decay_time->format('H:i') }}</small>
                                     </td>
                                     <td class="text-right">
@@ -236,7 +250,7 @@
                                                 {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                             </span>
                                             @if($extraction->is_jackpot)
-                                                <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
+                                                <span class="badge ml-1 mm-jackpot-badge" style="font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
                                                     <i class="fas fa-star"></i>
                                                 </span>
                                             @endif

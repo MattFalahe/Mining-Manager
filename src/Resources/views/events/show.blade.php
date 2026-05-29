@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
@@ -72,9 +74,23 @@
                                 <div class="col-md-6">
                                     <h5>{{ trans('mining-manager::events.event_information') }}</h5>
                                     <p><i class="fas fa-tag"></i> <strong>{{ trans('mining-manager::events.type') }}:</strong> {{ $event->getTypeLabel() }}</p>
-                                    <p><i class="fas fa-calendar-alt"></i> <strong>{{ trans('mining-manager::events.starts') }}:</strong> {{ $event->start_time->format('F d, Y H:i') }}</p>
+                                    <p><i class="fas fa-calendar-alt"></i> <strong>{{ trans('mining-manager::events.starts') }}:</strong>
+                                        <span class="eve-time" data-eve-time="{{ $event->start_time->toIso8601String() }}" data-show-local>
+                                            {{ $event->start_time->format('F d, Y H:i') }} EVE
+                                        </span>
+                                        <span class="eve-countdown" data-target="{{ $event->start_time->toIso8601String() }}">
+                                            ({{ $event->start_time->diffForHumans() }})
+                                        </span>
+                                    </p>
                                     @if($event->end_time)
-                                    <p><i class="fas fa-clock"></i> <strong>{{ trans('mining-manager::events.ends') }}:</strong> {{ $event->end_time->format('F d, Y H:i') }}</p>
+                                    <p><i class="fas fa-clock"></i> <strong>{{ trans('mining-manager::events.ends') }}:</strong>
+                                        <span class="eve-time" data-eve-time="{{ $event->end_time->toIso8601String() }}" data-show-local>
+                                            {{ $event->end_time->format('F d, Y H:i') }} EVE
+                                        </span>
+                                        <span class="eve-countdown" data-target="{{ $event->end_time->toIso8601String() }}">
+                                            ({{ $event->end_time->diffForHumans() }})
+                                        </span>
+                                    </p>
                                     @endif
                                     @if($event->getLocationName())
                                     <p><i class="fas fa-map-marker-alt"></i> <strong>{{ trans('mining-manager::events.location') }}:</strong> {{ $event->getLocationName() }} ({{ $event->getLocationScopeLabel() }})</p>
@@ -161,7 +177,17 @@
                                 </td>
                                 <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
                                 <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
-                                <td>{{ $participant->joined_at ? $participant->joined_at->diffForHumans() : 'N/A' }}</td>
+                                <td>
+                                    @if($participant->joined_at)
+                                        <span class="eve-time" data-eve-time="{{ $participant->joined_at->toIso8601String() }}">
+                                            <span class="eve-countdown" data-target="{{ $participant->joined_at->toIso8601String() }}">
+                                                {{ $participant->joined_at->diffForHumans() }}
+                                            </span>
+                                        </span>
+                                    @else
+                                        N/A
+                                    @endif
+                                </td>
                             </tr>
                             @empty
                             <tr>

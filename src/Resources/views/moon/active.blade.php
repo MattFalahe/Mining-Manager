@@ -4,7 +4,9 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
+<script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 <meta http-equiv="refresh" content="60">
 @endpush
 
@@ -40,6 +42,14 @@
                     <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
                 </a>
             </li>
+            @can('mining-manager.director')
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">
+                    <i class="fas fa-box-open"></i> {{ trans('mining-manager::menu.metenox_cargo') }}
+                    <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
+                </a>
+            </li>
+            @endcan
         </ul>
     </div>
     <div class="card-body">
@@ -153,7 +163,9 @@
                                     </p>
                                     <div class="countdown-timer">
                                         <i class="fas fa-hourglass-half"></i>
-                                        {{ $extraction->chunk_arrival_time->diffForHumans() }}
+                                        <span class="eve-countdown" data-target="{{ $extraction->chunk_arrival_time->toIso8601String() }}">
+                                            {{ $extraction->chunk_arrival_time->diffForHumans() }}
+                                        </span>
                                     </div>
                                     <p class="mb-0 mt-2">
                                         <strong>{{ trans('mining-manager::moons.estimated_value') }}:</strong>
@@ -161,7 +173,7 @@
                                             {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                         </span>
                                         @if($extraction->is_jackpot)
-                                            <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000;" title="Jackpot — value reflects 2x multiplier">
+                                            <span class="badge ml-1 mm-jackpot-badge" title="Jackpot — value reflects 2x multiplier">
                                                 <i class="fas fa-star"></i> 2x
                                             </span>
                                         @endif
@@ -245,7 +257,9 @@
                                         @endif
                                     </div>
                                     <p class="mb-0 text-muted small">
-                                        {{ $extraction->chunk_arrival_time->format('M d, H:i') }}
+                                        <span class="eve-time" data-eve-time="{{ $extraction->chunk_arrival_time->toIso8601String() }}" data-show-local>
+                                            {{ $extraction->chunk_arrival_time->format('M d, H:i') }} EVE
+                                        </span>
                                     </p>
                                 </div>
 
@@ -281,7 +295,7 @@
                                         <h3 class="mb-1 text-success">
                                             {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }}
                                             @if($extraction->is_jackpot)
-                                                <span class="badge align-middle" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
+                                                <span class="badge align-middle mm-jackpot-badge" style="font-size: 0.55em; vertical-align: super;" title="Jackpot — 2x multiplier applied">
                                                     <i class="fas fa-star"></i> 2x
                                                 </span>
                                             @endif
@@ -293,7 +307,7 @@
                                     
                                     @if($extraction->is_jackpot)
                                         <div class="mb-2">
-                                            <span class="badge" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.9em; padding: 4px 8px;">
+                                            <span class="badge mm-jackpot-badge" style="font-size: 0.9em; padding: 4px 8px;">
                                                 <i class="fas fa-star"></i> JACKPOT
                                                 @if($extraction->jackpot_verified === true)
                                                     <i class="fas fa-check-circle ml-1" title="Verified"></i>
@@ -312,7 +326,7 @@
                                         @if(!$extraction->is_jackpot && $extraction->chunk_arrival_time->isPast())
                                         <form action="{{ route('mining-manager.moon.report-jackpot', $extraction->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure this is a jackpot extraction?');">
                                             @csrf
-                                            <button type="submit" class="btn btn-sm" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; border: none;">
+                                            <button type="submit" class="btn btn-sm mm-jackpot">
                                                 <i class="fas fa-star"></i> Jackpot
                                             </button>
                                         </form>
@@ -392,14 +406,20 @@
                                         <i class="fas fa-moon text-info"></i>
                                         {{ $extraction->moon_name ?? 'Unknown' }}
                                     </td>
-                                    <td>{{ $extraction->chunk_arrival_time->format('M d, Y H:i') }}</td>
+                                    <td>
+                                        <span class="eve-time" data-eve-time="{{ $extraction->chunk_arrival_time->toIso8601String() }}" data-show-local>
+                                            {{ $extraction->chunk_arrival_time->format('M d, Y H:i') }} EVE
+                                        </span>
+                                    </td>
                                     <td>
                                         @php
                                             $hoursRemaining = \Carbon\Carbon::now()->diffInHours($extraction->chunk_arrival_time, false);
                                         @endphp
                                         @if($hoursRemaining > 0)
-                                            <span class="badge badge-{{ $hoursRemaining < 24 ? 'danger' : 'warning' }}">
-                                                {{ floor($hoursRemaining / 24) }}d {{ $hoursRemaining % 24 }}h
+                                            <span class="badge">
+                                                <span class="eve-countdown" data-target="{{ $extraction->chunk_arrival_time->toIso8601String() }}">
+                                                    {{ floor($hoursRemaining / 24) }}d {{ $hoursRemaining % 24 }}h
+                                                </span>
                                             </span>
                                         @else
                                             <span class="badge badge-success">{{ trans('mining-manager::moons.ready') }}</span>
@@ -408,7 +428,7 @@
                                     <td class="text-right text-success">
                                         {{ number_format($extraction->calculated_value ?? $extraction->estimated_value ?? 0, 0) }} ISK
                                         @if($extraction->is_jackpot)
-                                            <span class="badge ml-1" style="background: linear-gradient(45deg, #ffd700, #ffed4e); color: #000; font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
+                                            <span class="badge ml-1 mm-jackpot-badge" style="font-size: 0.7em;" title="Jackpot — 2x multiplier applied">
                                                 <i class="fas fa-star"></i>
                                             </span>
                                         @endif

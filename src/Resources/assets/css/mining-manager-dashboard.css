@@ -3895,3 +3895,128 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     color: #fff;
 }
 
+/* === Jackpot styling — override-resistant ============================
+   Custom SeAT CSS often uses `!important` on Bootstrap classes such as
+   `.btn-warning` or `.badge` to enforce a chrome theme. That overrides
+   inline `style="color: #000"` declarations (inline styles lose to any
+   external rule that uses !important). To make jackpot gold-on-black
+   survive arbitrary custom SeAT CSS, these classes carry their own
+   !important on background, color, border, and nested icon colors.
+
+   Pattern documented in shared memory:
+   `feedback_help_docs_visual_design.md` — rule #5 (inline colors lose
+   to custom-CSS !important).
+   ===================================================================== */
+
+/* Button + small-badge variant — gold gradient on black text */
+.mining-manager-wrapper .mm-jackpot,
+.mining-manager-wrapper .mm-jackpot-badge,
+.mining-dashboard .mm-jackpot,
+.mining-dashboard .mm-jackpot-badge {
+    background: linear-gradient(45deg, #ffd700, #ffed4e) !important;
+    color: #000 !important;
+    border: none !important;
+    font-weight: 600 !important;
+}
+
+/* Force nested icon colors too — custom CSS often targets `.btn i` or
+   `.badge i` directly with !important and would otherwise re-yellow
+   the star/check/etc. icons inside jackpot buttons + badges. */
+.mining-manager-wrapper .mm-jackpot i,
+.mining-manager-wrapper .mm-jackpot-badge i,
+.mining-dashboard .mm-jackpot i,
+.mining-dashboard .mm-jackpot-badge i {
+    color: #000 !important;
+}
+
+/* Hover/focus state — subtle reverse-gradient so the button still
+   reacts to pointer interaction under override-resistant rules. */
+.mining-manager-wrapper .mm-jackpot:hover,
+.mining-manager-wrapper .mm-jackpot:focus,
+.mining-dashboard .mm-jackpot:hover,
+.mining-dashboard .mm-jackpot:focus {
+    background: linear-gradient(45deg, #ffed4e, #ffd700) !important;
+    color: #000 !important;
+    text-decoration: none !important;
+}
+
+/* Full-width banner-style alert variant — 135deg gradient and a thicker
+   gold border for the "this is a jackpot extraction" callout banner. */
+.mining-manager-wrapper .mm-jackpot-alert,
+.mining-dashboard .mm-jackpot-alert {
+    background: linear-gradient(135deg, #ffd700, #ffed4e) !important;
+    color: #000 !important;
+    border: 2px solid #daa520 !important;
+}
+
+.mining-manager-wrapper .mm-jackpot-alert strong,
+.mining-manager-wrapper .mm-jackpot-alert small,
+.mining-manager-wrapper .mm-jackpot-alert p,
+.mining-manager-wrapper .mm-jackpot-alert i,
+.mining-dashboard .mm-jackpot-alert strong,
+.mining-dashboard .mm-jackpot-alert small,
+.mining-dashboard .mm-jackpot-alert p,
+.mining-dashboard .mm-jackpot-alert i {
+    color: #000 !important;
+}
+
+/* === Live countdown color stages ====================================
+   Used by .eve-countdown elements ticked by eve-countdown.js. Colors
+   reflect time-to-target urgency: distant (>1d) green, near (1d-1h)
+   yellow, imminent (<1h) red, past (target time passed) muted grey.
+   `!important` per the inline-color-vs-custom-CSS rule documented in
+   `feedback_help_docs_visual_design.md` rule #5. */
+.eve-countdown-distant   { color: #28a745 !important; }
+.eve-countdown-near      { color: #ffc107 !important; }
+.eve-countdown-imminent  { color: #dc3545 !important; font-weight: 600 !important; }
+.eve-countdown-past      { color: #6c757d !important; }
+
+/* Inline-pill style for the optional " · HH:MM local" suffix that
+   eve-time.js appends when a .eve-time element has `data-show-local`.
+   Kept here so custom SeAT themes can target/hide it consistently. */
+.eve-time-local {
+    opacity: 0.85;
+    margin-left: 0.35rem;
+    font-size: 0.85em;
+}
+
+/* "What's new in this version" green callout — ported from Structure
+   Manager (`.whats-new-box`) so the Help & Documentation Overview tab
+   has a consistent green-tinted box for version highlights across the
+   plugin suite. Sits between the Welcome and "What is..." cards on
+   the Overview tab. */
+.whats-new-box {
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.15) 0%, rgba(32, 201, 151, 0.1) 100%);
+    border-left: 4px solid var(--mm-success);
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin: 20px 0;
+    color: #d1d5db !important;
+}
+
+.whats-new-box h3,
+.whats-new-box h4,
+.whats-new-box h5 {
+    color: #51cf66 !important;
+    margin-top: 0;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.whats-new-box h3 i,
+.whats-new-box h4 i,
+.whats-new-box h5 i {
+    color: #51cf66 !important;
+}
+
+.whats-new-box ul {
+    color: #d1d5db !important;
+}
+
+.whats-new-box code {
+    background: rgba(0, 0, 0, 0.25);
+    color: #93f7b8;
+}
+

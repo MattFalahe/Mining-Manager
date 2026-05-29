@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=1.0.1">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=4">
 <style>
     .help-wrapper {
         display: flex;
@@ -550,7 +550,7 @@
                         {{ trans('mining-manager::help.plugin_information') }}
                     </h3>
                     <p>
-                        Version: <img src="https://img.shields.io/github/v/release/MattFalahe/Mining-Manager?label=release&color=667eea" alt="version" style="vertical-align: middle;">
+                        Version: <img src="https://img.shields.io/packagist/v/mattfalahe/mining-manager?label=release&color=667eea" alt="version" style="vertical-align: middle;">
                         <img src="https://img.shields.io/badge/SeAT-5.0-764ba2" alt="SeAT 5.0" style="vertical-align: middle;">
                     </p>
                     <p>License: {{ trans('mining-manager::help.plugin_license') }}</p>
@@ -593,6 +593,79 @@
                     </div>
                 </div>
 
+                {{-- Version Status — installed vs latest on Packagist.
+                     Ported from Structure Manager / SeAT Broadcast (same
+                     VersionChecker pattern); shape is stable so subsequent
+                     plugins can reuse this markup verbatim with their own
+                     service. --}}
+                @php
+                    $vs = $versionStatus ?? ['current' => '?', 'current_source' => 'config', 'is_dev_branch' => false, 'latest' => null, 'status' => 'unknown', 'message' => '', 'release_url' => null];
+                    $statusBadgeClass = [
+                        'current'    => 'badge-success',
+                        'outdated'   => 'badge-warning',
+                        'ahead'      => 'badge-info',
+                        'dev_branch' => 'badge-info',
+                        'unknown'    => 'badge-secondary',
+                    ][$vs['status']] ?? 'badge-secondary';
+                    $statusLabel = [
+                        'current'    => '&#10003; Up to date',
+                        'outdated'   => '&#9888; Update available',
+                        'ahead'      => '&#128640; Pre-release',
+                        'dev_branch' => '&#127793; Development branch',
+                        'unknown'    => '&mdash; Unable to check',
+                    ][$vs['status']] ?? '&mdash; Unknown';
+                    // Show the raw branch ref as-is (no 'v' prefix); tagged versions get the v.
+                    $installedDisplay = $vs['is_dev_branch'] ? $vs['current'] : ('v' . $vs['current']);
+                    $sourceHint = $vs['current_source'] === 'composer'
+                        ? "resolved via Composer's installed.json"
+                        : 'resolved via mining-manager.config.php (fallback, Composer metadata unavailable)';
+                @endphp
+                <div class="help-card">
+                    <h3><i class="fas fa-tag"></i> Version Status</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin: 0.5rem 0;">
+                        <div>
+                            <strong>Installed:</strong>
+                            <span class="badge badge-secondary" style="font-size: 0.9rem;" title="{{ $sourceHint }}">
+                                {{ $installedDisplay }}
+                            </span>
+                        </div>
+                        <div>
+                            <strong>Latest release:</strong>
+                            @if($vs['latest'])
+                                <span class="badge badge-secondary" style="font-size: 0.9rem;">v{{ $vs['latest'] }}</span>
+                            @else
+                                <span class="badge badge-secondary" style="font-size: 0.9rem;">unknown</span>
+                            @endif
+                        </div>
+                        <div>
+                            <span class="badge {{ $statusBadgeClass }}" style="font-size: 0.9rem;">{!! $statusLabel !!}</span>
+                        </div>
+                        @if($vs['release_url'])
+                            <div>
+                                <a href="{{ $vs['release_url'] }}" target="_blank" rel="noopener" class="btn btn-sm btn-mm-primary">
+                                    <i class="fas fa-external-link-alt"></i> View release notes
+                                </a>
+                            </div>
+                        @endif
+                    </div>
+                    <small class="text-muted">{{ $vs['message'] }}</small>
+                    @if($vs['status'] === 'outdated')
+                        <div class="info-box" style="margin-top: 0.75rem;">
+                            <i class="fas fa-arrow-circle-up"></i>
+                            <strong>Upgrade recipe (SeAT Docker stack):</strong>
+                            <pre style="margin-top: 0.4rem; margin-bottom: 0;"><code>docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-compose.traefik.yml down
+docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-compose.traefik.yml up -d</code></pre>
+                            <small class="text-muted" style="display: block; margin-top: 0.4rem;">
+                                Container boot pulls the latest plugin via composer, runs new migrations, and re-seeds schedules automatically.
+                            </small>
+                        </div>
+                    @endif
+                    <small class="text-muted" style="display: block; margin-top: 0.4rem; font-size: 0.75rem;">
+                        <i class="fas fa-info-circle"></i>
+                        Installed version {{ $sourceHint }}. Latest checked via Packagist's public API (6h cache, safe on outages).
+                    </small>
+                </div>
+
                 {{-- Welcome --}}
                 <div class="help-card">
                     <h3>
@@ -600,6 +673,223 @@
                         {{ trans('mining-manager::help.welcome_title') }}
                     </h3>
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
+                </div>
+
+                {{-- What's New in v2.0.1 ============================================
+                     Green callout placed right after the Welcome card so the upgrade
+                     summary lands as the first thing operators read after the
+                     introduction. Mirrors SM's `.whats-new-box` styling for visual
+                     consistency across the plugin suite. =========================== --}}
+                <div class="whats-new-box">
+                    <h3>
+                        <i class="fas fa-sparkles"></i>
+                        What's New in v2.0.1
+                        <small class="ml-2" style="font-size: 0.65em; color: #93f7b8;">The Ecosystem Era: Polish Pass</small>
+                    </h3>
+                    <p>
+                        v2.0.0 opened the <strong>Ecosystem Era</strong> (Manager Core pricing + Structure Manager threat alerts).
+                        <strong>v2.0.1 is the Polish Pass on the same era</strong> &mdash; same arc, deeper craft:
+                        faster director workflows, cross-plugin event publishing, and per-surface quality lifts.
+                        Every item is additive, no breaking changes, no new ESI scopes.
+                    </p>
+
+                    <h4><i class="fas fa-star"></i> Director-side speed-ups</h4>
+                    <ul>
+                        <li>
+                            <strong>Discord role picker</strong> on every per-type role-ID input
+                            (Settings &rarr; Notifications). One click picks from your installed Discord
+                            role source &mdash; SeAT Broadcast curated list, SeAT Connector synced
+                            roles, or the legacy warlof tables. No more Developer Mode &rarr; right-click
+                            &rarr; Copy ID &rarr; paste, &times; 17 notification types.
+                        </li>
+                        <li>
+                            <strong>Notification Routing Map</strong> (Settings &rarr; Routing Map).
+                            Read-only delivery snapshot showing every notification type, the webhooks it
+                            fires through, the corp scope, and the resolved Discord role for each (L1
+                            per-type override, L2 webhook fallback). Summary chips flag "enabled but
+                            firing nowhere" and dormant cross-plugin types when Manager Core or Structure
+                            Manager is absent.
+                        </li>
+                        <li>
+                            <strong>Metenox Cargo readout</strong> (sidebar &rarr; Metenox Cargo, director-only).
+                            New page surfacing what's currently in every Metenox Moon Drill's cargo bay
+                            owned by the <strong>Moon Owner Corporation</strong> (Settings &rarr; General).
+                            Per-drill cards with ore composition, m³ volume, ISK valuation at current
+                            market prices, percent-of-cargo bars, color-graded <strong>bay fill indicator</strong>
+                            (500,000 m³ Metenox capacity), <strong>solar-system name</strong> (with the
+                            numeric id as a small muted suffix), and a "last polled" timestamp. Scope
+                            matches the Past Extractions table convention &mdash; directors see only moon-owner-corp
+                            drills so the page and the related notification stay in lockstep. <strong>SeAT
+                            admins</strong> (<code>mining-manager.admin</code>) land on the same Moon Owner
+                            Corp view but get a corp scope picker above the chips &mdash; every metenox-owning
+                            corp + an "All corps" aggregate option + a one-click "Back to Moon Owner"
+                            shortcut. Notifications still scope to Moon Owner Corp only, so the picker is
+                            a read-side convenience. Cross-plugin contract:
+                            <code>mining.metenox.cargoSnapshot</code> PluginBridge capability lets
+                            Structure Manager render the bay on its structure detail page.
+                        </li>
+                        <li>
+                            <strong>Metenox Cargo Bay Full notification.</strong> New
+                            <code>metenox_cargo_full</code> notification type fires when a drill's
+                            <code>MoonMaterialBay</code> crosses the configurable fill-% threshold
+                            (default 85%, configurable 50-99% from Settings &rarr; Notifications).
+                            Yield-stopping warning specifically &mdash; drilling stops when the bay
+                            caps out but the structure stays online and safe. Dedup-latched against
+                            repeat fires while still over threshold; resets when cargo is pulled.
+                            Standalone &mdash; no Manager Core or Structure Manager required. Cron
+                            <code>mining-manager:scan-metenox-cargo-fill</code> runs every 5 minutes.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-clock"></i> Live local time + countdowns</h4>
+                    <ul>
+                        <li>
+                            <strong>Every EVE timestamp</strong> across the events and moon pages gets a
+                            hover tooltip with full local time formatted in your browser's IANA
+                            timezone (same mechanism Discord, Google Calendar, and GitHub use; DST
+                            handled automatically).
+                        </li>
+                        <li>
+                            <strong>High-priority surfaces</strong> (active extractions, upcoming events,
+                            calendar, my-events) opt into an inline " &middot; HH:MM local" pill for
+                            at-a-glance reading.
+                        </li>
+                        <li>
+                            <strong>Live-ticking countdowns</strong> replace stale server-rendered
+                            "in 2 hours" text. Color-graded: green (&gt;1d) &rarr; yellow (1d-1h) &rarr;
+                            red+bold (&lt;1h) &rarr; muted grey (past target). Updates every second on
+                            the page.
+                        </li>
+                        <li>
+                            <strong>Event create / edit forms</strong> gained an
+                            <em>Enter time in: EVE/UTC &middot; My local</em> toggle with live
+                            confirmation box. DST-safe; server still always stores UTC.
+                        </li>
+                        <li>
+                            Browser-TZ readout in <em>Mining Events &rarr; Time display &amp; timezones</em>
+                            help docs section so operators can sanity-check what their browser reports.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-broadcast-tower"></i> Cross-plugin publishing</h4>
+                    <ul>
+                        <li>
+                            <strong>Three new <code>mining.extraction_*</code> events</strong> published
+                            via Manager Core's Topics facade: <code>ready</code> (chunk fractured, 48h
+                            mining window opens), <code>unstable</code> (final 2h capital-safety window),
+                            <code>expired</code> (window closed). Once per extraction per lifecycle stage.
+                        </li>
+                        <li>
+                            Rich payload: extraction_id, moon_id/name, structure_id/name, corporation_id
+                            (visibility scoping), full lifecycle timestamps, auto_fractured/is_jackpot
+                            flags, estimated_value, plus a <code>url</code> field deeplinking to MM's
+                            per-extraction detail page.
+                        </li>
+                        <li>
+                            New cron <code>mining-manager:scan-extraction-events</code> runs every 5
+                            minutes. Per-stage latches in the new <code>moon_extraction_event_log</code>
+                            table prevent re-publishing. Catch-up logic backfills earlier stages if the
+                            scanner first observes an extraction already in <code>unstable</code>/<code>expired</code>.
+                        </li>
+                        <li>
+                            <strong>Standalone-safe</strong> via <code>class_exists</code> guard on
+                            <code>\ManagerCore\Topics</code>. Without Manager Core the scanner is a
+                            friendly no-op.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-cogs"></i> Manager Core pricing centralization</h4>
+                    <ul>
+                        <li>
+                            <strong>Single source of truth for pricing config.</strong> When Manager Core
+                            is the chosen price provider, the &quot;Manager Core Configuration&quot; panel
+                            in Settings &rarr; Pricing becomes a read-only status readout (market, price
+                            type, provider routing, admin-overridden flag) plus a prominent
+                            <em>&quot;Configure pricing in Manager Core &rarr;&quot;</em> deep-link
+                            button. The old duplicate Market / Variant / Price Type dropdowns are gone
+                            &mdash; MC's Pricing Preferences page is where you change them now. No more
+                            wondering which side wins when MM and MC disagree (MC always did, the UI
+                            just lied about it).
+                        </li>
+                        <li>
+                            <strong>Live cache invalidation.</strong> Changing Mining Manager's market in
+                            Manager Core's Pricing Preferences page now flushes MM's local price cache
+                            immediately via the new <code>pricing.preference_changed</code> EventBus
+                            topic. Next price read goes fresh through the bridge and picks up the new
+                            market's prices (routed through whichever provider MC has configured for
+                            that market &mdash; Fuzzwork for hubs by default, Goonpraisal for the 7
+                            pre-seeded nullsec markets). No more waiting up to 4 hours for the scheduled
+                            refresh to catch up.
+                        </li>
+                        <li>
+                            <strong>Jita fallback now actually works on the MC path.</strong> Per-item
+                            safety net retries any item that returns 0 from a non-Jita market through
+                            Jita (subject to the <em>Fallback to Jita</em> toggle on Settings &rarr;
+                            Pricing). Was effectively dead code before v2.0.1 because the previous
+                            implementation always thought it was already on Jita.
+                        </li>
+                        <li>
+                            <strong>Per-plugin provider override.</strong> MC's Pricing Preferences
+                            page now has a <em>Provider Override</em> dropdown on every plugin row.
+                            Leaving it on "Use market's provider" keeps current behavior (MM reads
+                            whatever provider the chosen market is configured for). Picking a specific
+                            provider routes <strong>only Mining Manager's reads</strong> through that
+                            upstream &mdash; other plugins reading the same market continue through the
+                            market's default. Real-world use: route Mining Manager through <strong>Janice
+                            for Jita</strong> (tighter tax accuracy) while Structure Manager continues
+                            through Fuzzwork for the same Jita lookups. When an override is set, MC
+                            does a live upstream fetch on every MM cache refresh (bypasses MC's local
+                            cache because the cache can't store per-provider variants for the same
+                            market) &mdash; acceptable bandwidth because MM only refreshes once every
+                            4 hours via its scheduled cron.
+                        </li>
+                        <li>
+                            <strong>Defensive fallbacks.</strong> Manager Core v1.0.0 is the first
+                            stable MC release, so the centralized pricing is available as soon as MC
+                            is installed. Every bridge call is wrapped in try/catch: if a capability
+                            call ever fails for any reason, MM falls back to <code>jita</code> literal
+                            with a logged warning &mdash; no crash, no zero prices, just a slightly
+                            less responsive update path. If Manager Core isn't installed at all, MM
+                            falls back to its own provider stack (SeAT / Fuzzwork / Janice) exactly
+                            like v2.0.0.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-paint-brush"></i> Visual polish</h4>
+                    <ul>
+                        <li>
+                            <strong>Jackpot rendering hardened</strong> against custom SeAT themes.
+                            18 inline-styled jackpot elements across 6 blades (Report Jackpot button,
+                            JACKPOT banners, every "2x multiplier" indicator badge) now use override-resistant
+                            <code>.mm-jackpot</code> classes with <code>!important</code>. Custom
+                            <code>custom-layout.css</code> installs no longer wash the black text out
+                            of yellow buttons.
+                        </li>
+                        <li>
+                            <strong>Diagnostic page aligned to suite-wide standard.</strong> Default
+                            landing tab is now <em>Health Checks</em> (renamed from "System Status").
+                            Nav reordered to put Tier 1 universal tabs first (Health Checks &rarr;
+                            Master Test &rarr; System Validation &rarr; Settings Health &rarr; Data
+                            Integrity &rarr; Tax Trace). Every Tier 1 tab opens with a "What this tab
+                            does / When to use / Heads up" intro paragraph.
+                        </li>
+                    </ul>
+
+                    <p style="margin-top:12px; margin-bottom:0; font-size:0.88rem; color:#9aa3b3;">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Upgrading from v2.0.0?</strong>
+                        Just take the SeAT Docker stack down and back up. Migrations and seeders run
+                        automatically on container boot. New: <code>moon_extraction_event_log</code>
+                        + <code>metenox_cargo_alert_state</code> tables (additive), migration
+                        <code>000018</code> cleans up two now-unused MC market settings rows
+                        (the dropdowns they backed are gone), new schedule rows (firstOrCreate so your
+                        cron customisations are preserved), CSS cache buster bumped to <code>?v=4</code>
+                        for the new <code>.whats-new-box</code> primitive. No settings to change, no
+                        permissions to re-grant, no data to migrate. Pricing config moves to
+                        <strong>Manager Core &rarr; Pricing Preferences</strong> when MC is your provider
+                        &mdash; existing operator preferences are preserved via MC's
+                        <code>admin_overridden</code> flag.
+                    </p>
                 </div>
 
                 {{-- What is Mining Manager? --}}
@@ -1503,6 +1793,53 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.events_intro') }}</p>
 
+                    <h4><i class="fas fa-globe"></i> Time display &amp; timezones</h4>
+                    <p>
+                        All times across Mining Manager are stored and displayed in <strong>EVE Time (UTC)</strong>
+                        as the single source of truth. Every timestamp also carries a live local-time tooltip and,
+                        on high-priority surfaces (calendar, active extractions, upcoming events),
+                        an inline " &middot; HH:MM local" pill so you can read both at a glance without thinking.
+                        Countdowns ("starts in 2h 15m") tick live every second &mdash; no need to refresh the page.
+                    </p>
+                    <div class="info-box">
+                        <p>
+                            <i class="fas fa-globe"></i>
+                            <strong>Your browser timezone (right now):</strong>
+                            <code id="detected-tz-name">detecting&hellip;</code>
+                            &mdash; sample conversion: <code id="detected-tz-sample">&hellip;</code>
+                        </p>
+                        <p class="text-muted" style="font-size: 0.85em; margin-bottom: 0;">
+                            If this doesn't match your physical timezone, check your operating
+                            system's Date &amp; Time settings &mdash; the browser inherits its
+                            timezone from there (same mechanism Discord and Google Calendar use).
+                            DST changes are handled automatically.
+                        </p>
+                    </div>
+                    <p>
+                        When <strong>creating or editing</strong> an event, the date/time inputs default to EVE / UTC.
+                        Flip the "Enter time in: EVE / UTC &middot; My local time" toggle to enter times in
+                        your local timezone instead &mdash; we convert to EVE on submit. The live confirmation box
+                        below the inputs shows both interpretations side by side so you always see what the server
+                        will record.
+                    </p>
+                    <script>
+                        (function () {
+                            try {
+                                var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+                                var nowSample = new Intl.DateTimeFormat(undefined, {
+                                    year: 'numeric', month: '2-digit', day: '2-digit',
+                                    hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+                                }).format(new Date());
+                                var elTz     = document.getElementById('detected-tz-name');
+                                var elSample = document.getElementById('detected-tz-sample');
+                                if (elTz)     elTz.textContent = tz;
+                                if (elSample) elSample.textContent = nowSample;
+                            } catch (e) {
+                                // Old browser — leave placeholders.
+                            }
+                        })();
+                    </script>
+
                     <h4>{{ trans('mining-manager::help.creating_events') }}</h4>
                     <ol class="step-by-step">
                         <li>{{ trans('mining-manager::help.event_create_step_1') }}</li>
@@ -1665,6 +2002,85 @@
                     </h3>
                     <p>{{ trans('mining-manager::help.moon_intro') }}</p>
 
+                    <h4><i class="fas fa-box-open"></i> Metenox cargo readout
+                        <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
+                    </h4>
+                    <p>
+                        The <strong>Metenox Cargo</strong> page (sidebar &rarr; Moon Extractions &rarr;
+                        Metenox Cargo, or the tab on any moon page) shows what's currently sitting
+                        in every Metenox Moon Drill's cargo bay owned by the
+                        <strong>Moon Owner Corporation</strong> (Settings &rarr; General &rarr;
+                        <code>moon_owner_corporation_id</code>). One card per drill, ore composition
+                        table with per-ore ISK valuation and percent-of-cargo bars, structure state
+                        pill, and a last-polled timestamp so you know how fresh the data is.
+                    </p>
+                    <div class="info-box">
+                        <p>
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Data source &amp; refresh cadence.</strong> The page reads from
+                            SeAT's existing <code>corporation_assets</code> table, which is
+                            populated by SeAT's standard corp-assets ESI poller. ESI caches the
+                            corp-assets endpoint for ~1 hour, so don't expect sub-minute freshness.
+                            The "Last polled" timestamp on each card tells you the actual sample
+                            time; values older than 2 hours are highlighted in yellow.
+                        </p>
+                        <p class="text-muted" style="font-size: 0.85em; margin-bottom: 0;">
+                            No new ESI scopes required &mdash; the standard
+                            <code>esi-assets.read_corporation_assets.v1</code> scope (granted to
+                            SeAT by any Director-roled character on the corp) is sufficient. If a
+                            corp's drills appear empty when you know they shouldn't be, the most
+                            common cause is that no Director ESI token has been registered for
+                            that corp.
+                        </p>
+                    </div>
+                    <h5>Permission model</h5>
+                    <ul>
+                        <li><strong>Director-only.</strong> The page is gated by the
+                            <code>mining-manager.director</code> permission. Members and accountants
+                            cannot see it (no sidebar entry, no route access).</li>
+                        <li><strong>Scoped to Moon Owner Corporation (directors).</strong> Directors
+                            see only Metenoxes owned by the corp set as Moon Owner in Settings &rarr;
+                            General. Same convention as the Past Extractions table. Member corps'
+                            drills (if any) are intentionally hidden so the page and the
+                            <code>metenox_cargo_full</code> notification cron stay aligned (both
+                            scan the same set of drills, so there's no scenario where an alert fires
+                            for a drill that doesn't appear on the page). If the Moon Owner Corp
+                            isn't configured, the page shows a warning with a one-click link to
+                            Settings.</li>
+                        <li><strong>Admin bypass + corp picker.</strong> Operators with the
+                            <code>mining-manager.admin</code> permission land on the same Moon Owner
+                            Corp view that directors see, so the default landing scope is identical
+                            regardless of role. The header dropdown lets admins switch to any other
+                            corporation with a Metenox, or to the install-wide <em>All corps</em>
+                            aggregate view (handy on multi-corp installs where you need to spot-
+                            check drills outside the Moon Owner Corp). The
+                            <code>metenox_cargo_full</code> notification scope is unchanged: alerts
+                            still fire for the Moon Owner Corp only, so the picker is a read-side
+                            convenience and never generates extra alert traffic.</li>
+                        <li><strong>No write surface.</strong> The page is purely informational
+                            &mdash; no cleanup buttons, no recalculation actions, no exports. Use
+                            the in-game asset browser if you need to actually move ore.</li>
+                    </ul>
+                    <h5>ISK valuation</h5>
+                    <p>
+                        ISK values are computed at page render using the plugin's configured price
+                        provider (Manager Core's pricing service when available, with Jita /
+                        Fuzzwork fallback). Prices are fetched in a single batch for every ore type
+                        across every visible drill, so adding more Metenoxes doesn't multiply the
+                        pricing cost. If pricing is unavailable for any reason, the page renders
+                        the quantity columns only and shows "pricing unavailable" in the header.
+                    </p>
+                    <h5>Cross-plugin contract</h5>
+                    <p class="text-muted" style="font-size: 0.88em;">
+                        For plugin developers: Mining Manager exposes
+                        <code>mining.metenox.cargoSnapshot($structureId)</code> through Manager
+                        Core's PluginBridge. Returns <code>[type_id =&gt; quantity]</code> for any
+                        Metenox structure the plugin can see, or <code>null</code> for non-Metenox
+                        structures. Lets Structure Manager (or future consumers) render the drill's
+                        contents on its structure detail page without round-tripping through MM's
+                        UI.
+                    </p>
+
                     <h4>{{ trans('mining-manager::help.moon_tracking') }}</h4>
                     <p>{{ trans('mining-manager::help.moon_tracking_desc') }}</p>
 
@@ -1751,6 +2167,37 @@
                     <div class="info-box">
                         <i class="fas fa-link"></i>
                         <strong>Structure Board deeplink:</strong> every embed includes a one-click "Open in Structure Manager" link to SM's Structure Board scoped to the affected refinery. Operators pivot from the Discord ping straight to SM's full structure context (timers, fuel curve, history) without searching.
+                    </div>
+                </div>
+
+                {{-- Published Events (v2.0.1+) --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-broadcast-tower text-info"></i>
+                        Published Events (EventBus)
+                    </h3>
+                    <p>From <strong>v2.0.1</strong>, Mining Manager <em>publishes</em> moon-extraction lifecycle events to Manager Core's EventBus in addition to subscribing to Structure Manager's threat alerts. Other plugins can subscribe to these events instead of polling MM's tables. <strong>SeAT Broadcast v2.0.0</strong> is the first known consumer (FC Opportunities mining category).</p>
+
+                    <p>Events are fired exactly once per extraction per lifecycle stage by the <code>mining-manager:scan-extraction-events</code> cron command (every 5 minutes). Per-stage dedup is enforced via the <code>moon_extraction_event_log</code> table. Without Manager Core installed, the scanner is a no-op.</p>
+
+                    <div class="feature-grid">
+                        <div class="feature-item" style="border-left: 4px solid #17a2b8;">
+                            <h5><code>mining.extraction_ready</code></h5>
+                            <p>Chunk has fractured, 48h fleet-able mining window opens. Payload includes window_opens_at, window_closes_at, is_jackpot, estimated_value.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #f39c12;">
+                            <h5><code>mining.extraction_unstable</code></h5>
+                            <p>Final 2h capital-safety window before expiry (48-50h after fracture). Use for last-call FC reminders.</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #6c757d;">
+                            <h5><code>mining.extraction_expired</code></h5>
+                            <p>Window closed, no more mining (past 50h after fracture). Consumers should drop the extraction from active views.</p>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>Catch-up logic:</strong> if the scanner first observes an extraction already in the unstable or expired state (Manager Core was down, cron paused, fresh install with already-active moons), earlier stages are back-filled so subscribers see a complete lifecycle picture.
                     </div>
                 </div>
 
