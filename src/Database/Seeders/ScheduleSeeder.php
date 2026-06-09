@@ -300,6 +300,27 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Daily integrity audit of moon_extractions.status against the
+            // model's helper-computed lifecycle position. Catches divergence
+            // between the import-time determineStatus() path and the runtime
+            // helpers (scopeExpiredByTime / getExpiryTime). Added 2026-05-31
+            // as a permanent backstop after the natural_decay_time vs
+            // fractured_at+50h bug ate every moon_chunk_unstable notification
+            // in production for an unknown stretch of time.
+            //
+            // 03:00 UTC — quiet hour, off the top of the hour to avoid
+            // colliding with the */2-hour update-extractions sweep at :00.
+            // Read-only by default; the --quiet-ok flag silences output when
+            // there's nothing to report (so the daily cron line stays a
+            // no-op when everything is healthy).
+            [
+                'command' => 'mining-manager:validate-lifecycle-integrity --quiet-ok',
+                'expression' => '0 3 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
         ];
     }
 

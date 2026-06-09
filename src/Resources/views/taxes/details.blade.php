@@ -351,6 +351,22 @@ $(document).ready(function() {
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // Modal stacking fix (v2.0.2): SeAT's AdminLTE wrapper creates a CSS
+    // stacking context that traps Bootstrap's modal-backdrop ABOVE the
+    // modal-dialog when the modal is rendered inside the page content.
+    // Visually the dialog still appears, but every click lands on the
+    // backdrop and the form looks frozen ("blocked"). The fix is to
+    // reparent the modal element to <body> on first show so its z-index
+    // works against the body-level backdrop. Delegated via show.bs.modal
+    // so the fix also covers Bootstrap's declarative data-toggle="modal"
+    // triggers (which don't go through $.fn.modal('show') and can't be
+    // patched at the call site).
+    $(document).on('show.bs.modal', '#markPaidModal', function () {
+        if (!$(this).parent().is('body')) {
+            $(this).appendTo('body');
+        }
+    });
+
     // Mark as Paid
     $('#confirmDetailMarkPaid').on('click', function() {
         $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');

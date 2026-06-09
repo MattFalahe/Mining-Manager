@@ -212,7 +212,16 @@ class SettingsManagerService
             // ProcessWalletJournalListener for how the listener consults it
             // before applying a matched payment.
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
-            
+
+            // Accept payments from any of a player's characters (alt-aware
+            // match, v2.0.2+). Same surfacing-pattern as auto_match_payments:
+            // the canonical read site is `getPaymentSettings()`; the value
+            // is duplicated here so the General settings blade can render
+            // the checkbox without juggling two arrays. WalletTransferService
+            // consults `getPaymentSettings()['accept_alt_characters']` at
+            // match time.
+            'accept_alt_characters' => (bool) $this->getSetting('payment.accept_alt_characters', true),
+
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
 
@@ -314,7 +323,7 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
-                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours', 'payment_auto_match_payments'])) {
+                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours', 'payment_auto_match_payments', 'payment_accept_alt_characters'])) {
                     // Payment settings use payment. prefix instead of general.
                     // form input `payment_<x>` → setting key `payment.<x>`.
                     $settingKey = str_replace('payment_', 'payment.', $key);
@@ -385,6 +394,17 @@ class SettingsManagerService
             // confirm. Useful for installs that want a human-review step
             // before any tax row is updated.
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
+            // Accept payments from any of a player's characters, not just
+            // the exact taxed character. Players routinely send ISK from
+            // their wallet-richest alt rather than the alt that mined the
+            // ore, so before v2.0.2 those payments dropped on the floor
+            // as 'unmatched' even though the tax code was correct. With
+            // this on (default), MM matches tax-code-bearing transactions
+            // when the paying character shares a SeAT user_id with the
+            // taxed character. Set to false for stricter per-character
+            // matching (rare; only useful in installs where each
+            // character is its own SeAT account).
+            'accept_alt_characters' => (bool) $this->getSetting('payment.accept_alt_characters', true),
         ];
     }
 

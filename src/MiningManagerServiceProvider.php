@@ -19,6 +19,7 @@ use MiningManager\Console\Commands\BackfillEventRecordsCommand;
 use MiningManager\Console\Commands\DetectJackpotsCommand;
 use MiningManager\Console\Commands\ScanMoonExtractionEventsCommand;
 use MiningManager\Console\Commands\ScanMetenoxCargoFillCommand;
+use MiningManager\Console\Commands\ValidateLifecycleIntegrityCommand;
 use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
@@ -136,6 +137,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 DetectJackpotsCommand::class,
                 ScanMoonExtractionEventsCommand::class,
                 ScanMetenoxCargoFillCommand::class,
+                ValidateLifecycleIntegrityCommand::class,
                 CachePriceDataCommand::class,
                 DiagnosePricesCommand::class,
                 DiagnoseAffiliationCommand::class,

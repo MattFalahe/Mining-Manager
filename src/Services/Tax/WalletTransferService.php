@@ -156,15 +156,46 @@ class WalletTransferService
             return ['matched' => false];
         }
 
-        // Find tax code record
+        // Find tax code record. When `payment.accept_alt_characters` is on
+        // (default), the lookup broadens to include any tax code owned by
+        // a character that shares a SeAT user_id with the paying character
+        // — so a player can settle their main's tax bill from any alt's
+        // wallet. With the setting off, strict per-character match (the
+        // pre-v2.0.2 behaviour).
+        $payerCharacterId = (int) $transaction->first_party_id;
+        $paymentSettings = $this->settings->getPaymentSettings();
+        $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+
+        $eligibleCharacterIds = $acceptAlts
+            ? $this->getCharacterIdsForUserOf($payerCharacterId)
+            : [$payerCharacterId];
+
         $taxCodeRecord = TaxCode::where('code', $taxCode)
-            ->where('character_id', $transaction->first_party_id)
+            ->whereIn('character_id', $eligibleCharacterIds)
             ->where('status', 'active')
             ->first();
 
         if (!$taxCodeRecord) {
-            Log::warning("Mining Manager: Tax code '{$taxCode}' not found or not active for character {$transaction->first_party_id}");
+            Log::warning("Mining Manager: Tax code '{$taxCode}' not found or not active", [
+                'paying_character_id'    => $payerCharacterId,
+                'eligible_character_ids' => $eligibleCharacterIds,
+                'accept_alts'            => $acceptAlts,
+            ]);
             return ['matched' => false];
+        }
+
+        // Audit: log when payment is credited via an alt rather than the
+        // exact taxed character. Helps directors reconcile if someone
+        // disputes ("who actually paid this?"). Only logs when the IDs
+        // differ to keep the same-character happy path quiet.
+        if ((int) $taxCodeRecord->character_id !== $payerCharacterId) {
+            Log::info("Mining Manager: Payment credited via alt character", [
+                'tax_code'             => $taxCode,
+                'taxed_character_id'   => (int) $taxCodeRecord->character_id,
+                'paying_character_id'  => $payerCharacterId,
+                'transaction_id'       => (int) $transaction->id,
+                'amount'               => (float) $transaction->amount,
+            ]);
         }
 
         // Find associated tax record
@@ -400,8 +431,27 @@ class WalletTransferService
             $transaction = CharacterWalletJournal::findOrFail($transactionId);
             $tax = MiningTax::findOrFail($taxId);
 
-            if ($tax->character_id !== $transaction->first_party_id) {
+            // Per-character vs same-SeAT-user comparison. Default behaviour
+            // (`payment.accept_alt_characters = true`) lets a player settle
+            // their main's tax from any of their alts. Strict mode keeps
+            // the pre-v2.0.2 character-identity check.
+            $paymentSettings = $this->settings->getPaymentSettings();
+            $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+            $isSameOwner = $acceptAlts
+                ? $this->sharesSeatUser((int) $tax->character_id, (int) $transaction->first_party_id)
+                : ((int) $tax->character_id === (int) $transaction->first_party_id);
+
+            if (!$isSameOwner) {
                 throw new \Exception("Character mismatch");
+            }
+
+            if ((int) $tax->character_id !== (int) $transaction->first_party_id) {
+                Log::info("Mining Manager: Manual match credited via alt character", [
+                    'tax_id'              => (int) $tax->id,
+                    'taxed_character_id'  => (int) $tax->character_id,
+                    'paying_character_id' => (int) $transaction->first_party_id,
+                    'transaction_id'      => (int) $transaction->id,
+                ]);
             }
 
             $amount = abs($transaction->amount);
@@ -814,5 +864,82 @@ class WalletTransferService
         }
 
         return $totalDays / $paidTaxes->count();
+    }
+
+    /**
+     * Return every character_id belonging to the same SeAT user as the
+     * given character. Used by the v2.0.2 alt-character-payments path so
+     * a player can settle a tax bill from any of their alts, not just
+     * the alt that did the mining.
+     *
+     * The SeAT model: `refresh_tokens.user_id` is the cross-character
+     * link — every character a player authenticates against the install
+     * gets a row in `refresh_tokens` with the same `user_id`. So all
+     * characters sharing a user_id are alts of the same player.
+     *
+     * Falls back to a singleton list (just the input character) when:
+     *   - The character isn't registered (no refresh_tokens row): we
+     *     can't widen the search, so strict per-character match.
+     *   - The user_id lookup fails for any reason: defensive same-as-
+     *     strict-mode behaviour.
+     *
+     * Returns the character_id list as ints. Always contains the input
+     * character, so it's safe to feed directly into a `whereIn(...)`.
+     *
+     * @param int $characterId
+     * @return array<int>
+     */
+    protected function getCharacterIdsForUserOf(int $characterId): array
+    {
+        try {
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if ($userId === null) {
+                // Unregistered character — guest miner, deleted token,
+                // etc. Can't broaden, so just match strictly on the
+                // input character.
+                return [$characterId];
+            }
+
+            $charIds = DB::table('refresh_tokens')
+                ->where('user_id', $userId)
+                ->pluck('character_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            // Defensive: include input character even if the query
+            // somehow misses it (shouldn't, but never returns empty).
+            if (!in_array($characterId, $charIds, true)) {
+                $charIds[] = $characterId;
+            }
+
+            return $charIds;
+        } catch (\Exception $e) {
+            Log::warning('Mining Manager: getCharacterIdsForUserOf() failed, falling back to strict character match', [
+                'character_id' => $characterId,
+                'error'        => $e->getMessage(),
+            ]);
+            return [$characterId];
+        }
+    }
+
+    /**
+     * True if both character IDs belong to the same SeAT user (i.e. they
+     * are alts of the same player), or are the same character. Thin
+     * wrapper over `getCharacterIdsForUserOf()` for boolean call sites
+     * like manualMatch's "is this payer allowed to pay this tax?" gate.
+     *
+     * @param int $a
+     * @param int $b
+     * @return bool
+     */
+    protected function sharesSeatUser(int $a, int $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+        return in_array($b, $this->getCharacterIdsForUserOf($a), true);
     }
 }

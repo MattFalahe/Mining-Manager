@@ -3066,6 +3066,12 @@ class DiagnosticController extends Controller
                 // under "moon"), since the Metenox cargo subsystem is its
                 // own pipeline (alert state + threshold + dedup latch).
                 $category = 'metenox';
+            } elseif (str_contains($cmd, 'validate-lifecycle-integrity')) {
+                // v2.0.2 — daily moon_extractions status audit. Separate
+                // category so a failing daily run stands out on Health Checks
+                // (a divergence here is a data-integrity signal, not a
+                // routine extraction op).
+                $category = 'integrity';
             } elseif (str_contains($cmd, 'extract') || str_contains($cmd, 'jackpot') || str_contains($cmd, 'archive')) {
                 $category = 'moon';
             } elseif (str_contains($cmd, 'theft') || str_contains($cmd, 'detect-theft')) {

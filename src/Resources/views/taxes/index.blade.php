@@ -698,7 +698,15 @@ $(document).ready(function() {
         
         $('#taxIdInput').val(taxId);
         $('#amountPaidInput').val(amountOwed);
-        $('#markPaidModal').modal('show');
+        // Append to body before show: SeAT's AdminLTE wrapper creates a CSS
+        // stacking context (transform/filter) that pins child z-indexes to
+        // the local context. Bootstrap inserts .modal-backdrop at body level
+        // (z-index 1040), but the modal-dialog stays inside the wrapper so
+        // its effective stacking ends up BELOW the backdrop. Visually the
+        // dialog still renders, but every click lands on the backdrop and
+        // the form appears frozen. Moving the modal node out to <body>
+        // escapes the wrapper's context and restores normal layering.
+        $('#markPaidModal').appendTo('body').modal('show');
     });
 
     // Confirm mark as paid

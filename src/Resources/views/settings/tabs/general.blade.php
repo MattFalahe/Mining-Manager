@@ -345,6 +345,43 @@
                     </div>
                 </div>
             </div>
+
+            {{-- Accept payments from any of a player's characters
+                 (alt-aware match). When ON (default), MM credits a tax
+                 payment if the tax code matches AND the paying character
+                 shares a SeAT user_id with the taxed character — so a
+                 player can settle their main's tax bill from any alt's
+                 wallet. When OFF, strict per-character matching (the
+                 pre-v2.0.2 behaviour). --}}
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_accept_alt_characters"
+                                   name="payment_accept_alt_characters"
+                                   value="1"
+                                   {{ old('payment_accept_alt_characters', $settings->accept_alt_characters ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_accept_alt_characters">
+                                <i class="fas fa-users"></i>
+                                Accept payments from any of a player's characters
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), MM accepts a tax payment if the tax code
+                            in the transaction description matches AND the paying character
+                            shares a SeAT user with the taxed character (i.e. is an alt of
+                            the same player). When OFF, the paying character must be
+                            <em>exactly</em> the taxed character — strict pre-v2.0.2
+                            behaviour. Alt payments are logged in
+                            <code>laravel.log</code> with both the paying and taxed
+                            character IDs for audit, so directors can reconcile after
+                            the fact.
+                        </small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

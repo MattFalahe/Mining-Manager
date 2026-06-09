@@ -533,7 +533,10 @@ $(document).ready(function() {
     $('.view-details').on('click', function() {
         const entryId = $(this).data('entry-id');
         
-        $('#entryDetailsModal').modal('show');
+        // appendTo('body') escapes AdminLTE's CSS stacking context so the
+        // modal-backdrop (inserted at body level by Bootstrap) doesn't end
+        // up above the modal-dialog. See the same fix in taxes/index.blade.php.
+        $('#entryDetailsModal').appendTo('body').modal('show');
         $('#entryDetailsContent').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i></div>');
         
         $.ajax({

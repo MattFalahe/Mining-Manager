@@ -101,8 +101,12 @@ class NotificationService
     public function send(string $type, array $recipients, array $data, ?array $channels = null): array
     {
         if (!$this->isEnabled()) {
-            Log::info('Notifications disabled, skipping send');
-            return ['skipped' => true];
+            $reason = $this->describeChannelGateFailure();
+            Log::warning('Notifications: send() skipped — no channel is currently enabled', [
+                'notification_type' => $type,
+                'reason' => $reason,
+            ]);
+            return ['skipped' => true, 'reason' => $reason];
         }
 
         // Check global per-type toggle (master override)
@@ -2919,8 +2923,71 @@ class NotificationService
         try {
             return \MiningManager\Models\WebhookConfiguration::enabled()->exists();
         } catch (\Exception $e) {
+            // Previously this swallowed the exception silently, which made
+            // the global `isEnabled()` gate return false invisibly when the
+            // Eloquent query threw — operators saw "skipped (unknown)" on
+            // the diagnostic page with no breadcrumb. Now we log so the
+            // underlying cause surfaces in laravel.log, and the higher-
+            // level send() path attaches the diagnosis to the API response.
+            Log::warning('Notifications: hasAnyEnabledWebhook() query threw — treating as zero enabled webhooks', [
+                'error' => $e->getMessage(),
+            ]);
             return false;
         }
+    }
+
+    /**
+     * Build a human-readable reason string explaining why isEnabled()
+     * returned false. Used by send() to populate the `reason` field on
+     * the skip response so the Diagnostic Notification Testing tab can
+     * show something more useful than the generic "unknown".
+     *
+     * Independently re-reads each underlying signal so the message lists
+     * the actual current state (rather than guessing). If the channel gate
+     * actually IS unblocked but isEnabled() still said false (stale cache,
+     * model issue) the diagnosis is explicit instead of misleading.
+     *
+     * @return string
+     */
+    protected function describeChannelGateFailure(): string
+    {
+        $evemailOn = (bool) $this->settings->getSetting('notifications.evemail_enabled', false);
+        $slackOn   = (bool) $this->settings->getSetting('notifications.slack_enabled', false);
+
+        $enabledWebhookCount = 0;
+        $webhookProbeError = null;
+        try {
+            $enabledWebhookCount = \MiningManager\Models\WebhookConfiguration::enabled()->count();
+        } catch (\Exception $e) {
+            $webhookProbeError = $e->getMessage();
+        }
+
+        // If the underlying channels actually look healthy but the gate
+        // still failed, something else is wrong (caching, model boot,
+        // service container) — surface that explicitly so we don't
+        // mislead the operator.
+        if ($webhookProbeError === null && ($evemailOn || $slackOn || $enabledWebhookCount > 0)) {
+            return sprintf(
+                'Channel gate returned false despite enabled channels present (evemail=%s, slack=%s, enabled_webhooks=%d). Likely a stale settings cache or model issue — try `php artisan cache:clear`.',
+                $evemailOn ? 'on' : 'off',
+                $slackOn ? 'on' : 'off',
+                $enabledWebhookCount
+            );
+        }
+
+        if ($webhookProbeError !== null) {
+            return sprintf(
+                'Webhook table probe threw: %s. Fix the underlying error then re-test.',
+                $webhookProbeError
+            );
+        }
+
+        return sprintf(
+            'No enabled channel found — EVE Mail %s, Slack %s, %d webhook(s) enabled. Tick at least one webhook in Settings → Webhooks, or enable EVE Mail / Slack in Settings → Notifications.',
+            $evemailOn ? 'on' : 'off',
+            $slackOn ? 'on' : 'off',
+            $enabledWebhookCount
+        );
     }
 
     /**

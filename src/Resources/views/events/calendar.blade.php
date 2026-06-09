@@ -336,7 +336,10 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</div>';
         
         $('#eventModalBody').html(html);
-        $('#eventModal').modal('show');
+        // appendTo('body') escapes AdminLTE's CSS stacking context so the
+        // modal-backdrop (inserted at body level by Bootstrap) doesn't end
+        // up above the modal-dialog. See the same fix in taxes/index.blade.php.
+        $('#eventModal').appendTo('body').modal('show');
     }
 });
 </script>

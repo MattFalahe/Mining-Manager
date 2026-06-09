@@ -150,15 +150,45 @@ class VerifyWalletPaymentsCommand extends Command
                     continue;
                 }
 
-                // Find tax code record
+                // Find tax code record. Mirrors the alt-aware lookup in
+                // WalletTransferService::processTransaction() (v2.0.2): when
+                // `payment.accept_alt_characters` is on (default), the search
+                // includes any tax code owned by a character sharing a SeAT
+                // user_id with the paying character — so a player can settle
+                // their main's tax from any of their alts. Both code paths
+                // need to match or the artisan command silently misses what
+                // the listener would have caught (parallel-implementation
+                // gap — original bug pre-v2.0.2).
+                $payerCharacterId = (int) $transaction->first_party_id;
+                $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+                $eligibleCharacterIds = $acceptAlts
+                    ? $this->getCharacterIdsForUserOf($payerCharacterId)
+                    : [$payerCharacterId];
+
                 $taxCodeRecord = TaxCode::where('code', $taxCode)
-                    ->where('character_id', $transaction->first_party_id)
+                    ->whereIn('character_id', $eligibleCharacterIds)
                     ->first();
 
                 if (!$taxCodeRecord) {
-                    $this->warn("Tax code '{$taxCode}' not found for character {$transaction->first_party_id}");
+                    $extra = $acceptAlts && count($eligibleCharacterIds) > 1
+                        ? ' (searched ' . count($eligibleCharacterIds) . ' linked characters: ' . implode(', ', $eligibleCharacterIds) . ')'
+                        : '';
+                    $this->warn("Tax code '{$taxCode}' not found for character {$payerCharacterId}{$extra}");
                     $unmatched++;
                     continue;
+                }
+
+                // Audit: log when payment is credited via an alt rather than
+                // the taxed character itself. Same log shape as
+                // WalletTransferService for grep-ability.
+                if ((int) $taxCodeRecord->character_id !== $payerCharacterId) {
+                    Log::info("Mining Manager: Payment credited via alt character (verify-payments)", [
+                        'tax_code'             => $taxCode,
+                        'taxed_character_id'   => (int) $taxCodeRecord->character_id,
+                        'paying_character_id'  => $payerCharacterId,
+                        'transaction_id'       => (int) $transaction->id,
+                        'amount'               => (float) $transaction->amount,
+                    ]);
                 }
 
                 // Find associated tax record
@@ -350,5 +380,53 @@ class VerifyWalletPaymentsCommand extends Command
         ]);
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Return every character_id belonging to the same SeAT user as the
+     * given character. Mirror of
+     * `WalletTransferService::getCharacterIdsForUserOf()` — kept in sync
+     * because the verify-payments command runs its own match loop rather
+     * than delegating to the service (parallel-implementation by design;
+     * the command has extra dedup + amount-mismatch reporting the
+     * service-level path doesn't need).
+     *
+     * Falls back to a singleton list (just the input character) when the
+     * paying character isn't registered with SeAT (no refresh_tokens
+     * row) or the lookup throws. The widest possible behaviour is
+     * "include the paying character" — same as pre-v2.0.2 strict mode.
+     *
+     * @param int $characterId
+     * @return array<int>
+     */
+    protected function getCharacterIdsForUserOf(int $characterId): array
+    {
+        try {
+            $userId = DB::table('refresh_tokens')
+                ->where('character_id', $characterId)
+                ->value('user_id');
+
+            if ($userId === null) {
+                return [$characterId];
+            }
+
+            $charIds = DB::table('refresh_tokens')
+                ->where('user_id', $userId)
+                ->pluck('character_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            if (!in_array($characterId, $charIds, true)) {
+                $charIds[] = $characterId;
+            }
+
+            return $charIds;
+        } catch (\Exception $e) {
+            Log::warning('Mining Manager (verify-payments): getCharacterIdsForUserOf() failed, falling back to strict character match', [
+                'character_id' => $characterId,
+                'error'        => $e->getMessage(),
+            ]);
+            return [$characterId];
+        }
     }
 }

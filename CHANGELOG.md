@@ -2,6 +2,115 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [2.0.2] — 2026-05-31 — The Ecosystem Era: Field Repairs
+
+> **Mental model:** v2.0.1 was the Polish Pass. v2.0.2 is **field repairs** on top of it — real bugs the Polish Pass left behind, surfaced when production traffic hit them. Two were silent-failure traps in the notification dispatcher and the moon-extraction lifecycle model that quietly ate `moon_chunk_unstable` warnings for an unknown stretch. One was a Bootstrap-meets-AdminLTE modal-stacking interaction that froze the Mark-as-Paid form. One was a fairness gap where players paying tax from an alt wallet got their payment silently rejected. Each fix surfaces a diagnostic mechanism in the existing tooling so the next failure of its class is observable. Every item additive. No breaking changes. No new ESI scopes. No schema changes.
+
+### 🐛 Critical bug fixes
+
+**Moon-chunk-unstable notification silently never fired in production.** Root cause: `MoonExtractionService::determineStatus()` treated ESI's `natural_decay_time` field (the auto-fracture mark, ~3h after chunk arrival) as the chunk's expiry point. Every chunk got stamped `status='expired'` ~3 hours after arrival even though it had **50 more hours of mineable life** ahead of it. `CheckExtractionArrivalsCommand` Pass 2 filters `whereNotIn('status', ['cancelled', 'expired'])`, so the wrongly-stamped row was invisible to the cron and the capital-safety warning never fired.
+
+Fix mirrors `MoonExtraction::scopeExpiredByTime()` math — the model has had the correct lifecycle logic all along, it was just `determineStatus()` that drifted apart. Prefers `fractured_at + 50h`, falls back to `natural_decay_time + 50h` as a conservative auto-fracture estimate when `fractured_at` isn't yet populated. Either way the +50h offset matches the actual chunk lifecycle (48h ready + 2h unstable). The UI's "Ready since" / "Unstable in 2h" pills were always correct because they used the runtime helpers (`getUnstableStartTime()`, `getExpiryTime()`); only the persisted `status` column was wrong, and only the cron read `status` directly.
+
+Signature change: `determineStatus(array $data, ?MoonExtraction $existing = null)`. Update path passes `$existing` so the method can read `fractured_at` off the model. Create path (no existing row, so no fractured_at to read) calls without `$existing` and falls through to the `natural_decay_time` fallback — same as before for new rows.
+
+**Recovery for installs already affected** (one-shot, run after deploy):
+
+```sql
+UPDATE moon_extractions SET status = 'ready'
+WHERE status = 'expired' AND fractured_at IS NOT NULL
+  AND DATE_ADD(fractured_at, INTERVAL 50 HOUR) > NOW();
+```
+
+After deploy, wrongly-stamped rows also self-heal on the next ESI import (~hourly) — the SQL just shortcuts the wait. Without it, you might miss the 2h unstable warning window for any chunk currently inside it.
+
+**Notification dispatcher silently skipped with no reason.** `NotificationService::send()` had a silent `['skipped' => true]` early-return (no `reason` key) when the `isEnabled()` channel gate failed. The Diagnostic Notification Testing tab showed `reason: unknown`; operators couldn't tell whether the dispatcher had succeeded silently or failed silently. The combination of this + the lifecycle bug meant the moon_chunk_unstable warning could be silently broken at both the trigger layer AND the delivery layer with zero observable signal in any log line.
+
+Fix: dispatcher now calls a new `describeChannelGateFailure()` helper that re-reads each channel signal (EVE Mail / Slack / webhook count) and constructs a specific human-readable reason — *"No enabled channel found: EVE Mail off, Slack off, 0 webhook(s) enabled. Tick at least one webhook in Settings → Webhooks, or enable EVE Mail / Slack in Settings → Notifications."* The reason is in both the API response (so the Diagnostic page shows it) and a WARNING line in `laravel.log`.
+
+Companion fix: `hasAnyEnabledWebhook()` previously caught Eloquent exceptions silently and returned `false`, making every notification skip with no breadcrumb if any model/query issue ever surfaced. The catch block now logs the actual exception at WARNING level so the underlying cause appears in `laravel.log` instead of being swallowed.
+
+**Mark-as-Paid modal froze on click.** Classic Bootstrap 4 modal interaction with AdminLTE: SeAT's `.content-wrapper` creates a local CSS stacking context (transform/filter/perspective on an ancestor). Bootstrap inserts `.modal-backdrop` at `<body>` level (z-index 1040), but the modal-dialog stays inside the wrapper and its z-index gets pinned to the local context. The backdrop ends up effectively above the modal-dialog in the stacking order; clicks land on the backdrop and the form looks frozen. The dialog still renders visually because the backdrop is translucent — so the bug was easy to misdiagnose as a JS handler issue.
+
+Fix: reparent the modal element to `<body>` before show, escaping the wrapper's stacking context. Four direct `.modal('show')` call sites patched with `.appendTo('body').modal('show')`; one declarative `data-toggle="modal"` trigger got a delegated `show.bs.modal` event handler that does the same reparenting (no JS call site to patch).
+
+Five surfaces total: `#markPaidModal` × 2 (taxes index + details), `#eventModal` (events calendar), `#extractionModal` (moon calendar), `#entryDetailsModal` (ledger index). Same latent bug would have hit all five but was less noticeable on the others until you tried to fill a form.
+
+**Tax payments from alt characters silently rejected.** `WalletTransferService::processTransaction()` required the paying character (`transaction.first_party_id`) to be **exactly** the taxed character (`mining_tax.character_id`). Players routinely send tax ISK from their wallet-richest alt rather than the alt that did the mining — those payments dropped on the floor as 'unmatched' even though the tax code in the transaction description was correct.
+
+Fix: the auto-match now accepts a payment if the tax code matches AND the paying character shares a SeAT `user_id` (via `refresh_tokens`) with the taxed character — i.e. is a recognised alt of the same player. New helpers `getCharacterIdsForUserOf()` + `sharesSeatUser()` encapsulate the lookup. Two call sites updated: `processTransaction()` (the listener-triggered auto-match path) and `manualMatch()` (the transaction-to-tax pairing entry point used by the tinker recovery recipe).
+
+New setting `payment.accept_alt_characters` (default `true`) governs the behaviour. UI toggle exposed in **Settings → General** as a switch directly below "Auto-match wallet payments". Default value means the alt-aware behaviour is on automatically; operators who want strict pre-v2.0.2 matching opt in explicitly.
+
+Audit log fires INFO when a payment is credited through an alt (paying char ≠ taxed char). `laravel.log` carries the tax_code, both character IDs, the transaction_id, and the amount. Same-character payments stay quiet. Directors disputing "who actually paid?" can grep the log for `"Payment credited via alt character"`.
+
+**Parallel-implementation gap closed.** `VerifyWalletPaymentsCommand` (the artisan `mining-manager:verify-payments` command) had its own copy of the tax-code lookup loop rather than delegating to the service. The alt-aware fix in the service didn't reach the artisan command, so `--auto-match` kept using strict matching until a follow-up commit applied the same alt-aware logic inline. The artisan warn line now includes the searched-character list when alt mode is on — *"Tax code 'XYZ' not found for character N (searched M linked characters: ...)"* — so failure cases surface the eligible-id set in the operator output.
+
+### 🚀 Permanent backstop
+
+**New `mining-manager:validate-lifecycle-integrity` daily cron.** Permanent backstop against the class of bug that produced the lifecycle status incident: walks `moon_extractions` rows updated in the last 14 days (configurable via `--days`), computes the expected status via the same `fractured_at + 50h` math the runtime helpers use, and warns when persisted status diverges. With `--fix`, applies corrections in place.
+
+Scheduled daily at 03:00 UTC via `ScheduleSeeder` with the `--quiet-ok` flag (no output when there's nothing to report — so the daily cron line stays a no-op when everything's healthy). Non-zero exit code on divergences so SeAT's schedule history reflects "needs attention" even when stdout is quiet.
+
+Three flags:
+- `--fix` — apply corrections in place. Each correction logged at INFO with from/to status.
+- `--quiet-ok` — suppress success output. Used in the cron schedule line.
+- `--days=N` — bound the audit window for performance on large installs (default 14).
+
+Statuses skipped: `'cancelled'` (operator-applied; not derivable from time) and `'fractured'` (legacy/transient).
+
+Diagnostic surfacing: the cron's category in Health Checks → Scheduled Jobs is `integrity` — distinct from `moon` / `metenox` / `tax` / etc. — so a failing audit stands out as a data-integrity signal rather than a routine extraction op.
+
+Operator workflow when the cron flags a divergence:
+1. Open Diagnostic → Health Checks → see the `integrity` cron's last exit code.
+2. Run `php artisan mining-manager:validate-lifecycle-integrity` manually to see the divergence list.
+3. Investigate the rows, or re-run with `--fix` to auto-correct.
+
+### ⚙️ Modified surfaces
+
+- `src/Services/Notification/NotificationService.php` — new `describeChannelGateFailure()`; `send()` skip carries a real reason; `hasAnyEnabledWebhook()` logs swallowed exceptions
+- `src/Services/Moon/MoonExtractionService.php` — `determineStatus()` rewritten + signature change + caller updated
+- `src/Services/Tax/WalletTransferService.php` — `processTransaction()` + `manualMatch()` now alt-aware; new `getCharacterIdsForUserOf()` + `sharesSeatUser()` helpers; INFO audit log on alt-credited payments
+- `src/Services/Configuration/SettingsManagerService.php` — `getPaymentSettings()` + `getGeneralSettings()` expose `accept_alt_characters`; `updateGeneralSettings()` whitelist extended
+- `src/Console/Commands/VerifyWalletPaymentsCommand.php` — alt-aware match parity with the service; enriched warn output naming the searched-character set
+- `src/Console/Commands/ValidateLifecycleIntegrityCommand.php` — new (daily integrity cron)
+- `src/Http/Controllers/SettingsController.php` — validation + checkbox conversion for `payment_accept_alt_characters`
+- `src/Http/Controllers/DiagnosticController.php` — `integrity` category in `systemStatusScheduledJobs()` categoriser
+- `src/Database/Seeders/ScheduleSeeder.php` — daily 03:00 UTC entry for the validator with `--quiet-ok`
+- `src/MiningManagerServiceProvider.php` — `ValidateLifecycleIntegrityCommand` registered
+- `src/Resources/views/settings/tabs/general.blade.php` — new alt-payments toggle below auto-match
+- `src/Resources/views/taxes/index.blade.php`, `taxes/details.blade.php`, `events/calendar.blade.php`, `moon/calendar.blade.php`, `ledger/index.blade.php` — modal `appendTo('body')` patches (4 call sites + 1 event handler)
+
+### ⚠️ Compatibility
+
+- **Fully additive.** No existing schema changes. No public API change. No breaking setting changes. No new ESI scopes.
+- New setting `payment.accept_alt_characters` defaults to `true` — the alt-aware behaviour is on automatically; operators who want strict mode opt in via Settings → General.
+- `determineStatus()` signature is backward-compatible — `$existing` is optional with default `null`, so any external code calling the old signature keeps working.
+- The validator cron's schedule row is seeded via `firstOrCreate` (canonical `AbstractScheduleSeeder` pattern) — existing operator cron customisations are preserved.
+- The modal `appendTo('body')` patch is purely additive — modals that were working continue to work; the broken ones now also work.
+
+### 🔧 Operator recipes
+
+**Re-run historical payment matching** to recover alt payments that were dropped on the floor before deploy:
+```bash
+docker exec -it seat-docker-front-1 php artisan mining-manager:verify-payments --days=30 --auto-match
+```
+`--days=30` covers a month of wallet history. Catches alt payments retroactively now that the matcher is broader.
+
+**Manually pair a specific transaction to a specific tax row** (handy for the double-payment-from-two-alts edge case where you want to control which transaction credits):
+```php
+// in tinker
+app(\MiningManager\Services\Tax\WalletTransferService::class)->manualMatch($transactionId, $taxId);
+```
+Uses the alt-aware sharesSeatUser check; logs an audit line; returns true on success. There's no UI for this in v2.0.2 — if alt-payment double-sends become recurring, a UI control would slot into v2.0.3.
+
+### 🔗 Related
+
+- v2.0.2 was discovered live during a moon_chunk_unstable production debug session on 2026-05-31. Two unrelated bugs (modal hang, alt-payments rejection) were found in the same session and folded into the same release rather than queued separately.
+- The lifecycle bug is the kind of two-sources-of-truth divergence the new integrity validator is designed to catch. Pattern noted in `project_mining_manager_future_refactors.md` for the next plugin to reuse — derived-snapshot columns that drift from their source-of-truth helpers are a recurring bug class.
+
+---
+
 ## [2.0.1] — 2026-05-26 — The Ecosystem Era: Polish Pass
 
 > **Mental model:** v2.0.0 opened the Ecosystem Era (Manager Core pricing + Structure Manager threat alerts). **v2.0.1 is the Polish Pass on the same era** — same arc, deeper craft: faster director workflows (role picker, routing map, Metenox cargo readout), cross-plugin publishing (MM joins the EventBus producer side), and per-surface quality lifts (live local-time conversion, jackpot rendering hardened against custom SeAT themes, diagnostic page aligned to the suite-wide standard). Every item is additive. No breaking changes. No new ESI scopes.

@@ -455,7 +455,14 @@ class MoonExtractionService
                     $existing->update([
                         'chunk_arrival_time' => $data['chunk_arrival_time'],
                         'natural_decay_time' => $data['natural_decay_time'],
-                        'status' => $this->determineStatus($data),
+                        // Pass $existing so determineStatus() can read
+                        // fractured_at (which is populated separately by
+                        // detectAutoFractures, not by the ESI extraction
+                        // payload). Without this, status was being computed
+                        // off natural_decay_time alone and flipping to
+                        // 'expired' ~3h after chunk arrival — see the
+                        // method docblock for the full lifecycle story.
+                        'status' => $this->determineStatus($data, $existing),
                         'moon_id' => $data['moon_id'] ?? null,
                         'ore_composition' => $data['ore_composition'] ?? null,
                     ]);
@@ -494,24 +501,64 @@ class MoonExtractionService
     }
 
     /**
-     * Determine extraction status based on times.
+     * Determine the persisted `status` value for a moon_extractions row,
+     * based on the chunk's lifecycle position.
      *
-     * @param array $data
+     * IMPORTANT LIFECYCLE NOTE (fixed 2026-05-31):
+     *   `natural_decay_time` is the **auto-fracture mark** (~3h after
+     *   chunk_arrival_time), NOT the end of the chunk's life.
+     *   The actual mineable window is:
+     *     chunk_arrival_time → fractured_at (manual or auto)
+     *     fractured_at → fractured_at + 48h  (ready window)
+     *     fractured_at + 48h → fractured_at + 50h  (unstable window)
+     *     fractured_at + 50h → expired
+     *   So the chunk has ~50 hours of life from fracture, not from arrival.
+     *
+     * The previous implementation treated `natural_decay_time` itself as
+     * the expiry point, which flipped every chunk to `status='expired'`
+     * about 3 hours after arrival — even though the chunk had 50 more
+     * hours of mineable life ahead of it. Downstream filters
+     * (`whereNotIn('status', ['cancelled', 'expired'])`) then excluded
+     * the row from `moon_arrival` re-checks, `moon_chunk_unstable`
+     * warning evaluation, and analytics roll-ups. This is why
+     * unstable-warning notifications never fired in production.
+     *
+     * The fix mirrors `MoonExtraction::scopeExpiredByTime()` — uses
+     * `fractured_at` when present (set by `detectAutoFractures()` from
+     * `MoonminingLaserFired` / `MoonminingAutomaticFracture` ESI
+     * notifications), and falls back to `natural_decay_time` as a
+     * conservative auto-fracture estimate when fractured_at isn't yet
+     * known. Either way the +50h offset is the canonical end of life.
+     *
+     * @param array $data       Fresh ESI payload (chunk_arrival_time,
+     *                          natural_decay_time, etc.)
+     * @param MoonExtraction|null $existing  When updating an existing
+     *                          row, pass it so we can read fractured_at
+     *                          (which lives on the model, not in ESI data).
      * @return string
      */
-    private function determineStatus(array $data): string
+    private function determineStatus(array $data, ?MoonExtraction $existing = null): string
     {
         $now = Carbon::now();
         $chunkArrival = Carbon::parse($data['chunk_arrival_time']);
-        $naturalDecay = Carbon::parse($data['natural_decay_time']);
 
         if ($now < $chunkArrival) {
             return 'extracting';
-        } elseif ($now >= $chunkArrival && $now < $naturalDecay) {
-            return 'ready';
-        } else {
-            return 'expired';
         }
+
+        // Determine the actual fracture point:
+        //  - Prefer `fractured_at` on the existing row (populated by
+        //    detectAutoFractures from ESI notifications — accurate).
+        //  - Fall back to `natural_decay_time` as the auto-fracture mark
+        //    (conservative: assumes no manual laser fire happened).
+        $fractureTime = ($existing && $existing->fractured_at)
+            ? $existing->fractured_at
+            : Carbon::parse($data['natural_decay_time']);
+
+        // Total mineable lifetime after fracture: 48h ready + 2h unstable.
+        $expiryTime = $fractureTime->copy()->addHours(50);
+
+        return $now < $expiryTime ? 'ready' : 'expired';
     }
 
     /**

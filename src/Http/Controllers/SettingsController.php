@@ -357,6 +357,7 @@ class SettingsController extends Controller
             'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
             'payment_auto_match_payments' => 'nullable|boolean',
+            'payment_accept_alt_characters' => 'nullable|boolean',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
@@ -405,6 +406,11 @@ class SettingsController extends Controller
             // that case (otherwise the operator can never turn auto-match
             // off — the listener default is true).
             $data['payment_auto_match_payments'] = $request->has('payment_auto_match_payments');
+            // Same checkbox-unchecked-must-persist-false logic as above:
+            // the WalletTransferService default is true, so the only way
+            // to switch to strict per-character matching is to actually
+            // persist the false value.
+            $data['payment_accept_alt_characters'] = $request->has('payment_accept_alt_characters');
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 

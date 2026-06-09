@@ -892,6 +892,73 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                 </div>
 
+                {{-- v2.0.2 mention ===================================================
+                     Field Repairs hotfix sits as a small note below the v2.0.1
+                     callout rather than its own full whats-new-box — v2.0.2 is
+                     bugfixes, not features, so it doesn't deserve the same
+                     headline treatment as the polish-pass arc. Compact card with
+                     a left-border accent stays visible without competing for
+                     attention with v2.0.1's box. =================================== --}}
+                <div class="help-card" style="border-left: 4px solid #51cf66; padding: 12px 18px; font-size: 0.93em;">
+                    <h5 style="color: #51cf66; margin-bottom: 8px;">
+                        <i class="fas fa-tools"></i>
+                        v2.0.2 hotfix &mdash; The Ecosystem Era: Field Repairs
+                        <small class="text-muted ml-2" style="font-size: 0.78em;">2026-05-31</small>
+                    </h5>
+                    <p style="margin-bottom: 6px;">
+                        Real production bugs the Polish Pass left behind, surfaced when live traffic
+                        hit them. Same arc, no new features. Every fix additive, no schema changes,
+                        no new ESI scopes.
+                    </p>
+                    <ul style="margin-bottom: 6px; padding-left: 22px;">
+                        <li>
+                            <strong>Moon-chunk-unstable warning now fires.</strong>
+                            <code>MoonExtractionService::determineStatus()</code> mis-used ESI's
+                            <code>natural_decay_time</code> as the chunk expiry, stamping rows
+                            <code>'expired'</code> ~3h after arrival despite 50h of mineable life
+                            remaining. Math now mirrors <code>scopeExpiredByTime()</code>:
+                            <code>fractured_at + 50h</code>.
+                        </li>
+                        <li>
+                            <strong>Notification dispatcher tells you why it skipped.</strong>
+                            Diagnostic Notification Testing previously showed
+                            <em>reason: unknown</em>; now surfaces specific causes ("No enabled
+                            channel found", "Webhook table probe threw", etc.).
+                            <code>hasAnyEnabledWebhook()</code> stopped silently swallowing
+                            Eloquent exceptions.
+                        </li>
+                        <li>
+                            <strong>Mark-as-Paid modal no longer freezes.</strong> Bootstrap-meets-
+                            AdminLTE stacking-context bug; modals now reparent to
+                            <code>&lt;body&gt;</code> before show. Affects 5 surfaces across
+                            taxes / events / moon / ledger.
+                        </li>
+                        <li>
+                            <strong>Tax payments from alts now accepted.</strong> Auto-match
+                            broadened from strict <code>character_id</code> equality to
+                            "same SeAT <code>user_id</code>". Toggle at <em>Settings &rarr;
+                            General &rarr; Accept payments from any of a player's characters</em>
+                            (default ON). Audit log fires INFO on alt-credited payments.
+                        </li>
+                        <li>
+                            <strong>New daily integrity validator</strong>
+                            (<code>mining-manager:validate-lifecycle-integrity</code>) catches the
+                            class of bug behind the chunk-unstable incident if it ever recurs.
+                            Runs at 03:00 UTC with <code>--quiet-ok</code>; <code>--fix</code>
+                            applies corrections.
+                        </li>
+                    </ul>
+                    <p style="margin-bottom: 0; font-size: 0.85em; color: #9aa3b3;">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Upgrading from v2.0.1?</strong>
+                        Docker stack down/up. No migrations, no settings to change.
+                        See the
+                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md"
+                           target="_blank" style="color: #93f7b8;">CHANGELOG</a>
+                        for the full fix arcs + recovery SQL recipes.
+                    </p>
+                </div>
+
                 {{-- What is Mining Manager? --}}
                 <div class="help-card">
                     <h3>
