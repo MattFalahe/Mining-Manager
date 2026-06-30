@@ -67,6 +67,9 @@ class NotificationService
     const TYPE_MOON_READY = 'moon_ready';
     const TYPE_JACKPOT_DETECTED = 'jackpot_detected';
     const TYPE_MOON_CHUNK_UNSTABLE = 'moon_chunk_unstable';
+    // Planner notifications (corp coordination — Moon Extraction Planner).
+    const TYPE_EXTRACTION_STARTED = 'extraction_started';
+    const TYPE_NEXT_EXTRACTION_PLANNED = 'next_extraction_planned';
     const TYPE_EXTRACTION_AT_RISK = 'extraction_at_risk';
     const TYPE_EXTRACTION_LOST = 'extraction_lost';
     const TYPE_THEFT_DETECTED = 'theft_detected';
@@ -534,6 +537,60 @@ class NotificationService
     }
 
     /**
+     * Send an `extraction_started` notification — fired when a refinery
+     * begins a new moon extraction (the drill was fired / chunk is forming).
+     *
+     * Source: SeAT's `character_notifications` feed — the
+     * `MoonminingExtractionStarted` notification a director receives in-game.
+     * MoonExtractionService already reads that feed (for ore volumes); the
+     * planner adds an outbound notification on it so the team knows a new
+     * chunk is on the clock and when it'll arrive.
+     *
+     * Corp-scoped (moon owner) via the default webhook scoping in
+     * sendViaWebhooks. Standalone — no cross-plugin dependency.
+     *
+     * Expected keys in $data (all optional, filtered if missing):
+     *   moon_name, structure_name, system_name, extraction_start_time,
+     *   chunk_arrival_time, time_until_arrival, estimated_value,
+     *   extraction_url, extraction_id
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendExtractionStarted(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '⛏️ A new moon extraction has started — the chunk is forming and will arrive at the listed time. Plan your fleet around the arrival.';
+        return $this->send(self::TYPE_EXTRACTION_STARTED, [], $data);
+    }
+
+    /**
+     * Send a `next_extraction_planned` notification — the planner's
+     * "don't forget to re-fire" nudge.
+     *
+     * Fires ONLY AFTER the moon-ready notification has latched for the
+     * just-arrived chunk (see CheckExtractionArrivalsCommand). Looks up the
+     * refinery's next slot on the Moon Extraction Planner and announces it so
+     * a director re-fires the drill on schedule, keeping the staggered
+     * rotation intact.
+     *
+     * Corp-scoped (moon owner). Standalone.
+     *
+     * Expected keys in $data (all optional, filtered if missing):
+     *   moon_name, structure_name, planned_arrival_time, cadence_label,
+     *   source (auto|manual), planner_url
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendNextExtractionPlanned(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '🗓️ This chunk is ready — the next pull for this refinery is planned below. Re-fire the drill to stay on the planned rotation.';
+        return $this->send(self::TYPE_NEXT_EXTRACTION_PLANNED, [], $data);
+    }
+
+    /**
      * Send an extraction_at_risk notification — cross-plugin threat warning.
      *
      * Fires when Structure Manager detects an Athanor/Tatara running an active
@@ -775,6 +832,8 @@ class NotificationService
             'active_theft' => self::TYPE_ACTIVE_THEFT,
             'incident_resolved' => self::TYPE_INCIDENT_RESOLVED,
             'report_generated' => self::TYPE_REPORT_GENERATED,
+            'extraction_started' => self::TYPE_EXTRACTION_STARTED,
+            'next_extraction_planned' => self::TYPE_NEXT_EXTRACTION_PLANNED,
             default => self::TYPE_CUSTOM,
         };
 
@@ -1229,6 +1288,8 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
             default => null,
         };
 
@@ -1261,6 +1322,8 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
             self::TYPE_CUSTOM => 'custom',
             default => null,
         };
@@ -1414,6 +1477,8 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
             default => null,
         };
 
@@ -1801,6 +1866,32 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
+            self::TYPE_EXTRACTION_STARTED => [
+                'subject' => sprintf('Moon Extraction Started: %s', $data['moon_name'] ?? 'Unknown Moon'),
+                'body' => sprintf(
+                    "A new moon extraction has started.\n\n" .
+                    "Moon: %s\nStructure: %s\nChunk Arrives: %s\n\n" .
+                    "Plan your fleet around the arrival.\n\n" .
+                    "%s Management",
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['chunk_arrival_time'] ?? 'Unknown',
+                    $this->getCorpName()
+                )
+            ],
+            self::TYPE_NEXT_EXTRACTION_PLANNED => [
+                'subject' => sprintf('Next Extraction Planned: %s', $data['structure_name'] ?? 'Refinery'),
+                'body' => sprintf(
+                    "This chunk is ready — the next pull for this refinery is planned.\n\n" .
+                    "Refinery: %s\nMoon: %s\nNext Pull Planned: %s\n\n" .
+                    "Re-fire the drill to stay on the planned rotation.\n\n" .
+                    "%s Management",
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['planned_arrival_time'] ?? 'See planner',
+                    $this->getCorpName()
+                )
+            ],
             self::TYPE_EXTRACTION_AT_RISK => [
                 'subject' => sprintf(
                     'EXTRACTION IN DANGER (%s): %s',
@@ -1983,6 +2074,8 @@ class NotificationService
             self::TYPE_MOON_READY => '#3498DB',
             self::TYPE_JACKPOT_DETECTED => '#FFD700',
             self::TYPE_MOON_CHUNK_UNSTABLE => '#FF6B00',
+            self::TYPE_EXTRACTION_STARTED => '#1ABC9C',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => '#9B59B6',
             self::TYPE_THEFT_DETECTED => '#FFA500',
             self::TYPE_CRITICAL_THEFT => 'danger',
             self::TYPE_ACTIVE_THEFT => 'danger',
@@ -2003,6 +2096,8 @@ class NotificationService
             self::TYPE_MOON_READY => "Moon Chunk Ready — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_JACKPOT_DETECTED => "⭐ JACKPOT MOON DETECTED — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
+            self::TYPE_EXTRACTION_STARTED => "⛏️ Extraction started — " . ($data['moon_name'] ?? 'Unknown Moon') . " (chunk arrives " . ($data['chunk_arrival_time'] ?? 'soon') . ")",
+            self::TYPE_NEXT_EXTRACTION_PLANNED => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner'),
             self::TYPE_THEFT_DETECTED => "Theft Incident Detected — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_CRITICAL_THEFT => "🚨 CRITICAL THEFT — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_ACTIVE_THEFT => "🔥 ACTIVE THEFT IN PROGRESS — " . ($data['character_name'] ?? 'Unknown'),
@@ -2331,6 +2426,8 @@ class NotificationService
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskColor($data),
             self::TYPE_EXTRACTION_LOST => 0x1F0000, // Near-black / very dark red — post-mortem
             self::TYPE_METENOX_CARGO_FULL => 0xFF9800, // Orange — yield-stopping warning, not safety
+            self::TYPE_EXTRACTION_STARTED => 0x1ABC9C, // Teal — new chunk on the clock
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 0x9B59B6, // Purple — planner nudge
             self::TYPE_THEFT_DETECTED => 0xFFA500, // Orange
             self::TYPE_CRITICAL_THEFT => 0xFF0000, // Red
             self::TYPE_ACTIVE_THEFT => 0xFF6B00, // Orange-red
@@ -2355,6 +2452,8 @@ class NotificationService
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskTitle($data),
             self::TYPE_EXTRACTION_LOST => '☠️ MOON CHUNK DESTROYED',
             self::TYPE_METENOX_CARGO_FULL => 'Metenox Cargo Bay Filling Up — Pull Soon',
+            self::TYPE_EXTRACTION_STARTED => '⛏️ Moon Extraction Started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => '🗓️ Next Extraction Planned',
             self::TYPE_THEFT_DETECTED => 'Theft Incident Detected',
             self::TYPE_CRITICAL_THEFT => 'CRITICAL THEFT DETECTED',
             self::TYPE_ACTIVE_THEFT => 'ACTIVE THEFT IN PROGRESS',
@@ -2480,6 +2579,25 @@ class NotificationService
                 isset($data['natural_decay_time']) ? ['title' => 'Goes Unstable', 'value' => $data['natural_decay_time'], 'short' => true] : null,
                 isset($data['time_until_unstable']) ? ['title' => 'Time Remaining', 'value' => $data['time_until_unstable'], 'short' => true] : null,
                 !empty($data['extraction_url']) ? ['title' => 'Details', 'value' => '<' . $data['extraction_url'] . '|View Extraction>', 'short' => false] : null,
+            ])),
+            self::TYPE_EXTRACTION_STARTED => array_values(array_filter([
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['structure_name']) ? ['title' => 'Structure', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['system_name']) ? ['title' => 'System', 'value' => $data['system_name'], 'short' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Arrives', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
+                isset($data['time_until_arrival']) ? ['title' => 'Time Until Arrival', 'value' => $data['time_until_arrival'], 'short' => true] : null,
+                (isset($data['estimated_value']) && $data['estimated_value'] > 0)
+                    ? ['title' => 'Est. Value', 'value' => number_format((float) $data['estimated_value'], 0) . ' ISK', 'short' => true]
+                    : null,
+                !empty($data['extraction_url']) ? ['title' => 'Details', 'value' => '<' . $data['extraction_url'] . '|View Extraction>', 'short' => false] : null,
+            ])),
+            self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
+                isset($data['structure_name']) ? ['title' => 'Refinery', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
+                !empty($data['cadence_label']) ? ['title' => 'Cadence', 'value' => $data['cadence_label'], 'short' => true] : null,
+                !empty($data['source']) ? ['title' => 'Source', 'value' => ucfirst($data['source']), 'short' => true] : null,
+                !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 isset($data['alert_flavor']) ? ['title' => 'Threat Type', 'value' => ucwords(str_replace('_', ' ', $data['alert_flavor'])), 'short' => true] : null,

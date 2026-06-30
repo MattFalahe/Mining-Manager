@@ -202,6 +202,8 @@
                 'moon_ready'          => ['label' => 'Moon Chunk Ready',                'col' => 'notify_moon_arrival'],
                 'jackpot_detected'    => ['label' => 'Jackpot Detected',                'col' => 'notify_jackpot_detected'],
                 'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable',             'col' => 'notify_moon_chunk_unstable'],
+                'extraction_started'  => ['label' => 'Extraction Started',              'col' => 'notify_extraction_started'],
+                'next_extraction_planned' => ['label' => 'Next Extraction Planned',     'col' => 'notify_next_extraction_planned'],
                 'extraction_at_risk'  => ['label' => 'Extraction at Risk (MC+SM)',      'col' => 'notify_extraction_at_risk',  'requires_mc' => true, 'requires_sm' => true],
                 'extraction_lost'     => ['label' => 'Extraction Lost (MC+SM)',         'col' => 'notify_extraction_lost',     'requires_mc' => true, 'requires_sm' => true],
                 'metenox_cargo_full'  => ['label' => 'Metenox Cargo Bay Full',          'col' => 'notify_metenox_cargo_full'],

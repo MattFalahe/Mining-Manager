@@ -16,6 +16,7 @@ A comprehensive mining management plugin for SeAT 5.x. Track mining operations, 
 
 - **Mining Ledger** -- Automated processing of character and corporation mining data with daily summary aggregation
 - **Moon Mining** -- Extraction tracking, ore composition, value estimation, jackpot detection (automatic + manual reporting), chunk arrival alerts. Past Extractions table with sortable/filterable DataTables view, structure column, status filter (expired/fractured/cancelled), and search — scoped to Moon Owner Corporation only
+- **Moon Extraction Planner** *(Planner Era, Moon Manager / Director)* -- A corp-internal coordination calendar at **Moon Planner** for staggering refinery pulls so a small crew isn't drowned by chunks landing together (chunks not mined promptly are wasted). Shows each refinery's planned pulls alongside the real extractions; per-refinery sidebar with cadence, last arrival, and projected next pull. **Auto-fill from history** projects each refinery's next pull (needs ≥2 past arrivals; median interval at ≥3) and spreads them to honour a configurable minimum gap. **Re-anchor a recurring day** — drag a Monday moon onto Tuesday and it sticks (future projections chain off the moved slot). **<gap proximity guard** — placing/moving a pull within the minimum-gap window of another arrival raises a confirmation listing the clashing moons (enforced client- AND server-side). Plan-vs-actual reconciliation confirms a slot once the real extraction appears. SeAT can only read in-game extractions, so the planner is intent/coordination only — it never controls the structure. Gated by the new standalone `mining-manager.moon_manager` ability (directors/admins included).
 - **Metenox Cargo Readout** *(v2.0.1, director-only)* -- New sidebar page showing what's currently in every Metenox Moon Drill's `MoonMaterialBay` owned by your **Moon Owner Corporation** (matches the Past Extractions table scope and the related notification). Per-drill cards with ore composition, quantity, m³ volume, percent-of-cargo bars, ISK valuation (Manager Core pricing primary, Jita/Fuzzwork fallback), structure state, **solar-system name** (joined from `solar_systems.name` with id-only fallback), and last-polled timestamp (yellow if stale > 2h). Per-drill **bay fill indicator** with color-graded progress bar (500,000 m³ Metenox MoonMaterialBay capacity, verified against SDE attribute 5693 and EVE Ref). **Admin scope picker** -- operators with `mining-manager.admin` get a dropdown above the chips listing every corp with at least one Metenox + an "All corps" aggregate option, defaulting to the same Moon Owner Corp view directors see (one-click "Back to Moon Owner" shortcut whenever off the default). Notifications still scope to Moon Owner Corp only, so admin's expanded read visibility doesn't generate extra alert traffic. **Cargo Bay Full notification** fires when a drill crosses the configurable fill threshold (default 85%, configurable 50-99%) — yield-stopping warning, dedup-latched against repeats while still over threshold, resets when cargo is pulled. Cron `mining-manager:scan-metenox-cargo-fill` every 5 min. Cross-plugin contract: PluginBridge capability `mining.metenox.cargoSnapshot($structureId)` lets Structure Manager render the bay on its structure detail page.
 - **Tax System** -- Daily summary-based tax calculation with per-ore rates (moon R4-R64, regular ore, ice, gas, abyssal, triglavian), multi-corporation support, guest mining rates, event modifiers (per-row attribution), configurable minimum tax amount with exempt/enforce behavior, wallet payment verification, and manual payment entry. Supports **monthly** and **biweekly** tax periods with a safe queued-switch mechanism (effective day 3 of next month to prevent row collisions). Weekly period type removed in v2.0.0 &mdash; historical weekly rows still render correctly.
 - **Mining Events** -- Create events with tax modifiers (tax-free to double-tax). Dedicated `event_mining_records` table materialises the exact mining activity qualifying for each event, with all four scope filters (corporation, location, time, ore category) applied at populate time. Per-row tax attribution: the modifier applies only to mining that actually overlaps the event window, not the whole day. Historical pricing preserved via proportional allocation from the mining ledger. Event form surfaces a live tax-compatibility panel so organisers know which event types are meaningful given current tax settings. *(v2.0.1)* Event create/edit forms gained an **EVE/UTC vs My local time** input toggle with live confirmation box; server still always stores UTC. Miners see their event discount ("saved X ISK") on My Mining and My Taxes; directors see an Event Tax column + 12-month chart.
@@ -23,7 +24,7 @@ A comprehensive mining management plugin for SeAT 5.x. Track mining operations, 
 - **Reports** -- Daily/weekly/monthly reports with PDF/CSV/JSON export and scheduled Discord/Slack delivery
 - **Theft Detection** -- Detect and monitor unauthorized mining with severity classification and incident tracking
 - **Dashboard** -- Corporation-wide analytics with 12-month charts, leaderboards, and statistics
-- **Notifications** -- 19 notification types via Discord webhooks, Slack, EVE Mail, or custom JSON endpoints, with per-webhook event toggles. Cross-plugin alerts for fuel/shield/armor/hull/destroyed events when Manager Core + Structure Manager are installed. *(v2.0.1)* Inline **Discord role picker** on every per-type role-id input (one-click pick from your installed Discord role source — SeAT Broadcast / SeAT Connector / legacy warlof tables). **Notification Routing Map** read-only Settings tab shows what fires where and who gets pinged at a glance, with "enabled but firing nowhere" warnings.
+- **Notifications** -- 21 notification types via Discord webhooks, Slack, EVE Mail, or custom JSON endpoints, with per-webhook event toggles. Cross-plugin alerts for fuel/shield/armor/hull/destroyed events when Manager Core + Structure Manager are installed. *(Planner Era)* Two new standalone moon-lifecycle notifications: **Extraction Started** (a refinery lit its drill — read from the in-game `MoonminingExtractionStarted` director notification) and **Next Extraction Planned** (fires *after* a chunk is ready, announcing the refinery's next planned pull from the planner so a director re-fires on schedule). **Manager Core fast-poll** — when Manager Core is installed, Extraction Started is detected in ~2 min via MC's ESI fast-poll instead of the ~30 min moon-extraction endpoint cache; the two paths are mutually exclusive (no duplicates), with an operator `auto` / `seat_native` toggle. *(v2.0.1)* Inline **Discord role picker** on every per-type role-id input (one-click pick from your installed Discord role source — SeAT Broadcast / SeAT Connector / legacy warlof tables). **Notification Routing Map** read-only Settings tab shows what fires where and who gets pinged at a glance, with "enabled but firing nowhere" warnings.
 - **EventBus Publishing** *(v2.0.1)* -- Three new `mining.extraction_*` events published via Manager Core's Topics facade (`ready` / `unstable` / `expired`) once per extraction per lifecycle stage. Rich payload with deeplink URL. New cron `mining-manager:scan-extraction-events` at `*/5 * * * *`. Standalone-safe via `class_exists` guard on `\ManagerCore\Topics`. Consumable by SeAT Broadcast's FC Opportunities board.
 - **Diagnostics** -- 16-tab diagnostic suite. *(v2.0.1)* Default tab is now **Health Checks** (renamed from "System Status", reordered to match the suite-wide standard from `feedback_plugin_diagnostic_standard.md`). Tier 1 tabs each open with a "What this tab does / When to use / Heads up" intro box. Tabs: Health Checks, Master Test (one-click read-only smoke chain, ~26 checks, sub-30s), System Validation, Settings Health, Data Integrity, Tax Trace, Notification Testing, plus plugin-specific traces and a DEV-only Test Data tab.
 
@@ -102,9 +103,11 @@ This decoupling means arrivals notify within ~60 seconds of the actual chunk arr
 
 **Cancellation handling:** If a director cancels an extraction in-game before chunk arrival, EVE sends a `MoonminingExtractionCancelled` character notification. The state system detects this during its next ESI poll and marks the extraction as `cancelled`. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time.
 
+**Extraction Started — fast-poll vs SeAT-native:** The `extraction_started` notification has two possible trigger paths. With **Manager Core** installed, MM registers a handler with MC's ESI fast-poll registry and reacts to the in-game `MoonminingExtractionStarted` director notification in ~2 minutes. Without Manager Core, the SeAT-native path fires it from the stored `extraction_start_time` once the corp moon-extraction endpoint refreshes (~30 min cache). The two are **mutually exclusive** — when fast-poll is active, the SeAT-native pass in `check-extraction-arrivals` is suppressed, so a single notification fires per extraction. Operator toggle at Settings → Notifications → *Extraction Started — Detection Speed* (`auto` / `seat_native`, default `auto`). Same model Structure Manager uses for its structure alerts.
+
 ## Permissions
 
-4-tier permission model -- higher tiers inherit all lower tier access.
+4-tier permission model -- higher tiers inherit all lower tier access. Plus one standalone capability (`moon_manager`) that grants the planner without requiring full director.
 
 | Permission | Tier | Description |
 |---|---|---|
@@ -112,6 +115,7 @@ This decoupling means arrivals notify within ~60 seconds of the actual chunk arr
 | `mining-manager.member` | Member | View own mining data, join events, view moon schedules, report jackpots, reprocessing calculator |
 | `mining-manager.director` | Director | View all corp data, manage operations, analytics, reports, theft detection |
 | `mining-manager.admin` | Admin | Full control: settings, tax management, delete actions, API, diagnostics |
+| `mining-manager.moon_manager` | Capability *(standalone)* | Access the Moon Extraction Planner — assign / move / auto-fill planned moon pulls. Directors and admins also have this access. |
 
 ## Artisan Commands
 
@@ -162,14 +166,14 @@ This decoupling means arrivals notify within ~60 seconds of the actual chunk arr
 
 ## Webhook Notifications
 
-16 notification types across 5 categories. Each webhook can independently toggle which events it receives.
+18 notification types across 5 categories (plus 3 cross-plugin / Metenox types — extraction-at-risk, extraction-lost, metenox-cargo-full — documented elsewhere). Each webhook can independently toggle which events it receives.
 
 Supported channels: Discord webhooks, Slack, and ESI in-game mail (for tax reminders/invoices/overdue notices).
 
 | Category | Events | Description |
 |---|---|---|
 | Tax | generated, announcement, reminder, invoice, overdue | Payment lifecycle notifications |
-| Moon | arrival, jackpot, chunk-unstable | Chunk ready, jackpot detection, capital safety warnings (~2h before chunk goes unstable) |
+| Moon | arrival, jackpot, chunk-unstable, extraction-started, next-planned | Chunk ready, jackpot detection, capital safety warnings (~2h before chunk goes unstable), drill lit (Extraction Started), and the planner's next-pull nudge (Next Extraction Planned) |
 | Events | created, started, completed | Mining event lifecycle |
 | Theft | detected, critical, active, resolved | Security alerts |
 | Reports | generated | Scheduled report delivery |
@@ -184,7 +188,7 @@ All dispatch goes through a single `NotificationService` (consolidated from the 
 |---|---|---|
 | **Preview Test** | One webhook (selected or custom URL) | Check embed layout + single-webhook wiring — renders without writing to audit log |
 | **Fire Live Notification** | Full pipeline, one type, all subscribed webhooks | End-to-end verification for one specific surface. Respects corp scoping + all gates. Writes audit log. |
-| **Fire ALL (Chain)** | Full pipeline, all 16 types sequentially | Post-deploy smoke test — every subscribed webhook receives every type in ~24 seconds |
+| **Fire ALL (Chain)** | Full pipeline, every fire-able type sequentially | Post-deploy smoke test — every subscribed webhook receives every type in well under a minute |
 
 Settings → Webhooks → **Test** button sends a minimal "✅ Webhook Active" ping for wiring verification.
 

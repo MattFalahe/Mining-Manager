@@ -1081,6 +1081,8 @@ class SettingsManagerService
         'event_created', 'event_started', 'event_completed',
         // Moon
         'moon_ready', 'jackpot_detected',
+        // Planner — extraction lifecycle coordination
+        'extraction_started', 'next_extraction_planned',
         // Metenox (v2.0.1) — bay-full warning, standalone (no cross-plugin deps)
         'metenox_cargo_full',
         // Theft
@@ -1134,6 +1136,15 @@ class SettingsManagerService
             // [50, 99] both client-side via the UI input + server-side in the
             // scanner). Read here so the settings view can prefill the input.
             'metenox_cargo_full_threshold_pct' => (float) $this->getSetting('notifications.metenox_cargo_full_threshold_pct', 85),
+
+            // Moon Extraction Planner — minimum gap (hours) between two chunk
+            // arrivals before the planner warns about clustering.
+            'min_extraction_gap_hours' => (int) $this->getSetting('notifications.min_extraction_gap_hours', 24),
+
+            // extraction_started detection mode. 'auto' uses Manager Core's
+            // ESI fast-poll when present (~2 min detection); 'seat_native'
+            // forces the slower endpoint-driven cron pass even with MC.
+            'moon_extraction_fastpoll_mode' => $this->getSetting('notifications.moon_extraction_fastpoll_mode', 'auto'),
 
             // seat-connector availability (runtime)
             'seat_connector_available' => \Illuminate\Support\Facades\Schema::hasTable('seat_connector_users'),

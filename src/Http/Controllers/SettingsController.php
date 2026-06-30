@@ -476,6 +476,19 @@ class SettingsController extends Controller
                 'min:50',
                 'max:99',
             ],
+            // Moon Extraction Planner minimum gap (hours). Bounded [1, 168]
+            // (1 week) — clusters tighter than an hour are nonsensical and a
+            // gap wider than a week defeats staggering on weekly cadences.
+            'min_extraction_gap_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:168',
+            ],
+            'moon_extraction_fastpoll_mode' => [
+                'nullable',
+                'in:auto,seat_native',
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -543,6 +556,19 @@ class SettingsController extends Controller
             $data['metenox_cargo_full_threshold_pct'] = ($thresholdInput !== null && $thresholdInput !== '')
                 ? (float) $thresholdInput
                 : 85;
+
+            // Moon Extraction Planner — minimum gap (hours) between arrivals.
+            $gapInput = $request->input('min_extraction_gap_hours');
+            $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
+                ? (int) $gapInput
+                : 24;
+
+            // extraction_started detection mode (auto = Manager Core fast-poll
+            // when present; seat_native = endpoint-driven cron pass).
+            $fastpollMode = $request->input('moon_extraction_fastpoll_mode');
+            $data['moon_extraction_fastpoll_mode'] = in_array($fastpollMode, ['auto', 'seat_native'], true)
+                ? $fastpollMode
+                : 'auto';
 
             $this->settingsService->updateNotificationSettings($data);
             $this->clearSettingsCache();
@@ -1229,6 +1255,8 @@ class SettingsController extends Controller
             $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
             $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
+            $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
+            $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1297,6 +1325,8 @@ class SettingsController extends Controller
             $data['notify_moon_arrival'] = $request->boolean('notify_moon_arrival');
             $data['notify_jackpot_detected'] = $request->boolean('notify_jackpot_detected');
             $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
+            $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
+            $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1471,6 +1501,8 @@ class SettingsController extends Controller
             'notify_moon_arrival' => 'nullable|boolean',
             'notify_jackpot_detected' => 'nullable|boolean',
             'notify_moon_chunk_unstable' => 'nullable|boolean',
+            'notify_extraction_started' => 'nullable|boolean',
+            'notify_next_extraction_planned' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
             'notify_event_created' => 'nullable|boolean',

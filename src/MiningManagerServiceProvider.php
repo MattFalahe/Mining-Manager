@@ -102,6 +102,15 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // either MC or SM is missing — plugin still works standalone.
         $this->registerCrossPluginStructureAlerts();
 
+        // Register MM's moon notification handler with Manager Core's ESI
+        // fast-poll registry so `MoonminingExtractionStarted` is detected in
+        // ~2 min instead of waiting on the corp moon-extraction endpoint's
+        // ~30 min cache. Unconditional (queue workers must register it too);
+        // no-ops when MC is absent or the operator forced SeAT-native. When
+        // active, CheckExtractionArrivalsCommand suppresses its own
+        // extraction_started pass to avoid double-firing.
+        \MiningManager\Integrations\MoonFastPollIntegration::registerHandler();
+
         // Subscribe to MC's pricing.preference_changed event so an
         // operator's change in MC's Pricing Preferences UI invalidates
         // MM's local price cache immediately. Without this subscription,

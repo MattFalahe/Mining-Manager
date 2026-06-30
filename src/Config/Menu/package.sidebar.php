@@ -52,6 +52,13 @@ return [
                 'permission' => 'mining-manager.director',
             ],
             [
+                'name'       => 'Moon Planner',
+                'label'      => 'mining-manager::menu.moon_planner',
+                'icon'       => 'fas fa-calendar-alt',
+                'route'      => 'mining-manager.moon.planner',
+                'permission' => 'mining-manager.moon_manager',
+            ],
+            [
                 'name'       => 'Analytics',
                 'label'      => 'mining-manager::menu.analytics',
                 'icon'       => 'fas fa-chart-line',

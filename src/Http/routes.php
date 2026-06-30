@@ -452,6 +452,49 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
+        // =================================================================
+        // Moon Extraction Planner — gated by the new `moon_manager` ability
+        // OR `director` (admins bypass). The OR can't be expressed in a
+        // single `can:` middleware, so MoonPlannerController's constructor
+        // enforces it. These literal paths MUST be registered BEFORE the
+        // `/{id}` catch-all below or Laravel treats "planner" as an
+        // extraction ID — same ordering reason as metenox-cargo above.
+        // =================================================================
+        Route::get('/planner', [
+            'as' => 'mining-manager.moon.planner',
+            'uses' => 'MoonPlannerController@index',
+        ]);
+
+        Route::get('/planner/data', [
+            'as' => 'mining-manager.moon.planner.data',
+            'uses' => 'MoonPlannerController@data',
+        ]);
+
+        Route::post('/planner/check-conflicts', [
+            'as' => 'mining-manager.moon.planner.check-conflicts',
+            'uses' => 'MoonPlannerController@checkConflicts',
+        ]);
+
+        Route::post('/planner/auto-fill', [
+            'as' => 'mining-manager.moon.planner.auto-fill',
+            'uses' => 'MoonPlannerController@autoFill',
+        ]);
+
+        Route::post('/planner', [
+            'as' => 'mining-manager.moon.planner.store',
+            'uses' => 'MoonPlannerController@store',
+        ]);
+
+        Route::put('/planner/{id}', [
+            'as' => 'mining-manager.moon.planner.update',
+            'uses' => 'MoonPlannerController@update',
+        ]);
+
+        Route::delete('/planner/{id}', [
+            'as' => 'mining-manager.moon.planner.destroy',
+            'uses' => 'MoonPlannerController@destroy',
+        ]);
+
         Route::get('/{id}', [
             'as' => 'mining-manager.moon.show',
             'uses' => 'MoonController@show',

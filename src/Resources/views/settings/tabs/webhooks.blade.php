@@ -420,6 +420,20 @@
                                 Moon Chunk Unstable (capital safety)
                             </label>
                         </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-extraction-started" name="notify_extraction_started" value="1">
+                            <label class="custom-control-label" for="notify-extraction-started">
+                                <i class="fas fa-hammer text-info"></i>
+                                Extraction Started
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-next-extraction-planned" name="notify_next_extraction_planned" value="1">
+                            <label class="custom-control-label" for="notify-next-extraction-planned">
+                                <i class="fas fa-calendar-check text-primary"></i>
+                                Next Extraction Planned (planner)
+                            </label>
+                        </div>
 
                         @php
                             // Cross-plugin checks for extraction_at_risk + extraction_lost.

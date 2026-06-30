@@ -13,6 +13,10 @@ return [
     'director_label' => 'Director',
     'director_description' => 'All Member permissions plus: view all corporation data, process ledger, create/edit events, update moon data, view analytics/reports/theft incidents, verify wallet payments.',
 
+    // Moon Manager capability (standalone, not a tier)
+    'moon_manager_label' => 'Moon Manager',
+    'moon_manager_description' => 'Access the Moon Extraction Planner: assign, move, and auto-fill planned moon pulls across refineries to stagger arrivals. Directors and admins also have this access.',
+
     // Admin tier
     'admin_label' => 'Admin',
     'admin_description' => 'All Director permissions plus: manage settings, calculate/manage taxes, generate tax codes, delete data, generate/export reports, resolve theft incidents, API access, diagnostics.',

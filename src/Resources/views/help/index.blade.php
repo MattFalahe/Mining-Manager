@@ -675,6 +675,64 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
                 </div>
 
+                {{-- What's New — Planner Era (unreleased dev) ====================== --}}
+                <div class="whats-new-box">
+                    <h3>
+                        <i class="fas fa-calendar-check"></i>
+                        What's New &mdash; The Planner Era
+                        <small class="ml-2" style="font-size: 0.65em; color: #93f7b8;">moon-pull coordination</small>
+                    </h3>
+                    <p>
+                        SeAT can only <em>read</em> the moon extractions a director fires in-game &mdash; it can't reach
+                        into the structure. So the new <strong>Moon Extraction Planner</strong> is a corp-internal
+                        <strong>coordination layer</strong>: lay each refinery's projected next pull onto a calendar and
+                        <strong>stagger</strong> arrivals so a small crew isn't drowned by chunks landing together
+                        (chunks not mined promptly are wasted &mdash; the risk this feature manages).
+                    </p>
+                    <h4><i class="fas fa-calendar-alt"></i> Moon Extraction Planner</h4>
+                    <ul>
+                        <li>
+                            New <strong>Moon Planner</strong> page (sidebar, under Moon Manager), gated by the new
+                            standalone <code>mining-manager.moon_manager</code> ability (directors/admins included).
+                        </li>
+                        <li>
+                            <strong>Auto-fill from history</strong> projects each refinery's next pull from its arrival
+                            cadence (needs &ge;2 past arrivals; median interval at &ge;3) and spreads them to honour a
+                            configurable minimum gap.
+                        </li>
+                        <li>
+                            <strong>Re-anchor a recurring day</strong> &mdash; drag a Monday moon onto Tuesday and it
+                            sticks; future projections chain off the moved slot.
+                        </li>
+                        <li>
+                            <strong>&lt;gap proximity guard</strong> &mdash; placing/moving a pull within the
+                            minimum-gap window of another arrival (default <strong>24h</strong>, Settings &rarr;
+                            Notifications) prompts a confirmation listing the clashing moons. Enforced client- and
+                            server-side, so it can't be bypassed.
+                        </li>
+                    </ul>
+                    <h4><i class="fas fa-bell"></i> Two new notifications</h4>
+                    <ul>
+                        <li>
+                            <strong>Extraction Started</strong> &mdash; fires when a refinery lights its drill (read from
+                            the in-game <code>MoonminingExtractionStarted</code> director notification). With
+                            <strong>Manager Core</strong> installed it's detected in <strong>~2 minutes</strong> via MC's
+                            ESI fast-poll instead of the ~30 min moon-extraction endpoint cache. The fast-poll and
+                            SeAT-native paths are mutually exclusive (no duplicates); toggle at Settings &rarr;
+                            Notifications &rarr; <em>Extraction Started &mdash; Detection Speed</em>
+                            (<code>auto</code> / <code>seat_native</code>).
+                        </li>
+                        <li>
+                            <strong>Next Extraction Planned</strong> &mdash; fires <em>after</em> a chunk is ready,
+                            announcing the refinery's next planned pull so a director re-fires the drill on schedule.
+                        </li>
+                    </ul>
+                    <p class="mb-0"><small class="text-muted">
+                        Both notifications are per-webhook opt-in (off by default). Everything additive &mdash; one new
+                        table, one standalone permission, two opt-in notification types. No new ESI scopes.
+                    </small></p>
+                </div>
+
                 {{-- What's New in v2.0.1 ============================================
                      Green callout placed right after the Welcome card so the upgrade
                      summary lands as the first thing operators read after the
@@ -2921,6 +2979,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <div class="feature-item" style="border-left: 4px solid #dc3545;">
                             <h5><span class="badge badge-danger">{{ trans('mining-manager::help.perm_admin') }}</span></h5>
                             <p>{{ trans('mining-manager::help.perm_admin_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #9b59b6;">
+                            <h5><span class="badge" style="background:#9b59b6;">Moon Manager</span> <small class="text-muted">(capability)</small></h5>
+                            <p><code>mining-manager.moon_manager</code> &mdash; a <strong>standalone capability</strong>, not a tier. Grants access to the <strong>Moon Extraction Planner</strong> (assign / move / auto-fill planned moon pulls to stagger arrivals). Directors and admins already have this access; grant <code>moon_manager</code> to delegate moon-pull scheduling to someone who isn't a full director.</p>
                         </div>
                     </div>
 
