@@ -7,9 +7,14 @@
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <style>
-    .mm-plan-auto   { border-left: 4px solid #9B59B6 !important; }
-    .mm-plan-manual { border-left: 4px solid #1ABC9C !important; }
-    .mm-plan-actual { opacity: 0.65; border-left: 4px dashed #6c757d !important; }
+    /* Event backgrounds must be set (not just a left border) or FullCalendar's
+       default blue wins and the legend doesn't match what's on the grid. */
+    .fc-event.mm-plan-auto   { background-color:#8e44ad !important; border-color:#6c3483 !important; color:#fff !important; }
+    .fc-event.mm-plan-manual { background-color:#16a085 !important; border-color:#0e6655 !important; color:#fff !important; }
+    .fc-event.mm-plan-actual { background-color:#5d6670 !important; border-color:#454b52 !important; color:#e9ecef !important; }
+    /* Locked = set in-game / reconciled — dashed edge signals "can't edit here". */
+    .fc-event.mm-plan-locked { border-style:dashed !important; cursor:not-allowed !important; }
+    .fc-event.mm-plan-locked .fc-event-title { font-style:italic; }
     .mm-refinery-card { font-size: 0.85rem; }
     .mm-refinery-card .mm-proj { font-weight: 600; }
     .mm-conflict-row { padding: 6px 10px; border-radius: 4px; background: rgba(255,193,7,0.12); margin-bottom: 6px; }
@@ -96,9 +101,9 @@
             <div class="card">
                 <div class="card-body">
                     <div class="mm-status-legend mb-2">
-                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#9B59B6"></div> Planned (auto)</div>
-                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#1ABC9C"></div> Planned (manual)</div>
-                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#6c757d"></div> Actual extraction</div>
+                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#8e44ad"></div> Planned (auto)</div>
+                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#16a085"></div> Planned (manual)</div>
+                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#5d6670"></div> <i class="fas fa-lock" style="font-size:0.75em;"></i> Actual / extracting (locked)</div>
                     </div>
                     <div id="planner-calendar"></div>
                 </div>
@@ -230,6 +235,22 @@
         </div>
     </div>
 </div>
+
+{{-- LOCKED-ENTRY INFO MODAL --}}
+<div class="modal fade" id="lockedModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-lock text-muted"></i> Set in-game — can't be changed here</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body" id="locked-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('javascript')
@@ -252,20 +273,26 @@ document.addEventListener('DOMContentLoaded', function () {
     for (const [day, entries] of Object.entries(calendarData)) {
         entries.forEach(e => {
             if (e.kind === 'plan') {
+                // A plan reconciled to a live extraction is locked — it's a
+                // record of reality now, not an editable intent.
+                const locked = e.status === 'confirmed';
+                let cls = e.source === 'auto' ? 'mm-plan-auto' : 'mm-plan-manual';
+                if (locked) cls += ' mm-plan-locked';
                 events.push({
                     id: 'plan-' + e.id,
-                    title: (e.structure_name || 'Refinery'),
+                    title: (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
                     start: e.iso,
-                    className: e.source === 'auto' ? 'mm-plan-auto' : 'mm-plan-manual',
-                    extendedProps: { type: 'plan', raw: e },
+                    className: cls,
+                    extendedProps: { type: 'plan', raw: e, locked: locked },
                 });
             } else {
+                // Actual extraction — set in-game, can't be changed here.
                 events.push({
                     id: 'actual-' + e.id,
-                    title: '✔ ' + (e.structure_name || 'Refinery'),
+                    title: '🔒 ' + (e.structure_name || 'Refinery'),
                     start: e.iso,
-                    className: 'mm-plan-actual',
-                    extendedProps: { type: 'actual', raw: e },
+                    className: 'mm-plan-actual mm-plan-locked',
+                    extendedProps: { type: 'actual', raw: e, locked: true },
                 });
             }
         });
@@ -284,9 +311,14 @@ document.addEventListener('DOMContentLoaded', function () {
         eventClick: function (info) {
             info.jsEvent.preventDefault();
             const p = info.event.extendedProps;
-            if (p.type === 'plan') {
-                openEditModal(p.raw);
+            // Locked entries (live/completed extractions + reconciled plans)
+            // are set in-game — show why they can't be edited instead of
+            // silently doing nothing.
+            if (p.type === 'actual' || p.locked) {
+                showLockedInfo(p.raw, p.type === 'actual' ? 'actual' : 'confirmed');
+                return;
             }
+            openEditModal(p.raw);
         },
         datesSet: function (dateInfo) {
             const d = dateInfo.view.currentStart;
@@ -347,6 +379,28 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#btn-delete-plan').show().data('id', raw.id);
         $('#plan-error').hide().text('');
         $('#planModal').appendTo('body').modal('show');
+    }
+
+    // Explain why a locked entry can't be edited from the planner.
+    function showLockedInfo(raw, kind) {
+        const moon = raw.moon_name || ('Moon ' + (raw.moon_id || ''));
+        const structure = raw.structure_name || 'Refinery';
+        const when = raw.iso ? new Date(raw.iso) : null;
+        const whenStr = when
+            ? when.getUTCFullYear() + '-' + String(when.getUTCMonth() + 1).padStart(2, '0') + '-' +
+              String(when.getUTCDate()).padStart(2, '0') + ' ' +
+              String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0') + ' EVE'
+            : '';
+        const lead = kind === 'actual'
+            ? 'This is a <strong>live / completed extraction</strong> — it was set in-game and reflects what EVE actually scheduled.'
+            : 'This planned pull has been <strong>confirmed against a real extraction</strong>, so it now records what actually happened.';
+        $('#locked-body').html(
+            lead + ' It can\'t be moved or removed from the planner.' +
+            '<div class="mt-2"><i class="fas fa-moon text-info"></i> ' + moon + '<br>' +
+            '<i class="fas fa-building text-primary"></i> ' + structure +
+            (whenStr ? '<br><i class="fas fa-clock"></i> ' + whenStr : '') + '</div>'
+        );
+        $('#lockedModal').appendTo('body').modal('show');
     }
 
     $('#btn-add-pull').on('click', () => openAddModal(null, null));

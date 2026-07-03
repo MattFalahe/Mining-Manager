@@ -263,103 +263,200 @@ class MoonPlannerService
     }
 
     /**
-     * Auto-fill projected slots for a corporation across a target month.
+     * Auto-fill projected pulls for a corporation across a target month.
      *
-     * For each refinery with a derivable cadence and no active plan in the
-     * month, create an 'auto' plan at the projected arrival. When $spread is
-     * true, greedily push later slots forward so no two land inside the gap
-     * window — turning "natural" projections into a clean stagger in one
-     * click.
+     * Unlike a single "next pull" projection, this walks each refinery's
+     * cadence across the WHOLE viewed month and places a plan on every
+     * occurrence that lands in it — so a refinery that should pull mid-month
+     * (even if the in-game extraction hasn't been fired yet, or its cycle
+     * already rolled past `now`) still shows up. Occurrences already covered
+     * by a real extraction, an archived pull, or an existing plan are skipped,
+     * so re-running is safe and we never duplicate a pull that's already on
+     * the board.
      *
-     * Idempotent-ish: skips refineries that already have an active plan in
-     * the month, so re-running won't duplicate. Returns a small summary.
+     * Cadence comes from history (median interval, ≥2 arrivals). Refineries
+     * with too little history of their own fall back to the corp-median
+     * cadence so they still get projected (flagged in the `fallback` count) —
+     * the operator can drag them to the real day.
      *
-     * @return array{created:int,skipped:int,no_cadence:int,spread_adjusted:int}
+     * @return array{created:int,skipped:int,no_cadence:int,spread_adjusted:int,fallback:int}
      */
     public function autoFill(int $corporationId, Carbon $month, bool $spread = true, ?int $createdBy = null): array
     {
-        $summary = ['created' => 0, 'skipped' => 0, 'no_cadence' => 0, 'spread_adjusted' => 0];
+        $summary = ['created' => 0, 'skipped' => 0, 'no_cadence' => 0, 'spread_adjusted' => 0, 'fallback' => 0];
 
         $monthStart = $month->copy()->startOfMonth();
         $monthEnd = $month->copy()->endOfMonth();
+        $gapHours = $this->getMinGapHours();
 
         $refineries = $this->refineriesForCorporation($corporationId);
+        if ($refineries->isEmpty()) {
+            return $summary;
+        }
 
-        // Candidate (structure_id => projected Carbon) for refineries that
-        // need a plan this month.
+        // Corp-median cadence across refineries that HAVE a derivable one —
+        // the fallback for rigs without enough of their own history.
+        $knownCadences = [];
+        foreach ($refineries as $refinery) {
+            $c = $this->cadence((int) $refinery->structure_id)['cadence_days'];
+            if ($c) {
+                $knownCadences[] = $c;
+            }
+        }
+        $fallbackCadence = $this->medianInt($knownCadences) ?? 30;
+
+        // Each candidate: ['structure_id','moon_id','arrival'=>Carbon,'cadence_days','fallback'=>bool]
         $candidates = [];
 
         foreach ($refineries as $refinery) {
             $structureId = (int) $refinery->structure_id;
+            $cad = $this->cadence($structureId);
 
-            $hasActivePlan = MoonExtractionPlan::where('structure_id', $structureId)
-                ->active()
-                ->whereBetween('planned_arrival_time', [$monthStart, $monthEnd])
-                ->exists();
-
-            if ($hasActivePlan) {
-                $summary['skipped']++;
-                continue;
+            $cadenceDays = $cad['cadence_days'];
+            $isFallback = false;
+            if ($cadenceDays === null) {
+                $cadenceDays = $fallbackCadence;
+                $isFallback = true;
             }
 
-            $cadence = $this->cadence($structureId);
-            $projected = $this->projectNextArrival($structureId);
-
-            if ($projected === null) {
+            // Need an anchor to iterate from and a sane cadence.
+            $anchor = $cad['last_arrival'];
+            if (!$anchor || $cadenceDays < 1) {
                 $summary['no_cadence']++;
                 continue;
             }
 
-            // Only place it if the projection actually lands in the target
-            // month — projecting a refinery whose next pull is months out
-            // would clutter the wrong calendar page.
-            if ($projected->lt($monthStart) || $projected->gt($monthEnd)) {
-                $summary['skipped']++;
-                continue;
+            // Every arrival already on the board for this refinery — real
+            // extractions, archived pulls, and existing active plans — so we
+            // don't double up on an occurrence that already exists.
+            $existing = $this->existingArrivalTimes($corporationId, $structureId);
+
+            // Align the anchor to the first occurrence at/just before the
+            // month start, then step forward collecting every occurrence in
+            // the month window.
+            $occ = $anchor->copy();
+            $guard = 0;
+            while ($occ->gt($monthStart) && $guard < 800) {
+                $occ->subDays($cadenceDays);
+                $guard++;
             }
 
-            $candidates[$structureId] = [
-                'projected' => $projected,
-                'moon_id' => $refinery->moon_id ?? null,
-                'cadence_days' => $cadence['cadence_days'],
-            ];
+            $placedForStructure = 0;
+            $guard = 0;
+            while ($occ->lte($monthEnd) && $guard < 800 && $placedForStructure < 15) {
+                $guard++;
+                if ($occ->gte($monthStart) && !$this->coveredWithinGap($existing, $occ, $gapHours)) {
+                    $candidates[] = [
+                        'structure_id' => $structureId,
+                        'moon_id' => $refinery->moon_id ?? null,
+                        'arrival' => $occ->copy(),
+                        'cadence_days' => $cadenceDays,
+                        'fallback' => $isFallback,
+                    ];
+                    $placedForStructure++;
+                }
+                $occ->addDays($cadenceDays);
+            }
+
+            if ($placedForStructure === 0) {
+                $summary['skipped']++;
+            }
         }
 
-        // Optional spread: sort candidates by time, push any that violate the
-        // gap relative to the previous placed slot forward.
-        if ($spread && !empty($candidates)) {
-            $gapHours = $this->getMinGapHours();
-            uasort($candidates, fn ($a, $b) => $a['projected']->getTimestamp() <=> $b['projected']->getTimestamp());
-
+        // Spread: sort by time, push any occurrence that violates the gap
+        // relative to the previously placed one forward.
+        if ($spread && count($candidates) > 1) {
+            usort($candidates, fn ($a, $b) => $a['arrival']->getTimestamp() <=> $b['arrival']->getTimestamp());
             $previous = null;
-            foreach ($candidates as $sid => &$c) {
-                if ($previous !== null) {
-                    $gapToPrev = $previous->diffInHours($c['projected']);
-                    if ($c['projected']->lt($previous) || $gapToPrev < $gapHours) {
-                        $c['projected'] = $previous->copy()->addHours($gapHours);
-                        $summary['spread_adjusted']++;
-                    }
+            foreach ($candidates as &$c) {
+                if ($previous !== null
+                    && ($c['arrival']->lt($previous) || $previous->diffInHours($c['arrival']) < $gapHours)) {
+                    $c['arrival'] = $previous->copy()->addHours($gapHours);
+                    $summary['spread_adjusted']++;
                 }
-                $previous = $c['projected'];
+                $previous = $c['arrival'];
             }
             unset($c);
         }
 
-        foreach ($candidates as $structureId => $c) {
+        foreach ($candidates as $c) {
             MoonExtractionPlan::create([
                 'corporation_id' => $corporationId,
-                'structure_id' => $structureId,
+                'structure_id' => $c['structure_id'],
                 'moon_id' => $c['moon_id'],
-                'planned_arrival_time' => $c['projected'],
+                'planned_arrival_time' => $c['arrival'],
                 'cadence_days' => $c['cadence_days'],
                 'source' => MoonExtractionPlan::SOURCE_AUTO,
                 'status' => MoonExtractionPlan::STATUS_PLANNED,
+                'notes' => $c['fallback'] ? 'Estimated from corp cadence (limited history)' : null,
                 'created_by' => $createdBy,
             ]);
             $summary['created']++;
+            if ($c['fallback']) {
+                $summary['fallback']++;
+            }
         }
 
         return $summary;
+    }
+
+    /**
+     * All arrival timestamps already represented for a structure — live
+     * extractions, archived history, and active plans. Used by auto-fill to
+     * avoid placing a plan on an occurrence that's already on the board.
+     *
+     * @return \Illuminate\Support\Collection<int,Carbon>
+     */
+    protected function existingArrivalTimes(int $corporationId, int $structureId): Collection
+    {
+        $live = MoonExtraction::where('structure_id', $structureId)
+            ->whereNotIn('status', ['cancelled'])
+            ->pluck('chunk_arrival_time');
+
+        $history = MoonExtractionHistory::where('structure_id', $structureId)
+            ->pluck('chunk_arrival_time');
+
+        $plans = MoonExtractionPlan::where('structure_id', $structureId)
+            ->active()
+            ->pluck('planned_arrival_time');
+
+        return $live->merge($history)->merge($plans)
+            ->filter()
+            ->map(fn ($t) => $t instanceof Carbon ? $t : Carbon::parse($t))
+            ->values();
+    }
+
+    /**
+     * True when any timestamp in $times is within $gapHours of $moment.
+     *
+     * @param \Illuminate\Support\Collection<int,Carbon> $times
+     */
+    protected function coveredWithinGap(Collection $times, Carbon $moment, int $gapHours): bool
+    {
+        foreach ($times as $t) {
+            if (abs($moment->diffInMinutes($t)) < $gapHours * 60) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Integer median of a list, or null when empty.
+     *
+     * @param array<int,int|float> $values
+     */
+    protected function medianInt(array $values): ?int
+    {
+        if (empty($values)) {
+            return null;
+        }
+        sort($values);
+        $mid = intdiv(count($values), 2);
+        $median = count($values) % 2 === 0
+            ? ($values[$mid - 1] + $values[$mid]) / 2
+            : $values[$mid];
+        return (int) round($median);
     }
 
     /**

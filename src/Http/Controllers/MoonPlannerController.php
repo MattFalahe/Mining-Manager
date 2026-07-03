@@ -180,11 +180,13 @@ class MoonPlannerController extends Controller
         );
 
         $msg = sprintf(
-            'Auto-fill complete: %d planned, %d skipped, %d without enough history%s.',
+            'Auto-fill complete: %d pull%s planned across %s%s%s%s.',
             $summary['created'],
-            $summary['skipped'],
-            $summary['no_cadence'],
-            $summary['spread_adjusted'] > 0 ? ", {$summary['spread_adjusted']} nudged to keep the gap" : ''
+            $summary['created'] === 1 ? '' : 's',
+            $month->format('F Y'),
+            $summary['fallback'] > 0 ? " ({$summary['fallback']} estimated from corp cadence — limited history)" : '',
+            $summary['spread_adjusted'] > 0 ? ", {$summary['spread_adjusted']} nudged to keep the {$this->planner->getMinGapHours()}h gap" : '',
+            $summary['no_cadence'] > 0 ? ", {$summary['no_cadence']} refinery(ies) had no arrivals to project from" : ''
         );
 
         return redirect()
@@ -347,7 +349,24 @@ class MoonPlannerController extends Controller
             ->get();
         MoonExtraction::loadDisplayNames($extractions);
 
+        // Archived/completed pulls live in moon_extraction_history once they age
+        // out of moon_extractions. Show them too (locked) so a refinery whose
+        // chunk already arrived + got archived doesn't vanish from the planner —
+        // the operator still needs to see it happened on that day.
+        $history = \MiningManager\Models\MoonExtractionHistory::where('corporation_id', $corporationId)
+            ->whereBetween('chunk_arrival_time', [$monthStart, $monthEnd])
+            ->orderBy('chunk_arrival_time')
+            ->get();
+        MoonExtraction::loadDisplayNames($history);
+
         $calendar = [];
+
+        // Dedup key set so an archived row for a still-live extraction (mid
+        // archival) doesn't render twice.
+        $liveKeys = [];
+        foreach ($extractions as $ext) {
+            $liveKeys[$ext->structure_id . '@' . $ext->chunk_arrival_time->format('Y-m-d H:i')] = true;
+        }
 
         foreach ($plans as $plan) {
             $day = $plan->planned_arrival_time->format('Y-m-d');
@@ -379,6 +398,30 @@ class MoonPlannerController extends Controller
                 'time' => $ext->chunk_arrival_time->format('H:i'),
                 'iso' => $ext->chunk_arrival_time->toIso8601String(),
                 'status' => $ext->status,
+                'archived' => false,
+            ];
+        }
+
+        foreach ($history as $h) {
+            if (!$h->chunk_arrival_time) {
+                continue;
+            }
+            $key = $h->structure_id . '@' . $h->chunk_arrival_time->format('Y-m-d H:i');
+            if (isset($liveKeys[$key])) {
+                continue; // already shown from the live table
+            }
+            $day = $h->chunk_arrival_time->format('Y-m-d');
+            $calendar[$day][] = [
+                'kind' => 'actual',
+                'id' => 'h' . $h->id,
+                'structure_id' => $h->structure_id,
+                'moon_id' => $h->moon_id,
+                'moon_name' => $h->moon_name ?? "Moon {$h->moon_id}",
+                'structure_name' => $h->structure_name ?? "Structure {$h->structure_id}",
+                'time' => $h->chunk_arrival_time->format('H:i'),
+                'iso' => $h->chunk_arrival_time->toIso8601String(),
+                'status' => $h->final_status ?? 'archived',
+                'archived' => true,
             ];
         }
 
