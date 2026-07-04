@@ -15,6 +15,9 @@
     /* Locked = set in-game / reconciled — dashed edge signals "can't edit here". */
     .fc-event.mm-plan-locked { border-style:dashed !important; cursor:not-allowed !important; }
     .fc-event.mm-plan-locked .fc-event-title { font-style:italic; }
+    /* Scheduled off-plan — the in-game timer diverged from the plan. */
+    .fc-event.mm-plan-mismatch { background-color:#c0392b !important; border-color:#922b21 !important; color:#fff !important; }
+    .mm-planner-month { margin-bottom: 0.5rem; }
     .mm-refinery-card { font-size: 0.85rem; }
     .mm-refinery-card .mm-proj { font-weight: 600; }
     .mm-conflict-row { padding: 6px 10px; border-radius: 4px; background: rgba(255,193,7,0.12); margin-bottom: 6px; }
@@ -64,6 +67,7 @@
             <small class="text-muted">
                 Stagger your refinery pulls so chunks don't clump. Minimum gap before a warning:
                 <strong>{{ $minGapHours }}h</strong>.
+                All times shown in <strong>EVE (UTC)</strong> — moons are set in EVE time in-game.
             </small>
         </div>
         <div class="btn-group">
@@ -72,10 +76,10 @@
             </button>
             <form method="POST" action="{{ route('mining-manager.moon.planner.auto-fill') }}" class="d-inline ml-1" id="autofill-form">
                 @csrf
-                <input type="hidden" name="month" value="{{ $month->format('Y-m') }}">
+                <input type="hidden" name="month" value="{{ $anchor->format('Y-m') }}">
                 <input type="hidden" name="spread" value="1">
                 <button type="submit" class="btn btn-sm btn-outline-primary"
-                        title="Project each refinery's next pull from its history and stagger them to honour the gap">
+                        title="Project each refinery's next pull across all three months and stagger to honour the gap">
                     <i class="fas fa-magic"></i> Auto-fill from History
                 </button>
             </form>
@@ -95,6 +99,24 @@
         </div>
     @endif
 
+    {{-- SCHEDULE-MISMATCH WARNINGS — a plan and the real in-game pull for the
+         same moon are more than the tolerance apart. --}}
+    @if(!empty($warnings))
+        <div class="alert alert-warning">
+            <h6 class="mb-2"><i class="fas fa-exclamation-triangle"></i> Scheduling mismatches ({{ count($warnings) }})</h6>
+            <small class="d-block text-muted mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer.</small>
+            <ul class="mb-0" style="font-size: 0.85em;">
+                @foreach($warnings as $w)
+                    <li>
+                        <strong>{{ $w['moon_name'] }}</strong> ({{ $w['structure_name'] }}) —
+                        planned <strong>{{ $w['planned'] }}</strong>, in-game <strong>{{ $w['actual'] }}</strong>
+                        <span class="badge badge-warning">{{ $w['offset_hours'] }}h off</span>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="row">
         {{-- CALENDAR --}}
         <div class="col-lg-9">
@@ -104,8 +126,27 @@
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#8e44ad"></div> Planned (auto)</div>
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#16a085"></div> Planned (manual)</div>
                         <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#5d6670"></div> <i class="fas fa-lock" style="font-size:0.75em;"></i> Actual / extracting (locked)</div>
+                        <div class="mm-status-legend-item"><div class="mm-status-legend-color" style="background:#d9534f"></div> <i class="fas fa-exclamation-triangle" style="font-size:0.75em;"></i> Scheduled off-plan</div>
                     </div>
-                    <div id="planner-calendar"></div>
+
+                    {{-- 3-month window nav (EVE/UTC) --}}
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="btn-group">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ route('mining-manager.moon.planner', ['month' => $anchor->copy()->subMonth()->format('Y-m')]) }}">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ route('mining-manager.moon.planner') }}">Today</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ route('mining-manager.moon.planner', ['month' => $anchor->copy()->addMonth()->format('Y-m')]) }}">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </div>
+                        <strong>{{ $months[0]->format('M Y') }} – {{ $months[2]->format('M Y') }} <span class="text-muted">(EVE / UTC)</span></strong>
+                    </div>
+
+                    @foreach($months as $m)
+                        <h5 class="mt-3 mb-2 text-muted">{{ $m->format('F Y') }}</h5>
+                        <div class="mm-planner-month" data-month="{{ $m->format('Y-m-d') }}"></div>
+                    @endforeach
                 </div>
             </div>
         </div>
@@ -191,8 +232,12 @@
                     <select class="form-control" id="plan-structure-id"></select>
                 </div>
                 <div class="form-group">
-                    <label>Planned arrival (EVE / UTC)</label>
+                    <label>Planned arrival <span class="badge badge-info">EVE / UTC</span></label>
                     <input type="datetime-local" class="form-control" id="plan-arrival">
+                    <small class="form-text text-muted">
+                        Enter the time in <strong>EVE (UTC)</strong> — the same time you set the drill to in-game.
+                        <span id="plan-local-confirm"></span>
+                    </small>
                 </div>
                 <div class="form-group">
                     <label>Notes <small class="text-muted">(optional)</small></label>
@@ -287,48 +332,52 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             } else {
                 // Actual extraction — set in-game, can't be changed here.
+                // A mismatch flag means the in-game timer diverged from a plan.
+                let cls = 'mm-plan-actual mm-plan-locked';
+                if (e.mismatch) cls = 'mm-plan-mismatch mm-plan-locked';
                 events.push({
                     id: 'actual-' + e.id,
-                    title: '🔒 ' + (e.structure_name || 'Refinery'),
+                    title: (e.mismatch ? '⚠ ' : '🔒 ') + (e.structure_name || 'Refinery'),
                     start: e.iso,
-                    className: 'mm-plan-actual mm-plan-locked',
-                    extendedProps: { type: 'actual', raw: e, locked: true },
+                    className: cls,
+                    extendedProps: { type: 'actual', raw: e, locked: true, mismatch: !!e.mismatch },
                 });
             }
         });
     }
 
-    const calendar = new FullCalendar.Calendar(document.getElementById('planner-calendar'), {
-        initialView: 'dayGridMonth',
-        initialDate: '{{ $month->format('Y-m-d') }}',
-        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listWeek' },
-        events: events,
-        firstDay: 1,
-        height: 720,
-        nowIndicator: true,
-        eventDisplay: 'block',
-        dayMaxEvents: 4,
-        eventClick: function (info) {
-            info.jsEvent.preventDefault();
-            const p = info.event.extendedProps;
-            // Locked entries (live/completed extractions + reconciled plans)
-            // are set in-game — show why they can't be edited instead of
-            // silently doing nothing.
-            if (p.type === 'actual' || p.locked) {
-                showLockedInfo(p.raw, p.type === 'actual' ? 'actual' : 'confirmed');
-                return;
-            }
-            openEditModal(p.raw);
-        },
-        datesSet: function (dateInfo) {
-            const d = dateInfo.view.currentStart;
-            const viewMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-            if (viewMonth !== '{{ $month->format('Y-m') }}') {
-                window.location.href = '{{ route('mining-manager.moon.planner') }}?month=' + viewMonth + '-01';
-            }
-        },
+    function onEventClick(info) {
+        info.jsEvent.preventDefault();
+        const p = info.event.extendedProps;
+        // Locked entries (live/completed extractions + reconciled plans) are
+        // set in-game — explain why they can't be edited instead of doing nothing.
+        if (p.type === 'actual' || p.locked) {
+            showLockedInfo(p.raw, p.mismatch ? 'mismatch' : (p.type === 'actual' ? 'actual' : 'confirmed'));
+            return;
+        }
+        openEditModal(p.raw);
+    }
+
+    // Render one dayGridMonth per visible month. timeZone:'UTC' makes every
+    // event time render in EVE time (what moons are set to in-game) rather
+    // than the browser's local zone.
+    document.querySelectorAll('.mm-planner-month').forEach(function (el) {
+        const cal = new FullCalendar.Calendar(el, {
+            initialView: 'dayGridMonth',
+            initialDate: el.dataset.month,
+            timeZone: 'UTC',
+            headerToolbar: false,
+            events: events,
+            firstDay: 1,
+            showNonCurrentDates: false,
+            fixedWeekCount: false,
+            height: 'auto',
+            eventDisplay: 'block',
+            dayMaxEvents: 4,
+            eventClick: onEventClick,
+        });
+        cal.render();
     });
-    calendar.render();
 
     // ---- Modal helpers ----
     function fillRefinerySelect(selectedId) {
@@ -357,6 +406,21 @@ document.addEventListener('DOMContentLoaded', function () {
         return val + ':00Z';
     }
 
+    // Live "that's HH:MM your local time" confirmation under the EVE input.
+    function updateLocalConfirm() {
+        const val = $('#plan-arrival').val();
+        if (!val) { $('#plan-local-confirm').text(''); return; }
+        try {
+            const d = new Date(val + ':00Z');
+            $('#plan-local-confirm').html(
+                '<br><i class="fas fa-user-clock"></i> That\'s <strong>' +
+                d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) +
+                '</strong> your local time.'
+            );
+        } catch (e) { $('#plan-local-confirm').text(''); }
+    }
+    $(document).on('input change', '#plan-arrival', updateLocalConfirm);
+
     function openAddModal(structureId, projectedIso) {
         $('#planModalTitle').text('Plan Pull');
         $('#plan-id').val('');
@@ -366,6 +430,7 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#plan-notes').val('');
         $('#btn-delete-plan').hide();
         $('#plan-error').hide().text('');
+        updateLocalConfirm();
         $('#planModal').appendTo('body').modal('show');
     }
 
@@ -378,7 +443,15 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#plan-notes').val(raw.notes || '');
         $('#btn-delete-plan').show().data('id', raw.id);
         $('#plan-error').hide().text('');
+        updateLocalConfirm();
         $('#planModal').appendTo('body').modal('show');
+    }
+
+    // Render an ISO instant in the browser's local zone (confirmation only).
+    function localFromIso(iso) {
+        if (!iso) return '';
+        try { return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
+        catch (e) { return ''; }
     }
 
     // Explain why a locked entry can't be edited from the planner.
@@ -386,19 +459,27 @@ document.addEventListener('DOMContentLoaded', function () {
         const moon = raw.moon_name || ('Moon ' + (raw.moon_id || ''));
         const structure = raw.structure_name || 'Refinery';
         const when = raw.iso ? new Date(raw.iso) : null;
-        const whenStr = when
+        const eveStr = when
             ? when.getUTCFullYear() + '-' + String(when.getUTCMonth() + 1).padStart(2, '0') + '-' +
               String(when.getUTCDate()).padStart(2, '0') + ' ' +
               String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0') + ' EVE'
             : '';
-        const lead = kind === 'actual'
-            ? 'This is a <strong>live / completed extraction</strong> — it was set in-game and reflects what EVE actually scheduled.'
-            : 'This planned pull has been <strong>confirmed against a real extraction</strong>, so it now records what actually happened.';
+        const localStr = localFromIso(raw.iso);
+        let lead;
+        if (kind === 'mismatch') {
+            lead = '⚠️ This extraction is scheduled in-game at a <strong>different time than planned</strong>. Check whether the drill was fired on the wrong timer — the in-game time below is what EVE will actually run.';
+        } else if (kind === 'actual') {
+            lead = 'This is a <strong>live / completed extraction</strong> — it was set in-game and reflects what EVE actually scheduled.';
+        } else {
+            lead = 'This planned pull has been <strong>confirmed against a real extraction</strong>, so it now records what actually happened.';
+        }
         $('#locked-body').html(
             lead + ' It can\'t be moved or removed from the planner.' +
             '<div class="mt-2"><i class="fas fa-moon text-info"></i> ' + moon + '<br>' +
             '<i class="fas fa-building text-primary"></i> ' + structure +
-            (whenStr ? '<br><i class="fas fa-clock"></i> ' + whenStr : '') + '</div>'
+            (eveStr ? '<br><i class="fas fa-clock"></i> ' + eveStr : '') +
+            (localStr ? '<br><small class="text-muted"><i class="fas fa-user-clock"></i> ' + localStr + ' your time</small>' : '') +
+            '</div>'
         );
         $('#lockedModal').appendTo('body').modal('show');
     }

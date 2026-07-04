@@ -68,13 +68,21 @@ class MoonPlannerController extends Controller
                 ->with('warning', 'Moon tracking is currently disabled. Enable it in Settings > Features.');
         }
 
-        $month = $request->input('month')
+        // Anchor month — the first of the three shown. Moons are set in EVE
+        // (UTC) time in-game, so the planner works entirely in UTC.
+        $anchor = $request->input('month')
             ? Carbon::parse($request->input('month'))->startOfMonth()
             : Carbon::now()->startOfMonth();
+
+        // Three-month window: anchor + next 2.
+        $months = [$anchor->copy(), $anchor->copy()->addMonth(), $anchor->copy()->addMonths(2)];
+        $rangeStart = $anchor->copy()->startOfMonth();
+        $rangeEnd = $anchor->copy()->addMonths(2)->endOfMonth();
 
         $corporationId = $this->plannerCorporationId();
 
         $calendar = [];
+        $warnings = [];
         $refinerySummaries = [];
         $minGapHours = $this->planner->getMinGapHours();
 
@@ -83,13 +91,17 @@ class MoonPlannerController extends Controller
             // states are fresh.
             $this->planner->reconcile($corporationId);
 
-            $calendar = $this->buildCalendar($corporationId, $month);
+            $built = $this->buildCalendar($corporationId, $rangeStart, $rangeEnd);
+            $calendar = $built['calendar'];
+            $warnings = $built['warnings'];
             $refinerySummaries = $this->buildRefinerySummaries($corporationId);
         }
 
         return view('mining-manager::moon.planner', [
-            'month' => $month,
+            'anchor' => $anchor,
+            'months' => $months,
             'calendar' => $calendar,
+            'warnings' => $warnings,
             'refinerySummaries' => $refinerySummaries,
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
@@ -110,10 +122,17 @@ class MoonPlannerController extends Controller
             ? Carbon::parse($request->input('month'))->startOfMonth()
             : Carbon::now()->startOfMonth();
 
+        $built = $this->buildCalendar(
+            $corporationId,
+            $month->copy()->startOfMonth(),
+            $month->copy()->endOfMonth()
+        );
+
         return response()->json([
             'month' => $month->format('Y-m'),
             'min_gap_hours' => $this->planner->getMinGapHours(),
-            'calendar' => $this->buildCalendar($corporationId, $month),
+            'calendar' => $built['calendar'],
+            'warnings' => $built['warnings'],
             'refineries' => $this->buildRefinerySummaries($corporationId),
         ]);
     }
@@ -166,31 +185,38 @@ class MoonPlannerController extends Controller
             'spread' => 'nullable|boolean',
         ]);
 
-        $month = !empty($validated['month'])
+        $anchor = !empty($validated['month'])
             ? Carbon::parse($validated['month'])->startOfMonth()
             : Carbon::now()->startOfMonth();
 
         $spread = $request->boolean('spread', true);
+        $createdBy = auth()->user()->main_character_id ?? null;
 
-        $summary = $this->planner->autoFill(
-            $corporationId,
-            $month,
-            $spread,
-            auth()->user()->main_character_id ?? null
-        );
+        // Fill all three visible months. Calling per-month in sequence dedups
+        // progressively — plans placed for the anchor month are visible to the
+        // next month's pass (existingPlanTimes re-reads the DB each call).
+        $created = 0;
+        $fallback = 0;
+        $spreadAdjusted = 0;
+        foreach ([0, 1, 2] as $offset) {
+            $s = $this->planner->autoFill($corporationId, $anchor->copy()->addMonths($offset), $spread, $createdBy);
+            $created += $s['created'];
+            $fallback += $s['fallback'];
+            $spreadAdjusted += $s['spread_adjusted'];
+        }
 
         $msg = sprintf(
-            'Auto-fill complete: %d pull%s planned across %s%s%s%s.',
-            $summary['created'],
-            $summary['created'] === 1 ? '' : 's',
-            $month->format('F Y'),
-            $summary['fallback'] > 0 ? " ({$summary['fallback']} estimated from corp cadence — limited history)" : '',
-            $summary['spread_adjusted'] > 0 ? ", {$summary['spread_adjusted']} nudged to keep the {$this->planner->getMinGapHours()}h gap" : '',
-            $summary['no_cadence'] > 0 ? ", {$summary['no_cadence']} refinery(ies) had no arrivals to project from" : ''
+            'Auto-fill complete: %d pull%s planned across %s–%s%s%s.',
+            $created,
+            $created === 1 ? '' : 's',
+            $anchor->format('M Y'),
+            $anchor->copy()->addMonths(2)->format('M Y'),
+            $fallback > 0 ? " ({$fallback} estimated from corp cadence — limited history)" : '',
+            $spreadAdjusted > 0 ? ", {$spreadAdjusted} nudged to keep the {$this->planner->getMinGapHours()}h gap" : ''
         );
 
         return redirect()
-            ->route('mining-manager.moon.planner', ['month' => $month->format('Y-m')])
+            ->route('mining-manager.moon.planner', ['month' => $anchor->format('Y-m')])
             ->with('success', $msg);
     }
 
@@ -326,49 +352,124 @@ class MoonPlannerController extends Controller
     }
 
     /**
-     * Build the day-grouped calendar of planned pulls + actual extractions
-     * for the month.
+     * Build the day-grouped calendar of planned pulls + actual extractions for
+     * a date range, plus a list of scheduling mismatches.
      *
-     * @return array<string,array<int,array>>  keyed by Y-m-d
+     * Dedup rule (per Matt): a plan and a real pull for the same refinery
+     * within MATCH_TOLERANCE_MINUTES are the SAME pull — the plan is hidden and
+     * only the real pull (locked) shows. If they're further apart but still in
+     * the same cycle (within CYCLE_MATCH_WINDOW_HOURS), the in-game schedule
+     * diverged from the plan: the plan is still hidden (no double render) but
+     * the real pull is flagged, and the pair is added to $warnings for the
+     * "wrong scheduled moon" banner.
+     *
+     * @return array{calendar: array<string,array<int,array>>, warnings: array<int,array>}
      */
-    protected function buildCalendar(int $corporationId, Carbon $month): array
+    protected function buildCalendar(int $corporationId, Carbon $rangeStart, Carbon $rangeEnd): array
     {
-        $monthStart = $month->copy()->startOfMonth();
-        $monthEnd = $month->copy()->endOfMonth();
+        $tolerance = \MiningManager\Services\Moon\MoonPlannerService::MATCH_TOLERANCE_MINUTES;
+        $cycleWindow = \MiningManager\Services\Moon\MoonPlannerService::CYCLE_MATCH_WINDOW_HOURS * 60;
 
         $plans = MoonExtractionPlan::forCorporation($corporationId)
             ->active()
-            ->forMonth($month)
+            ->whereBetween('planned_arrival_time', [$rangeStart, $rangeEnd])
             ->orderBy('planned_arrival_time')
             ->get();
         MoonExtractionPlan::loadDisplayNames($plans);
 
         $extractions = MoonExtraction::where('corporation_id', $corporationId)
-            ->whereBetween('chunk_arrival_time', [$monthStart, $monthEnd])
+            ->whereBetween('chunk_arrival_time', [$rangeStart, $rangeEnd])
             ->orderBy('chunk_arrival_time')
             ->get();
         MoonExtraction::loadDisplayNames($extractions);
 
         // Archived/completed pulls live in moon_extraction_history once they age
         // out of moon_extractions. Show them too (locked) so a refinery whose
-        // chunk already arrived + got archived doesn't vanish from the planner —
-        // the operator still needs to see it happened on that day.
+        // chunk already arrived + got archived doesn't vanish from the planner.
         $history = \MiningManager\Models\MoonExtractionHistory::where('corporation_id', $corporationId)
-            ->whereBetween('chunk_arrival_time', [$monthStart, $monthEnd])
+            ->whereBetween('chunk_arrival_time', [$rangeStart, $rangeEnd])
             ->orderBy('chunk_arrival_time')
             ->get();
         MoonExtraction::loadDisplayNames($history);
 
-        $calendar = [];
-
-        // Dedup key set so an archived row for a still-live extraction (mid
-        // archival) doesn't render twice.
+        // Merge live + archived into a single "actuals" list (deduped between
+        // the two tables by structure + minute).
+        $actuals = [];
         $liveKeys = [];
         foreach ($extractions as $ext) {
+            if (!$ext->chunk_arrival_time) {
+                continue;
+            }
             $liveKeys[$ext->structure_id . '@' . $ext->chunk_arrival_time->format('Y-m-d H:i')] = true;
+            $actuals[] = [
+                'id' => (string) $ext->id,
+                'structure_id' => (int) $ext->structure_id,
+                'moon_id' => $ext->moon_id,
+                'moon_name' => $ext->moon_name ?? "Moon {$ext->moon_id}",
+                'structure_name' => $ext->structure_name ?? "Structure {$ext->structure_id}",
+                'time' => $ext->chunk_arrival_time,
+                'status' => $ext->status,
+                'archived' => false,
+            ];
+        }
+        foreach ($history as $h) {
+            if (!$h->chunk_arrival_time) {
+                continue;
+            }
+            $key = $h->structure_id . '@' . $h->chunk_arrival_time->format('Y-m-d H:i');
+            if (isset($liveKeys[$key])) {
+                continue;
+            }
+            $actuals[] = [
+                'id' => 'h' . $h->id,
+                'structure_id' => (int) $h->structure_id,
+                'moon_id' => $h->moon_id,
+                'moon_name' => $h->moon_name ?? "Moon {$h->moon_id}",
+                'structure_name' => $h->structure_name ?? "Structure {$h->structure_id}",
+                'time' => $h->chunk_arrival_time,
+                'status' => $h->final_status ?? 'archived',
+                'archived' => true,
+            ];
         }
 
+        $calendar = [];
+        $warnings = [];
+
+        // Index which actuals get a mismatch flag (keyed by actual id).
+        $mismatchByActual = [];
+
+        // Process plans: hide any that map to a real pull; flag off-tolerance
+        // matches as scheduling mismatches.
         foreach ($plans as $plan) {
+            $nearest = null;
+            $nearestOffset = null;
+            foreach ($actuals as $a) {
+                if ($a['structure_id'] !== (int) $plan->structure_id) {
+                    continue;
+                }
+                $offset = abs($plan->planned_arrival_time->diffInMinutes($a['time']));
+                if ($nearestOffset === null || $offset < $nearestOffset) {
+                    $nearestOffset = $offset;
+                    $nearest = $a;
+                }
+            }
+
+            // A real pull covers this plan's cycle → don't render the plan.
+            if ($nearest !== null && $nearestOffset <= $cycleWindow) {
+                if ($nearestOffset > $tolerance) {
+                    // Same cycle but the times diverged — flag it.
+                    $mismatchByActual[$nearest['id']] = true;
+                    $warnings[] = [
+                        'moon_name' => $plan->moon_name ?? "Moon {$plan->moon_id}",
+                        'structure_name' => $plan->structure_name ?? "Structure {$plan->structure_id}",
+                        'planned' => $plan->planned_arrival_time->format('M d, Y H:i') . ' EVE',
+                        'actual' => $nearest['time']->format('M d, Y H:i') . ' EVE',
+                        'offset_hours' => round($nearestOffset / 60, 1),
+                    ];
+                }
+                continue;
+            }
+
             $day = $plan->planned_arrival_time->format('Y-m-d');
             $calendar[$day][] = [
                 'kind' => 'plan',
@@ -386,54 +487,33 @@ class MoonPlannerController extends Controller
             ];
         }
 
-        foreach ($extractions as $ext) {
-            $day = $ext->chunk_arrival_time->format('Y-m-d');
+        // Render actuals (locked), tagging any flagged as a mismatch.
+        foreach ($actuals as $a) {
+            $day = $a['time']->format('Y-m-d');
             $calendar[$day][] = [
                 'kind' => 'actual',
-                'id' => $ext->id,
-                'structure_id' => $ext->structure_id,
-                'moon_id' => $ext->moon_id,
-                'moon_name' => $ext->moon_name ?? "Moon {$ext->moon_id}",
-                'structure_name' => $ext->structure_name ?? "Structure {$ext->structure_id}",
-                'time' => $ext->chunk_arrival_time->format('H:i'),
-                'iso' => $ext->chunk_arrival_time->toIso8601String(),
-                'status' => $ext->status,
-                'archived' => false,
-            ];
-        }
-
-        foreach ($history as $h) {
-            if (!$h->chunk_arrival_time) {
-                continue;
-            }
-            $key = $h->structure_id . '@' . $h->chunk_arrival_time->format('Y-m-d H:i');
-            if (isset($liveKeys[$key])) {
-                continue; // already shown from the live table
-            }
-            $day = $h->chunk_arrival_time->format('Y-m-d');
-            $calendar[$day][] = [
-                'kind' => 'actual',
-                'id' => 'h' . $h->id,
-                'structure_id' => $h->structure_id,
-                'moon_id' => $h->moon_id,
-                'moon_name' => $h->moon_name ?? "Moon {$h->moon_id}",
-                'structure_name' => $h->structure_name ?? "Structure {$h->structure_id}",
-                'time' => $h->chunk_arrival_time->format('H:i'),
-                'iso' => $h->chunk_arrival_time->toIso8601String(),
-                'status' => $h->final_status ?? 'archived',
-                'archived' => true,
+                'id' => $a['id'],
+                'structure_id' => $a['structure_id'],
+                'moon_id' => $a['moon_id'],
+                'moon_name' => $a['moon_name'],
+                'structure_name' => $a['structure_name'],
+                'time' => $a['time']->format('H:i'),
+                'iso' => $a['time']->toIso8601String(),
+                'status' => $a['status'],
+                'archived' => $a['archived'],
+                'mismatch' => isset($mismatchByActual[$a['id']]),
             ];
         }
 
         // Sort each day's entries by time.
         foreach ($calendar as &$entries) {
-            usort($entries, fn ($a, $b) => strcmp($a['time'], $b['time']));
+            usort($entries, fn ($x, $y) => strcmp($x['time'], $y['time']));
         }
         unset($entries);
 
         ksort($calendar);
 
-        return $calendar;
+        return ['calendar' => $calendar, 'warnings' => $warnings];
     }
 
     /**

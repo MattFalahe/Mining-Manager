@@ -38,6 +38,22 @@ class MoonPlannerService
     /** Athanor + Tatara — the only structures that run plannable chunk extractions. */
     public const REFINERY_TYPE_IDS = [35835, 35836];
 
+    /**
+     * A plan and a real extraction for the same refinery within this many
+     * minutes are the SAME pull — deduped silently. Beyond it (but within the
+     * same cycle) the in-game schedule diverged from the plan → flagged as a
+     * scheduling mismatch ("wrong scheduled moon").
+     */
+    public const MATCH_TOLERANCE_MINUTES = 30;
+
+    /**
+     * How far from a projected occurrence a real extraction still counts as
+     * "this cycle is already covered" (so auto-fill won't add a plan for it,
+     * and display dedup matches a plan to its real pull). Kept below realistic
+     * cadences so it never bleeds into the previous/next cycle.
+     */
+    public const CYCLE_MATCH_WINDOW_HOURS = 72;
+
     protected SettingsManagerService $settings;
 
     public function __construct(SettingsManagerService $settings)
@@ -326,10 +342,12 @@ class MoonPlannerService
                 continue;
             }
 
-            // Every arrival already on the board for this refinery — real
-            // extractions, archived pulls, and existing active plans — so we
-            // don't double up on an occurrence that already exists.
-            $existing = $this->existingArrivalTimes($corporationId, $structureId);
+            // Real pulls (live + archived) block the WHOLE cycle they belong
+            // to — if a moon already extracted around this occurrence, that
+            // cycle is covered and we don't plan over it. Existing plans only
+            // block the immediate gap window so we don't stack plans.
+            $actualTimes = $this->existingActualTimes($structureId);
+            $planTimes = $this->existingPlanTimes($structureId);
 
             // Align the anchor to the first occurrence at/just before the
             // month start, then step forward collecting every occurrence in
@@ -345,7 +363,9 @@ class MoonPlannerService
             $guard = 0;
             while ($occ->lte($monthEnd) && $guard < 800 && $placedForStructure < 15) {
                 $guard++;
-                if ($occ->gte($monthStart) && !$this->coveredWithinGap($existing, $occ, $gapHours)) {
+                $coveredByActual = $this->coveredWithin($actualTimes, $occ, self::CYCLE_MATCH_WINDOW_HOURS * 60);
+                $coveredByPlan = $this->coveredWithin($planTimes, $occ, $gapHours * 60);
+                if ($occ->gte($monthStart) && !$coveredByActual && !$coveredByPlan) {
                     $candidates[] = [
                         'structure_id' => $structureId,
                         'moon_id' => $refinery->moon_id ?? null,
@@ -401,13 +421,13 @@ class MoonPlannerService
     }
 
     /**
-     * All arrival timestamps already represented for a structure — live
-     * extractions, archived history, and active plans. Used by auto-fill to
-     * avoid placing a plan on an occurrence that's already on the board.
+     * Real chunk-arrival timestamps for a structure — live extractions +
+     * archived history. These represent pulls that actually happened / are
+     * scheduled in-game.
      *
      * @return \Illuminate\Support\Collection<int,Carbon>
      */
-    protected function existingArrivalTimes(int $corporationId, int $structureId): Collection
+    protected function existingActualTimes(int $structureId): Collection
     {
         $live = MoonExtraction::where('structure_id', $structureId)
             ->whereNotIn('status', ['cancelled'])
@@ -416,25 +436,36 @@ class MoonPlannerService
         $history = MoonExtractionHistory::where('structure_id', $structureId)
             ->pluck('chunk_arrival_time');
 
-        $plans = MoonExtractionPlan::where('structure_id', $structureId)
-            ->active()
-            ->pluck('planned_arrival_time');
-
-        return $live->merge($history)->merge($plans)
+        return $live->merge($history)
             ->filter()
             ->map(fn ($t) => $t instanceof Carbon ? $t : Carbon::parse($t))
             ->values();
     }
 
     /**
-     * True when any timestamp in $times is within $gapHours of $moment.
+     * Planned-pull timestamps for a structure (active plans only).
+     *
+     * @return \Illuminate\Support\Collection<int,Carbon>
+     */
+    protected function existingPlanTimes(int $structureId): Collection
+    {
+        return MoonExtractionPlan::where('structure_id', $structureId)
+            ->active()
+            ->pluck('planned_arrival_time')
+            ->filter()
+            ->map(fn ($t) => $t instanceof Carbon ? $t : Carbon::parse($t))
+            ->values();
+    }
+
+    /**
+     * True when any timestamp in $times is within $toleranceMinutes of $moment.
      *
      * @param \Illuminate\Support\Collection<int,Carbon> $times
      */
-    protected function coveredWithinGap(Collection $times, Carbon $moment, int $gapHours): bool
+    protected function coveredWithin(Collection $times, Carbon $moment, int $toleranceMinutes): bool
     {
         foreach ($times as $t) {
-            if (abs($moment->diffInMinutes($t)) < $gapHours * 60) {
+            if (abs($moment->diffInMinutes($t)) < $toleranceMinutes) {
                 return true;
             }
         }
@@ -484,9 +515,16 @@ class MoonPlannerService
             ->orderBy('planned_arrival_time')
             ->get();
 
+        $tol = self::MATCH_TOLERANCE_MINUTES;
+        $cycleWindow = self::CYCLE_MATCH_WINDOW_HOURS;
+
         foreach ($plans as $plan) {
-            $windowStart = $plan->planned_arrival_time->copy()->subHours($gap);
-            $windowEnd = $plan->planned_arrival_time->copy()->addHours($gap);
+            // Confirm ONLY on a tight (±30 min) match to a live extraction —
+            // that's genuinely the same pull. A looser window would wrongly
+            // "confirm" a plan against a pull that's actually mis-scheduled,
+            // hiding the discrepancy the operator needs to see.
+            $windowStart = $plan->planned_arrival_time->copy()->subMinutes($tol);
+            $windowEnd = $plan->planned_arrival_time->copy()->addMinutes($tol);
 
             $match = MoonExtraction::where('structure_id', $plan->structure_id)
                 ->whereBetween('chunk_arrival_time', [$windowStart, $windowEnd])
@@ -509,11 +547,20 @@ class MoonPlannerService
                 continue;
             }
 
-            // No match and the planned time is well past → supersede so it
-            // doesn't haunt the conflict checker forever.
-            if ($plan->planned_arrival_time->lt($now->copy()->subHours($gap))) {
-                $plan->update(['status' => MoonExtractionPlan::STATUS_SUPERSEDED]);
-                $summary['superseded']++;
+            // Only supersede a plan that's well in the past AND has no real
+            // pull anywhere near its cycle — i.e. genuinely abandoned. A past
+            // plan WITH a nearby (but off-tolerance) actual is a scheduling
+            // mismatch we deliberately keep active so the planner can flag it.
+            if ($plan->planned_arrival_time->lt($now->copy()->subHours($cycleWindow))) {
+                $nearbyActual = $this->coveredWithin(
+                    $this->existingActualTimes($plan->structure_id),
+                    $plan->planned_arrival_time,
+                    $cycleWindow * 60
+                );
+                if (!$nearbyActual) {
+                    $plan->update(['status' => MoonExtractionPlan::STATUS_SUPERSEDED]);
+                    $summary['superseded']++;
+                }
             }
         }
 
