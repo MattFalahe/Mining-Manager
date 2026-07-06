@@ -17,7 +17,18 @@
     .fc-event.mm-plan-locked .fc-event-title { font-style:italic; }
     /* Scheduled off-plan — the in-game timer diverged from the plan. */
     .fc-event.mm-plan-mismatch { background-color:#c0392b !important; border-color:#922b21 !important; color:#fff !important; }
-    .mm-planner-month { margin-bottom: 0.5rem; }
+
+    /* ---- calendar polish ---- */
+    .mm-planner-month { margin-bottom: 1rem; border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden; }
+    .mm-planner-month .fc-col-header-cell { background: rgba(255,255,255,0.04); }
+    .mm-planner-month .fc-col-header-cell-cushion { text-transform:uppercase; font-size:0.7rem; letter-spacing:0.04em; color:#9aa4b2; padding:6px 4px; }
+    .mm-planner-month .fc-daygrid-day-number { font-size:0.75rem; color:#8a94a3; padding:4px 6px; }
+    .mm-planner-month .fc-day-today { background: rgba(52,152,219,0.10) !important; }
+    .mm-planner-month .fc-event { border-radius:4px; padding:1px 4px; font-size:0.72rem; margin:1px 2px; box-shadow:0 1px 2px rgba(0,0,0,0.25); }
+    .mm-planner-month .fc-event:hover { filter:brightness(1.12); }
+    .mm-planner-month .fc-daygrid-event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .mm-month-heading { display:flex; align-items:center; gap:8px; font-weight:600; color:#cfd6df; }
+    .mm-month-heading .mm-month-pill { font-size:0.65rem; background:rgba(255,255,255,0.06); color:#9aa4b2; padding:1px 8px; border-radius:10px; }
     .mm-refinery-card { font-size: 0.85rem; }
     .mm-refinery-card .mm-proj { font-weight: 600; }
     .mm-conflict-row { padding: 6px 10px; border-radius: 4px; background: rgba(255,193,7,0.12); margin-bottom: 6px; }
@@ -83,6 +94,21 @@
                     <i class="fas fa-magic"></i> Auto-fill from History
                 </button>
             </form>
+            <button type="button" class="btn btn-sm btn-outline-secondary ml-1" id="btn-history"
+                    title="Who changed what on the planner">
+                <i class="fas fa-history"></i> History
+            </button>
+        </div>
+    </div>
+
+    {{-- EVE-time banner — moons are scheduled in EVE (UTC) in-game, so the
+         planner works in the same clock the EVE structure scheduler uses. --}}
+    <div class="alert alert-info d-flex align-items-center py-2">
+        <i class="fas fa-clock fa-lg mr-2"></i>
+        <div>
+            <strong>All times are EVE time (UTC).</strong>
+            This is the clock EVE's in-game structure scheduler uses when you set a moon drill —
+            plan here in EVE time and the modal confirms your local time.
         </div>
     </div>
 
@@ -144,7 +170,12 @@
                     </div>
 
                     @foreach($months as $m)
-                        <h5 class="mt-3 mb-2 text-muted">{{ $m->format('F Y') }}</h5>
+                        <h5 class="mt-3 mb-2 mm-month-heading">
+                            <i class="fas fa-calendar-day text-primary"></i> {{ $m->format('F Y') }}
+                            @if($m->isSameMonth(\Carbon\Carbon::now()))
+                                <span class="mm-month-pill">current</span>
+                            @endif
+                        </h5>
                         <div class="mm-planner-month" data-month="{{ $m->format('Y-m-d') }}"></div>
                     @endforeach
                 </div>
@@ -159,17 +190,34 @@
                     <div class="card-tools"><span class="badge badge-primary">{{ count($refinerySummaries) }}</span></div>
                 </div>
                 <div class="card-body p-2" style="max-height: 640px; overflow-y: auto;">
+                    @php
+                        // R-tier badge colours (richest = gold, down to grey).
+                        $rarityColors = ['R64' => '#f1c40f', 'R32' => '#e74c3c', 'R16' => '#9b59b6', 'R8' => '#3498db', 'R4' => '#7f8c8d'];
+                    @endphp
                     @forelse($refinerySummaries as $r)
                         <div class="mm-sidebar-item mm-refinery-card mb-2">
-                            <div class="mm-structure-name">
-                                <i class="fas fa-building text-primary"></i>
-                                {{ $r['structure_name'] }}
+                            <div class="mm-structure-name d-flex justify-content-between align-items-start">
+                                <span><i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}</span>
+                                @if(!empty($r['rarity']))
+                                    <span class="badge ml-1" style="background: {{ $rarityColors[$r['rarity']] ?? '#7f8c8d' }}; color:#000; font-weight:700;"
+                                          title="Highest ore tier on this moon">{{ $r['rarity'] }}</span>
+                                @endif
                             </div>
                             @if($r['moon_name'])
                                 <div class="text-muted" style="font-size: 0.8em;">
                                     <i class="fas fa-moon"></i> {{ $r['moon_name'] }}
                                 </div>
                             @endif
+
+                            {{-- Coverage: how many upcoming pulls are planned (0 = skipped). --}}
+                            @if($r['future_plan_count'] === 0)
+                                <div class="mt-1"><span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> Not planned</span></div>
+                            @elseif($r['future_plan_count'] === 1)
+                                <div class="mt-1"><span class="badge badge-info">Planned 1&times;</span></div>
+                            @else
+                                <div class="mt-1"><span class="badge badge-success">Planned {{ $r['future_plan_count'] }}&times;</span></div>
+                            @endif
+
                             @if($r['has_history'])
                                 <div style="font-size: 0.8em;">
                                     <i class="fas fa-history text-muted"></i>
@@ -296,6 +344,27 @@
         </div>
     </div>
 </div>
+
+{{-- CHANGE-HISTORY MODAL --}}
+<div class="modal fade" id="historyModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-history"></i> Planner change history</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div id="history-body">
+                    <div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Loading…</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <small class="text-muted mr-auto">Most recent 100 changes. Times shown in your local zone.</small>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('javascript')
@@ -311,6 +380,7 @@ document.addEventListener('DOMContentLoaded', function () {
         update: '{{ url('mining-manager/moon/planner') }}',
         destroy: '{{ url('mining-manager/moon/planner') }}',
         checkConflicts: '{{ route('mining-manager.moon.planner.check-conflicts') }}',
+        history: '{{ route('mining-manager.moon.planner.history') }}',
     };
 
     // ---- Build FullCalendar events from the day-grouped payload ----
@@ -487,6 +557,54 @@ document.addEventListener('DOMContentLoaded', function () {
     $('#btn-add-pull').on('click', () => openAddModal(null, null));
     $('.btn-plan-refinery').on('click', function () {
         openAddModal($(this).data('structure-id'), $(this).data('projected') || null);
+    });
+
+    // ---- Change history ----
+    const ACTION_META = {
+        created:    { icon: 'fa-plus-circle text-success',   label: 'created' },
+        moved:      { icon: 'fa-arrows-alt-h text-info',     label: 'moved' },
+        deleted:    { icon: 'fa-trash text-danger',          label: 'removed' },
+        autofilled: { icon: 'fa-magic text-primary',         label: 'auto-filled' },
+    };
+
+    function fmtLocal(iso) {
+        if (!iso) return '';
+        try { return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); }
+        catch (e) { return ''; }
+    }
+
+    $('#btn-history').on('click', function () {
+        $('#history-body').html('<div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Loading…</div>');
+        $('#historyModal').appendTo('body').modal('show');
+        $.getJSON(routes.history)
+            .done(function (res) {
+                const rows = (res.entries || []);
+                if (!rows.length) {
+                    $('#history-body').html('<p class="text-muted mb-0">No changes recorded yet.</p>');
+                    return;
+                }
+                let html = '<table class="table table-sm table-dark mb-0"><thead><tr>' +
+                    '<th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>';
+                rows.forEach(function (e) {
+                    const meta = ACTION_META[e.action] || { icon: 'fa-circle', label: e.action };
+                    // Escape server text (structure names are player-set).
+                    let detail = $('<div>').text(e.detail || '').html();
+                    if (e.action === 'moved' && e.old_arrival && e.new_arrival) {
+                        detail += ' <span class="text-muted">(' + fmtLocal(e.old_arrival) + ' → ' + fmtLocal(e.new_arrival) + ')</span>';
+                    }
+                    html += '<tr>' +
+                        '<td class="text-muted" style="white-space:nowrap;">' + fmtLocal(e.when) + '</td>' +
+                        '<td>' + $('<div>').text(e.actor || 'System').html() + '</td>' +
+                        '<td><i class="fas ' + meta.icon + '"></i> ' + meta.label + '</td>' +
+                        '<td style="font-size:0.85em;">' + detail + '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table>';
+                $('#history-body').html(html);
+            })
+            .fail(function () {
+                $('#history-body').html('<p class="text-danger mb-0">Could not load history.</p>');
+            });
     });
 
     // ---- Save (create or update), with the gap-confirm flow ----

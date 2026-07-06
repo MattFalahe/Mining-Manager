@@ -205,6 +205,23 @@ class MoonPlannerController extends Controller
             $spreadAdjusted += $s['spread_adjusted'];
         }
 
+        if ($created > 0) {
+            [$actorId, $actorName] = $this->actor();
+            \MiningManager\Models\MoonExtractionPlanAudit::record([
+                'corporation_id' => $corporationId,
+                'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_AUTOFILLED,
+                'character_id' => $actorId,
+                'character_name' => $actorName,
+                'detail' => sprintf(
+                    'Auto-filled %d pull%s across %s–%s',
+                    $created,
+                    $created === 1 ? '' : 's',
+                    $anchor->format('M Y'),
+                    $anchor->copy()->addMonths(2)->format('M Y')
+                ),
+            ]);
+        }
+
         $msg = sprintf(
             'Auto-fill complete: %d pull%s planned across %s–%s%s%s.',
             $created,
@@ -264,6 +281,8 @@ class MoonPlannerController extends Controller
             $moonId = CorporationStructure::where('structure_id', $validated['structure_id'])->value('moon_id');
         }
 
+        [$actorId, $actorName] = $this->actor();
+
         $plan = MoonExtractionPlan::create([
             'corporation_id' => $corporationId,
             'structure_id' => (int) $validated['structure_id'],
@@ -272,7 +291,19 @@ class MoonPlannerController extends Controller
             'source' => MoonExtractionPlan::SOURCE_MANUAL,
             'status' => MoonExtractionPlan::STATUS_PLANNED,
             'notes' => $validated['notes'] ?? null,
-            'created_by' => auth()->user()->main_character_id ?? null,
+            'created_by' => $actorId,
+        ]);
+
+        \MiningManager\Models\MoonExtractionPlanAudit::record([
+            'corporation_id' => $corporationId,
+            'plan_id' => $plan->id,
+            'structure_id' => $plan->structure_id,
+            'moon_id' => $plan->moon_id,
+            'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_CREATED,
+            'character_id' => $actorId,
+            'character_name' => $actorName,
+            'new_arrival' => $plannedAt,
+            'detail' => $this->planLabel($plan),
         ]);
 
         return response()->json(['success' => true, 'plan_id' => $plan->id]);
@@ -322,12 +353,31 @@ class MoonPlannerController extends Controller
             }
         }
 
+        $oldArrival = $plan->planned_arrival_time->copy();
+
         $plan->update([
             'planned_arrival_time' => $plannedAt,
             'notes' => $validated['notes'] ?? $plan->notes,
             // A hand-moved slot becomes a manual placement going forward.
             'source' => MoonExtractionPlan::SOURCE_MANUAL,
         ]);
+
+        // Only log an actual time change as a "move".
+        if ($oldArrival->ne($plannedAt)) {
+            [$actorId, $actorName] = $this->actor();
+            \MiningManager\Models\MoonExtractionPlanAudit::record([
+                'corporation_id' => $corporationId,
+                'plan_id' => $plan->id,
+                'structure_id' => $plan->structure_id,
+                'moon_id' => $plan->moon_id,
+                'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_MOVED,
+                'character_id' => $actorId,
+                'character_name' => $actorName,
+                'old_arrival' => $oldArrival,
+                'new_arrival' => $plannedAt,
+                'detail' => $this->planLabel($plan),
+            ]);
+        }
 
         return response()->json(['success' => true]);
     }
@@ -345,6 +395,19 @@ class MoonPlannerController extends Controller
         if (!$plan) {
             return response()->json(['error' => 'Plan not found.'], 404);
         }
+
+        [$actorId, $actorName] = $this->actor();
+        \MiningManager\Models\MoonExtractionPlanAudit::record([
+            'corporation_id' => $corporationId,
+            'plan_id' => $plan->id,
+            'structure_id' => $plan->structure_id,
+            'moon_id' => $plan->moon_id,
+            'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_DELETED,
+            'character_id' => $actorId,
+            'character_name' => $actorName,
+            'old_arrival' => $plan->planned_arrival_time,
+            'detail' => $this->planLabel($plan),
+        ]);
 
         $plan->delete();
 
@@ -556,9 +619,82 @@ class MoonPlannerController extends Controller
                 'projected_next' => $projected ? $projected->format('M d, Y H:i') : null,
                 'projected_iso' => $projected ? $projected->toIso8601String() : null,
                 'has_history' => $cadence['cadence_days'] !== null,
+                // Coverage: how many upcoming pulls are planned for this rig
+                // (0 = skipped moon), + its highest ore tier for the badge.
+                'future_plan_count' => $this->planner->futurePlanCount($sid),
+                'rarity' => $this->planner->highestRarityForStructure($sid),
             ];
         }
 
+        // Skipped (uncovered) refineries first, then by rarity (richest first),
+        // so the operator's attention lands on gaps + valuable moons.
+        $rarityRank = ['R64' => 5, 'R32' => 4, 'R16' => 3, 'R8' => 2, 'R4' => 1];
+        usort($summaries, function ($a, $b) use ($rarityRank) {
+            $aCov = $a['future_plan_count'] === 0 ? 0 : 1;
+            $bCov = $b['future_plan_count'] === 0 ? 0 : 1;
+            if ($aCov !== $bCov) {
+                return $aCov <=> $bCov; // uncovered (0) first
+            }
+            return ($rarityRank[$b['rarity']] ?? 0) <=> ($rarityRank[$a['rarity']] ?? 0);
+        });
+
         return $summaries;
+    }
+
+    /**
+     * Recent planner change history for the corp (who did what) — JSON for the
+     * History modal.
+     */
+    public function history(Request $request)
+    {
+        $corporationId = $this->plannerCorporationId();
+        if (!$corporationId) {
+            return response()->json(['entries' => []]);
+        }
+
+        $rows = \MiningManager\Models\MoonExtractionPlanAudit::forCorporation($corporationId)
+            ->orderByDesc('created_at')
+            ->limit(100)
+            ->get();
+
+        $entries = $rows->map(function ($r) {
+            return [
+                'action' => $r->action,
+                'actor' => $r->character_name ?: 'System',
+                'detail' => $r->detail,
+                'old_arrival' => $r->old_arrival ? $r->old_arrival->toIso8601String() : null,
+                'new_arrival' => $r->new_arrival ? $r->new_arrival->toIso8601String() : null,
+                'when' => $r->created_at ? $r->created_at->toIso8601String() : null,
+            ];
+        });
+
+        return response()->json(['entries' => $entries]);
+    }
+
+    /**
+     * Resolve the acting operator: [character_id, character_name].
+     */
+    protected function actor(): array
+    {
+        $user = auth()->user();
+        $charId = $user->main_character_id ?? null;
+        $name = null;
+        if ($charId) {
+            $name = DB::table('character_infos')->where('character_id', $charId)->value('name');
+        }
+        return [$charId, $name];
+    }
+
+    /**
+     * "Moon (Structure)" label for a plan, for audit detail lines.
+     */
+    protected function planLabel(MoonExtractionPlan $plan): string
+    {
+        $moon = $plan->moon_id
+            ? (DB::table('moons')->where('moon_id', $plan->moon_id)->value('name') ?? "Moon {$plan->moon_id}")
+            : 'Unknown Moon';
+        $struct = DB::table('universe_structures')->where('structure_id', $plan->structure_id)->value('name')
+            ?? "Structure {$plan->structure_id}";
+        return "{$moon} ({$struct})";
     }
 }

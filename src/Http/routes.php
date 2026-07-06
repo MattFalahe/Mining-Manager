@@ -470,6 +470,11 @@ Route::group([
             'uses' => 'MoonPlannerController@data',
         ]);
 
+        Route::get('/planner/history', [
+            'as' => 'mining-manager.moon.planner.history',
+            'uses' => 'MoonPlannerController@history',
+        ]);
+
         Route::post('/planner/check-conflicts', [
             'as' => 'mining-manager.moon.planner.check-conflicts',
             'uses' => 'MoonPlannerController@checkConflicts',

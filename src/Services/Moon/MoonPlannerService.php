@@ -566,4 +566,60 @@ class MoonPlannerService
 
         return $summary;
     }
+
+    /**
+     * Number of still-upcoming planned pulls for a refinery across the whole
+     * horizon (not just one month). Powers the sidebar "planned N×" / "not
+     * planned" indicator so operators can spot a skipped moon when planning a
+     * year out.
+     */
+    public function futurePlanCount(int $structureId): int
+    {
+        return MoonExtractionPlan::where('structure_id', $structureId)
+            ->active()
+            ->where('planned_arrival_time', '>', Carbon::now())
+            ->count();
+    }
+
+    /**
+     * Highest moon-ore rarity tier (R4..R64) in a refinery's most recent known
+     * composition, or null when none is available. Reads the latest extraction
+     * (live, else archived) — ore_composition stores a type_id per ore entry,
+     * which MoonOreHelper::getRarity maps to a tier.
+     */
+    public function highestRarityForStructure(int $structureId): ?string
+    {
+        $composition = MoonExtraction::where('structure_id', $structureId)
+            ->whereNotNull('ore_composition')
+            ->orderByDesc('chunk_arrival_time')
+            ->value('ore_composition');
+
+        if (!is_array($composition) || empty($composition)) {
+            $composition = MoonExtractionHistory::where('structure_id', $structureId)
+                ->whereNotNull('ore_composition')
+                ->orderByDesc('chunk_arrival_time')
+                ->value('ore_composition');
+        }
+
+        if (!is_array($composition) || empty($composition)) {
+            return null;
+        }
+
+        $rank = ['R4' => 1, 'R8' => 2, 'R16' => 3, 'R32' => 4, 'R64' => 5];
+        $best = null;
+        $bestRank = 0;
+        foreach ($composition as $ore) {
+            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : null;
+            if (!$typeId) {
+                continue;
+            }
+            $rarity = \MiningManager\Services\Moon\MoonOreHelper::getRarity((int) $typeId);
+            if ($rarity && ($rank[$rarity] ?? 0) > $bestRank) {
+                $bestRank = $rank[$rarity];
+                $best = $rarity;
+            }
+        }
+
+        return $best;
+    }
 }
