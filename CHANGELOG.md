@@ -38,7 +38,7 @@ Both are per-webhook opt-in (off by default), wired into the master type toggles
 - **Coverage badges.** Every refinery shows how many upcoming pulls are planned — `Planned 2×` / `Planned 1×` / amber **`Not planned`** (the skipped-moon indicator), counted across the whole horizon so it works for a year-out plan. Uncovered refineries sort to the top.
 - **Highest-ore-tier badges.** Each refinery carries an **R4–R64** badge (gold → grey) derived from its latest extraction's `ore_composition`, so moon type reads at a glance.
 - **Change history.** New `moon_extraction_plan_audits` table records who created / moved / deleted each planned pull with before→after times; auto-fill logs an aggregate entry. A **History** button lists the last 100 changes.
-- **Planner diagnostic.** System Validation gains a **Moon Extraction Planner** card: schema checks for migrations 000016–000018, Moon Owner Corp scope, **Manager Core fast-poll handler registration** (the wiring that fails silently — a mis-resolved container key leaves the handler on a throwaway instance MC's poll job never sees), planner coverage gaps, and open scheduling mismatches.
+- **Planner diagnostic.** System Validation gains a **Moon Extraction Planner** card: schema checks for migrations 000019–000021, Moon Owner Corp scope, **Manager Core fast-poll handler registration** (the wiring that fails silently — a mis-resolved container key leaves the handler on a throwaway instance MC's poll job never sees), planner coverage gaps, and open scheduling mismatches.
 
 ### ⚡ Manager Core fast-poll for Extraction Started
 
@@ -46,9 +46,9 @@ When Manager Core is installed, MM now registers a handler with MC's ESI fast-po
 
 ### 📦 Schema
 
-- New table `moon_extraction_plans` (migration `2026_01_01_000016`).
-- New table `moon_extraction_plan_audits` (migration `2026_01_01_000017`) — planner change history.
-- Additive columns: `moon_extractions.extraction_started_sent` + `next_planned_sent` (idempotency latches), `webhook_configurations.notify_extraction_started` + `notify_next_extraction_planned` (per-webhook opt-in), and via migration `2026_01_01_000018` `moon_extraction_plans.mismatch_notified_at` + `webhook_configurations.notify_schedule_mismatch`. All defaulted, no backfill required.
+- New table `moon_extraction_plans` (migration `2026_01_01_000019`).
+- New table `moon_extraction_plan_audits` (migration `2026_01_01_000020`) — planner change history.
+- Additive columns: `moon_extractions.extraction_started_sent` + `next_planned_sent` (idempotency latches), `webhook_configurations.notify_extraction_started` + `notify_next_extraction_planned` (per-webhook opt-in), and via migration `2026_01_01_000021` `moon_extraction_plans.mismatch_notified_at` + `webhook_configurations.notify_schedule_mismatch`. All defaulted, no backfill required.
 
 ## [2.0.2] — 2026-05-31 — The Ecosystem Era: Field Repairs
 

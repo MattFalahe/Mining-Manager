@@ -157,10 +157,10 @@ class DiagnosticController extends Controller
      * ['label', 'status' => ok|warn|fail, 'message'].
      *
      * Checks:
-     *   - Migration 000016: moon_extraction_plans table
-     *   - Migration 000016: extraction_started_sent / next_planned_sent latches
-     *   - Migration 000017: moon_extraction_plan_audits table
-     *   - Migration 000018: mismatch latch + webhook opt-in column
+     *   - Migration 000019: moon_extraction_plans table
+     *   - Migration 000019: extraction_started_sent / next_planned_sent latches
+     *   - Migration 000020: moon_extraction_plan_audits table
+     *   - Migration 000021: mismatch latch + webhook opt-in column
      *   - Moon Owner Corporation configured (the planner's scope)
      *   - Manager Core fast-poll handler registration (the wiring that
      *     silently breaks — SM burned a debug session on exactly this)
@@ -173,7 +173,7 @@ class DiagnosticController extends Controller
         // 1. Core planner table
         $hasPlans = \Schema::hasTable('moon_extraction_plans');
         $checks[] = [
-            'label'   => 'Migration 000016: moon_extraction_plans table',
+            'label'   => 'Migration 000019: moon_extraction_plans table',
             'status'  => $hasPlans ? 'ok' : 'fail',
             'message' => $hasPlans
                 ? 'Planner table present.'
@@ -185,7 +185,7 @@ class DiagnosticController extends Controller
         $hasNextLatch = \Schema::hasColumn('moon_extractions', 'next_planned_sent');
         $latchesOk = $hasStartedLatch && $hasNextLatch;
         $checks[] = [
-            'label'   => 'Migration 000016: extraction_started_sent / next_planned_sent latches',
+            'label'   => 'Migration 000019: extraction_started_sent / next_planned_sent latches',
             'status'  => $latchesOk ? 'ok' : 'fail',
             'message' => $latchesOk
                 ? 'Both idempotency latches present on moon_extractions.'
@@ -195,7 +195,7 @@ class DiagnosticController extends Controller
         // 3. Audit table
         $hasAudits = \Schema::hasTable('moon_extraction_plan_audits');
         $checks[] = [
-            'label'   => 'Migration 000017: moon_extraction_plan_audits table',
+            'label'   => 'Migration 000020: moon_extraction_plan_audits table',
             'status'  => $hasAudits ? 'ok' : 'fail',
             'message' => $hasAudits
                 ? 'Change-history table present.'
@@ -207,7 +207,7 @@ class DiagnosticController extends Controller
         $hasMismatchCol = \Schema::hasColumn('webhook_configurations', 'notify_schedule_mismatch');
         $mismatchOk = $hasMismatchLatch && $hasMismatchCol;
         $checks[] = [
-            'label'   => 'Migration 000018: schedule-mismatch latch + webhook opt-in',
+            'label'   => 'Migration 000021: schedule-mismatch latch + webhook opt-in',
             'status'  => $mismatchOk ? 'ok' : 'fail',
             'message' => $mismatchOk
                 ? 'mismatch_notified_at + notify_schedule_mismatch present.'
