@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_planner'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <style>
     /* Event backgrounds must be set (not just a left border) or FullCalendar's
@@ -29,6 +29,27 @@
     .mm-planner-month .fc-daygrid-event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .mm-month-heading { display:flex; align-items:center; gap:8px; font-weight:600; color:#cfd6df; }
     .mm-month-heading .mm-month-pill { font-size:0.65rem; background:rgba(255,255,255,0.06); color:#9aa4b2; padding:1px 8px; border-radius:10px; }
+
+    /* ---- dark tinted callouts ----
+       Bootstrap's .alert-warning renders as a solid light amber panel, which
+       on this dark theme leaves muted text and outline buttons unreadable
+       (the documented low-contrast tinted-box + text-muted cascade bug).
+       These are dark 12%-opacity tints with near-white text instead. */
+    .mm-note { border-radius:6px; padding:12px 16px; margin-bottom:1rem; border:1px solid; border-left-width:4px; }
+    .mm-note h6 { font-weight:700; margin-bottom:6px; color:#f9fafb; }
+    .mm-note p, .mm-note li { color:#f3f4f6; }
+    .mm-note strong { color:#ffffff; }
+    .mm-note .mm-note-sub { color:#d1d5db; opacity:0.95; font-size:0.85em; }
+    .mm-note-info { background:rgba(23,162,184,0.12); border-color:rgba(23,162,184,0.45); border-left-color:#17a2b8; }
+    .mm-note-info .mm-note-icon { color:#4dd4e8; }
+    .mm-note-warn { background:rgba(255,193,7,0.12); border-color:rgba(255,193,7,0.45); border-left-color:#ffc107; }
+    .mm-note-warn h6 { color:#ffd75e; }
+    .mm-note-warn .mm-note-icon { color:#ffc107; }
+    .mm-note-warn ul { margin-bottom:0; padding-left:1.1rem; }
+    .mm-offset-badge { background:#ffc107; color:#1a1d24; font-weight:700; }
+    /* High-contrast dismiss button — outline-secondary washes out on a tint. */
+    .btn-dismiss-mismatch { background:transparent; border:1px solid #ffc107; color:#ffd75e; }
+    .btn-dismiss-mismatch:hover { background:#ffc107; color:#1a1d24; }
     .mm-refinery-card { font-size: 0.85rem; }
     .mm-refinery-card .mm-proj { font-weight: 600; }
     .mm-conflict-row { padding: 6px 10px; border-radius: 4px; background: rgba(255,193,7,0.12); margin-bottom: 6px; }
@@ -63,11 +84,13 @@
     <div class="card-body">
 
     @if(!$corporationId)
-        <div class="alert alert-warning">
-            <i class="fas fa-exclamation-triangle"></i>
-            No <strong>Moon Owner Corporation</strong> is configured yet. Set one in
-            <a href="{{ route('mining-manager.settings.index') }}">Settings &rsaquo; General</a>
-            so the planner knows which refineries to schedule.
+        <div class="mm-note mm-note-warn">
+            <i class="fas fa-exclamation-triangle mm-note-icon"></i>
+            <span style="color:#f3f4f6;">
+                No <strong>Moon Owner Corporation</strong> is configured yet. Set one in
+                <a href="{{ route('mining-manager.settings.index') }}">Settings &rsaquo; General</a>
+                so the planner knows which refineries to schedule.
+            </span>
         </div>
     @else
 
@@ -103,12 +126,14 @@
 
     {{-- EVE-time banner — moons are scheduled in EVE (UTC) in-game, so the
          planner works in the same clock the EVE structure scheduler uses. --}}
-    <div class="alert alert-info d-flex align-items-center py-2">
-        <i class="fas fa-clock fa-lg mr-2"></i>
+    <div class="mm-note mm-note-info d-flex align-items-center">
+        <i class="fas fa-clock fa-lg mr-2 mm-note-icon"></i>
         <div>
             <strong>All times are EVE time (UTC).</strong>
-            This is the clock EVE's in-game structure scheduler uses when you set a moon drill —
-            plan here in EVE time and the modal confirms your local time.
+            <span style="color:#f3f4f6;">
+                This is the clock EVE's in-game structure scheduler uses when you set a moon drill —
+                plan here in EVE time and the modal confirms your local time.
+            </span>
         </div>
     </div>
 
@@ -128,16 +153,16 @@
     {{-- SCHEDULE-MISMATCH WARNINGS — a plan and the real in-game pull for the
          same moon are more than the tolerance apart. --}}
     @if(!empty($warnings))
-        <div class="alert alert-warning">
-            <h6 class="mb-2"><i class="fas fa-exclamation-triangle"></i> Scheduling mismatches ({{ count($warnings) }})</h6>
-            <small class="d-block text-muted mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer.</small>
-            <ul class="mb-0" style="font-size: 0.85em;">
+        <div class="mm-note mm-note-warn">
+            <h6><i class="fas fa-exclamation-triangle mm-note-icon"></i> Scheduling mismatches ({{ count($warnings) }})</h6>
+            <div class="mm-note-sub mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer.</div>
+            <ul style="font-size: 0.88em;">
                 @foreach($warnings as $w)
                     <li class="mb-1">
                         <strong>{{ $w['moon_name'] }}</strong> ({{ $w['structure_name'] }}) —
                         planned <strong>{{ $w['planned'] }}</strong>, in-game <strong>{{ $w['actual'] }}</strong>
-                        <span class="badge badge-warning">{{ $w['offset_hours'] }}h off</span>
-                        <button type="button" class="btn btn-xs btn-outline-secondary ml-1 btn-dismiss-mismatch"
+                        <span class="badge mm-offset-badge">{{ $w['offset_hours'] }}h off</span>
+                        <button type="button" class="btn btn-xs ml-1 btn-dismiss-mismatch"
                                 data-plan-id="{{ $w['plan_id'] }}"
                                 title="Retire the stale plan behind this warning (the in-game pull is unaffected)">
                             <i class="fas fa-check"></i> Dismiss

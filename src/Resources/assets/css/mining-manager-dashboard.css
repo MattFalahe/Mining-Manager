@@ -3504,8 +3504,13 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     margin: 0 auto;
 }
 
-/* FullCalendar Dark Theme Overrides */
-.mining-manager-wrapper.moon-calendar-page .fc {
+/* FullCalendar Dark Theme Overrides
+   Applies to BOTH the read-only Moon Extraction Calendar and the Moon
+   Extraction Planner. Without the planner selector here FullCalendar falls
+   back to its stock light theme and the header row / grid render white on
+   the dark page. */
+.mining-manager-wrapper.moon-calendar-page .fc,
+.mining-manager-wrapper.moon-planner-page .fc {
     --fc-border-color: rgba(255, 255, 255, 0.1);
     --fc-button-bg-color: #f39c12;
     --fc-button-border-color: #e08e0b;
