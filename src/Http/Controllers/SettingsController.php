@@ -154,8 +154,7 @@ class SettingsController extends Controller
         // role-id picker buttons in the notifications tab. When at least one
         // provider is detected (SeAT Broadcast / SeAT Connector / legacy
         // warlof), each role-id input gets a "Pick from Discord" button +
-        // collapsible inline picker. Pattern documented in memory:
-        // feedback_plugin_role_picker_pattern.md. Source-of-truth implementation:
+        // collapsible inline picker. Source-of-truth implementation:
         // structure-manager/src/Services/DiscordRoleResolver.php (copied here
         // verbatim with namespace change).
         $roleProviderAvailable = DiscordRoleResolver::isAvailable();

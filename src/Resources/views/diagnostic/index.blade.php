@@ -9,8 +9,7 @@
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
 
 /* === Per-tab intro box ===========================================
-   Required on every diagnostic tab per
-   feedback_plugin_diagnostic_standard.md. The diagnostic page is
+   Shown on every diagnostic tab. The diagnostic page is
    admin-only and intentionally NOT linked from Help & Documentation,
    so this box is where operators learn each tab's purpose.
 
@@ -255,7 +254,7 @@
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
-            {{-- Tier 1 — Universal (per feedback_plugin_diagnostic_standard.md) --}}
+            {{-- Tier 1 — Universal --}}
             <li class="nav-item">
                 <a class="nav-link active" href="#health-checks" data-toggle="tab" onclick="loadSystemStatus()">
                     <i class="fas fa-heartbeat"></i> Health Checks

@@ -27,8 +27,7 @@
  *     window.EveTime.convert(rootEl);     // limited scope
  *
  * Canonical source: SeAT Broadcast commit 924cfaf. Each plugin keeps its own
- * copy per the standalone-plugin principle — see project memory
- * `feedback_local_time_pattern.md`.
+ * copy per the standalone-plugin principle.
  */
 (function () {
     'use strict';

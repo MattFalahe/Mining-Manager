@@ -28,7 +28,7 @@
       $mmManagerCoreAvailable   — flags cross-plugin types that won't fire
       $mmStructureManagerAvail  — flags cross-plugin types that won't fire
 
-    Blade gotcha (per memory feedback_plugin_routing_map.md): do NOT place an
+    Blade gotcha: do NOT place an
     inline @php(...) directive immediately before this @php block, and never
     write the literal tokens @php or @endphp inside a comment — Blade's
     storePhpBlocks regex is non-greedy and will corrupt the compiled view.

@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\Schema;
  * Forward-only — backward compat with the released v1.0.2 migration
  * set. Migration 000001 is unchanged.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class AddDiscordAvatarUrlToWebhookConfigurations extends Migration
 {

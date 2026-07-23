@@ -31,15 +31,12 @@ use Illuminate\Support\Facades\Log;
  * Safe to run repeatedly: `delete()` is idempotent. Returns 0 affected on
  * a clean install where the rows were never written.
  *
- * Why number 000018 (skipping 000017's chronology check): the dev-5.0
- * branch is pre-release, fixed-date prefix per plugin (per
- * feedback_migration_naming.md). 000017 is the latest released migration
- * in the chain; 000018 is the next sequential.
+ * Why number 000018: fixed-date prefix per plugin, sequential numbering.
+ * 000017 was the latest migration in the chain; 000018 is the next.
  *
  * Forward-only — empty down() since the rows are unrecoverable and weren't
  * referenced by any operator-visible feature.
  *
- * @see project memory feedback_released_plugin_migrations.md
  * @see commit 583ea48 dev-5.0 — Pricing tab rewrite that removed the inputs
  * @see commit d61e9e9 dev-5.0 — Read-path fix that removed the last reader
  */

@@ -682,9 +682,8 @@ class NotificationService
      * the follow-up is different: tax reconciliation, "no chunk this cycle"
      * announcement to miners, insurance claim, etc.
      *
-     * Driven by SM's `structure.alert.destroyed` event (detection design
-     * deferred to a future SM session — see memory doc
-     * project_structure_manager_destruction_detection.md).
+     * Driven by SM's `structure.alert.destroyed` event (destruction
+     * detection ships in a future Structure Manager release).
      *
      * Same MC+SM gating as extraction_at_risk.
      *
@@ -2970,7 +2969,6 @@ class NotificationService
      *      audit hook, or schema change is honored. Raw DB queries
      *      bypass that and silently break under SeAT version drift.
      *
-     * @see project memory reference_seat_v5_models.md
      *      ("RefreshToken (token returns NULL when expired)")
      *
      * @param int $characterId

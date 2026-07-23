@@ -40,7 +40,6 @@ use Illuminate\Support\Facades\Log;
  * period_start; that would break idempotency of the migration run for
  * anyone on v1.0.2 already.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class BackfillMiningTaxesPeriodStart extends Migration
 {

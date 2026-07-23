@@ -21,9 +21,6 @@ use Illuminate\Support\Facades\DB;
  * middleware. The service itself filters by corporation_id when supplied, so
  * per-corp visibility is enforced by passing only the corps the viewer can
  * actually see.
- *
- * Pattern documented in project memory `project_mining_manager_future_refactors.md`
- * (the "TODO from Structure Manager issue #16" section).
  */
 class MetenoxCargoService
 {

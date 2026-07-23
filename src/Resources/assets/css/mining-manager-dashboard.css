@@ -3908,9 +3908,8 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
    survive arbitrary custom SeAT CSS, these classes carry their own
    !important on background, color, border, and nested icon colors.
 
-   Pattern documented in shared memory:
-   `feedback_help_docs_visual_design.md` — rule #5 (inline colors lose
-   to custom-CSS !important).
+   These guard against the inline-color-vs-custom-CSS problem: inline
+   colors lose to a theme's custom-CSS !important.
    ===================================================================== */
 
 /* Button + small-badge variant — gold gradient on black text */
@@ -3969,8 +3968,7 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
    Used by .eve-countdown elements ticked by eve-countdown.js. Colors
    reflect time-to-target urgency: distant (>1d) green, near (1d-1h)
    yellow, imminent (<1h) red, past (target time passed) muted grey.
-   `!important` per the inline-color-vs-custom-CSS rule documented in
-   `feedback_help_docs_visual_design.md` rule #5. */
+   `!important` per the inline-color-vs-custom-CSS rule. */
 .eve-countdown-distant   { color: #28a745 !important; }
 .eve-countdown-near      { color: #ffc107 !important; }
 .eve-countdown-imminent  { color: #dc3545 !important; font-weight: 600 !important; }

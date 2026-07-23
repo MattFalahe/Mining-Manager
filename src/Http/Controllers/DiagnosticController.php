@@ -163,7 +163,7 @@ class DiagnosticController extends Controller
      *   - Migration 000021: mismatch latch + webhook opt-in column
      *   - Moon Owner Corporation configured (the planner's scope)
      *   - Manager Core fast-poll handler registration (the wiring that
-     *     silently breaks — SM burned a debug session on exactly this)
+     *     silently breaks if the container key is mis-resolved)
      *   - Planner data sanity: refineries, coverage gaps, open mismatches
      */
     private function buildMoonPlannerValidation(): array

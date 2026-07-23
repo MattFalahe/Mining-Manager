@@ -25,7 +25,6 @@ use Illuminate\Support\Facades\Log;
  *
  * Forward-only — backward compat with the released v1.0.2 migration set.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class CleanupOrphanManagerCoreSettings extends Migration
 {

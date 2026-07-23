@@ -388,8 +388,7 @@
                                         </div>
 
                                         {{-- Inline role picker for this notification type. Hidden by default,
-                                             toggles on the Pick button. Pattern documented in memory:
-                                             feedback_plugin_role_picker_pattern.md. One picker div per type
+                                             toggles on the Pick button. One picker div per type
                                              keeps the JS handler dumb (data attributes route the click to
                                              the right input + picker). AJAX-loaded role list cached across
                                              ALL pickers on the page, so opening any of them after the first
@@ -851,8 +850,7 @@ $(document).ready(function() {
 
     // ============================================================
     // INLINE DISCORD ROLE PICKER — multi-instance (one per type with
-    // has_role_ping=true). Pattern documented in memory:
-    // feedback_plugin_role_picker_pattern.md
+    // has_role_ping=true).
     //
     // Each picker button carries data-picker-id (the inline picker div
     // to toggle) and data-input-id (the role-id input to receive the

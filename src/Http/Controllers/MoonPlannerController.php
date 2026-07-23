@@ -429,7 +429,7 @@ class MoonPlannerController extends Controller
      * Build the day-grouped calendar of planned pulls + actual extractions for
      * a date range, plus a list of scheduling mismatches.
      *
-     * Dedup rule (per Matt): a plan and a real pull for the same refinery
+     * Dedup rule: a plan and a real pull for the same refinery
      * within MATCH_TOLERANCE_MINUTES are the SAME pull — the plan is hidden and
      * only the real pull (locked) shows. If they're further apart but still in
      * the same cycle (within CYCLE_MATCH_WINDOW_HOURS), the in-game schedule
