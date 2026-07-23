@@ -133,10 +133,15 @@
             <small class="d-block text-muted mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer.</small>
             <ul class="mb-0" style="font-size: 0.85em;">
                 @foreach($warnings as $w)
-                    <li>
+                    <li class="mb-1">
                         <strong>{{ $w['moon_name'] }}</strong> ({{ $w['structure_name'] }}) —
                         planned <strong>{{ $w['planned'] }}</strong>, in-game <strong>{{ $w['actual'] }}</strong>
                         <span class="badge badge-warning">{{ $w['offset_hours'] }}h off</span>
+                        <button type="button" class="btn btn-xs btn-outline-secondary ml-1 btn-dismiss-mismatch"
+                                data-plan-id="{{ $w['plan_id'] }}"
+                                title="Retire the stale plan behind this warning (the in-game pull is unaffected)">
+                            <i class="fas fa-check"></i> Dismiss
+                        </button>
                     </li>
                 @endforeach
             </ul>
@@ -381,7 +386,19 @@ document.addEventListener('DOMContentLoaded', function () {
         destroy: '{{ url('mining-manager/moon/planner') }}',
         checkConflicts: '{{ route('mining-manager.moon.planner.check-conflicts') }}',
         history: '{{ route('mining-manager.moon.planner.history') }}',
+        base: '{{ url('mining-manager/moon/planner') }}',
     };
+
+    // Retire the stale plan behind a scheduling-mismatch warning.
+    $('.btn-dismiss-mismatch').on('click', function () {
+        const planId = $(this).data('plan-id');
+        if (!confirm('Retire this stale plan? The in-game extraction is unaffected.')) return;
+        $.ajax({
+            url: routes.base + '/' + planId + '/dismiss-mismatch',
+            method: 'POST',
+            data: { _token: CSRF },
+        }).done(() => window.location.reload()).fail(() => alert('Could not dismiss the mismatch.'));
+    });
 
     // ---- Build FullCalendar events from the day-grouped payload ----
     const events = [];

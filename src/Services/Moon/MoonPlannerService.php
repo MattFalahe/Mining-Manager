@@ -4,6 +4,7 @@ namespace MiningManager\Services\Moon;
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MoonExtractionPlan;
@@ -565,6 +566,81 @@ class MoonPlannerService
         }
 
         return $summary;
+    }
+
+    /**
+     * Find plans whose refinery has a real in-game extraction in the same
+     * cycle but at a materially different time (> MATCH_TOLERANCE_MINUTES),
+     * and fire a one-shot `schedule_mismatch` notification for each.
+     *
+     * This is the "wrong scheduled moon" alert: someone fired the drill on a
+     * different timer than the plan called for (or the plan went stale).
+     * Latched on the plan's `mismatch_notified_at` so a standing mismatch
+     * pings once — clearing that column re-arms it.
+     *
+     * Safe to run repeatedly (called from the extraction-update cron, after
+     * ESI data refreshes). Returns the number of notifications fired.
+     */
+    public function detectAndNotifyMismatches(int $corporationId): int
+    {
+        $tolerance = self::MATCH_TOLERANCE_MINUTES;
+        $cycleWindow = self::CYCLE_MATCH_WINDOW_HOURS * 60;
+        $fired = 0;
+
+        $plans = MoonExtractionPlan::forCorporation($corporationId)
+            ->active()
+            ->whereNull('mismatch_notified_at')
+            ->get();
+
+        if ($plans->isEmpty()) {
+            return 0;
+        }
+        MoonExtractionPlan::loadDisplayNames($plans);
+
+        foreach ($plans as $plan) {
+            $actuals = $this->existingActualTimes((int) $plan->structure_id);
+
+            // Nearest real pull to this plan.
+            $nearest = null;
+            $nearestOffset = null;
+            foreach ($actuals as $t) {
+                $offset = abs($plan->planned_arrival_time->diffInMinutes($t));
+                if ($nearestOffset === null || $offset < $nearestOffset) {
+                    $nearestOffset = $offset;
+                    $nearest = $t;
+                }
+            }
+
+            // Same cycle but off-tolerance = mismatch. Within tolerance is the
+            // same pull (fine); beyond the cycle window is a different cycle.
+            if ($nearest === null || $nearestOffset <= $tolerance || $nearestOffset > $cycleWindow) {
+                continue;
+            }
+
+            try {
+                $baseUrl = rtrim(config('app.url', ''), '/');
+                app(\MiningManager\Services\Notification\NotificationService::class)->sendScheduleMismatch([
+                    'moon_name' => $plan->moon_name ?? "Moon {$plan->moon_id}",
+                    'structure_name' => $plan->structure_name ?? "Structure {$plan->structure_id}",
+                    'planned_arrival_time' => $plan->planned_arrival_time->format('Y-m-d H:i') . ' EVE',
+                    'actual_arrival_time' => $nearest->format('Y-m-d H:i') . ' EVE',
+                    'offset_hours' => round($nearestOffset / 60, 1),
+                    'planner_url' => $baseUrl . '/mining-manager/moon/planner',
+                ]);
+
+                $plan->update(['mismatch_notified_at' => Carbon::now()]);
+                $fired++;
+
+                Log::info("Mining Manager: fired schedule_mismatch for plan {$plan->id}", [
+                    'structure_id' => $plan->structure_id,
+                    'offset_minutes' => (int) $nearestOffset,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error("Mining Manager: failed to fire schedule_mismatch for plan {$plan->id}: " . $e->getMessage());
+            }
+        }
+
+        return $fired;
     }
 
     /**

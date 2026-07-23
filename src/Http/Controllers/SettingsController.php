@@ -1257,6 +1257,7 @@ class SettingsController extends Controller
             $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
+            $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1327,6 +1328,7 @@ class SettingsController extends Controller
             $data['notify_moon_chunk_unstable'] = $request->boolean('notify_moon_chunk_unstable');
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
+            $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1503,6 +1505,7 @@ class SettingsController extends Controller
             'notify_moon_chunk_unstable' => 'nullable|boolean',
             'notify_extraction_started' => 'nullable|boolean',
             'notify_next_extraction_planned' => 'nullable|boolean',
+            'notify_schedule_mismatch' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
             'notify_event_created' => 'nullable|boolean',

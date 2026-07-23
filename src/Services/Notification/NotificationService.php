@@ -70,6 +70,7 @@ class NotificationService
     // Planner notifications (corp coordination — Moon Extraction Planner).
     const TYPE_EXTRACTION_STARTED = 'extraction_started';
     const TYPE_NEXT_EXTRACTION_PLANNED = 'next_extraction_planned';
+    const TYPE_SCHEDULE_MISMATCH = 'schedule_mismatch';
     const TYPE_EXTRACTION_AT_RISK = 'extraction_at_risk';
     const TYPE_EXTRACTION_LOST = 'extraction_lost';
     const TYPE_THEFT_DETECTED = 'theft_detected';
@@ -591,6 +592,32 @@ class NotificationService
     }
 
     /**
+     * Send a `schedule_mismatch` notification — the in-game extraction for a
+     * refinery is set to a materially different time than the Moon Extraction
+     * Planner called for ("wrong scheduled moon").
+     *
+     * Fires when a plan and the real pull for the same refinery are further
+     * apart than the planner's 30-minute match tolerance but still inside the
+     * same cycle — i.e. someone fired the drill on the wrong timer, or the plan
+     * is stale. One-shot per plan (latched on mismatch_notified_at).
+     *
+     * Corp-scoped (moon owner). Standalone — no cross-plugin dependency.
+     *
+     * Expected keys in $data:
+     *   moon_name, structure_name, planned_arrival_time, actual_arrival_time,
+     *   offset_hours, planner_url
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendScheduleMismatch(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '⚠️ **This moon is scheduled in-game at a different time than planned.** Check whether the drill was fired on the wrong timer — the in-game time is what EVE will actually run. Adjust the plan or re-fire to match.';
+        return $this->send(self::TYPE_SCHEDULE_MISMATCH, [], $data);
+    }
+
+    /**
      * Send an extraction_at_risk notification — cross-plugin threat warning.
      *
      * Fires when Structure Manager detects an Athanor/Tatara running an active
@@ -834,6 +861,7 @@ class NotificationService
             'report_generated' => self::TYPE_REPORT_GENERATED,
             'extraction_started' => self::TYPE_EXTRACTION_STARTED,
             'next_extraction_planned' => self::TYPE_NEXT_EXTRACTION_PLANNED,
+            'schedule_mismatch' => self::TYPE_SCHEDULE_MISMATCH,
             default => self::TYPE_CUSTOM,
         };
 
@@ -1290,6 +1318,7 @@ class NotificationService
             self::TYPE_REPORT_GENERATED => 'report_generated',
             self::TYPE_EXTRACTION_STARTED => 'extraction_started',
             self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             default => null,
         };
 
@@ -1324,6 +1353,7 @@ class NotificationService
             self::TYPE_REPORT_GENERATED => 'report_generated',
             self::TYPE_EXTRACTION_STARTED => 'extraction_started',
             self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             self::TYPE_CUSTOM => 'custom',
             default => null,
         };
@@ -1479,6 +1509,7 @@ class NotificationService
             self::TYPE_REPORT_GENERATED => 'report_generated',
             self::TYPE_EXTRACTION_STARTED => 'extraction_started',
             self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             default => null,
         };
 
@@ -1879,6 +1910,21 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
+            self::TYPE_SCHEDULE_MISMATCH => [
+                'subject' => sprintf('Moon Scheduled Off-Plan: %s', $data['moon_name'] ?? 'Unknown Moon'),
+                'body' => sprintf(
+                    "A moon is scheduled in-game at a different time than planned.\n\n" .
+                    "Moon: %s\nRefinery: %s\nPlanned: %s\nScheduled In-Game: %s\nDifference: %sh\n\n" .
+                    "Check whether the drill was fired on the wrong timer.\n\n" .
+                    "%s Management",
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['planned_arrival_time'] ?? 'Unknown',
+                    $data['actual_arrival_time'] ?? 'Unknown',
+                    $data['offset_hours'] ?? '?',
+                    $this->getCorpName()
+                )
+            ],
             self::TYPE_NEXT_EXTRACTION_PLANNED => [
                 'subject' => sprintf('Next Extraction Planned: %s', $data['structure_name'] ?? 'Refinery'),
                 'body' => sprintf(
@@ -2076,6 +2122,7 @@ class NotificationService
             self::TYPE_MOON_CHUNK_UNSTABLE => '#FF6B00',
             self::TYPE_EXTRACTION_STARTED => '#1ABC9C',
             self::TYPE_NEXT_EXTRACTION_PLANNED => '#9B59B6',
+            self::TYPE_SCHEDULE_MISMATCH => 'danger',
             self::TYPE_THEFT_DETECTED => '#FFA500',
             self::TYPE_CRITICAL_THEFT => 'danger',
             self::TYPE_ACTIVE_THEFT => 'danger',
@@ -2098,6 +2145,7 @@ class NotificationService
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
             self::TYPE_EXTRACTION_STARTED => "⛏️ Extraction started — " . ($data['moon_name'] ?? 'Unknown Moon') . " (chunk arrives " . ($data['chunk_arrival_time'] ?? 'soon') . ")",
             self::TYPE_NEXT_EXTRACTION_PLANNED => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner'),
+            self::TYPE_SCHEDULE_MISMATCH => "⚠️ " . ($data['moon_name'] ?? 'A moon') . " is scheduled off-plan — planned " . ($data['planned_arrival_time'] ?? '?') . ", in-game " . ($data['actual_arrival_time'] ?? '?'),
             self::TYPE_THEFT_DETECTED => "Theft Incident Detected — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_CRITICAL_THEFT => "🚨 CRITICAL THEFT — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_ACTIVE_THEFT => "🔥 ACTIVE THEFT IN PROGRESS — " . ($data['character_name'] ?? 'Unknown'),
@@ -2428,6 +2476,7 @@ class NotificationService
             self::TYPE_METENOX_CARGO_FULL => 0xFF9800, // Orange — yield-stopping warning, not safety
             self::TYPE_EXTRACTION_STARTED => 0x1ABC9C, // Teal — new chunk on the clock
             self::TYPE_NEXT_EXTRACTION_PLANNED => 0x9B59B6, // Purple — planner nudge
+            self::TYPE_SCHEDULE_MISMATCH => 0xC0392B, // Red — scheduled off-plan
             self::TYPE_THEFT_DETECTED => 0xFFA500, // Orange
             self::TYPE_CRITICAL_THEFT => 0xFF0000, // Red
             self::TYPE_ACTIVE_THEFT => 0xFF6B00, // Orange-red
@@ -2454,6 +2503,7 @@ class NotificationService
             self::TYPE_METENOX_CARGO_FULL => 'Metenox Cargo Bay Filling Up — Pull Soon',
             self::TYPE_EXTRACTION_STARTED => '⛏️ Moon Extraction Started',
             self::TYPE_NEXT_EXTRACTION_PLANNED => '🗓️ Next Extraction Planned',
+            self::TYPE_SCHEDULE_MISMATCH => '⚠️ Moon Scheduled Off-Plan',
             self::TYPE_THEFT_DETECTED => 'Theft Incident Detected',
             self::TYPE_CRITICAL_THEFT => 'CRITICAL THEFT DETECTED',
             self::TYPE_ACTIVE_THEFT => 'ACTIVE THEFT IN PROGRESS',
@@ -2597,6 +2647,14 @@ class NotificationService
                 isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
                 !empty($data['cadence_label']) ? ['title' => 'Cadence', 'value' => $data['cadence_label'], 'short' => true] : null,
                 !empty($data['source']) ? ['title' => 'Source', 'value' => ucfirst($data['source']), 'short' => true] : null,
+                !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
+            ])),
+            self::TYPE_SCHEDULE_MISMATCH => array_values(array_filter([
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['structure_name']) ? ['title' => 'Refinery', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['planned_arrival_time']) ? ['title' => 'Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
+                isset($data['actual_arrival_time']) ? ['title' => 'Scheduled In-Game', 'value' => $data['actual_arrival_time'], 'short' => true] : null,
+                isset($data['offset_hours']) ? ['title' => 'Difference', 'value' => $data['offset_hours'] . 'h off plan', 'short' => true] : null,
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([

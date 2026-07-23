@@ -137,13 +137,189 @@ class DiagnosticController extends Controller
         // Every check is read-only and tolerant of missing tables/columns.
         $metenoxValidation = $this->buildMetenoxCargoValidation();
 
+        // System Validation: Moon Extraction Planner health probe. Same
+        // read-only, tolerant-of-missing-schema contract as the Metenox set.
+        $plannerValidation = $this->buildMoonPlannerValidation();
+
         return view('mining-manager::diagnostic.index', compact(
             'testDataCounts',
             'webhooks',
             'seatCharacters',
             'notificationSettings',
-            'metenoxValidation'
+            'metenoxValidation',
+            'plannerValidation'
         ));
+    }
+
+    /**
+     * Build the Moon Extraction Planner validation result set for the System
+     * Validation tab. Same shape as buildMetenoxCargoValidation():
+     * ['label', 'status' => ok|warn|fail, 'message'].
+     *
+     * Checks:
+     *   - Migration 000016: moon_extraction_plans table
+     *   - Migration 000016: extraction_started_sent / next_planned_sent latches
+     *   - Migration 000017: moon_extraction_plan_audits table
+     *   - Migration 000018: mismatch latch + webhook opt-in column
+     *   - Moon Owner Corporation configured (the planner's scope)
+     *   - Manager Core fast-poll handler registration (the wiring that
+     *     silently breaks — SM burned a debug session on exactly this)
+     *   - Planner data sanity: refineries, coverage gaps, open mismatches
+     */
+    private function buildMoonPlannerValidation(): array
+    {
+        $checks = [];
+
+        // 1. Core planner table
+        $hasPlans = \Schema::hasTable('moon_extraction_plans');
+        $checks[] = [
+            'label'   => 'Migration 000016: moon_extraction_plans table',
+            'status'  => $hasPlans ? 'ok' : 'fail',
+            'message' => $hasPlans
+                ? 'Planner table present.'
+                : 'Table missing — run migrations. The Moon Planner page cannot function without it.',
+        ];
+
+        // 2. Notification latches on moon_extractions
+        $hasStartedLatch = \Schema::hasColumn('moon_extractions', 'extraction_started_sent');
+        $hasNextLatch = \Schema::hasColumn('moon_extractions', 'next_planned_sent');
+        $latchesOk = $hasStartedLatch && $hasNextLatch;
+        $checks[] = [
+            'label'   => 'Migration 000016: extraction_started_sent / next_planned_sent latches',
+            'status'  => $latchesOk ? 'ok' : 'fail',
+            'message' => $latchesOk
+                ? 'Both idempotency latches present on moon_extractions.'
+                : 'Latch column(s) missing — run migrations. Without them the planner notifications would re-fire every cron tick.',
+        ];
+
+        // 3. Audit table
+        $hasAudits = \Schema::hasTable('moon_extraction_plan_audits');
+        $checks[] = [
+            'label'   => 'Migration 000017: moon_extraction_plan_audits table',
+            'status'  => $hasAudits ? 'ok' : 'fail',
+            'message' => $hasAudits
+                ? 'Change-history table present.'
+                : 'Table missing — run migrations. The planner History modal will return nothing.',
+        ];
+
+        // 4. Mismatch notification schema
+        $hasMismatchLatch = $hasPlans && \Schema::hasColumn('moon_extraction_plans', 'mismatch_notified_at');
+        $hasMismatchCol = \Schema::hasColumn('webhook_configurations', 'notify_schedule_mismatch');
+        $mismatchOk = $hasMismatchLatch && $hasMismatchCol;
+        $checks[] = [
+            'label'   => 'Migration 000018: schedule-mismatch latch + webhook opt-in',
+            'status'  => $mismatchOk ? 'ok' : 'fail',
+            'message' => $mismatchOk
+                ? 'mismatch_notified_at + notify_schedule_mismatch present.'
+                : 'Column(s) missing — run migrations. The "moon scheduled off-plan" alert cannot latch or be subscribed to.',
+        ];
+
+        // 5. Moon Owner Corporation — the planner's operating scope
+        $moonOwner = $this->settingsService->getTaxProgramCorporationId();
+        $checks[] = [
+            'label'   => 'Settings: Moon Owner Corporation configured',
+            'status'  => $moonOwner ? 'ok' : 'warn',
+            'message' => $moonOwner
+                ? "Planner scoped to corporation {$moonOwner}."
+                : 'Not set — the planner page shows an empty state. Configure it in Settings → General.',
+        ];
+
+        // 6. Manager Core fast-poll registration. This is the wiring that fails
+        //    silently: MC binds the registry singleton under the ::class key, so
+        //    a mis-resolved container key leaves the handler on a throwaway
+        //    instance MC's poll job never sees.
+        $mcAvailable = \MiningManager\Integrations\MoonFastPollIntegration::registryAvailable();
+        $mode = \MiningManager\Integrations\MoonFastPollIntegration::mode();
+        if (!$mcAvailable) {
+            $checks[] = [
+                'label'   => 'Manager Core fast-poll: extraction_started detection',
+                'status'  => 'warn',
+                'message' => 'Manager Core not installed — falling back to the SeAT-native pass (extraction_started fires after the ~30 min moon-extraction endpoint cache instead of ~2 min). This is expected on a standalone install.',
+            ];
+        } elseif ($mode !== \MiningManager\Integrations\MoonFastPollIntegration::MODE_AUTO) {
+            $checks[] = [
+                'label'   => 'Manager Core fast-poll: extraction_started detection',
+                'status'  => 'warn',
+                'message' => "Manager Core is installed but detection mode is '{$mode}' — fast-poll is disabled by operator choice, so extraction_started uses the slower SeAT-native pass. Change at Settings → Notifications → Extraction Started — Detection Speed.",
+            ];
+        } else {
+            $registered = false;
+            try {
+                $registry = app(\ManagerCore\Services\ESI\EsiNotificationRegistry::class);
+                $registered = in_array('MoonminingExtractionStarted', $registry->getRegisteredTypes(), true);
+            } catch (\Throwable $e) {
+                $registered = false;
+            }
+            $checks[] = [
+                'label'   => 'Manager Core fast-poll: MoonminingExtractionStarted registered',
+                'status'  => $registered ? 'ok' : 'fail',
+                'message' => $registered
+                    ? 'Handler registered with MC\'s EsiNotificationRegistry — extraction_started detects in ~2 min. NOTE: this reflects THIS web process; MC\'s poll job runs in a queue worker, so also confirm via MC\'s Plugin Bridge dashboard.'
+                    : 'Handler NOT registered in this process. MC\'s poll job will never route MoonminingExtractionStarted to Mining Manager. Check that the plugin booted cleanly and that a director with esi-characters.read_notifications.v1 is in MC\'s ESI key pool.',
+            ];
+        }
+
+        // 7. Planner data sanity — coverage gaps + open mismatches
+        if ($hasPlans && $moonOwner) {
+            try {
+                $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
+                $refineries = $planner->refineriesForCorporation((int) $moonOwner);
+                $total = $refineries->count();
+                $uncovered = 0;
+                foreach ($refineries as $r) {
+                    if ($planner->futurePlanCount((int) $r->structure_id) === 0) {
+                        $uncovered++;
+                    }
+                }
+                $checks[] = [
+                    'label'   => 'Planner coverage: refineries with an upcoming planned pull',
+                    'status'  => $total === 0 ? 'warn' : ($uncovered === 0 ? 'ok' : 'warn'),
+                    'message' => $total === 0
+                        ? 'No Athanor/Tatara refineries found for the Moon Owner Corporation.'
+                        : ($uncovered === 0
+                            ? "All {$total} refineries have at least one upcoming planned pull."
+                            : "{$uncovered} of {$total} refineries have no upcoming planned pull (skipped moons). Use Auto-fill from History on the planner."),
+                ];
+
+                $openMismatches = \MiningManager\Models\MoonExtractionPlan::forCorporation((int) $moonOwner)
+                    ->active()
+                    ->whereNotNull('mismatch_notified_at')
+                    ->count();
+                $checks[] = [
+                    'label'   => 'Planner: schedule mismatches flagged',
+                    'status'  => $openMismatches === 0 ? 'ok' : 'warn',
+                    'message' => $openMismatches === 0
+                        ? 'No moons currently scheduled off-plan.'
+                        : "{$openMismatches} plan(s) flagged as scheduled off-plan. Review the warning banner on the planner and dismiss once reconciled.",
+                ];
+            } catch (\Throwable $e) {
+                $checks[] = [
+                    'label'   => 'Planner data sanity',
+                    'status'  => 'warn',
+                    'message' => 'Could not evaluate planner data: ' . $e->getMessage(),
+                ];
+            }
+        }
+
+        // Overall summary pill (worst-status wins) — same contract as the
+        // Metenox validation set so the blade renders both identically.
+        $hasFailure = false;
+        $hasWarning = false;
+        foreach ($checks as $c) {
+            if ($c['status'] === 'fail') $hasFailure = true;
+            if ($c['status'] === 'warn') $hasWarning = true;
+        }
+        $overall = $hasFailure ? 'fail' : ($hasWarning ? 'warn' : 'ok');
+
+        return [
+            'checks'  => $checks,
+            'overall' => $overall,
+            'summary' => $hasFailure
+                ? 'One or more critical checks failed — the Moon Extraction Planner will not work correctly until these are resolved.'
+                : ($hasWarning
+                    ? 'Planner is functional but has configuration or coverage gaps. Review the warnings below.'
+                    : 'All planner checks passed. Scheduling, notifications and fast-poll detection should work normally.'),
+        ];
     }
 
     /**
@@ -3252,6 +3428,14 @@ class DiagnosticController extends Controller
                 'time_until_arrival' => $data['time_until_arrival'] ?? '6 days',
                 'estimated_value' => (int) ($data['estimated_value'] ?? 1200000000),
             ])),
+            'schedule_mismatch' => $ns->sendScheduleMismatch(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'planned_arrival_time' => $data['planned_arrival_time'] ?? now()->addDays(7)->format('Y-m-d H:i'),
+                'actual_arrival_time' => $data['actual_arrival_time'] ?? now()->addDays(7)->subHours(3)->format('Y-m-d H:i'),
+                'offset_hours' => $data['offset_hours'] ?? 3.0,
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
             'next_extraction_planned' => $ns->sendNextExtractionPlanned(array_merge($data, [
                 'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
@@ -3546,6 +3730,7 @@ class DiagnosticController extends Controller
             'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
             'extraction_started' => 'Extraction Started (new chunk)',
             'next_extraction_planned' => 'Next Extraction Planned (planner nudge)',
+            'schedule_mismatch' => 'Moon Scheduled Off-Plan (planner mismatch)',
             'metenox_cargo_full' => 'Metenox Cargo Bay Full (yield-stopping)',
             'extraction_at_risk' => 'Extraction at Risk (fuel / attack / reinforced)',
             'extraction_lost' => 'Extraction Lost (structure destroyed)',

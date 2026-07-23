@@ -55,12 +55,14 @@ class MoonExtractionPlan extends Model
         'status',
         'linked_extraction_id',
         'variance_hours',
+        'mismatch_notified_at',
         'created_by',
         'notes',
     ];
 
     protected $casts = [
         'planned_arrival_time' => 'datetime',
+        'mismatch_notified_at' => 'datetime',
         'cadence_days' => 'integer',
         'variance_hours' => 'integer',
         'corporation_id' => 'integer',

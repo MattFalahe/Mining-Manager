@@ -71,6 +71,8 @@ function loadWebhookData(webhookId) {
                 if (startedField) startedField.checked = !!webhook.notify_extraction_started;
                 const nextPlannedField = document.getElementById('notify-next-extraction-planned');
                 if (nextPlannedField) nextPlannedField.checked = !!webhook.notify_next_extraction_planned;
+                const mismatchField = document.getElementById('notify-schedule-mismatch');
+                if (mismatchField) mismatchField.checked = !!webhook.notify_schedule_mismatch;
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
@@ -131,6 +133,7 @@ function saveWebhook() {
         notify_moon_chunk_unstable: document.getElementById('notify-moon-chunk-unstable')?.checked ? 1 : 0,
         notify_extraction_started: document.getElementById('notify-extraction-started')?.checked ? 1 : 0,
         notify_next_extraction_planned: document.getElementById('notify-next-extraction-planned')?.checked ? 1 : 0,
+        notify_schedule_mismatch: document.getElementById('notify-schedule-mismatch')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,

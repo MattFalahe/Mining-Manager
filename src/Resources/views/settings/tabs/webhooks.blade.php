@@ -434,6 +434,13 @@
                                 Next Extraction Planned (planner)
                             </label>
                         </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-schedule-mismatch" name="notify_schedule_mismatch" value="1">
+                            <label class="custom-control-label" for="notify-schedule-mismatch">
+                                <i class="fas fa-exclamation-triangle text-danger"></i>
+                                Moon Scheduled Off-Plan
+                            </label>
+                        </div>
 
                         @php
                             // Cross-plugin checks for extraction_at_risk + extraction_lost.

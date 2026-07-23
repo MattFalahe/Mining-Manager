@@ -180,6 +180,25 @@ class UpdateMoonExtractionsCommand extends Command
         // causing moon arrival notifications to silently never fire.)
         $this->extractionService->updateExtractionStatuses();
 
+        // Planner reconciliation — now that ESI extraction data is fresh, pair
+        // planned pulls with the real ones and fire `schedule_mismatch` for any
+        // moon whose in-game timer diverged from the plan ("wrong scheduled
+        // moon"). One-shot per plan; no-ops when no Moon Owner Corp is set.
+        try {
+            $moonOwnerCorpId = $settingsService->getTaxProgramCorporationId();
+            if ($moonOwnerCorpId !== null) {
+                $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
+                $planner->reconcile($moonOwnerCorpId);
+                $mismatches = $planner->detectAndNotifyMismatches($moonOwnerCorpId);
+                if ($mismatches > 0) {
+                    $this->warn("Fired {$mismatches} schedule-mismatch notification(s).");
+                }
+            }
+        } catch (\Exception $e) {
+            // Planner reconciliation must never break the extraction import.
+            $this->error("Planner reconciliation failed: {$e->getMessage()}");
+        }
+
         $this->info("\nMoon extraction update complete!");
         $this->info("Created: {$created} new extractions");
         $this->info("Updated: {$updated} existing extractions");

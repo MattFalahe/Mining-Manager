@@ -465,11 +465,6 @@ Route::group([
             'uses' => 'MoonPlannerController@index',
         ]);
 
-        Route::get('/planner/data', [
-            'as' => 'mining-manager.moon.planner.data',
-            'uses' => 'MoonPlannerController@data',
-        ]);
-
         Route::get('/planner/history', [
             'as' => 'mining-manager.moon.planner.history',
             'uses' => 'MoonPlannerController@history',
@@ -493,6 +488,11 @@ Route::group([
         Route::put('/planner/{id}', [
             'as' => 'mining-manager.moon.planner.update',
             'uses' => 'MoonPlannerController@update',
+        ]);
+
+        Route::post('/planner/{id}/dismiss-mismatch', [
+            'as' => 'mining-manager.moon.planner.dismiss-mismatch',
+            'uses' => 'MoonPlannerController@dismissMismatch',
         ]);
 
         Route::delete('/planner/{id}', [

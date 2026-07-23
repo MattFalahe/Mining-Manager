@@ -710,6 +710,33 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             Notifications) prompts a confirmation listing the clashing moons. Enforced client- and
                             server-side, so it can't be bypassed.
                         </li>
+                        <li>
+                            <strong>Three months at once, all in EVE time (UTC)</strong> &mdash; the anchor month plus
+                            the next two, paged by prev/today/next. Times match EVE's in-game structure scheduler; the
+                            add/edit form takes EVE time and confirms what that is in your local zone.
+                        </li>
+                        <li>
+                            <strong>In-game pulls are locked</strong> &mdash; live, completed and archived extractions
+                            (and plans already reconciled to one) carry a lock and can't be edited here; clicking one
+                            explains why. They're set in EVE, so the planner only ever records them.
+                        </li>
+                        <li>
+                            <strong>30-minute dedup + off-plan detection</strong> &mdash; a plan and the real pull within
+                            30 minutes are the same pull, so it renders once. Further apart but the same cycle means the
+                            drill was fired on a different timer: the pull is flagged red, listed in a
+                            <em>Scheduling mismatches</em> banner with a one-click <strong>Dismiss</strong>, and a
+                            <strong>Moon Scheduled Off-Plan</strong> notification fires.
+                        </li>
+                        <li>
+                            <strong>Refinery panel</strong> &mdash; every refinery with its cadence, projected next pull,
+                            a coverage badge (<code>Planned 2&times;</code> / amber <code>Not planned</code> = a skipped
+                            moon, counted across the whole horizon) and a highest-ore-tier badge (<strong>R4&ndash;R64</strong>).
+                            Uncovered refineries sort to the top.
+                        </li>
+                        <li>
+                            <strong>Change history</strong> &mdash; the <em>History</em> button shows who created, moved
+                            or removed each planned pull, with before&rarr;after times.
+                        </li>
                     </ul>
                     <h4><i class="fas fa-bell"></i> Two new notifications</h4>
                     <ul>
@@ -725,6 +752,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>
                             <strong>Next Extraction Planned</strong> &mdash; fires <em>after</em> a chunk is ready,
                             announcing the refinery's next planned pull so a director re-fires the drill on schedule.
+                        </li>
+                        <li>
+                            <strong>Moon Scheduled Off-Plan</strong> &mdash; fires when a moon's in-game extraction is
+                            set to a materially different time than the planner called for (beyond the 30-minute
+                            tolerance, same cycle). One ping per plan, so a standing mismatch doesn't repeat.
                         </li>
                     </ul>
                     <p class="mb-0"><small class="text-muted">

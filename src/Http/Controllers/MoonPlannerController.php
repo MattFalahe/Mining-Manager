@@ -109,32 +109,43 @@ class MoonPlannerController extends Controller
     }
 
     /**
-     * JSON feed of the planner calendar for a month (AJAX month navigation).
+     * Dismiss a scheduling mismatch by superseding the stale plan behind it.
+     *
+     * The real in-game pull is the source of truth; once the operator has
+     * eyeballed the divergence, retiring the plan clears the warning banner and
+     * the red flag without touching the extraction itself.
      */
-    public function data(Request $request)
+    public function dismissMismatch($id)
     {
         $corporationId = $this->plannerCorporationId();
-        if (!$corporationId) {
-            return response()->json(['calendar' => [], 'refineries' => []]);
+        $plan = MoonExtractionPlan::where('id', $id)
+            ->where('corporation_id', $corporationId)
+            ->first();
+
+        if (!$plan) {
+            return response()->json(['error' => 'Plan not found.'], 404);
         }
 
-        $month = $request->input('month')
-            ? Carbon::parse($request->input('month'))->startOfMonth()
-            : Carbon::now()->startOfMonth();
+        [$actorId, $actorName] = $this->actor();
 
-        $built = $this->buildCalendar(
-            $corporationId,
-            $month->copy()->startOfMonth(),
-            $month->copy()->endOfMonth()
-        );
-
-        return response()->json([
-            'month' => $month->format('Y-m'),
-            'min_gap_hours' => $this->planner->getMinGapHours(),
-            'calendar' => $built['calendar'],
-            'warnings' => $built['warnings'],
-            'refineries' => $this->buildRefinerySummaries($corporationId),
+        $plan->update([
+            'status' => MoonExtractionPlan::STATUS_SUPERSEDED,
+            'mismatch_notified_at' => Carbon::now(),
         ]);
+
+        \MiningManager\Models\MoonExtractionPlanAudit::record([
+            'corporation_id' => $corporationId,
+            'plan_id' => $plan->id,
+            'structure_id' => $plan->structure_id,
+            'moon_id' => $plan->moon_id,
+            'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_DELETED,
+            'character_id' => $actorId,
+            'character_name' => $actorName,
+            'old_arrival' => $plan->planned_arrival_time,
+            'detail' => 'Dismissed schedule mismatch — ' . $this->planLabel($plan),
+        ]);
+
+        return response()->json(['success' => true]);
     }
 
     /**
@@ -523,6 +534,7 @@ class MoonPlannerController extends Controller
                     // Same cycle but the times diverged — flag it.
                     $mismatchByActual[$nearest['id']] = true;
                     $warnings[] = [
+                        'plan_id' => $plan->id,
                         'moon_name' => $plan->moon_name ?? "Moon {$plan->moon_id}",
                         'structure_name' => $plan->structure_name ?? "Structure {$plan->structure_id}",
                         'planned' => $plan->planned_arrival_time->format('M d, Y H:i') . ' EVE',

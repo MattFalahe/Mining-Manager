@@ -152,6 +152,15 @@
                         'has_user_ping' => false,
                         'has_show_amount' => false,
                     ],
+                    'schedule_mismatch' => [
+                        'label' => 'Moon Scheduled Off-Plan',
+                        'icon' => 'fas fa-exclamation-triangle text-danger',
+                        'desc' => 'Fires when a moon\'s in-game extraction is set to a materially different time than the Moon Extraction Planner called for (more than the 30-minute match tolerance, but still the same cycle) — i.e. the drill was fired on the wrong timer, or the plan is stale. One ping per plan. Standalone.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
                     'extraction_at_risk' => [
                         'label' => 'Extraction at Risk',
                         'icon' => 'fas fa-fire text-danger',
@@ -614,6 +623,7 @@
                         'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'extraction_started' => ['label' => 'Extraction Started', 'icon' => 'fas fa-hammer text-info'],
                         'next_extraction_planned' => ['label' => 'Next Extraction Planned', 'icon' => 'fas fa-calendar-check text-primary'],
+                        'schedule_mismatch' => ['label' => 'Moon Scheduled Off-Plan', 'icon' => 'fas fa-exclamation-triangle text-danger'],
                         'theft_detected' => ['label' => 'Theft Detected', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'critical_theft' => ['label' => 'Critical Theft', 'icon' => 'fas fa-skull-crossbones text-danger'],
                         'active_theft' => ['label' => 'Active Theft', 'icon' => 'fas fa-bolt text-danger'],

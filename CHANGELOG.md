@@ -23,6 +23,23 @@ A dedicated planner page at **Moon Manager → Moon Planner** (`/mining-manager/
 
 Both are per-webhook opt-in (off by default), wired into the master type toggles, Slack/EVE-mail channel toggles, the Notification Routing Map, and the Diagnostic test-fire panel. Discord, Slack and EVE-mail formatters all carry dedicated layouts.
 
+### 🗓️ Planner: three-month view, EVE time, and dedup
+
+- **Three months at once.** The planner shows the anchor month plus the next two as stacked grids, paged by prev/today/next — a quarter visible at a glance, a year by paging. Auto-fill covers all three.
+- **Everything in EVE time (UTC)** — the clock EVE's in-game structure scheduler uses. Calendars render in UTC; the add/edit form takes EVE time and shows a live *"that's [time] your local time"* confirmation; locked entries show both.
+- **Auto-fill now fills the month, not just the next pull.** It walks each refinery's cadence across the whole window and places every occurrence that isn't already covered by a real pull, an archived pull, or an existing plan. Previously it projected a single next pull and rolled it past `now`, so an occurrence landing earlier in the viewed month got skipped to the following month. Refineries with too little history fall back to the corp-median cadence (flagged as estimated).
+- **Locked in-game pulls.** Live/completed extractions and plans reconciled to a real extraction carry a lock + dashed edge and can't be edited; clicking one explains why. Archived pulls now render too, so a refinery whose chunk already arrived and was archived no longer vanishes from the calendar.
+- **30-minute dedup.** A plan and the real pull for the same refinery within 30 minutes are the same pull — the plan is hidden so it stops rendering twice.
+- **Off-plan detection.** Further apart but still the same cycle means the in-game timer diverged from the plan: the real pull is flagged red, the pair is listed in a **Scheduling mismatches** banner with a one-click **Dismiss** (retires the stale plan; the extraction is untouched), and a new **Moon Scheduled Off-Plan** notification fires (one ping per plan, latched). `reconcile()` tightened to the same 30-minute tolerance so it only confirms genuine matches.
+- **Event colours fixed** — events only had a left border, so everything rendered FullCalendar's default blue regardless of the legend. Backgrounds are now coloured per type and the legend matches.
+
+### 🏭 Planner: refinery coverage, ore tiers, and change history
+
+- **Coverage badges.** Every refinery shows how many upcoming pulls are planned — `Planned 2×` / `Planned 1×` / amber **`Not planned`** (the skipped-moon indicator), counted across the whole horizon so it works for a year-out plan. Uncovered refineries sort to the top.
+- **Highest-ore-tier badges.** Each refinery carries an **R4–R64** badge (gold → grey) derived from its latest extraction's `ore_composition`, so moon type reads at a glance.
+- **Change history.** New `moon_extraction_plan_audits` table records who created / moved / deleted each planned pull with before→after times; auto-fill logs an aggregate entry. A **History** button lists the last 100 changes.
+- **Planner diagnostic.** System Validation gains a **Moon Extraction Planner** card: schema checks for migrations 000016–000018, Moon Owner Corp scope, **Manager Core fast-poll handler registration** (the wiring that fails silently — a mis-resolved container key leaves the handler on a throwaway instance MC's poll job never sees), planner coverage gaps, and open scheduling mismatches.
+
 ### ⚡ Manager Core fast-poll for Extraction Started
 
 When Manager Core is installed, MM now registers a handler with MC's ESI fast-poll registry and reacts to the in-game `MoonminingExtractionStarted` notification in **~2 minutes** — instead of waiting on the corp moon-extraction endpoint's ~30 min cache. Same mechanism Structure Manager uses for attack/fuel alerts. The two paths are **mutually exclusive**: when fast-poll is active the SeAT-native `extraction_started` cron pass is suppressed, so there are never duplicate notifications. New setting *Settings → Notifications → Extraction Started — Detection Speed* (`auto` / `seat_native`, default `auto`) is the operator escape hatch. Standalone installs (no Manager Core) keep using the SeAT-native path automatically.
@@ -30,7 +47,8 @@ When Manager Core is installed, MM now registers a handler with MC's ESI fast-po
 ### 📦 Schema
 
 - New table `moon_extraction_plans` (migration `2026_01_01_000016`).
-- Additive columns: `moon_extractions.extraction_started_sent` + `next_planned_sent` (idempotency latches), `webhook_configurations.notify_extraction_started` + `notify_next_extraction_planned` (per-webhook opt-in). All defaulted, no backfill required.
+- New table `moon_extraction_plan_audits` (migration `2026_01_01_000017`) — planner change history.
+- Additive columns: `moon_extractions.extraction_started_sent` + `next_planned_sent` (idempotency latches), `webhook_configurations.notify_extraction_started` + `notify_next_extraction_planned` (per-webhook opt-in), and via migration `2026_01_01_000018` `moon_extraction_plans.mismatch_notified_at` + `webhook_configurations.notify_schedule_mismatch`. All defaulted, no backfill required.
 
 ## [2.0.2] — 2026-05-31 — The Ecosystem Era: Field Repairs
 
