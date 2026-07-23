@@ -2,57 +2,37 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
-## [Unreleased] — The Planner Era
+## [Unreleased] — The Ecosystem Era: The Moon Planner
 
-> **Mental model:** SeAT can only *read* the moon extractions a director fires in-game — it can't reach into the structure. So the new **Moon Extraction Planner** is a corp-internal *coordination layer*, not a remote control. It lets you lay each refinery's projected next pull onto a month calendar and **stagger** arrivals so a small crew isn't drowned by eight chunks landing the same evening. Chunks not mined promptly are wasted — that's the risk this feature exists to manage. Two new notifications bracket the extraction lifecycle: one when a pull *starts* (read from the in-game director notification), one *after* a chunk is ready that announces the refinery's next planned pull. Everything additive: one new table, one standalone permission, two opt-in notification types. No breaking changes. No new ESI scopes.
+The Moon Extraction Planner: a corp-internal calendar for staggering refinery pulls so chunks don't clump faster than a small crew can mine them. SeAT can only read the extractions a director fires in-game, so the planner is a coordination tool — it never controls the structure. Additive: one new permission, two new tables, a handful of columns, three opt-in notifications. No new ESI scopes.
 
-### 🚀 New: Moon Extraction Planner
+### Moon Extraction Planner
 
-A dedicated planner page at **Moon Manager → Moon Planner** (`/mining-manager/moon/planner`), gated by a new standalone **`mining-manager.moon_manager`** ability (directors and admins also have access). A month calendar shows each refinery's planned pulls alongside the real extractions, with a per-refinery sidebar showing cadence, last arrival, and the projected next pull.
+- New **Moon Planner** page under Moon Manager, gated by the standalone `mining-manager.moon_manager` permission (directors and admins included).
+- Shows three months at once, all in **EVE time (UTC)** — the clock the in-game structure scheduler uses. The add/edit form takes EVE time and confirms what that is in your local zone.
+- **Auto-fill from history** projects each refinery's pulls from its arrival cadence (needs 2+ past arrivals) and spreads them to honour a configurable minimum gap (default 24h, set in Settings → Notifications). Refineries with too little history of their own use the corp-median cadence.
+- **Re-anchor** a recurring day by moving a pull — future projections follow the new day.
+- **Minimum-gap guard**: placing a pull within the gap window of another arrival asks for confirmation, enforced client- and server-side.
+- Live and completed extractions are **locked** — they're set in-game, so the planner records them and can't edit them. Archived pulls stay visible.
+- Per-refinery panel with cadence, next projected pull, a coverage badge (`Planned N×` / amber `Not planned` for a skipped moon) and a highest-ore-tier badge (R4–R64). Uncovered refineries sort to the top.
+- **Change history**: who created, moved or removed each planned pull.
 
-- **Auto-fill from history** — projects each refinery's next pull from its arrival history (needs ≥ 2 past arrivals to derive a cadence; uses the median interval when ≥ 3) and lays them on the calendar, optionally spreading them so none violate the minimum gap.
-- **Re-anchor a recurring day** — drag a moon that's been landing Mondays onto Tuesday; the move sticks. The planner re-anchors off the moved slot, so future projections chain from the new day rather than snapping back.
-- **< 24h proximity guard** — placing or moving a pull within the minimum-gap window of another arrival (planned *or* live) raises a confirmation listing the clashing moons and the actual gap: *"Moon X arrives only 18h after Moon Y — plan this anyway?"* Enforced on both sides: a JS modal **and** a server-side check that refuses the save unless explicitly confirmed.
-- **Configurable gap** — Settings → Notifications → *Moon Planner — Minimum Arrival Gap* (default 24h, clamped 1–168h). Smaller corps can widen it (e.g. 36h); larger groups can tighten it.
-- **Plan-vs-actual reconciliation** — when a real extraction shows up matching a planned slot, the plan is confirmed and linked, recording the variance.
+### Notifications
 
-### 🔔 New notifications
+- **Extraction Started** — a refinery lit its drill. With Manager Core installed it's detected in about 2 minutes via ESI fast-poll instead of the ~30-minute moon-extraction endpoint cache. Toggle at Settings → Notifications → Extraction Started — Detection Speed.
+- **Next Extraction Planned** — after a chunk is ready, announces the refinery's next planned pull.
+- **Moon Scheduled Off-Plan** — a moon's in-game extraction is set more than 30 minutes off the plan; flagged on the calendar and pinged once.
 
-- **Extraction Started** — fires when a refinery begins a new extraction, read from the in-game `MoonminingExtractionStarted` director notification MM already ingests. Standalone (no Manager Core / Structure Manager required).
-- **Next Extraction Planned** — fires **after** a chunk's "ready" notification has gone out, announcing the refinery's next planned pull so a director re-fires the drill on schedule and keeps the staggered rotation intact.
+All three are per-webhook opt-in and off by default.
 
-Both are per-webhook opt-in (off by default), wired into the master type toggles, Slack/EVE-mail channel toggles, the Notification Routing Map, and the Diagnostic test-fire panel. Discord, Slack and EVE-mail formatters all carry dedicated layouts.
+### Schema
 
-### 🗓️ Planner: three-month view, EVE time, and dedup
-
-- **Three months at once.** The planner shows the anchor month plus the next two as stacked grids, paged by prev/today/next — a quarter visible at a glance, a year by paging. Auto-fill covers all three.
-- **Everything in EVE time (UTC)** — the clock EVE's in-game structure scheduler uses. Calendars render in UTC; the add/edit form takes EVE time and shows a live *"that's [time] your local time"* confirmation; locked entries show both.
-- **Auto-fill now fills the month, not just the next pull.** It walks each refinery's cadence across the whole window and places every occurrence that isn't already covered by a real pull, an archived pull, or an existing plan. Previously it projected a single next pull and rolled it past `now`, so an occurrence landing earlier in the viewed month got skipped to the following month. Refineries with too little history fall back to the corp-median cadence (flagged as estimated).
-- **Locked in-game pulls.** Live/completed extractions and plans reconciled to a real extraction carry a lock + dashed edge and can't be edited; clicking one explains why. Archived pulls now render too, so a refinery whose chunk already arrived and was archived no longer vanishes from the calendar.
-- **30-minute dedup.** A plan and the real pull for the same refinery within 30 minutes are the same pull — the plan is hidden so it stops rendering twice.
-- **Off-plan detection.** Further apart but still the same cycle means the in-game timer diverged from the plan: the real pull is flagged red, the pair is listed in a **Scheduling mismatches** banner with a one-click **Dismiss** (retires the stale plan; the extraction is untouched), and a new **Moon Scheduled Off-Plan** notification fires (one ping per plan, latched). `reconcile()` tightened to the same 30-minute tolerance so it only confirms genuine matches.
-- **Event colours fixed** — events only had a left border, so everything rendered FullCalendar's default blue regardless of the legend. Backgrounds are now coloured per type and the legend matches.
-
-### 🏭 Planner: refinery coverage, ore tiers, and change history
-
-- **Coverage badges.** Every refinery shows how many upcoming pulls are planned — `Planned 2×` / `Planned 1×` / amber **`Not planned`** (the skipped-moon indicator), counted across the whole horizon so it works for a year-out plan. Uncovered refineries sort to the top.
-- **Highest-ore-tier badges.** Each refinery carries an **R4–R64** badge (gold → grey) derived from its latest extraction's `ore_composition`, so moon type reads at a glance.
-- **Change history.** New `moon_extraction_plan_audits` table records who created / moved / deleted each planned pull with before→after times; auto-fill logs an aggregate entry. A **History** button lists the last 100 changes.
-- **Planner diagnostic.** System Validation gains a **Moon Extraction Planner** card: schema checks for migrations 000019–000021, Moon Owner Corp scope, **Manager Core fast-poll handler registration** (the wiring that fails silently — a mis-resolved container key leaves the handler on a throwaway instance MC's poll job never sees), planner coverage gaps, and open scheduling mismatches.
-
-### ⚡ Manager Core fast-poll for Extraction Started
-
-When Manager Core is installed, MM now registers a handler with MC's ESI fast-poll registry and reacts to the in-game `MoonminingExtractionStarted` notification in **~2 minutes** — instead of waiting on the corp moon-extraction endpoint's ~30 min cache. Same mechanism Structure Manager uses for attack/fuel alerts. The two paths are **mutually exclusive**: when fast-poll is active the SeAT-native `extraction_started` cron pass is suppressed, so there are never duplicate notifications. New setting *Settings → Notifications → Extraction Started — Detection Speed* (`auto` / `seat_native`, default `auto`) is the operator escape hatch. Standalone installs (no Manager Core) keep using the SeAT-native path automatically.
-
-### 📦 Schema
-
-- New table `moon_extraction_plans` (migration `2026_01_01_000019`).
-- New table `moon_extraction_plan_audits` (migration `2026_01_01_000020`) — planner change history.
-- Additive columns: `moon_extractions.extraction_started_sent` + `next_planned_sent` (idempotency latches), `webhook_configurations.notify_extraction_started` + `notify_next_extraction_planned` (per-webhook opt-in), and via migration `2026_01_01_000021` `moon_extraction_plans.mismatch_notified_at` + `webhook_configurations.notify_schedule_mismatch`. All defaulted, no backfill required.
+- New tables `moon_extraction_plans` (`000019`) and `moon_extraction_plan_audits` (`000020`).
+- Additive columns on `moon_extractions` and `webhook_configurations` (`000019`, `000021`). All defaulted, no backfill.
 
 ## [2.0.2] — 2026-05-31 — The Ecosystem Era: Field Repairs
 
-> **Mental model:** v2.0.1 was the Polish Pass. v2.0.2 is **field repairs** on top of it — real bugs the Polish Pass left behind, surfaced when production traffic hit them. Two were silent-failure traps in the notification dispatcher and the moon-extraction lifecycle model that quietly ate `moon_chunk_unstable` warnings for an unknown stretch. One was a Bootstrap-meets-AdminLTE modal-stacking interaction that froze the Mark-as-Paid form. One was a fairness gap where players paying tax from an alt wallet got their payment silently rejected. Each fix surfaces a diagnostic mechanism in the existing tooling so the next failure of its class is observable. Every item additive. No breaking changes. No new ESI scopes. No schema changes.
+Bug fixes for issues that surfaced in production after v2.0.1: the moon-chunk-unstable warning silently never firing, the notification dispatcher skipping without saying why, the Mark-as-Paid modal freezing on click, and tax payments from alt characters being rejected. All additive, no schema changes, no new ESI scopes.
 
 ### 🐛 Critical bug fixes
 
@@ -154,14 +134,13 @@ Uses the alt-aware sharesSeatUser check; logs an audit line; returns true on suc
 
 ### 🔗 Related
 
-- v2.0.2 was discovered live during a moon_chunk_unstable production debug session on 2026-05-31. Two unrelated bugs (modal hang, alt-payments rejection) were found in the same session and folded into the same release rather than queued separately.
 - The lifecycle bug is the kind of two-sources-of-truth divergence the new integrity validator is designed to catch. Pattern noted in `project_mining_manager_future_refactors.md` for the next plugin to reuse — derived-snapshot columns that drift from their source-of-truth helpers are a recurring bug class.
 
 ---
 
 ## [2.0.1] — 2026-05-26 — The Ecosystem Era: Polish Pass
 
-> **Mental model:** v2.0.0 opened the Ecosystem Era (Manager Core pricing + Structure Manager threat alerts). **v2.0.1 is the Polish Pass on the same era** — same arc, deeper craft: faster director workflows (role picker, routing map, Metenox cargo readout), cross-plugin publishing (MM joins the EventBus producer side), and per-surface quality lifts (live local-time conversion, jackpot rendering hardened against custom SeAT themes, diagnostic page aligned to the suite-wide standard). Every item is additive. No breaking changes. No new ESI scopes.
+Polish on top of v2.0.0's ecosystem features: faster director workflows (Discord role picker, notification routing map, Metenox cargo readout), cross-plugin event publishing, and per-surface quality lifts (live local-time conversion, hardened jackpot rendering, aligned diagnostics). All additive, no new ESI scopes.
 
 ### 🎉 Headline features
 
@@ -296,7 +275,7 @@ The MC Configuration status panel on Settings → Pricing also grows two new bad
 
 ## [2.0.0] — 2026-05-03 — The Ecosystem Era
 
-> **Mental model:** Mining Manager grew from a standalone tax/extraction tracker into the first ecosystem-aware plugin in Matt's SeAT plugin suite. v2.0.0 marks that transition: the plugin still works perfectly fine on its own, but when **Manager Core** is installed it gains centralised pricing via the documented PluginBridge contract, and when **Structure Manager** is also installed it subscribes to SM's structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts to operators in real time. None of this is required — every existing v1.0.3 install upgrades cleanly without changing a thing.
+Mining Manager becomes ecosystem-aware. It still works standalone, but when **Manager Core** is installed it uses centralised pricing via the PluginBridge contract, and when **Structure Manager** is installed it subscribes to structure-threat events and dispatches `extraction_at_risk` / `extraction_lost` alerts. Both integrations are optional; existing v1.0.3 installs upgrade cleanly.
 
 ### 🎉 Headline features
 
@@ -2162,7 +2141,7 @@ Big release. Three parallel streams of work converged:
 - **Non-moon events use SeAT fetch time**, not literal EVE mining time (character_minings doesn't carry the moment of mining). Good enough for events spanning several hours; noisy for sub-hour events.
 - **Weekly removal does not delete historical rows.** They remain visible in Tax History and export reports forever (we don't touch released migrations).
 
-### Mental Model
+### How it works
 
 **ESI tells us WHAT is happening. The clock tells us WHEN to notify. `event_mining_records` tells us WHICH mining counts for which event.**
 
@@ -2200,7 +2179,7 @@ Big release. Three parallel streams of work converged:
 - **Past Extractions (Archived) table — interactive DataTables + MOC scoping + Structure column** -- the archived history table on `/mining-manager/moon` is now filtered to Moon Owner Corporation only (other directors' private moons on shared SeAT installs no longer leak through). Added a Structure column showing station/refinery names (batch-loaded via `MoonExtraction::loadDisplayNames()` — no N+1). Table uses jQuery DataTables for client-side sorting (all columns, with numeric `data-order` attributes on dates/values/progress bars for correct sort semantics), full-text search across all columns, a Status filter dropdown (auto-populated from the visible badge text), and pagination (10/25/50/100/All). Default sort is chunk arrival descending.
 - **`mining-manager:backfill-extraction-history` now filters by Moon Owner Corporation** -- resolves MOC from settings, pre-loads the set of structure IDs owned by that corp, and skips notifications for any other structure during the dedup pass. Rejects `--structure=ID` for structures not owned by MOC. Reports a count of skipped foreign-corp notifications. Fully dynamic — if MOC changes in Settings, next run uses the new value.
 
-### Mental Model
+### How it works
 **ESI tells us WHAT is happening. The clock tells us WHEN to notify.**
 
 ## [1.0.1] - Notification & Event Fixes
