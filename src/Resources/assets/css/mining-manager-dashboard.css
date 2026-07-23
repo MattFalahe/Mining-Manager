@@ -4016,6 +4016,27 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     color: #51cf66 !important;
 }
 
+/* Subtitle pill on a "What's New" heading. Rendered as an attached chip so it
+   reads as part of the title rather than a small floating detached next to it
+   (the flex heading vertically-centres inline text, which looked disconnected).
+   margin-left:auto pushes it to the trailing edge of the heading row. */
+.whats-new-box h3 .whats-new-tag,
+.whats-new-box h4 .whats-new-tag,
+.whats-new-box h5 .whats-new-tag {
+    margin-left: auto;
+    align-self: center;
+    font-size: 0.6em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #b7f7c8 !important;
+    background: rgba(40, 167, 69, 0.22);
+    border: 1px solid rgba(81, 207, 102, 0.4);
+    border-radius: 20px;
+    padding: 3px 12px;
+    white-space: nowrap;
+}
+
 .whats-new-box ul {
     color: #d1d5db !important;
 }

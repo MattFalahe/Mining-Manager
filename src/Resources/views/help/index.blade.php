@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=4">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=5">
 <style>
     .help-wrapper {
         display: flex;
@@ -680,7 +680,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h3>
                         <i class="fas fa-calendar-check"></i>
                         What's New &mdash; The Planner Era
-                        <small class="ml-2" style="font-size: 0.65em; color: #93f7b8;">moon-pull coordination</small>
+                        <span class="whats-new-tag">moon-pull coordination</span>
                     </h3>
                     <p>
                         SeAT can only <em>read</em> the moon extractions a director fires in-game &mdash; it can't reach
@@ -774,7 +774,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h3>
                         <i class="fas fa-sparkles"></i>
                         What's New in v2.0.1
-                        <small class="ml-2" style="font-size: 0.65em; color: #93f7b8;">The Ecosystem Era: Polish Pass</small>
+                        <span class="whats-new-tag">The Ecosystem Era: Polish Pass</span>
                     </h3>
                     <p>
                         v2.0.0 opened the <strong>Ecosystem Era</strong> (Manager Core pricing + Structure Manager threat alerts).
