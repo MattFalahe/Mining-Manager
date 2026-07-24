@@ -19,7 +19,7 @@ use Seat\Services\Seeding\AbstractScheduleSeeder;
  *     setting expression='', etc.). Forcibly overwriting those on every
  *     plugin boot is user-hostile and contrary to SeAT conventions.
  *   - `AbstractScheduleSeeder` is explicit about the no-reconciliation
- *     contract — see `reference_seat_v5_scheduling.md` in project memory.
+ *     contract.
  *
  * For deprecation (renaming/removing a command), use
  * `getDeprecatedSchedules()` below — `AbstractScheduleSeeder::run()`

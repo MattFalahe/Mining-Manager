@@ -21,9 +21,8 @@ use Illuminate\Support\Facades\Schema;
  *      drops below threshold (cargo pulled) — the next cross-up fires
  *      a fresh notification for the new cycle.
  *
- * Forward-only per the released-plugin-migration rule
- * (feedback_released_plugin_migrations.md): adds columns/table only,
- * never alters existing released migrations.
+ * Forward-only per the released-plugin-migration rule: adds columns/table
+ * only, never alters existing released migrations.
  *
  * Both objects are guarded with Schema::hasTable / Schema::hasColumn so
  * re-running the migration is a no-op (idempotent for ops who run the
@@ -66,7 +65,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        // No down() — released migrations are forward-only per
-        // feedback_released_plugin_migrations.md.
+        // No down() — released migrations are forward-only.
     }
 };

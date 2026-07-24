@@ -15,8 +15,8 @@ use Illuminate\Support\Facades\Schema;
  * the model never listed it as `$fillable`, the controller validator
  * never validated it, and the JS form never submitted it.
  *
- * Effect pre-fix: a UI label that doesn't surface anywhere, dispatch
- * code that reads a non-existent column (always null), and operators
+ * Without the column: a UI label that doesn't surface anywhere, dispatch
+ * code reading a non-existent column (always null), and operators
  * with no way to override the Discord webhook's default avatar.
  *
  * This migration adds the column. The companion changes (model
@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\Schema;
  * Forward-only — backward compat with the released v1.0.2 migration
  * set. Migration 000001 is unchanged.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class AddDiscordAvatarUrlToWebhookConfigurations extends Migration
 {

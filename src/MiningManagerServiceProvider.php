@@ -102,6 +102,15 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // either MC or SM is missing — plugin still works standalone.
         $this->registerCrossPluginStructureAlerts();
 
+        // Register MM's moon notification handler with Manager Core's ESI
+        // fast-poll registry so `MoonminingExtractionStarted` is detected in
+        // ~2 min instead of waiting on the corp moon-extraction endpoint's
+        // ~30 min cache. Unconditional (queue workers must register it too);
+        // no-ops when MC is absent or the operator forced SeAT-native. When
+        // active, CheckExtractionArrivalsCommand suppresses its own
+        // extraction_started pass to avoid double-firing.
+        \MiningManager\Integrations\MoonFastPollIntegration::registerHandler();
+
         // Subscribe to MC's pricing.preference_changed event so an
         // operator's change in MC's Pricing Preferences UI invalidates
         // MM's local price cache immediately. Without this subscription,
@@ -507,9 +516,9 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
      *
      * Why this is needed:
      *
-     *   Pre-fix the only place that called `subscribeToManagerCore()` was
-     *   `SettingsController::updatePricing()` — i.e. when the admin clicked
-     *   "Save" on the pricing tab with provider=manager-core. That meant:
+     *   If the only caller of `subscribeToManagerCore()` were
+     *   `SettingsController::updatePricing()` — i.e. the admin clicking
+     *   "Save" on the pricing tab with provider=manager-core — then:
      *
      *     - Installing MC AFTER MM was already configured with provider=
      *       manager-core left MC with zero MM subscriptions. MC's
@@ -568,8 +577,8 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             // Pre-compute a stable signature of "what we'd subscribe right
             // now" and short-circuit when the MC table already matches.
             //
-            // Pre-fix this method called subscribeToManagerCore on EVERY
-            // boot (every PHP-FPM request), which UPSERTs hundreds of rows
+            // Without it, this method would call subscribeToManagerCore on
+            // EVERY boot (every PHP-FPM request), UPSERTing hundreds of rows
             // into manager_core_type_subscriptions every single time.
             // Even with $immediateRefresh=false (so MC doesn't dispatch a
             // refresh job), that's N row-existence DB writes per request

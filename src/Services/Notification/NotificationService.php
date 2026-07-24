@@ -35,11 +35,9 @@ use Exception;
  *  - Report: report_generated
  *  - Custom (ad-hoc message)
  *
- * History: consolidated from the original two-dispatcher design
- * (NotificationService + WebhookService) across Phases A-F of the
- * notification consolidation, 2026-04-23. Shared webhook dispatch
- * infrastructure (role mentions, corp scoping, retry, getCorpName)
- * lives in WebhookDispatchTrait.
+ * Consolidated from an earlier two-dispatcher design (NotificationService
+ * + WebhookService). Shared webhook dispatch infrastructure (role mentions,
+ * corp scoping, retry, getCorpName) lives in WebhookDispatchTrait.
  */
 class NotificationService
 {
@@ -67,6 +65,10 @@ class NotificationService
     const TYPE_MOON_READY = 'moon_ready';
     const TYPE_JACKPOT_DETECTED = 'jackpot_detected';
     const TYPE_MOON_CHUNK_UNSTABLE = 'moon_chunk_unstable';
+    // Planner notifications (corp coordination — Moon Extraction Planner).
+    const TYPE_EXTRACTION_STARTED = 'extraction_started';
+    const TYPE_NEXT_EXTRACTION_PLANNED = 'next_extraction_planned';
+    const TYPE_SCHEDULE_MISMATCH = 'schedule_mismatch';
     const TYPE_EXTRACTION_AT_RISK = 'extraction_at_risk';
     const TYPE_EXTRACTION_LOST = 'extraction_lost';
     const TYPE_THEFT_DETECTED = 'theft_detected';
@@ -421,7 +423,7 @@ class NotificationService
      * Reports are GLOBAL scope — every enabled webhook subscribed to the
      * `report_generated` event receives the notification regardless of
      * corporation_id. Replaces the previous WebhookService::sendReportNotification()
-     * path as of Phase B of the notification consolidation.
+     * path.
      *
      * @param MiningReport $report The report that was just generated
      * @param array $reportData The aggregated report payload (summary, taxes, period, ...)
@@ -478,7 +480,7 @@ class NotificationService
      * Corp-scoped via the shared WebhookDispatchTrait — only webhooks that
      * are global or assigned to the moon owner corp receive it. Replaces
      * the previous WebhookService::sendMoonNotification('moon_arrival', ...)
-     * path as of Phase C of the notification consolidation.
+     * path.
      *
      * Expected keys in $data (all optional, gracefully filtered if missing):
      *   moon_name, structure_name, chunk_arrival_time, auto_fracture_time,
@@ -531,6 +533,86 @@ class NotificationService
         $data['description'] = $data['description']
             ?? '⚠️ This chunk will enter **unstable state** soon (last 2 hours of the 50-hour post-fracture window). Capital ship pilots (Rorquals, Orcas) should dock up or warp to safety — unstable chunks are known hotspots for hostile activity.';
         return $this->send(self::TYPE_MOON_CHUNK_UNSTABLE, [], $data);
+    }
+
+    /**
+     * Send an `extraction_started` notification — fired when a refinery
+     * begins a new moon extraction (the drill was fired / chunk is forming).
+     *
+     * Source: SeAT's `character_notifications` feed — the
+     * `MoonminingExtractionStarted` notification a director receives in-game.
+     * MoonExtractionService already reads that feed (for ore volumes); the
+     * planner adds an outbound notification on it so the team knows a new
+     * chunk is on the clock and when it'll arrive.
+     *
+     * Corp-scoped (moon owner) via the default webhook scoping in
+     * sendViaWebhooks. Standalone — no cross-plugin dependency.
+     *
+     * Expected keys in $data (all optional, filtered if missing):
+     *   moon_name, structure_name, system_name, extraction_start_time,
+     *   chunk_arrival_time, time_until_arrival, estimated_value,
+     *   extraction_url, extraction_id
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendExtractionStarted(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '⛏️ A new moon extraction has started — the chunk is forming and will arrive at the listed time. Plan your fleet around the arrival.';
+        return $this->send(self::TYPE_EXTRACTION_STARTED, [], $data);
+    }
+
+    /**
+     * Send a `next_extraction_planned` notification — the planner's
+     * "don't forget to re-fire" nudge.
+     *
+     * Fires ONLY AFTER the moon-ready notification has latched for the
+     * just-arrived chunk (see CheckExtractionArrivalsCommand). Looks up the
+     * refinery's next slot on the Moon Extraction Planner and announces it so
+     * a director re-fires the drill on schedule, keeping the staggered
+     * rotation intact.
+     *
+     * Corp-scoped (moon owner). Standalone.
+     *
+     * Expected keys in $data (all optional, filtered if missing):
+     *   moon_name, structure_name, planned_arrival_time, cadence_label,
+     *   source (auto|manual), planner_url
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendNextExtractionPlanned(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '🗓️ This chunk is ready — the next pull for this refinery is planned below. Re-fire the drill to stay on the planned rotation.';
+        return $this->send(self::TYPE_NEXT_EXTRACTION_PLANNED, [], $data);
+    }
+
+    /**
+     * Send a `schedule_mismatch` notification — the in-game extraction for a
+     * refinery is set to a materially different time than the Moon Extraction
+     * Planner called for ("wrong scheduled moon").
+     *
+     * Fires when a plan and the real pull for the same refinery are further
+     * apart than the planner's 30-minute match tolerance but still inside the
+     * same cycle — i.e. someone fired the drill on the wrong timer, or the plan
+     * is stale. One-shot per plan (latched on mismatch_notified_at).
+     *
+     * Corp-scoped (moon owner). Standalone — no cross-plugin dependency.
+     *
+     * Expected keys in $data:
+     *   moon_name, structure_name, planned_arrival_time, actual_arrival_time,
+     *   offset_hours, planner_url
+     *
+     * @param array $data
+     * @return array Result map from send()
+     */
+    public function sendScheduleMismatch(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? '⚠️ **This moon is scheduled in-game at a different time than planned.** Check whether the drill was fired on the wrong timer — the in-game time is what EVE will actually run. Adjust the plan or re-fire to match.';
+        return $this->send(self::TYPE_SCHEDULE_MISMATCH, [], $data);
     }
 
     /**
@@ -598,9 +680,8 @@ class NotificationService
      * the follow-up is different: tax reconciliation, "no chunk this cycle"
      * announcement to miners, insurance claim, etc.
      *
-     * Driven by SM's `structure.alert.destroyed` event (detection design
-     * deferred to a future SM session — see memory doc
-     * project_structure_manager_destruction_detection.md).
+     * Driven by SM's `structure.alert.destroyed` event (destruction
+     * detection ships in a future Structure Manager release).
      *
      * Same MC+SM gating as extraction_at_risk.
      *
@@ -775,6 +856,9 @@ class NotificationService
             'active_theft' => self::TYPE_ACTIVE_THEFT,
             'incident_resolved' => self::TYPE_INCIDENT_RESOLVED,
             'report_generated' => self::TYPE_REPORT_GENERATED,
+            'extraction_started' => self::TYPE_EXTRACTION_STARTED,
+            'next_extraction_planned' => self::TYPE_NEXT_EXTRACTION_PLANNED,
+            'schedule_mismatch' => self::TYPE_SCHEDULE_MISMATCH,
             default => self::TYPE_CUSTOM,
         };
 
@@ -1059,10 +1143,10 @@ class NotificationService
         // model) rather than $token->access_token (the raw column). The
         // accessor auto-refreshes the access token when SeAT's stored copy
         // has expired but the refresh_token is still valid — so Eseye gets
-        // a guaranteed-fresh token. Pre-fix the raw column read could pass
-        // a stale access token, forcing Eseye to try the refresh path
-        // itself and surface ESI auth errors mid-send instead of MM
-        // catching the bad-token state up-front.
+        // a guaranteed-fresh token. Reading the raw column can pass a stale
+        // access token, forcing Eseye to attempt the refresh itself and
+        // surface ESI auth errors mid-send instead of MM catching the
+        // bad-token state up-front.
         //
         // getCharacterToken() already returned null when ->token was empty,
         // so by the time we get here the auto-refresh has succeeded.
@@ -1229,6 +1313,9 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             default => null,
         };
 
@@ -1261,6 +1348,9 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             self::TYPE_CUSTOM => 'custom',
             default => null,
         };
@@ -1329,9 +1419,10 @@ class NotificationService
      * Record a successful legacy-global-Slack dispatch in the persistent
      * health metric. Per-webhook rows in `webhook_configurations` already
      * track this via `recordSuccess`/`recordFailure` on the model;
-     * pre-fix the legacy global path (single URL stored in
-     * `notifications.slack_webhook_url`) had no equivalent — operators
-     * had to grep logs to find out their Slack webhook was broken.
+     * the legacy global path (single URL stored in
+     * `notifications.slack_webhook_url`) has no equivalent of its own, so
+     * without this operators would have to grep logs to discover their
+     * Slack webhook was broken.
      *
      * Stored as plain settings rows so we don't need a new schema. Read
      * by the Notification Settings tab + diagnostic page (future) to
@@ -1414,6 +1505,9 @@ class NotificationService
             self::TYPE_ACTIVE_THEFT => 'active_theft',
             self::TYPE_INCIDENT_RESOLVED => 'incident_resolved',
             self::TYPE_REPORT_GENERATED => 'report_generated',
+            self::TYPE_EXTRACTION_STARTED => 'extraction_started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 'next_extraction_planned',
+            self::TYPE_SCHEDULE_MISMATCH => 'schedule_mismatch',
             default => null,
         };
 
@@ -1801,6 +1895,47 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
+            self::TYPE_EXTRACTION_STARTED => [
+                'subject' => sprintf('Moon Extraction Started: %s', $data['moon_name'] ?? 'Unknown Moon'),
+                'body' => sprintf(
+                    "A new moon extraction has started.\n\n" .
+                    "Moon: %s\nStructure: %s\nChunk Arrives: %s\n\n" .
+                    "Plan your fleet around the arrival.\n\n" .
+                    "%s Management",
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['chunk_arrival_time'] ?? 'Unknown',
+                    $this->getCorpName()
+                )
+            ],
+            self::TYPE_SCHEDULE_MISMATCH => [
+                'subject' => sprintf('Moon Scheduled Off-Plan: %s', $data['moon_name'] ?? 'Unknown Moon'),
+                'body' => sprintf(
+                    "A moon is scheduled in-game at a different time than planned.\n\n" .
+                    "Moon: %s\nRefinery: %s\nPlanned: %s\nScheduled In-Game: %s\nDifference: %sh\n\n" .
+                    "Check whether the drill was fired on the wrong timer.\n\n" .
+                    "%s Management",
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['planned_arrival_time'] ?? 'Unknown',
+                    $data['actual_arrival_time'] ?? 'Unknown',
+                    $data['offset_hours'] ?? '?',
+                    $this->getCorpName()
+                )
+            ],
+            self::TYPE_NEXT_EXTRACTION_PLANNED => [
+                'subject' => sprintf('Next Extraction Planned: %s', $data['structure_name'] ?? 'Refinery'),
+                'body' => sprintf(
+                    "This chunk is ready — the next pull for this refinery is planned.\n\n" .
+                    "Refinery: %s\nMoon: %s\nNext Pull Planned: %s\n\n" .
+                    "Re-fire the drill to stay on the planned rotation.\n\n" .
+                    "%s Management",
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['planned_arrival_time'] ?? 'See planner',
+                    $this->getCorpName()
+                )
+            ],
             self::TYPE_EXTRACTION_AT_RISK => [
                 'subject' => sprintf(
                     'EXTRACTION IN DANGER (%s): %s',
@@ -1983,6 +2118,9 @@ class NotificationService
             self::TYPE_MOON_READY => '#3498DB',
             self::TYPE_JACKPOT_DETECTED => '#FFD700',
             self::TYPE_MOON_CHUNK_UNSTABLE => '#FF6B00',
+            self::TYPE_EXTRACTION_STARTED => '#1ABC9C',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => '#9B59B6',
+            self::TYPE_SCHEDULE_MISMATCH => 'danger',
             self::TYPE_THEFT_DETECTED => '#FFA500',
             self::TYPE_CRITICAL_THEFT => 'danger',
             self::TYPE_ACTIVE_THEFT => 'danger',
@@ -2003,6 +2141,9 @@ class NotificationService
             self::TYPE_MOON_READY => "Moon Chunk Ready — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_JACKPOT_DETECTED => "⭐ JACKPOT MOON DETECTED — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
+            self::TYPE_EXTRACTION_STARTED => "⛏️ Extraction started — " . ($data['moon_name'] ?? 'Unknown Moon') . " (chunk arrives " . ($data['chunk_arrival_time'] ?? 'soon') . ")",
+            self::TYPE_NEXT_EXTRACTION_PLANNED => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner'),
+            self::TYPE_SCHEDULE_MISMATCH => "⚠️ " . ($data['moon_name'] ?? 'A moon') . " is scheduled off-plan — planned " . ($data['planned_arrival_time'] ?? '?') . ", in-game " . ($data['actual_arrival_time'] ?? '?'),
             self::TYPE_THEFT_DETECTED => "Theft Incident Detected — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_CRITICAL_THEFT => "🚨 CRITICAL THEFT — " . ($data['character_name'] ?? 'Unknown'),
             self::TYPE_ACTIVE_THEFT => "🔥 ACTIVE THEFT IN PROGRESS — " . ($data['character_name'] ?? 'Unknown'),
@@ -2074,7 +2215,7 @@ class NotificationService
             if (is_scalar($value) || $value === null) {
                 // JSON-escape every substitution rather than raw cast-to-string.
                 //
-                // Pre-fix `(string) $value` substitution had two bugs:
+                // A plain `(string) $value` substitution has two problems:
                 //   1. Injection: a string value containing `"` or `\` or
                 //      a newline broke the surrounding template's JSON
                 //      (parsed back as null → notification silently dropped).
@@ -2117,10 +2258,10 @@ class NotificationService
             } elseif (is_array($value) || is_object($value)) {
                 // Substitute the full JSON literal for array/object values.
                 //
-                // Pre-fix the loop's `is_scalar || === null` filter dropped
-                // these silently — the placeholder literal stayed in the
-                // output, breaking JSON parsing for templates that had
-                // intentional object/array placeholders like:
+                // An `is_scalar || === null` filter would drop these
+                // silently — the placeholder literal stays in the output,
+                // breaking JSON parsing for templates with intentional
+                // object/array placeholders like:
                 //
                 //   {"data": {{raw_summary}}, "taxes": {{raw_taxes}}}
                 //
@@ -2136,23 +2277,22 @@ class NotificationService
                 // `"taxes": {{raw_taxes}}` (no surrounding quotes in the
                 // template). Wrapping a placeholder in quotes for an array
                 // value (e.g. `"name": "{{some_array}}"`) was already
-                // pre-fix not supported and isn't sensible — the template
-                // author should pick scalar fields for string contexts.
+                // not supported and isn't sensible — the template author
+                // should pick scalar fields for string contexts.
                 $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 $processed = str_replace('{{' . $key . '}}', $encoded, $processed);
             }
             // Resources, closures, and other non-JSON-encodable values fall
             // through with no substitution. The placeholder literal stays
-            // in the output (same as pre-fix behaviour for these — they
-            // shouldn't appear in $data anyway).
+            // in the output — they shouldn't appear in $data anyway.
         }
 
         $decoded = json_decode($processed, true);
 
         // Surface JSON parse errors so operators don't silently get an
         // empty body delivered to their endpoint (looks like "the
-        // notification fired but my server got nothing"). Pre-fix the
-        // `?? []` swallowed every parse failure with no log line.
+        // notification fired but my server got nothing"). A bare `?? []`
+        // would swallow every parse failure with no log line.
         // Common causes: a substituted value containing characters that
         // happen to break the surrounding template's JSON (the H3 fix
         // covers most of these; this is the catch-all for the rest),
@@ -2176,13 +2316,12 @@ class NotificationService
         $timestamp = now()->toIso8601String();
 
         return match ($type) {
-            // Envelope wins on key collision. Pre-fix the array_merge order
-            // had `raw_report_data` LAST, so a report_data payload that
-            // happened to contain a key like `event_type` or `timestamp`
-            // would silently override the canonical envelope value.
-            // Subscribers downstream that key off `event_type` would then
-            // see "report_data_some_value" instead of "report_generated".
-            // Reversed the merge order — envelope keys are now authoritative.
+            // Envelope wins on key collision — keep it LAST in the merge.
+            // With `raw_report_data` last instead, a report_data payload
+            // containing a key like `event_type` or `timestamp` would
+            // silently override the canonical envelope value, and downstream
+            // subscribers keying off `event_type` would see
+            // "report_data_some_value" instead of "report_generated".
             self::TYPE_REPORT_GENERATED => array_merge($data['raw_report_data'] ?? [], [
                 'event_type' => 'report_generated',
                 'timestamp' => $timestamp,
@@ -2331,6 +2470,9 @@ class NotificationService
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskColor($data),
             self::TYPE_EXTRACTION_LOST => 0x1F0000, // Near-black / very dark red — post-mortem
             self::TYPE_METENOX_CARGO_FULL => 0xFF9800, // Orange — yield-stopping warning, not safety
+            self::TYPE_EXTRACTION_STARTED => 0x1ABC9C, // Teal — new chunk on the clock
+            self::TYPE_NEXT_EXTRACTION_PLANNED => 0x9B59B6, // Purple — planner nudge
+            self::TYPE_SCHEDULE_MISMATCH => 0xC0392B, // Red — scheduled off-plan
             self::TYPE_THEFT_DETECTED => 0xFFA500, // Orange
             self::TYPE_CRITICAL_THEFT => 0xFF0000, // Red
             self::TYPE_ACTIVE_THEFT => 0xFF6B00, // Orange-red
@@ -2355,6 +2497,9 @@ class NotificationService
             self::TYPE_EXTRACTION_AT_RISK => $this->resolveExtractionAtRiskTitle($data),
             self::TYPE_EXTRACTION_LOST => '☠️ MOON CHUNK DESTROYED',
             self::TYPE_METENOX_CARGO_FULL => 'Metenox Cargo Bay Filling Up — Pull Soon',
+            self::TYPE_EXTRACTION_STARTED => '⛏️ Moon Extraction Started',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => '🗓️ Next Extraction Planned',
+            self::TYPE_SCHEDULE_MISMATCH => '⚠️ Moon Scheduled Off-Plan',
             self::TYPE_THEFT_DETECTED => 'Theft Incident Detected',
             self::TYPE_CRITICAL_THEFT => 'CRITICAL THEFT DETECTED',
             self::TYPE_ACTIVE_THEFT => 'ACTIVE THEFT IN PROGRESS',
@@ -2480,6 +2625,33 @@ class NotificationService
                 isset($data['natural_decay_time']) ? ['title' => 'Goes Unstable', 'value' => $data['natural_decay_time'], 'short' => true] : null,
                 isset($data['time_until_unstable']) ? ['title' => 'Time Remaining', 'value' => $data['time_until_unstable'], 'short' => true] : null,
                 !empty($data['extraction_url']) ? ['title' => 'Details', 'value' => '<' . $data['extraction_url'] . '|View Extraction>', 'short' => false] : null,
+            ])),
+            self::TYPE_EXTRACTION_STARTED => array_values(array_filter([
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['structure_name']) ? ['title' => 'Structure', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['system_name']) ? ['title' => 'System', 'value' => $data['system_name'], 'short' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Arrives', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
+                isset($data['time_until_arrival']) ? ['title' => 'Time Until Arrival', 'value' => $data['time_until_arrival'], 'short' => true] : null,
+                (isset($data['estimated_value']) && $data['estimated_value'] > 0)
+                    ? ['title' => 'Est. Value', 'value' => number_format((float) $data['estimated_value'], 0) . ' ISK', 'short' => true]
+                    : null,
+                !empty($data['extraction_url']) ? ['title' => 'Details', 'value' => '<' . $data['extraction_url'] . '|View Extraction>', 'short' => false] : null,
+            ])),
+            self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
+                isset($data['structure_name']) ? ['title' => 'Refinery', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
+                !empty($data['cadence_label']) ? ['title' => 'Cadence', 'value' => $data['cadence_label'], 'short' => true] : null,
+                !empty($data['source']) ? ['title' => 'Source', 'value' => ucfirst($data['source']), 'short' => true] : null,
+                !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
+            ])),
+            self::TYPE_SCHEDULE_MISMATCH => array_values(array_filter([
+                isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
+                isset($data['structure_name']) ? ['title' => 'Refinery', 'value' => $data['structure_name'], 'short' => true] : null,
+                isset($data['planned_arrival_time']) ? ['title' => 'Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
+                isset($data['actual_arrival_time']) ? ['title' => 'Scheduled In-Game', 'value' => $data['actual_arrival_time'], 'short' => true] : null,
+                isset($data['offset_hours']) ? ['title' => 'Difference', 'value' => $data['offset_hours'] . 'h off plan', 'short' => true] : null,
+                !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 isset($data['alert_flavor']) ? ['title' => 'Threat Type', 'value' => ucwords(str_replace('_', ' ', $data['alert_flavor'])), 'short' => true] : null,
@@ -2784,17 +2956,15 @@ class NotificationService
      *
      *   1. The model's `->token` accessor returns `null` when the access
      *      token has expired AND SeAT's refresh path failed (revoked
-     *      refresh token, ESI auth outage, etc.). Pre-fix, the raw query
-     *      returned the row with whatever stale `access_token` was last
-     *      written — Eseye would then fail mid-mail-send with an opaque
-     *      ESI error instead of MM cleanly logging "no valid token" and
-     *      bailing early.
+     *      refresh token, ESI auth outage, etc.). A raw query returns the
+     *      row with whatever stale `access_token` was last written, and
+     *      Eseye then fails mid-mail-send with an opaque ESI error instead
+     *      of MM cleanly logging "no valid token" and bailing early.
      *
      *   2. Going through the model means any future SeAT-side observer,
      *      audit hook, or schema change is honored. Raw DB queries
      *      bypass that and silently break under SeAT version drift.
      *
-     * @see project memory reference_seat_v5_models.md
      *      ("RefreshToken (token returns NULL when expired)")
      *
      * @param int $characterId
@@ -2888,13 +3058,13 @@ class NotificationService
      * regardless of type (Discord/Slack/custom) or which notify_* flags
      * it has set.
      *
-     * Pre-fix this function:
-     *   1. Filtered to `type = 'discord'`, so installs whose only
-     *      configured webhooks were Slack or custom got back `false`
-     *      and the entire CHANNEL_DISCORD dispatch path (which actually
-     *      fans out to all three types via sendViaWebhooks) was
-     *      skipped — silently dropping ALL per-webhook notifications.
-     *   2. OR'd only 7 of ~17 `notify_*` flags (tax_reminder/invoice/
+     * Two traps this deliberately avoids:
+     *   1. Filtering to `type = 'discord'` — installs whose only configured
+     *      webhooks are Slack or custom would get back `false` and the
+     *      entire CHANNEL_DISCORD dispatch path (which actually fans out to
+     *      all three types via sendViaWebhooks) would be skipped, silently
+     *      dropping ALL per-webhook notifications.
+     *   2. OR-ing only a subset of the `notify_*` flags (tax_reminder/invoice/
      *      overdue, event_*, moon_arrival). Missing
      *      notify_jackpot_detected, notify_moon_chunk_unstable,
      *      notify_extraction_at_risk/lost, notify_theft_*,
@@ -3031,12 +3201,11 @@ class NotificationService
     protected function logNotification(string $type, array $recipients, array $channels, array $results): void
     {
         try {
-            // Cap the recipients payload at a representative sample. Pre-fix
-            // we json_encoded the full list — for broadcast notifications
-            // (`sendBroadcast`) that's the entire corp member list,
-            // potentially hundreds-thousands of character IDs. Twelve
-            // months of monthly tax_announcement broadcasts then store
-            // 12×N character IDs duplicated.
+            // Cap the recipients payload at a representative sample.
+            // json_encoding the full list means broadcast notifications
+            // (`sendBroadcast`) store the entire corp member list —
+            // potentially thousands of character IDs, duplicated across
+            // twelve months of monthly tax_announcement broadcasts.
             //
             // Now: store the count (always accurate) plus a sample of the
             // first 50 IDs (enough for "did the right cohort get pinged?"

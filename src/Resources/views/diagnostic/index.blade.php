@@ -9,8 +9,7 @@
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
 
 /* === Per-tab intro box ===========================================
-   Required on every diagnostic tab per
-   feedback_plugin_diagnostic_standard.md. The diagnostic page is
+   Shown on every diagnostic tab. The diagnostic page is
    admin-only and intentionally NOT linked from Help & Documentation,
    so this box is where operators learn each tab's purpose.
 
@@ -255,7 +254,7 @@
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
-            {{-- Tier 1 — Universal (per feedback_plugin_diagnostic_standard.md) --}}
+            {{-- Tier 1 — Universal --}}
             <li class="nav-item">
                 <a class="nav-link active" href="#health-checks" data-toggle="tab" onclick="loadSystemStatus()">
                     <i class="fas fa-heartbeat"></i> Health Checks
@@ -972,6 +971,69 @@
                         </div>
                     </div>
 
+                    {{-- Moon Extraction Planner Validation ============================
+                         Server-side rendered via buildMoonPlannerValidation().
+                         Covers planner schema, the Manager Core fast-poll handler
+                         registration (the wiring that fails silently), and planner
+                         coverage / mismatch state. ================================= --}}
+                    <div class="card card-dark">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <i class="fas fa-calendar-check"></i> Moon Extraction Planner
+                                @if(isset($plannerValidation['overall']))
+                                    @if($plannerValidation['overall'] === 'ok')
+                                        <span class="badge badge-success ml-2">Healthy</span>
+                                    @elseif($plannerValidation['overall'] === 'warn')
+                                        <span class="badge badge-warning ml-2">Warnings</span>
+                                    @else
+                                        <span class="badge badge-danger ml-2">Critical</span>
+                                    @endif
+                                @endif
+                            </h3>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">
+                                Verifies the Moon Extraction Planner: schema, the Manager Core
+                                fast-poll handler registration, planner coverage (skipped moons),
+                                and open scheduling mismatches. Read-only — each check is a single
+                                <code>SELECT</code> or <code>Schema::hasX</code> probe.
+                            </p>
+                            @if(isset($plannerValidation['summary']))
+                                <div class="alert {{ $plannerValidation['overall'] === 'ok' ? 'alert-success' : ($plannerValidation['overall'] === 'warn' ? 'alert-warning' : 'alert-danger') }} py-2 mb-3">
+                                    {{ $plannerValidation['summary'] }}
+                                </div>
+                            @endif
+                            @if(!empty($plannerValidation['checks']))
+                                <table class="table table-sm table-dark mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 70px;">Status</th>
+                                            <th>Check</th>
+                                            <th>Detail</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($plannerValidation['checks'] as $check)
+                                            <tr>
+                                                <td>
+                                                    @if($check['status'] === 'ok')
+                                                        <span class="badge badge-success"><i class="fas fa-check"></i> OK</span>
+                                                    @elseif($check['status'] === 'warn')
+                                                        <span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> WARN</span>
+                                                    @else
+                                                        <span class="badge badge-danger"><i class="fas fa-times"></i> FAIL</span>
+                                                    @endif
+                                                </td>
+                                                <td><strong>{{ $check['label'] }}</strong></td>
+                                                <td class="text-muted" style="font-size: 0.88em;">{{ $check['message'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            @endif
+                        </div>
+                    </div>
+
                     <div class="card card-dark">
                         <div class="card-header">
                             <h3 class="card-title">
@@ -1295,6 +1357,9 @@
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
                                                 <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
+                                                <option value="extraction_started">⛏️ Extraction Started (drill lit)</option>
+                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
+                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
                                                 <option value="metenox_cargo_full">📦 Metenox Cargo Bay Full (v2.0.1, yield-stopping)</option>
                                                 <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
                                                 <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
@@ -3461,6 +3526,9 @@ function runFireAllNotifications() {
         { type: 'moon_ready',          label: '🌙 Moon Chunk Ready' },
         { type: 'jackpot_detected',    label: '🎰 Jackpot Detected' },
         { type: 'moon_chunk_unstable', label: '⚠️ Moon Chunk Unstable' },
+        { type: 'extraction_started',  label: '⛏️ Extraction Started' },
+        { type: 'next_extraction_planned', label: '🗓️ Next Extraction Planned' },
+        { type: 'schedule_mismatch',   label: '⚠️ Moon Scheduled Off-Plan' },
         { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
         { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
         { type: 'report_generated',    label: '📊 Report Generated' },

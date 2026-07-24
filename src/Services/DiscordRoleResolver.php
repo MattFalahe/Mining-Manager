@@ -11,9 +11,8 @@ use Illuminate\Support\Facades\Schema;
  * for Mining Manager's per-notification-type role-id pickers.
  *
  * Ported verbatim from Structure Manager's DiscordRoleResolver (only the
- * namespace + log prefix differ). The pattern + behaviour is documented
- * in memory/feedback_plugin_role_picker_pattern.md as the standard for
- * every plugin in the ecosystem. When MC eventually consolidates this,
+ * namespace + log prefix differ). The pattern + behaviour is the standard
+ * for every plugin in the ecosystem. When MC eventually consolidates this,
  * both SM and MM will import from \ManagerCore\Services\DiscordRoleResolver
  * via the PluginBridge `discord.listRoles` capability and these per-plugin
  * copies will be removed.

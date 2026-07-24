@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=4">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=5">
 <style>
     .help-wrapper {
         display: flex;
@@ -253,13 +253,11 @@
     }
 
     /* Scoped to direct-child icons only (the big feature-card top icon).
-       Pre-fix this selector hit ALL nested icons too — including <i>
-       elements inside badges — which forced badge icons to render in
-       indigo regardless of the badge background. On a green
-       badge-success or red badge-danger the indigo icon was barely
-       visible. The "> i" direct-child combinator leaves badge / inline
-       icons alone so they inherit the badge's white text colour as
-       intended. */
+       Without the "> i" combinator this selector also hits nested <i>
+       elements inside badges, forcing badge icons to render indigo
+       regardless of the badge background — barely visible on a green
+       badge-success or red badge-danger. Direct-child leaves badge /
+       inline icons alone so they inherit the badge's white text. */
     .feature-item > i {
         font-size: 2rem;
         color: #667eea;
@@ -477,6 +475,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="moon-planner">
+                                <i class="fas fa-calendar-check"></i>
+                                Moon Planner
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="theft-detection">
                                 <i class="fas fa-user-secret"></i>
                                 {{ trans('mining-manager::help.theft_detection') }}
@@ -675,288 +679,94 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
                 </div>
 
-                {{-- What's New in v2.0.1 ============================================
-                     Green callout placed right after the Welcome card so the upgrade
-                     summary lands as the first thing operators read after the
-                     introduction. Mirrors SM's `.whats-new-box` styling for visual
-                     consistency across the plugin suite. =========================== --}}
+                {{-- What's New — The Moon Planner --}}
                 <div class="whats-new-box">
                     <h3>
-                        <i class="fas fa-sparkles"></i>
-                        What's New in v2.0.1
-                        <small class="ml-2" style="font-size: 0.65em; color: #93f7b8;">The Ecosystem Era: Polish Pass</small>
+                        <i class="fas fa-calendar-check"></i>
+                        What's New &mdash; The Ecosystem Era: The Moon Planner
+                        <span class="whats-new-tag">moon-pull coordination</span>
                     </h3>
                     <p>
-                        v2.0.0 opened the <strong>Ecosystem Era</strong> (Manager Core pricing + Structure Manager threat alerts).
-                        <strong>v2.0.1 is the Polish Pass on the same era</strong> &mdash; same arc, deeper craft:
-                        faster director workflows, cross-plugin event publishing, and per-surface quality lifts.
-                        Every item is additive, no breaking changes, no new ESI scopes.
+                        SeAT can only <em>read</em> the moon extractions a director fires in-game &mdash; it can't reach
+                        into the structure. So the new <strong>Moon Extraction Planner</strong> is a corp-internal
+                        <strong>coordination layer</strong>: lay each refinery's projected next pull onto a calendar and
+                        <strong>stagger</strong> arrivals so a small crew isn't drowned by chunks landing together
+                        (chunks not mined promptly are wasted &mdash; the risk this feature manages).
                     </p>
-
-                    <h4><i class="fas fa-star"></i> Director-side speed-ups</h4>
+                    <h4><i class="fas fa-calendar-alt"></i> Moon Extraction Planner</h4>
                     <ul>
                         <li>
-                            <strong>Discord role picker</strong> on every per-type role-ID input
-                            (Settings &rarr; Notifications). One click picks from your installed Discord
-                            role source &mdash; SeAT Broadcast curated list, SeAT Connector synced
-                            roles, or the legacy warlof tables. No more Developer Mode &rarr; right-click
-                            &rarr; Copy ID &rarr; paste, &times; 17 notification types.
+                            New <strong>Moon Planner</strong> page (sidebar, under Moon Manager), gated by the new
+                            standalone <code>mining-manager.moon_manager</code> ability (directors/admins included).
                         </li>
                         <li>
-                            <strong>Notification Routing Map</strong> (Settings &rarr; Routing Map).
-                            Read-only delivery snapshot showing every notification type, the webhooks it
-                            fires through, the corp scope, and the resolved Discord role for each (L1
-                            per-type override, L2 webhook fallback). Summary chips flag "enabled but
-                            firing nowhere" and dormant cross-plugin types when Manager Core or Structure
-                            Manager is absent.
+                            <strong>Auto-fill from history</strong> projects each refinery's next pull from its arrival
+                            cadence (needs &ge;2 past arrivals; median interval at &ge;3) and spreads them to honour a
+                            configurable minimum gap.
                         </li>
                         <li>
-                            <strong>Metenox Cargo readout</strong> (sidebar &rarr; Metenox Cargo, director-only).
-                            New page surfacing what's currently in every Metenox Moon Drill's cargo bay
-                            owned by the <strong>Moon Owner Corporation</strong> (Settings &rarr; General).
-                            Per-drill cards with ore composition, m³ volume, ISK valuation at current
-                            market prices, percent-of-cargo bars, color-graded <strong>bay fill indicator</strong>
-                            (500,000 m³ Metenox capacity), <strong>solar-system name</strong> (with the
-                            numeric id as a small muted suffix), and a "last polled" timestamp. Scope
-                            matches the Past Extractions table convention &mdash; directors see only moon-owner-corp
-                            drills so the page and the related notification stay in lockstep. <strong>SeAT
-                            admins</strong> (<code>mining-manager.admin</code>) land on the same Moon Owner
-                            Corp view but get a corp scope picker above the chips &mdash; every metenox-owning
-                            corp + an "All corps" aggregate option + a one-click "Back to Moon Owner"
-                            shortcut. Notifications still scope to Moon Owner Corp only, so the picker is
-                            a read-side convenience. Cross-plugin contract:
-                            <code>mining.metenox.cargoSnapshot</code> PluginBridge capability lets
-                            Structure Manager render the bay on its structure detail page.
+                            <strong>Re-anchor a recurring day</strong> &mdash; drag a Monday moon onto Tuesday and it
+                            sticks; future projections chain off the moved slot.
                         </li>
                         <li>
-                            <strong>Metenox Cargo Bay Full notification.</strong> New
-                            <code>metenox_cargo_full</code> notification type fires when a drill's
-                            <code>MoonMaterialBay</code> crosses the configurable fill-% threshold
-                            (default 85%, configurable 50-99% from Settings &rarr; Notifications).
-                            Yield-stopping warning specifically &mdash; drilling stops when the bay
-                            caps out but the structure stays online and safe. Dedup-latched against
-                            repeat fires while still over threshold; resets when cargo is pulled.
-                            Standalone &mdash; no Manager Core or Structure Manager required. Cron
-                            <code>mining-manager:scan-metenox-cargo-fill</code> runs every 5 minutes.
+                            <strong>&lt;gap proximity guard</strong> &mdash; placing/moving a pull within the
+                            minimum-gap window of another arrival (default <strong>24h</strong>, Settings &rarr;
+                            Notifications) prompts a confirmation listing the clashing moons. Enforced client- and
+                            server-side, so it can't be bypassed.
+                        </li>
+                        <li>
+                            <strong>Three months at once, all in EVE time (UTC)</strong> &mdash; the anchor month plus
+                            the next two, paged by prev/today/next. Times match EVE's in-game structure scheduler; the
+                            add/edit form takes EVE time and confirms what that is in your local zone.
+                        </li>
+                        <li>
+                            <strong>In-game pulls are locked</strong> &mdash; live, completed and archived extractions
+                            (and plans already reconciled to one) carry a lock and can't be edited here; clicking one
+                            explains why. They're set in EVE, so the planner only ever records them.
+                        </li>
+                        <li>
+                            <strong>30-minute dedup + off-plan detection</strong> &mdash; a plan and the real pull within
+                            30 minutes are the same pull, so it renders once. Further apart but the same cycle means the
+                            drill was fired on a different timer: the pull is flagged red, listed in a
+                            <em>Scheduling mismatches</em> banner with a one-click <strong>Dismiss</strong>, and a
+                            <strong>Moon Scheduled Off-Plan</strong> notification fires.
+                        </li>
+                        <li>
+                            <strong>Refinery panel</strong> &mdash; every refinery with its cadence, projected next pull,
+                            a coverage badge (<code>Planned 2&times;</code> / amber <code>Not planned</code> = a skipped
+                            moon, counted across the whole horizon) and a highest-ore-tier badge (<strong>R4&ndash;R64</strong>).
+                            Uncovered refineries sort to the top.
+                        </li>
+                        <li>
+                            <strong>Change history</strong> &mdash; the <em>History</em> button shows who created, moved
+                            or removed each planned pull, with before&rarr;after times.
                         </li>
                     </ul>
-
-                    <h4><i class="fas fa-clock"></i> Live local time + countdowns</h4>
+                    <h4><i class="fas fa-bell"></i> Three new notifications</h4>
                     <ul>
                         <li>
-                            <strong>Every EVE timestamp</strong> across the events and moon pages gets a
-                            hover tooltip with full local time formatted in your browser's IANA
-                            timezone (same mechanism Discord, Google Calendar, and GitHub use; DST
-                            handled automatically).
+                            <strong>Extraction Started</strong> &mdash; fires when a refinery lights its drill (read from
+                            the in-game <code>MoonminingExtractionStarted</code> director notification). With
+                            <strong>Manager Core</strong> installed it's detected in <strong>~2 minutes</strong> via MC's
+                            ESI fast-poll instead of the ~30 min moon-extraction endpoint cache. The fast-poll and
+                            SeAT-native paths are mutually exclusive (no duplicates); toggle at Settings &rarr;
+                            Notifications &rarr; <em>Extraction Started &mdash; Detection Speed</em>
+                            (<code>auto</code> / <code>seat_native</code>).
                         </li>
                         <li>
-                            <strong>High-priority surfaces</strong> (active extractions, upcoming events,
-                            calendar, my-events) opt into an inline " &middot; HH:MM local" pill for
-                            at-a-glance reading.
+                            <strong>Next Extraction Planned</strong> &mdash; fires <em>after</em> a chunk is ready,
+                            announcing the refinery's next planned pull so a director re-fires the drill on schedule.
                         </li>
                         <li>
-                            <strong>Live-ticking countdowns</strong> replace stale server-rendered
-                            "in 2 hours" text. Color-graded: green (&gt;1d) &rarr; yellow (1d-1h) &rarr;
-                            red+bold (&lt;1h) &rarr; muted grey (past target). Updates every second on
-                            the page.
-                        </li>
-                        <li>
-                            <strong>Event create / edit forms</strong> gained an
-                            <em>Enter time in: EVE/UTC &middot; My local</em> toggle with live
-                            confirmation box. DST-safe; server still always stores UTC.
-                        </li>
-                        <li>
-                            Browser-TZ readout in <em>Mining Events &rarr; Time display &amp; timezones</em>
-                            help docs section so operators can sanity-check what their browser reports.
+                            <strong>Moon Scheduled Off-Plan</strong> &mdash; fires when a moon's in-game extraction is
+                            set to a materially different time than the planner called for (beyond the 30-minute
+                            tolerance, same cycle). One ping per plan, so a standing mismatch doesn't repeat.
                         </li>
                     </ul>
-
-                    <h4><i class="fas fa-broadcast-tower"></i> Cross-plugin publishing</h4>
-                    <ul>
-                        <li>
-                            <strong>Three new <code>mining.extraction_*</code> events</strong> published
-                            via Manager Core's Topics facade: <code>ready</code> (chunk fractured, 48h
-                            mining window opens), <code>unstable</code> (final 2h capital-safety window),
-                            <code>expired</code> (window closed). Once per extraction per lifecycle stage.
-                        </li>
-                        <li>
-                            Rich payload: extraction_id, moon_id/name, structure_id/name, corporation_id
-                            (visibility scoping), full lifecycle timestamps, auto_fractured/is_jackpot
-                            flags, estimated_value, plus a <code>url</code> field deeplinking to MM's
-                            per-extraction detail page.
-                        </li>
-                        <li>
-                            New cron <code>mining-manager:scan-extraction-events</code> runs every 5
-                            minutes. Per-stage latches in the new <code>moon_extraction_event_log</code>
-                            table prevent re-publishing. Catch-up logic backfills earlier stages if the
-                            scanner first observes an extraction already in <code>unstable</code>/<code>expired</code>.
-                        </li>
-                        <li>
-                            <strong>Standalone-safe</strong> via <code>class_exists</code> guard on
-                            <code>\ManagerCore\Topics</code>. Without Manager Core the scanner is a
-                            friendly no-op.
-                        </li>
-                    </ul>
-
-                    <h4><i class="fas fa-cogs"></i> Manager Core pricing centralization</h4>
-                    <ul>
-                        <li>
-                            <strong>Single source of truth for pricing config.</strong> When Manager Core
-                            is the chosen price provider, the &quot;Manager Core Configuration&quot; panel
-                            in Settings &rarr; Pricing becomes a read-only status readout (market, price
-                            type, provider routing, admin-overridden flag) plus a prominent
-                            <em>&quot;Configure pricing in Manager Core &rarr;&quot;</em> deep-link
-                            button. The old duplicate Market / Variant / Price Type dropdowns are gone
-                            &mdash; MC's Pricing Preferences page is where you change them now. No more
-                            wondering which side wins when MM and MC disagree (MC always did, the UI
-                            just lied about it).
-                        </li>
-                        <li>
-                            <strong>Live cache invalidation.</strong> Changing Mining Manager's market in
-                            Manager Core's Pricing Preferences page now flushes MM's local price cache
-                            immediately via the new <code>pricing.preference_changed</code> EventBus
-                            topic. Next price read goes fresh through the bridge and picks up the new
-                            market's prices (routed through whichever provider MC has configured for
-                            that market &mdash; Fuzzwork for hubs by default, Goonpraisal for the 7
-                            pre-seeded nullsec markets). No more waiting up to 4 hours for the scheduled
-                            refresh to catch up.
-                        </li>
-                        <li>
-                            <strong>Jita fallback now actually works on the MC path.</strong> Per-item
-                            safety net retries any item that returns 0 from a non-Jita market through
-                            Jita (subject to the <em>Fallback to Jita</em> toggle on Settings &rarr;
-                            Pricing). Was effectively dead code before v2.0.1 because the previous
-                            implementation always thought it was already on Jita.
-                        </li>
-                        <li>
-                            <strong>Per-plugin provider override.</strong> MC's Pricing Preferences
-                            page now has a <em>Provider Override</em> dropdown on every plugin row.
-                            Leaving it on "Use market's provider" keeps current behavior (MM reads
-                            whatever provider the chosen market is configured for). Picking a specific
-                            provider routes <strong>only Mining Manager's reads</strong> through that
-                            upstream &mdash; other plugins reading the same market continue through the
-                            market's default. Real-world use: route Mining Manager through <strong>Janice
-                            for Jita</strong> (tighter tax accuracy) while Structure Manager continues
-                            through Fuzzwork for the same Jita lookups. When an override is set, MC
-                            does a live upstream fetch on every MM cache refresh (bypasses MC's local
-                            cache because the cache can't store per-provider variants for the same
-                            market) &mdash; acceptable bandwidth because MM only refreshes once every
-                            4 hours via its scheduled cron.
-                        </li>
-                        <li>
-                            <strong>Defensive fallbacks.</strong> Manager Core v1.0.0 is the first
-                            stable MC release, so the centralized pricing is available as soon as MC
-                            is installed. Every bridge call is wrapped in try/catch: if a capability
-                            call ever fails for any reason, MM falls back to <code>jita</code> literal
-                            with a logged warning &mdash; no crash, no zero prices, just a slightly
-                            less responsive update path. If Manager Core isn't installed at all, MM
-                            falls back to its own provider stack (SeAT / Fuzzwork / Janice) exactly
-                            like v2.0.0.
-                        </li>
-                    </ul>
-
-                    <h4><i class="fas fa-paint-brush"></i> Visual polish</h4>
-                    <ul>
-                        <li>
-                            <strong>Jackpot rendering hardened</strong> against custom SeAT themes.
-                            18 inline-styled jackpot elements across 6 blades (Report Jackpot button,
-                            JACKPOT banners, every "2x multiplier" indicator badge) now use override-resistant
-                            <code>.mm-jackpot</code> classes with <code>!important</code>. Custom
-                            <code>custom-layout.css</code> installs no longer wash the black text out
-                            of yellow buttons.
-                        </li>
-                        <li>
-                            <strong>Diagnostic page aligned to suite-wide standard.</strong> Default
-                            landing tab is now <em>Health Checks</em> (renamed from "System Status").
-                            Nav reordered to put Tier 1 universal tabs first (Health Checks &rarr;
-                            Master Test &rarr; System Validation &rarr; Settings Health &rarr; Data
-                            Integrity &rarr; Tax Trace). Every Tier 1 tab opens with a "What this tab
-                            does / When to use / Heads up" intro paragraph.
-                        </li>
-                    </ul>
-
-                    <p style="margin-top:12px; margin-bottom:0; font-size:0.88rem; color:#9aa3b3;">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>Upgrading from v2.0.0?</strong>
-                        Just take the SeAT Docker stack down and back up. Migrations and seeders run
-                        automatically on container boot. New: <code>moon_extraction_event_log</code>
-                        + <code>metenox_cargo_alert_state</code> tables (additive), migration
-                        <code>000018</code> cleans up two now-unused MC market settings rows
-                        (the dropdowns they backed are gone), new schedule rows (firstOrCreate so your
-                        cron customisations are preserved), CSS cache buster bumped to <code>?v=4</code>
-                        for the new <code>.whats-new-box</code> primitive. No settings to change, no
-                        permissions to re-grant, no data to migrate. Pricing config moves to
-                        <strong>Manager Core &rarr; Pricing Preferences</strong> when MC is your provider
-                        &mdash; existing operator preferences are preserved via MC's
-                        <code>admin_overridden</code> flag.
-                    </p>
-                </div>
-
-                {{-- v2.0.2 mention ===================================================
-                     Field Repairs hotfix sits as a small note below the v2.0.1
-                     callout rather than its own full whats-new-box — v2.0.2 is
-                     bugfixes, not features, so it doesn't deserve the same
-                     headline treatment as the polish-pass arc. Compact card with
-                     a left-border accent stays visible without competing for
-                     attention with v2.0.1's box. =================================== --}}
-                <div class="help-card" style="border-left: 4px solid #51cf66; padding: 12px 18px; font-size: 0.93em;">
-                    <h5 style="color: #51cf66; margin-bottom: 8px;">
-                        <i class="fas fa-tools"></i>
-                        v2.0.2 hotfix &mdash; The Ecosystem Era: Field Repairs
-                        <small class="text-muted ml-2" style="font-size: 0.78em;">2026-05-31</small>
-                    </h5>
-                    <p style="margin-bottom: 6px;">
-                        Real production bugs the Polish Pass left behind, surfaced when live traffic
-                        hit them. Same arc, no new features. Every fix additive, no schema changes,
-                        no new ESI scopes.
-                    </p>
-                    <ul style="margin-bottom: 6px; padding-left: 22px;">
-                        <li>
-                            <strong>Moon-chunk-unstable warning now fires.</strong>
-                            <code>MoonExtractionService::determineStatus()</code> mis-used ESI's
-                            <code>natural_decay_time</code> as the chunk expiry, stamping rows
-                            <code>'expired'</code> ~3h after arrival despite 50h of mineable life
-                            remaining. Math now mirrors <code>scopeExpiredByTime()</code>:
-                            <code>fractured_at + 50h</code>.
-                        </li>
-                        <li>
-                            <strong>Notification dispatcher tells you why it skipped.</strong>
-                            Diagnostic Notification Testing previously showed
-                            <em>reason: unknown</em>; now surfaces specific causes ("No enabled
-                            channel found", "Webhook table probe threw", etc.).
-                            <code>hasAnyEnabledWebhook()</code> stopped silently swallowing
-                            Eloquent exceptions.
-                        </li>
-                        <li>
-                            <strong>Mark-as-Paid modal no longer freezes.</strong> Bootstrap-meets-
-                            AdminLTE stacking-context bug; modals now reparent to
-                            <code>&lt;body&gt;</code> before show. Affects 5 surfaces across
-                            taxes / events / moon / ledger.
-                        </li>
-                        <li>
-                            <strong>Tax payments from alts now accepted.</strong> Auto-match
-                            broadened from strict <code>character_id</code> equality to
-                            "same SeAT <code>user_id</code>". Toggle at <em>Settings &rarr;
-                            General &rarr; Accept payments from any of a player's characters</em>
-                            (default ON). Audit log fires INFO on alt-credited payments.
-                        </li>
-                        <li>
-                            <strong>New daily integrity validator</strong>
-                            (<code>mining-manager:validate-lifecycle-integrity</code>) catches the
-                            class of bug behind the chunk-unstable incident if it ever recurs.
-                            Runs at 03:00 UTC with <code>--quiet-ok</code>; <code>--fix</code>
-                            applies corrections.
-                        </li>
-                    </ul>
-                    <p style="margin-bottom: 0; font-size: 0.85em; color: #9aa3b3;">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>Upgrading from v2.0.1?</strong>
-                        Docker stack down/up. No migrations, no settings to change.
-                        See the
-                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md"
-                           target="_blank" style="color: #93f7b8;">CHANGELOG</a>
-                        for the full fix arcs + recovery SQL recipes.
-                    </p>
+                    <p class="mb-0"><small class="text-muted">
+                        All three notifications are per-webhook opt-in (off by default). Everything additive &mdash;
+                        two new tables, one standalone permission, three opt-in notification types. No new ESI scopes.
+                    </small></p>
                 </div>
 
                 {{-- What is Mining Manager? --}}
@@ -994,6 +804,14 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <i class="fas fa-moon"></i>
                             <h5>{{ trans('mining-manager::help.feature_moon') }}</h5>
                             <p>{{ trans('mining-manager::help.feature_moon_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-calendar-check"></i>
+                            <h5>Moon Planner</h5>
+                            <p>Plan and stagger your refinery pulls across a three-month calendar so chunks don't
+                               land on top of each other. Projects each moon's next pull from its own history,
+                               warns when two arrivals fall too close together, and flags moons scheduled
+                               off-plan.</p>
                         </div>
                         <div class="feature-item">
                             <i class="fas fa-calendar-alt"></i>
@@ -2333,6 +2151,121 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                 </div>
             </div>
 
+            {{-- Moon Planner Section --}}
+            <div id="moon-planner" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-calendar-check"></i>
+                        Moon Planner
+                    </h3>
+                    <p>
+                        A calendar for deciding <em>when</em> each refinery should pull, so arrivals are spread out
+                        instead of landing on top of each other. Chunks that aren't mined promptly are wasted, so for
+                        a smaller crew the spacing matters as much as the schedule itself.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>The planner does not control your structures.</strong>
+                        SeAT can only read the extractions a director fires in-game. The planner is a coordination
+                        tool: it records what's already scheduled, and lets you plan what <em>should</em> happen next.
+                        Firing the drill is still done in EVE.
+                    </div>
+
+                    <h4><i class="fas fa-key"></i> Who can use it</h4>
+                    <p>
+                        The <strong>Moon Planner</strong> page appears in the sidebar for anyone with the
+                        <code>mining-manager.moon_manager</code> permission. Directors and admins have access as well.
+                        Grant <code>moon_manager</code> on its own when you want someone scheduling moon pulls without
+                        giving them full director rights.
+                    </p>
+
+                    <h4><i class="fas fa-clock"></i> Everything is EVE time</h4>
+                    <p>
+                        The calendar runs on <strong>EVE time (UTC)</strong> &mdash; the same clock the in-game
+                        structure scheduler uses &mdash; so what you plan matches what you type into the drill. When
+                        you add or edit a pull you enter EVE time and the form shows what that is in your own
+                        timezone underneath, as a sanity check.
+                    </p>
+
+                    <h4><i class="fas fa-magic"></i> Auto-fill from history</h4>
+                    <p>
+                        Rather than placing everything by hand, <strong>Auto-fill from History</strong> works out each
+                        refinery's natural rhythm from its past arrivals and lays the upcoming pulls onto the
+                        calendar. A refinery needs at least two recorded arrivals for this; with three or more the
+                        median interval is used so one unusual cycle doesn't skew it. Refineries without enough
+                        history of their own borrow the typical cadence of your other moons and are marked as
+                        estimates.
+                    </p>
+                    <p>
+                        If a refinery is missing history, run
+                        <code>mining-manager:backfill-extraction-history</code> &mdash; it reconstructs past cycles
+                        from your in-game notifications.
+                    </p>
+
+                    <h4><i class="fas fa-arrows-alt-h"></i> Moving pulls, and the gap warning</h4>
+                    <p>
+                        Move a pull to a different day and it stays there &mdash; later projections follow the new
+                        day rather than snapping back to the old one. That's how you shift a moon that has always
+                        landed on a Monday onto a Tuesday.
+                    </p>
+                    <p>
+                        If a pull lands within the <strong>minimum gap</strong> of another arrival (24 hours by
+                        default, configurable at Settings &rarr; Notifications) you'll get a confirmation listing the
+                        moons it clashes with and how far apart they are. You can still go ahead &mdash; it's a
+                        warning, not a block &mdash; but nothing gets saved past the gap without you agreeing to it.
+                    </p>
+
+                    <h4><i class="fas fa-lock"></i> Locked entries</h4>
+                    <p>
+                        Extractions that are live, finished, or archived are shown with a padlock and can't be edited.
+                        They were set in EVE, so the planner only records them. Clicking one explains why it's locked.
+                    </p>
+
+                    <h4><i class="fas fa-exclamation-triangle"></i> Moons scheduled off-plan</h4>
+                    <p>
+                        When a plan and the real extraction for the same refinery are within 30 minutes of each other
+                        they're treated as the same pull, so it appears once. If they're further apart than that but
+                        still in the same cycle, the drill was fired on a different timer than planned: the real pull
+                        is highlighted, it's listed in a <em>Scheduling mismatches</em> banner at the top of the page,
+                        and a <strong>Moon Scheduled Off-Plan</strong> notification fires once. Use <strong>Dismiss</strong>
+                        on the banner to retire the stale plan &mdash; the in-game extraction isn't touched.
+                    </p>
+
+                    <h4><i class="fas fa-industry"></i> The refinery panel</h4>
+                    <p>
+                        Down the right-hand side, each refinery shows its cadence, last arrival and next projected
+                        pull, plus two badges:
+                    </p>
+                    <ul>
+                        <li>
+                            A <strong>coverage badge</strong> &mdash; <code>Planned 2&times;</code> when upcoming pulls
+                            are booked, or an amber <code>Not planned</code> when none are. That's your "did I skip a
+                            moon?" check, counted across the whole horizon rather than just the visible months, and
+                            uncovered refineries sort to the top.
+                        </li>
+                        <li>
+                            An <strong>ore tier badge</strong> (R4 through R64) taken from the moon's most recent
+                            composition, so you can see at a glance which refineries are sitting on the valuable
+                            moons.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-history"></i> Change history</h4>
+                    <p>
+                        The <strong>History</strong> button lists who created, moved or removed each planned pull and
+                        what the times were before and after. Auto-fill runs are recorded as a single entry.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Getting started:</strong> open the Moon Planner, press
+                        <strong>Auto-fill from History</strong>, then adjust anything that looks wrong. Refineries
+                        flagged <code>Not planned</code> or "not enough history" are the ones needing a manual slot.
+                    </div>
+                </div>
+            </div>
+
             {{-- Theft Detection Section --}}
             <div id="theft-detection" class="help-section">
                 <div class="help-card">
@@ -2921,6 +2854,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <div class="feature-item" style="border-left: 4px solid #dc3545;">
                             <h5><span class="badge badge-danger">{{ trans('mining-manager::help.perm_admin') }}</span></h5>
                             <p>{{ trans('mining-manager::help.perm_admin_desc') }}</p>
+                        </div>
+                        <div class="feature-item" style="border-left: 4px solid #9b59b6;">
+                            <h5><span class="badge" style="background:#9b59b6;">Moon Manager</span> <small class="text-muted">(capability)</small></h5>
+                            <p><code>mining-manager.moon_manager</code> &mdash; a <strong>standalone capability</strong>, not a tier. Grants access to the <strong>Moon Extraction Planner</strong> (assign / move / auto-fill planned moon pulls to stagger arrivals). Directors and admins already have this access; grant <code>moon_manager</code> to delegate moon-pull scheduling to someone who isn't a full director.</p>
                         </div>
                     </div>
 

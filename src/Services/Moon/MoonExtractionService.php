@@ -881,10 +881,9 @@ class MoonExtractionService
      * Send moon arrival webhook notification.
      *
      * Public so external callers (CheckExtractionArrivalsCommand) can invoke
-     * directly. Pre-fix this was private and the command reached it via
-     * `ReflectionClass::getMethod()->setAccessible(true)` — a code smell
-     * (breaks IDE refactor + bypasses PHP's accessibility model just to
-     * dodge writing a public entry point).
+     * directly, rather than reaching a private method via
+     * `ReflectionClass::getMethod()->setAccessible(true)` (breaks IDE
+     * refactor and bypasses PHP's accessibility model).
      *
      * Atomic claim is handled internally — see comments inside.
      *
@@ -910,12 +909,12 @@ class MoonExtractionService
         // the two commands have separate locks and can interleave on the
         // same extraction within a 60-second overlap window.
         //
-        // Pre-fix: an `if ($extraction->notification_sent) return` check at
-        // the bottom of the try block (after structure + ore lookups) read
-        // a stale model. Both workers passed the check, both dispatched,
-        // both flipped the flag. Duplicate Discord pings for one arrival.
+        // A plain `if ($extraction->notification_sent) return` check at the
+        // bottom of the try block (after structure + ore lookups) reads a
+        // stale model: both workers pass the check, both dispatch, both flip
+        // the flag — duplicate Discord pings for one arrival.
         //
-        // Now: UPDATE WHERE notification_sent=false returns the count of
+        // Instead: UPDATE WHERE notification_sent=false returns the count of
         // rows updated. Only the worker that flips false→true gets back
         // claimed=1; everyone else gets 0 and bails. Same row-level pattern
         // as StructureAlertHandler's dedup latches.
@@ -986,6 +985,148 @@ class MoonExtractionService
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+            ]);
+        }
+    }
+
+    /**
+     * Send an `extraction_started` notification for a freshly-started
+     * extraction (new chunk forming, arrival in the future).
+     *
+     * Atomic claim on `extraction_started_sent` mirrors the moon-arrival
+     * dedup pattern: UPDATE WHERE flag=false returns the claim count, so
+     * only one worker dispatches even if two crons interleave. Rolls the
+     * claim back on dispatch failure so a later tick retries.
+     *
+     * @param MoonExtraction $extraction
+     * @return void
+     */
+    public function sendExtractionStartedNotification(MoonExtraction $extraction): void
+    {
+        $claimed = MoonExtraction::where('id', $extraction->id)
+            ->where('extraction_started_sent', false)
+            ->update(['extraction_started_sent' => true]);
+
+        if ($claimed === 0) {
+            Log::info("Mining Manager: Skipping extraction_started — already claimed for extraction {$extraction->id}");
+            return;
+        }
+
+        $extraction->refresh();
+
+        try {
+            $structure = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->first();
+            $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
+
+            $arrival = $extraction->chunk_arrival_time;
+            $timeUntil = ($arrival && $arrival->isFuture())
+                ? Carbon::now()->diffForHumans($arrival, ['parts' => 2, 'syntax' => Carbon::DIFF_ABSOLUTE])
+                : null;
+
+            $baseUrl = rtrim(config('app.url', ''), '/');
+
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $notificationService->sendExtractionStarted(array_filter([
+                'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                'structure_name' => $structureName,
+                'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
+                'time_until_arrival' => $timeUntil,
+                'estimated_value' => $extraction->estimated_value ?? 0,
+                'extraction_id' => $extraction->id,
+                'extraction_url' => $baseUrl . '/mining-manager/moon/' . $extraction->id,
+            ], fn ($v) => $v !== null));
+
+            Log::info("Mining Manager: fired extraction_started for extraction {$extraction->id}");
+        } catch (\Exception $e) {
+            MoonExtraction::where('id', $extraction->id)->update(['extraction_started_sent' => false]);
+            Log::error("Mining Manager: Failed to send extraction_started — claim rolled back", [
+                'extraction_id' => $extraction->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Send a `next_extraction_planned` notification — the planner "re-fire"
+     * nudge. Called AFTER the moon-ready notification has latched for the
+     * just-arrived chunk; announces the refinery's next planned pull so the
+     * staggered rotation is maintained.
+     *
+     * Looks up the soonest future active plan for the structure on the Moon
+     * Extraction Planner. If none exists, falls back to an on-the-fly cadence
+     * projection (not persisted). If neither yields a date, skips silently —
+     * we don't nag without something to point at.
+     *
+     * Latches on `next_planned_sent` of the ARRIVED extraction so each
+     * arrival triggers at most one nudge.
+     *
+     * @param MoonExtraction $extraction The chunk that just became ready.
+     * @return void
+     */
+    public function sendNextExtractionPlannedNotification(MoonExtraction $extraction): void
+    {
+        $claimed = MoonExtraction::where('id', $extraction->id)
+            ->where('next_planned_sent', false)
+            ->update(['next_planned_sent' => true]);
+
+        if ($claimed === 0) {
+            return;
+        }
+
+        try {
+            $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
+
+            // Prefer an explicit active plan for this refinery in the future.
+            $plan = \MiningManager\Models\MoonExtractionPlan::where('structure_id', $extraction->structure_id)
+                ->active()
+                ->where('planned_arrival_time', '>', Carbon::now())
+                ->orderBy('planned_arrival_time')
+                ->first();
+
+            $plannedAt = $plan?->planned_arrival_time;
+            $source = $plan ? $plan->source : null;
+            $cadenceDays = $plan?->cadence_days;
+
+            // Fall back to a fresh projection if there's no explicit plan.
+            if (!$plannedAt) {
+                $plannedAt = $planner->projectNextArrival((int) $extraction->structure_id);
+                $source = 'auto';
+                $cadenceDays = $planner->cadence((int) $extraction->structure_id)['cadence_days'] ?? null;
+            }
+
+            // Nothing to announce — roll back the latch so a later tick can
+            // try again once a plan exists, and bail.
+            if (!$plannedAt) {
+                MoonExtraction::where('id', $extraction->id)->update(['next_planned_sent' => false]);
+                Log::info("Mining Manager: next_extraction_planned skipped — no plan/projection for structure {$extraction->structure_id}");
+                return;
+            }
+
+            $structure = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->first();
+            $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
+
+            $baseUrl = rtrim(config('app.url', ''), '/');
+
+            $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
+            $notificationService->sendNextExtractionPlanned(array_filter([
+                'structure_name' => $structureName,
+                'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                'planned_arrival_time' => $plannedAt->format('Y-m-d H:i'),
+                'cadence_label' => $cadenceDays ? "~{$cadenceDays} days" : null,
+                'source' => $source,
+                'planner_url' => $baseUrl . '/mining-manager/moon/planner',
+            ], fn ($v) => $v !== null));
+
+            Log::info("Mining Manager: fired next_extraction_planned after arrival of extraction {$extraction->id}");
+        } catch (\Exception $e) {
+            MoonExtraction::where('id', $extraction->id)->update(['next_planned_sent' => false]);
+            Log::error("Mining Manager: Failed to send next_extraction_planned — claim rolled back", [
+                'extraction_id' => $extraction->id,
+                'error' => $e->getMessage(),
             ]);
         }
     }

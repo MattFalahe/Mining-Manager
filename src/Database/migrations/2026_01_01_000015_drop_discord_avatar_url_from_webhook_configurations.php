@@ -36,10 +36,9 @@ use Illuminate\Support\Facades\Schema;
  *   - lang/en/settings.php: discord_avatar_url + discord_avatar_help
  *     translation keys removed
  *
- * Forward-only per `feedback_released_plugin_migrations.md`. 000014
+ * Forward-only (released migrations are never altered). 000014
  * stays in the migration set as historical record.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class DropDiscordAvatarUrlFromWebhookConfigurations extends Migration
 {

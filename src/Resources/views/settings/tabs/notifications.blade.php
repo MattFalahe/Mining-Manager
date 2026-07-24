@@ -134,6 +134,33 @@
                         'has_user_ping' => false,
                         'has_show_amount' => false,
                     ],
+                    'extraction_started' => [
+                        'label' => 'Extraction Started',
+                        'icon' => 'fas fa-hammer text-info',
+                        'desc' => 'Fires when a refinery begins a new extraction (drill fired, chunk forming). Read from the in-game MoonminingExtractionStarted director notification. Lets the team plan around the upcoming arrival. Standalone — no Manager Core or Structure Manager required.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
+                    'next_extraction_planned' => [
+                        'label' => 'Next Extraction Planned',
+                        'icon' => 'fas fa-calendar-check text-primary',
+                        'desc' => 'The Moon Extraction Planner nudge — fired AFTER a chunk becomes ready, announcing the refinery\'s next planned pull so a director re-fires the drill on schedule. Points at the Moon Planner. Standalone.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
+                    'schedule_mismatch' => [
+                        'label' => 'Moon Scheduled Off-Plan',
+                        'icon' => 'fas fa-exclamation-triangle text-danger',
+                        'desc' => 'Fires when a moon\'s in-game extraction is set to a materially different time than the Moon Extraction Planner called for (more than the 30-minute match tolerance, but still the same cycle) — i.e. the drill was fired on the wrong timer, or the plan is stale. One ping per plan. Standalone.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
                     'extraction_at_risk' => [
                         'label' => 'Extraction at Risk',
                         'icon' => 'fas fa-fire text-danger',
@@ -361,8 +388,7 @@
                                         </div>
 
                                         {{-- Inline role picker for this notification type. Hidden by default,
-                                             toggles on the Pick button. Pattern documented in memory:
-                                             feedback_plugin_role_picker_pattern.md. One picker div per type
+                                             toggles on the Pick button. One picker div per type
                                              keeps the JS handler dumb (data attributes route the click to
                                              the right input + picker). AJAX-loaded role list cached across
                                              ALL pickers on the page, so opening any of them after the first
@@ -594,6 +620,9 @@
                         'moon_ready' => ['label' => 'Moon Chunk Ready', 'icon' => 'fas fa-moon text-warning'],
                         'jackpot_detected' => ['label' => 'Jackpot Detected', 'icon' => 'fas fa-star text-warning'],
                         'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],
+                        'extraction_started' => ['label' => 'Extraction Started', 'icon' => 'fas fa-hammer text-info'],
+                        'next_extraction_planned' => ['label' => 'Next Extraction Planned', 'icon' => 'fas fa-calendar-check text-primary'],
+                        'schedule_mismatch' => ['label' => 'Moon Scheduled Off-Plan', 'icon' => 'fas fa-exclamation-triangle text-danger'],
                         'theft_detected' => ['label' => 'Theft Detected', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'critical_theft' => ['label' => 'Critical Theft', 'icon' => 'fas fa-skull-crossbones text-danger'],
                         'active_theft' => ['label' => 'Active Theft', 'icon' => 'fas fa-bolt text-danger'],
@@ -672,6 +701,107 @@
         </div>
     </div>
 
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    {{-- MOON EXTRACTION PLANNER — MINIMUM GAP                            --}}
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-calendar-check text-primary"></i>
+                Moon Planner — Minimum Arrival Gap
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                Minimum gap (hours) between two chunk arrivals before the
+                <a href="{{ route('mining-manager.moon.planner') }}">Moon Extraction Planner</a>
+                warns about clustering. Default <strong>24h</strong>. Chunks not mined promptly can
+                be wasted, so smaller corps may prefer a wider gap (e.g. 36h) to give a small crew
+                time to clear each belt; larger groups can tighten it (e.g. 12h). Clamped to
+                <code>1-168</code> hours.
+            </small>
+            <div class="form-group row align-items-center mb-0">
+                <label for="min_extraction_gap_hours" class="col-md-4 col-form-label">
+                    Minimum gap between arrivals
+                </label>
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <input type="number"
+                               class="form-control"
+                               id="min_extraction_gap_hours"
+                               name="min_extraction_gap_hours"
+                               min="1" max="168" step="1"
+                               value="{{ old('min_extraction_gap_hours', $notificationSettings['min_extraction_gap_hours'] ?? 24) }}">
+                        <div class="input-group-append">
+                            <span class="input-group-text">hours</span>
+                        </div>
+                    </div>
+                    @error('min_extraction_gap_hours')
+                        <small class="invalid-feedback d-block">{{ $message }}</small>
+                    @enderror
+                </div>
+                <div class="col-md-5">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i>
+                        Placing or moving a pull within this window of another arrival prompts a
+                        confirmation. Auto-fill also uses it to spread projected pulls.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    {{-- EXTRACTION STARTED — DETECTION SPEED (MANAGER CORE FAST-POLL)    --}}
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    @php $mmFastPollAvailable = class_exists('\ManagerCore\Services\ESI\EsiNotificationRegistry'); @endphp
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-bolt text-info"></i>
+                Extraction Started — Detection Speed
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                How fast the <code>extraction_started</code> notification fires when a refinery lights
+                its moon drill.
+                <strong>Fast (Manager Core)</strong> registers with Manager Core's ESI fast-poll and
+                reacts to the in-game <code>MoonminingExtractionStarted</code> notification in ~2 minutes.
+                <strong>SeAT-native</strong> waits for the corp moon-extraction endpoint to refresh
+                (~30 min cache). The two paths are mutually exclusive — only one fires, so there are
+                no duplicate notifications.
+                @if(!$mmFastPollAvailable)
+                    <span class="d-block mt-1 text-warning">
+                        <i class="fas fa-info-circle"></i>
+                        Manager Core is not installed — only SeAT-native applies regardless of this setting.
+                    </span>
+                @endif
+            </small>
+            @php $mmFastPollMode = old('moon_extraction_fastpoll_mode', $notificationSettings['moon_extraction_fastpoll_mode'] ?? 'auto'); @endphp
+            <div class="form-group mb-0">
+                <div class="custom-control custom-radio mb-2">
+                    <input type="radio" class="custom-control-input" id="fastpoll_auto"
+                           name="moon_extraction_fastpoll_mode" value="auto"
+                           {{ $mmFastPollMode === 'auto' ? 'checked' : '' }}>
+                    <label class="custom-control-label" for="fastpoll_auto">
+                        <i class="fas fa-bolt text-info"></i>
+                        <strong>Fast (Manager Core)</strong> — recommended when Manager Core is installed
+                    </label>
+                </div>
+                <div class="custom-control custom-radio">
+                    <input type="radio" class="custom-control-input" id="fastpoll_seat_native"
+                           name="moon_extraction_fastpoll_mode" value="seat_native"
+                           {{ $mmFastPollMode === 'seat_native' ? 'checked' : '' }}>
+                    <label class="custom-control-label" for="fastpoll_seat_native">
+                        <i class="fas fa-clock text-muted"></i>
+                        <strong>SeAT-native</strong> — endpoint-driven, no Manager Core dependency
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- Save Button --}}
     <div class="action-buttons">
         <button type="submit" class="btn btn-success btn-block">
@@ -720,8 +850,7 @@ $(document).ready(function() {
 
     // ============================================================
     // INLINE DISCORD ROLE PICKER — multi-instance (one per type with
-    // has_role_ping=true). Pattern documented in memory:
-    // feedback_plugin_role_picker_pattern.md
+    // has_role_ping=true).
     //
     // Each picker button carries data-picker-id (the inline picker div
     // to toggle) and data-input-id (the role-id input to receive the

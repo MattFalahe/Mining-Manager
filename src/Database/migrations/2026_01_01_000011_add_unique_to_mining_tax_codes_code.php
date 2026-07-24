@@ -39,7 +39,6 @@ use Illuminate\Support\Facades\DB;
  * NEVER edit migration 000001 to add the constraint; that would break
  * idempotency of the migration run for anyone on v1.0.2 already.
  *
- * @see project memory feedback_released_plugin_migrations.md
  */
 class AddUniqueToMiningTaxCodesCode extends Migration
 {

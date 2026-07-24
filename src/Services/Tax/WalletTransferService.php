@@ -253,13 +253,11 @@ class WalletTransferService
      *   2. ProcessWalletJournalListener::handle (queued)
      *   3. WalletTransferService::autoVerifyFromCorporationWallet
      *
-     * Pre-fix C1+C2 (audit follow-up): paths 2 and 3 each had their own
-     * divergent write logic. Path 2 had the dedup-table insert AFTER the
-     * tax update (race window). Path 3 didn't write to the dedup table at
-     * all AND set status='paid' with replacement-not-accumulation
-     * semantics, bulldozing partial payments. Now all three paths funnel
-     * through this method so the atomic-claim + partial-payment semantics
-     * are guaranteed identical.
+     * All three paths funnel through this method so the atomic-claim and
+     * partial-payment semantics are guaranteed identical. Divergent write
+     * logic here is a known hazard: a dedup-table insert placed after the
+     * tax update opens a race window, and replacement-rather-than-
+     * accumulation semantics bulldoze partial payments.
      *
      * Idempotency:
      *   - Inserts the dedup row FIRST inside DB::transaction. The unique
@@ -689,12 +687,11 @@ class WalletTransferService
                     // same atomic-claim, partial-payment-accumulating
                     // semantics as the listener and the manual paths.
                     //
-                    // Pre-fix this method had its own divergent write logic:
-                    // (a) replaced amount_paid instead of accumulating
-                    //     (bulldozed partial payments to "fully paid" with
-                    //     the wrong amount), and (b) skipped the dedup-table
-                    //     insert entirely (allowing the same transaction to
-                    //     re-credit a tax on every cron run).
+                    // Must not diverge from that shared logic: replacing
+                    // amount_paid instead of accumulating bulldozes partial
+                    // payments to "fully paid" with the wrong amount, and
+                    // skipping the dedup-table insert lets the same
+                    // transaction re-credit a tax on every cron run.
                     $applied = $this->applyPaymentToTax(
                         $tax,
                         $taxCode,

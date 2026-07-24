@@ -595,10 +595,10 @@ class MoonController extends Controller
      */
     public function extractions($structureId)
     {
-        // Reject obviously-bad URLs up front. Pre-fix a non-numeric
-        // structureId (typo'd link, paste error) reached the query and
-        // silently returned an empty paginated result rendered as a blank
-        // page. Now we 404 with a clear server-side signal.
+        // Reject obviously-bad URLs up front. A non-numeric structureId
+        // (typo'd link, paste error) would otherwise reach the query and
+        // silently return an empty paginated result rendered as a blank
+        // page; 404 is a clear server-side signal instead.
         if (!is_numeric($structureId) || (int) $structureId <= 0) {
             abort(404);
         }

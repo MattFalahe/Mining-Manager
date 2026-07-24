@@ -154,10 +154,10 @@ class CachePriceDataCommand extends Command
 
         // Goes through `pricing.getPrices` which returns the documented
         // `[typeId => ['buy' => stats, 'sell' => stats]]` shape regardless
-        // of MC's underlying column names. Pre-fix this used
-        // `DB::table('manager_core_market_prices')` directly — schema-coupled
-        // to MC's table layout, exactly the class of issue the H7b
-        // PluginBridge migration set out to eliminate.
+        // of MC's underlying column names. Do NOT read
+        // `DB::table('manager_core_market_prices')` directly — that couples us
+        // to MC's table layout, which is exactly what the PluginBridge
+        // contract exists to avoid.
         //
         // 4th arg 'mining-manager' (added 2026-05-29 for MC Option B): when
         // MC sees a per-plugin provider_override on MM's row in

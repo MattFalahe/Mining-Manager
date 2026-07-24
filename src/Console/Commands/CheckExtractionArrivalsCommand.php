@@ -140,15 +140,22 @@ class CheckExtractionArrivalsCommand extends Command
                     //
                     // The service handles the notification_sent latch atomically
                     // (compare-and-swap UPDATE WHERE flag=false). Two implications:
-                    //   1. We MUST NOT set the flag here. Pre-M3-fix the command
-                    //      always set it post-dispatch — that overrode the service's
-                    //      rollback-on-failure path, leaving notifications silently
-                    //      lost on transient errors.
+                    //   1. We MUST NOT set the flag here. Setting it post-dispatch
+                    //      would override the service's rollback-on-failure path,
+                    //      leaving notifications silently lost on transient errors.
                     //   2. If the service silently bails (race lost — another worker
                     //      already claimed the latch), this counter increments
                     //      without an actual ping firing. Minor counter imprecision
                     //      vs the prior duplicate-ping bug it cures.
                     $this->extractionService->sendMoonArrivalNotification($extraction);
+
+                    // Planner nudge: now that this chunk is ready, announce the
+                    // refinery's NEXT planned pull. Ordered AFTER the arrival
+                    // dispatch so it only ever follows the moon-ready ping, per
+                    // the planner contract. Has its own next_planned_sent latch
+                    // so it fires at most once per arrival; no-ops silently when
+                    // there's no plan/projection to point at.
+                    $this->extractionService->sendNextExtractionPlannedNotification($extraction);
 
                     $dispatched++;
 
@@ -271,6 +278,80 @@ class CheckExtractionArrivalsCommand extends Command
 
                 if (!$dryRun) {
                     $this->info("Unstable warnings dispatched: {$warned}" . ($warningFailed > 0 ? ", Failed: {$warningFailed}" : ''));
+                }
+            }
+
+            // ================================================================
+            // PASS 3: fire extraction_started for freshly-started extractions
+            // (chunk forming, arrival still in the future). Driven off the
+            // stored extraction_start_time, NOT ESI state polling — same
+            // robustness rationale as the arrival pass. Idempotent via
+            // extraction_started_sent.
+            //
+            // Window-bounded on extraction_start_time (not created_at) so a
+            // history backfill or a fresh deploy doesn't fire for extractions
+            // that started long ago — only genuinely recent starts notify.
+            //
+            // SUPPRESSED when Manager Core fast-poll owns extraction_started —
+            // MC's notification handler fires it ~2 min after the drill is
+            // lit, far ahead of this endpoint-driven pass. Running both would
+            // double-fire (they dedup on different keys). Mutual exclusion
+            // mirrors Structure Manager's fast-poll vs SeAT-native model.
+            // ================================================================
+            if (\MiningManager\Integrations\MoonFastPollIntegration::isFastPollEnabled()) {
+                $this->info('Extraction-started handled by Manager Core fast-poll — skipping SeAT-native pass.');
+
+                if ($dryRun) {
+                    $this->warn("DRY RUN — no notifications fired, no flags updated.");
+                } else {
+                    $this->info("Arrival dispatched: {$dispatched}" . ($failed > 0 ? ", Failed: {$failed}" : ''));
+                }
+
+                return Command::SUCCESS;
+            }
+
+            $startedQuery = MoonExtraction::query()
+                ->where('status', 'extracting')
+                ->where('chunk_arrival_time', '>', $now)
+                ->where('extraction_start_time', '>=', $windowStart)
+                ->where('extraction_started_sent', false);
+
+            if ($moonOwnerCorpId !== null) {
+                $startedQuery->where('corporation_id', $moonOwnerCorpId);
+            }
+
+            $started = $startedQuery->orderBy('extraction_start_time')->limit($limit)->get();
+
+            if ($started->isEmpty()) {
+                $this->info('No newly-started extractions pending notification.');
+            } else {
+                $this->info("Found {$started->count()} newly-started extraction(s):");
+                $startedDispatched = 0;
+                $startedFailed = 0;
+
+                foreach ($started as $extraction) {
+                    $moonLabel = $extraction->moon_name ?? "Moon {$extraction->moon_id}";
+                    $this->line("  #{$extraction->id} — {$moonLabel} — arrives {$extraction->chunk_arrival_time->diffForHumans()}");
+
+                    if ($dryRun) {
+                        $startedDispatched++;
+                        continue;
+                    }
+
+                    try {
+                        $this->extractionService->sendExtractionStartedNotification($extraction);
+                        $startedDispatched++;
+                    } catch (\Exception $e) {
+                        $startedFailed++;
+                        $this->error("  Failed: {$e->getMessage()}");
+                        Log::error("CheckExtractionArrivalsCommand: failed to fire extraction_started for extraction {$extraction->id}", [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (!$dryRun) {
+                    $this->info("Extraction-started dispatched: {$startedDispatched}" . ($startedFailed > 0 ? ", Failed: {$startedFailed}" : ''));
                 }
             }
 

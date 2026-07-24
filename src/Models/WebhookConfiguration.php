@@ -75,6 +75,9 @@ class WebhookConfiguration extends Model
         'notify_moon_arrival',
         'notify_jackpot_detected',
         'notify_moon_chunk_unstable',
+        'notify_extraction_started',
+        'notify_next_extraction_planned',
+        'notify_schedule_mismatch',
         'notify_extraction_at_risk',
         'notify_extraction_lost',
         'notify_metenox_cargo_full',
@@ -110,6 +113,9 @@ class WebhookConfiguration extends Model
         'notify_moon_arrival' => 'boolean',
         'notify_jackpot_detected' => 'boolean',
         'notify_moon_chunk_unstable' => 'boolean',
+        'notify_extraction_started' => 'boolean',
+        'notify_next_extraction_planned' => 'boolean',
+        'notify_schedule_mismatch' => 'boolean',
         'notify_extraction_at_risk' => 'boolean',
         'notify_extraction_lost' => 'boolean',
         'notify_metenox_cargo_full' => 'boolean',
@@ -196,6 +202,9 @@ class WebhookConfiguration extends Model
             'moon_arrival' => 'notify_moon_arrival',
             'jackpot_detected' => 'notify_jackpot_detected',
             'moon_chunk_unstable' => 'notify_moon_chunk_unstable',
+            'extraction_started' => 'notify_extraction_started',
+            'next_extraction_planned' => 'notify_next_extraction_planned',
+            'schedule_mismatch' => 'notify_schedule_mismatch',
             'extraction_at_risk' => 'notify_extraction_at_risk',
             'extraction_lost' => 'notify_extraction_lost',
             'event_created' => 'notify_event_created',
@@ -228,8 +237,7 @@ class WebhookConfiguration extends Model
         // Bump the counter + timestamp + clear last_error in one round-trip,
         // then mirror the new values onto $this so callers reading the
         // model post-call see the updated state without a separate
-        // refresh() query. Pre-fix this did UPDATE + refresh() = 2 RTT;
-        // now 1 RTT.
+        // refresh() query — one round-trip instead of UPDATE + refresh().
         $now = now();
         self::where('id', $this->id)->update([
             'success_count' => DB::raw('success_count + 1'),
@@ -323,6 +331,9 @@ class WebhookConfiguration extends Model
             'moon_arrival' => $this->notify_moon_arrival,
             'jackpot_detected' => $this->notify_jackpot_detected,
             'moon_chunk_unstable' => $this->notify_moon_chunk_unstable,
+            'extraction_started' => $this->notify_extraction_started,
+            'next_extraction_planned' => $this->notify_next_extraction_planned,
+            'schedule_mismatch' => $this->notify_schedule_mismatch,
             'extraction_at_risk' => $this->notify_extraction_at_risk,
             'extraction_lost' => $this->notify_extraction_lost,
             'event_created' => $this->notify_event_created,

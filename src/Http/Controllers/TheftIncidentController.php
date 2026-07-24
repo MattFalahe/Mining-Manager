@@ -181,8 +181,7 @@ class TheftIncidentController extends Controller
             ]);
 
             // Fire incident_resolved webhooks when the incident moves out of
-            // active status (either to 'resolved' or 'false_alarm'). Wired up
-            // as of Phase E of the notification consolidation.
+            // active status (either to 'resolved' or 'false_alarm').
             if ($shouldNotifyResolved) {
                 try {
                     app(\MiningManager\Services\Notification\TheftNotificationService::class)
@@ -240,8 +239,7 @@ class TheftIncidentController extends Controller
                 'user_id' => Auth::id()
             ]);
 
-            // Fire incident_resolved webhooks for either resolution type
-            // (Phase E of the notification consolidation).
+            // Fire incident_resolved webhooks for either resolution type.
             try {
                 app(\MiningManager\Services\Notification\TheftNotificationService::class)
                     ->notifyIncidentResolved($incident->fresh());

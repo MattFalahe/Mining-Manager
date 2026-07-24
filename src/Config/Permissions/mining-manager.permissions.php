@@ -30,6 +30,16 @@ return [
         'division' => 'financial',
     ],
 
+    // Standalone capability (NOT a tier) — grants access to the Moon
+    // Extraction Planner. Directors/admins reach the planner too (the routes
+    // accept moon_manager OR director), but this ability lets a corp delegate
+    // moon-pull scheduling to someone who isn't a full director.
+    'moon_manager' => [
+        'label' => 'mining-manager::permissions.moon_manager_label',
+        'description' => 'mining-manager::permissions.moon_manager_description',
+        'division' => 'financial',
+    ],
+
     'admin' => [
         'label' => 'mining-manager::permissions.admin_label',
         'description' => 'mining-manager::permissions.admin_description',

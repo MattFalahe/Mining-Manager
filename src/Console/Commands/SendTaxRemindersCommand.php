@@ -115,13 +115,13 @@ class SendTaxRemindersCommand extends Command
         }
 
         // Include both 'unpaid' (pre-grace-period) and 'overdue' (post-grace-period)
-        // statuses. Pre-fix, this only queried 'unpaid', which meant:
-        //   (a) taxes past due but still within the 7-day grace period got
+        // statuses. Querying only 'unpaid' would mean:
+        //   (a) taxes past due but still within the 7-day grace period get
         //       tax_reminder spam with "Days Remaining: 0" every day.
         //   (b) taxes past the grace period (status flipped to 'overdue' by
-        //       TaxCalculationService::updateOverdueTaxes) fell out of the
-        //       query entirely and got NO notifications at all.
-        // Both are fixed here — the per-character loop below branches between
+        //       TaxCalculationService::updateOverdueTaxes) fall out of the
+        //       query entirely and get NO notifications at all.
+        // The per-character loop below branches between
         // sendTaxReminder and sendTaxOverdue based on each character's
         // earliest due date vs today.
         $query = MiningTax::whereIn('status', ['unpaid', 'overdue'])

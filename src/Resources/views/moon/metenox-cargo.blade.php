@@ -69,8 +69,7 @@
     /* Bay-fill badge in the drill card title — colour-graded by fill state.
        Same three-tier palette as the fill-bar below: ok (green) / warning
        (yellow) / critical (red). !important per the inline-color-vs-custom-
-       CSS rule (feedback_help_docs_visual_design.md rule #5) so custom
-       SeAT themes don't wash out the state colour. */
+       CSS rule so custom SeAT themes don't wash out the state colour. */
     .metenox-cargo-page .drill-fill-badge {
         display: inline-block;
         padding: 2px 9px;
