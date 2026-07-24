@@ -47,14 +47,13 @@ class SettingsController extends Controller
         $prefix = SettingsManagerService::CACHE_PREFIX;
         $activeCorp = $this->settingsService->getActiveCorporation();
 
-        // Pre-fix this iterated a list of GROUP names ('general', 'pricing',
-        // 'notifications', etc.) and called Cache::forget on
-        // `<prefix>global_<group>`. But the cache keys SettingsManagerService
-        // writes use the FULL dotted path (`<prefix>global_notifications.enabled_types`,
-        // `<prefix>global_pricing.cache_duration`, etc.), so the bulk-clear
-        // forgot non-existent keys and the actual cache entries persisted
-        // for up to CACHE_DURATION (60 minutes). Stale-cache risk after
-        // every settings save.
+        // Clear by the FULL dotted cache key, not by group name. The keys
+        // SettingsManagerService writes look like
+        // `<prefix>global_notifications.enabled_types` /
+        // `<prefix>global_pricing.cache_duration`, so forgetting
+        // `<prefix>global_<group>` would target non-existent keys and leave
+        // the real entries alive for up to CACHE_DURATION (60 minutes) —
+        // stale settings after every save.
         //
         // Now: enumerate the actual setting keys from the DB and forget
         // each. Both global rows (corporation_id IS NULL) and active-corp
@@ -451,10 +450,10 @@ class SettingsController extends Controller
             // which gates the per-webhook URLs the same way.
             //
             // Conditional `required_if`: if the operator turned slack_enabled
-            // ON, the URL must be present. Pre-fix an admin could save with
-            // slack_enabled=true and an empty URL — every notification
-            // dispatch would then return "Slack webhook URL not configured"
-            // with no save-time error to point them at the missing field.
+            // ON, the URL must be present. Otherwise an admin can save with
+            // slack_enabled=true and an empty URL, and every notification
+            // dispatch returns "Slack webhook URL not configured" with no
+            // save-time error pointing at the missing field.
             'slack_webhook_url' => [
                 'nullable',
                 'required_if:slack_enabled,1',
@@ -791,11 +790,10 @@ class SettingsController extends Controller
             // Manager Core-specific settings are persisted via
             // updatePricingSettings() below (under the `pricing.` prefix)
             // — the canonical reader (SettingsManagerService::getPricingSettings)
-            // looks them up there. Pre-fix this block ALSO wrote them at
-            // the top-level (`manager_core_market` / `manager_core_variant`
-            // unprefixed), creating orphan rows that were never read by
-            // anything. Removed for cleanliness — the prefixed write later
-            // is the single source of truth.
+            // looks them up there. Do NOT also write them unprefixed
+            // (`manager_core_market` / `manager_core_variant`) — that creates
+            // orphan rows nothing reads. The prefixed write later is the
+            // single source of truth.
 
             // Auto-subscribe type IDs to Manager Core when selected as
             // provider, AND register MM's default preference into MC's
@@ -1489,11 +1487,10 @@ class SettingsController extends Controller
             // HTTPS-only — Discord/Slack/standard webhooks are always HTTPS.
             // The starts_with rule blocks http://, file://, gopher://, etc.
             'webhook_url' => ['required', 'url', 'starts_with:https://'],
-            // is_enabled — explicit boolean validation. Pre-fix the field
-            // was silently coerced via $request->boolean() in the
-            // controller without going through the validator at all,
-            // meaning a form payload of `is_enabled=banana` would just
-            // become false instead of triggering a validation error.
+            // is_enabled — explicit boolean validation. Coercing it via
+            // $request->boolean() in the controller without going through the
+            // validator means a payload of `is_enabled=banana` silently
+            // becomes false instead of raising a validation error.
             'is_enabled' => 'nullable|boolean',
             'notify_theft_detected' => 'nullable|boolean',
             'notify_critical_theft' => 'nullable|boolean',
@@ -1519,11 +1516,10 @@ class SettingsController extends Controller
             // Discord role IDs are snowflakes — 64-bit integers serialized
             // as strings. They're 17-20 digits in practice (Discord's
             // snowflake epoch + the bit allocation guarantees this range).
-            // Pre-fix this was just `string|max:255` so an operator who
-            // pasted a role NAME instead of an ID got accepted, then their
-            // role-ping tag rendered as `<@&MyRole>` in Discord — a literal
-            // string that doesn't ping anyone. Now we reject non-numeric
-            // values up-front so the operator sees the issue at save time.
+            // A plain `string|max:255` would accept an operator pasting a
+            // role NAME instead of an ID; the role-ping tag then renders as
+            // `<@&MyRole>` in Discord — a literal string that pings nobody.
+            // Rejecting non-numeric values up-front surfaces it at save time.
             'discord_role_id' => ['nullable', 'string', 'regex:/^\d{17,20}$/'],
             'discord_username' => 'nullable|string|max:255',
             'slack_channel' => 'nullable|string|max:255',

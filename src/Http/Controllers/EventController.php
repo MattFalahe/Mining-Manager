@@ -128,12 +128,12 @@ class EventController extends Controller
         }
 
         // Get the dropdown corp set: corps with MM settings + the moon
-        // owner corp (always included). Pre-fix this loaded the entire
-        // `corporation_infos` table — on a multi-corp shared SeAT install,
-        // hundreds of unrelated corps could appear in the dropdown,
-        // causing UI bloat and letting an admin pick a corp that has
-        // nothing to do with this MM install. The new scope matches what
-        // operators can actually meaningfully assign events to.
+        // owner corp (always included). Loading the entire
+        // `corporation_infos` table would mean that on a multi-corp shared
+        // SeAT install hundreds of unrelated corps appear in the dropdown —
+        // UI bloat, and an admin could pick a corp that has nothing to do
+        // with this MM install. This scope matches what operators can
+        // actually meaningfully assign events to.
         $corporations = $this->getEventDropdownCorporations();
 
         $taxCompat = $this->buildTaxCompatibilityMap();
@@ -156,11 +156,11 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Reference checks: pre-fix any integer was accepted, so a
-            // typo or stale form replay could persist a row that points
-            // at a non-existent system or corp. Display code joins
-            // `solar_systems` later and silently renders "Unknown" —
-            // confusing reports / charts. Now we reject at save time.
+            // Reference checks: accepting any integer lets a typo or stale
+            // form replay persist a row pointing at a non-existent system or
+            // corp. Display code joins `solar_systems` later and silently
+            // renders "Unknown", confusing reports / charts — so reject at
+            // save time instead.
             'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
             'tax_modifier' => 'required|integer|min:-100|max:100',
             'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
@@ -277,9 +277,9 @@ class EventController extends Controller
      * an event tied to a corp that's no longer in the active set still
      * renders its current value correctly).
      *
-     * Pre-fix the create/edit forms loaded the entire `corporation_infos`
-     * table with no filter — on a shared SeAT install with many
-     * historical corps, the dropdown could have hundreds of entries.
+     * Without this filter the create/edit forms load the entire
+     * `corporation_infos` table — on a shared SeAT install with many
+     * historical corps the dropdown can run to hundreds of entries.
      *
      * @param int $alwaysIncludeCorpId  Optional corp id to include even
      *                                  if it's not in the active set
@@ -341,9 +341,9 @@ class EventController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'nullable|date|after:start_time',
             'location_scope' => 'required|string|in:any,system,constellation,region',
-            // Existence checks — symmetric with store(). Pre-fix accepted
-            // any integer; stale form replays / typos could persist
-            // pointers to non-existent systems / corps.
+            // Existence checks — symmetric with store(). Accepting any
+            // integer lets stale form replays / typos persist pointers to
+            // non-existent systems / corps.
             'solar_system_id' => 'nullable|integer|exists:solar_systems,system_id',
             'tax_modifier' => 'required|integer|min:-100|max:100',
             'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',

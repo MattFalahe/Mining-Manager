@@ -748,12 +748,10 @@ class AnalyticsController extends Controller
             }
 
             // CSV export — streamed via php://output rather than building
-            // the full string in memory. Pre-fix the export concatenated
-            // every row into a single PHP string before returning, which
-            // could hit hundreds of MB for active corps with months of
-            // mining data. The audit-driven cycle 1 fixed the equivalent
-            // pattern on the ledger export path; this is the same fix
-            // applied to analytics.
+            // the full string in memory. Concatenating every row into a
+            // single PHP string before returning can hit hundreds of MB for
+            // active corps with months of mining data. The ledger export
+            // path streams for the same reason.
             $headers = ['Character', 'Ore Type', 'Quantity', 'Value', 'System', 'Date'];
             $filename = 'mining_analytics_' . $startDate->format('Y-m-d') . '_' . $endDate->format('Y-m-d') . '.csv';
 

@@ -9,12 +9,11 @@ use Illuminate\Support\Facades\Log;
  * Clean up orphan top-level `manager_core_market` and `manager_core_variant`
  * rows in `mining_manager_settings`.
  *
- * Pre-fix `SettingsController::updatePricing()` wrote the user's MC market
+ * `SettingsController::updatePricing()` used to write the user's MC market
  * and variant selections to BOTH the top-level keys (e.g. `manager_core_market`)
  * AND the prefixed keys (e.g. `pricing.manager_core_market`). The reader
  * (`SettingsManagerService::getPricingSettings()`) only looks at the prefixed
- * forms — see C1 fix in this changelog for the full story. The top-level
- * rows were never read by anything, just orphan data.
+ * forms, so the top-level rows were never read by anything — orphan data.
  *
  * The M11 commit (controller change) removed the duplicate write going
  * forward. This migration cleans up the orphans on existing installs that

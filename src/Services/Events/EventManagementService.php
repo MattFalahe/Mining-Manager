@@ -60,12 +60,11 @@ class EventManagementService
 
         // 1. planned → active (start_time has passed)
         //
-        // ATOMIC CLAIM via compare-and-swap. Pre-fix: the cron read
-        // status='planned' rows then `$event->update(['status' => 'active'])`
-        // unconditionally. Manual start path (EventController::start) had
-        // the same shape — a director clicking "Start" the same minute the
-        // cron fires both passed their respective reads + writes, both
-        // dispatched event_started. Now: UPDATE WHERE status='planned'
+        // ATOMIC CLAIM via compare-and-swap. A plain read of status='planned'
+        // followed by `$event->update(['status' => 'active'])` would race with
+        // the manual start path (EventController::start): a director clicking
+        // "Start" the same minute the cron fires means both pass their reads
+        // and writes, and both dispatch event_started. Instead: UPDATE WHERE status='planned'
         // returns the count of rows updated. Only the path that flips
         // planned→active gets back claimed=1 and proceeds to dispatch.
         $shouldStart = MiningEvent::where('status', 'planned')

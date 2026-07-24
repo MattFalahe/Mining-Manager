@@ -128,10 +128,9 @@ class ProcessMiningLedgerCommand extends Command
 
         // No outer DB::beginTransaction.
         //
-        // Pre-fix this command wrapped the entire chunk loop in a single
-        // transaction. For active corps that's tens of thousands of observer
-        // records — the transaction held row-level locks on `mining_ledger`
-        // for minutes. With Cache::lock=900s on this command and ESI
+        // Do NOT wrap the chunk loop in a single transaction. For active corps
+        // that's tens of thousands of observer records — it would hold
+        // row-level locks on `mining_ledger` for minutes. With Cache::lock=900s on this command and ESI
         // refreshes happening on their own schedules, any concurrent writer
         // (the import-character-mining cron at :20/:50 vs this one at :15/:45,
         // or the dashboard's auto-refresh queries) could hit MySQL's
@@ -158,7 +157,7 @@ class ProcessMiningLedgerCommand extends Command
         //
         // Capture the singleton's active corp BEFORE the loop so we can
         // restore it in `finally` regardless of how this method exits.
-        // Pre-fix the loop's setActiveCorporation calls leaked context to
+        // Without this, the loop's setActiveCorporation calls leak context to
         // the next caller in the same PHP process — invisible on web
         // requests (each request gets a fresh container) but real on
         // queue workers (Laravel's persistent worker reuses the process

@@ -459,10 +459,10 @@ class PriceProviderService
         $bridgePriceType = $priceType === 'average' ? 'both' : $priceType;
 
         // Cross-plugin call via the documented PluginBridge contract
-        // (pricing.getPrices). Pre-fix the implementation reached directly
-        // into manager_core_market_prices via DB::table — fragile under MC
-        // schema drift, bypassed MC's Cache::remember layer, and ignored the
-        // documented capability surface entirely.
+        // (pricing.getPrices). Reaching directly into
+        // manager_core_market_prices via DB::table is fragile under MC schema
+        // drift, bypasses MC's Cache::remember layer, and ignores the
+        // documented capability surface.
         //
         // The bridge call uses MC's getPrice / fetchPriceForType / formatPriceStats
         // pipeline, returning the per-type stats arrays:
@@ -867,10 +867,8 @@ class PriceProviderService
      * some type IDs and we want to retry against Jita before falling back
      * to local zeros.
      *
-     * Pre-fix this called `DB::table('manager_core_market_prices')`
-     * directly — the H7b PluginBridge migration missed this overload and
-     * left it schema-coupled to MC's table layout. Now goes through
-     * `pricing.getPrices` like the primary path, with the same defensive
+     * Goes through `pricing.getPrices` like the primary path rather than
+     * `DB::table('manager_core_market_prices')`, with the same defensive
      * shape-handling (single-element-collapse normalization, buy/sell vs
      * inner-stats variant detection, sane fallback to zeros on bridge
      * failure).
@@ -896,9 +894,8 @@ class PriceProviderService
 
         // The Jita-fallback path doesn't try to be clever about 'average'
         // — if the user picked 'average', we just use sell-side here. This
-        // matches the pre-fix behaviour and keeps the second-provider call
-        // bounded. The primary `getPricesFromManagerCore` does proper
-        // buy+sell averaging.
+        // keeps the second-provider call bounded. The primary
+        // `getPricesFromManagerCore` does proper buy+sell averaging.
         $bridgePriceType = $priceType === 'average' ? 'sell' : $priceType;
 
         try {
@@ -1016,8 +1013,8 @@ class PriceProviderService
         $typeIds = \MiningManager\Services\TypeIdRegistry::getTypeIdsByCategory('all');
 
         // Cross-plugin call via the documented PluginBridge contract
-        // (pricing.subscribeTypes). Pre-fix this called PricingService directly
-        // via service-locator (`app('ManagerCore\Services\PricingService')`) —
+        // (pricing.subscribeTypes). Calling PricingService directly via
+        // service-locator (`app('ManagerCore\Services\PricingService')`)
         // works today but bypasses the documented capability surface and ties
         // us to MC's concrete class name. The bridge call is forward-compat
         // friendly: MC can rename the underlying class, restructure the
@@ -1036,9 +1033,9 @@ class PriceProviderService
         // PluginBridge::call() returns null when the capability isn't
         // registered (older MC version pre-`8381cc1` that didn't plumb
         // immediateRefresh through, or a much older MC that didn't ship
-        // the capability at all). Pre-fix we ignored the return value and
-        // logged "Subscribed N type IDs" even when nothing was persisted —
-        // operators saw success in logs while MC's table stayed empty.
+        // the capability at all). Ignoring the return value here would log
+        // "Subscribed N type IDs" even when nothing was persisted —
+        // operators see success in the logs while MC's table stays empty.
         if ($bridgeResult === null) {
             Log::warning('Mining Manager: pricing.subscribeTypes capability returned null. MC may be on an older version. Falling back to direct service call.', [
                 'market' => $market,
@@ -1081,11 +1078,11 @@ class PriceProviderService
 
         try {
             // Cross-plugin call via PluginBridge (pricing.unsubscribeTypes,
-            // added in MC commit dd50b94). Pre-fix this did a raw
-            // DB::table('manager_core_type_subscriptions')->delete() which
-            // bypassed the documented capability surface and tied us to the
-            // MC schema. Through the bridge: MC controls the deletion shape
-            // and can add audit/observer logic in future without breaking us.
+            // added in MC commit dd50b94). A raw
+            // DB::table('manager_core_type_subscriptions')->delete() would
+            // bypass the documented capability surface and tie us to the MC
+            // schema. Through the bridge, MC controls the deletion shape and
+            // can add audit/observer logic later without breaking us.
             //
             // Passing market=null removes ALL of mining-manager's
             // subscriptions across every market — matches the previous

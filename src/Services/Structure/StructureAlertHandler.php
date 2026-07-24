@@ -177,8 +177,8 @@ class StructureAlertHandler
         //
         // If dispatch fails (skipped due to MC/SM missing, or throws),
         // we roll the claim back so the next cron tick retries — this
-        // preserves the pre-fix behavior of "don't eat the latch on a
-        // failed dispatch" while gaining race safety.
+        // keeps the "don't eat the latch on a failed dispatch" guarantee
+        // while staying race-safe.
         $dedupCol = $this->getDedupColumnForFlavor($flavor);
 
         $claimed = MoonExtraction::where('id', $extraction->id)

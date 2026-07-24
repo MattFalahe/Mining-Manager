@@ -1143,10 +1143,10 @@ class NotificationService
         // model) rather than $token->access_token (the raw column). The
         // accessor auto-refreshes the access token when SeAT's stored copy
         // has expired but the refresh_token is still valid — so Eseye gets
-        // a guaranteed-fresh token. Pre-fix the raw column read could pass
-        // a stale access token, forcing Eseye to try the refresh path
-        // itself and surface ESI auth errors mid-send instead of MM
-        // catching the bad-token state up-front.
+        // a guaranteed-fresh token. Reading the raw column can pass a stale
+        // access token, forcing Eseye to attempt the refresh itself and
+        // surface ESI auth errors mid-send instead of MM catching the
+        // bad-token state up-front.
         //
         // getCharacterToken() already returned null when ->token was empty,
         // so by the time we get here the auto-refresh has succeeded.
@@ -1419,9 +1419,10 @@ class NotificationService
      * Record a successful legacy-global-Slack dispatch in the persistent
      * health metric. Per-webhook rows in `webhook_configurations` already
      * track this via `recordSuccess`/`recordFailure` on the model;
-     * pre-fix the legacy global path (single URL stored in
-     * `notifications.slack_webhook_url`) had no equivalent — operators
-     * had to grep logs to find out their Slack webhook was broken.
+     * the legacy global path (single URL stored in
+     * `notifications.slack_webhook_url`) has no equivalent of its own, so
+     * without this operators would have to grep logs to discover their
+     * Slack webhook was broken.
      *
      * Stored as plain settings rows so we don't need a new schema. Read
      * by the Notification Settings tab + diagnostic page (future) to
@@ -2214,7 +2215,7 @@ class NotificationService
             if (is_scalar($value) || $value === null) {
                 // JSON-escape every substitution rather than raw cast-to-string.
                 //
-                // Pre-fix `(string) $value` substitution had two bugs:
+                // A plain `(string) $value` substitution has two problems:
                 //   1. Injection: a string value containing `"` or `\` or
                 //      a newline broke the surrounding template's JSON
                 //      (parsed back as null → notification silently dropped).
@@ -2257,10 +2258,10 @@ class NotificationService
             } elseif (is_array($value) || is_object($value)) {
                 // Substitute the full JSON literal for array/object values.
                 //
-                // Pre-fix the loop's `is_scalar || === null` filter dropped
-                // these silently — the placeholder literal stayed in the
-                // output, breaking JSON parsing for templates that had
-                // intentional object/array placeholders like:
+                // An `is_scalar || === null` filter would drop these
+                // silently — the placeholder literal stays in the output,
+                // breaking JSON parsing for templates with intentional
+                // object/array placeholders like:
                 //
                 //   {"data": {{raw_summary}}, "taxes": {{raw_taxes}}}
                 //
@@ -2276,23 +2277,22 @@ class NotificationService
                 // `"taxes": {{raw_taxes}}` (no surrounding quotes in the
                 // template). Wrapping a placeholder in quotes for an array
                 // value (e.g. `"name": "{{some_array}}"`) was already
-                // pre-fix not supported and isn't sensible — the template
-                // author should pick scalar fields for string contexts.
+                // not supported and isn't sensible — the template author
+                // should pick scalar fields for string contexts.
                 $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 $processed = str_replace('{{' . $key . '}}', $encoded, $processed);
             }
             // Resources, closures, and other non-JSON-encodable values fall
             // through with no substitution. The placeholder literal stays
-            // in the output (same as pre-fix behaviour for these — they
-            // shouldn't appear in $data anyway).
+            // in the output — they shouldn't appear in $data anyway.
         }
 
         $decoded = json_decode($processed, true);
 
         // Surface JSON parse errors so operators don't silently get an
         // empty body delivered to their endpoint (looks like "the
-        // notification fired but my server got nothing"). Pre-fix the
-        // `?? []` swallowed every parse failure with no log line.
+        // notification fired but my server got nothing"). A bare `?? []`
+        // would swallow every parse failure with no log line.
         // Common causes: a substituted value containing characters that
         // happen to break the surrounding template's JSON (the H3 fix
         // covers most of these; this is the catch-all for the rest),
@@ -2316,13 +2316,12 @@ class NotificationService
         $timestamp = now()->toIso8601String();
 
         return match ($type) {
-            // Envelope wins on key collision. Pre-fix the array_merge order
-            // had `raw_report_data` LAST, so a report_data payload that
-            // happened to contain a key like `event_type` or `timestamp`
-            // would silently override the canonical envelope value.
-            // Subscribers downstream that key off `event_type` would then
-            // see "report_data_some_value" instead of "report_generated".
-            // Reversed the merge order — envelope keys are now authoritative.
+            // Envelope wins on key collision — keep it LAST in the merge.
+            // With `raw_report_data` last instead, a report_data payload
+            // containing a key like `event_type` or `timestamp` would
+            // silently override the canonical envelope value, and downstream
+            // subscribers keying off `event_type` would see
+            // "report_data_some_value" instead of "report_generated".
             self::TYPE_REPORT_GENERATED => array_merge($data['raw_report_data'] ?? [], [
                 'event_type' => 'report_generated',
                 'timestamp' => $timestamp,
@@ -2957,11 +2956,10 @@ class NotificationService
      *
      *   1. The model's `->token` accessor returns `null` when the access
      *      token has expired AND SeAT's refresh path failed (revoked
-     *      refresh token, ESI auth outage, etc.). Pre-fix, the raw query
-     *      returned the row with whatever stale `access_token` was last
-     *      written — Eseye would then fail mid-mail-send with an opaque
-     *      ESI error instead of MM cleanly logging "no valid token" and
-     *      bailing early.
+     *      refresh token, ESI auth outage, etc.). A raw query returns the
+     *      row with whatever stale `access_token` was last written, and
+     *      Eseye then fails mid-mail-send with an opaque ESI error instead
+     *      of MM cleanly logging "no valid token" and bailing early.
      *
      *   2. Going through the model means any future SeAT-side observer,
      *      audit hook, or schema change is honored. Raw DB queries
@@ -3060,13 +3058,13 @@ class NotificationService
      * regardless of type (Discord/Slack/custom) or which notify_* flags
      * it has set.
      *
-     * Pre-fix this function:
-     *   1. Filtered to `type = 'discord'`, so installs whose only
-     *      configured webhooks were Slack or custom got back `false`
-     *      and the entire CHANNEL_DISCORD dispatch path (which actually
-     *      fans out to all three types via sendViaWebhooks) was
-     *      skipped — silently dropping ALL per-webhook notifications.
-     *   2. OR'd only 7 of ~17 `notify_*` flags (tax_reminder/invoice/
+     * Two traps this deliberately avoids:
+     *   1. Filtering to `type = 'discord'` — installs whose only configured
+     *      webhooks are Slack or custom would get back `false` and the
+     *      entire CHANNEL_DISCORD dispatch path (which actually fans out to
+     *      all three types via sendViaWebhooks) would be skipped, silently
+     *      dropping ALL per-webhook notifications.
+     *   2. OR-ing only a subset of the `notify_*` flags (tax_reminder/invoice/
      *      overdue, event_*, moon_arrival). Missing
      *      notify_jackpot_detected, notify_moon_chunk_unstable,
      *      notify_extraction_at_risk/lost, notify_theft_*,
@@ -3203,12 +3201,11 @@ class NotificationService
     protected function logNotification(string $type, array $recipients, array $channels, array $results): void
     {
         try {
-            // Cap the recipients payload at a representative sample. Pre-fix
-            // we json_encoded the full list — for broadcast notifications
-            // (`sendBroadcast`) that's the entire corp member list,
-            // potentially hundreds-thousands of character IDs. Twelve
-            // months of monthly tax_announcement broadcasts then store
-            // 12×N character IDs duplicated.
+            // Cap the recipients payload at a representative sample.
+            // json_encoding the full list means broadcast notifications
+            // (`sendBroadcast`) store the entire corp member list —
+            // potentially thousands of character IDs, duplicated across
+            // twelve months of monthly tax_announcement broadcasts.
             //
             // Now: store the count (always accurate) plus a sample of the
             // first 50 IDs (enough for "did the right cohort get pinged?"

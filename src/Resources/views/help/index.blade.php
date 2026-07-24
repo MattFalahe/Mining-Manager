@@ -253,13 +253,11 @@
     }
 
     /* Scoped to direct-child icons only (the big feature-card top icon).
-       Pre-fix this selector hit ALL nested icons too — including <i>
-       elements inside badges — which forced badge icons to render in
-       indigo regardless of the badge background. On a green
-       badge-success or red badge-danger the indigo icon was barely
-       visible. The "> i" direct-child combinator leaves badge / inline
-       icons alone so they inherit the badge's white text colour as
-       intended. */
+       Without the "> i" combinator this selector also hits nested <i>
+       elements inside badges, forcing badge icons to render indigo
+       regardless of the badge background — barely visible on a green
+       badge-success or red badge-danger. Direct-child leaves badge /
+       inline icons alone so they inherit the badge's white text. */
     .feature-item > i {
         font-size: 2rem;
         color: #667eea;

@@ -237,8 +237,7 @@ class WebhookConfiguration extends Model
         // Bump the counter + timestamp + clear last_error in one round-trip,
         // then mirror the new values onto $this so callers reading the
         // model post-call see the updated state without a separate
-        // refresh() query. Pre-fix this did UPDATE + refresh() = 2 RTT;
-        // now 1 RTT.
+        // refresh() query — one round-trip instead of UPDATE + refresh().
         $now = now();
         self::where('id', $this->id)->update([
             'success_count' => DB::raw('success_count + 1'),

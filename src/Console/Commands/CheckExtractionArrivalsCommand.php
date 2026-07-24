@@ -140,10 +140,9 @@ class CheckExtractionArrivalsCommand extends Command
                     //
                     // The service handles the notification_sent latch atomically
                     // (compare-and-swap UPDATE WHERE flag=false). Two implications:
-                    //   1. We MUST NOT set the flag here. Pre-M3-fix the command
-                    //      always set it post-dispatch — that overrode the service's
-                    //      rollback-on-failure path, leaving notifications silently
-                    //      lost on transient errors.
+                    //   1. We MUST NOT set the flag here. Setting it post-dispatch
+                    //      would override the service's rollback-on-failure path,
+                    //      leaving notifications silently lost on transient errors.
                     //   2. If the service silently bails (race lost — another worker
                     //      already claimed the latch), this counter increments
                     //      without an actual ping firing. Minor counter imprecision

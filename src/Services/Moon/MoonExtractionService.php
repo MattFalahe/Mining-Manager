@@ -881,10 +881,9 @@ class MoonExtractionService
      * Send moon arrival webhook notification.
      *
      * Public so external callers (CheckExtractionArrivalsCommand) can invoke
-     * directly. Pre-fix this was private and the command reached it via
-     * `ReflectionClass::getMethod()->setAccessible(true)` — a code smell
-     * (breaks IDE refactor + bypasses PHP's accessibility model just to
-     * dodge writing a public entry point).
+     * directly, rather than reaching a private method via
+     * `ReflectionClass::getMethod()->setAccessible(true)` (breaks IDE
+     * refactor and bypasses PHP's accessibility model).
      *
      * Atomic claim is handled internally — see comments inside.
      *
@@ -910,12 +909,12 @@ class MoonExtractionService
         // the two commands have separate locks and can interleave on the
         // same extraction within a 60-second overlap window.
         //
-        // Pre-fix: an `if ($extraction->notification_sent) return` check at
-        // the bottom of the try block (after structure + ore lookups) read
-        // a stale model. Both workers passed the check, both dispatched,
-        // both flipped the flag. Duplicate Discord pings for one arrival.
+        // A plain `if ($extraction->notification_sent) return` check at the
+        // bottom of the try block (after structure + ore lookups) reads a
+        // stale model: both workers pass the check, both dispatch, both flip
+        // the flag — duplicate Discord pings for one arrival.
         //
-        // Now: UPDATE WHERE notification_sent=false returns the count of
+        // Instead: UPDATE WHERE notification_sent=false returns the count of
         // rows updated. Only the worker that flips false→true gets back
         // claimed=1; everyone else gets 0 and bails. Same row-level pattern
         // as StructureAlertHandler's dedup latches.

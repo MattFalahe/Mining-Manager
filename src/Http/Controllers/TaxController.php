@@ -1068,12 +1068,12 @@ class TaxController extends Controller
     public function markPaid(Request $request)
     {
         try {
-            // Validate up front. Pre-fix this read raw input via
-            // $request->input() and relied on findOrFail($taxId) for
-            // existence — non-numeric tax_id values fell through to MySQL
-            // with soft type coercion, garbage payment_date strings would
-            // throw deep inside Carbon::parse and bubble as 500. Now
-            // failures surface as a 422 with field-level errors.
+            // Validate up front. Reading raw input via $request->input()
+            // and leaning on findOrFail($taxId) for existence lets
+            // non-numeric tax_id values fall through to MySQL with soft type
+            // coercion, and garbage payment_date strings throw deep inside
+            // Carbon::parse and bubble up as a 500. Validation surfaces
+            // these as a 422 with field-level errors instead.
             $validated = $request->validate([
                 'tax_id' => 'required|integer|exists:mining_taxes,id',
                 'amount_paid' => 'required|numeric|min:0',
@@ -1256,8 +1256,8 @@ class TaxController extends Controller
     public function sendReminder(Request $request)
     {
         try {
-            // Validate up front for parity with markPaid. Pre-fix
-            // non-integer tax_id fell through to MySQL with soft cast.
+            // Validate up front for parity with markPaid — otherwise a
+            // non-integer tax_id falls through to MySQL with a soft cast.
             $validated = $request->validate([
                 'tax_id' => 'required|integer|exists:mining_taxes,id',
             ]);
@@ -2073,12 +2073,11 @@ class TaxController extends Controller
     public function dismissTransaction(Request $request)
     {
         try {
-            // Validate up front. Pre-fix any integer was accepted, even
-            // ones that didn't correspond to a real wallet journal entry,
-            // letting an admin (or compromised admin token) stuff the
-            // dismissal table with bogus IDs (storage waste). Existence
-            // check confirms the row is real before we permanently
-            // dismiss it.
+            // Validate up front. Accepting any integer — including ones
+            // that don't correspond to a real wallet journal entry — lets an
+            // admin (or a compromised admin token) stuff the dismissal table
+            // with bogus IDs. The existence check confirms the row is real
+            // before we permanently dismiss it.
             $validated = $request->validate([
                 'transaction_id' => 'required|integer|exists:corporation_wallet_journals,id',
             ]);
