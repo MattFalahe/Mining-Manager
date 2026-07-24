@@ -1357,6 +1357,9 @@
                                                 <option value="moon_ready">🌙 Moon Chunk Ready</option>
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
                                                 <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
+                                                <option value="extraction_started">⛏️ Extraction Started (drill lit)</option>
+                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
+                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
                                                 <option value="metenox_cargo_full">📦 Metenox Cargo Bay Full (v2.0.1, yield-stopping)</option>
                                                 <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
                                                 <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
@@ -3523,6 +3526,9 @@ function runFireAllNotifications() {
         { type: 'moon_ready',          label: '🌙 Moon Chunk Ready' },
         { type: 'jackpot_detected',    label: '🎰 Jackpot Detected' },
         { type: 'moon_chunk_unstable', label: '⚠️ Moon Chunk Unstable' },
+        { type: 'extraction_started',  label: '⛏️ Extraction Started' },
+        { type: 'next_extraction_planned', label: '🗓️ Next Extraction Planned' },
+        { type: 'schedule_mismatch',   label: '⚠️ Moon Scheduled Off-Plan' },
         { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
         { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
         { type: 'report_generated',    label: '📊 Report Generated' },

@@ -475,6 +475,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="moon-planner">
+                                <i class="fas fa-calendar-check"></i>
+                                Moon Planner
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="theft-detection">
                                 <i class="fas fa-user-secret"></i>
                                 {{ trans('mining-manager::help.theft_detection') }}
@@ -736,7 +742,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             or removed each planned pull, with before&rarr;after times.
                         </li>
                     </ul>
-                    <h4><i class="fas fa-bell"></i> Two new notifications</h4>
+                    <h4><i class="fas fa-bell"></i> Three new notifications</h4>
                     <ul>
                         <li>
                             <strong>Extraction Started</strong> &mdash; fires when a refinery lights its drill (read from
@@ -758,8 +764,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </li>
                     </ul>
                     <p class="mb-0"><small class="text-muted">
-                        Both notifications are per-webhook opt-in (off by default). Everything additive &mdash; one new
-                        table, one standalone permission, two opt-in notification types. No new ESI scopes.
+                        All three notifications are per-webhook opt-in (off by default). Everything additive &mdash;
+                        two new tables, one standalone permission, three opt-in notification types. No new ESI scopes.
                     </small></p>
                 </div>
 
@@ -798,6 +804,14 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <i class="fas fa-moon"></i>
                             <h5>{{ trans('mining-manager::help.feature_moon') }}</h5>
                             <p>{{ trans('mining-manager::help.feature_moon_desc') }}</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-calendar-check"></i>
+                            <h5>Moon Planner</h5>
+                            <p>Plan and stagger your refinery pulls across a three-month calendar so chunks don't
+                               land on top of each other. Projects each moon's next pull from its own history,
+                               warns when two arrivals fall too close together, and flags moons scheduled
+                               off-plan.</p>
                         </div>
                         <div class="feature-item">
                             <i class="fas fa-calendar-alt"></i>
@@ -2133,6 +2147,121 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <strong>{{ trans('mining-manager::help.jackpot_note_title') }}:</strong> {{ trans('mining-manager::help.jackpot_note_desc') }}
+                    </div>
+                </div>
+            </div>
+
+            {{-- Moon Planner Section --}}
+            <div id="moon-planner" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-calendar-check"></i>
+                        Moon Planner
+                    </h3>
+                    <p>
+                        A calendar for deciding <em>when</em> each refinery should pull, so arrivals are spread out
+                        instead of landing on top of each other. Chunks that aren't mined promptly are wasted, so for
+                        a smaller crew the spacing matters as much as the schedule itself.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>The planner does not control your structures.</strong>
+                        SeAT can only read the extractions a director fires in-game. The planner is a coordination
+                        tool: it records what's already scheduled, and lets you plan what <em>should</em> happen next.
+                        Firing the drill is still done in EVE.
+                    </div>
+
+                    <h4><i class="fas fa-key"></i> Who can use it</h4>
+                    <p>
+                        The <strong>Moon Planner</strong> page appears in the sidebar for anyone with the
+                        <code>mining-manager.moon_manager</code> permission. Directors and admins have access as well.
+                        Grant <code>moon_manager</code> on its own when you want someone scheduling moon pulls without
+                        giving them full director rights.
+                    </p>
+
+                    <h4><i class="fas fa-clock"></i> Everything is EVE time</h4>
+                    <p>
+                        The calendar runs on <strong>EVE time (UTC)</strong> &mdash; the same clock the in-game
+                        structure scheduler uses &mdash; so what you plan matches what you type into the drill. When
+                        you add or edit a pull you enter EVE time and the form shows what that is in your own
+                        timezone underneath, as a sanity check.
+                    </p>
+
+                    <h4><i class="fas fa-magic"></i> Auto-fill from history</h4>
+                    <p>
+                        Rather than placing everything by hand, <strong>Auto-fill from History</strong> works out each
+                        refinery's natural rhythm from its past arrivals and lays the upcoming pulls onto the
+                        calendar. A refinery needs at least two recorded arrivals for this; with three or more the
+                        median interval is used so one unusual cycle doesn't skew it. Refineries without enough
+                        history of their own borrow the typical cadence of your other moons and are marked as
+                        estimates.
+                    </p>
+                    <p>
+                        If a refinery is missing history, run
+                        <code>mining-manager:backfill-extraction-history</code> &mdash; it reconstructs past cycles
+                        from your in-game notifications.
+                    </p>
+
+                    <h4><i class="fas fa-arrows-alt-h"></i> Moving pulls, and the gap warning</h4>
+                    <p>
+                        Move a pull to a different day and it stays there &mdash; later projections follow the new
+                        day rather than snapping back to the old one. That's how you shift a moon that has always
+                        landed on a Monday onto a Tuesday.
+                    </p>
+                    <p>
+                        If a pull lands within the <strong>minimum gap</strong> of another arrival (24 hours by
+                        default, configurable at Settings &rarr; Notifications) you'll get a confirmation listing the
+                        moons it clashes with and how far apart they are. You can still go ahead &mdash; it's a
+                        warning, not a block &mdash; but nothing gets saved past the gap without you agreeing to it.
+                    </p>
+
+                    <h4><i class="fas fa-lock"></i> Locked entries</h4>
+                    <p>
+                        Extractions that are live, finished, or archived are shown with a padlock and can't be edited.
+                        They were set in EVE, so the planner only records them. Clicking one explains why it's locked.
+                    </p>
+
+                    <h4><i class="fas fa-exclamation-triangle"></i> Moons scheduled off-plan</h4>
+                    <p>
+                        When a plan and the real extraction for the same refinery are within 30 minutes of each other
+                        they're treated as the same pull, so it appears once. If they're further apart than that but
+                        still in the same cycle, the drill was fired on a different timer than planned: the real pull
+                        is highlighted, it's listed in a <em>Scheduling mismatches</em> banner at the top of the page,
+                        and a <strong>Moon Scheduled Off-Plan</strong> notification fires once. Use <strong>Dismiss</strong>
+                        on the banner to retire the stale plan &mdash; the in-game extraction isn't touched.
+                    </p>
+
+                    <h4><i class="fas fa-industry"></i> The refinery panel</h4>
+                    <p>
+                        Down the right-hand side, each refinery shows its cadence, last arrival and next projected
+                        pull, plus two badges:
+                    </p>
+                    <ul>
+                        <li>
+                            A <strong>coverage badge</strong> &mdash; <code>Planned 2&times;</code> when upcoming pulls
+                            are booked, or an amber <code>Not planned</code> when none are. That's your "did I skip a
+                            moon?" check, counted across the whole horizon rather than just the visible months, and
+                            uncovered refineries sort to the top.
+                        </li>
+                        <li>
+                            An <strong>ore tier badge</strong> (R4 through R64) taken from the moon's most recent
+                            composition, so you can see at a glance which refineries are sitting on the valuable
+                            moons.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-history"></i> Change history</h4>
+                    <p>
+                        The <strong>History</strong> button lists who created, moved or removed each planned pull and
+                        what the times were before and after. Auto-fill runs are recorded as a single entry.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Getting started:</strong> open the Moon Planner, press
+                        <strong>Auto-fill from History</strong>, then adjust anything that looks wrong. Refineries
+                        flagged <code>Not planned</code> or "not enough history" are the ones needing a manual slot.
                     </div>
                 </div>
             </div>
