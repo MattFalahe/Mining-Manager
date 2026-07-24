@@ -2,7 +2,7 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
-## [Unreleased] — The Ecosystem Era: The Moon Planner
+## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 
 The Moon Extraction Planner: a corp-internal calendar for staggering refinery pulls so chunks don't clump faster than a small crew can mine them. SeAT can only read the extractions a director fires in-game, so the planner is a coordination tool — it never controls the structure. Additive: one new permission, two new tables, a handful of columns, three opt-in notifications. No new ESI scopes.
 
