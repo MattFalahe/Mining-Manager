@@ -14,13 +14,9 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  * Shared webhook dispatch concerns for NotificationService (and any
  * future dispatcher that might spin up alongside it).
  *
- * Extracted in Phase A of the notification consolidation (2026-04-23) to
- * eliminate duplicated infrastructure that had burned us twice —
- * most notably the per-type role-mention "legacy fallback" fix that had
- * to be applied independently to two services. After Phases B-F folded
- * the old WebhookService into NotificationService entirely, this trait
- * is used by the single remaining dispatcher, but is left as a trait
- * so it can be reused if we ever introduce a second dispatch class
+ * Shared so the webhook query, role-mention, and corp-scoping logic lives
+ * in one place instead of being duplicated across dispatchers. Kept as a
+ * trait so it can be reused if a second dispatch class is ever introduced
  * (e.g. a dedicated ESI-mail service or a Pings plugin adapter).
  *
  * Contents:

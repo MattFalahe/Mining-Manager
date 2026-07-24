@@ -12,8 +12,7 @@ use Illuminate\Support\Facades\Log;
  * Thin wrapper around NotificationService for theft-specific notifications.
  * Preserves the convenience API (notifyTheftDetected, notifyActiveTheft, etc.)
  * used by the theft detection commands while routing the actual dispatch
- * through the consolidated NotificationService (Phase D of the notification
- * consolidation, 2026-04-23).
+ * through the consolidated NotificationService.
  *
  * Kept as a separate class because:
  *  - Callers (DetectMoonTheftCommand, MonitorActiveTheftsCommand) have a

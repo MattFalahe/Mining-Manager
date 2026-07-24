@@ -1464,7 +1464,7 @@ class DiagnosticController extends Controller
                 $testIncident->resolved_by = 'Test Admin';
             }
 
-            // Send notification via NotificationService (Phase D — was
+            // Send notification via NotificationService (was
             // WebhookService::sendTheftNotification before consolidation).
             $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
             $nsResults = match ($eventType) {
@@ -3956,7 +3956,7 @@ class DiagnosticController extends Controller
         }
 
         // Format Discord embed — all surfaces (theft/moon/report/tax/event)
-        // now live in NotificationService as of Phases B-D. We still reflect
+        // now live in NotificationService. We still reflect
         // into the protected formatter to build the preview without actually
         // sending to any webhook.
         $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_at_risk', 'extraction_lost']);
@@ -3965,8 +3965,7 @@ class DiagnosticController extends Controller
         $message = null;
 
         if ($isTheftType) {
-            // Theft notifications live in NotificationService as of Phase D
-            // of the notification consolidation.
+            // Theft notifications live in NotificationService.
             try {
                 $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
                 $testIncident = new \MiningManager\Models\TheftIncident([
@@ -4013,8 +4012,7 @@ class DiagnosticController extends Controller
                 $this->addLog($logs, 'warn', 'Could not format theft Discord embed: ' . $e->getMessage());
             }
         } elseif ($isReportType) {
-            // Report notifications live in NotificationService as of Phase B
-            // of the notification consolidation. Build the same $data shape
+            // Report notifications live in NotificationService. Build the same $data shape
             // the consolidated formatter expects, then run it through the
             // formatter for the preview. (formatMessageForDiscord is public.)
             try {
@@ -4048,8 +4046,7 @@ class DiagnosticController extends Controller
                 $this->addLog($logs, 'warn', 'Could not format report Discord embed: ' . $e->getMessage());
             }
         } elseif ($isMoonType) {
-            // Moon notifications live in NotificationService as of Phase C
-            // of the notification consolidation. formatMessageForDiscord
+            // Moon notifications live in NotificationService. formatMessageForDiscord
             // is public — call directly.
             try {
                 $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
@@ -4244,8 +4241,8 @@ class DiagnosticController extends Controller
             $this->addLog($logs, 'warn', "Notification type '{$type}' is disabled for Slack, but sending test anyway");
         }
 
-        // Format message — all surfaces now live in NotificationService as of
-        // Phases B-D. The branches below stay type-specialised because some
+        // Format message — all surfaces now live in NotificationService.
+        // The branches below stay type-specialised because some
         // surfaces (moon, report) build inline field layouts in this preview
         // rather than reflecting into protected formatters.
         $isMoonType = in_array($type, ['moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_at_risk', 'extraction_lost']);
@@ -4324,8 +4321,8 @@ class DiagnosticController extends Controller
         } elseif ($isMoonType) {
             // Build Slack moon payload matching production format (previously in
             // WebhookService, now ported into NotificationService::formatFieldsForSlack
-            // TYPE_MOON_READY / TYPE_JACKPOT_DETECTED branches — Phase C of the
-            // notification consolidation). Kept inline here to avoid reflection.
+            // TYPE_MOON_READY / TYPE_JACKPOT_DETECTED branches). Kept inline here
+            // to avoid reflection.
             $moonEventType = $type === 'jackpot_detected' ? 'jackpot_detected' : 'moon_arrival';
             $fields = [];
             if (isset($data['moon_name'])) {

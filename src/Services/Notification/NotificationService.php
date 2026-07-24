@@ -35,11 +35,9 @@ use Exception;
  *  - Report: report_generated
  *  - Custom (ad-hoc message)
  *
- * History: consolidated from the original two-dispatcher design
- * (NotificationService + WebhookService) across Phases A-F of the
- * notification consolidation, 2026-04-23. Shared webhook dispatch
- * infrastructure (role mentions, corp scoping, retry, getCorpName)
- * lives in WebhookDispatchTrait.
+ * Consolidated from an earlier two-dispatcher design (NotificationService
+ * + WebhookService). Shared webhook dispatch infrastructure (role mentions,
+ * corp scoping, retry, getCorpName) lives in WebhookDispatchTrait.
  */
 class NotificationService
 {
@@ -425,7 +423,7 @@ class NotificationService
      * Reports are GLOBAL scope — every enabled webhook subscribed to the
      * `report_generated` event receives the notification regardless of
      * corporation_id. Replaces the previous WebhookService::sendReportNotification()
-     * path as of Phase B of the notification consolidation.
+     * path.
      *
      * @param MiningReport $report The report that was just generated
      * @param array $reportData The aggregated report payload (summary, taxes, period, ...)
@@ -482,7 +480,7 @@ class NotificationService
      * Corp-scoped via the shared WebhookDispatchTrait — only webhooks that
      * are global or assigned to the moon owner corp receive it. Replaces
      * the previous WebhookService::sendMoonNotification('moon_arrival', ...)
-     * path as of Phase C of the notification consolidation.
+     * path.
      *
      * Expected keys in $data (all optional, gracefully filtered if missing):
      *   moon_name, structure_name, chunk_arrival_time, auto_fracture_time,
