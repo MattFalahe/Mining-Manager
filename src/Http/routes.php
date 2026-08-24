@@ -207,6 +207,18 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
+        Route::post('/wallet/assign', [
+            'as' => 'mining-manager.taxes.wallet.assign',
+            'uses' => 'TaxController@assignPayment',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/wallet/unassign', [
+            'as' => 'mining-manager.taxes.wallet.unassign',
+            'uses' => 'TaxController@unassignPayment',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/export', [
             'as' => 'mining-manager.taxes.export',
             'uses' => 'TaxController@export',

@@ -9,6 +9,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard taxes-details-page">
 
 @include('mining-manager::taxes.partials.tab-navigation')
@@ -185,6 +186,46 @@
                         <h5><i class="fas fa-info-circle"></i> Notes</h5>
                         <pre class="mb-0" style="color: #ccc; background: transparent; border: none; padding: 0;">{{ $tax->notes }}</pre>
                     </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Payments received. An invoice can be settled in several instalments,
+         and the invoice row itself only remembers the most recent one. --}}
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-coins mr-1"></i> {{ trans('mining-manager::taxes.payment_history') }}
+                    </h3>
+                </div>
+                <div class="card-body p-0">
+                    @if(($paymentHistory ?? collect())->isEmpty())
+                        <p class="text-muted p-3 mb-0">{{ trans('mining-manager::taxes.payment_history_empty') }}</p>
+                    @else
+                    <table class="table table-dark table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>{{ trans('mining-manager::taxes.date') }}</th>
+                                <th class="text-right">{{ trans('mining-manager::taxes.amount') }}</th>
+                                <th>{{ trans('mining-manager::taxes.payment_source') }}</th>
+                                <th>{{ trans('mining-manager::taxes.notes') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($paymentHistory as $payment)
+                            <tr>
+                                <td>{{ $payment->allocated_at ? $payment->allocated_at->format('Y-m-d H:i') : '-' }}</td>
+                                <td class="text-right">{{ number_format($payment->amount, 0) }} ISK</td>
+                                <td><span class="badge badge-secondary">{{ $payment->source_label }}</span></td>
+                                <td><small class="text-muted">{{ $payment->notes ?: '-' }}</small></td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                     @endif
                 </div>
             </div>

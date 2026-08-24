@@ -336,11 +336,11 @@
                             </label>
                         </div>
                         <small class="form-text text-muted">
-                            When ON (default), the wallet listener applies matched payments
-                            to taxes automatically as ESI wallet updates arrive. When OFF,
-                            matches are detected and listed on the Wallet Verification page
-                            but require manual confirmation before any tax row updates.
-                            Recommended for most installs to leave ON.
+                            When ON (default), the scheduled verification run applies
+                            matched payments to invoices as soon as it finds them. When
+                            OFF, matches are detected and listed on the Wallet
+                            Verification page but require manual confirmation before any
+                            invoice updates. Recommended for most installs to leave ON.
                         </small>
                     </div>
                 </div>
@@ -378,6 +378,60 @@
                             <code>laravel.log</code> with both the paying and taxed
                             character IDs for audit, so directors can reconcile after
                             the fact.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            {{-- What to do when a payment is bigger than the invoice it settles. --}}
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_cascade_remainder"
+                                   name="payment_cascade_remainder"
+                                   value="1"
+                                   {{ old('payment_cascade_remainder', $settings->cascade_remainder ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_cascade_remainder">
+                                <i class="fas fa-angle-double-right"></i>
+                                Roll leftover payment onto the next unpaid invoice
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), a payment larger than the invoice it settles
+                            keeps going: the remainder pays down that player's next-oldest
+                            unpaid invoice, and so on until the money runs out. Covers the
+                            common case of someone clearing three months in one transfer.
+                            When OFF, a payment only ever touches the one invoice it was
+                            matched to.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_hold_surplus_as_credit"
+                                   name="payment_hold_surplus_as_credit"
+                                   value="1"
+                                   {{ old('payment_hold_surplus_as_credit', $settings->hold_surplus_as_credit ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_hold_surplus_as_credit">
+                                <i class="fas fa-piggy-bank"></i>
+                                Hold surplus as credit against the next invoice
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), money still left over once every open
+                            invoice is settled is parked against the paying character and
+                            comes off their next invoice automatically. Held credit is
+                            listed on the Wallet Verification page. When OFF, the surplus
+                            is logged and discarded.
                         </small>
                     </div>
                 </div>

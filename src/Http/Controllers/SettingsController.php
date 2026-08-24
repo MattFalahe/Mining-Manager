@@ -356,6 +356,8 @@ class SettingsController extends Controller
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
             'payment_auto_match_payments' => 'nullable|boolean',
             'payment_accept_alt_characters' => 'nullable|boolean',
+            'payment_cascade_remainder' => 'nullable|boolean',
+            'payment_hold_surplus_as_credit' => 'nullable|boolean',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
@@ -409,6 +411,10 @@ class SettingsController extends Controller
             // to switch to strict per-character matching is to actually
             // persist the false value.
             $data['payment_accept_alt_characters'] = $request->has('payment_accept_alt_characters');
+            // Both default to true in getPaymentSettings(), so an unchecked box
+            // has to be persisted as false or it can never be turned off.
+            $data['payment_cascade_remainder'] = $request->has('payment_cascade_remainder');
+            $data['payment_hold_surplus_as_credit'] = $request->has('payment_hold_surplus_as_credit');
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 

@@ -207,10 +207,7 @@ class SettingsManagerService
 
             // Payment auto-match toggle. Surfaced here so the General settings
             // blade can render the checkbox's current state. The canonical
-            // read site for runtime gating is `getPaymentSettings()` /
-            // `getSetting('payment.auto_match_payments')` — see
-            // ProcessWalletJournalListener for how the listener consults it
-            // before applying a matched payment.
+            // read site for runtime gating is getPaymentSettings().
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
 
             // Accept payments from any of a player's characters (alt-aware
@@ -221,6 +218,19 @@ class SettingsManagerService
             // consults `getPaymentSettings()['accept_alt_characters']` at
             // match time.
             'accept_alt_characters' => (bool) $this->getSetting('payment.accept_alt_characters', true),
+
+            // Roll the remainder of an oversized payment onto the payer's
+            // next-oldest unpaid invoice, and keep going until the money runs
+            // out. Covers the common "settles three months in one transfer"
+            // case without a director splitting it by hand. Off means a
+            // payment only ever touches the one invoice it was matched to.
+            'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
+
+            // What to do with money left over once every open invoice is
+            // settled. On (default) parks it against the paying character and
+            // draws it down when their next invoice is calculated. Off
+            // discards it, which is the pre-allocation-ledger behaviour.
+            'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
 
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
@@ -323,7 +333,14 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
-                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours', 'payment_auto_match_payments', 'payment_accept_alt_characters'])) {
+                } elseif (in_array($key, [
+                    'payment_match_tolerance',
+                    'payment_grace_period_hours',
+                    'payment_auto_match_payments',
+                    'payment_accept_alt_characters',
+                    'payment_cascade_remainder',
+                    'payment_hold_surplus_as_credit',
+                ])) {
                     // Payment settings use payment. prefix instead of general.
                     // form input `payment_<x>` → setting key `payment.<x>`.
                     $settingKey = str_replace('payment_', 'payment.', $key);
@@ -385,15 +402,18 @@ class SettingsManagerService
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
             'minimum_tax_amount' => (float) $this->getSetting('payment.minimum_tax_amount',
                 config('mining-manager.tax_payment.minimum_tax_amount', 1000000)),
-            // Auto-match toggle. Read by ProcessWalletJournalListener (the
-            // queued listener that fires per CharacterWalletJournalUpdated
-            // event) to decide whether to apply matched payments
-            // automatically. true (default) = listener applies the payment
-            // immediately; false = match is detected and shown on the
-            // wallet-verification page but the operator must manually
-            // confirm. Useful for installs that want a human-review step
-            // before any tax row is updated.
+            // Auto-match toggle, read by the scheduled verify-payments run.
+            // true (default) applies a matched payment as soon as it is found;
+            // false detects the match and leaves it on the wallet verification
+            // page for someone to confirm. Useful for installs that want a
+            // human-review step before any invoice is updated.
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
+
+            // Read by PaymentAllocationService when deciding how far a payment
+            // reaches. Surfaced in getGeneralSettings() as well so the settings
+            // blade can render the checkboxes.
+            'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
+            'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
             // Accept payments from any of a player's characters, not just
             // the exact taxed character. Players routinely send ISK from
             // their wallet-richest alt rather than the alt that mined the
