@@ -286,7 +286,25 @@ return [
     'wallet_verification' => 'Wallet Verification',
     'wallet_verification_desc' => 'The Wallet Verification page shows corporation donations and their matching status. Access is permission-based:',
     'wallet_verification_member' => 'Members can only see their own wallet transfers and personal payment stats.',
-    'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, and manually record payments.',
+    'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, assign payments to invoices by hand, and manually record payments.',
+
+    // Assigning a payment by hand
+    'assign_payment' => 'Assigning a Payment That Has No Tax Code',
+    'assign_payment_desc' => 'Automatic matching depends entirely on the member typing their tax code into the transfer reason field. When they forget, the transfer arrives, nothing can identify it, and it sits on the Wallet Verification page marked "No tax code". Neither Verify nor Auto-Match can help, because both work by reading the code that is not there.',
+    'assign_payment_how' => 'Use the Assign to invoice button on that row. It opens a panel showing who paid and how much, alongside the open invoices belonging to that player. Alts are included when the accept-alts setting is on. Pick the invoice the money was meant for and confirm.',
+    'assign_payment_what_happens' => 'What happens next:',
+    'assign_payment_effect_1' => 'The payment is credited to the invoice you picked, and the invoice becomes Partial or Paid depending on whether it covers the balance.',
+    'assign_payment_effect_2' => 'Any remainder rolls onto the next-oldest unpaid invoice for that player, then the one after that, until the money runs out. Turn off Roll leftover payment onto the next unpaid invoice in Settings if you would rather it stopped at the first one.',
+    'assign_payment_effect_3' => 'Whatever is still left once they have no open invoices is held as credit against that character and comes off their next invoice automatically. Held credit is listed on the Wallet Verification page.',
+    'assign_payment_effect_4' => 'The transfer is claimed, so it disappears from the pending list and can never be credited twice.',
+    'assign_payment_effect_5' => 'A payment record is written against every invoice it touched. The invoice detail page shows the full list under Payments received.',
+    'assign_payment_vs_mark_paid' => 'Assign to invoice versus Mark as Paid: Mark as Paid settles the invoice but has no connection to the ISK that arrived, so the transfer keeps sitting in the pending queue and you have to dismiss it separately. Assign to invoice ties the two together. Use Mark as Paid for payments that never went through the wallet at all, such as a contract or a waiver.',
+
+    // Verification cutover
+    'verification_cutover' => 'The Verification Cutover',
+    'verification_cutover_desc' => 'When the payment allocation ledger was added, a cutover timestamp was recorded. Automatic matching only considers wallet transfers dated after it. Everything before is left exactly as it was, and is never re-examined or corrected.',
+    'verification_cutover_why' => 'This exists because the old matching pipeline kept no record of which transfers had already been credited, only the most recent one per invoice. Re-running matching across that history would risk crediting old transfers a second time. The cutover draws a clean line: from that point on, every payment is claimed and reconcilable, and the past is left alone.',
+    'verification_cutover_manual' => 'A transfer from before the cutover can still be assigned to an invoice by hand. The guard only applies to automatic matching.',
 
     // Calculation Buttons
     'calculation_methods' => 'Calculate Taxes Page — Buttons',

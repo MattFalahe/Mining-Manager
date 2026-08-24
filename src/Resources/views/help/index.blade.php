@@ -1355,6 +1355,36 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </ul>
                 </div>
 
+                {{-- Assigning a payment that arrived without a tax code --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-link"></i>
+                        {{ trans('mining-manager::help.assign_payment') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.assign_payment_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.assign_payment_how') }}</p>
+                    <p><strong>{{ trans('mining-manager::help.assign_payment_what_happens') }}</strong></p>
+                    <ul>
+                        <li>{{ trans('mining-manager::help.assign_payment_effect_1') }}</li>
+                        <li>{{ trans('mining-manager::help.assign_payment_effect_2') }}</li>
+                        <li>{{ trans('mining-manager::help.assign_payment_effect_3') }}</li>
+                        <li>{{ trans('mining-manager::help.assign_payment_effect_4') }}</li>
+                        <li>{{ trans('mining-manager::help.assign_payment_effect_5') }}</li>
+                    </ul>
+                    <p>{{ trans('mining-manager::help.assign_payment_vs_mark_paid') }}</p>
+                </div>
+
+                {{-- Verification cutover --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-flag-checkered"></i>
+                        {{ trans('mining-manager::help.verification_cutover') }}
+                    </h3>
+                    <p>{{ trans('mining-manager::help.verification_cutover_desc') }}</p>
+                    <p>{{ trans('mining-manager::help.verification_cutover_why') }}</p>
+                    <p>{{ trans('mining-manager::help.verification_cutover_manual') }}</p>
+                </div>
+
                 {{-- Manual Payment Entry --}}
                 <div class="help-card">
                     <h3>

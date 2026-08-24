@@ -2,6 +2,65 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [Unreleased] — Payment Allocation
+
+Wallet payment verification, rebuilt. A member who sends their tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, in two clicks, with the remainder rolling onto their next unpaid invoice and any surplus held as credit.
+
+> Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
+
+### 🐛 The buttons on Wallet Verification did nothing
+
+Four separate faults, stacked:
+
+- **`toastr` was never loaded.** Every page in this plugin reports through `toastr`, SeAT's layout does not ship it, and neither did we, despite the library sitting unused in our own assets. `toastr.info()` on the first line of Sync and Auto-Match threw before the request was even sent. In Verify and Dismiss it threw in the success handler, so `location.reload()` never ran and a working action looked dead. Now loaded via a shared partial on all 20 pages that use it.
+- **Verify could never succeed.** The page lists exactly the donations where no tax code was found, and Verify re-ran the same code-based matcher that had already rejected them. It also looked the transaction up in `character_wallet_journals` while the page reads `corporation_wallet_journals`, so for any payer without a personal wallet token it could not find the row at all. Verification now reads the corporation journal throughout.
+- **Sync Wallet Journal returned a 500 every time.** It called `WalletTransferService::verifyPayment()`, which does not exist. PHP raised an `Error`, which the surrounding `catch (\Exception)` does not catch.
+- **Failures were reported as success.** A batch where every row failed still answered `200` with "0 payments verified", so the page showed a green toast and reloaded unchanged. Failures now answer as failures and say what is actually wrong.
+
+### 🐛 Partial payments could be credited twice
+
+`mining-manager:verify-payments` guarded against re-crediting by checking `mining_taxes.transaction_id`, a single column overwritten on every payment. An invoice settled in two instalments inside the lookback window lost the reference to the earlier one, so the next run credited it again and the invoice reached "paid" while still short. The command now claims every transaction in `mining_manager_processed_transactions` before touching an invoice, the same guard the rest of the codebase already used.
+
+### 🐛 Tax codes in the reason field were invisible to two of three matchers
+
+EVE puts the note a player types into `reason`; `description` is CCP's generated sentence and never contains the code. The scheduled command read both, but `WalletTransferService::processTransaction()` and the wallet journal listener read only `description`. All matching now reads both fields.
+
+### 🗑️ Removed: a listener that never ran
+
+`ProcessWalletJournalListener` was bound to `Seat\Eveapi\Events\CharacterWalletJournalUpdated`. SeAT has no such event, so it never fired once since it was written. It also read the character wallet journal, the wrong side of a donation. Removed rather than repointed. The scheduled run is and always was the real matching engine.
+
+### ✨ Assign a payment to an invoice
+
+- **Assign to invoice** on every pending row. Shows who paid and how much, lists that player's open invoices (alts included when the accept-alts setting is on), and credits the payment where you point it.
+- **Remainder cascades** onto the next-oldest unpaid invoice for that player, and keeps going until the money runs out. One transfer can settle three months. Toggle in Settings → General → Payment Settings.
+- **Surplus is held as credit** against the paying character and comes off their next invoice automatically when it is calculated. Listed on the Wallet Verification page. Toggle alongside the cascade setting.
+- **Undo**, which reopens the invoices and returns the transfer to the pending queue. Refused when part of the surplus has already gone somewhere else, rather than silently reopening a settled invoice.
+- Status badges now say *why* a payment is still waiting: no tax code, unknown code, not yet applied, or before the cutover.
+- The "Mismatched" tile used to repeat the pending count. It now means a payment carrying a code that matches no invoice.
+
+### ✨ Payments received
+
+The invoice detail page has a **Payments received** table listing every payment credited to it, with amount, date, origin (matched by code, recorded by hand, rolled over, drawn from credit) and notes. `mining_taxes.transaction_id` only ever held the most recent payment, so instalments were invisible.
+
+### ✨ Verification cutover
+
+The migration stamps `payment.dedup_epoch`. Automatic matching ignores transfers dated before it, so historical records are left exactly as they stand and are never re-examined or corrected. Everything from that point forward is claimed and reconcilable. Assigning an older transfer by hand still works; the guard only applies to automatic matching. `--ignore-cutover` opts a manual run out, and `--reset-month` sets it automatically.
+
+### ✨ Diagnostics
+
+Tax pipeline gains **Step 4b: Payment Reconciliation**. For every invoice settled since the cutover it checks that `amount_paid` equals the sum of the payments recorded against it, and flags transaction claims that produced no allocation. Scoped to post-cutover data by design: older records were credited by a pipeline that kept no breakdown and cannot be reconciled.
+
+### 🧹 Consolidation
+
+Matching and crediting lived in four places that disagreed with each other. `PaymentAllocationService` is now the only thing that credits an invoice; `WalletTransferService` reads and matches; the command schedules and reports. The alt-ownership lookup, previously two hand-synced copies, is a single trait.
+
+Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
+
+### Schema
+
+- New tables `mining_manager_payment_allocations` and `mining_manager_payment_credits` (`000022`).
+- `000022` also backfills `mining_manager_processed_transactions` from the transaction ids already recorded on invoices and tax codes, so the new guard recognises what the old pipeline credited, and stamps the cutover. Additive, no existing column changes.
+
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 
 The Moon Extraction Planner: a corp-internal calendar for staggering refinery pulls so chunks don't clump faster than a small crew can mine them. SeAT can only read the extractions a director fires in-game, so the planner is a coordination tool — it never controls the structure. Additive: one new permission, two new tables, a handful of columns, three opt-in notifications. No new ESI scopes.

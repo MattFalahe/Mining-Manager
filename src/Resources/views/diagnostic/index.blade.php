@@ -4022,6 +4022,44 @@ function runTaxPipeline() {
             </div>
         </div>`;
 
+        // Step 4b: Payment reconciliation - does amount_paid still equal the
+        // sum of the allocations behind it, for everything since the cutover
+        const recon = pipe.payment_reconciliation || {};
+        const reconState = recon.status === 'pass' ? 'success' : (recon.status === 'error' ? 'error' : 'warning');
+        html += `<div class="provider-test-result ${reconState}" style="margin-top: 10px;">
+            <h5><i class="fas fa-balance-scale"></i> Step 4b: Payment Reconciliation</h5>`;
+        if (recon.error) {
+            html += `<div class="text-danger">${recon.error}</div>`;
+        } else if (recon.message && !recon.checked) {
+            html += `<div class="text-muted">${recon.message}</div>`;
+            if (recon.cutover) {
+                html += `<div class="text-muted small mt-1">Cutover: ${recon.cutover}</div>`;
+            }
+        } else {
+            html += `<div class="row mb-2">
+                <div class="col-md-3"><strong>Invoices Checked:</strong> ${fmtNum(recon.checked || 0)}</div>
+                <div class="col-md-3"><strong>Discrepancies:</strong> <span class="${(recon.discrepancy_count || 0) > 0 ? 'text-warning' : 'text-success'}">${fmtNum(recon.discrepancy_count || 0)}</span></div>
+                <div class="col-md-3"><strong>Claims Without Allocations:</strong> <span class="${(recon.claims_without_allocations || 0) > 0 ? 'text-warning' : 'text-success'}">${fmtNum(recon.claims_without_allocations || 0)}</span></div>
+                <div class="col-md-3"><strong>Cutover:</strong> <span class="small">${recon.cutover || 'N/A'}</span></div>
+            </div>`;
+            const reconRows = recon.discrepancies || [];
+            if (reconRows.length > 0) {
+                html += `<table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
+                    <thead><tr><th>Invoice</th><th>Character ID</th><th class="text-right">Recorded Paid</th><th class="text-right">Sum of Payments</th><th class="text-right">Difference</th></tr></thead><tbody>`;
+                reconRows.forEach(item => {
+                    html += `<tr>
+                        <td>${item.tax_id}</td>
+                        <td>${item.character_id}</td>
+                        <td class="text-right">${fmtISK(item.amount_paid)} ISK</td>
+                        <td class="text-right">${fmtISK(item.sum_of_allocations)} ISK</td>
+                        <td class="text-right text-warning">${fmtISK(item.difference)} ISK</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+            }
+        }
+        html += '</div>';
+
         // Step 5: Overdue - controller returns {status, count, overdue_records[{id, character_id, amount_owed, due_date}]}
         const step5 = pipe.overdue || {};
         html += `<div class="provider-test-result ${(step5.count || 0) > 0 ? 'error' : 'success'}" style="margin-top: 10px;">

@@ -2242,6 +2242,9 @@ class DiagnosticController extends Controller
                 $pipeline['pending_payments'] = ['status' => 'error', 'error' => $e->getMessage()];
             }
 
+            // Step 4b: Payment reconciliation
+            $pipeline['payment_reconciliation'] = $this->reconcilePayments();
+
             // Step 5: Overdue check
             $overdueCount = $taxRecords->filter(fn($t) => $t->isOverdue())->count();
             $pipeline['overdue'] = [
@@ -2290,6 +2293,92 @@ class DiagnosticController extends Controller
         } catch (\Exception $e) {
             Log::error('Tax pipeline diagnostic failed', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Check that credited payments still add up, from the cutover forward.
+     *
+     * Every payment applied since the allocation ledger shipped writes a row
+     * per invoice it touched, so an invoice's amount_paid should equal the sum
+     * of its allocations. A mismatch means something credited an invoice
+     * without going through the allocator, which is the failure mode this
+     * whole mechanism exists to prevent.
+     *
+     * Deliberately scoped to invoices settled after the cutover. Older records
+     * were credited by a pipeline that kept no such breakdown, so they cannot
+     * be reconciled and are not something to raise alarms about now.
+     */
+    private function reconcilePayments(): array
+    {
+        try {
+            $allocator = app(\MiningManager\Services\Tax\PaymentAllocationService::class);
+            $epoch = $allocator->getDedupEpoch();
+
+            if (!$epoch) {
+                return [
+                    'status' => 'warning',
+                    'message' => 'No verification cutover is recorded, so nothing can be reconciled.',
+                ];
+            }
+
+            $taxes = \MiningManager\Models\MiningTax::where('paid_at', '>=', $epoch)
+                ->whereIn('status', ['paid', 'partial'])
+                ->get(['id', 'character_id', 'amount_owed', 'amount_paid', 'status']);
+
+            if ($taxes->isEmpty()) {
+                return [
+                    'status' => 'pass',
+                    'cutover' => $epoch->toDateTimeString(),
+                    'checked' => 0,
+                    'message' => 'No payments have been credited since the cutover yet.',
+                ];
+            }
+
+            $allocated = \MiningManager\Models\PaymentAllocation::whereIn('mining_tax_id', $taxes->pluck('id'))
+                ->selectRaw('mining_tax_id, SUM(amount) as total')
+                ->groupBy('mining_tax_id')
+                ->pluck('total', 'mining_tax_id');
+
+            $discrepancies = [];
+
+            foreach ($taxes as $tax) {
+                $expected = round((float) ($allocated[$tax->id] ?? 0), 2);
+                $actual = round((float) $tax->amount_paid, 2);
+
+                // A tolerance of 1 ISK matches the settled threshold used when
+                // applying payments, so decimal dust does not read as a fault.
+                if (abs($expected - $actual) < 1.0) {
+                    continue;
+                }
+
+                $discrepancies[] = [
+                    'tax_id' => (int) $tax->id,
+                    'character_id' => (int) $tax->character_id,
+                    'amount_paid' => $actual,
+                    'sum_of_allocations' => $expected,
+                    'difference' => round($actual - $expected, 2),
+                ];
+            }
+
+            $orphanClaims = \MiningManager\Models\ProcessedTransaction::where('matched_at', '>=', $epoch)
+                ->whereNotIn('transaction_id', function ($query) {
+                    $query->select('transaction_id')
+                        ->from('mining_manager_payment_allocations')
+                        ->whereNotNull('transaction_id');
+                })
+                ->count();
+
+            return [
+                'status' => empty($discrepancies) && $orphanClaims === 0 ? 'pass' : 'warning',
+                'cutover' => $epoch->toDateTimeString(),
+                'checked' => $taxes->count(),
+                'discrepancies' => array_slice($discrepancies, 0, 20),
+                'discrepancy_count' => count($discrepancies),
+                'claims_without_allocations' => $orphanClaims,
+            ];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'error' => $e->getMessage()];
         }
     }
 
