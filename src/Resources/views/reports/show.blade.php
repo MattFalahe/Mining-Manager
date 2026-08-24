@@ -74,6 +74,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard reports-page">
 
 {{-- TAB NAVIGATION --}}

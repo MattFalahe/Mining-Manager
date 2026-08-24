@@ -95,6 +95,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper settings-page">
     
     {{-- Success/Error Messages --}}

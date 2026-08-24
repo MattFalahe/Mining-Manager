@@ -8,6 +8,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard moon-simulator-page">
 
 {{-- TAB NAVIGATION --}}
