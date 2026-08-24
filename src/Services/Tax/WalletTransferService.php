@@ -3,49 +3,64 @@
 namespace MiningManager\Services\Tax;
 
 use MiningManager\Models\MiningTax;
+use MiningManager\Models\PaymentAllocation;
 use MiningManager\Models\ProcessedTransaction;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Configuration\SettingsManagerService;
-use Seat\Eveapi\Models\Wallet\CharacterWalletJournal;
-use Illuminate\Database\QueryException;
+use MiningManager\Services\Tax\Concerns\ResolvesCharacterOwnership;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
+/**
+ * Reading and matching corporation wallet payments against tax invoices.
+ *
+ * Everything here works from corporation_wallet_journals. That is the wallet
+ * the ISK actually arrives in, and it is populated for every payer whether or
+ * not they have added their character to SeAT with a wallet scope. An earlier
+ * version of this class matched against character_wallet_journals, which meant
+ * a payment from anyone without a personal wallet token could never be
+ * verified even though the corp could plainly see the ISK.
+ *
+ * Tax codes are read from reason and description together. EVE puts the note a
+ * player types into reason; description is CCP's generated sentence and never
+ * contains the code.
+ *
+ * Applying a payment is not done here. Anything that credits an invoice goes
+ * through PaymentAllocationService so there is one implementation of the
+ * claim, cascade and surplus rules.
+ */
 class WalletTransferService
 {
-    /**
-     * Settings manager service
-     *
-     * @var SettingsManagerService
-     */
-    protected $settings;
+    use ResolvesCharacterOwnership;
 
-    /**
-     * Constructor
-     *
-     * @param SettingsManagerService $settings
-     */
-    public function __construct(SettingsManagerService $settings)
+    protected SettingsManagerService $settings;
+
+    protected PaymentAllocationService $allocator;
+
+    public function __construct(SettingsManagerService $settings, PaymentAllocationService $allocator)
     {
         $this->settings = $settings;
+        $this->allocator = $allocator;
     }
 
     /**
      * Set the corporation context for settings retrieval.
-     *
-     * @param int|null $corporationId
-     * @return self
      */
     public function setCorporationContext(?int $corporationId): self
     {
         $this->settings->setActiveCorporation($corporationId);
+        $this->allocator->setCorporationContext($corporationId);
+
         return $this;
     }
 
     /**
-     * Get the wallet divisions to check for payments.
-     * Always includes master wallet (1) as fallback, plus the configured division.
+     * The wallet divisions to check for payments.
+     *
+     * Always includes the master wallet as a fallback: operators routinely
+     * configure a dedicated tax division but members pay into the master
+     * wallet anyway because that is what the corp hangar shows them.
      *
      * @return array
      */
@@ -54,10 +69,8 @@ class WalletTransferService
         $paymentSettings = $this->settings->getPaymentSettings();
         $division = (int) ($paymentSettings['wallet_division'] ?? 1);
 
-        // Always check master wallet (1) as secondary source
         $divisions = [1];
         if ($division !== 1) {
-            // Configured division is primary, master wallet is fallback
             array_unshift($divisions, $division);
         }
 
@@ -65,65 +78,145 @@ class WalletTransferService
     }
 
     /**
-     * Verify wallet payments against outstanding taxes.
+     * The corporation whose wallet we are reading.
+     */
+    private function resolveCorporationId(?int $corporationId = null): ?int
+    {
+        if ($corporationId) {
+            return $corporationId;
+        }
+
+        $configured = $this->settings->getSetting('general.moon_owner_corporation_id');
+
+        if ($configured) {
+            return (int) $configured;
+        }
+
+        return $this->settings->getAllCorporations()->first()->corporation_id ?? null;
+    }
+
+    /**
+     * Base query for player donations into the configured wallet divisions.
+     */
+    private function donationQuery(?int $corporationId, ?int $days = null)
+    {
+        $query = DB::table('corporation_wallet_journals')
+            ->where('ref_type', 'player_donation')
+            ->whereIn('division', $this->getPaymentDivisions());
+
+        if ($corporationId) {
+            $query->where('corporation_id', $corporationId);
+        }
+
+        if ($days !== null) {
+            $query->where('date', '>=', Carbon::now()->subDays($days));
+        }
+
+        return $query;
+    }
+
+    /**
+     * Load a single donation by its wallet journal reference id.
      *
-     * @param int $days
-     * @param bool $autoMatch
-     * @return array
+     * @return object|null
+     */
+    public function findTransaction(int $transactionId, ?int $corporationId = null)
+    {
+        return $this->donationQuery($this->resolveCorporationId($corporationId))
+            ->where('id', $transactionId)
+            ->first();
+    }
+
+    /**
+     * Pull a tax code out of a journal row.
+     *
+     * Both fields are searched because operators have historically told
+     * members to put the code in either one, and because a copy-pasted code
+     * sometimes lands in the wrong box.
+     */
+    public function extractTaxCodeFromTransaction(object $transaction): ?string
+    {
+        $text = trim(($transaction->reason ?? '') . ' ' . ($transaction->description ?? ''));
+
+        return TaxCode::extractCodeFromText($text);
+    }
+
+    /**
+     * Find the tax code record a payment refers to.
+     *
+     * With payment.accept_alt_characters on (the default) the search widens to
+     * every character belonging to the paying player, so someone can settle
+     * their main's bill from whichever alt is holding the ISK.
+     */
+    public function resolveTaxCodeRecord(string $code, int $payerCharacterId): ?TaxCode
+    {
+        $paymentSettings = $this->settings->getPaymentSettings();
+        $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+        $eligibleCharacterIds = $this->eligibleCharacterIds($payerCharacterId, $acceptAlts);
+
+        $record = TaxCode::where('code', $code)
+            ->whereIn('character_id', $eligibleCharacterIds)
+            ->where('status', 'active')
+            ->first();
+
+        if ($record) {
+            return $record;
+        }
+
+        // A code that has already been marked used still identifies the right
+        // invoice. That matters for follow-up payments on an invoice that was
+        // briefly settled and then reopened, and for members who reuse the
+        // code from their last payment out of habit.
+        return TaxCode::where('code', $code)
+            ->whereIn('character_id', $eligibleCharacterIds)
+            ->where('status', '!=', 'cancelled')
+            ->first();
+    }
+
+    /**
+     * Scan recent donations and match what can be matched.
+     *
+     * @param  int  $days
+     * @param  bool  $autoMatch  Apply the payments, rather than only reporting them
+     * @return array  matched, unmatched, skipped, errors
      */
     public function verifyPayments(int $days = 7, bool $autoMatch = false): array
     {
-        Log::info("Mining Manager: Starting payment verification (last {$days} days)");
+        Log::info("Mining Manager: starting payment verification (last {$days} days)");
 
-        $cutoffDate = Carbon::now()->subDays($days);
+        $corporationId = $this->resolveCorporationId();
 
-        // Get potential tax payment transactions, EXCLUDING those already
-        // processed (claimed in mining_manager_processed_transactions). Without
-        // this exclusion, every cron run (every 6h) re-processes the same
-        // transactions, and any tax that's only partially paid (status=partial,
-        // tax_codes.status=active) gets its amount_paid ratcheted up by the
-        // same payment over and over until it appears fully paid — silent
-        // double-credit on partial-payment scenarios.
-        //
-        // This mirrors the canonical filter pattern from
-        // ProcessWalletJournalListener (the listener that fires when wallet
-        // updates arrive). Defense-in-depth: applyPayment() also writes
-        // atomically to the dedup table inside its DB::transaction so a
-        // racy second worker can't credit the same transaction twice even
-        // if the filter slipped (replication lag, mid-cron insert, etc.).
-        $transactions = CharacterWalletJournal::where('date', '>=', $cutoffDate)
-            ->where('ref_type', 'player_donation')
+        $transactions = $this->donationQuery($corporationId, $days)
             ->whereNotIn('id', function ($query) {
-                $query->select('transaction_id')
-                    ->from('mining_manager_processed_transactions');
+                $query->select('transaction_id')->from('mining_manager_processed_transactions');
             })
+            ->orderBy('date', 'desc')
             ->get();
-
-        if ($transactions->isEmpty()) {
-            Log::info("Mining Manager: No relevant transactions found");
-            return [
-                'matched' => 0,
-                'unmatched' => 0,
-                'errors' => [],
-            ];
-        }
 
         $matched = 0;
         $unmatched = 0;
+        $skipped = 0;
         $errors = [];
 
         foreach ($transactions as $transaction) {
             try {
-                $result = $this->processTransaction($transaction, $autoMatch);
+                if ($this->allocator->isBeforeEpoch($transaction->date)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $result = $this->matchTransaction((int) $transaction->id, [
+                    'apply' => $autoMatch,
+                    'transaction' => $transaction,
+                ]);
 
                 if ($result['matched']) {
                     $matched++;
                 } else {
                     $unmatched++;
                 }
-
             } catch (\Exception $e) {
-                Log::error("Mining Manager: Error processing transaction {$transaction->id}: " . $e->getMessage());
+                Log::error("Mining Manager: error processing transaction {$transaction->id}: " . $e->getMessage());
                 $errors[] = [
                     'transaction_id' => $transaction->id,
                     'error' => $e->getMessage(),
@@ -131,360 +224,281 @@ class WalletTransferService
             }
         }
 
-        Log::info("Mining Manager: Payment verification complete. Matched: {$matched}, Unmatched: {$unmatched}");
+        Log::info("Mining Manager: payment verification complete. Matched: {$matched}, unmatched: {$unmatched}, before cutover: {$skipped}");
 
         return [
             'matched' => $matched,
             'unmatched' => $unmatched,
+            'skipped' => $skipped,
             'errors' => $errors,
         ];
     }
 
     /**
-     * Process a single transaction.
+     * Try to match one donation to an invoice via its tax code.
      *
-     * @param CharacterWalletJournal $transaction
-     * @param bool $autoMatch
-     * @return array
+     * Returns why it failed rather than a bare false, because the wallet
+     * verification page needs to tell a director what to do next: a payment
+     * with no code needs assigning by hand, a payment whose code points at an
+     * unknown invoice is a different problem entirely.
+     *
+     * @param  array  $options  apply (bool), transaction (preloaded row)
+     * @return array  matched, applied, reason, tax_id, tax_code, amount, allocations, credited
      */
-    private function processTransaction(CharacterWalletJournal $transaction, bool $autoMatch): array
+    public function matchTransaction(int $transactionId, array $options = []): array
     {
-        // Extract tax code from description
-        $taxCode = $this->extractTaxCode($transaction->description);
+        $result = [
+            'matched' => false,
+            'applied' => false,
+            'reason' => null,
+            'tax_id' => null,
+            'tax_code' => null,
+            'amount' => 0.0,
+            'allocations' => [],
+            'credited' => 0.0,
+        ];
 
-        if (!$taxCode) {
-            return ['matched' => false];
+        $transaction = $options['transaction'] ?? $this->findTransaction($transactionId);
+
+        if (!$transaction) {
+            $result['reason'] = 'transaction_not_found';
+
+            return $result;
         }
 
-        // Find tax code record. When `payment.accept_alt_characters` is on
-        // (default), the lookup broadens to include any tax code owned by
-        // a character that shares a SeAT user_id with the paying character
-        // — so a player can settle their main's tax bill from any alt's
-        // wallet. With the setting off, strict per-character match (the
-        // pre-v2.0.2 behaviour).
-        $payerCharacterId = (int) $transaction->first_party_id;
-        $paymentSettings = $this->settings->getPaymentSettings();
-        $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+        $result['amount'] = round(abs((float) $transaction->amount), 2);
 
-        $eligibleCharacterIds = $acceptAlts
-            ? $this->getCharacterIdsForUserOf($payerCharacterId)
-            : [$payerCharacterId];
+        if (ProcessedTransaction::isProcessed($transactionId)) {
+            $result['reason'] = 'already_claimed';
 
-        $taxCodeRecord = TaxCode::where('code', $taxCode)
-            ->whereIn('character_id', $eligibleCharacterIds)
-            ->where('status', 'active')
-            ->first();
+            return $result;
+        }
+
+        $ignoreCutover = (bool) ($options['ignore_cutover'] ?? false);
+
+        if (!$ignoreCutover && $this->allocator->isBeforeEpoch($transaction->date)) {
+            $result['reason'] = 'before_cutover';
+
+            return $result;
+        }
+
+        $code = $this->extractTaxCodeFromTransaction($transaction);
+
+        if (!$code) {
+            $result['reason'] = 'no_tax_code';
+
+            return $result;
+        }
+
+        $result['tax_code'] = $code;
+
+        $payerCharacterId = (int) ($transaction->first_party_id ?? 0);
+        $taxCodeRecord = $this->resolveTaxCodeRecord($code, $payerCharacterId);
 
         if (!$taxCodeRecord) {
-            Log::warning("Mining Manager: Tax code '{$taxCode}' not found or not active", [
-                'paying_character_id'    => $payerCharacterId,
-                'eligible_character_ids' => $eligibleCharacterIds,
-                'accept_alts'            => $acceptAlts,
-            ]);
-            return ['matched' => false];
+            $result['reason'] = 'tax_code_not_recognised';
+            Log::warning("Mining Manager: tax code '{$code}' not found for character {$payerCharacterId}");
+
+            return $result;
         }
 
-        // Audit: log when payment is credited via an alt rather than the
-        // exact taxed character. Helps directors reconcile if someone
-        // disputes ("who actually paid this?"). Only logs when the IDs
-        // differ to keep the same-character happy path quiet.
-        if ((int) $taxCodeRecord->character_id !== $payerCharacterId) {
-            Log::info("Mining Manager: Payment credited via alt character", [
-                'tax_code'             => $taxCode,
-                'taxed_character_id'   => (int) $taxCodeRecord->character_id,
-                'paying_character_id'  => $payerCharacterId,
-                'transaction_id'       => (int) $transaction->id,
-                'amount'               => (float) $transaction->amount,
-            ]);
-        }
-
-        // Find associated tax record
         $tax = MiningTax::find($taxCodeRecord->mining_tax_id);
 
         if (!$tax) {
-            Log::warning("Mining Manager: Tax record not found for code '{$taxCode}'");
-            return ['matched' => false];
+            $result['reason'] = 'invoice_missing';
+            Log::warning("Mining Manager: no invoice behind tax code '{$code}'");
+
+            return $result;
         }
 
-        // Verify amount
-        $amount = abs($transaction->amount);
-        $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
+        $result['matched'] = true;
+        $result['tax_id'] = (int) $tax->id;
 
-        if (abs($amount - $tax->amount_owed) > $tolerance) {
-            Log::warning("Mining Manager: Amount mismatch for tax code '{$taxCode}': Expected {$tax->amount_owed}, Got {$amount}");
-        }
-
-        if ($autoMatch) {
-            $this->applyPayment($tax, $taxCodeRecord, $transaction, $amount);
-        }
-
-        return ['matched' => true, 'tax_code' => $taxCode, 'amount' => $amount];
-    }
-
-    /**
-     * Apply payment to tax record from a CharacterWalletJournal model.
-     *
-     * Thin wrapper around `applyPaymentToTax()`; preserves the original
-     * signature for callers that already have a typed model instance
-     * (processTransaction, manualMatch).
-     *
-     * @param MiningTax $tax
-     * @param TaxCode $taxCode
-     * @param CharacterWalletJournal $transaction
-     * @param float $amount
-     * @return void
-     */
-    private function applyPayment(MiningTax $tax, TaxCode $taxCode, CharacterWalletJournal $transaction, float $amount): void
-    {
-        $this->applyPaymentToTax(
-            $tax,
-            $taxCode,
-            (int) $transaction->id,
-            $transaction->date,
-            (int) $tax->character_id,
-            $amount
-        );
-    }
-
-    /**
-     * Canonical payment-application core. Single source of truth for the
-     * "credit a payment to a tax" operation across all three entry paths:
-     *   1. WalletTransferService::processTransaction → applyPayment (model)
-     *   2. ProcessWalletJournalListener::handle (queued)
-     *   3. WalletTransferService::autoVerifyFromCorporationWallet
-     *
-     * All three paths funnel through this method so the atomic-claim and
-     * partial-payment semantics are guaranteed identical. Divergent write
-     * logic here is a known hazard: a dedup-table insert placed after the
-     * tax update opens a race window, and replacement-rather-than-
-     * accumulation semantics bulldoze partial payments.
-     *
-     * Idempotency:
-     *   - Inserts the dedup row FIRST inside DB::transaction. The unique
-     *     constraint on `mining_manager_processed_transactions.transaction_id`
-     *     makes this the canonical "compare-and-swap on a unique row" — a
-     *     QueryException on insert means another path already credited
-     *     this transaction; we bail before touching the tax.
-     *
-     * Partial-payment support:
-     *   - Accumulates `amount_paid` rather than replacing it.
-     *   - Sets status='partial' until the running total covers
-     *     `amount_owed`, then 'paid'.
-     *   - Marks the TaxCode as 'used' only on full payment.
-     *
-     * @param MiningTax  $tax
-     * @param TaxCode    $taxCode
-     * @param int        $transactionId   wallet journal row id
-     * @param mixed      $transactionDate Carbon|string — paid_at value
-     * @param int        $characterId     paying character (for log context)
-     * @param float      $amount          payment amount in ISK
-     * @return bool   true if payment applied; false if dedup-claim collided
-     *                or the tax disappeared mid-flight
-     */
-    private function applyPaymentToTax(
-        MiningTax $tax,
-        TaxCode $taxCode,
-        int $transactionId,
-        $transactionDate,
-        int $characterId,
-        float $amount
-    ): bool {
-        // Track whether the inner transaction actually applied the payment so
-        // the post-transaction log line reflects reality. Closures need a
-        // reference variable to write back to the outer scope.
-        $applied = false;
-
-        DB::transaction(function () use ($tax, $taxCode, $transactionId, $transactionDate, $characterId, $amount, &$applied) {
-            // ATOMIC CLAIM via the dedup table: try to insert
-            // mining_manager_processed_transactions FIRST. The transaction_id
-            // column has a unique constraint — if another worker already
-            // processed this transaction, our insert throws a QueryException,
-            // we catch it, and bail before touching the tax. This is the
-            // canonical "compare-and-swap on a unique row" pattern; it's the
-            // only way to make payment application safe under concurrency
-            // without distributed locking.
-            //
-            // Why insert FIRST rather than after the tax update? If the tax
-            // update were to land before the dedup row, two parallel workers
-            // could both update amount_paid (each adding the same $amount)
-            // before either tried the unique insert — the second worker's
-            // unique violation would correctly roll back its own insert, but
-            // the inner DB::transaction rollback would also revert the tax
-            // update, leaving us with a tax that was net-zero changed despite
-            // two attempts (and one legit). By claiming the dedup row first,
-            // the second worker bails BEFORE touching the tax row at all.
-            try {
-                ProcessedTransaction::create([
-                    'transaction_id' => $transactionId,
-                    'character_id' => $characterId,
-                    'tax_id' => $tax->id,
-                    'matched_at' => Carbon::now(),
-                ]);
-            } catch (QueryException $e) {
-                // Unique violation = transaction already processed by another
-                // path. Not an error — bail silently. The tax row is untouched.
-                Log::info("Mining Manager: Transaction {$transactionId} already processed; skipping double-credit attempt for character {$characterId}");
-                return;
-            }
-
-            // Re-fetch with lock to prevent race conditions on concurrent payments
-            $taxLocked = MiningTax::where('id', $tax->id)->lockForUpdate()->first();
-            if (!$taxLocked) {
-                // Tax disappeared mid-flight — let the dedup row stand so we
-                // don't loop on a missing tax, but log it as anomalous.
-                Log::warning("Mining Manager: Tax {$tax->id} not found during payment application for transaction {$transactionId}; dedup row inserted, no payment applied");
-                return;
-            }
-
-            // Support partial payments — accumulate amount_paid.
-            $newPaid = ($taxLocked->amount_paid ?? 0) + $amount;
-
-            $taxLocked->update([
-                'amount_paid' => $newPaid,
-                'paid_at' => $transactionDate,
-                'status' => ($taxLocked->amount_owed - $newPaid) < 1 ? 'paid' : 'partial',
+        if ((int) $taxCodeRecord->character_id !== $payerCharacterId) {
+            Log::info('Mining Manager: payment credited via an alt of the taxed character', [
+                'tax_code' => $code,
+                'taxed_character_id' => (int) $taxCodeRecord->character_id,
+                'paying_character_id' => $payerCharacterId,
                 'transaction_id' => $transactionId,
             ]);
-
-            // Mark tax code as used only when fully paid.
-            if (($taxLocked->amount_owed - $newPaid) < 1) {
-                $taxCode->update([
-                    'used_at' => Carbon::now(),
-                    'transaction_id' => $transactionId,
-                    'status' => 'used',
-                ]);
-            }
-
-            $applied = true;
-        });
-
-        if ($applied) {
-            Log::info("Mining Manager: Applied payment for character {$characterId}: " . number_format($amount, 2) . " ISK (code: {$taxCode->code})");
         }
 
-        return $applied;
+        $tolerance = (float) $this->settings->getSetting('payment.match_tolerance', 100);
+        if (abs($result['amount'] - (float) $tax->amount_owed) > $tolerance) {
+            Log::warning("Mining Manager: amount differs from invoice for code '{$code}': owed " .
+                number_format($tax->amount_owed, 2) . ', paid ' . number_format($result['amount'], 2));
+        }
+
+        if (!($options['apply'] ?? true)) {
+            return $result;
+        }
+
+        $allocation = $this->allocator->allocate($transaction, (int) $tax->id, [
+            'source' => PaymentAllocation::SOURCE_AUTO,
+            'ignore_cutover' => $ignoreCutover,
+        ]);
+
+        $result['applied'] = $allocation['applied'];
+        $result['allocations'] = $allocation['allocations'];
+        $result['credited'] = $allocation['credited'];
+
+        if (!$allocation['applied']) {
+            $result['reason'] = $allocation['reason'];
+        }
+
+        return $result;
     }
 
     /**
-     * Extract tax code from transaction description.
-     * Delegates to TaxCode::extractCodeFromText() which handles mixed code lengths.
+     * Match a single transaction and apply it.
      *
-     * @param string|null $description
-     * @return string|null
-     */
-    private function extractTaxCode(?string $description): ?string
-    {
-        return TaxCode::extractCodeFromText($description);
-    }
-
-    /**
-     * Match a single transaction to its tax record and apply payment.
-     * Called from the wallet verification page "Verify" button.
-     *
-     * @param int $transactionId
-     * @return bool True if the transaction was matched and applied
+     * Thin boolean wrapper kept for call sites that only care whether it
+     * worked. New code should use matchTransaction() and read the reason.
      */
     public function matchTransactionToTax(int $transactionId): bool
     {
-        $transaction = CharacterWalletJournal::findOrFail($transactionId);
-
-        $result = $this->processTransaction($transaction, true);
-
-        return $result['matched'] ?? false;
+        return $this->matchTransaction($transactionId, ['apply' => true])['applied'];
     }
 
     /**
-     * Get pending payments (potential matches).
+     * Donations that carry a recognisable tax code but have not been credited.
      *
-     * @param int $days
      * @return \Illuminate\Support\Collection
      */
     public function getPendingPayments(int $days = 7)
     {
-        $cutoffDate = Carbon::now()->subDays($days);
+        $corporationId = $this->resolveCorporationId();
 
-        return CharacterWalletJournal::where('date', '>=', $cutoffDate)
-            ->where('ref_type', 'player_donation')
+        return $this->donationQuery($corporationId, $days)
             ->whereNotIn('id', function ($query) {
-                $query->select('transaction_id')
-                    ->from('mining_manager_processed_transactions');
+                $query->select('transaction_id')->from('mining_manager_processed_transactions');
             })
-            ->with('character')
             ->get()
-            ->filter(function ($transaction) {
-                return $this->extractTaxCode($transaction->description) !== null;
-            });
+            ->filter(fn ($transaction) => $this->extractTaxCodeFromTransaction($transaction) !== null)
+            ->values();
     }
 
     /**
-     * Manually match a transaction to a tax.
+     * Assign a payment to a specific invoice by hand.
      *
-     * @param int $transactionId
-     * @param int $taxId
-     * @return bool
+     * This is what a director does with a transfer that arrived without a tax
+     * code. The payer still has to be the invoiced character or one of their
+     * alts, unless strict mode is on, in which case it must be the exact
+     * character.
+     *
+     * @param  array  $options  allocated_by, notes, cascade
+     * @return array  success, reason, allocations, credited
      */
-    public function manualMatch(int $transactionId, int $taxId): bool
+    public function manualMatch(int $transactionId, int $taxId, array $options = []): array
     {
-        try {
-            $transaction = CharacterWalletJournal::findOrFail($transactionId);
-            $tax = MiningTax::findOrFail($taxId);
+        $result = [
+            'success' => false,
+            'reason' => null,
+            'allocations' => [],
+            'credited' => 0.0,
+        ];
 
-            // Per-character vs same-SeAT-user comparison. Default behaviour
-            // (`payment.accept_alt_characters = true`) lets a player settle
-            // their main's tax from any of their alts. Strict mode keeps
-            // the pre-v2.0.2 character-identity check.
-            $paymentSettings = $this->settings->getPaymentSettings();
-            $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
-            $isSameOwner = $acceptAlts
-                ? $this->sharesSeatUser((int) $tax->character_id, (int) $transaction->first_party_id)
-                : ((int) $tax->character_id === (int) $transaction->first_party_id);
+        $transaction = $this->findTransaction($transactionId);
 
-            if (!$isSameOwner) {
-                throw new \Exception("Character mismatch");
-            }
+        if (!$transaction) {
+            $result['reason'] = 'transaction_not_found';
 
-            if ((int) $tax->character_id !== (int) $transaction->first_party_id) {
-                Log::info("Mining Manager: Manual match credited via alt character", [
-                    'tax_id'              => (int) $tax->id,
-                    'taxed_character_id'  => (int) $tax->character_id,
-                    'paying_character_id' => (int) $transaction->first_party_id,
-                    'transaction_id'      => (int) $transaction->id,
-                ]);
-            }
+            return $result;
+        }
 
-            $amount = abs($transaction->amount);
+        $tax = MiningTax::find($taxId);
 
-            // Create tax code record if it doesn't exist
-            $taxCode = TaxCode::firstOrCreate(
+        if (!$tax) {
+            $result['reason'] = 'invoice_not_found';
+
+            return $result;
+        }
+
+        if (ProcessedTransaction::isProcessed($transactionId)) {
+            $result['reason'] = 'already_claimed';
+
+            return $result;
+        }
+
+        $payerCharacterId = (int) ($transaction->first_party_id ?? 0);
+        $paymentSettings = $this->settings->getPaymentSettings();
+        $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+
+        $isSameOwner = $acceptAlts
+            ? $this->sharesSeatUser((int) $tax->character_id, $payerCharacterId)
+            : ((int) $tax->character_id === $payerCharacterId);
+
+        if (!$isSameOwner) {
+            $result['reason'] = 'character_mismatch';
+
+            return $result;
+        }
+
+        if ((int) $tax->character_id !== $payerCharacterId) {
+            Log::info('Mining Manager: manual assignment credited via an alt', [
+                'tax_id' => (int) $tax->id,
+                'taxed_character_id' => (int) $tax->character_id,
+                'paying_character_id' => $payerCharacterId,
+                'transaction_id' => $transactionId,
+            ]);
+        }
+
+        // A manual assignment is a deliberate act, so it is allowed to settle
+        // a payment that predates the verification cutover. That is the whole
+        // point of the queue: old transfers nobody could match automatically.
+        $allocation = $this->allocator->allocate($transaction, (int) $tax->id, [
+            'source' => PaymentAllocation::SOURCE_MANUAL,
+            'allocated_by' => $options['allocated_by'] ?? null,
+            'notes' => $options['notes'] ?? null,
+            'cascade' => $options['cascade'] ?? null,
+            'ignore_cutover' => true,
+        ]);
+
+        $result['success'] = $allocation['applied'];
+        $result['allocations'] = $allocation['allocations'];
+        $result['credited'] = $allocation['credited'];
+
+        if (!$allocation['applied']) {
+            $result['reason'] = $allocation['reason'];
+        }
+
+        // A codeless payment leaves no trail back to the invoice, so record
+        // one. The code reads MANUAL rather than a generated string because it
+        // was never quoted by the member.
+        if ($allocation['applied']) {
+            TaxCode::firstOrCreate(
                 [
                     'mining_tax_id' => $tax->id,
                     'character_id' => $tax->character_id,
-                    'transaction_id' => $transaction->id,
+                    'transaction_id' => $transactionId,
                 ],
                 [
                     'code' => 'MANUAL',
                     'status' => 'used',
                     'generated_at' => Carbon::now(),
                     'used_at' => Carbon::now(),
+                    'notes' => $options['notes'] ?? 'Assigned by hand from wallet verification',
                 ]
             );
-
-            $this->applyPayment($tax, $taxCode, $transaction, $amount);
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error("Mining Manager: Error in manual match: " . $e->getMessage());
-            return false;
         }
+
+        return $result;
     }
 
     /**
-     * Reverse a payment.
+     * Undo a payment assignment, putting the transaction back in the queue.
+     */
+    public function unassign(int $transactionId, ?int $actorId = null): array
+    {
+        return $this->allocator->unallocate($transactionId, $actorId);
+    }
+
+    /**
+     * Reverse every payment against an invoice and reopen it.
      *
-     * @param int $taxId
-     * @param string $reason
-     * @return bool
+     * Distinct from unassign(): this works from the invoice side and drops
+     * everything credited to it, which is what you want when an invoice was
+     * settled in error rather than when one payment went to the wrong place.
      */
     public function reversePayment(int $taxId, string $reason): bool
     {
@@ -493,7 +507,30 @@ class WalletTransferService
                 $tax = MiningTax::findOrFail($taxId);
 
                 if ($tax->status !== 'paid' && $tax->status !== 'partial') {
-                    throw new \Exception("Tax is not marked as paid");
+                    throw new \Exception('Invoice is not marked as paid');
+                }
+
+                // Release the claims too, otherwise the payments stay consumed
+                // and can never be reassigned anywhere.
+                $transactionIds = PaymentAllocation::where('mining_tax_id', $taxId)
+                    ->whereNotNull('transaction_id')
+                    ->pluck('transaction_id')
+                    ->unique()
+                    ->all();
+
+                PaymentAllocation::where('mining_tax_id', $taxId)->delete();
+
+                if (!empty($transactionIds)) {
+                    $stillUsed = PaymentAllocation::whereIn('transaction_id', $transactionIds)
+                        ->pluck('transaction_id')
+                        ->unique()
+                        ->all();
+
+                    $releasable = array_diff($transactionIds, $stillUsed);
+
+                    if (!empty($releasable)) {
+                        ProcessedTransaction::whereIn('transaction_id', $releasable)->delete();
+                    }
                 }
 
                 $tax->update([
@@ -502,39 +539,32 @@ class WalletTransferService
                     'status' => 'unpaid',
                     'transaction_id' => null,
                     'notes' => ($tax->notes ? $tax->notes . "\n" : '') .
-                              Carbon::now()->toDateTimeString() . " - Payment reversed. Reason: {$reason}",
+                        Carbon::now()->toDateTimeString() . " - Payment reversed. Reason: {$reason}",
                 ]);
 
-                // Mark associated tax codes as cancelled
                 TaxCode::where('mining_tax_id', $tax->id)
                     ->where('status', 'used')
                     ->update(['status' => 'cancelled']);
 
-                Log::info("Mining Manager: Reversed payment for tax {$taxId}");
+                Log::info("Mining Manager: reversed all payments for invoice {$taxId}");
 
                 return true;
             });
-
         } catch (\Exception $e) {
-            Log::error("Mining Manager: Error reversing payment: " . $e->getMessage());
+            Log::error('Mining Manager: error reversing payment: ' . $e->getMessage());
+
             return false;
         }
     }
 
     /**
-     * Verify tax payment from corporation wallet journal
+     * Find the donation that settles a given invoice, by tax code.
      *
-     * Queries corporation_wallet_journals for player_donation type transactions
-     * that match tax codes in reason or description fields
-     *
-     * @param MiningTax $taxRecord The tax record to verify
-     * @param int|null $corporationId Optional corporation ID filter
-     * @return array|null Transaction data if found, null otherwise
+     * @return array|null
      */
     public function verifyPaymentFromJournal(MiningTax $taxRecord, ?int $corporationId = null): ?array
     {
         try {
-            // Get the tax code for this tax record
             $taxCode = TaxCode::where('mining_tax_id', $taxRecord->id)
                 ->where('status', '!=', 'cancelled')
                 ->first();
@@ -543,62 +573,46 @@ class WalletTransferService
                 return null;
             }
 
-            // Build query for corporation wallet journals
-            // Filter by configured wallet division(s) — primary + master wallet fallback
-            $divisions = $this->getPaymentDivisions();
+            $paymentSettings = $this->settings->getPaymentSettings();
+            $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+            $eligibleCharacterIds = $this->eligibleCharacterIds((int) $taxRecord->character_id, $acceptAlts);
 
-            $query = DB::table('corporation_wallet_journals')
-                ->where('ref_type', 'player_donation')
-                ->where('first_party_id', $taxRecord->character_id)
-                ->whereIn('division', $divisions)
-                ->where(function($q) use ($taxCode) {
+            $query = $this->donationQuery($corporationId)
+                ->whereIn('first_party_id', $eligibleCharacterIds)
+                ->where(function ($q) use ($taxCode) {
                     $q->where('reason', 'LIKE', "%{$taxCode->code}%")
-                      ->orWhere('description', 'LIKE', "%{$taxCode->code}%");
+                        ->orWhere('description', 'LIKE', "%{$taxCode->code}%");
                 });
 
-            // Filter by corporation if specified
-            if ($corporationId !== null) {
-                $query->where('corporation_id', $corporationId);
-            }
-
-            // Exclude transactions already applied. Use the canonical dedup
-            // table (mining_manager_processed_transactions) rather than
-            // mining_taxes.transaction_id — the latter is mutated per
-            // payment, so a partial-payment tax that gets a follow-up
-            // payment with the same wallet code would have its OLDER
-            // transaction_id overwritten and the older transaction would
-            // re-suggest itself on the next auto-verify run. The dedup
-            // table is append-only and is the single source of truth for
-            // "has this transaction been credited to anything yet?".
+            // The claim table is the only reliable answer to "has this been
+            // credited yet". mining_taxes.transaction_id holds just the most
+            // recent payment, so an invoice settled in instalments would
+            // re-offer its earlier payments forever.
             $query->whereNotIn('id', function ($sub) {
-                $sub->select('transaction_id')
-                    ->from('mining_manager_processed_transactions');
+                $sub->select('transaction_id')->from('mining_manager_processed_transactions');
             });
 
-            // Get the most recent matching transaction (tax code match is primary identifier)
             $transaction = $query->orderBy('date', 'desc')->first();
 
             if (!$transaction) {
                 return null;
             }
 
-            // Check amount tolerance — warn but don't block if code matches
-            $tolerance = $this->settings->getSetting('payment.match_tolerance', 100);
-            $amountDiff = abs(abs($transaction->amount) - $taxRecord->amount_owed);
+            $tolerance = (float) $this->settings->getSetting('payment.match_tolerance', 100);
+            $amountDiff = abs(abs((float) $transaction->amount) - (float) $taxRecord->amount_owed);
             $amountMismatch = $amountDiff > $tolerance;
 
             if ($amountMismatch) {
-                Log::warning("WalletTransferService: Amount mismatch for tax {$taxRecord->id} — expected " .
-                    number_format($taxRecord->amount_owed, 2) . ", got " .
-                    number_format(abs($transaction->amount), 2) . " (diff: " .
-                    number_format($amountDiff, 2) . " ISK)");
+                Log::warning("Mining Manager: amount differs for invoice {$taxRecord->id}, owed " .
+                    number_format($taxRecord->amount_owed, 2) . ', paid ' .
+                    number_format(abs($transaction->amount), 2));
             }
 
             return [
                 'id' => $transaction->id,
                 'corporation_id' => $transaction->corporation_id,
                 'date' => $transaction->date,
-                'amount' => abs($transaction->amount),
+                'amount' => abs((float) $transaction->amount),
                 'first_party_id' => $transaction->first_party_id,
                 'second_party_id' => $transaction->second_party_id,
                 'reason' => $transaction->reason,
@@ -607,51 +621,52 @@ class WalletTransferService
                 'tax_code' => $taxCode->code,
                 'amount_mismatch' => $amountMismatch,
             ];
-
         } catch (\Exception $e) {
-            Log::error("WalletTransferService: Failed to verify payment from journal for tax {$taxRecord->id}", [
-                'error' => $e->getMessage()
+            Log::error("Mining Manager: failed to check the journal for invoice {$taxRecord->id}", [
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
 
     /**
-     * Get all player donation transactions for a corporation
+     * Every player donation for a corporation, with the payer's name attached.
      *
-     * @param int $corporationId Corporation ID to filter by
-     * @param int $days Number of days to look back
      * @return \Illuminate\Support\Collection
      */
     public function getCorporationDonations(int $corporationId, int $days = 30)
     {
-        $cutoffDate = Carbon::now()->subDays($days);
-
-        $divisions = $this->getPaymentDivisions();
-
-        return DB::table('corporation_wallet_journals as cwj')
+        $donations = DB::table('corporation_wallet_journals as cwj')
             ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
-            ->whereIn('cwj.division', $divisions)
-            ->where('cwj.date', '>=', $cutoffDate)
-            ->select(
-                'cwj.*',
-                'ci.name as character_name',
-                DB::raw('false as verified'),
-                DB::raw('false as mismatch'),
-                DB::raw('null as matched_tax_id')
-            )
+            ->whereIn('cwj.division', $this->getPaymentDivisions())
+            ->where('cwj.date', '>=', Carbon::now()->subDays($days))
+            ->select('cwj.*', 'ci.name as character_name')
             ->orderBy('cwj.date', 'desc')
             ->get();
+
+        $claimed = $this->claimedTransactionMap(
+            $donations->pluck('id')->map(fn ($id) => (int) $id)->all()
+        );
+
+        return $donations
+            ->map(function ($donation) use ($claimed) {
+                $taxId = $claimed[(int) $donation->id] ?? null;
+
+                $donation->verified = $taxId !== null;
+                $donation->mismatch = false;
+                $donation->matched_tax_id = $taxId;
+
+                return $donation;
+            });
     }
 
     /**
-     * Auto-verify all unpaid taxes by checking corporation wallet journals
+     * Auto-verify outstanding invoices against the corporation wallet.
      *
-     * @param int|null $corporationId Optional corporation ID filter
-     * @param int $days Number of days to look back in wallet history
-     * @return array Statistics about verification
+     * @return array
      */
     public function autoVerifyFromCorporationWallet(?int $corporationId = null, int $days = 30): array
     {
@@ -659,64 +674,40 @@ class WalletTransferService
         $failed = 0;
         $errors = [];
 
-        // Get all unpaid/overdue/partial taxes.
-        $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
-            ->get();
+        $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])->get();
 
         foreach ($unpaidTaxes as $tax) {
             try {
                 $transaction = $this->verifyPaymentFromJournal($tax, $corporationId);
 
-                if ($transaction) {
-                    // Resolve the TaxCode that maps this tax → wallet code.
-                    // verifyPaymentFromJournal already proved one exists (the
-                    // journal-row lookup uses it). Re-fetch as a model so we
-                    // can pass it to applyPaymentToTax.
-                    $taxCode = TaxCode::where('mining_tax_id', $tax->id)
-                        ->where('status', '!=', 'cancelled')
-                        ->first();
-
-                    if (!$taxCode) {
-                        // Defensive — shouldn't happen since verifyPaymentFromJournal
-                        // returned non-null, but log and skip rather than crash.
-                        Log::warning("WalletTransferService: TaxCode disappeared between verifyPaymentFromJournal and apply for tax {$tax->id}");
-                        continue;
-                    }
-
-                    // Route through the canonical applyPaymentToTax helper —
-                    // same atomic-claim, partial-payment-accumulating
-                    // semantics as the listener and the manual paths.
-                    //
-                    // Must not diverge from that shared logic: replacing
-                    // amount_paid instead of accumulating bulldozes partial
-                    // payments to "fully paid" with the wrong amount, and
-                    // skipping the dedup-table insert lets the same
-                    // transaction re-credit a tax on every cron run.
-                    $applied = $this->applyPaymentToTax(
-                        $tax,
-                        $taxCode,
-                        (int) $transaction['id'],
-                        Carbon::parse($transaction['date']),
-                        (int) $tax->character_id,
-                        (float) $transaction['amount']
-                    );
-
-                    if ($applied) {
-                        $verified++;
-
-                        Log::info("WalletTransferService: Auto-verified tax payment", [
-                            'tax_id' => $tax->id,
-                            'character_id' => $tax->character_id,
-                            'amount' => $transaction['amount'],
-                            'transaction_id' => $transaction['id'],
-                        ]);
-                    }
-                    // applied=false means dedup-claim collided (transaction
-                    // already credited by another path) or the tax row
-                    // disappeared mid-flight; both are non-error skips that
-                    // applyPaymentToTax already logged.
+                if (!$transaction) {
+                    continue;
                 }
 
+                if ($this->allocator->isBeforeEpoch($transaction['date'])) {
+                    continue;
+                }
+
+                $row = $this->findTransaction((int) $transaction['id'], $corporationId);
+
+                if (!$row) {
+                    continue;
+                }
+
+                $applied = $this->allocator->allocate($row, (int) $tax->id, [
+                    'source' => PaymentAllocation::SOURCE_AUTO,
+                ]);
+
+                if ($applied['applied']) {
+                    $verified++;
+
+                    Log::info('Mining Manager: auto-verified an invoice payment', [
+                        'tax_id' => $tax->id,
+                        'character_id' => $tax->character_id,
+                        'amount' => $transaction['amount'],
+                        'transaction_id' => $transaction['id'],
+                    ]);
+                }
             } catch (\Exception $e) {
                 $failed++;
                 $errors[] = [
@@ -724,8 +715,8 @@ class WalletTransferService
                     'error' => $e->getMessage(),
                 ];
 
-                Log::error("WalletTransferService: Failed to auto-verify tax {$tax->id}", [
-                    'error' => $e->getMessage()
+                Log::error("Mining Manager: failed to auto-verify invoice {$tax->id}", [
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -739,87 +730,108 @@ class WalletTransferService
     }
 
     /**
-     * Get unmatched corporation donations (donations without matching tax codes)
+     * Donations still waiting for someone to decide what they are.
      *
-     * @param int $corporationId Corporation ID
-     * @param int $days Number of days to look back
+     * A donation drops off this list once it has been claimed, whether that
+     * was by the automatic matcher or by a director assigning it by hand. It
+     * also drops off if it was dismissed.
+     *
+     * Rows carry a `blocker` describing why they are still here, so the page
+     * can say something more useful than "pending".
+     *
      * @return \Illuminate\Support\Collection
      */
     public function getUnmatchedDonations(int $corporationId, int $days = 30)
     {
-        $cutoffDate = Carbon::now()->subDays($days);
-
-        // Get all donations with character names (filtered to payment divisions)
-        $divisions = $this->getPaymentDivisions();
-
         $donations = DB::table('corporation_wallet_journals as cwj')
             ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
-            ->whereIn('cwj.division', $divisions)
-            ->where('cwj.date', '>=', $cutoffDate)
+            ->whereIn('cwj.division', $this->getPaymentDivisions())
+            ->where('cwj.date', '>=', Carbon::now()->subDays($days))
             ->select('cwj.*', 'ci.name as character_name')
+            ->orderBy('cwj.date', 'desc')
             ->get();
 
-        // Get dismissed transaction IDs
+        $claimed = $this->claimedTransactionMap(
+            $donations->pluck('id')->map(fn ($id) => (int) $id)->all()
+        );
+
         $dismissedIds = DB::table('mining_manager_dismissed_transactions')
             ->pluck('transaction_id')
-            ->map(fn($id) => (int) $id)
-            ->toArray();
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        // Filter out donations that have matching tax codes or are dismissed
         $unmatched = [];
 
         foreach ($donations as $donation) {
-            $foundMatch = false;
+            $transactionId = (int) $donation->id;
+
+            if (isset($claimed[$transactionId]) || in_array($transactionId, $dismissedIds, true)) {
+                continue;
+            }
+
+            $code = $this->extractTaxCodeFromTransaction($donation);
             $matchedTaxId = null;
+            $blocker = 'no_tax_code';
 
-            // Try to extract any tax code pattern from reason or description
-            $text = ($donation->reason ?? '') . ' ' . ($donation->description ?? '');
-            $length = TaxCode::getCodeLength();
+            if ($code) {
+                $taxCode = TaxCode::where('code', $code)->first();
 
-            // Collect all known prefixes: current setting + any stored in DB
-            $prefixes = collect([TaxCode::getPrefix()]);
-            $storedPrefixes = TaxCode::select('prefix')->distinct()->whereNotNull('prefix')->pluck('prefix');
-            $prefixes = $prefixes->merge($storedPrefixes)->unique();
-
-            foreach ($prefixes as $tryPrefix) {
-                $escapedPrefix = preg_quote($tryPrefix, '/');
-                if (preg_match('/' . $escapedPrefix . '([A-Z0-9]{' . $length . '})/i', $text, $matches)) {
-                    $code = strtoupper($matches[1]);
-
-                    // Check if this code exists in our database
-                    $taxCode = TaxCode::where('code', $code)->first();
-
-                    if ($taxCode) {
-                        $foundMatch = true;
-                        $matchedTaxId = $taxCode->mining_tax_id;
-                        break;
-                    }
+                if ($taxCode) {
+                    $matchedTaxId = $taxCode->mining_tax_id;
+                    $blocker = 'code_not_applied';
+                } else {
+                    $blocker = 'tax_code_not_recognised';
                 }
             }
 
-            if (!$foundMatch) {
-                // Skip dismissed transactions
-                if (in_array((int) $donation->id, $dismissedIds)) {
-                    continue;
-                }
-
-                // Add computed fields expected by the view
-                $donation->verified = false;
-                $donation->mismatch = false;
-                $donation->matched_tax_id = $matchedTaxId;
-                $unmatched[] = $donation;
+            // Only relabel a payment the matcher would otherwise have picked
+            // up. A payment with no code at all is stuck for that reason
+            // whichever side of the cutover it sits on, and "No tax code" tells
+            // a director far more about what to do next.
+            if ($blocker === 'code_not_applied' && $this->allocator->isBeforeEpoch($donation->date)) {
+                $blocker = 'before_cutover';
             }
+
+            $donation->verified = false;
+            $donation->mismatch = $blocker === 'tax_code_not_recognised';
+            $donation->matched_tax_id = $matchedTaxId;
+            $donation->tax_code = $code;
+            $donation->blocker = $blocker;
+
+            $unmatched[] = $donation;
         }
 
         return collect($unmatched);
     }
 
     /**
-     * Get payment statistics.
+     * transaction_id => tax_id for everything already credited.
      *
-     * @return array
+     * Scoped to the ids actually on screen. The claim table only grows, so
+     * loading all of it to answer a question about thirty days of donations
+     * gets slower every month the install runs.
+     *
+     * @param  array  $transactionIds
+     */
+    private function claimedTransactionMap(array $transactionIds): array
+    {
+        // No rows on screen means nothing to look up. Guarding here rather than
+        // treating an empty list as "no filter", which would fetch the lot.
+        if (empty($transactionIds)) {
+            return [];
+        }
+
+        return DB::table('mining_manager_processed_transactions')
+            ->whereIn('transaction_id', $transactionIds)
+            ->pluck('tax_id', 'transaction_id')
+            ->map(fn ($id) => $id === null ? null : (int) $id)
+            ->toArray();
+    }
+
+    /**
+     * Get payment statistics.
      */
     public function getPaymentStatistics(): array
     {
@@ -839,9 +851,7 @@ class WalletTransferService
     }
 
     /**
-     * Calculate average time between tax calculation and payment.
-     *
-     * @return float Days
+     * Average days between an invoice being calculated and it being settled.
      */
     private function calculateAveragePaymentTime(): float
     {
@@ -861,82 +871,5 @@ class WalletTransferService
         }
 
         return $totalDays / $paidTaxes->count();
-    }
-
-    /**
-     * Return every character_id belonging to the same SeAT user as the
-     * given character. Used by the v2.0.2 alt-character-payments path so
-     * a player can settle a tax bill from any of their alts, not just
-     * the alt that did the mining.
-     *
-     * The SeAT model: `refresh_tokens.user_id` is the cross-character
-     * link — every character a player authenticates against the install
-     * gets a row in `refresh_tokens` with the same `user_id`. So all
-     * characters sharing a user_id are alts of the same player.
-     *
-     * Falls back to a singleton list (just the input character) when:
-     *   - The character isn't registered (no refresh_tokens row): we
-     *     can't widen the search, so strict per-character match.
-     *   - The user_id lookup fails for any reason: defensive same-as-
-     *     strict-mode behaviour.
-     *
-     * Returns the character_id list as ints. Always contains the input
-     * character, so it's safe to feed directly into a `whereIn(...)`.
-     *
-     * @param int $characterId
-     * @return array<int>
-     */
-    protected function getCharacterIdsForUserOf(int $characterId): array
-    {
-        try {
-            $userId = DB::table('refresh_tokens')
-                ->where('character_id', $characterId)
-                ->value('user_id');
-
-            if ($userId === null) {
-                // Unregistered character — guest miner, deleted token,
-                // etc. Can't broaden, so just match strictly on the
-                // input character.
-                return [$characterId];
-            }
-
-            $charIds = DB::table('refresh_tokens')
-                ->where('user_id', $userId)
-                ->pluck('character_id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
-
-            // Defensive: include input character even if the query
-            // somehow misses it (shouldn't, but never returns empty).
-            if (!in_array($characterId, $charIds, true)) {
-                $charIds[] = $characterId;
-            }
-
-            return $charIds;
-        } catch (\Exception $e) {
-            Log::warning('Mining Manager: getCharacterIdsForUserOf() failed, falling back to strict character match', [
-                'character_id' => $characterId,
-                'error'        => $e->getMessage(),
-            ]);
-            return [$characterId];
-        }
-    }
-
-    /**
-     * True if both character IDs belong to the same SeAT user (i.e. they
-     * are alts of the same player), or are the same character. Thin
-     * wrapper over `getCharacterIdsForUserOf()` for boolean call sites
-     * like manualMatch's "is this payer allowed to pay this tax?" gate.
-     *
-     * @param int $a
-     * @param int $b
-     * @return bool
-     */
-    protected function sharesSeatUser(int $a, int $b): bool
-    {
-        if ($a === $b) {
-            return true;
-        }
-        return in_array($b, $this->getCharacterIdsForUserOf($a), true);
     }
 }
