@@ -43,14 +43,6 @@ use MiningManager\Console\Commands\RestoreDataCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
 
-// Import Events
-
-use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
-
-// Import Listeners
-
-use MiningManager\Listeners\ProcessWalletJournalListener;
-
 class MiningManagerServiceProvider extends AbstractSeatPlugin
 {
     /**
@@ -208,6 +200,13 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             \MiningManager\Services\Configuration\SettingsManagerService::class
         );
 
+        // Shared so the controller, the wallet service and the tax calculator
+        // all talk to the same allocator, and therefore the same corporation
+        // context, within a request.
+        $this->app->singleton(
+            \MiningManager\Services\Tax\PaymentAllocationService::class
+        );
+
         $this->app->singleton(
             \MiningManager\Services\Pricing\PriceProviderService::class
         );
@@ -265,11 +264,13 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             }
         });
 
-        // Wallet Journal Updates - Track tax payments
-        Event::listen(
-            CharacterWalletJournalUpdated::class,
-            ProcessWalletJournalListener::class
-        );
+        // Tax payments are matched by mining-manager:verify-payments on its
+        // schedule. There used to be a listener bound to
+        // Seat\Eveapi\Events\CharacterWalletJournalUpdated here, but SeAT has
+        // no such event, so it never fired once. It also read the character
+        // wallet journal, which is the wrong side of a donation. Removed
+        // rather than repointed: the corp journal is what the scheduled run
+        // reads, and there is no SeAT event for that either.
     }
 
     /**

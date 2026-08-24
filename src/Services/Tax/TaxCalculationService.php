@@ -26,13 +26,22 @@ class TaxCalculationService
     protected $settingsService;
 
     /**
+     * Draws down credit held from earlier overpayments.
+     *
+     * @var PaymentAllocationService
+     */
+    protected $allocationService;
+
+    /**
      * Constructor
      *
      * @param SettingsManagerService $settingsService
+     * @param PaymentAllocationService $allocationService
      */
-    public function __construct(SettingsManagerService $settingsService)
+    public function __construct(SettingsManagerService $settingsService, PaymentAllocationService $allocationService)
     {
         $this->settingsService = $settingsService;
+        $this->allocationService = $allocationService;
     }
 
     /**
@@ -45,6 +54,8 @@ class TaxCalculationService
     public function setCorporationContext(?int $corporationId): self
     {
         $this->settingsService->setActiveCorporation($corporationId);
+        $this->allocationService->setCorporationContext($corporationId);
+
         return $this;
     }
 
@@ -319,6 +330,17 @@ class TaxCalculationService
                             'triggered_by' => $triggeredBy,
                         ]);
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+
+                        // Someone who overpaid last period has the balance
+                        // sitting as credit. Draw it down now so the invoice
+                        // they are about to be shown is already net of it,
+                        // rather than billing them for money we are holding.
+                        $creditApplied = $this->allocationService->applyCreditsToTax($newTax);
+
+                        if ($creditApplied > 0) {
+                            $newTax->refresh();
+                            Log::info("Mining Manager: applied " . number_format($creditApplied, 2) . " ISK of held credit to invoice {$newTax->id}");
+                        }
 
                         // B1a: announce on the cross-plugin event bus so other
                         // plugins (Discord Pings, HR Manager, etc.) can react.
