@@ -267,6 +267,20 @@ class MoonPlannerController extends Controller
         ]);
 
         $plannedAt = Carbon::parse($validated['planned_arrival_time']);
+        $structureId = (int) $validated['structure_id'];
+
+        // structure_id was accepted as any integer, so a bad one produced a
+        // plan for a structure this corp does not own that renders as
+        // "Structure 12345" on the calendar forever. Checking it against the
+        // corp's refineries also hands us the resolved moon.
+        $refinery = $this->planner->refineriesForCorporation($corporationId)
+            ->firstWhere('structure_id', $structureId);
+
+        if (!$refinery) {
+            return response()->json([
+                'error' => 'That structure is not a refinery belonging to this corporation.',
+            ], 422);
+        }
 
         // Server-side gap guard — refuse unconfirmed clashes.
         if (!$request->boolean('confirmed')) {
@@ -274,7 +288,7 @@ class MoonPlannerController extends Controller
                 $corporationId,
                 $plannedAt,
                 null,
-                (int) $validated['structure_id']
+                $structureId
             );
             if (!empty($conflicts)) {
                 return response()->json([
@@ -285,16 +299,18 @@ class MoonPlannerController extends Controller
             }
         }
 
-        // Resolve the refinery's anchored moon if the caller didn't pass one.
+        // The moon comes from what we have observed for this refinery, not
+        // from the request: a caller-supplied moon_id was never checked
+        // against the structure, and the browser does not send one anyway.
         // This used to read a moon_id column off corporation_structures, which
         // does not exist, so saving a planned pull threw a 1054 every time.
-        $moonId = $validated['moon_id'] ?? $this->planner->resolveMoonId((int) $validated['structure_id']);
+        $moonId = $refinery->moon_id ?? ($validated['moon_id'] ?? null);
 
         [$actorId, $actorName] = $this->actor();
 
         $plan = MoonExtractionPlan::create([
             'corporation_id' => $corporationId,
-            'structure_id' => (int) $validated['structure_id'],
+            'structure_id' => $structureId,
             'moon_id' => $moonId ? (int) $moonId : null,
             'planned_arrival_time' => $plannedAt,
             'source' => MoonExtractionPlan::SOURCE_MANUAL,

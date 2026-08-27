@@ -66,6 +66,8 @@ A refinery is anchored on exactly one moon and cannot move, so the moon is recov
 
 Migration `000023` backfills the plans and audit rows already saved without one. Data only, idempotent, and it leaves a refinery nothing has ever observed as null, which the column allows.
 
+Because the browser never sent a `moon_id` in the first place, that fallback branch was taken on every single save: **placing a pull by hand has never worked**, on any refinery, on any day. Auto-fill was the only way to get a plan onto the calendar. Saving also now checks the structure is a refinery this corporation owns, instead of accepting any integer and producing a plan captioned "Structure 12345" that nothing could ever reconcile.
+
 ### Schema
 
 - New tables `mining_manager_payment_allocations` and `mining_manager_payment_credits` (`000022`).
