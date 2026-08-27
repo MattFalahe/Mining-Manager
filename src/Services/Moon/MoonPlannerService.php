@@ -75,15 +75,146 @@ class MoonPlannerService
     }
 
     /**
+     * Resolved structure_id => moon_id, memoised for the request.
+     *
+     * @var array<int,int|null>
+     */
+    protected array $moonIdCache = [];
+
+    /**
      * Every refinery (Athanor/Tatara) belonging to a corporation.
+     *
+     * Each structure comes back with a resolved `moon_id`. SeAT's
+     * corporation_structures table has no such column, so callers reading
+     * `$refinery->moon_id` straight off the model silently got null forever
+     * (Eloquent returns null for an attribute that was never selected, rather
+     * than complaining). Resolving it here means every consumer of this method
+     * gets a real moon without having to know where moons actually live.
      *
      * @return \Illuminate\Support\Collection<int,CorporationStructure>
      */
     public function refineriesForCorporation(int $corporationId): Collection
     {
-        return CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
+        $refineries = CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
             ->where('corporation_id', $corporationId)
             ->get();
+
+        if ($refineries->isEmpty()) {
+            return $refineries;
+        }
+
+        $moonIds = $this->moonIdsForStructures(
+            $refineries->pluck('structure_id')->map(fn ($id) => (int) $id)->all()
+        );
+
+        foreach ($refineries as $refinery) {
+            $refinery->moon_id = $moonIds[(int) $refinery->structure_id] ?? null;
+        }
+
+        return $refineries;
+    }
+
+    /**
+     * The moon a refinery is anchored on, or null if nothing knows yet.
+     *
+     * An Upwell structure is anchored on exactly one moon and cannot move, so
+     * this mapping is stable once anything has observed it.
+     */
+    public function resolveMoonId(int $structureId): ?int
+    {
+        return $this->moonIdsForStructures([$structureId])[$structureId] ?? null;
+    }
+
+    /**
+     * Bulk structure_id => moon_id.
+     *
+     * Three sources, in order of how much we trust them to be current:
+     * our own live extractions, our archived history, and finally SeAT's raw
+     * extraction table for a refinery we have not imported yet. A refinery
+     * that has never run an extraction resolves to null, which is a legitimate
+     * answer and why the plan column is nullable.
+     *
+     * @param  array<int,int>  $structureIds
+     * @return array<int,int|null>
+     */
+    public function moonIdsForStructures(array $structureIds): array
+    {
+        $wanted = array_values(array_unique(array_filter(array_map('intval', $structureIds))));
+
+        if (empty($wanted)) {
+            return [];
+        }
+
+        $resolved = [];
+        $outstanding = [];
+
+        foreach ($wanted as $id) {
+            if (array_key_exists($id, $this->moonIdCache)) {
+                $resolved[$id] = $this->moonIdCache[$id];
+            } else {
+                $outstanding[] = $id;
+            }
+        }
+
+        if (empty($outstanding)) {
+            return $resolved;
+        }
+
+        // Ordered oldest first on purpose: pluck() keys by structure_id and the
+        // last row processed wins, so ascending order leaves the most recently
+        // observed moon in place. A refinery's moon never changes, but a
+        // structure id can be reused after an unanchor, and the newest
+        // observation is the right answer if it ever is.
+        $lookups = [
+            fn (array $ids) => MoonExtraction::whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+
+            fn (array $ids) => MoonExtractionHistory::whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+
+            fn (array $ids) => DB::table('corporation_industry_mining_extractions')
+                ->whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+        ];
+
+        foreach ($lookups as $lookup) {
+            if (empty($outstanding)) {
+                break;
+            }
+
+            try {
+                foreach ($lookup($outstanding) as $structureId => $moonId) {
+                    $resolved[(int) $structureId] = (int) $moonId;
+                }
+            } catch (\Exception $e) {
+                Log::warning('Mining Manager: a moon lookup failed, falling through to the next source', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $outstanding = array_values(array_filter(
+                $outstanding,
+                fn ($id) => !isset($resolved[$id])
+            ));
+        }
+
+        // Remember the misses too, so a refinery with no extraction history
+        // does not re-run all three lookups on every call within a request.
+        foreach ($outstanding as $id) {
+            $resolved[$id] = null;
+        }
+
+        foreach ($wanted as $id) {
+            $this->moonIdCache[$id] = $resolved[$id] ?? null;
+        }
+
+        return $resolved;
     }
 
     /**

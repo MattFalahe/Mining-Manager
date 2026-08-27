@@ -56,6 +56,16 @@ Matching and crediting lived in four places that disagreed with each other. `Pay
 
 Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
 
+### 🐛 Moon Planner: saving a planned pull threw a database error
+
+The planner resolved a refinery's moon by reading a `moon_id` column off `corporation_structures`. SeAT has no such column there. Saving a planned pull put that read in the SELECT list, so it failed outright with `SQLSTATE[42S22] Unknown column 'moon_id'` and the pull was never stored.
+
+The same wrong assumption elsewhere failed quietly instead. Auto-fill and the refinery sidebar reached for `$refinery->moon_id` on an already-loaded model, where Eloquent returns null for an attribute it never selected rather than complaining. So every auto-filled plan was stored with no moon, the calendar showed **Unknown Moon** on every entry, and the refinery panel showed no moon names at all.
+
+A refinery is anchored on exactly one moon and cannot move, so the moon is recoverable from any extraction ever seen for that structure. `MoonPlannerService` now resolves it from our live extractions, then our archived history, then SeAT's own extraction table, memoised per request and resolved in bulk rather than per refinery. `refineriesForCorporation()` attaches it, so every caller reading `$refinery->moon_id` gets a real answer. Moving a plan also fills in a moon that was not known when it was created.
+
+Migration `000023` backfills the plans and audit rows already saved without one. Data only, idempotent, and it leaves a refinery nothing has ever observed as null, which the column allows.
+
 ### Schema
 
 - New tables `mining_manager_payment_allocations` and `mining_manager_payment_credits` (`000022`).

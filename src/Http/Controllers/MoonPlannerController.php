@@ -8,7 +8,6 @@ use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionPlan;
 use MiningManager\Services\Moon\MoonPlannerService;
 use MiningManager\Services\Configuration\SettingsManagerService;
-use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -287,10 +286,9 @@ class MoonPlannerController extends Controller
         }
 
         // Resolve the refinery's anchored moon if the caller didn't pass one.
-        $moonId = $validated['moon_id'] ?? null;
-        if (!$moonId) {
-            $moonId = CorporationStructure::where('structure_id', $validated['structure_id'])->value('moon_id');
-        }
+        // This used to read a moon_id column off corporation_structures, which
+        // does not exist, so saving a planned pull threw a 1054 every time.
+        $moonId = $validated['moon_id'] ?? $this->planner->resolveMoonId((int) $validated['structure_id']);
 
         [$actorId, $actorName] = $this->actor();
 
@@ -371,6 +369,9 @@ class MoonPlannerController extends Controller
             'notes' => $validated['notes'] ?? $plan->notes,
             // A hand-moved slot becomes a manual placement going forward.
             'source' => MoonExtractionPlan::SOURCE_MANUAL,
+            // Self-heal: a plan made for a refinery with no extraction history
+            // has no moon yet. Once one turns up, take it.
+            'moon_id' => $plan->moon_id ?? $this->planner->resolveMoonId((int) $plan->structure_id),
         ]);
 
         // Only log an actual time change as a "move".
