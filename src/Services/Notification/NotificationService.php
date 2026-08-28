@@ -2736,6 +2736,23 @@ class NotificationService
      * @param array $data
      * @return array
      */
+    /**
+     * Label a timestamp as EVE time without doubling the suffix.
+     *
+     * The senders disagree: detectAndNotifyMismatches() appends " EVE" itself,
+     * sendNextExtractionPlannedNotification() and the two extraction_started
+     * callers do not. Rather than pick a side and leave the other rendering
+     * "14:00 EVE EVE", the field builder adds it only when it is missing.
+     */
+    protected function withEveSuffix(?string $time): ?string
+    {
+        if ($time === null || $time === '') {
+            return $time;
+        }
+
+        return str_ends_with(strtoupper(trim($time)), ' EVE') ? $time : $time . ' EVE';
+    }
+
     protected function formatFieldsForDiscord(string $type, array $data): array
     {
         return match ($type) {
@@ -2848,6 +2865,42 @@ class NotificationService
                     ? ['name' => '💰 Estimated Value', 'value' => number_format($data['estimated_value'], 0) . ' ISK', 'inline' => true]
                     : null,
                 !empty($data['extraction_url']) ? ['name' => '🔗 Extraction Details', 'value' => '[View Extraction](' . $data['extraction_url'] . ')', 'inline' => false] : null,
+            ])),
+            // The three planner types were wired into every other surface when
+            // they shipped - Slack fields, EVE-mail bodies, colours, titles,
+            // ping text - but never into this builder, so they fell through to
+            // the empty default and posted as a bare title and description
+            // with no detail at all.
+            self::TYPE_EXTRACTION_STARTED => array_values(array_filter([
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['system_name']) ? ['name' => '📍 System', 'value' => $data['system_name'], 'inline' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['name' => '📦 Chunk Arrives', 'value' => $this->withEveSuffix($data['chunk_arrival_time']), 'inline' => true] : null,
+                isset($data['time_until_arrival']) ? ['name' => '⏳ Time Until Arrival', 'value' => $data['time_until_arrival'], 'inline' => true] : null,
+                (isset($data['estimated_value']) && $data['estimated_value'] > 0)
+                    ? ['name' => '💰 Est. Value', 'value' => number_format((float) $data['estimated_value'], 0) . ' ISK', 'inline' => true]
+                    : null,
+                !empty($data['extraction_url']) ? ['name' => '🔗 Extraction Details', 'value' => '[View Extraction](' . $data['extraction_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']), 'inline' => true] : null,
+                !empty($data['cadence_label']) ? ['name' => '🔁 Cadence', 'value' => $data['cadence_label'], 'inline' => true] : null,
+                !empty($data['source']) ? [
+                    'name' => '📋 Source',
+                    'value' => $data['source'] === 'auto' ? 'Projected from history' : 'Placed by hand',
+                    'inline' => true,
+                ] : null,
+                !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_SCHEDULE_MISMATCH => array_values(array_filter([
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']), 'inline' => true] : null,
+                isset($data['actual_arrival_time']) ? ['name' => '🎮 Scheduled In-Game', 'value' => $this->withEveSuffix($data['actual_arrival_time']), 'inline' => true] : null,
+                isset($data['offset_hours']) ? ['name' => '⚠️ Difference', 'value' => $data['offset_hours'] . 'h off plan', 'inline' => true] : null,
+                !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 // Flavor indicator — important for quick triage in a noisy channel

@@ -56,6 +56,14 @@ Matching and crediting lived in four places that disagreed with each other. `Pay
 
 Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
 
+### 🐛 The three Moon Planner notifications posted to Discord with no detail
+
+`formatFieldsForDiscord()` never learned about `extraction_started`, `next_extraction_planned` or `schedule_mismatch`. They fell through to the empty default, so the embed carried a title, a description and a footer and nothing else. The "Next Extraction Planned" ping said the next pull was "planned below" with nothing below it: no refinery, no moon, no date.
+
+Everything else about these three was wired up when they shipped, which is why it went unnoticed: Slack fields, EVE-mail bodies, embed colours, titles and ping text all handled them. Only the Discord field builder was missed. All three now carry the same detail their Slack counterparts already did, and a check of all 23 notification types confirms `custom` is the only one left without fields, which is correct for a free-form message.
+
+Timestamps also pick up an EVE-time label, added only where a sender has not already added one. `detectAndNotifyMismatches()` appends it itself while the other three callers do not, so a shared suffix would have rendered "14:00 EVE EVE" on the mismatch embed.
+
 ### 🐛 Moon Planner: saving a planned pull threw a database error
 
 The planner resolved a refinery's moon by reading a `moon_id` column off `corporation_structures`. SeAT has no such column there. Saving a planned pull put that read in the SELECT list, so it failed outright with `SQLSTATE[42S22] Unknown column 'moon_id'` and the pull was never stored.
