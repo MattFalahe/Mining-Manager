@@ -1,5 +1,6 @@
 <?php
 
+use Carbon\Carbon;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -107,8 +108,15 @@ class AddPaymentAllocationsAndDedupEpoch extends Migration
             });
         }
 
-        $this->backfillProcessedTransactions();
-        $this->stampDedupEpoch();
+        // One clock for both, so a backfilled claim can never share a second
+        // with the cutover. Anything recovered from history is stamped just
+        // before it, which keeps the reconciliation check (which only looks at
+        // claims from the cutover forward) from reporting them as orphans on
+        // day one.
+        $now = now();
+
+        $this->backfillProcessedTransactions($now->copy()->subSecond());
+        $this->stampDedupEpoch($now);
     }
 
     public function down(): void
@@ -131,13 +139,15 @@ class AddPaymentAllocationsAndDedupEpoch extends Migration
      * two sources overlap heavily (a fully paid invoice records the same id on
      * both the tax and its code).
      */
-    private function backfillProcessedTransactions(): void
+    private function backfillProcessedTransactions(Carbon $fallbackMatchedAt): void
     {
         if (!Schema::hasTable('mining_manager_processed_transactions')) {
             return;
         }
 
-        $now = now();
+        // Only used when the source row has no date of its own. It sits before
+        // the cutover so these rows read as history, which is what they are.
+        $now = $fallbackMatchedAt;
 
         if (Schema::hasTable('mining_taxes')) {
             DB::table('mining_taxes')
@@ -202,13 +212,11 @@ class AddPaymentAllocationsAndDedupEpoch extends Migration
      * Stamp the cutover, once. insertOrIgnore so a re-run cannot push the
      * epoch forward and silently orphan payments that arrived in between.
      */
-    private function stampDedupEpoch(): void
+    private function stampDedupEpoch(Carbon $now): void
     {
         if (!Schema::hasTable('mining_manager_settings')) {
             return;
         }
-
-        $now = now();
 
         DB::table('mining_manager_settings')->insertOrIgnore([
             'key' => 'payment.dedup_epoch',
