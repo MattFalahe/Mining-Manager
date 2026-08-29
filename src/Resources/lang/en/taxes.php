@@ -329,7 +329,15 @@ return [
     'blocker_code_not_applied' => 'Not yet applied',
     'blocker_code_not_applied_help' => 'The code matches an invoice but the payment has not been credited. Try Verify.',
     'blocker_before_cutover' => 'Before cutover',
-    'blocker_before_cutover_help' => 'This predates the verification cutover, so it is left out of automatic matching. It can still be assigned by hand.',
+    'blocker_before_cutover_help' => 'This predates the verification cutover and carries a tax code, so it was most likely already credited by the old matcher. Check the invoice before assigning it.',
+
+    // Older payments withheld from the queue
+    'legacy_hidden_notice' => ':count payment(s) from before the verification cutover are hidden.',
+    'legacy_hidden_why' => 'They carry a tax code, which means the old matcher almost certainly credited them already. Records from back then only kept the most recent payment per invoice, so instalments cannot be proven either way. Assigning one that was already applied would credit the invoice twice.',
+    'legacy_show' => 'Show them anyway',
+    'legacy_hide' => 'Hide older payments',
+    'legacy_row_warning' => 'From before the cutover. Check the invoice before assigning: this may already have been paid.',
+    'legacy_showing_notice' => 'Showing payments from before the verification cutover. These may already have been credited.',
 
     'match_failed_no_tax_code' => 'No tax code in this payment, so it cannot be matched automatically. Use Assign to invoice.',
     'match_failed_tax_code_not_recognised' => 'The code on this payment does not match any invoice.',

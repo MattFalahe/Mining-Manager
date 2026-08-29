@@ -741,7 +741,28 @@ class WalletTransferService
      *
      * @return \Illuminate\Support\Collection
      */
-    public function getUnmatchedDonations(int $corporationId, int $days = 30)
+    public function getUnmatchedDonations(int $corporationId, int $days = 30, bool $includeLegacy = false)
+    {
+        return $this->unmatchedDonationBreakdown($corporationId, $days, $includeLegacy)['donations'];
+    }
+
+    /**
+     * The pending list plus a count of what was withheld from it.
+     *
+     * Pre-cutover payments that carry a valid tax code are hidden by default.
+     * The old pipeline recorded only the most recent payment per invoice, so
+     * for anything settled in instalments the earlier payments cannot be
+     * proven to have been credited even though they were. Showing them invites
+     * a director to assign a payment that has already been applied, which the
+     * cutover guard does not stop because a manual assignment is deliberate.
+     *
+     * Pre-cutover payments with NO code stay visible: nothing could ever have
+     * matched those automatically, so they are exactly the ones that still
+     * need a human. Same for a code that matches no invoice at all.
+     *
+     * @return array{donations: \Illuminate\Support\Collection, hidden_legacy: int}
+     */
+    public function unmatchedDonationBreakdown(int $corporationId, int $days = 30, bool $includeLegacy = false): array
     {
         $donations = DB::table('corporation_wallet_journals as cwj')
             ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
@@ -763,6 +784,7 @@ class WalletTransferService
             ->all();
 
         $unmatched = [];
+        $hiddenLegacy = 0;
 
         foreach ($donations as $donation) {
             $transactionId = (int) $donation->id;
@@ -792,6 +814,11 @@ class WalletTransferService
             // a director far more about what to do next.
             if ($blocker === 'code_not_applied' && $this->allocator->isBeforeEpoch($donation->date)) {
                 $blocker = 'before_cutover';
+
+                if (!$includeLegacy) {
+                    $hiddenLegacy++;
+                    continue;
+                }
             }
 
             $donation->verified = false;
@@ -803,7 +830,10 @@ class WalletTransferService
             $unmatched[] = $donation;
         }
 
-        return collect($unmatched);
+        return [
+            'donations' => collect($unmatched),
+            'hidden_legacy' => $hiddenLegacy,
+        ];
     }
 
     /**

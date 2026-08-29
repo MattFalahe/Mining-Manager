@@ -115,6 +115,33 @@
     </div>
     @endif
 
+    {{-- Older payments withheld from the queue, or a warning that they are on
+         show. Only ever offered to someone who can act on them. --}}
+    @if((($isDirector ?? false) || ($isAdmin ?? false)) && (($hiddenLegacy ?? 0) > 0 || ($showLegacy ?? false)))
+    <div class="row">
+        <div class="col-12">
+            @if($showLegacy ?? false)
+                <div class="alert alert-warning">
+                    <i class="fas fa-history mr-1"></i>
+                    <strong>{{ trans('mining-manager::taxes.legacy_showing_notice') }}</strong>
+                    <a href="{{ route('mining-manager.taxes.wallet') }}" class="btn btn-sm btn-default ml-2">
+                        <i class="fas fa-eye-slash"></i> {{ trans('mining-manager::taxes.legacy_hide') }}
+                    </a>
+                </div>
+            @else
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <strong>{{ trans('mining-manager::taxes.legacy_hidden_notice', ['count' => $hiddenLegacy]) }}</strong>
+                    <div class="small mt-1">{{ trans('mining-manager::taxes.legacy_hidden_why') }}</div>
+                    <a href="{{ route('mining-manager.taxes.wallet', ['show_legacy' => 1]) }}" class="btn btn-sm btn-default mt-2">
+                        <i class="fas fa-eye"></i> {{ trans('mining-manager::taxes.legacy_show') }}
+                    </a>
+                </div>
+            @endif
+        </div>
+    </div>
+    @endif
+
     {{-- Transactions Table --}}
     <div class="row">
         <div class="col-12">
@@ -184,13 +211,14 @@
                                 </td>
                                 <td class="text-center text-nowrap">
                                     @if(!$transaction->verified && (($isDirector ?? false) || ($isAdmin ?? false)))
-                                    <button class="btn btn-sm btn-primary mr-1"
+                                    <button class="btn btn-sm {{ $blocker === 'before_cutover' ? 'btn-outline-warning' : 'btn-primary' }} mr-1"
                                             onclick="openAssign(this)"
                                             data-transaction-id="{{ $transaction->id }}"
                                             data-payer-id="{{ $transaction->first_party_id }}"
                                             data-payer-name="{{ $transaction->character_name }}"
                                             data-amount="{{ abs($transaction->amount) }}"
-                                            title="{{ trans('mining-manager::taxes.assign_to_invoice') }}">
+                                            data-legacy="{{ $blocker === 'before_cutover' ? '1' : '0' }}"
+                                            title="{{ $blocker === 'before_cutover' ? trans('mining-manager::taxes.legacy_row_warning') : trans('mining-manager::taxes.assign_to_invoice') }}">
                                         <i class="fas fa-link"></i>
                                     </button>
                                     @if($blocker === 'code_not_applied')
@@ -359,6 +387,7 @@ function openAssign(button) {
     });
 
     $select.val('');
+    $('#apLegacyWarning').toggle(String($btn.data('legacy')) === '1');
     $('#apNoInvoices').toggle(matches === 0);
     $('#apSubmit').prop('disabled', matches === 0);
     $('#apCascade').prop('checked', true);
@@ -516,6 +545,11 @@ $(document).on('change', '#rpTaxId', function() {
                 </p>
 
                 <input type="hidden" id="apTransactionId">
+
+                <div id="apLegacyWarning" class="alert alert-warning py-2" style="display: none;">
+                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                    {{ trans('mining-manager::taxes.legacy_row_warning') }}
+                </div>
 
                 <div class="row mb-3">
                     <div class="col-md-6">

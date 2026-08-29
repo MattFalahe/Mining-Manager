@@ -889,6 +889,10 @@ class TaxController extends Controller
                 'features' => $this->getFeatureFlags(),
                 'unpaidTaxes' => collect(),
                 'corpCharacterIds' => collect(),
+                'payerInvoiceMap' => [],
+                'heldCredits' => collect(),
+                'showLegacy' => false,
+                'hiddenLegacy' => 0,
             ]);
         }
 
@@ -905,7 +909,14 @@ class TaxController extends Controller
         $donations = $this->walletService->getCorporationDonations($corporationId, $days);
 
         // Get unmatched donations (donations without tax codes)
-        $unmatchedDonations = $this->walletService->getUnmatchedDonations($corporationId, $days);
+        // Payments from before the verification cutover that carry a valid tax
+        // code are withheld unless asked for. See unmatchedDonationBreakdown()
+        // for why: they were most likely already credited, and we cannot prove
+        // it for anything settled in instalments.
+        $showLegacy = $request->boolean('show_legacy');
+        $breakdown = $this->walletService->unmatchedDonationBreakdown($corporationId, $days, $showLegacy);
+        $unmatchedDonations = $breakdown['donations'];
+        $hiddenLegacy = $breakdown['hidden_legacy'];
 
         // Scope transactions for regular members: only show their own transfers
         if (!$canSeeAll && !empty($userCharacterIds)) {
@@ -1017,7 +1028,9 @@ class TaxController extends Controller
             'unpaidTaxes',
             'corpCharacterIds',
             'payerInvoiceMap',
-            'heldCredits'
+            'heldCredits',
+            'showLegacy',
+            'hiddenLegacy'
         ));
     }
 

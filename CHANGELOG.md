@@ -12,7 +12,7 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 Four separate faults, stacked:
 
-- **`toastr` was never loaded.** Every page in this plugin reports through `toastr`, SeAT's layout does not ship it, and neither did we, despite the library sitting unused in our own assets. `toastr.info()` on the first line of Sync and Auto-Match threw before the request was even sent. In Verify and Dismiss it threw in the success handler, so `location.reload()` never ran and a working action looked dead. Now loaded via a shared partial on all 20 pages that use it.
+- **`toastr` was never loaded.** Every page in this plugin reports through `toastr`, SeAT's layout does not ship it, and neither did we, despite the library sitting unused in our own assets. `toastr.info()` on the first line of Sync and Auto-Match threw before the request was even sent. In Verify and Dismiss it threw in the success handler, so `location.reload()` never ran and a working action looked dead. Now loaded via a shared partial on all 20 pages that use it, backed by a fallback that stands in if the asset ever fails to load, so that failure mode cannot silently kill every button again.
 - **Verify could never succeed.** The page lists exactly the donations where no tax code was found, and Verify re-ran the same code-based matcher that had already rejected them. It also looked the transaction up in `character_wallet_journals` while the page reads `corporation_wallet_journals`, so for any payer without a personal wallet token it could not find the row at all. Verification now reads the corporation journal throughout.
 - **Sync Wallet Journal returned a 500 every time.** It called `WalletTransferService::verifyPayment()`, which does not exist. PHP raised an `Error`, which the surrounding `catch (\Exception)` does not catch.
 - **Failures were reported as success.** A batch where every row failed still answered `200` with "0 payments verified", so the page showed a green toast and reloaded unchanged. Failures now answer as failures and say what is actually wrong.
@@ -41,6 +41,14 @@ EVE puts the note a player types into `reason`; `description` is CCP's generated
 ### ✨ Payments received
 
 The invoice detail page has a **Payments received** table listing every payment credited to it, with amount, date, origin (matched by code, recorded by hand, rolled over, drawn from credit) and notes. `mining_taxes.transaction_id` only ever held the most recent payment, so instalments were invisible.
+
+### ✨ Older payments stay out of the queue
+
+A payment from before the cutover that carries a valid tax code is withheld from the pending list. The old pipeline recorded only the most recent payment per invoice, so for anything settled in instalments the earlier payments cannot be proven to have been credited even though they were. Left visible, they invite a director to assign a payment that has already been applied, and a manual assignment is deliberate so the cutover guard does not stop it.
+
+Payments from before the cutover with **no** tax code stay visible, because nothing could ever have matched those automatically and they are exactly the ones still needing a human. Same for a code matching no invoice at all.
+
+The page says how many are hidden and why, with a **Show them anyway** toggle. Revealed rows are styled as a warning, and the assign panel repeats the caution before you commit.
 
 ### ✨ Verification cutover
 
