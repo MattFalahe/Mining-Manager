@@ -464,6 +464,31 @@
                         </small>
                     </div>
                 </div>
+
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="payment_overdue_paid_threshold_pct">
+                            <i class="fas fa-percentage"></i>
+                            Treat as overdue below (% paid)
+                        </label>
+                        <input type="number"
+                               class="form-control"
+                               id="payment_overdue_paid_threshold_pct"
+                               name="payment_overdue_paid_threshold_pct"
+                               min="0" max="100" step="1"
+                               value="{{ old('payment_overdue_paid_threshold_pct', $settings->overdue_paid_threshold_pct ?? 95) }}">
+                        <small class="form-text text-muted">
+                            A part-paid invoice past its due date gets the overdue wording
+                            unless at least this much of it is covered. Without it, a token
+                            payment buys permanent immunity: 1m against a 1b invoice stays
+                            "partial" forever, however late it gets. The default of 95%
+                            forgives rounding and price drift, which is the only honest
+                            reason to be slightly short. Set to <strong>0</strong> to
+                            restore the old behaviour where any payment at all softened
+                            the tone.
+                        </small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

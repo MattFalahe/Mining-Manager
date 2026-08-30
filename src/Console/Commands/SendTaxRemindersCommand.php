@@ -176,6 +176,10 @@ class SendTaxRemindersCommand extends Command
         // Group by character to send one notification per character
         $taxesByCharacter = $unpaidTaxes->groupBy('character_id');
 
+        // How much of an invoice has to be paid for a late one to still get the
+        // gentler wording. Read once rather than per character.
+        $paidThreshold = (float) ($this->settingsService->getPaymentSettings()['overdue_paid_threshold_pct'] ?? 95);
+
         $sentReminder = 0;
         $sentOverdue = 0;
         $errors = 0;
@@ -215,6 +219,31 @@ class SendTaxRemindersCommand extends Command
                 // payment) correctly gets a reminder, not a premature
                 // overdue notice.
                 $isOverdue = $taxes->contains(fn($t) => $t->status === 'overdue');
+
+                // A partly paid invoice never reaches status 'overdue', because
+                // updateOverdueTaxes() only promotes 'unpaid'. Left there, a
+                // token payment buys permanent immunity from the overdue
+                // wording: 1m against a 1b invoice reads as "partial" forever,
+                // however late it gets. MiningTax::isOverdue() has always known
+                // better - it works off the due date and only excludes paid and
+                // waived - so ask it, and let the operator decide how much of an
+                // invoice counts as a genuine near-miss.
+                if (!$isOverdue && $paidThreshold > 0) {
+                    $isOverdue = $taxes->contains(function ($t) use ($paidThreshold) {
+                        if ($t->status !== 'partial' || !$t->isOverdue()) {
+                            return false;
+                        }
+
+                        $owed = (float) $t->amount_owed;
+
+                        if ($owed <= 0) {
+                            return false;
+                        }
+
+                        return (((float) ($t->amount_paid ?? 0)) / $owed) * 100 < $paidThreshold;
+                    });
+                }
+
                 $today = Carbon::now()->startOfDay();
 
                 if ($isOverdue) {

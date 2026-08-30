@@ -238,6 +238,15 @@ class SettingsManagerService
             // Empty disables the feature entirely.
             'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
 
+            // An invoice past its due date is treated as overdue for
+            // notification purposes unless this much of it is already paid.
+            // Guards the token-payment loophole: 1m against a 1b invoice is
+            // 0.1% paid, nowhere near settled, and should not buy the gentler
+            // wording forever. The default forgives rounding and price drift,
+            // which is the only honest reason to be slightly short. 0 restores
+            // the old behaviour where any payment at all softened the tone.
+            'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
+
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
 
@@ -346,6 +355,8 @@ class SettingsManagerService
                     'payment_accept_alt_characters',
                     'payment_cascade_remainder',
                     'payment_hold_surplus_as_credit',
+                    'payment_upfront_keyword',
+                    'payment_overdue_paid_threshold_pct',
                 ])) {
                     // Payment settings use payment. prefix instead of general.
                     // form input `payment_<x>` → setting key `payment.<x>`.
@@ -426,6 +437,15 @@ class SettingsManagerService
             // and is the same for everyone, so it can be pinned in a corp MOTD.
             // Empty disables the feature entirely.
             'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
+
+            // An invoice past its due date is treated as overdue for
+            // notification purposes unless this much of it is already paid.
+            // Guards the token-payment loophole: 1m against a 1b invoice is
+            // 0.1% paid, nowhere near settled, and should not buy the gentler
+            // wording forever. The default forgives rounding and price drift,
+            // which is the only honest reason to be slightly short. 0 restores
+            // the old behaviour where any payment at all softened the tone.
+            'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
             // Accept payments from any of a player's characters, not just
             // the exact taxed character. Players routinely send ISK from
             // their wallet-richest alt rather than the alt that mined the

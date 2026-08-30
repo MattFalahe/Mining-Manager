@@ -193,7 +193,14 @@ class TaxController extends Controller
         $query = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
-            $query->where('status', $status);
+            // "outstanding" is the view a director actually wants: everything
+            // with money still on it, rather than checking unpaid, overdue and
+            // partial in turn and holding the total in their head.
+            if ($status === 'outstanding') {
+                $query->whereIn('status', ['unpaid', 'overdue', 'partial']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($month) {

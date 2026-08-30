@@ -223,6 +223,7 @@
                                     <label for="statusFilter">{{ trans('mining-manager::taxes.status') }}</label>
                                     <select class="form-control" id="statusFilter" name="status">
                                         <option value="">{{ trans('mining-manager::taxes.all_statuses') }}</option>
+                                        <option value="outstanding" {{ request('status') == 'outstanding' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.outstanding_status') }}</option>
                                         <option value="unpaid" {{ request('status') == 'unpaid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.unpaid') }}</option>
                                         <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.paid') }}</option>
                                         <option value="overdue" {{ request('status') == 'overdue' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.overdue') }}</option>

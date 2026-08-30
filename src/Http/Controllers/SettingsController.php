@@ -359,6 +359,7 @@ class SettingsController extends Controller
             'payment_cascade_remainder' => 'nullable|boolean',
             'payment_hold_surplus_as_credit' => 'nullable|boolean',
             'payment_upfront_keyword' => 'nullable|string|max:32',
+            'payment_overdue_paid_threshold_pct' => 'nullable|numeric|min:0|max:100',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',

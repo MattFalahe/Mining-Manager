@@ -175,6 +175,7 @@ return [
     // Filters
     'filters' => 'Filters',
     'all_statuses' => 'All Statuses',
+    'outstanding_status' => 'Outstanding (not fully paid)',
     'all_paid_up' => 'All Paid Up!',
     'all_unpaid_members' => 'All Unpaid Members',
     'items_selected' => ':count items selected',
