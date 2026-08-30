@@ -38,6 +38,16 @@ EVE puts the note a player types into `reason`; `description` is CCP's generated
 - Status badges now say *why* a payment is still waiting: no tax code, unknown code, not yet applied, or before the cutover.
 - The "Mismatched" tile used to repeat the pending count. It now means a payment carrying a code that matches no invoice.
 
+### ✨ Account balance is visible to the person who owns it
+
+Held credit was only ever shown to directors, on the Wallet Verification page. A member who overpaid had no way of knowing the surplus was kept rather than swallowed, and no way of knowing their next invoice was already covered.
+
+**My Taxes** now shows an Account Balance panel, but only when there is a balance to show. It is alt-aware, so a surplus sitting on whichever character sent the ISK is visible against the account it belongs to.
+
+**An invoice that credit paid for says so.** The detail page carries a callout naming the amount, or saying the invoice was settled in full from balance with nothing to pay. The invoice's own notes record it too, so it reaches the exports and the receipt rather than living only in the allocation rows.
+
+The director-side card on Wallet Verification gains a total once more than one character is holding a balance.
+
 ### ✨ Payments received
 
 The invoice detail page has a **Payments received** table listing every payment credited to it, with amount, date, origin (matched by code, recorded by hand, rolled over, drawn from credit) and notes. `mining_taxes.transaction_id` only ever held the most recent payment, so instalments were invisible.

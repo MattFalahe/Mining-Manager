@@ -1638,6 +1638,8 @@ class TaxController extends Controller
             [$periodStartEmpty, $periodEndEmpty] = $periodHelperEmpty->getPeriodBounds(Carbon::now(), $periodTypeEmpty);
 
             return view('mining-manager::taxes.my-taxes', [
+                'creditBalance' => 0.0,
+                'creditRecords' => collect(),
                 'taxHistory' => collect(),
                 'summary' => [
                     'total_owed' => 0,
@@ -1814,7 +1816,20 @@ class TaxController extends Controller
             $corpName = \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $moonOwnerCorpId)->value('name');
         }
 
+        // Money we are holding for this player from an earlier overpayment.
+        // Alt-aware, because the surplus can sit on whichever character sent
+        // the ISK while the invoices belong to their main.
+        $creditBalance = PaymentCredit::balanceFor($characterIds);
+        $creditRecords = $creditBalance > 0
+            ? PaymentCredit::whereIn('character_id', $characterIds)
+                ->where('remaining', '>', 0)
+                ->orderBy('created_at')
+                ->get()
+            : collect();
+
         return view('mining-manager::taxes.my-taxes', compact(
+            'creditBalance',
+            'creditRecords',
             'taxHistory',
             'summary',
             'currentTax',
@@ -2483,6 +2498,13 @@ class TaxController extends Controller
 
         $paymentHistory = $this->getPaymentHistory((int) $tax->id);
 
+        // How much of this invoice was settled from money we were already
+        // holding, rather than from a payment the member made for it. Without
+        // saying so, an invoice that arrives part-paid looks like a mistake.
+        $creditApplied = (float) $paymentHistory
+            ->where('source', PaymentAllocation::SOURCE_CREDIT)
+            ->sum('amount');
+
         // Get mining breakdown for the tax's period (or fall back to month)
         $startDate = $tax->period_start ? Carbon::parse($tax->period_start) : Carbon::parse($tax->month)->startOfMonth();
         $endDate = $tax->period_end ? Carbon::parse($tax->period_end) : Carbon::parse($tax->month)->endOfMonth();
@@ -2550,7 +2572,8 @@ class TaxController extends Controller
             'isDirector',
             'viewAll',
             'features',
-            'paymentHistory'
+            'paymentHistory',
+            'creditApplied'
         ));
     }
 

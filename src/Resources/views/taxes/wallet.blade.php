@@ -108,6 +108,14 @@
                             </tr>
                             @endforeach
                         </tbody>
+                        @if($heldCredits->count() > 1)
+                        <tfoot>
+                            <tr>
+                                <th>{{ trans('mining-manager::taxes.held_credit_total') }}</th>
+                                <th class="text-right">{{ number_format($heldCredits->sum('remaining'), 0) }} ISK</th>
+                            </tr>
+                        </tfoot>
+                        @endif
                     </table>
                 </div>
             </div>

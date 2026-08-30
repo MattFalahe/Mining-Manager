@@ -53,6 +53,47 @@
         </div>
     </div>
 
+    {{-- ACCOUNT BALANCE - only when we are actually holding money for them.
+         Someone who overpays has no other way of knowing the surplus was kept
+         rather than swallowed, and no way of knowing their next invoice is
+         already covered. --}}
+    @if(($creditBalance ?? 0) > 0)
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-piggy-bank"></i>
+                        {{ trans('mining-manager::taxes.account_balance') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-lg-4 col-md-6">
+                            <div class="info-box bg-gradient-success">
+                                <span class="info-box-icon"><i class="fas fa-coins"></i></span>
+                                <div class="info-box-content">
+                                    <span class="info-box-text">{{ trans('mining-manager::taxes.balance_available') }}</span>
+                                    <span class="info-box-number">{{ number_format($creditBalance, 0) }}</span>
+                                    <span class="info-box-text">ISK</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-8 col-md-6">
+                            <p class="mb-1">{{ trans('mining-manager::taxes.balance_explained') }}</p>
+                            @if(($creditRecords ?? collect())->count() > 1)
+                                <small class="text-muted">
+                                    {{ trans('mining-manager::taxes.balance_from_payments', ['count' => $creditRecords->count()]) }}
+                                </small>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- CURRENT TAX STATUS --}}
     <div class="row">
         <div class="col-12">

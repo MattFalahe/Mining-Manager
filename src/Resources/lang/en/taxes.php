@@ -360,8 +360,17 @@ return [
     'payment_source_cascade' => 'Rolled over from another payment',
     'payment_source_credit' => 'Drawn from held credit',
 
+    // Account balance (member-facing wording for held credit)
+    'account_balance' => 'Account Balance',
+    'balance_available' => 'Available Balance',
+    'balance_explained' => 'You paid more than you owed, so the difference is being held on your account. It comes off your next invoice automatically, before you are asked for anything.',
+    'balance_from_payments' => 'Held from :count separate payments.',
+    'balance_covered_this' => 'Account balance covered :amount ISK of this invoice.',
+    'balance_covered_full' => 'This invoice was settled in full from your account balance. Nothing to pay.',
+
     // Held credit
     'held_credit' => 'Held credit',
+    'held_credit_total' => 'Total held',
     'held_credit_none' => 'No credit is being held.',
     'held_credit_intro' => 'Money left over from payments that were larger than the invoices they settled. It comes off their next invoice automatically.',
     'credit_applied' => 'Applied :amount ISK of held credit.',

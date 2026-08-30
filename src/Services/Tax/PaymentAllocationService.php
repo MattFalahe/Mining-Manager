@@ -448,6 +448,22 @@ class PaymentAllocationService
                 $outstanding = round($outstanding - $slice, 2);
                 $applied = round($applied + $slice, 2);
             }
+
+            // Say it on the invoice itself, not just in the allocation rows.
+            // An invoice that arrives already part-paid reads as a mistake
+            // unless it explains where the money came from, and this is the
+            // text that reaches the details page, the exports and the receipt.
+            if ($applied > 0) {
+                $note = Carbon::now()->format('Y-m-d H:i') . ' - '
+                    . number_format($applied, 0)
+                    . ' ISK paid from account balance held on an earlier overpayment.';
+
+                $locked->update([
+                    'notes' => $locked->notes ? $locked->notes . "
+
+" . $note : $note,
+                ]);
+            }
         });
 
         if ($applied > 0) {

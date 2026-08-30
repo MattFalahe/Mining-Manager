@@ -172,6 +172,21 @@
                     </div>
                     @endif
 
+                    {{-- An invoice that arrives already part-paid looks like an
+                         error unless we say where the money came from. --}}
+                    @if(($creditApplied ?? 0) > 0)
+                    <div class="callout callout-info">
+                        <h5><i class="fas fa-piggy-bank"></i> {{ trans('mining-manager::taxes.account_balance') }}</h5>
+                        <p class="mb-0">
+                            @if($creditApplied >= (float) $tax->amount_owed)
+                                {{ trans('mining-manager::taxes.balance_covered_full') }}
+                            @else
+                                {{ trans('mining-manager::taxes.balance_covered_this', ['amount' => number_format($creditApplied, 0)]) }}
+                            @endif
+                        </p>
+                    </div>
+                    @endif
+
                     {{-- Triggered By --}}
                     @if($tax->triggered_by)
                     <div class="callout callout-secondary">
