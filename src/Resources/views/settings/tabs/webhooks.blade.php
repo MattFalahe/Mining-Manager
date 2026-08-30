@@ -441,6 +441,13 @@
                                 Moon Scheduled Off-Plan
                             </label>
                         </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-outstanding-digest" name="notify_tax_outstanding_digest" value="1">
+                            <label class="custom-control-label" for="notify-tax-outstanding-digest">
+                                <i class="fas fa-clipboard-list text-warning"></i>
+                                Outstanding Mining Tax (weekly director digest)
+                            </label>
+                        </div>
 
                         @php
                             // Cross-plugin checks for extraction_at_risk + extraction_lost.

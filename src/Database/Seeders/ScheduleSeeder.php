@@ -136,6 +136,18 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
+            // Outstanding tax digest for directors - every 7 days, Monday 10:30.
+            // Half an hour after the daily member reminders so the two do not
+            // land together, and weekly rather than daily because a summary
+            // that arrives every morning stops being read within a week.
+            [
+                'command' => 'mining-manager:send-outstanding-digest',
+                'expression' => '30 10 * * 1',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
             // Generate previous month's report — runs day 9 at 04:05 AM.
             // Day 9 = ~7 days after `finalize-month` (day 2) and `calculate-monthly-stats` (day 2),
             // giving miners time to pay invoices so the collection % in the report is meaningful.

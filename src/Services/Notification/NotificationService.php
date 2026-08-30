@@ -58,6 +58,7 @@ class NotificationService
     const TYPE_TAX_REMINDER = 'tax_reminder';
     const TYPE_TAX_INVOICE = 'tax_invoice';
     const TYPE_TAX_OVERDUE = 'tax_overdue';
+    const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
@@ -267,6 +268,33 @@ class NotificationService
         }
 
         return $this->send(self::TYPE_TAX_OVERDUE, [$characterId], $data);
+    }
+
+    /**
+     * Send the outstanding-tax digest to directors.
+     *
+     * Every other tax notification speaks to one member about one debt. This is
+     * the only one that shows the whole picture, which is what makes it the
+     * backstop: an invoice missed by the per-member notifications (no Discord
+     * on that member, a delivery that failed quietly, a gap in matching we have
+     * not found yet) still surfaces here.
+     *
+     * Corp-scoped rather than personal, so it goes to director webhooks and
+     * never to the members it names.
+     *
+     * Expected keys in $data:
+     *   member_count, formatted_total, rows (each: character_name,
+     *   formatted_outstanding, percent_paid, invoice_count), tax_page_url
+     *
+     * @param array $data
+     * @return array
+     */
+    public function sendOutstandingDigest(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? 'Mining tax still outstanding. Amounts are what is left to pay, not what was originally charged.';
+
+        return $this->send(self::TYPE_TAX_OUTSTANDING_DIGEST, [], $data);
     }
 
     /**
@@ -864,6 +892,7 @@ class NotificationService
             'tax_reminder' => self::TYPE_TAX_REMINDER,
             'tax_invoice' => self::TYPE_TAX_INVOICE,
             'tax_overdue' => self::TYPE_TAX_OVERDUE,
+            'tax_outstanding_digest' => self::TYPE_TAX_OUTSTANDING_DIGEST,
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
@@ -1321,6 +1350,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1356,6 +1386,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1503,6 +1534,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1722,6 +1754,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -2134,6 +2167,7 @@ class NotificationService
     {
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 'danger',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
@@ -2160,6 +2194,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => "Tax Payment Reminder: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_INVOICE => "New Tax Invoice: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_OVERDUE => "Overdue Tax: {$data['formatted_amount']} - {$data['days_overdue']} days overdue",
+            self::TYPE_TAX_OUTSTANDING_DIGEST => "Outstanding mining tax: " . ($data['member_count'] ?? 0) . " member(s), " . ($data['formatted_total'] ?? '0 ISK') . " still owed",
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
@@ -2481,6 +2516,7 @@ class NotificationService
     {
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 15158332, // Red
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
@@ -2512,6 +2548,7 @@ class NotificationService
             self::TYPE_TAX_REMINDER => '⏰ Tax Payment Reminder',
             self::TYPE_TAX_INVOICE => '📧 New Tax Invoice',
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
@@ -2586,6 +2623,12 @@ class NotificationService
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
+            ])),
+            self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
+                ['title' => 'Members', 'value' => (string) ($data['member_count'] ?? 0), 'short' => true],
+                ['title' => 'Still Owed', 'value' => $data['formatted_total'] ?? '0 ISK', 'short' => true],
+                !empty($data['rows']) ? ['title' => 'Who still owes', 'value' => $data['rows_text'], 'short' => false] : null,
+                !empty($data['tax_page_url']) ? ['title' => 'Full list', 'value' => '<' . $data['tax_page_url'] . '|Outstanding tax>', 'short' => false] : null,
             ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true] : null,
@@ -2819,6 +2862,20 @@ class NotificationService
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
                 isset($data['help_url']) ? ['name' => '❓ How to Pay', 'value' => '[Payment Guide](' . $data['help_url'] . ')', 'inline' => true] : null,
+            ])),
+            self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
+                ['name' => '👥 Members', 'value' => (string) ($data['member_count'] ?? 0), 'inline' => true],
+                ['name' => '💰 Still Owed', 'value' => $data['formatted_total'] ?? '0 ISK', 'inline' => true],
+                ['name' => '📆 Covers', 'value' => $data['period_label'] ?? 'All open invoices', 'inline' => true],
+                !empty($data['rows'])
+                    ? ['name' => '🧾 Who still owes', 'value' => $data['rows_text'], 'inline' => false]
+                    : null,
+                !empty($data['truncated_count'])
+                    ? ['name' => 'And more', 'value' => $data['truncated_count'] . ' further member(s) not listed. Open the tax page for the full list.', 'inline' => false]
+                    : null,
+                !empty($data['tax_page_url'])
+                    ? ['name' => '🔗 Full list', 'value' => '[Outstanding tax](' . $data['tax_page_url'] . ')', 'inline' => false]
+                    : null,
             ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['name' => '💰 Amount', 'value' => $data['formatted_amount'], 'inline' => true] : null,
