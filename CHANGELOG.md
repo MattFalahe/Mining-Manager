@@ -38,6 +38,18 @@ EVE puts the note a player types into `reason`; `description` is CCP's generated
 - Status badges now say *why* a payment is still waiting: no tax code, unknown code, not yet applied, or before the cutover.
 - The "Mismatched" tile used to repeat the pending count. It now means a payment carrying a code that matches no invoice.
 
+### 🐛 Partly paid invoices were never chased, and reminders quoted the wrong number
+
+Two faults in the same family, both older than the allocation work and both made worse by it.
+
+`SendTaxRemindersCommand` and `GenerateTaxInvoicesCommand` selected only `unpaid` and `overdue`. A **partly** settled invoice matched neither, so it was never invoiced for the remainder and never reminded about. It simply went quiet. That was survivable when partial payments barely worked; now that instalments, cascades and account balance all produce them, a partly paid invoice is a normal state.
+
+Where an amount was quoted, it summed `amount_owed` and ignored `amount_paid`, so a member who had paid half would have been chased for the whole invoice. Fixed in all four places that ask someone for money: the scheduled reminder, the invoice generator, the single Send Reminder button and the bulk one. Each now asks for the outstanding balance and skips anything with nothing left to pay.
+
+### ✨ Tax reminders account for balance
+
+A reminder or overdue notice that follows a partial drawdown now names how much of the period was already met from the member's balance, on Discord, Slack and EVE mail. Without it the figure is smaller than the invoice they remember, with nothing to say whether that is a discount, a mistake, or their own money.
+
 ### ✨ Account balance is visible to the person who owns it
 
 Held credit was only ever shown to directors, on the Wallet Verification page. A member who overpaid had no way of knowing the surplus was kept rather than swallowed, and no way of knowing their next invoice was already covered.

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningTax;
+use MiningManager\Models\PaymentAllocation;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Tax\TaxCalculationService;
@@ -124,7 +125,13 @@ class SendTaxRemindersCommand extends Command
         // The per-character loop below branches between
         // sendTaxReminder and sendTaxOverdue based on each character's
         // earliest due date vs today.
-        $query = MiningTax::whereIn('status', ['unpaid', 'overdue'])
+        // 'partial' belongs here alongside unpaid and overdue. An invoice
+        // settled in part still has a balance owing, and omitting it meant a
+        // member who paid half was never chased for the rest - the invoice just
+        // went quiet. Harmless when partial payments barely worked; now that
+        // instalments, cascades and account balance all produce them, a partly
+        // paid invoice is a normal state rather than an oddity.
+        $query = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
             ->where('amount_owed', '>', 0);
 
         if ($overdueOnly) {
@@ -175,8 +182,25 @@ class SendTaxRemindersCommand extends Command
 
         foreach ($taxesByCharacter as $characterId => $taxes) {
             try {
-                $totalOwed = $taxes->sum('amount_owed');
+                // What is still owed, not what was originally charged. Summing
+                // amount_owed chases a member for money they have already paid
+                // on a partly settled invoice.
+                $totalOwed = round($taxes->sum(
+                    fn ($t) => max(0, (float) $t->amount_owed - (float) ($t->amount_paid ?? 0))
+                ), 2);
                 $taxCount = $taxes->count();
+
+                // Nothing left to ask for; the statuses just have not caught up.
+                if ($totalOwed <= 0) {
+                    continue;
+                }
+
+                // How much of this balance was already met from money we were
+                // holding, so the notification can explain a figure that is
+                // smaller than the invoice the member remembers.
+                $creditApplied = round((float) PaymentAllocation::whereIn('mining_tax_id', $taxes->pluck('id'))
+                    ->where('source', PaymentAllocation::SOURCE_CREDIT)
+                    ->sum('amount'), 2);
 
                 // Find the earliest due date among this character's outstanding taxes
                 $earliestDueDate = $taxes->min('due_date');
@@ -213,7 +237,8 @@ class SendTaxRemindersCommand extends Command
                         (int) $characterId,
                         (float) $totalOwed,
                         $dueDate,
-                        $daysOverdueForChar
+                        $daysOverdueForChar,
+                        ['credit_applied' => $creditApplied]
                     );
 
                     if ($result) {
@@ -259,7 +284,8 @@ class SendTaxRemindersCommand extends Command
                         (int) $characterId,
                         (float) $totalOwed,
                         $dueDate,
-                        $daysRemaining
+                        $daysRemaining,
+                        ['credit_applied' => $creditApplied]
                     );
 
                     if ($result) {

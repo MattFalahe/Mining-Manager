@@ -157,7 +157,7 @@ class NotificationService
      * @param int $daysRemaining
      * @return array
      */
-    public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining): array
+    public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining, array $context = []): array
     {
         $typeSettings = $this->settings->getTypeNotificationSettings('tax_reminder');
 
@@ -176,6 +176,17 @@ class NotificationService
             // can receive tax notifications for just their own members.
             'miner_corporation_id' => $this->resolveMinerCorporationId($characterId),
         ];
+
+        // Money already met from the member's balance. Passed by the caller
+        // because only it knows which invoices this figure covers. Without it a
+        // member sees a smaller number than the invoice they remember and has
+        // no way to tell whether it is a discount, an error, or their own money.
+        $creditApplied = round((float) ($context['credit_applied'] ?? 0), 2);
+
+        if ($creditApplied > 0) {
+            $data['credit_applied'] = $creditApplied;
+            $data['formatted_credit_applied'] = number_format($creditApplied, 2) . ' ISK';
+        }
 
         return $this->send(self::TYPE_TAX_REMINDER, [$characterId], $data);
     }
@@ -227,7 +238,7 @@ class NotificationService
      * @param int $daysOverdue
      * @return array
      */
-    public function sendTaxOverdue(int $characterId, float $amount, Carbon $dueDate, int $daysOverdue): array
+    public function sendTaxOverdue(int $characterId, float $amount, Carbon $dueDate, int $daysOverdue, array $context = []): array
     {
         $typeSettings = $this->settings->getTypeNotificationSettings('tax_overdue');
 
@@ -243,6 +254,17 @@ class NotificationService
             'is_personal' => true,
             'miner_corporation_id' => $this->resolveMinerCorporationId($characterId),
         ];
+
+        // Money already met from the member's balance. Passed by the caller
+        // because only it knows which invoices this figure covers. Without it a
+        // member sees a smaller number than the invoice they remember and has
+        // no way to tell whether it is a discount, an error, or their own money.
+        $creditApplied = round((float) ($context['credit_applied'] ?? 0), 2);
+
+        if ($creditApplied > 0) {
+            $data['credit_applied'] = $creditApplied;
+            $data['formatted_credit_applied'] = number_format($creditApplied, 2) . ' ISK';
+        }
 
         return $this->send(self::TYPE_TAX_OVERDUE, [$characterId], $data);
     }
@@ -1766,12 +1788,15 @@ class NotificationService
                 'subject' => 'Mining Tax Payment Reminder',
                 'body' => sprintf(
                     "Hello,\n\nThis is a reminder that you have an outstanding mining tax payment due.\n\n" .
-                    "Amount: %s\nDue Date: %s\nDays Remaining: %d\n\n" .
+                    "Amount: %s\nDue Date: %s\nDays Remaining: %d\n%s\n" .
                     "Please make your payment before the due date to avoid any penalties.\n\n" .
                     "Thank you,\n%s Management",
                     $data['formatted_amount'],
                     $data['due_date'],
                     $data['days_remaining'],
+                    !empty($data['formatted_credit_applied'])
+                        ? "\n{$data['formatted_credit_applied']} of this period was already covered from your account balance.\n"
+                        : '',
                     $this->getCorpName()
                 )
             ],
@@ -2555,12 +2580,18 @@ class NotificationService
             ])),
             self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['title' => 'Already covered from balance', 'value' => $data['formatted_credit_applied'], 'short' => true]
+                    : null,
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
             ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['title' => 'Already covered from balance', 'value' => $data['formatted_credit_applied'], 'short' => true]
+                    : null,
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 ['title' => 'Days Overdue', 'value' => (string) $data['days_overdue'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
@@ -2775,6 +2806,9 @@ class NotificationService
             ])),
             self::TYPE_TAX_REMINDER => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['name' => '💰 Amount', 'value' => $data['formatted_amount'], 'inline' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['name' => '🐷 Already covered from balance', 'value' => $data['formatted_credit_applied'], 'inline' => true]
+                    : null,
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 isset($data['days_remaining']) ? ['name' => '⏳ Days Remaining', 'value' => (string) $data['days_remaining'], 'inline' => true] : null,
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
@@ -2788,6 +2822,9 @@ class NotificationService
             ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['name' => '💰 Amount', 'value' => $data['formatted_amount'], 'inline' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['name' => '🐷 Already covered from balance', 'value' => $data['formatted_credit_applied'], 'inline' => true]
+                    : null,
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 ['name' => '⚠️ Days Overdue', 'value' => (string) $data['days_overdue'], 'inline' => true],
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,

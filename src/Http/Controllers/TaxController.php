@@ -1399,11 +1399,19 @@ class TaxController extends Controller
             $dueDate = $tax->due_date ? Carbon::parse($tax->due_date) : Carbon::now();
             $daysRemaining = (int) max(0, Carbon::now()->startOfDay()->diffInDays($dueDate->startOfDay(), false));
 
+            // Ask for what is left, not what was originally charged, and say
+            // how much of it their balance already met.
+            $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+            $creditApplied = round((float) PaymentAllocation::where('mining_tax_id', $tax->id)
+                ->where('source', PaymentAllocation::SOURCE_CREDIT)
+                ->sum('amount'), 2);
+
             $result = $this->notificationService->sendTaxReminder(
                 (int) $tax->character_id,
-                (float) $tax->amount_owed,
+                $outstanding,
                 $dueDate,
-                $daysRemaining
+                $daysRemaining,
+                ['credit_applied' => $creditApplied]
             );
 
             // Update reminder tracking on the tax record
@@ -1548,7 +1556,17 @@ class TaxController extends Controller
 
             foreach ($taxesByCharacter as $characterId => $characterTaxes) {
                 try {
-                    $totalOwed = $characterTaxes->sum('amount_owed');
+                    $totalOwed = round($characterTaxes->sum(
+                        fn ($t) => max(0, (float) $t->amount_owed - (float) ($t->amount_paid ?? 0))
+                    ), 2);
+
+                    if ($totalOwed <= 0) {
+                        continue;
+                    }
+
+                    $creditApplied = round((float) PaymentAllocation::whereIn('mining_tax_id', $characterTaxes->pluck('id'))
+                        ->where('source', PaymentAllocation::SOURCE_CREDIT)
+                        ->sum('amount'), 2);
 
                     // Find the earliest due date among these taxes
                     $earliestDueDate = $characterTaxes->min('due_date');
@@ -1559,7 +1577,8 @@ class TaxController extends Controller
                         (int) $characterId,
                         (float) $totalOwed,
                         $dueDate,
-                        $daysRemaining
+                        $daysRemaining,
+                        ['credit_applied' => $creditApplied]
                     );
 
                     // Update reminder tracking on each tax record
