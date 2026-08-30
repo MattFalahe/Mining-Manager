@@ -328,6 +328,8 @@ return [
     'blocker_tax_code_not_recognised_help' => 'A code was found but it matches no invoice. Check it belongs to this corporation.',
     'blocker_code_not_applied' => 'Not yet applied',
     'blocker_code_not_applied_help' => 'The code matches an invoice but the payment has not been credited. Try Verify.',
+    'blocker_upfront_pending' => 'Paying ahead',
+    'blocker_upfront_pending_help' => 'Marked with the upfront keyword. The next scheduled run will settle any outstanding invoices and bank the rest as account balance. No action needed.',
     'blocker_before_cutover' => 'Before cutover',
     'blocker_before_cutover_help' => 'This predates the verification cutover and carries a tax code, so it was most likely already credited by the old matcher. Check the invoice before assigning it.',
 

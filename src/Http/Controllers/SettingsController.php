@@ -358,6 +358,7 @@ class SettingsController extends Controller
             'payment_accept_alt_characters' => 'nullable|boolean',
             'payment_cascade_remainder' => 'nullable|boolean',
             'payment_hold_surplus_as_credit' => 'nullable|boolean',
+            'payment_upfront_keyword' => 'nullable|string|max:32',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
@@ -415,6 +416,27 @@ class SettingsController extends Controller
             // has to be persisted as false or it can never be turned off.
             $data['payment_cascade_remainder'] = $request->has('payment_cascade_remainder');
             $data['payment_hold_surplus_as_credit'] = $request->has('payment_hold_surplus_as_credit');
+
+            // The upfront keyword and the tax code prefix are both matched
+            // against the same reason field. If one contains the other, a
+            // payment could read as either and the behaviour would depend on
+            // matching order, which is not something an operator could ever
+            // diagnose from the outside. Refuse the ambiguity instead.
+            $upfrontKeyword = trim((string) ($data['payment_upfront_keyword'] ?? ''));
+
+            if ($upfrontKeyword !== '') {
+                $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
+
+                if ($taxPrefix !== ''
+                    && (stripos($upfrontKeyword, $taxPrefix) !== false
+                        || stripos($taxPrefix, $upfrontKeyword) !== false)) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                }
+            }
+
+            $data['payment_upfront_keyword'] = $upfrontKeyword;
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 

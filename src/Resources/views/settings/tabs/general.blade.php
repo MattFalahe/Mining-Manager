@@ -436,6 +436,35 @@
                     </div>
                 </div>
             </div>
+
+            {{-- Standing keyword for paying ahead of an invoice. --}}
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="payment_upfront_keyword">
+                            <i class="fas fa-hand-holding-usd"></i>
+                            Upfront payment keyword
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="payment_upfront_keyword"
+                               name="payment_upfront_keyword"
+                               maxlength="32"
+                               placeholder="MM-UPFRONT"
+                               value="{{ old('payment_upfront_keyword', $settings->upfront_keyword ?? 'MM-UPFRONT') }}">
+                        <small class="form-text text-muted">
+                            A standing keyword members can put in the transfer reason to pay
+                            ahead, without waiting to be invoiced. Unlike a tax code it never
+                            expires and is the same for everyone, so it can live in the corp
+                            MOTD. The payment settles whatever they already owe, oldest first,
+                            and the rest becomes account balance against future invoices.
+                            Matching ignores case. <strong>Leave empty to turn the feature
+                            off.</strong> It cannot overlap the tax code prefix, since both are
+                            read from the same field.
+                        </small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

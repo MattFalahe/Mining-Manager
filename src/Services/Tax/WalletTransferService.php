@@ -142,6 +142,42 @@ class WalletTransferService
     }
 
     /**
+     * The standing keyword that marks a payment as paying ahead.
+     *
+     * Empty disables the feature. Returns null rather than an empty string so
+     * callers only have one falsy case to think about.
+     */
+    public function getUpfrontKeyword(): ?string
+    {
+        $keyword = trim((string) ($this->settings->getPaymentSettings()['upfront_keyword'] ?? ''));
+
+        return $keyword === '' ? null : $keyword;
+    }
+
+    /**
+     * True when a payment is a deliberate pay-ahead rather than settlement of
+     * a specific invoice.
+     *
+     * Checked only after tax-code extraction has come up empty, so a member who
+     * quotes both a code and the keyword gets the specific behaviour they asked
+     * for. Matching is case-insensitive and substring-based because the reason
+     * field is typed by hand under time pressure and will arrive with stray
+     * spaces, punctuation and capitalisation.
+     */
+    public function looksLikeUpfrontPayment(object $transaction): bool
+    {
+        $keyword = $this->getUpfrontKeyword();
+
+        if ($keyword === null) {
+            return false;
+        }
+
+        $text = trim(($transaction->reason ?? '') . ' ' . ($transaction->description ?? ''));
+
+        return $text !== '' && stripos($text, $keyword) !== false;
+    }
+
+    /**
      * Find the tax code record a payment refers to.
      *
      * With payment.accept_alt_characters on (the default) the search widens to
@@ -256,6 +292,7 @@ class WalletTransferService
             'amount' => 0.0,
             'allocations' => [],
             'credited' => 0.0,
+            'upfront' => false,
         ];
 
         $transaction = $options['transaction'] ?? $this->findTransaction($transactionId);
@@ -285,6 +322,13 @@ class WalletTransferService
         $code = $this->extractTaxCodeFromTransaction($transaction);
 
         if (!$code) {
+            // No code, but the member may have marked it as paying ahead. That
+            // is a real instruction, not a failure to match: settle whatever
+            // they already owe, oldest first, and bank the rest as balance.
+            if ($this->looksLikeUpfrontPayment($transaction)) {
+                return $this->applyUpfrontPayment($transaction, $result, $options);
+            }
+
             $result['reason'] = 'no_tax_code';
 
             return $result;
@@ -344,6 +388,56 @@ class WalletTransferService
 
         if (!$allocation['applied']) {
             $result['reason'] = $allocation['reason'];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Consume a payment the member marked as paying ahead.
+     *
+     * No invoice is nominated, so the allocator settles their oldest open
+     * invoices first and banks whatever is left. Clearing debt before banking
+     * is the only sane order: the alternative parks credit while leaving the
+     * member overdue, which would then trigger the very notices the payment
+     * was meant to avoid.
+     *
+     * @param  array  $result  The in-progress result from matchTransaction()
+     */
+    protected function applyUpfrontPayment(object $transaction, array $result, array $options): array
+    {
+        $result['matched'] = true;
+        $result['upfront'] = true;
+
+        if (!($options['apply'] ?? true)) {
+            return $result;
+        }
+
+        $allocation = $this->allocator->allocate($transaction, null, [
+            'source' => PaymentAllocation::SOURCE_AUTO,
+            'notes' => 'Paid ahead using ' . ($this->getUpfrontKeyword() ?? 'the upfront keyword'),
+            'ignore_cutover' => (bool) ($options['ignore_cutover'] ?? false),
+        ]);
+
+        $result['applied'] = $allocation['applied'];
+        $result['allocations'] = $allocation['allocations'];
+        $result['credited'] = $allocation['credited'];
+
+        // Nothing owing and nothing banked means the surplus was discarded
+        // because credit holding is switched off. That is a configuration
+        // choice rather than a match failure, but the caller should not be told
+        // the payment was applied when no money moved anywhere.
+        if (!$allocation['applied'] && $allocation['credited'] <= 0) {
+            $result['reason'] = $allocation['reason'] ?? 'upfront_not_held';
+        }
+
+        if ($allocation['applied'] || $allocation['credited'] > 0) {
+            Log::info('Mining Manager: took an upfront payment', [
+                'transaction_id' => (int) $transaction->id,
+                'character_id' => (int) ($transaction->first_party_id ?? 0),
+                'invoices_settled' => count($allocation['allocations']),
+                'banked' => $allocation['credited'],
+            ]);
         }
 
         return $result;
@@ -796,6 +890,13 @@ class WalletTransferService
             $code = $this->extractTaxCodeFromTransaction($donation);
             $matchedTaxId = null;
             $blocker = 'no_tax_code';
+
+            // Marked as paying ahead and simply not picked up yet. Saying so
+            // stops a director assigning by hand something the next scheduled
+            // run will handle correctly on its own.
+            if (!$code && $this->looksLikeUpfrontPayment($donation)) {
+                $blocker = 'upfront_pending';
+            }
 
             if ($code) {
                 $taxCode = TaxCode::where('code', $code)->first();

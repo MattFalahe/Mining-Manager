@@ -232,6 +232,12 @@ class SettingsManagerService
             // discards it, which is the pre-allocation-ledger behaviour.
             'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
 
+            // A standing keyword a member can put in the transfer reason to
+            // pay ahead of being invoiced. Unlike a tax code it never expires
+            // and is the same for everyone, so it can be pinned in a corp MOTD.
+            // Empty disables the feature entirely.
+            'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
+
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
 
@@ -414,6 +420,12 @@ class SettingsManagerService
             // blade can render the checkboxes.
             'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
             'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
+
+            // A standing keyword a member can put in the transfer reason to
+            // pay ahead of being invoiced. Unlike a tax code it never expires
+            // and is the same for everyone, so it can be pinned in a corp MOTD.
+            // Empty disables the feature entirely.
+            'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
             // Accept payments from any of a player's characters, not just
             // the exact taxed character. Players routinely send ISK from
             // their wallet-richest alt rather than the alt that mined the
