@@ -170,6 +170,12 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::get('/balances', [
+            'as' => 'mining-manager.taxes.balances',
+            'uses' => 'TaxController@balances',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/wallet', [
             'as' => 'mining-manager.taxes.wallet',
             'uses' => 'TaxController@wallet',

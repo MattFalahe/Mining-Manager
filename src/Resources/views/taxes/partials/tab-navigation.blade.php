@@ -38,6 +38,21 @@
                 </a>
             </li>
             @endif
+
+            {{-- Balances only appears when it would have something to say:
+                 someone is holding a balance, or upfront payments are on and
+                 members could start creating one. An empty tab on a fresh
+                 install just looks broken. $balancesTabVisible is supplied by
+                 the view composer in the service provider, so every page that
+                 includes this partial gets it without threading it through
+                 each controller. --}}
+            @if($balancesTabVisible ?? false)
+            <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/tax/balances') ? 'active' : '' }}" href="{{ route('mining-manager.taxes.balances') }}">
+                    <i class="fas fa-piggy-bank"></i> {{ trans('mining-manager::menu.account_balances') }}
+                </a>
+            </li>
+            @endif
         </ul>
     </div>
 

@@ -50,6 +50,28 @@ Where an amount was quoted, it summed `amount_owed` and ignored `amount_paid`, s
 
 A reminder or overdue notice that follows a partial drawdown now names how much of the period was already met from the member's balance, on Discord, Slack and EVE mail. Without it the figure is smaller than the invoice they remember, with nothing to say whether that is a discount, a mistake, or their own money.
 
+### ✨ Pay ahead, and a Balances tab to see it
+
+**Upfront payments.** A standing keyword in the transfer reason (default `MM-UPFRONT`, configurable, off by default under Settings → Features) lets a member pay before being invoiced. Unlike a tax code it never expires and is the same for everyone, so it can live in the corp MOTD. The payment settles whatever they already owe, oldest invoice first, and the rest becomes account balance. A tax code still wins if both appear.
+
+The keyword is stored globally, not per corporation: there is one tax program reading one wallet, so one keyword serves every configured corp. It cannot overlap the tax code prefix in either direction, since both are read from the same field and an overlap would make a payment readable as either.
+
+**Balances tab.** One page, two audiences, the way the rest of the tax section works. A director sees everyone holding a balance, the corporation-wide total, and how much has already been applied to invoices; a member sees their own, alt-aware. Every balance lists what it has been spent on, linked to the invoices. The tab hides itself entirely until someone holds a balance or upfront payments are switched on.
+
+### 🐛 Partly paid invoices could dodge the overdue treatment forever
+
+A part payment moves an invoice to `partial`, and `updateOverdueTaxes()` only promotes `unpaid`, so it could never become overdue however late it got. A token payment bought permanent immunity from escalation.
+
+`MiningTax::isOverdue()` has always been date-based and has always been right about this; nothing was asking it. Reminders now do, gated on `payment.overdue_paid_threshold_pct` (default 95) so a genuine near-miss from price drift keeps the gentler wording while a token payment does not. The tax list shows an Overdue badge next to Partial, because showing only "Partial" made the page look calm about something the reminder was already chasing.
+
+### ✨ A weekly digest of who still owes
+
+Directors had no view of the whole picture, so an invoice missed by the per-member notifications went unnoticed. The digest names each member, what is left to pay, the percentage already covered and how many invoices it spans, largest debt first.
+
+It follows the chain rather than a fixed weekday: invoices go out, the due date passes, then the first digest, then every 7 days until everything clears, at which point it goes quiet and resets. Per-webhook opt-in, off by default (migration `000024`), corp-scoped so it never reaches the members it names.
+
+Tax Overview also gains an **Outstanding (not fully paid)** filter covering unpaid, overdue and partial together, which is where the digest links to.
+
 ### ✨ Account balance is visible to the person who owns it
 
 Held credit was only ever shown to directors, on the Wallet Verification page. A member who overpaid had no way of knowing the surplus was kept rather than swallowed, and no way of knowing their next invoice was already covered.

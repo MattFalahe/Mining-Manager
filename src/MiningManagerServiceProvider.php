@@ -87,6 +87,12 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             return "<?php echo ($expression) ? \Carbon\Carbon::parse($expression)->format('M d, Y') : '-'; ?>";
         });
 
+        // Decide whether the tax section shows a Balances tab. Done here rather
+        // than in each controller because the tab lives in a partial that every
+        // tax page includes, and threading one boolean through six actions to
+        // hide one link is not worth it.
+        $this->registerBalancesTabComposer();
+
         // Register event listeners
         $this->registerEventListeners();
 
@@ -223,6 +229,48 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
 
         // Add database seeders
         $this->add_database_seeders();
+    }
+
+    /**
+     * Show the Balances tab only when it would have something to say.
+     *
+     * Either someone is already holding a balance, or upfront payments are
+     * switched on and members could start creating one. On a fresh install with
+     * neither, an empty tab just looks broken.
+     *
+     * The visibility query is cached briefly: this runs on every tax page load,
+     * and the answer changes rarely.
+     */
+    private function registerBalancesTabComposer(): void
+    {
+        \Illuminate\Support\Facades\View::composer(
+            'mining-manager::taxes.partials.tab-navigation',
+            function ($view) {
+                $visible = false;
+
+                try {
+                    $visible = \Illuminate\Support\Facades\Cache::remember(
+                        'mining_manager_balances_tab_visible',
+                        300,
+                        function () {
+                            if (\MiningManager\Models\PaymentCredit::where('remaining', '>', 0)->exists()) {
+                                return true;
+                            }
+
+                            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+
+                            return (bool) ($settings->getFeatureFlags()['enable_upfront_payments'] ?? false);
+                        }
+                    );
+                } catch (\Exception $e) {
+                    // Before migrations have run the table does not exist yet.
+                    // A missing tab is a better failure than a broken tax page.
+                    $visible = false;
+                }
+
+                $view->with('balancesTabVisible', $visible);
+            }
+        );
     }
 
     /**

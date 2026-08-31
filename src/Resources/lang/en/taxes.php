@@ -372,6 +372,18 @@ return [
     'balance_covered_this' => 'Account balance covered :amount ISK of this invoice.',
     'balance_covered_full' => 'This invoice was settled in full from your account balance. Nothing to pay.',
 
+    // Balances tab
+    'account_balances' => 'Account Balances',
+    'balance_holders' => 'Members Holding a Balance',
+    'balance_drawn_total' => 'Already Applied to Invoices',
+    'balance_original' => 'Paid In',
+    'balance_remaining' => 'Remaining',
+    'balance_covered' => 'Applied To',
+    'balance_fully_used' => 'Fully used',
+    'balance_not_used_yet' => 'Not used yet',
+    'balance_none_personal' => 'You have no account balance. Anything you overpay, or send using the upfront keyword, will be held here.',
+    'balance_upfront_hint' => 'Members can also pay ahead at any time by putting :keyword in the transfer reason. It settles anything they already owe first, oldest invoice first, and the rest is held here.',
+
     // Held credit
     'held_credit' => 'Held credit',
     'held_credit_total' => 'Total held',

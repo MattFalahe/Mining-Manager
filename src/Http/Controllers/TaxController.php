@@ -2604,6 +2604,75 @@ class TaxController extends Controller
     }
 
     /**
+     * Account balances: money held from overpayments and paying ahead.
+     *
+     * One page, two audiences, the way the rest of the tax section already
+     * works. A director sees everyone who is holding a balance and where it
+     * came from; a member sees their own, alt-aware, because the surplus sits
+     * on whichever character sent the ISK while the invoices belong to their
+     * main.
+     */
+    public function balances(Request $request)
+    {
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+        $canSeeAll = $isAdmin || $isDirector;
+
+        $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($corporationId ? (int) $corporationId : null);
+
+        // A member only ever sees money held against their own characters.
+        // Scoping on the way in rather than filtering a full list afterwards,
+        // so a bug here cannot leak someone else's balance.
+        $scopeCharacterIds = $canSeeAll ? null : $this->getUserCharacterIds();
+
+        $creditsQuery = PaymentCredit::with('character')->orderByDesc('created_at');
+
+        if ($scopeCharacterIds !== null) {
+            if (empty($scopeCharacterIds)) {
+                $creditsQuery->whereRaw('1 = 0');
+            } else {
+                $creditsQuery->whereIn('character_id', $scopeCharacterIds);
+            }
+        }
+
+        $credits = $creditsQuery->get();
+        $openCredits = $credits->where('remaining', '>', 0);
+
+        // What each balance has already paid for. Keyed by credit so a row can
+        // show its own drawdowns rather than one undifferentiated list.
+        $drawdowns = collect();
+
+        if ($credits->isNotEmpty()) {
+            $drawdowns = PaymentAllocation::with('tax.character')
+                ->whereIn('credit_id', $credits->pluck('id'))
+                ->orderByDesc('allocated_at')
+                ->get()
+                ->groupBy('credit_id');
+        }
+
+        $stats = [
+            'total_held' => (float) $openCredits->sum('remaining'),
+            'holders' => $openCredits->pluck('character_id')->unique()->count(),
+            'total_drawn' => (float) $drawdowns->flatten()->sum('amount'),
+        ];
+
+        return view('mining-manager::taxes.balances', [
+            'credits' => $credits,
+            'openCredits' => $openCredits,
+            'drawdowns' => $drawdowns,
+            'stats' => $stats,
+            'isAdmin' => $isAdmin,
+            'isDirector' => $isDirector,
+            'viewAll' => $viewAll,
+            'canSeeAll' => $canSeeAll,
+            'features' => $this->getFeatureFlags(),
+            'upfrontKeyword' => $this->walletService->getUpfrontKeyword(),
+        ]);
+    }
+
+    /**
      * Every payment recorded against an invoice, newest first.
      *
      * mining_taxes.transaction_id only ever holds the most recent payment, so

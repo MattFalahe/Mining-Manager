@@ -37,6 +37,12 @@ class SettingsController extends Controller
      */
     private function clearSettingsCache(): void
     {
+        // Whether the Balances tab shows depends on a feature flag, and its
+        // visibility answer is cached for five minutes. Without dropping it
+        // here, turning upfront payments on would leave the operator staring
+        // at an unchanged tab bar wondering what they did wrong.
+        cache()->forget('mining_manager_balances_tab_visible');
+
         try {
             cache()->tags(['mining-manager'])->flush();
         } catch (\Exception $e) {
