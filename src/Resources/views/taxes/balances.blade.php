@@ -95,7 +95,8 @@
                                 <th>{{ trans('mining-manager::taxes.character') }}</th>
                                 @endif
                                 <th>{{ trans('mining-manager::taxes.date') }}</th>
-                                <th class="text-right">{{ trans('mining-manager::taxes.balance_original') }}</th>
+                                <th class="text-right">{{ trans('mining-manager::taxes.balance_payment_total') }}</th>
+                                <th class="text-right">{{ trans('mining-manager::taxes.balance_banked') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::taxes.balance_remaining') }}</th>
                                 <th>{{ trans('mining-manager::taxes.balance_covered') }}</th>
                             </tr>
@@ -108,6 +109,19 @@
                                 <td>{{ $credit->character->name ?? "Character #{$credit->character_id}" }}</td>
                                 @endif
                                 <td>{{ $credit->created_at ? $credit->created_at->format('Y-m-d H:i') : '-' }}</td>
+                                <td class="text-right">
+                                    {{ number_format($credit->payment_total, 0) }}
+                                    {{-- The split is the answer to "I sent 1.2b, where did it
+                                         go?". Without it the row only shows the leftover and
+                                         looks like the payment was smaller than it was. --}}
+                                    @if($credit->settled_on_arrival > 0)
+                                    <div class="small text-muted">
+                                        {{ trans('mining-manager::taxes.balance_settled_on_arrival', [
+                                            'amount' => number_format($credit->settled_on_arrival, 0),
+                                        ]) }}
+                                    </div>
+                                    @endif
+                                </td>
                                 <td class="text-right">{{ number_format($credit->amount, 0) }}</td>
                                 <td class="text-right">
                                     @if((float) $credit->remaining > 0)

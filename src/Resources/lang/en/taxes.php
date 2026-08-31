@@ -375,8 +375,10 @@ return [
     // Balances tab
     'account_balances' => 'Account Balances',
     'balance_holders' => 'Members Holding a Balance',
-    'balance_drawn_total' => 'Already Applied to Invoices',
-    'balance_original' => 'Paid In',
+    'balance_drawn_total' => 'Balance Spent on Later Invoices',
+    'balance_payment_total' => 'Payment',
+    'balance_banked' => 'Banked',
+    'balance_settled_on_arrival' => ':amount ISK settled invoices straight away',
     'balance_remaining' => 'Remaining',
     'balance_covered' => 'Applied To',
     'balance_fully_used' => 'Fully used',

@@ -2652,9 +2652,37 @@ class TaxController extends Controller
                 ->groupBy('credit_id');
         }
 
+        // A credit records only the surplus, so on its own it cannot answer the
+        // question a member actually asks: "I sent 1.2b, where did it go?".
+        // Pair each one with what the SAME payment settled outright, and the
+        // two add back up to the transfer. Read from the allocation rows rather
+        // than the wallet journal so the figures reconcile against each other
+        // by construction; a journal lookup could disagree with our own ledger
+        // and there would be no way to tell which was right.
+        $settledByPayment = collect();
+        $transactionIds = $credits->pluck('transaction_id')->filter()->unique();
+
+        if ($transactionIds->isNotEmpty()) {
+            $settledByPayment = PaymentAllocation::whereIn('transaction_id', $transactionIds)
+                ->whereNull('credit_id')
+                ->selectRaw('transaction_id, SUM(amount) as total')
+                ->groupBy('transaction_id')
+                ->pluck('total', 'transaction_id');
+        }
+
+        foreach ($credits as $credit) {
+            $settled = (float) ($settledByPayment[$credit->transaction_id] ?? 0);
+
+            $credit->settled_on_arrival = $settled;
+            $credit->payment_total = round($settled + (float) $credit->amount, 2);
+        }
+
         $stats = [
             'total_held' => (float) $openCredits->sum('remaining'),
             'holders' => $openCredits->pluck('character_id')->unique()->count(),
+            // Balance spent on later invoices. Deliberately NOT the same as the
+            // money a payment settled the moment it arrived, which never became
+            // balance at all.
             'total_drawn' => (float) $drawdowns->flatten()->sum('amount'),
         ];
 
