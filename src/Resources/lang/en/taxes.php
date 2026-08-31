@@ -176,6 +176,7 @@ return [
     'filters' => 'Filters',
     'all_statuses' => 'All Statuses',
     'outstanding_status' => 'Outstanding (not fully paid)',
+    'partial_overdue_help' => 'Part paid, and past its due date. The status stays Partial because that records how much is covered; this flag records how late it is.',
     'all_paid_up' => 'All Paid Up!',
     'all_unpaid_members' => 'All Unpaid Members',
     'items_selected' => ':count items selected',

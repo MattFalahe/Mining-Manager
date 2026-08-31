@@ -149,6 +149,13 @@ class WalletTransferService
      */
     public function getUpfrontKeyword(): ?string
     {
+        // Two ways to turn this off: the feature toggle, or clearing the
+        // keyword. Both are checked, because an operator who flips the feature
+        // off expects it off regardless of what is still typed in the box.
+        if (!($this->settings->getFeatureFlags()['enable_upfront_payments'] ?? false)) {
+            return null;
+        }
+
         $keyword = trim((string) ($this->settings->getPaymentSettings()['upfront_keyword'] ?? ''));
 
         return $keyword === '' ? null : $keyword;

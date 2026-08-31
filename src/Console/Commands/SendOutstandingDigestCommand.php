@@ -31,12 +31,24 @@ class SendOutstandingDigestCommand extends Command
      */
     protected $signature = 'mining-manager:send-outstanding-digest
                             {--limit=25 : Maximum members to name in the message}
+                            {--force : Send even if the last digest was under a week ago}
                             {--dry-run : Print the digest without sending it}';
 
     /**
      * @var string
      */
     protected $description = 'Send directors a summary of mining tax that is still outstanding';
+
+    /**
+     * When the last digest went out. Stored as a setting rather than a column
+     * because it is one timestamp for the whole install.
+     */
+    protected const LAST_SENT_KEY = 'payment.last_outstanding_digest_at';
+
+    /**
+     * Days between digests once one has been sent.
+     */
+    protected const REPEAT_DAYS = 7;
 
     protected NotificationService $notificationService;
 
@@ -101,7 +113,29 @@ class SendOutstandingDigestCommand extends Command
             }
 
             if (empty($byCharacter)) {
+                // All clear. Forget when we last sent so the next cycle starts
+                // from scratch: the first digest after the next due date should
+                // arrive on time, not a week late because of this run.
+                $this->settingsService->updateSetting(self::LAST_SENT_KEY, null);
                 $this->info('Nothing outstanding. No digest sent.');
+
+                return self::SUCCESS;
+            }
+
+            // The chain is: invoices go out, the due date passes, THEN directors
+            // hear who has not paid, and again every 7 days until it is clear.
+            // Nagging before anything is actually late would train people to
+            // ignore it.
+            $anythingLate = $taxes->contains(fn ($t) => $t->isOverdue());
+
+            if (!$anythingLate && !$dryRun && !$this->option('force')) {
+                $this->info('Nothing is past its due date yet. No digest sent.');
+
+                return self::SUCCESS;
+            }
+
+            if (!$this->dueForSend() && !$dryRun && !$this->option('force')) {
+                $this->info('A digest was already sent within the last 7 days. Skipping.');
 
                 return self::SUCCESS;
             }
@@ -170,6 +204,8 @@ class SendOutstandingDigestCommand extends Command
                 'total_outstanding' => $total,
             ]);
 
+            $this->settingsService->updateSetting(self::LAST_SENT_KEY, Carbon::now()->toDateTimeString());
+
             $this->info('Digest sent.');
 
             return self::SUCCESS;
@@ -181,6 +217,27 @@ class SendOutstandingDigestCommand extends Command
             return self::FAILURE;
         } finally {
             $lock->release();
+        }
+    }
+
+    /**
+     * True when no digest has gone out for a week, or ever.
+     *
+     * Unreadable stored values are treated as "never sent" rather than
+     * swallowing the digest forever on a bad write.
+     */
+    protected function dueForSend(): bool
+    {
+        $last = $this->settingsService->getSetting(self::LAST_SENT_KEY);
+
+        if (empty($last)) {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($last)->lte(Carbon::now()->subDays(self::REPEAT_DAYS));
+        } catch (\Exception $e) {
+            return true;
         }
     }
 

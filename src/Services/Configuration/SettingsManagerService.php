@@ -236,7 +236,11 @@ class SettingsManagerService
             // pay ahead of being invoiced. Unlike a tax code it never expires
             // and is the same for everyone, so it can be pinned in a corp MOTD.
             // Empty disables the feature entirely.
-            'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
+            'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
+
+            // Surfaced here purely so the General tab can grey the keyword box
+            // out. The canonical read for runtime gating is getFeatureFlags().
+            'enable_upfront_payments' => (bool) $this->getSetting('features.enable_upfront_payments', false),
 
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.
@@ -348,6 +352,16 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
+                } elseif ($key === 'payment_upfront_keyword') {
+                    // Global for the same reason the moon owner corp is. There
+                    // is one tax program and one wallet it reads, so one keyword
+                    // serves every configured corporation. Saved per-corp it
+                    // would land in a context the matcher never reads, and the
+                    // feature would silently do nothing.
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting('payment.upfront_keyword', $value);
+                    $this->activeCorporationId = $savedContext;
                 } elseif (in_array($key, [
                     'payment_match_tolerance',
                     'payment_grace_period_hours',
@@ -355,7 +369,6 @@ class SettingsManagerService
                     'payment_accept_alt_characters',
                     'payment_cascade_remainder',
                     'payment_hold_surplus_as_credit',
-                    'payment_upfront_keyword',
                     'payment_overdue_paid_threshold_pct',
                 ])) {
                     // Payment settings use payment. prefix instead of general.
@@ -436,7 +449,7 @@ class SettingsManagerService
             // pay ahead of being invoiced. Unlike a tax code it never expires
             // and is the same for everyone, so it can be pinned in a corp MOTD.
             // Empty disables the feature entirely.
-            'upfront_keyword' => trim((string) $this->getSetting('payment.upfront_keyword', 'MM-UPFRONT')),
+            'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
 
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.
@@ -1325,6 +1338,7 @@ class SettingsManagerService
             'auto_calculate_taxes' => (bool) $this->getSetting('features.auto_calculate_taxes', true),
             'auto_generate_invoices' => (bool) $this->getSetting('features.auto_generate_invoices', true),
             'verify_wallet_transactions' => (bool) $this->getSetting('features.verify_wallet_transactions', true),
+            'enable_upfront_payments' => (bool) $this->getSetting('features.enable_upfront_payments', false),
 
             // Data retention
             'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),

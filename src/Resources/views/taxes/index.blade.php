@@ -428,6 +428,16 @@
                                                 <span class="badge badge-info">
                                                     <i class="fas fa-adjust"></i> {{ trans('mining-manager::taxes.partial') }}
                                                 </span>
+                                                {{-- A part-paid invoice keeps status 'partial' however late it
+                                                     gets, because the status column records how much is paid, not
+                                                     how late it is. Without this second badge the page would show
+                                                     a calm "Partial" for something the reminder is already
+                                                     chasing as overdue. --}}
+                                                @if($tax->isOverdue())
+                                                <span class="badge badge-danger" title="{{ trans('mining-manager::taxes.partial_overdue_help') }}">
+                                                    <i class="fas fa-exclamation-circle"></i> {{ trans('mining-manager::taxes.overdue') }}
+                                                </span>
+                                                @endif
                                                 @break
                                         @endswitch
                                     </td>

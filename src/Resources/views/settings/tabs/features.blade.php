@@ -314,6 +314,26 @@
                     {{ trans('mining-manager::settings.verify_wallet_transactions_help') }}
                 </small>
             </div>
+
+            <div class="custom-control custom-switch mb-3">
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="enable_upfront_payments"
+                       name="enable_upfront_payments"
+                       value="1"
+                       {{ old('enable_upfront_payments', $settings->enable_upfront_payments ?? false) ? 'checked' : '' }}>
+                <label class="custom-control-label" for="enable_upfront_payments">
+                    <i class="fas fa-hand-holding-usd"></i>
+                    <strong>Upfront Payments</strong>
+                </label>
+                <small class="form-text text-muted">
+                    Lets members pay before being invoiced by putting a standing keyword
+                    in the transfer reason. The payment settles whatever they already owe,
+                    oldest first, and the rest becomes account balance against future
+                    invoices. Off by default. The keyword itself is set under
+                    General &rarr; Payment Settings.
+                </small>
+            </div>
         </div>
     </div>
 

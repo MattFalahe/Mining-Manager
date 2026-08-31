@@ -992,6 +992,7 @@ class SettingsController extends Controller
             'auto_calculate_taxes' => 'nullable|boolean',
             'auto_generate_invoices' => 'nullable|boolean',
             'verify_wallet_transactions' => 'nullable|boolean',
+            'enable_upfront_payments' => 'nullable|boolean',
             'auto_cleanup_old_data' => 'nullable|boolean',
         ]);
 
@@ -1031,6 +1032,7 @@ class SettingsController extends Controller
                 'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
                 'auto_generate_invoices' => $request->has('auto_generate_invoices'),
                 'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),
+                'enable_upfront_payments' => $request->has('enable_upfront_payments'),
 
                 // Data retention
                 'ledger_retention_days' => $data['ledger_retention_days'],

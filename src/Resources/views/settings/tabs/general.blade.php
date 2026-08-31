@@ -437,9 +437,23 @@
                 </div>
             </div>
 
-            {{-- Standing keyword for paying ahead of an invoice. --}}
+            {{-- Standing keyword for paying ahead of an invoice. Greyed out with
+                 a banner when the feature is off, so the box does not look
+                 broken or invite someone to type into a field that does
+                 nothing. --}}
+            @php $upfrontOn = (bool) ($settings->enable_upfront_payments ?? false); @endphp
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-12">
+                    @unless($upfrontOn)
+                    <div class="alert alert-danger py-2">
+                        <i class="fas fa-times-circle mr-1"></i>
+                        <strong>Upfront payments are turned off.</strong>
+                        Nothing below has any effect until you enable the feature under
+                        Settings &rarr; Features &rarr; Upfront Payments.
+                    </div>
+                    @endunless
+                </div>
+                <div class="col-md-6" @unless($upfrontOn) style="opacity: 0.5;" @endunless>
                     <div class="form-group">
                         <label for="payment_upfront_keyword">
                             <i class="fas fa-hand-holding-usd"></i>
@@ -451,6 +465,7 @@
                                name="payment_upfront_keyword"
                                maxlength="32"
                                placeholder="MM-UPFRONT"
+                               @unless($upfrontOn) disabled @endunless
                                value="{{ old('payment_upfront_keyword', $settings->upfront_keyword ?? 'MM-UPFRONT') }}">
                         <small class="form-text text-muted">
                             A standing keyword members can put in the transfer reason to pay
@@ -462,6 +477,14 @@
                             off.</strong> It cannot overlap the tax code prefix, since both are
                             read from the same field.
                         </small>
+                        <div class="alert alert-info py-2 mt-2 mb-0">
+                            <i class="fas fa-globe mr-1"></i>
+                            <strong>One keyword for every corporation.</strong>
+                            This is stored globally, not per corporation, and is not
+                            affected by the corporation context selected above. There is
+                            one tax program reading one wallet, so a per-corporation
+                            keyword would be saved somewhere the matcher never looks.
+                        </div>
                     </div>
                 </div>
 
