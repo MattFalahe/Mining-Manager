@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
 
@@ -46,6 +47,7 @@ class ImportCharacterMiningCommand extends Command
         $characterId = $this->option('character_id');
         $days = (int) $this->option('days');
         $force = $this->option('force');
+        $frozen = 0;
         $cutoffDate = Carbon::now()->subDays($days);
 
         // Check if SeAT's CharacterMining model exists
@@ -93,7 +95,7 @@ class ImportCharacterMiningCommand extends Command
 
         $query->chunk(500, function ($entries) use (
             $valuationService, $force,
-            &$created, &$updated, &$skipped, &$errors,
+            &$created, &$updated, &$skipped, &$errors, &$frozen,
             &$touchedPairs, $progressBar
         ) {
         foreach ($entries as $entry) {
@@ -156,8 +158,22 @@ class ImportCharacterMiningCommand extends Command
                 $isTriglavian = TypeIdRegistry::isTriglavianOre($entry->type_id);
                 $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                // Delete existing if force mode
+                // Delete existing if force mode.
+                //
+                // Except when the row predates the classification cutover.
+                // Deleting and recreating it would hand old mining this
+                // version's categories and reset its rate to the column
+                // default, which is exactly the retroactive change the cutover
+                // exists to prevent. Leave those rows alone; the normal
+                // non-force path above still keeps their quantity and value
+                // current.
                 if ($existing && $force) {
+                    if (ClassificationEpoch::existedBeforeCutover($existing->created_at)) {
+                        $frozen++;
+                        $progressBar->advance();
+                        continue;
+                    }
+
                     $existing->delete();
                 }
 
@@ -209,6 +225,15 @@ class ImportCharacterMiningCommand extends Command
                 ['Errors', $errors],
             ]
         );
+
+        // Only ever non-zero under --force, and worth saying out loud rather
+        // than quietly not doing what was asked.
+        if ($frozen > 0) {
+            $this->line('');
+            $this->warn("{$frozen} entr" . ($frozen === 1 ? 'y was' : 'ies were') . " left as they are: they predate the");
+            $this->warn('classification cutover, so re-importing them would change the tax');
+            $this->warn('categories and rate that mining was already billed on.');
+        }
 
         // Update daily summaries for touched character+date pairs
         if ($touchedPairs->isNotEmpty()) {

@@ -34,10 +34,22 @@ class AddClassificationEpoch extends Migration
             return;
         }
 
+        // Never move a cutover that is already set: moving it forward would
+        // expose rows the guard had been covering. insertOrIgnore is not enough
+        // on its own here, because the unique index on (key, corporation_id)
+        // cannot constrain rows whose corporation_id is NULL - MySQL treats
+        // NULLs in a unique index as distinct from one another.
+        $already = DB::table('mining_manager_settings')
+            ->where('key', 'classification.epoch')
+            ->whereNull('corporation_id')
+            ->exists();
+
+        if ($already) {
+            return;
+        }
+
         $now = Carbon::now();
 
-        // insertOrIgnore, so re-running never moves a cutover that is already
-        // set. Moving it forward would expose rows the guard had been covering.
         DB::table('mining_manager_settings')->insertOrIgnore([
             'key' => 'classification.epoch',
             'value' => $now->toDateTimeString(),

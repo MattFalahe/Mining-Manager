@@ -885,17 +885,17 @@
                                 <label>Select Category</label>
                                 <select id="validateCategory" class="form-control">
                                     <option value="refined-materials">All Refined Materials (35 items) - Moon + Minerals + Ice Products</option>
-                                    <option value="materials">Moon Materials Only (20 items)</option>
-                                    <option value="minerals">Minerals Only (8 items)</option>
-                                    <option value="ice-products">Ice Products Only (7 items)</option>
-                                    <option value="moon">Moon Ores (60 items)</option>
-                                    <option value="ore">Regular Ores (48 items)</option>
-                                    <option value="compressed-ore">Compressed Ores (63 items)</option>
-                                    <option value="ice">Ice (20 items)</option>
-                                    <option value="gas">Gas (12 items)</option>
-                                    <option value="new-ores">New Ores YC124-YC126 (72 items)</option>
-                                    <option value="abyssal">Abyssal Ores (10 items)</option>
-                                    <option value="triglavian">Triglavian Ores (9 items)</option>
+                                    <option value="materials">Moon Materials Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('materials') }} items)</option>
+                                    <option value="minerals">Minerals Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('minerals') }} items)</option>
+                                    <option value="ice-products">Ice Products Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ice-products') }} items)</option>
+                                    <option value="moon">Moon Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('moon') }} items)</option>
+                                    <option value="ore">Regular Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ore') }} items)</option>
+                                    <option value="compressed-ore">Compressed Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('compressed-ore') }} items)</option>
+                                    <option value="ice">Ice ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ice') }} items)</option>
+                                    <option value="gas">Gas ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('gas') }} items)</option>
+                                    <option value="new-ores">New Ores YC124-YC126 ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('new-ores') }} items)</option>
+                                    <option value="abyssal">Abyssal Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('abyssal') }} items)</option>
+                                    <option value="triglavian">Triglavian Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('triglavian') }} items)</option>
                                     <option value="all">All Categories</option>
                                 </select>
                             </div>

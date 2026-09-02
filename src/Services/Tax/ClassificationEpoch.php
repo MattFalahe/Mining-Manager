@@ -49,9 +49,12 @@ class ClassificationEpoch
         self::$cached = null;
 
         try {
+            // Oldest row wins. If a duplicate ever appears, the cutover stays
+            // where it was rather than jumping forward and unfreezing history.
             $raw = DB::table('mining_manager_settings')
                 ->where('key', self::SETTING_KEY)
                 ->whereNull('corporation_id')
+                ->orderBy('id')
                 ->value('value');
 
             if ($raw) {

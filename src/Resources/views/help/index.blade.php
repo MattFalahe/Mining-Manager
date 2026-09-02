@@ -2629,7 +2629,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:diagnose-prices</code></td>
                                     <td>Test price provider connectivity, cache health, and pricing accuracy.<br>
-                                        <small class="text-muted">Options: <code>--detailed</code> full breakdown, <code>--test-provider</code> test current provider, <code>--show-missing</code> list items without prices, <code>--show-sources</code> cache vs fallback, <code>--show-coverage</code> coverage stats for all 357 items</small>
+                                        <small class="text-muted">Options: <code>--detailed</code> full breakdown, <code>--test-provider</code> test current provider, <code>--show-missing</code> list items without prices, <code>--show-sources</code> cache vs fallback, <code>--show-coverage</code> coverage stats for every tracked type</small>
                                     </td>
                                 </tr>
                                 <tr>
