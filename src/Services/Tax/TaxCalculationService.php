@@ -301,6 +301,22 @@ class TaxCalculationService
                     }
 
                     if ($existingTax) {
+                        // Same rule as recalculateTax: once a payment code has
+                        // gone out or money has arrived, the invoice stands.
+                        $frozenReason = $this->invoiceFreezeReason($existingTax);
+
+                        if ($frozenReason !== null) {
+                            Log::info('Mining Manager: left an issued tax record untouched during recalculation', [
+                                'mining_tax_id' => $existingTax->id,
+                                'character_id'  => $mainCharacterId,
+                                'reason'        => $frozenReason,
+                                'stored'        => (float) $existingTax->amount_owed,
+                                'recalculated'  => round($combinedTaxAmount, 2),
+                            ]);
+
+                            return;
+                        }
+
                         // Update existing
                         $existingTax->update([
                             'amount_owed' => round($combinedTaxAmount, 2),
@@ -1024,6 +1040,35 @@ class TaxCalculationService
      * @param Carbon $month
      * @return float
      */
+    /**
+     * Why a tax record must not have its amount rewritten, or null when it may.
+     *
+     * Two things pin an invoice: a payment code, because that code is already in
+     * a member's hands and is what the wallet matcher looks for; and any money
+     * received against it, because a changed total would silently re-open
+     * something that was settled.
+     *
+     * @return string|null
+     */
+    private function invoiceFreezeReason(MiningTax $tax): ?string
+    {
+        if (in_array($tax->status, ['paid', 'partial'], true)) {
+            return 'status:' . $tax->status;
+        }
+
+        if ((float) $tax->amount_paid > 0) {
+            return 'payment received';
+        }
+
+        // Any code, whatever its status. 'used' means it was redeemed, which is
+        // an even stronger reason to leave the invoice alone than 'active'.
+        $hasCode = DB::table('mining_tax_codes')
+            ->where('mining_tax_id', $tax->id)
+            ->exists();
+
+        return $hasCode ? 'tax code issued' : null;
+    }
+
     public function recalculateTax(int $characterId, Carbon $month): float
     {
         $startDate = $month->copy()->startOfMonth();
@@ -1043,6 +1088,24 @@ class TaxCalculationService
         }
 
         if ($tax) {
+            // An invoice that has been issued is a record of what somebody was
+            // asked to pay. Once a payment code exists, or money has landed
+            // against it, the amount stops being a derived figure and becomes a
+            // fact, so recalculation reports the new number without writing it.
+            $frozenReason = $this->invoiceFreezeReason($tax);
+
+            if ($frozenReason !== null) {
+                Log::info('Mining Manager: skipped recalculating an issued tax record', [
+                    'mining_tax_id' => $tax->id,
+                    'character_id'  => $characterId,
+                    'reason'        => $frozenReason,
+                    'stored'        => (float) $tax->amount_owed,
+                    'recalculated'  => round($taxAmount),
+                ]);
+
+                return (float) $tax->amount_owed;
+            }
+
             $tax->update([
                 'amount_owed' => round($taxAmount),
                 'calculated_at' => Carbon::now(),

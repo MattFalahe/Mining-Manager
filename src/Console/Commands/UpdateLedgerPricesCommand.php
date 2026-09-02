@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Tax\TaxCalculationService;
+use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
@@ -91,6 +92,14 @@ class UpdateLedgerPricesCommand extends Command
             $this->info("🔍 Mode: Updating unpriced entries + today's entries (last {$days} day(s))");
         }
 
+        // Mining that sits inside an invoice somebody has already been handed
+        // stops being a live figure. Re-pricing it here would leave the ledger
+        // disagreeing with the bill: the invoice is pinned by
+        // TaxCalculationService::invoiceFreezeReason(), the rows behind it were
+        // not. Only issued invoices pin their rows; a bill still being worked
+        // out can move, so its rows may keep re-pricing.
+        $this->excludeSettledPeriods($query);
+
         $totalEntries = $query->count();
 
         if ($totalEntries === 0) {
@@ -141,7 +150,16 @@ class UpdateLedgerPricesCommand extends Command
                     ->where('character_id', $entry->character_id)
                     ->value('corporation_id');
 
-                $taxRate = $taxService->getTaxRateForOre($entry->type_id, $characterCorpId);
+                // Mining from before the classification cutover keeps the rate
+                // it was given at import. Re-deriving it here would apply this
+                // release's new ore categories to work members already finished,
+                // and on installs that tax gas it would raise historical bills.
+                if (ClassificationEpoch::existedBeforeCutover($entry->created_at)) {
+                    $taxRate = (float) $entry->tax_rate;
+                } else {
+                    $taxRate = $taxService->getTaxRateForOre($entry->type_id, $characterCorpId);
+                }
+
                 $newTaxAmount = $newTotalValue * ($taxRate / 100);
 
                 $entry->update([
@@ -226,5 +244,34 @@ class UpdateLedgerPricesCommand extends Command
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Leave alone any row covered by a tax record that has been issued.
+     *
+     * "Issued" means the same three things it means everywhere else in the
+     * plugin: a payment code exists at all, money has arrived, or the status
+     * already says paid or partial. Any code counts, not just an active one:
+     * a redeemed code is still a code that went out to a member. period_start/period_end are the modern columns;
+     * older records only carry `month`, so fall back to that month's span.
+     *
+     * A bill still being worked out is not pinned, so its rows keep re-pricing
+     * and a later recalculation picks the new figures up.
+     */
+    private function excludeSettledPeriods($query): void
+    {
+        $query->whereRaw('NOT EXISTS (
+            SELECT 1
+            FROM mining_taxes t
+            LEFT JOIN mining_tax_codes c
+                   ON c.mining_tax_id = t.id
+            WHERE t.character_id = mining_ledger.character_id
+              AND mining_ledger.date >= COALESCE(t.period_start, t.month)
+              AND mining_ledger.date <= COALESCE(
+                    t.period_end,
+                    LAST_DAY(COALESCE(t.period_start, t.month))
+                  )
+              AND (t.status IN (?, ?) OR t.amount_paid > 0 OR c.id IS NOT NULL)
+        )', ['paid', 'partial']);
     }
 }

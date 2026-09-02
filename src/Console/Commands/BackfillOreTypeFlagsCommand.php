@@ -5,12 +5,15 @@ namespace MiningManager\Console\Commands;
 use Illuminate\Console\Command;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\ClassificationEpoch;
 use Illuminate\Support\Facades\DB;
 
 class BackfillOreTypeFlagsCommand extends Command
 {
     protected $signature = 'mining-manager:backfill-ore-types
-                            {--batch=1000 : Number of records to process per batch}';
+                            {--batch=1000 : Number of records to process per batch}
+                            {--scope=epoch : epoch (default, cutover forward) or all}
+                            {--dry-run : Report what would change without writing}';
 
     protected $description = 'Backfill ore-type classification flags (is_moon_ore, is_ice, is_gas, is_abyssal, is_triglavian) + ore_category for existing mining ledger entries';
 
@@ -22,18 +25,41 @@ class BackfillOreTypeFlagsCommand extends Command
         $this->line('');
 
         $batchSize = $this->option('batch');
+        $dryRun = (bool) $this->option('dry-run');
+        $scope = strtolower((string) $this->option('scope'));
 
-        // Count total records that need updating
-        $total = MiningLedger::count();
-        $this->info("📊 Found {$total} total ledger entries");
+        if (! in_array($scope, ['epoch', 'all'], true)) {
+            $this->error("Unknown --scope '{$scope}'. Use 'epoch' or 'all'.");
+            return Command::FAILURE;
+        }
+
+        $query = $this->scopedQuery($scope);
+
+        $total = (clone $query)->count();
+        $overall = MiningLedger::count();
+
+        if ($scope === 'epoch') {
+            $epoch = ClassificationEpoch::get();
+            if ($epoch === null) {
+                $this->error('No classification.epoch is recorded, so there is no cutover to work forward from.');
+                $this->line('Run the plugin migrations first, or pass --scope=all if you genuinely mean to re-stamp everything.');
+                return Command::FAILURE;
+            }
+            $this->info("📊 {$total} of {$overall} ledger entries are dated on or after the cutover ({$epoch->toDateTimeString()})");
+            $this->line('   Earlier mining keeps the classification it was billed on.');
+        } else {
+            $this->info("📊 Found {$total} total ledger entries");
+            $this->warn('   Scope "all" re-stamps mining from before the cutover, which can');
+            $this->warn('   disagree with invoices members have already been sent and paid.');
+        }
 
         if ($total === 0) {
-            $this->warn('⚠️  No ledger entries found.');
+            $this->warn('⚠️  Nothing to process.');
             return Command::SUCCESS;
         }
 
         $this->line('');
-        $this->info('🔄 Processing entries...');
+        $this->info($dryRun ? '🔍 Dry run, nothing will be written...' : '🔄 Processing entries...');
 
         $progressBar = $this->output->createProgressBar($total);
         $progressBar->start();
@@ -42,7 +68,9 @@ class BackfillOreTypeFlagsCommand extends Command
         $errors = 0;
 
         // Process in batches to avoid memory issues
-        MiningLedger::chunk($batchSize, function ($entries) use (&$updated, &$errors, $progressBar) {
+        $changesByCategory = [];
+
+        $query->chunkById($batchSize, function ($entries) use (&$updated, &$errors, &$changesByCategory, $progressBar, $dryRun) {
             foreach ($entries as $entry) {
                 try {
                     // Classify ore type using TypeIdRegistry — same logic as
@@ -67,14 +95,22 @@ class BackfillOreTypeFlagsCommand extends Command
                         $entry->is_triglavian != $isTriglavian ||
                         $entry->ore_category !== $oreCategory) {
 
-                        $entry->update([
-                            'is_moon_ore' => $isMoonOre,
-                            'is_ice' => $isIce,
-                            'is_gas' => $isGas,
-                            'is_abyssal' => $isAbyssal,
-                            'is_triglavian' => $isTriglavian,
-                            'ore_category' => $oreCategory,
-                        ]);
+                        // Worth seeing which way rows are moving, because a
+                        // category change is a tax-rate change.
+                        $from = $entry->ore_category ?? 'null';
+                        $key = $from . ' -> ' . $oreCategory;
+                        $changesByCategory[$key] = ($changesByCategory[$key] ?? 0) + 1;
+
+                        if (! $dryRun) {
+                            $entry->update([
+                                'is_moon_ore' => $isMoonOre,
+                                'is_ice' => $isIce,
+                                'is_gas' => $isGas,
+                                'is_abyssal' => $isAbyssal,
+                                'is_triglavian' => $isTriglavian,
+                                'ore_category' => $oreCategory,
+                            ]);
+                        }
 
                         $updated++;
                     }
@@ -98,12 +134,65 @@ class BackfillOreTypeFlagsCommand extends Command
         $this->info('║                         SUMMARY                            ║');
         $this->info('╠════════════════════════════════════════════════════════════╣');
         $this->info("║  ✅ Total processed:  {$total}");
-        $this->info("║  🔄 Updated:          {$updated}");
-        $this->info("║  ⏭️  Skipped:          " . ($total - $updated - $errors));
+        $this->info('║  🔄 ' . ($dryRun ? 'Would update:     ' : 'Updated:          ') . $updated);
+        $this->info("║  ⏭️  Unchanged:        " . ($total - $updated - $errors));
         $this->info("║  ❌ Errors:           {$errors}");
         $this->info('╚════════════════════════════════════════════════════════════╝');
 
+        if (! empty($changesByCategory)) {
+            $this->line('');
+            $this->info('Category movements:');
+            ksort($changesByCategory);
+            $rows = [];
+            foreach ($changesByCategory as $move => $count) {
+                $rows[] = explode(' -> ', $move) + [2 => null];
+                $rows[count($rows) - 1][2] = $count;
+            }
+            $this->table(['From', 'To', 'Rows'], $rows);
+            $this->line('A row moving between categories is charged at a different rate.');
+        }
+
+        if ($dryRun) {
+            $this->line('');
+            $this->comment('Dry run. Re-run without --dry-run to apply.');
+        }
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * Ledger rows to consider.
+     *
+     * The default 'epoch' scope stops at the classification cutover, so this
+     * command can only ever agree with what the rest of the plugin does: rows
+     * from before the upgrade keep the categories and rate they were billed on,
+     * and nothing a member has already paid for is quietly reclassified.
+     *
+     * 'all' is the deliberate escape hatch for an install that would rather have
+     * consistent history than untouched history. It is not the default for a
+     * reason.
+     */
+    private function scopedQuery(string $scope)
+    {
+        $query = MiningLedger::query();
+
+        if ($scope === 'all') {
+            return $query;
+        }
+
+        $epoch = ClassificationEpoch::get();
+
+        if ($epoch === null) {
+            // handle() refuses before reaching here; belt and braces so a future
+            // caller cannot turn "no epoch" into "rewrite everything".
+            return $query->whereRaw('1 = 0');
+        }
+
+        // created_at, not date: a row imported after the upgrade is new data
+        // even when the mining it describes is older. Rows with a null
+        // created_at predate timestamps and are excluded by this comparison,
+        // which is the intent.
+        return $query->where('created_at', '>=', $epoch);
     }
 
     /**

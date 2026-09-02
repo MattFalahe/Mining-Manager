@@ -130,6 +130,45 @@ Everything else about these three was wired up when they shipped, which is why i
 
 Timestamps also pick up an EVE-time label, added only where a sender has not already added one. `detectAndNotifyMismatches()` appends it itself while the other three callers do not, so a shared suffix would have rendered "14:00 EVE EVE" on the mismatch embed.
 
+
+### ✨ Every ore CCP has shipped since the registry was written
+
+`TypeIdRegistry` carried 401 type IDs and now carries 539. What was missing:
+
+- **IV-Grade for all fifteen classic ores.** The registry held base, II-Grade and III-Grade for Veldspar through Spodumain, and IV-Grade for none of them. They were being classified by a fallthrough rather than by rule.
+- **The Exordium 0-Grade tier** — half-yield Veldspar and Scordite for the starter region, plus Pyroxeres 0-Grade.
+- **Four X-Grade families** (Raspite, Polycrase, Moissanite, Kangite) and their compressed forms.
+- **Prismaticite**, from phased asteroid fields. The SDE files it under Material rather than Asteroid, which is why it had gone unnoticed.
+- **Nine gas colours** across the Cytoserocin and Mykoserocin sets, plus 27 compressed gas types and Fullerite-C32.
+- **Base Rakovene and Bezdnacine**, and the compressed forms of both, where only Talassonite's had been present.
+- 63 batch-compressed variants, recognised by `isCompressedOre()` but deliberately kept out of the priced set, since nothing mines them.
+
+CCP has also renamed every ore variant to a numeric scheme: what was Fragrant Nocxite is now Nocxite II-Grade, Thick Blue Ice is Blue Ice IV-Grade, and so on across the whole game. Type IDs never moved, so nothing was mis-taxed, but the comments in the registry described ore names that no longer exist and have been brought up to date.
+
+That rename is also why the reprocessing tab appeared broken. It resolves pasted ore names against `invTypes` with an exact match, so a member pasting a current in-game name against an out-of-date SDE had their row silently dropped. Updating the SDE fixes it; no code change was needed.
+
+### ✨ New ore categories apply from this version forward
+
+Recognising all of the above is an improvement, but applying it backwards would change what people owe for mining they finished weeks ago. On an install that taxes gas, the nine newly recognised gas types would move out of an untaxed bucket and into a taxed one, and historical bills would grow.
+
+So this release stamps a cutover. Mining that was already in the ledger keeps the rate and categories it was billed on, whatever recalculates it later. Mining from here is classified properly.
+
+Two paths would otherwise have applied it retroactively without anybody running a command: `mining-manager:update-ledger-prices` re-derives the rate from the registry on its nightly run, and `mining-manager:backfill-ore-types` re-stamps flags wholesale. Both now stop at the cutover. `backfill-ore-types` gained `--scope` (`epoch` by default, `all` as a deliberate escape hatch), a `--dry-run`, and a report of every category movement, since each one is a rate change.
+
+The cutover keys on when a row entered the ledger, not when the ore was mined, so importing older mining after upgrading still classifies and prices it correctly.
+
+### 🐛 An issued invoice could be rewritten
+
+`recalculateTax()` and the recalculation path inside `calculateTaxes()` both overwrote `amount_owed` with no check for whether the invoice had already gone out. Running `mining-manager:calculate-taxes --recalculate` could therefore change the total on an invoice a member had already been sent, and already paid.
+
+Both now leave an invoice alone once a payment code has been generated for it, money has arrived against it, or its status says paid or partial. The recalculated figure is logged alongside the stored one rather than replacing it.
+
+The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
+
+### 🐛 The price coverage report showed impossible percentages
+
+`mining-manager:diagnose-prices --show-coverage` carried its own hardcoded counts, which had drifted from the registry, so it reported Gas as 16 of 12 items and Regular Ores as 46 of 45. The denominators now come from the registry itself and cannot drift again.
+
 ### 🐛 Moon Planner: saving a planned pull threw a database error
 
 The planner resolved a refinery's moon by reading a `moon_id` column off `corporation_structures`. SeAT has no such column there. Saving a planned pull put that read in the SELECT list, so it failed outright with `SQLSTATE[42S22] Unknown column 'moon_id'` and the pull was never stored.

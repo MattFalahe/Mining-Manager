@@ -12,6 +12,7 @@ use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -269,6 +270,25 @@ class ProcessMiningLedgerCommand extends Command
                         ->first();
 
                     if ($existing) {
+                        // Mining from before the classification cutover keeps the
+                        // rate and categories it was given at the time. Quantity
+                        // and value still update, because observer data is
+                        // cumulative, but the rate they are multiplied by does
+                        // not move under a member retrospectively.
+                        if (ClassificationEpoch::existedBeforeCutover($existing->created_at)) {
+                            $frozenRate = (float) $existing->tax_rate;
+                            $data['tax_rate'] = $frozenRate;
+                            $data['tax_amount'] = $totalValue * ($frozenRate / 100);
+                            unset(
+                                $data['is_moon_ore'],
+                                $data['is_ice'],
+                                $data['is_gas'],
+                                $data['is_abyssal'],
+                                $data['is_triglavian'],
+                                $data['ore_category']
+                            );
+                        }
+
                         // Observer data is CUMULATIVE — quantity grows as miners mine more.
                         // Always update if quantity increased or if recalculating prices.
                         if ($recalculate || $entry->quantity > $existing->quantity) {
