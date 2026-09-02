@@ -53,41 +53,117 @@ class TypeIdRegistry
         11396, 17869, 17870,
         // Spodumain family
         19, 17466, 17467,
+
+        // IV-Grade. CCP's fourth tier, shipped after this list was first written.
+        // Mercoxit has no IV-Grade, which is why it is absent below.
+        46689, // Veldspar IV-Grade
+        46687, // Scordite IV-Grade
+        46686, // Pyroxeres IV-Grade
+        46685, // Plagioclase IV-Grade
+        46684, // Omber IV-Grade
+        46683, // Kernite IV-Grade
+        46682, // Jaspet IV-Grade
+        46681, // Hemorphite IV-Grade
+        46680, // Hedbergite IV-Grade
+        46679, // Gneiss IV-Grade
+        46675, // Dark Ochre IV-Grade
+        46677, // Crokite IV-Grade
+        46676, // Bistot IV-Grade
+        46678, // Arkonor IV-Grade
+        46688, // Spodumain IV-Grade
+
+        // 0-Grade is Exordium's starter-region ore: Veldspar and Scordite
+        // variants at roughly half the usual yield, deliberately low value so
+        // the starter region stays uninteresting to established players.
+        // Pyroxeres 0-Grade arrived later and has no compressed form.
+        92371, // Veldspar 0-Grade
+        92373, // Scordite 0-Grade
+        95395, // Pyroxeres 0-Grade
+
+        // X-Grade, faction construction ore built on Scordite (asteroid meta 4).
+        // Regular ore despite the separate SDE groups, so it takes the ore rate.
+        92565, // Raspite X-Grade
+        92566, // Polycrase X-Grade
+        92567, // Moissanite X-Grade
+        92568, // Kangite X-Grade
+
+        // Prismaticite, from phased asteroid fields in low and nullsec. The SDE
+        // files it under the Material category rather than Asteroid, which is why
+        // it never showed up in an Asteroid-category sweep, but its market group
+        // is Standard Ores and it is mined with a mining laser like anything else.
+        // Reprocesses to a random mineral, so the refined-value model cannot
+        // price it; it needs a market price to be taxed at all.
+        90041, // Prismaticite
     ];
 
     const COMPRESSED_REGULAR_ORES = [
         // Compressed Veldspar family (4 variants)
-        62516, 62517, 62518, 62519,  // Veldspar, Concentrated, Dense, Stable
+        62516, 62517, 62518, 62519,  // Veldspar, II-Grade, III-Grade, IV-Grade
         // Compressed Scordite family (4 variants)
-        62520, 62521, 62522, 62523,  // Scordite, Condensed, Massive, Glossy
+        62520, 62521, 62522, 62523,  // Scordite, II-Grade, III-Grade, IV-Grade
         // Compressed Pyroxeres family (4 variants)
-        62524, 62525, 62526, 62527,  // Pyroxeres, Solid, Viscous, Opulent
+        62524, 62525, 62526, 62527,  // Pyroxeres, II-Grade, III-Grade, IV-Grade
         // Compressed Plagioclase family (4 variants)
-        62528, 62529, 62530, 62531,  // Plagioclase, Azure, Rich, Sparkling
+        62528, 62529, 62530, 62531,  // Plagioclase, II-Grade, III-Grade, IV-Grade
         // Compressed Omber family (4 variants)
-        62532, 62533, 62534, 62535,  // Omber, Silvery, Golden, Platinoid
+        62532, 62533, 62534, 62535,  // Omber, II-Grade, III-Grade, IV-Grade
         // Compressed Kernite family (4 variants)
-        62536, 62537, 62538, 62539,  // Kernite, Luminous, Fiery, Resplendant
+        62536, 62537, 62538, 62539,  // Kernite, II-Grade, III-Grade, IV-Grade
         // Compressed Jaspet family (4 variants)
-        62540, 62541, 62542, 62543,  // Jaspet, Pure, Pristine, Immaculate
+        62540, 62541, 62542, 62543,  // Jaspet, II-Grade, III-Grade, IV-Grade
         // Compressed Hemorphite family (4 variants)
-        62544, 62545, 62546, 62547,  // Hemorphite, Vivid, Radiant, Scintillating
+        62544, 62545, 62546, 62547,  // Hemorphite, II-Grade, III-Grade, IV-Grade
         // Compressed Hedbergite family (4 variants)
-        62548, 62549, 62550, 62551,  // Hedbergite, Vitric, Glazed, Lustrous
+        62548, 62549, 62550, 62551,  // Hedbergite, II-Grade, III-Grade, IV-Grade
         // Compressed Gneiss family (4 variants)
-        62552, 62553, 62554, 62555,  // Gneiss, Iridescent, Prismatic, Brilliant
+        62552, 62553, 62554, 62555,  // Gneiss, II-Grade, III-Grade, IV-Grade
         // Compressed Dark Ochre family (4 variants)
-        62556, 62557, 62558, 62559,  // Dark Ochre, Onyx, Obsidian, Jet
+        62556, 62557, 62558, 62559,  // Dark Ochre, II-Grade, III-Grade, IV-Grade
         // Compressed Crokite family (4 variants)
-        62560, 62561, 62562, 62563,  // Crokite, Sharp, Crystalline, Pellucid
+        62560, 62561, 62562, 62563,  // Crokite, II-Grade, III-Grade, IV-Grade
         // Compressed Bistot family (4 variants)
-        62564, 62565, 62566, 62567,  // Bistot, Triclinic, Monoclinic, Cubic
+        62564, 62565, 62566, 62567,  // Bistot, II-Grade, III-Grade, IV-Grade
         // Compressed Arkonor family (4 variants)
-        62568, 62569, 62570, 62571,  // Arkonor, Crimson, Prime, Flawless
+        62568, 62569, 62570, 62571,  // Arkonor, II-Grade, III-Grade, IV-Grade
         // Compressed Spodumain family (4 variants)
-        62572, 62573, 62574, 62575,  // Spodumain, Bright, Gleaming, Dazzling
+        62572, 62573, 62574, 62575,  // Spodumain, II-Grade, III-Grade, IV-Grade
         // Compressed Mercoxit family (3 variants)
-        62586, 62587, 62588,  // Mercoxit, Magma, Vitreous
+        62586, 62587, 62588,  // Mercoxit, II-Grade, III-Grade
+
+        // Compressed 0-Grade. Pyroxeres 0-Grade has no compressed form.
+        92372, // Compressed Veldspar 0-Grade
+        92374, // Compressed Scordite 0-Grade
+
+        92818, // Compressed Raspite X-Grade
+        92819, // Compressed Polycrase X-Grade
+        92820, // Compressed Moissanite X-Grade
+        92821, // Compressed Kangite X-Grade
+        90307, // Compressed Prismaticite
+    ];
+
+    /**
+     * Batch Compressed ore, the output of the old batch compression.
+     * These can never appear in a mining ledger because nobody mines them, so
+     * they are deliberately kept out of the pricing set. They are here so
+     * isCompressedOre() answers correctly when one turns up in reprocessing.
+     */
+    const BATCH_COMPRESSED_REGULAR_ORES = [
+        28430, 28431, 28432, 46705, // Veldspar
+        28427, 28428, 28429, 46703, // Scordite
+        28424, 28425, 28426, 46702, // Pyroxeres
+        28421, 28422, 28423, 46701, // Plagioclase
+        28415, 28416, 28417, 46700, // Omber
+        28409, 28410, 28411, 46699, // Kernite
+        28406, 28407, 28408, 46698, // Jaspet
+        28403, 28404, 28405, 46697, // Hemorphite
+        28400, 28401, 28402, 46696, // Hedbergite
+        28397, 28398, 28399, 46695, // Gneiss
+        28394, 28395, 28396, 46694, // Dark Ochre
+        28391, 28392, 28393, 46693, // Crokite
+        28388, 28389, 28390, 46692, // Bistot
+        28367, 28385, 28387, 46691, // Arkonor
+        28418, 28419, 28420, 46704, // Spodumain
+        28412, 28413, 28414,        // Mercoxit
     ];
 
     // ============================================
@@ -239,10 +315,10 @@ class TypeIdRegistry
         16269, // Krystallos
 
         // Ice Variants (improved versions found in specific space)
-        17975, // Thick Blue Ice
-        17976, // Pristine White Glaze
-        17977, // Smooth Glacial Mass
-        17978, // Enriched Clear Icicle
+        17975, // Blue Ice IV-Grade
+        17976, // White Glaze IV-Grade
+        17977, // Glacial Mass IV-Grade
+        17978, // Clear Icicle IV-Grade
         28627, // Azure Ice
         28628, // Crystalline Icicle
     ];
@@ -252,24 +328,25 @@ class TypeIdRegistry
         28433, // Compressed Blue Ice
         28434, // Compressed Clear Icicle
         28435, // Compressed Dark Glitter
-        28436, // Compressed Enriched Clear Icicle
+        28436, // Compressed Clear Icicle IV-Grade
         28437, // Compressed Gelidus
         28438, // Compressed Glacial Mass
         28439, // Compressed Glare Crust
         28440, // Compressed Krystallos
-        28441, // Compressed Pristine White Glaze
-        28442, // Compressed Smooth Glacial Mass
-        28443, // Compressed Thick Blue Ice
+        28441, // Compressed White Glaze IV-Grade
+        28442, // Compressed Glacial Mass IV-Grade
+        28443, // Compressed Blue Ice IV-Grade
         28444, // Compressed White Glaze
     ];
 
     // ============================================
-    // GAS (12 items)
+    // GAS
     // ============================================
 
     const GAS_FULLERITES = [
-        // Fullerites (C-X) - 8 types
+        // Fullerites (C-X)
         30370, 30371, 30372, 30373, 30374, 30375, 30377, 30378,
+        30376, // Fullerite-C32
     ];
 
     const GAS_BOOSTERS = [
@@ -283,12 +360,54 @@ class TypeIdRegistry
         25279, // Azure Cytoserocin
         28629, // Gamboge Cytoserocin
         28630, // Chartreuse Cytoserocin
+        25273, // Golden Cytoserocin
+        25277, // Lime Cytoserocin
     ];
 
     const GAS_MYKOSEROCIN = [
         // Mykoserocin variants (used in Synth Booster production)
         28694, // Amber Mykoserocin
         28695, // Azure Mykoserocin
+        28696, // Celadon Mykoserocin
+        28697, // Golden Mykoserocin
+        28698, // Lime Mykoserocin
+        28699, // Malachite Mykoserocin
+        28700, // Vermillion Mykoserocin
+        28701, // Viridian Mykoserocin
+    ];
+
+    /**
+     * Compressed gas. None of this reaches a mining ledger either, but it is
+     * traded and reprocessed, so isGas() needs to recognise it.
+     */
+    const COMPRESSED_GAS = [
+        62377, // Compressed Amber Mykoserocin
+        62379, // Compressed Azure Mykoserocin
+        62380, // Compressed Celadon Mykoserocin
+        62381, // Compressed Golden Mykoserocin
+        62382, // Compressed Lime Mykoserocin
+        62383, // Compressed Malachite Mykoserocin
+        62384, // Compressed Vermillion Mykoserocin
+        62385, // Compressed Viridian Mykoserocin
+        62386, // Compressed Azure Cytoserocin
+        62387, // Compressed Celadon Cytoserocin
+        62388, // Compressed Chartreuse Cytoserocin
+        62389, // Compressed Gamboge Cytoserocin
+        62390, // Compressed Golden Cytoserocin
+        62391, // Compressed Lime Cytoserocin
+        62392, // Compressed Malachite Cytoserocin
+        62393, // Compressed Vermillion Cytoserocin
+        62394, // Compressed Viridian Cytoserocin
+        62396, // Compressed Amber Cytoserocin
+        62397, // Compressed Fullerite-C60
+        62398, // Compressed Fullerite-C70
+        62399, // Compressed Fullerite-C50
+        62400, // Compressed Fullerite-C84
+        62402, // Compressed Fullerite-C28
+        62403, // Compressed Fullerite-C72
+        62404, // Compressed Fullerite-C32
+        62405, // Compressed Fullerite-C540
+        62406, // Compressed Fullerite-C320
     ];
 
     const TRIGLAVIAN_ORES = [
@@ -378,15 +497,25 @@ class TypeIdRegistry
 
     const ABYSSAL_ORES = [
         52306,  // Talassonite (base)
-        56625,  // Abyssal Talassonite
-        56626,  // Hadal Talassonite
+        56625,  // Talassonite II-Grade
+        56626,  // Talassonite III-Grade
         62582,  // Compressed Talassonite
-        62583,  // Compressed Abyssal Talassonite
-        62584,  // Compressed Hadal Talassonite
-        56629,  // Abyssal Rakovene
-        56630,  // Hadal Rakovene
-        56627,  // Abyssal Bezdnacine
-        56628,  // Hadal Bezdnacine
+        62583,  // Compressed Talassonite II-Grade
+        62584,  // Compressed Talassonite III-Grade
+        56629,  // Rakovene II-Grade
+        56630,  // Rakovene III-Grade
+        56627,  // Bezdnacine II-Grade
+        56628,  // Bezdnacine III-Grade
+
+        52315,  // Rakovene (base)
+        52316,  // Bezdnacine (base)
+        62579,  // Compressed Rakovene
+        62580,  // Compressed Rakovene II-Grade
+        62581,  // Compressed Rakovene III-Grade
+        62576,  // Compressed Bezdnacine
+        62577,  // Compressed Bezdnacine II-Grade
+        62578,  // Compressed Bezdnacine III-Grade
+        76373,  // Nesosilicate Rakovene
     ];
 
     // ============================================
@@ -499,16 +628,16 @@ class TypeIdRegistry
      */
     const NOCXITE_ORES = [
         82016,  // Nocxite (base)
-        82017,  // Fragrant Nocxite (+5%)
-        82018,  // Intoxicating Nocxite (+10%)
-        82019,  // Ambrosial Nocxite (+15%)
+        82017,  // Nocxite II-Grade
+        82018,  // Nocxite III-Grade
+        82019,  // Nocxite IV-Grade
     ];
 
     const COMPRESSED_NOCXITE_ORES = [
         82304,  // Compressed Nocxite
-        82305,  // Compressed Fragrant Nocxite
-        82306,  // Compressed Intoxicating Nocxite
-        82307,  // Compressed Ambrosial Nocxite
+        82305,  // Compressed Nocxite II-Grade
+        82306,  // Compressed Nocxite III-Grade
+        82307,  // Compressed Nocxite IV-Grade
     ];
 
     /**
@@ -628,7 +757,13 @@ class TypeIdRegistry
      */
     public static function getAllGas(): array
     {
-        return array_merge(self::GAS_FULLERITES, self::GAS_BOOSTERS, self::GAS_CYTOSEROCIN, self::GAS_MYKOSEROCIN);
+        return array_merge(
+            self::GAS_FULLERITES,
+            self::GAS_BOOSTERS,
+            self::GAS_CYTOSEROCIN,
+            self::GAS_MYKOSEROCIN,
+            self::COMPRESSED_GAS
+        );
     }
 
     /**
@@ -975,6 +1110,7 @@ class TypeIdRegistry
     public static function isCompressedOre(int $typeId): bool
     {
         return in_array($typeId, self::COMPRESSED_REGULAR_ORES) ||
+               in_array($typeId, self::BATCH_COMPRESSED_REGULAR_ORES) ||
                in_array($typeId, self::COMPRESSED_MOON_ORES) ||
                in_array($typeId, self::COMPRESSED_MORDUNIUM_ORES) ||
                in_array($typeId, self::COMPRESSED_YTIRIUM_ORES) ||
@@ -1004,7 +1140,8 @@ class TypeIdRegistry
         return in_array($typeId, self::GAS_FULLERITES) ||
                in_array($typeId, self::GAS_BOOSTERS) ||
                in_array($typeId, self::GAS_CYTOSEROCIN) ||
-               in_array($typeId, self::GAS_MYKOSEROCIN);
+               in_array($typeId, self::GAS_MYKOSEROCIN) ||
+               in_array($typeId, self::COMPRESSED_GAS);
     }
 
     /**
