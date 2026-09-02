@@ -816,18 +816,30 @@ class DiagnosePricesCommand extends Command
         $this->line("  💎 Jackpot Detection: " . ($jackpotDetectionReady ? '✅ Ready' : '❌ Incomplete'));
         
         $this->newLine();
+        // Counted off the registry, like the table above. These numbers used to
+        // be typed in by hand and had drifted a long way from reality.
+        $breakdown = [
+            'Regular Ores'     => TypeIdRegistry::REGULAR_ORES,
+            'Compressed Ores'  => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
+            'Moon Ores'        => TypeIdRegistry::MOON_ORES,
+            'Compressed Moon'  => TypeIdRegistry::COMPRESSED_MOON_ORES,
+            'Ice'              => TypeIdRegistry::getAllIce(),
+            'Gas'              => TypeIdRegistry::getAllGas(),
+            'Minerals'         => TypeIdRegistry::MINERALS,
+            'Moon Materials'   => TypeIdRegistry::getAllMoonMaterials(),
+            'Ice Products'     => TypeIdRegistry::ICE_PRODUCTS,
+        ];
+
         $this->line("  <fg=yellow>📊 COVERAGE BREAKDOWN:</>");
-        $this->line("  - Regular Ores: 45 items (base + variants)");
-        $this->line("  - Compressed Ores: 45 items");
-        $this->line("  - Moon Ores: 60 items (base + improved + jackpot)");
-        $this->line("  - Compressed Moon: 60 items (base + improved + jackpot)");
-        $this->line("  - Ice: 16 items");
-        $this->line("  - Gas: 12 items");
-        $this->line("  - Minerals: 8 items");
-        $this->line("  - Moon Materials: 20 items");
-        $this->line("  - Ice Products: 7 items");
+
+        $everything = [];
+        foreach ($breakdown as $label => $ids) {
+            $this->line("  - {$label}: " . count(array_unique($ids)) . " items");
+            $everything = array_merge($everything, $ids);
+        }
+
         $this->line("  ───────────────────────");
-        $this->line("  <fg=green>TOTAL: 273 UNIQUE ITEMS!</>");
+        $this->line("  <fg=green>TOTAL: " . count(array_unique($everything)) . " UNIQUE ITEMS</>");
         $this->newLine();
         $this->line("  <fg=cyan>Note:</> Jackpot ores (40 items) are included in moon ore counts above");
     }
