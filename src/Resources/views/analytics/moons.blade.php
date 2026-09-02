@@ -97,8 +97,15 @@
                                 </option>
                             @endforeach
                         </select>
-                        {{-- Keep month in sync --}}
-                        <input type="hidden" name="month" value="{{ ($month ?? now())->format('Y-m') }}">
+                        {{-- No hidden month field here. There used to be one, to
+                             "keep month in sync", but the visible picker above is
+                             only hidden with CSS and still submits its value in
+                             both modes, so this was a second input with the same
+                             name in the same form. PHP keeps the LAST one, which
+                             was this server-rendered copy of the month the page
+                             already had, so picking a new month submitted it and
+                             then overwrote it with the old one. The page always
+                             came back on the month you started from. --}}
                     </div>
                 </form>
             </div>
@@ -139,6 +146,10 @@
 <script src="{{ asset('vendor/mining-manager/js/vendor/chart.min.js') }}"></script>
 <script>
 function toggleExtractionPicker() {
+    // Hiding is not the same as disabling: the month input keeps submitting
+    // from inside the hidden div, which is exactly what carries the month
+    // through into extraction mode. Do not "fix" this by adding a second
+    // month field.
     document.getElementById('monthPicker').style.display = 'none';
     document.getElementById('extractionPicker').style.display = '';
 }

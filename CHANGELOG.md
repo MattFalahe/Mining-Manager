@@ -108,6 +108,12 @@ Matching and crediting lived in four places that disagreed with each other. `Pay
 
 Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
 
+### 🐛 Moon Analytics ignored the month you picked
+
+The filter form carried two inputs named `month`: the visible picker, and a hidden one inside the extraction-mode block added to "keep month in sync". Hiding an element with CSS does not stop it submitting, so both went into the query string on every submit, and PHP keeps the last duplicate. The last one was the hidden field, still holding the month the page had been rendered with, so choosing a new month submitted it and then overwrote it with the old one. The page always came back where it started.
+
+The hidden field was never needed: the visible picker submits from inside its own hidden div in extraction mode, which is what carries the month across. Removed, with a note on the toggle function so nobody re-adds it.
+
 ### 🐛 The three Moon Planner notifications posted to Discord with no detail
 
 `formatFieldsForDiscord()` never learned about `extraction_started`, `next_extraction_planned` or `schedule_mismatch`. They fell through to the empty default, so the embed carried a title, a description and a footer and nothing else. The "Next Extraction Planned" ping said the next pull was "planned below" with nothing below it: no refinery, no moon, no date.
