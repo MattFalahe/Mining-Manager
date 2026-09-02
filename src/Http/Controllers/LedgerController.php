@@ -1546,6 +1546,7 @@ class LedgerController extends Controller
 
         $mineralTotals = [];   // mineralTypeId => total quantity
         $oreResults = [];
+        $unresolved = [];      // names invTypes did not recognise
         $totalOreValue = 0;
 
         foreach ($ores as $ore) {
@@ -1554,6 +1555,14 @@ class LedgerController extends Controller
 
             $typeId = $oreNameToId[$typeName] ?? null;
             if ($typeId === null) {
+                // Dropping this quietly is how a stale SDE looked like an ore
+                // being worthless: the row vanished from the result and nothing
+                // said why. Hand the name back so the page can say it did not
+                // recognise it.
+                if (! in_array($typeName, $unresolved, true)) {
+                    $unresolved[] = $typeName;
+                }
+
                 continue;
             }
 
@@ -1665,6 +1674,7 @@ class LedgerController extends Controller
             ],
             'minerals' => $mineralsOutput,
             'ores' => $oreResults,
+            'unresolved' => $unresolved,
         ]);
     }
 }

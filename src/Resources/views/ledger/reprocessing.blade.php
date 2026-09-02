@@ -91,6 +91,19 @@
 
         {{-- RIGHT SIDE: Results --}}
         <div class="col-md-8">
+            {{-- Anything the SDE could not place. Sits above the totals because
+                 the totals are wrong-by-omission while this is showing. --}}
+            <div class="alert alert-warning" id="unresolvedAlert" style="display: none;">
+                <h6 class="mb-2">
+                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                    {{ trans('mining-manager::ledger.reprocessing_unresolved_title') }}
+                </h6>
+                <ul class="mb-2 pl-4" id="unresolvedNames"></ul>
+                <small class="mb-0 d-block">
+                    {{ trans('mining-manager::ledger.reprocessing_unresolved_help') }}
+                </small>
+            </div>
+
             {{-- Summary Stats --}}
             <div class="row" id="summaryStats" style="display: none;">
                 <div class="col-md-4">
@@ -262,6 +275,21 @@ $(document).ready(function() {
     }
 
     function renderResults(data) {
+        // Names the SDE did not recognise. Without this they simply vanish from
+        // the totals, which is indistinguishable from the ore being worthless.
+        var unresolved = data.unresolved || [];
+
+        if (unresolved.length > 0) {
+            var items = unresolved.map(function (name) {
+                return '<li><code>' + $('<div>').text(name).html() + '</code></li>';
+            }).join('');
+
+            $('#unresolvedNames').html(items);
+            $('#unresolvedAlert').show();
+        } else {
+            $('#unresolvedAlert').hide();
+        }
+
         // Show summary stats
         $('#statOreValue').text(formatIsk(data.summary.total_ore_value));
         $('#statMineralValue').text(formatIsk(data.summary.total_mineral_value));
@@ -357,10 +385,14 @@ $(document).ready(function() {
                 if (response.success) {
                     renderResults(response);
                 } else {
+                    $('#unresolvedAlert').hide();
                     toastr.error(response.message || '{{ trans("mining-manager::ledger.unknown_error") }}');
                 }
             },
             error: function(xhr) {
+                // Otherwise the previous run's warning stays on screen next to
+                // nothing, reading as though it belongs to this attempt.
+                $('#unresolvedAlert').hide();
                 var msg = xhr.responseJSON ? xhr.responseJSON.message : '{{ trans("mining-manager::ledger.unknown_error") }}';
                 toastr.error(msg);
             },
@@ -372,6 +404,7 @@ $(document).ready(function() {
 
     $('#btnClear').on('click', function() {
         $('#oreInput').val('');
+        $('#unresolvedAlert').hide();
         $('#summaryStats').hide();
         $('#mineralsCard').hide();
         $('#oresCard').hide();

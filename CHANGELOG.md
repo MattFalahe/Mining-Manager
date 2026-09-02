@@ -165,6 +165,17 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### ✨ The reprocessing calculator says what it did not recognise
+
+An ore name the calculator could not resolve was dropped without a word. The row
+simply left the totals, which looks exactly like the ore being worthless, and that
+ambiguity is why a stale static-data file took two reports and a database dig to
+identify rather than five minutes.
+
+Names that cannot be placed are now listed above the results, with the totals
+explicitly described as excluding them, and a note that a name which looks right in
+game usually means the local static data is behind.
+
 ### 🐛 Settings export could not represent a multi-corporation install
 
 The export keyed its map on the setting name alone and threw `corporation_id`

@@ -295,4 +295,8 @@ return [
     'note_mining_trend' => 'Your daily mining quantity over the selected month.',
     'note_ore_distribution' => 'Breakdown of ore types you mined, by ISK value.',
     'note_monthly_comparison' => 'Side-by-side comparison of your mining across recent months.',
+
+    // Reprocessing: names invTypes could not place
+    'reprocessing_unresolved_title' => 'These names were not recognised and are not included in the totals below',
+    'reprocessing_unresolved_help' => 'Check the spelling against the name shown in game. If it looks right, the local EVE static data may be out of date, which happens when CCP renames or adds ore.',
 ];
