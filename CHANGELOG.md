@@ -108,6 +108,14 @@ Matching and crediting lived in four places that disagreed with each other. `Pay
 
 Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
 
+### ✨ Analytics opens on your own corporation
+
+Every analytics page defaulted to All Corporations, mixing every corp on the install into the charts and totals. That is rarely the question anyone is asking, and on a shared SeAT it quietly shows a director other people's mining before they have chosen to look at it.
+
+With no corporation in the query, the filter now defaults to the viewer's own corporation, and the dropdown lists it first. All Corporations stays as a deliberate second choice rather than the accident you land on.
+
+Two things it is careful about: an explicitly empty `corporation_id` means the viewer chose All Corporations and is honoured, so the choice survives every submit; and the default only applies when their corporation is actually one of the dropdown's options, since filtering to a corporation the select cannot show would leave the page reading "All Corporations" while quietly filtering to something else.
+
 ### 🐛 Moon Analytics ignored the month you picked
 
 The filter form carried two inputs named `month`: the visible picker, and a hidden one inside the extraction-mode block added to "keep month in sync". Hiding an element with CSS does not stop it submitting, so both went into the query string on every submit, and PHP keeps the last duplicate. The last one was the hidden field, still holding the month the page had been rendered with, so choosing a new month submitted it and then overwrote it with the old one. The page always came back where it started.

@@ -34,13 +34,48 @@ class AnalyticsController extends Controller
      * Extract corporation filter from request.
      * Returns null for "all corporations", or the corporation_id integer.
      *
-     * @param Request $request
+     * With no corporation_id in the query at all - a first visit, or a link
+     * from elsewhere - this defaults to the viewer's own corporation rather
+     * than every corporation on the install. Analytics opened on "All
+     * Corporations" mixes other people's mining into every chart and total,
+     * which is almost never the question being asked.
+     *
+     * has() rather than filled() is the important part: an empty
+     * corporation_id means the viewer deliberately chose All Corporations, and
+     * that has to survive. Treating empty as "no preference" would snap the
+     * dropdown back on every submit and make All Corporations unselectable.
+     *
+     * The default only applies when the viewer's corporation is actually in
+     * the list offered by the dropdown. Filtering to a corporation that is not
+     * an option would leave the select showing "All Corporations" while the
+     * page silently filtered to something else.
+     *
+     * @param  Request  $request
+     * @param  \Illuminate\Support\Collection|array|null  $available  Corporations the page offers
      * @return int|null
      */
-    protected function getCorporationFilter(Request $request): ?int
+    protected function getCorporationFilter(Request $request, $available = null): ?int
     {
-        $corpId = $request->input('corporation_id');
-        return $corpId ? (int) $corpId : null;
+        if ($request->has('corporation_id')) {
+            $corpId = $request->input('corporation_id');
+
+            return $corpId ? (int) $corpId : null;
+        }
+
+        $userCorporationId = $this->getUserCorporationId();
+
+        if (!$userCorporationId) {
+            return null;
+        }
+
+        $available = $available ?? $this->analyticsService->getCorporationsWithData();
+        $keys = $available instanceof \Illuminate\Support\Collection
+            ? $available->keys()->all()
+            : array_keys((array) $available);
+
+        // Loose comparison on purpose: these ids arrive as ints from the
+        // affiliation lookup and as string keys off a plucked collection.
+        return in_array($userCorporationId, $keys) ? (int) $userCorporationId : null;
     }
 
     /**
@@ -97,8 +132,8 @@ class AnalyticsController extends Controller
             $oreCategory = $request->input('ore_category');
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Get top miners based on grouping
@@ -151,8 +186,8 @@ class AnalyticsController extends Controller
                 : Carbon::now();
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Get chart data
@@ -198,8 +233,8 @@ class AnalyticsController extends Controller
                 : Carbon::now();
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Get detailed table data
@@ -237,8 +272,8 @@ class AnalyticsController extends Controller
 
         try {
             // Corporation filter — for compare, show ALL corporations (even without data)
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getAllCorporations();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Check if comparison data should be generated
