@@ -759,7 +759,14 @@ class MoonPlannerService
                     'planner_url' => $baseUrl . '/mining-manager/moon/planner',
                 ]);
 
-                $plan->update(['mismatch_notified_at' => Carbon::now()]);
+                // Write through the query builder, not the model. This plan has
+                // been through loadDisplayNames(), which puts moon_name and
+                // structure_name into its attribute bag, and neither is a real
+                // column. $plan->update() saves every dirty attribute, not just
+                // the one handed to it, so it would try to persist those too and
+                // the whole notification would fail on an unknown column.
+                MoonExtractionPlan::where('id', $plan->id)
+                    ->update(['mismatch_notified_at' => Carbon::now()]);
                 $fired++;
 
                 Log::info("Mining Manager: fired schedule_mismatch for plan {$plan->id}", [

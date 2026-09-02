@@ -165,6 +165,31 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 Moon Planner: the schedule-mismatch alert could never finish
+
+Every mismatch warning failed with `Unknown column 'moon_name'` and the notification
+never went out. `detectAndNotifyMismatches()` calls `loadDisplayNames()` so the alert
+can name the moon and the refinery, and that helper attaches `moon_name` and
+`structure_name` to the model. Neither is a real column. Saving the "already warned"
+latch through the model then tried to write them too, because Eloquent saves every
+dirty attribute rather than only the one it was handed.
+
+The latch is now written through the query builder, which touches one column and
+cannot pick up display fields. `loadDisplayNames()` carries a note about the trap,
+since the same shape would break any future caller that saves a model it has been
+through.
+
+### 🐛 Turning upfront payments off could wipe the keyword
+
+The keyword field is rendered disabled while the feature is off, and browsers do not
+submit disabled inputs. The save path read the absent field as an empty string and
+wrote it, so saving anything on the General tab with upfront payments switched off
+silently cleared a configured keyword. Switching the feature back on later left the
+box empty and matching quietly doing nothing.
+
+The keyword is now only written when the field was actually submitted. Deliberately
+emptying the box still turns it off, which was always a supported way to disable it.
+
 ### ✨ Resetting a month of payments now asks first
 
 `mining-manager:verify-payments --reset-month=YYYY-MM` un-does payment matching for a

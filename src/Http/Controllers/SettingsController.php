@@ -429,21 +429,34 @@ class SettingsController extends Controller
             // payment could read as either and the behaviour would depend on
             // matching order, which is not something an operator could ever
             // diagnose from the outside. Refuse the ambiguity instead.
-            $upfrontKeyword = trim((string) ($data['payment_upfront_keyword'] ?? ''));
+            //
+            // Only touch the stored keyword when the field was actually on the
+            // form. It is rendered disabled while the feature is off, and a
+            // disabled input is not submitted, so an absent key means "not
+            // offered" rather than "cleared". Writing an empty string here would
+            // wipe a configured keyword every time somebody saved the General
+            // tab with upfront payments switched off, and they would find it
+            // gone when they switched the feature back on. has() rather than
+            // filled(), so deliberately emptying the box still turns it off.
+            if ($request->has('payment_upfront_keyword')) {
+                $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
 
-            if ($upfrontKeyword !== '') {
-                $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
+                if ($upfrontKeyword !== '') {
+                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
 
-                if ($taxPrefix !== ''
-                    && (stripos($upfrontKeyword, $taxPrefix) !== false
-                        || stripos($taxPrefix, $upfrontKeyword) !== false)) {
-                    return redirect()->back()
-                        ->withInput()
-                        ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                    if ($taxPrefix !== ''
+                        && (stripos($upfrontKeyword, $taxPrefix) !== false
+                            || stripos($taxPrefix, $upfrontKeyword) !== false)) {
+                        return redirect()->back()
+                            ->withInput()
+                            ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                    }
                 }
-            }
 
-            $data['payment_upfront_keyword'] = $upfrontKeyword;
+                $data['payment_upfront_keyword'] = $upfrontKeyword;
+            } else {
+                unset($data['payment_upfront_keyword']);
+            }
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 
