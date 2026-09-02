@@ -13,6 +13,7 @@ use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\InvoiceCoverage;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -109,6 +110,7 @@ class ProcessMiningLedgerCommand extends Command
 
         $processed = 0;
         $updated = 0;
+        $billedSkips = 0;
         $skipped = 0;
         $errors = 0;
 
@@ -170,7 +172,7 @@ class ProcessMiningLedgerCommand extends Command
                 $settingsService, $recalculate, $cutoffDate,
                 &$processed, &$updated, &$skipped, &$errors,
                 &$uniqueObserverIds, &$uniqueCharacterIds, &$totalQuantity,
-                &$touchedPairsMap, &$jackpotCheckEntries,
+                &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips,
                 $progressBar
             ) {
             $byObserver = $chunk->groupBy('observer_id');
@@ -308,6 +310,22 @@ class ProcessMiningLedgerCommand extends Command
                             ->whereNull('observer_id')
                             ->first();
 
+                        // Dedup is a correction, and a correction to mining that
+                        // has already been billed is a change to the bill's
+                        // evidence. Leave those rows exactly as they were.
+                        if ($personalDupe && InvoiceCoverage::coversRow(
+                            (int) $personalDupe->character_id,
+                            $personalDupe->date
+                        )) {
+                            $billedSkips++;
+                            Log::info('Mining Manager: left a personal ledger row alone, an issued invoice covers it', [
+                                'character_id' => $personalDupe->character_id,
+                                'date' => (string) $personalDupe->date,
+                                'type_id' => $personalDupe->type_id,
+                            ]);
+                            $personalDupe = null;
+                        }
+
                         if ($personalDupe) {
                             $remainder = $personalDupe->quantity - $entry->quantity;
                             if ($remainder <= 0) {
@@ -428,7 +446,7 @@ class ProcessMiningLedgerCommand extends Command
                         ->whereNull('observer_id')
                         ->where('is_moon_ore', true)
                         ->where('date', '>=', $cutoffDate->toDateString())
-                        ->chunk(500, function ($orphans) use ($valuationSvc, &$cleaned, &$adjusted) {
+                        ->chunk(500, function ($orphans) use ($valuationSvc, &$cleaned, &$adjusted, &$billedSkips) {
                             foreach ($orphans as $orphan) {
                                 // Sum all observer quantities for same character+date+type
                                 $observerQty = MiningLedger::where('character_id', $orphan->character_id)
@@ -438,6 +456,16 @@ class ProcessMiningLedgerCommand extends Command
                                     ->sum('quantity');
 
                                 if ($observerQty <= 0) {
+                                    continue;
+                                }
+
+                                if (InvoiceCoverage::coversRow((int) $orphan->character_id, $orphan->date)) {
+                                    $billedSkips++;
+                                    Log::info('Mining Manager: left an orphaned ledger row alone, an issued invoice covers it', [
+                                        'character_id' => $orphan->character_id,
+                                        'date' => (string) $orphan->date,
+                                        'type_id' => $orphan->type_id,
+                                    ]);
                                     continue;
                                 }
 

@@ -165,6 +165,25 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 Dedup could rewrite mining that had already been billed
+
+Cross-source dedup exists because the character endpoint and the observer endpoint
+both report the same mining, so one of the two records has to give way. It ran on
+anything up to thirty days old and took no interest in whether an invoice already
+covered it. A late-arriving observer record could therefore delete or shrink a
+ledger row sitting behind an invoice a member had been sent and paid, leaving the
+bill with nothing to stand on.
+
+Three places did this: the import-time dedup and the orphan sweep in
+`mining-manager:process-ledger`, and the orphan sweep in
+`mining-manager:update-daily-summaries`. All three now leave covered rows exactly as
+they are and log each one they skip, with `process-ledger` reporting the count at the
+end of its run.
+
+The rule for what counts as issued now lives in one place rather than being written
+out slightly differently in each caller, and `mining-manager:update-ledger-prices`
+was moved onto it too.
+
 ### 🐛 The price coverage report showed impossible percentages
 
 `mining-manager:diagnose-prices --show-coverage` carried its own hardcoded counts, which had drifted from the registry, so it reported Gas as 16 of 12 items and Regular Ores as 46 of 45. The denominators now come from the registry itself and cannot drift again.
