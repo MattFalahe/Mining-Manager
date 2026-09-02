@@ -41,7 +41,9 @@ class VerifyWalletPaymentsCommand extends Command
                             {--character_id= : Verify payments for specific character}
                             {--auto-match : Automatically match payments to taxes}
                             {--ignore-cutover : Include payments dated before the verification cutover}
-                            {--reset-month= : Reset all payment data for a month (YYYY-MM) and re-match}';
+                            {--reset-month= : Reset all payment data for a month (YYYY-MM) and re-match}
+                            {--dry-run : With --reset-month, report what would be undone and change nothing}
+                            {--force : With --reset-month, skip the confirmation prompt}';
 
     /**
      * The console command description.
@@ -333,6 +335,8 @@ class VerifyWalletPaymentsCommand extends Command
         }
 
         $monthLabel = $month->format('F Y');
+        $dryRun = (bool) $this->option('dry-run');
+        $force = (bool) $this->option('force');
 
         $taxes = MiningTax::where('month', $month->format('Y-m-01'))
             ->orWhere(function ($q) use ($month) {
@@ -347,7 +351,71 @@ class VerifyWalletPaymentsCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("Found {$taxes->count()} tax records for {$monthLabel}");
+        // Work out exactly what is at stake before touching any of it. This
+        // command un-does payments: invoices go back to unpaid, the ISK recorded
+        // against them is cleared, and payment codes members are holding become
+        // live again. That is a reasonable thing to want after a bad match, and
+        // a very unreasonable thing to do to the wrong month by accident.
+        $taxIds = $taxes->pluck('id')->all();
+
+        $affected = $taxes->filter(function ($tax) {
+            return $tax->amount_paid > 0 || in_array($tax->status, ['paid', 'partial'], true);
+        });
+
+        $iskCleared = $affected->sum(function ($tax) {
+            return (float) $tax->amount_paid;
+        });
+
+        $allocationCount = PaymentAllocation::whereIn('mining_tax_id', $taxIds)->count();
+        $codeCount = TaxCode::whereIn('mining_tax_id', $taxIds)->where('status', 'used')->count();
+
+        $this->line('');
+        $this->warn("This will undo payment data for {$monthLabel}.");
+        $this->table(['What', 'Count'], [
+            ['Tax records in scope', $taxes->count()],
+            ['Paid or partial, reset to unpaid', $affected->count()],
+            ['ISK recorded as paid, cleared', number_format($iskCleared, 2)],
+            ['Payment allocation rows deleted', $allocationCount],
+            ['Used payment codes made active again', $codeCount],
+        ]);
+
+        if ($affected->isNotEmpty()) {
+            $this->line('');
+            $this->line('Invoices that would be reset:');
+            $this->table(
+                ['Tax', 'Character', 'Status', 'Owed', 'Paid'],
+                $affected->take(15)->map(function ($tax) {
+                    return [
+                        $tax->id,
+                        $tax->character_id,
+                        $tax->status,
+                        number_format((float) $tax->amount_owed, 2),
+                        number_format((float) $tax->amount_paid, 2),
+                    ];
+                })->all()
+            );
+
+            if ($affected->count() > 15) {
+                $this->line('  ... and ' . ($affected->count() - 15) . ' more');
+            }
+        }
+
+        if ($dryRun) {
+            $this->line('');
+            $this->comment('Dry run. Nothing was changed and no re-match was run.');
+
+            return Command::SUCCESS;
+        }
+
+        // confirm() answers with its default when there is nobody to ask, so a
+        // non-interactive run cancels here rather than quietly resetting a month.
+        if (! $force && ! $this->confirm("Reset payment data for {$monthLabel}?", false)) {
+            $this->info('Cancelled. Nothing was changed.');
+            $this->line('Running this non-interactively? Pass --force, ideally after --dry-run.');
+
+            return Command::SUCCESS;
+        }
+
         $this->info('Resetting payment data...');
 
         $resetCount = 0;

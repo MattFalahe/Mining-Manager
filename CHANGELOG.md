@@ -165,6 +165,22 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### ✨ Resetting a month of payments now asks first
+
+`mining-manager:verify-payments --reset-month=YYYY-MM` un-does payment matching for a
+whole month: invoices go back to unpaid, the ISK recorded against them is cleared,
+allocation rows are deleted, released transactions become claimable again, and payment
+codes members are already holding go live a second time. That is a reasonable thing to
+want after a bad match, and a very unreasonable thing to do to the wrong month by
+accident, which is what a bare `YYYY-MM` and no confirmation allowed.
+
+It now shows what is at stake before it does any of it: how many invoices are in scope,
+how many are actually paid or partial, the ISK about to be cleared, the allocation rows
+and payment codes involved, and a list of the invoices themselves. Then it asks.
+
+`--dry-run` prints all of that and stops. `--force` skips the prompt for scripted use.
+With neither, a non-interactive run cancels rather than proceeding on a default.
+
 ### 🐛 Dedup could rewrite mining that had already been billed
 
 Cross-source dedup exists because the character endpoint and the observer endpoint
