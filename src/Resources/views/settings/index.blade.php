@@ -290,7 +290,25 @@
                                     </div>
                                     <div class="card-body">
                                         <p>{{ trans('mining-manager::settings.export_description') }}</p>
-                                        <a href="{{ route('mining-manager.settings.export') }}" 
+
+                                        {{-- Off by default. A webhook URL is a
+                                             credential: anyone holding the file
+                                             can post to the channel. --}}
+                                        <div class="custom-control custom-checkbox mb-3">
+                                            <input type="checkbox"
+                                                   class="custom-control-input"
+                                                   id="include_webhooks">
+                                            <label class="custom-control-label" for="include_webhooks">
+                                                {{ trans('mining-manager::settings.export_include_webhooks') }}
+                                            </label>
+                                            <small class="form-text text-warning">
+                                                <i class="fas fa-exclamation-triangle mr-1"></i>
+                                                {{ trans('mining-manager::settings.export_webhooks_warning') }}
+                                            </small>
+                                        </div>
+
+                                        <a href="{{ route('mining-manager.settings.export') }}"
+                                           id="exportSettingsLink"
                                            class="btn btn-info btn-block">
                                             <i class="fas fa-download"></i>
                                             {{ trans('mining-manager::settings.export_now') }}
@@ -483,6 +501,14 @@
 @push('javascript')
 <script>
 $(document).ready(function() {
+    // Carry the webhook choice onto the export link, so the download itself
+    // says whether credentials are wanted rather than the server guessing.
+    $('#include_webhooks').on('change', function() {
+        var $link = $('#exportSettingsLink');
+        var base = $link.attr('href').split('?')[0];
+        $link.attr('href', this.checked ? base + '?include_webhooks=1' : base);
+    });
+
     // Corporation switching functionality
     $('#switchCorporationBtn').on('click', function() {
         const corporationId = $('#corporation_id').val();

@@ -103,6 +103,21 @@ class UpdateLedgerPricesCommand extends Command
 
         $totalEntries = $query->count();
 
+        // --all-unpriced drops the date window entirely. Invoiced periods are
+        // excluded above, so this can no longer disturb a bill, but it can still
+        // rewrite value and rate across the whole history in one go. Say how big
+        // that is and ask, unless the caller has already said to go ahead.
+        if ($allUnpriced && ! $force && $totalEntries > 0) {
+            $this->warn("--all-unpriced ignores the date window: {$totalEntries} entries across all time.");
+
+            if (! $this->confirm('Re-price all of them?', false)) {
+                $this->info('Cancelled. Nothing was changed.');
+                $lock->release();
+
+                return self::SUCCESS;
+            }
+        }
+
         if ($totalEntries === 0) {
             $this->info('✅ No entries need price updates.');
             return Command::SUCCESS;

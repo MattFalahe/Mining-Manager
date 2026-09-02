@@ -3,6 +3,7 @@
 namespace MiningManager\Services\Configuration;
 
 use MiningManager\Models\Setting;
+use MiningManager\Models\WebhookConfiguration;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -1418,45 +1419,182 @@ class SettingsManagerService
      *
      * @return array
      */
-    public function exportSettings(): array
+    /**
+     * Export settings for moving a configuration between installs.
+     *
+     * Every row carries its own corporation_id. A flat key => value map cannot
+     * represent this data: most keys exist several times over, once globally and
+     * once per configured corporation, and flattening them silently keeps
+     * whichever row the database happened to return last.
+     *
+     * Webhooks are opt-in because webhook_url is a credential. Anyone holding
+     * the exported file can post to those channels, so putting them in by
+     * default would turn a settings backup into a secret people email around.
+     *
+     * @param bool $includeWebhooks
+     * @return array
+     */
+    public function exportSettings(bool $includeWebhooks = false): array
     {
-        $settings = Setting::all()->mapWithKeys(function ($setting) {
-            return [$setting->key => $this->castValue($setting->value, $setting->type)];
-        })->toArray();
+        $settings = Setting::query()
+            ->orderBy('corporation_id')
+            ->orderBy('key')
+            ->get()
+            ->map(function ($setting) {
+                return [
+                    'key' => $setting->key,
+                    'value' => $setting->value,
+                    'type' => $setting->type,
+                    'corporation_id' => $setting->corporation_id,
+                    'description' => $setting->description,
+                ];
+            })
+            ->values()
+            ->all();
 
-        return [
+        $export = [
             'exported_at' => now()->toDateTimeString(),
             'version' => config('mining-manager.version', '1.0.0'),
+            'format' => 2,
             'settings' => $settings,
         ];
+
+        if ($includeWebhooks) {
+            $export['webhooks'] = WebhookConfiguration::query()
+                ->orderBy('corporation_id')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($hook) {
+                    $row = $hook->toArray();
+
+                    // Delivery statistics belong to the install that produced
+                    // them, not to the configuration being moved.
+                    foreach ([
+                        'id', 'success_count', 'failure_count',
+                        'last_success_at', 'last_failure_at', 'last_error',
+                        'created_at', 'updated_at',
+                    ] as $drop) {
+                        unset($row[$drop]);
+                    }
+
+                    return $row;
+                })
+                ->values()
+                ->all();
+        }
+
+        return $export;
     }
 
     /**
-     * Import settings from array
+     * Import a settings export.
+     *
+     * Understands both shapes: the current one, where settings are rows that
+     * each name their own corporation, and the original flat key => value map,
+     * which had no corporation information at all and is therefore treated as
+     * global. Files produced before this change still import exactly as they
+     * did before.
+     *
+     * Additive. Nothing is deleted, so importing a partial file tops up a
+     * configuration rather than replacing it.
      *
      * @param array $data
-     * @return void
+     * @return array{settings:int,webhooks:int,skipped:int,legacy:bool}
      */
-    public function importSettings(array $data)
+    public function importSettings(array $data): array
     {
         if (!isset($data['settings'])) {
             throw new \Exception('Invalid settings format');
         }
 
+        $rows = $data['settings'];
+        $legacy = !array_is_list($rows);
+
+        $imported = 0;
+        $skipped = 0;
+        $webhooks = 0;
+        $savedContext = $this->activeCorporationId;
+
         DB::beginTransaction();
-        
+
         try {
-            foreach ($data['settings'] as $key => $value) {
-                $this->updateSetting($key, $value);
+            if ($legacy) {
+                // Original format: a flat map with no corporation context, so
+                // everything lands globally, which is where it came from.
+                $this->activeCorporationId = null;
+
+                foreach ($rows as $key => $value) {
+                    $this->updateSetting($key, $value);
+                    $imported++;
+                }
+            } else {
+                foreach ($rows as $row) {
+                    if (!is_array($row) || !isset($row['key'])) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Write in the row's own context, not the caller's.
+                    $this->activeCorporationId = isset($row['corporation_id'])
+                        ? ($row['corporation_id'] === null ? null : (int) $row['corporation_id'])
+                        : null;
+
+                    $this->updateSetting(
+                        $row['key'],
+                        $row['value'] ?? null,
+                        $row['type'] ?? null
+                    );
+
+                    $imported++;
+                }
             }
-            
-            Log::info('Mining Manager: Settings imported successfully');
-            
+
+            if (!empty($data['webhooks']) && is_array($data['webhooks'])) {
+                foreach ($data['webhooks'] as $hook) {
+                    if (!is_array($hook) || empty($hook['name'])) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Name plus corporation identifies a webhook well enough to
+                    // re-import over itself without piling up duplicates.
+                    WebhookConfiguration::updateOrCreate(
+                        [
+                            'name' => $hook['name'],
+                            'corporation_id' => $hook['corporation_id'] ?? null,
+                        ],
+                        $hook
+                    );
+
+                    $webhooks++;
+                }
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
+            $this->activeCorporationId = $savedContext;
             throw $e;
         }
+
+        $this->activeCorporationId = $savedContext;
+
+        // updateSetting() drops each key's own cache entry as it writes. The
+        // wider flush (aggregate getters, tab visibility) belongs to the caller,
+        // which knows whether it is finishing a request.
+        Log::info('Mining Manager: settings imported', [
+            'settings' => $imported,
+            'webhooks' => $webhooks,
+            'skipped' => $skipped,
+            'legacy_format' => $legacy,
+        ]);
+
+        return [
+            'settings' => $imported,
+            'webhooks' => $webhooks,
+            'skipped' => $skipped,
+            'legacy' => $legacy,
+        ];
     }
 
     /**

@@ -1094,10 +1094,13 @@ class SettingsController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function export()
+    public function export(Request $request)
     {
         try {
-            $settings = $this->settingsService->exportSettings();
+            // Webhook URLs are credentials, so they travel only when asked for.
+            $settings = $this->settingsService->exportSettings(
+                $request->boolean('include_webhooks')
+            );
 
             return response()->json($settings, 200, [
                 'Content-Type' => 'application/json',
@@ -1132,10 +1135,27 @@ class SettingsController extends Controller
                 throw new \Exception('Invalid JSON file: ' . json_last_error_msg());
             }
 
-            $this->settingsService->importSettings($settings);
+            $result = $this->settingsService->importSettings($settings);
+            $this->clearSettingsCache();
+
+            $message = "Imported {$result['settings']} setting(s)";
+
+            if ($result['webhooks'] > 0) {
+                $message .= " and {$result['webhooks']} webhook(s)";
+            }
+
+            if ($result['skipped'] > 0) {
+                $message .= ", skipped {$result['skipped']} unreadable row(s)";
+            }
+
+            if ($result['legacy']) {
+                $message .= '. This file predates per-corporation export, so everything'
+                    . ' was applied globally. Re-export from the source install to keep'
+                    . ' corporation settings separate.';
+            }
 
             return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Settings imported successfully');
+                ->with('success', $message);
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Error importing settings: ' . $e->getMessage());

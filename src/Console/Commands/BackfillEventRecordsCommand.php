@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Events\EventMiningAggregator;
 
@@ -34,7 +35,31 @@ class BackfillEventRecordsCommand extends Command
 
     protected $description = 'Populate event_mining_records for existing events (one-off backfill after migration)';
 
+        /**
+     * Acquire the run lock, then do the work.
+     *
+     * Two of these running at once would duplicate effort at best and interleave
+     * writes to the same rows at worst. Deliberately NOT named run(): Symfony's
+     * Command already has one, and shadowing it breaks every artisan call.
+     */
     public function handle(EventMiningAggregator $aggregator): int
+    {
+        $lock = Cache::lock('mining-manager:backfill-event-records', 3600);
+
+        if (! $lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleLocked($aggregator);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleLocked(EventMiningAggregator $aggregator): int
     {
         $query = MiningEvent::query();
 

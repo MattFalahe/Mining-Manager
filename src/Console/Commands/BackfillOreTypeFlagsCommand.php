@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Tax\ClassificationEpoch;
@@ -17,7 +18,31 @@ class BackfillOreTypeFlagsCommand extends Command
 
     protected $description = 'Backfill ore-type classification flags (is_moon_ore, is_ice, is_gas, is_abyssal, is_triglavian) + ore_category for existing mining ledger entries';
 
+        /**
+     * Acquire the run lock, then do the work.
+     *
+     * Two of these running at once would duplicate effort at best and interleave
+     * writes to the same rows at worst. Deliberately NOT named run(): Symfony's
+     * Command already has one, and shadowing it breaks every artisan call.
+     */
     public function handle()
+    {
+        $lock = Cache::lock('mining-manager:backfill-ore-types', 3600);
+
+        if (! $lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleLocked();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleLocked()
     {
         $this->info('╔════════════════════════════════════════════════════════════╗');
         $this->info('║   Mining Manager - Backfill Ore Type Flags                ║');

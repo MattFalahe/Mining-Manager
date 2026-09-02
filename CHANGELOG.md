@@ -165,6 +165,46 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 Settings export could not represent a multi-corporation install
+
+The export keyed its map on the setting name alone and threw `corporation_id`
+away. Most keys exist several times over, once globally and once for each
+configured corporation, so they collapsed into one entry each and whichever row
+the database returned last silently won. Import then wrote everything back into a
+single context. Webhooks were never in the file at all, because they live in their
+own table and the export only read the settings one.
+
+Settings now export as rows that each carry their own corporation, and import
+writes each row into the context it names. Files produced by the old export still
+import exactly as before, treated as global, and say so afterwards.
+
+Webhooks can now travel too, but only when asked for: a webhook URL is a
+credential, and anyone holding the file can post to that channel. The checkbox
+says as much, and delivery statistics stay behind with the install that earned
+them. Re-importing matches on name and corporation, so it updates rather than
+piling up duplicates.
+
+### ✨ Six commands that could run twice at once now hold a lock
+
+`backfill-ore-types`, `backfill-event-records`, `backfill-extraction-history`,
+`backfill-extraction-notifications`, `restore-data` and `initialize` all write, and
+none of them checked whether another copy was already running. Two at once would
+duplicate work at best and interleave writes to the same rows at worst. Every other
+writing command in the plugin already took a lock; these now do too, released in a
+`finally` so a failure cannot leave one stuck.
+
+### ✨ --all-unpriced says how much it is about to touch
+
+The flag drops the date window entirely. Invoiced periods are excluded from
+re-pricing now, so it can no longer disturb a bill, but it can still rewrite value
+and rate across all of history in one go. It reports the count and asks first.
+
+### 🐛 restore-data could leave constraint checks switched off
+
+The restore disables foreign key checks and turned them back on at the end, but an
+exception on the way there skipped that line and left the connection accepting rows
+it should have rejected. It is a `finally` now.
+
 ### 🐛 Moon Planner: the schedule-mismatch alert could never finish
 
 Every mismatch warning failed with `Unknown column 'moon_name'` and the notification
