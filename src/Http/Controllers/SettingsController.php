@@ -365,6 +365,7 @@ class SettingsController extends Controller
             'payment_cascade_remainder' => 'nullable|boolean',
             'payment_hold_surplus_as_credit' => 'nullable|boolean',
             'payment_upfront_keyword' => 'nullable|string|max:32',
+            'payment_refund_keyword' => 'nullable|string|max:32',
             'payment_overdue_paid_threshold_pct' => 'nullable|numeric|min:0|max:100',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
@@ -438,6 +439,11 @@ class SettingsController extends Controller
             // tab with upfront payments switched off, and they would find it
             // gone when they switched the feature back on. has() rather than
             // filled(), so deliberately emptying the box still turns it off.
+            // Null when the field was not on the form, which happens whenever
+            // upfront payments are off. The refund guard below reads it and
+            // falls back to what is stored.
+            $upfrontKeyword = null;
+
             if ($request->has('payment_upfront_keyword')) {
                 $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
 
@@ -456,6 +462,32 @@ class SettingsController extends Controller
                 $data['payment_upfront_keyword'] = $upfrontKeyword;
             } else {
                 unset($data['payment_upfront_keyword']);
+            }
+
+            // The refund keyword is read from the same field as the other two,
+            // so it has to be distinguishable from both. An overlap would make
+            // a transfer readable as more than one thing and the behaviour
+            // would depend on matching order, which nobody could diagnose from
+            // the outside.
+            if ($request->has('payment_refund_keyword')) {
+                $refundKeyword = trim((string) $data['payment_refund_keyword']);
+
+                if ($refundKeyword !== '') {
+                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
+                    $upfront = trim((string) ($upfrontKeyword ?? ($this->settingsService->getPaymentSettings()['upfront_keyword'] ?? '')));
+
+                    foreach (array_filter([$taxPrefix, $upfront]) as $other) {
+                        if (stripos($refundKeyword, $other) !== false || stripos($other, $refundKeyword) !== false) {
+                            return redirect()->back()
+                                ->withInput()
+                                ->with('error', "The refund keyword cannot overlap {$other}. Both are read from the transfer reason, so an overlap would make a payment readable as either. Pick something clearly different, for example MM-REFUND.");
+                        }
+                    }
+                }
+
+                $data['payment_refund_keyword'] = $refundKeyword;
+            } else {
+                unset($data['payment_refund_keyword']);
             }
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();

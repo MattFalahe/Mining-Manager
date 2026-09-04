@@ -501,6 +501,26 @@
 
                 <div class="col-md-6">
                     <div class="form-group">
+                        <label for="payment_refund_keyword">
+                            <i class="fas fa-undo"></i>
+                            {{ trans('mining-manager::taxes.refund_keyword_label') }}
+                            <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="payment_refund_keyword"
+                               name="payment_refund_keyword"
+                               maxlength="32"
+                               placeholder="MM-REFUND"
+                               value="{{ old('payment_refund_keyword', $settings->refund_keyword ?? 'MM-REFUND') }}">
+                        <small class="form-text text-muted">
+                            {{ trans('mining-manager::taxes.refund_keyword_help') }}
+                        </small>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="form-group">
                         <label for="payment_overdue_paid_threshold_pct">
                             <i class="fas fa-percentage"></i>
                             Treat as overdue below (% paid)

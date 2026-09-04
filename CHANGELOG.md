@@ -214,12 +214,18 @@ Until that happens the refund reads **Awaiting transfer**, and the total of ever
 waiting sits at the top of the page. That number is the one thing there that is a promise
 rather than a fact: money agreed to be returned and not yet gone.
 
+A refund is recognised by a keyword in the transfer reason, `MM-REFUND` by default and
+configurable next to the upfront one. The dialog shows the keyword to copy before you go
+and send the ISK. It is not decoration: an SRP payout, a ship reimbursement and a refund
+are all the same kind of wallet entry to the same person, and without something to tell
+them apart a reimbursement that happened to match a refund would take a real debt off the
+books. The keyword cannot overlap the tax code prefix or the upfront keyword, since all
+three are read from the same field.
+
 Refunds are looked for across every wallet division, since tax arrives in a configured one
-but a refund leaves from whichever division had the ISK. Matching is on the withdrawal a
-person makes by hand, not merely on money leaving, because market escrow also leaves the
-wallet towards characters in their thousands. If two transfers both fit, neither is
-chosen and the refund stays pending: marking money returned when it might not have been is
-worse than a person looking at it.
+but a refund leaves from whichever division had the ISK. If two transfers both fit,
+neither is chosen and the refund stays pending: marking money returned when it might not
+have been is worse than a person looking at it.
 
 ### ✨ Switching upfront payments off leaves held balances alone
 

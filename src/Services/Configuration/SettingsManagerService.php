@@ -239,6 +239,14 @@ class SettingsManagerService
             // Empty disables the feature entirely.
             'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
 
+            // The mirror of that, for money going the other way. A refund is a
+            // corporation_account_withdrawal to a character, and so is an SRP
+            // payout or any other reimbursement, so amount and recipient alone
+            // cannot tell them apart. Requiring this in the transfer reason
+            // means a refund only confirms against a transfer meant to be one.
+            // Global for the same reason the other is: one wallet, one keyword.
+            'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
+
             // Surfaced here purely so the General tab can grey the keyword box
             // out. The canonical read for runtime gating is getFeatureFlags().
             'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
@@ -353,6 +361,12 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
+                } elseif ($key === 'payment_refund_keyword') {
+                    // Global, like the upfront keyword and for the same reason.
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting('payment.refund_keyword', $value);
+                    $this->activeCorporationId = $savedContext;
                 } elseif ($key === 'payment_upfront_keyword') {
                     // Global for the same reason the moon owner corp is. There
                     // is one tax program and one wallet it reads, so one keyword
@@ -451,6 +465,14 @@ class SettingsManagerService
             // and is the same for everyone, so it can be pinned in a corp MOTD.
             // Empty disables the feature entirely.
             'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
+
+            // The mirror of that, for money going the other way. A refund is a
+            // corporation_account_withdrawal to a character, and so is an SRP
+            // payout or any other reimbursement, so amount and recipient alone
+            // cannot tell them apart. Requiring this in the transfer reason
+            // means a refund only confirms against a transfer meant to be one.
+            // Global for the same reason the other is: one wallet, one keyword.
+            'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
 
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.

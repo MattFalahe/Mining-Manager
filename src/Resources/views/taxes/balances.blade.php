@@ -221,6 +221,18 @@
             <div class="modal-body">
                 <p class="text-muted small">{{ trans('mining-manager::taxes.refund_intro') }}</p>
 
+                {{-- The keyword is the whole reason this can tell itself apart
+                     from an SRP payout, so it goes above everything else and in
+                     a size somebody will actually copy. --}}
+                <div class="alert alert-info py-2 px-3">
+                    <div class="small mb-1">{{ trans('mining-manager::taxes.refund_keyword_instruction') }}</div>
+                    <code id="rfKeyword" style="font-size: 1.1rem;">{{ $refundKeyword }}</code>
+                    <button type="button" class="btn btn-sm btn-outline-info ml-2" onclick="copyRefundKeyword()">
+                        <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy') }}
+                    </button>
+                    <div class="small mt-1">{{ trans('mining-manager::taxes.refund_keyword_why') }}</div>
+                </div>
+
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <small class="text-muted d-block">{{ trans('mining-manager::taxes.refund_holder') }}</small>
@@ -261,6 +273,25 @@
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
+function copyRefundKeyword() {
+    var text = $('#rfKeyword').text();
+
+    // Clipboard API needs a secure context, which an internal SeAT install
+    // often is not, so fall back to selecting it for a manual copy.
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(function() {
+            toastr.success('{{ trans("mining-manager::taxes.copied") }}');
+        });
+        return;
+    }
+
+    var range = document.createRange();
+    range.selectNodeContents(document.getElementById('rfKeyword'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    toastr.info('{{ trans("mining-manager::taxes.copy_manual") }}');
+}
+
 function openRefund(creditId, holder, available) {
     $('#rfCreditId').val(creditId);
     $('#rfHolder').text(holder);

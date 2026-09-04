@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\PaymentCredit;
+use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Models\PaymentRefund;
 
 /**
@@ -22,6 +23,27 @@ use MiningManager\Models\PaymentRefund;
  */
 class RefundService
 {
+    private SettingsManagerService $settings;
+
+    public function __construct(SettingsManagerService $settings)
+    {
+        $this->settings = $settings;
+    }
+
+    /**
+     * The word a director puts in the transfer reason so this is recognisable.
+     *
+     * Falls back to the default rather than to nothing: an empty keyword would
+     * quietly widen matching to every withdrawal of the right size, which is
+     * exactly what the keyword exists to prevent.
+     */
+    public function keyword(): string
+    {
+        $keyword = trim((string) ($this->settings->getPaymentSettings()['refund_keyword'] ?? ''));
+
+        return $keyword !== '' ? $keyword : 'MM-REFUND';
+    }
+
     /**
      * A refund and an outgoing transfer are the same event if they agree to
      * within this many ISK. Wallet amounts are exact, so this only absorbs
@@ -173,6 +195,7 @@ class RefundService
         }
 
         $since = Carbon::now()->subDays(self::MATCH_WINDOW_DAYS);
+        $keyword = $this->keyword();
         $confirmed = 0;
         $ambiguous = 0;
 
@@ -199,7 +222,19 @@ class RefundService
                 $query->whereNotIn('id', $claimed);
             }
 
-            $candidates = $query->orderBy('date')->limit(2)->get();
+            // The keyword is what separates a refund from an SRP payout, a
+            // ship reimbursement, or any other reason a corporation hands a
+            // member money. Amount and recipient alone cannot tell those apart,
+            // and confirming a refund against somebody's SRP would take a real
+            // debt off the books.
+            $candidates = $query->orderBy('date')->get()
+                ->filter(function ($row) use ($keyword) {
+                    $text = trim(($row->reason ?? '') . ' ' . ($row->description ?? ''));
+
+                    return $text !== '' && stripos($text, $keyword) !== false;
+                })
+                ->values()
+                ->take(2);
 
             if ($candidates->isEmpty()) {
                 continue;

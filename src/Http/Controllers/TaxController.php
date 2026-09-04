@@ -2834,6 +2834,10 @@ class TaxController extends Controller
             // wallet shows, has not. Worth surfacing: it is the one number here
             // that represents a promise rather than a fact.
             'refunds' => $refunds,
+            // Shown in the refund dialog so a director knows what to type into
+            // the transfer. Without it in the reason the refund cannot tell
+            // itself apart from an SRP payout and will not confirm.
+            'refundKeyword' => app(\MiningManager\Services\Tax\RefundService::class)->keyword(),
             'pendingRefundTotal' => (float) $refunds->flatten()
                 ->where('status', \MiningManager\Models\PaymentRefund::STATUS_PENDING)
                 ->sum('amount'),

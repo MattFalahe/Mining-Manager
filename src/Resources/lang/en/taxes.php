@@ -403,6 +403,13 @@ return [
     'assign_no_invoice_hint' => 'They have nothing outstanding, so this will be held as account balance.',
 
     // Refunding held account balance
+    'refund_keyword_instruction' => 'Put this in the transfer reason when you send the ISK:',
+    'refund_keyword_why' => 'Without it the refund cannot tell itself apart from an SRP payout or any other reimbursement, and will stay pending until somebody marks it sent by hand.',
+    'refund_keyword_label' => 'Refund keyword',
+    'refund_keyword_help' => 'Goes in the reason of the transfer when you refund a balance. It is how a refund is recognised in the wallet, so it must not overlap the tax code prefix or the upfront keyword.',
+    'copy' => 'Copy',
+    'copied' => 'Copied.',
+    'copy_manual' => 'Selected it for you: copy with Ctrl+C.',
     'refund_balance' => 'Refund',
     'refund_title' => 'Refund held balance',
     'refund_intro' => 'This records the refund and takes it off their balance straight away. The ISK itself you send in game: EVE has no way for a plugin to move money. The refund stays pending until that transfer shows up in the corporation wallet.',
