@@ -242,6 +242,12 @@ return [
     'error_refreshing_tracking' => 'Error refreshing tracking data',
     'regenerate_confirm' => 'Are you sure you want to regenerate tax codes? Existing codes will be replaced.',
     'code_copied' => 'Tax code copied to clipboard',
+
+    // These three were referenced by buttons and result panels but never
+    // defined, so the raw key was showing on screen instead of a word.
+    'generating' => 'Generating...',
+    'regenerating' => 'Regenerating...',
+    'errors' => 'Errors',
     'code_copy_failed' => 'Failed to copy tax code',
     'syncing_wallet' => 'Syncing wallet data...',
     'auto_matching' => 'Auto-matching tax codes...',
@@ -270,6 +276,16 @@ return [
     'cannot_delete_used_code' => 'Cannot delete a used tax code',
     'code_deleted' => 'Tax code deleted successfully',
     'code_deletion_error' => 'An error occurred deleting the tax code',
+
+    'code_mark_used_help' => 'Mark used. The invoice is settled, so this code has done its job.',
+    'code_mark_used_confirm' => 'Mark this code as used? Its invoice is already settled, so nothing further will be matched against it.',
+    'code_marked_used' => 'Code marked as used.',
+    'code_already_used' => 'That code is already marked used.',
+    'code_no_invoice' => 'That code has no invoice behind it, so there is nothing to settle. Delete it instead.',
+    'code_invoice_not_settled' => 'That invoice still has :amount ISK outstanding. Marking the code used would take away the reference the member is meant to quote.',
+    'code_mark_used_error' => 'Could not mark that code as used.',
+    'code_delete_help' => 'Delete this code',
+    'code_delete_confirm' => 'Delete :code? Anyone who was given this code will no longer be able to pay with it.',
 
     // Status & Record Management
     'status_updated' => 'Status updated successfully',

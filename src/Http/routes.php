@@ -297,6 +297,14 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        // Closing off a code whose invoice was settled some other way, usually
+        // a payment assigned by hand. Same gate as deleting one.
+        Route::post('/codes/{id}/mark-used', [
+            'as' => 'mining-manager.taxes.codes.mark-used',
+            'uses' => 'TaxController@markCodeUsed',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/mark-paid', [
             'as' => 'mining-manager.taxes.mark-paid',
             'uses' => 'TaxController@markPaid',

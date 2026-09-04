@@ -232,10 +232,10 @@
                         <!-- View Toggle -->
                         <div class="mb-3 mt-3">
                             <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-primary active" id="view-flat-btn">
+                                <button type="button" class="btn btn-outline-primary" id="view-flat-btn">
                                     <i class="fas fa-list"></i> Flat View
                                 </button>
-                                <button type="button" class="btn btn-outline-primary" id="view-grouped-btn">
+                                <button type="button" class="btn btn-outline-primary active" id="view-grouped-btn">
                                     <i class="fas fa-layer-group"></i> Grouped by Account
                                     @if(isset($liveTracking['account_count']))
                                         <span class="badge badge-light">{{ $liveTracking['account_count'] }}</span>
@@ -244,8 +244,10 @@
                             </div>
                         </div>
 
-                        <!-- FLAT VIEW (default) -->
-                        <div id="flat-view">
+                        {{-- Grouped is the view this page opens on. What is being
+                             calculated is a bill per player, and the flat list is
+                             the working underneath it. --}}
+                        <div id="flat-view" style="display:none;">
                             <div class="table-responsive">
                                 <table class="table table-striped table-hover" id="live-tracking-table">
                                     <thead>
@@ -285,7 +287,7 @@
                         </div>
 
                         <!-- GROUPED BY ACCOUNT VIEW -->
-                        <div id="grouped-view" style="display:none;">
+                        <div id="grouped-view">
                             @php
                                 $groupedEntries = collect($liveTracking['entries'])->groupBy('main_character_id');
                                 // Ensure all accounts from full totals appear, even if no entries in limited display
@@ -724,6 +726,13 @@ $(document).ready(function() {
         $('#grouped-view').hide();
         $(this).addClass('active');
         $('#view-grouped-btn').removeClass('active');
+
+        // The flat table is built while its container is hidden, so DataTables
+        // measures every column at zero and the header sits apart from the body
+        // the first time it is shown. Re-measuring once it is visible fixes it.
+        if ($.fn.DataTable.isDataTable('#live-tracking-table')) {
+            $('#live-tracking-table').DataTable().columns.adjust();
+        }
     });
 
     $('#view-grouped-btn').on('click', function() {

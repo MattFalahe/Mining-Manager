@@ -8,6 +8,50 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### 🐛 Tax Overview opened in what looked like no order at all
+
+It was ordered by amount owed, descending, as text. Sorted that way 87,534,100 comes above
+796,982,374, which is why the page looked shuffled. Every money column, every date column
+and the period column now carry their own sort key, so they sort as money and dates rather
+than as the strings they are printed as.
+
+The page now opens on what needs chasing: overdue first, then unpaid, then partly paid,
+then settled, and newest period first inside each group. A part-paid invoice that has gone
+past its due date sorts with the overdue ones, which is what the red badge already sitting
+next to it says.
+
+The same string ordering was making Tax Codes list periods out of order. Fixed there too.
+
+### 🐛 Tax History put the first half of a month above the second
+
+Both halves of a fortnightly month carry the same month value, so ordering by that left
+them tied, and the tie fell to whatever the database returned first. "Jul 1-14" sat above
+"Jul 15-31" even though the second half was the later period and the more recent payment.
+Ordering is now on the period's own start date, in My Taxes, on the overview, and in every
+export that lists tax records.
+
+### ✨ Closing off a tax code that was left behind
+
+A code is marked used by the payment that quotes it. A payment assigned by hand quotes
+nothing, so its invoice went paid while the code stayed active and eventually expired. The
+result was an expired code against a settled invoice, with nothing on the page able to
+resolve it.
+
+Admins get two actions on the Tax Codes tab. **Mark used** closes the code off, and is
+offered only where the invoice really is settled: doing it while money is still owed would
+take away the reference the member is meant to quote. **Delete** removes a code that should
+not exist at all, which the plugin could already do but never showed a button for.
+
+### ✨ Calculate Taxes opens grouped by account
+
+What is being worked out on that page is a bill per player. The flat list is the working
+underneath it, and is still one click away.
+
+### 🐛 Three buttons showed their own translation key
+
+"Generating", "Regenerating" and "Errors" were referenced but never defined, so the raw key
+appeared on screen in place of the word.
+
 ### 🐛 The buttons on Wallet Verification did nothing
 
 Four separate faults, stacked:

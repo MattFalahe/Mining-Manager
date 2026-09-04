@@ -46,8 +46,8 @@
                             <tr>
                                 <td><code>{{ $taxCodePrefix }}{{ $code->code }}</code></td>
                                 <td>{{ $code->character_info['name'] ?? $code->character->name ?? 'Unknown' }}</td>
-                                <td>{{ $code->miningTax ? ($code->miningTax->formatted_period ?? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y')) : '-' }}</td>
-                                <td>{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
+                                <td data-order="{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->period_start ?? $code->miningTax->month)->format('Y-m-d') : '' }}">{{ $code->miningTax ? ($code->miningTax->formatted_period ?? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y')) : '-' }}</td>
+                                <td data-order="{{ $code->miningTax ? (float) $code->miningTax->amount_owed : 0 }}">{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
                                 <td>
                                     @if($code->status === 'used')
                                         <span class="badge badge-success">{{ trans('mining-manager::taxes.used') }}</span>
@@ -58,9 +58,32 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $taxCodePrefix }}{{ $code->code }}')">
+                                    <button class="btn btn-sm btn-info" onclick="copyCode('{{ $taxCodePrefix }}{{ $code->code }}')"
+                                            data-toggle="tooltip" title="{{ trans('mining-manager::taxes.copy') }}">
                                         <i class="fas fa-copy"></i>
                                     </button>
+                                    @if(($isAdmin ?? false) && $code->status !== 'used')
+                                        @php
+                                            // A code goes used when a payment quotes it. A payment
+                                            // assigned by hand never does, so its code is left behind
+                                            // on a settled invoice with nothing able to close it.
+                                            $codeTax = $code->miningTax;
+                                            $codeOutstanding = $codeTax
+                                                ? round((float) $codeTax->amount_owed - (float) ($codeTax->amount_paid ?? 0), 2)
+                                                : null;
+                                            $codeSettled = $codeTax && ($codeTax->status === 'paid' || $codeOutstanding <= 1);
+                                        @endphp
+                                        @if($codeSettled)
+                                        <button class="btn btn-sm btn-success" onclick="markCodeUsed({{ $code->id }})"
+                                                data-toggle="tooltip" title="{{ trans('mining-manager::taxes.code_mark_used_help') }}">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        @endif
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCode({{ $code->id }}, '{{ $taxCodePrefix }}{{ $code->code }}')"
+                                                data-toggle="tooltip" title="{{ trans('mining-manager::taxes.code_delete_help') }}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                             @empty
@@ -106,6 +129,48 @@ function copyCode(code) {
         toastr.success('{{ trans("mining-manager::taxes.code_copied") }}');
     });
 }
+
+function markCodeUsed(id) {
+    if (!confirm('{{ trans("mining-manager::taxes.code_mark_used_confirm") }}')) {
+        return;
+    }
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.codes.mark-used", ["id" => "__ID__"]) }}'.replace('__ID__', id),
+        method: 'POST',
+        data: { _token: '{{ csrf_token() }}' },
+        success: function(response) {
+            toastr.success(response.message);
+            setTimeout(function() { location.reload(); }, 1200);
+        },
+        error: function(xhr) {
+            toastr.error((xhr.responseJSON && xhr.responseJSON.message) || '{{ trans("mining-manager::taxes.error_occurred") }}');
+        }
+    });
+}
+
+function deleteCode(id, code) {
+    if (!confirm('{{ trans("mining-manager::taxes.code_delete_confirm") }}'.replace(':code', code))) {
+        return;
+    }
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.codes.destroy", ["id" => "__ID__"]) }}'.replace('__ID__', id),
+        method: 'POST',
+        data: { _token: '{{ csrf_token() }}', _method: 'DELETE' },
+        success: function(response) {
+            toastr.success(response.message);
+            setTimeout(function() { location.reload(); }, 1200);
+        },
+        error: function(xhr) {
+            toastr.error((xhr.responseJSON && xhr.responseJSON.message) || '{{ trans("mining-manager::taxes.error_occurred") }}');
+        }
+    });
+}
+
+$(function() {
+    $('#taxCodesTable [data-toggle="tooltip"]').tooltip();
+});
 
 function generateCodes() {
     var formData = $('#generateCodeForm').serializeArray();

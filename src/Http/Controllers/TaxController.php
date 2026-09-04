@@ -244,7 +244,7 @@ class TaxController extends Controller
         }
 
         $taxes = $query->with('taxCodes')
-            ->orderBy('month', 'desc')
+            ->orderByRaw('COALESCE(period_start, month) DESC')
             ->orderBy('character_id')
             ->get();
 
@@ -1724,7 +1724,14 @@ class TaxController extends Controller
             $query->where('month', Carbon::parse($month)->format('Y-m-01'));
         }
 
-        $taxHistory = $query->orderBy('month', 'desc')
+        // Ordered on the period's own start date, not on the month it falls in.
+        // Both halves of a fortnightly month carry the same `month` value, so
+        // ordering by that alone left them tied and the tie broken by whatever
+        // came out of the table first: "Jul 1-14" above "Jul 15-31" even though
+        // the second half is the later period. COALESCE covers the monthly
+        // records made before fortnightly periods existed, which have no
+        // period_start.
+        $taxHistory = $query->orderByRaw('COALESCE(period_start, month) DESC')
             ->orderBy('character_id')
             ->paginate(25);
 
@@ -3039,6 +3046,87 @@ class TaxController extends Controller
     /**
      * Delete a tax code
      */
+    /**
+     * Close off a code whose invoice was settled some other way.
+     *
+     * A code is normally marked used by the payment that quotes it. A payment
+     * assigned by hand does not quote it, so the invoice goes paid while its
+     * code sits there active and eventually expires. The page then shows an
+     * expired code against a settled invoice, with no way to say what actually
+     * happened, and no way to remove it either.
+     *
+     * Only for codes whose invoice is genuinely settled. Marking a code used
+     * while money is still owed would take away the reference the member is
+     * meant to quote, which is the one thing that must not happen by accident.
+     */
+    public function markCodeUsed(Request $request, $id)
+    {
+        try {
+            $taxCode = TaxCode::with('miningTax')->findOrFail($id);
+
+            if ($taxCode->status === 'used') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_already_used'),
+                ], 422);
+            }
+
+            $tax = $taxCode->miningTax;
+
+            if (!$tax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_no_invoice'),
+                ], 422);
+            }
+
+            // Settled means paid, or paid enough that the remainder is rounding.
+            // Reading the figures rather than trusting the status alone, because
+            // a hand-assigned payment is exactly the case where the two can
+            // disagree.
+            $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
+            if ($tax->status !== 'paid' && $outstanding > 1) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_invoice_not_settled', [
+                        'amount' => number_format($outstanding, 0),
+                    ]),
+                ], 422);
+            }
+
+            $taxCode->update([
+                'status' => 'used',
+                'used_at' => $tax->paid_at ?? Carbon::now(),
+                // Whatever settled the invoice, if the invoice recorded it.
+                'transaction_id' => $taxCode->transaction_id ?? $tax->transaction_id,
+            ]);
+
+            $user = auth()->user();
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            Log::info('Mining Manager: tax code marked used by hand', [
+                'tax_code_id' => (int) $taxCode->id,
+                'code' => $taxCode->code,
+                'mining_tax_id' => (int) $tax->id,
+                'marked_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.code_marked_used'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax code mark-used error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.code_mark_used_error'),
+            ], 500);
+        }
+    }
+
     public function destroyCode(Request $request, $id)
     {
         try {
@@ -3223,7 +3311,9 @@ class TaxController extends Controller
                 $query->where('month', Carbon::parse($month)->format('Y-m-01'));
             }
 
-            $taxes = $query->orderBy('month', 'desc')->orderBy('character_id')->get();
+            $taxes = $query->orderByRaw('COALESCE(period_start, month) DESC')
+                ->orderBy('character_id')
+                ->get();
 
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
@@ -3309,7 +3399,7 @@ class TaxController extends Controller
 
             $taxes = MiningTax::with(['character'])
                 ->whereIn('character_id', $characterIds)
-                ->orderBy('month', 'desc')
+                ->orderByRaw('COALESCE(period_start, month) DESC')
                 ->orderBy('character_id')
                 ->get();
 
