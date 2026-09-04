@@ -165,6 +165,31 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### ✨ Mining that turns up after the bill is marked, not quietly charged
+
+Corporation observer data does not always arrive before the period it belongs to is
+invoiced. When it landed late, the day's summary was rebuilt from scratch and started
+reporting more tax than the member had been billed, while the invoice itself stayed put.
+Nothing said the two had parted company.
+
+Late mining is now exempt and says so. The row keeps its real quantity and value, carries
+a zero rate, and holds a note explaining that it arrived after the period was invoiced.
+The entry detail page shows that note beside the zero, because a bare 0 ISK invites
+exactly the question it fails to answer.
+
+Daily summaries for an invoiced period keep the tax figure they were billed at, while
+volume and value continue to refresh. Freezing the whole row would have left the day's
+tonnage looking wrong, which is its own kind of confusion; this way the numbers stay
+honest and the money stays settled.
+
+The ISK on genuinely late mining is not recovered. Re-opening a settled invoice, or
+chasing somebody for more on a bill they have already paid, is worse.
+
+Note for anyone reading the schema: `is_finalized` plays no part in this. It is derived
+from the calendar month, so on a fortnightly cycle a period can be invoiced and paid a
+fortnight before that flag turns over. The test used here reads the invoice periods
+themselves and does not care how long they are.
+
 ### 🐛 Nightly re-pricing ignored which ore types you actually tax
 
 Three places work out a tax rate. Import asks the tax selector which categories are

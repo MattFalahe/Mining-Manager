@@ -111,6 +111,7 @@ class ProcessMiningLedgerCommand extends Command
         $processed = 0;
         $updated = 0;
         $billedSkips = 0;
+        $lateArrivals = 0;
         $skipped = 0;
         $errors = 0;
 
@@ -172,7 +173,7 @@ class ProcessMiningLedgerCommand extends Command
                 $settingsService, $recalculate, $cutoffDate,
                 &$processed, &$updated, &$skipped, &$errors,
                 &$uniqueObserverIds, &$uniqueCharacterIds, &$totalQuantity,
-                &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips,
+                &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips, &$lateArrivals,
                 $progressBar
             ) {
             $byObserver = $chunk->groupBy('observer_id');
@@ -254,6 +255,22 @@ class ProcessMiningLedgerCommand extends Command
                         'ore_category' => $oreCategory,
                         'processed_at' => Carbon::now(),
                     ];
+
+                    // Mining that turns up for a period already invoiced was
+                    // never in that bill and never will be: the invoice is
+                    // pinned, so charging for this would mean re-opening
+                    // something the member has settled. It lands exempt, and
+                    // says why, rather than carrying a rate nothing collected.
+                    if (InvoiceCoverage::coversRow(
+                        (int) $entry->character_id,
+                        Carbon::parse($entry->last_updated)->toDateString()
+                    )) {
+                        $data['tax_rate'] = 0;
+                        $data['tax_amount'] = 0;
+                        $data['is_taxable'] = false;
+                        $data['notes'] = 'Arrived after this period was invoiced, so it was not taxed.';
+                        $lateArrivals++;
+                    }
 
                     // Unique key columns for updateOrCreate
                     $uniqueKey = [
@@ -381,6 +398,8 @@ class ProcessMiningLedgerCommand extends Command
                 [
                     ['🆕 New entries created', $processed],
                     ['🔄 Existing entries updated', $updated],
+                    ['📌 Arrived after invoicing, exempt', $lateArrivals],
+                    ['🔒 Left alone, already invoiced', $billedSkips],
                     ['⏭️  Entries skipped', $skipped],
                     ['❌ Errors', $errors],
                 ]

@@ -57,7 +57,20 @@
                     <dd class="col-sm-8">{{ number_format($entry->tax_rate, 2) }}%</dd>
 
                     <dt class="col-sm-4">{{ trans('mining-manager::ledger.tax_amount') }}:</dt>
-                    <dd class="col-sm-8"><strong>{{ number_format($entry->tax_amount, 2) }} ISK</strong></dd>
+                    <dd class="col-sm-8">
+                        <strong>{{ number_format($entry->tax_amount, 2) }} ISK</strong>
+                        {{-- A bare 0 ISK invites the question. Answer it here,
+                             next to the number, rather than leaving someone to
+                             wonder whether it is a fault. --}}
+                        @if(! $entry->is_taxable && $entry->notes)
+                            <div class="mt-1">
+                                <span class="badge badge-secondary">
+                                    {{ trans('mining-manager::ledger.not_taxed') }}
+                                </span>
+                                <small class="d-block text-muted mt-1">{{ $entry->notes }}</small>
+                            </div>
+                        @endif
+                    </dd>
                 </dl>
             </div>
         </div>

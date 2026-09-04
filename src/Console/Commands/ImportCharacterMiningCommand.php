@@ -9,6 +9,7 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\InvoiceCoverage;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
 
@@ -48,6 +49,7 @@ class ImportCharacterMiningCommand extends Command
         $days = (int) $this->option('days');
         $force = $this->option('force');
         $frozen = 0;
+        $lateArrivals = 0;
         $cutoffDate = Carbon::now()->subDays($days);
 
         // Check if SeAT's CharacterMining model exists
@@ -95,7 +97,7 @@ class ImportCharacterMiningCommand extends Command
 
         $query->chunk(500, function ($entries) use (
             $valuationService, $force,
-            &$created, &$updated, &$skipped, &$errors, &$frozen,
+            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals,
             &$touchedPairs, $progressBar
         ) {
         foreach ($entries as $entry) {
@@ -177,6 +179,16 @@ class ImportCharacterMiningCommand extends Command
                     $existing->delete();
                 }
 
+                // Same rule as the observer path: mining that surfaces for a
+                // period already invoiced is exempt. is_taxable defaults to
+                // true, so without this it would read as taxable at a rate of
+                // zero, which explains nothing to whoever is looking at it.
+                $lateExempt = InvoiceCoverage::coversRow((int) $entry->character_id, $entry->date);
+
+                if ($lateExempt) {
+                    $lateArrivals++;
+                }
+
                 MiningLedger::create([
                     'character_id' => $entry->character_id,
                     'date' => $entry->date,
@@ -194,6 +206,12 @@ class ImportCharacterMiningCommand extends Command
                     'is_triglavian' => $isTriglavian,
                     'ore_category' => $oreCategory,
                     'processed_at' => Carbon::now(),
+                    'is_taxable' => ! $lateExempt,
+                    'tax_rate' => 0,
+                    'tax_amount' => 0,
+                    'notes' => $lateExempt
+                        ? 'Arrived after this period was invoiced, so it was not taxed.'
+                        : null,
                 ]);
                 $created++;
 
@@ -222,6 +240,7 @@ class ImportCharacterMiningCommand extends Command
                 ['New entries created', $created],
                 ['Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
+                ['Arrived after invoicing, exempt', $lateArrivals],
                 ['Errors', $errors],
             ]
         );
