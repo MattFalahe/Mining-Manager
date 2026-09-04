@@ -2654,6 +2654,82 @@ class TaxController extends Controller
      * on whichever character sent the ISK while the invoices belong to their
      * main.
      */
+    /**
+     * Give held balance back to a member.
+     *
+     * Reduces the balance now so what they are owed is right immediately, and
+     * leaves the row pending until the ISK is seen leaving the corporation
+     * wallet. Nothing here sends money: EVE has no API for that, so a director
+     * makes the transfer in game and this records it was agreed.
+     */
+    public function refundBalance(Request $request)
+    {
+        $validated = $request->validate([
+            'credit_id' => 'required|integer|exists:mining_manager_payment_credits,id',
+            // Absent means all of it, which is what somebody leaving the corp
+            // wants and saves retyping a figure they would only get wrong.
+            'amount' => 'nullable|numeric|min:0.01',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->record(
+                (int) $validated['credit_id'],
+                isset($validated['amount']) ? (float) $validated['amount'] : null,
+                $validated['reason'],
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: balance refunded by hand', [
+                'credit_id' => (int) $validated['credit_id'],
+                'amount' => $result['refunded'],
+                'refunded_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_recorded', [
+                    'amount' => number_format($result['refunded'], 0),
+                ]),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error refunding balance: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
+     * Turn a refund failure reason into something a director can act on.
+     */
+    private function describeRefundFailure(?string $reason): string
+    {
+        $key = 'mining-manager::taxes.refund_failed_' . ($reason ?: 'unknown');
+        $message = trans($key);
+
+        return $message === $key
+            ? trans('mining-manager::taxes.refund_failed_unknown')
+            : $message;
+    }
+
     public function balances(Request $request)
     {
         $isAdmin = $this->isAdmin();
@@ -2681,6 +2757,21 @@ class TaxController extends Controller
 
         $credits = $creditsQuery->get();
         $openCredits = $credits->where('remaining', '>', 0);
+
+        // Refunds, scoped exactly as the balances above are. Keyed by credit so
+        // a row can show what has been handed back off it alongside what it was
+        // spent on.
+        $refundsQuery = \MiningManager\Models\PaymentRefund::orderByDesc('created_at');
+
+        if ($scopeCharacterIds !== null) {
+            if (empty($scopeCharacterIds)) {
+                $refundsQuery->whereRaw('1 = 0');
+            } else {
+                $refundsQuery->whereIn('character_id', $scopeCharacterIds);
+            }
+        }
+
+        $refunds = $refundsQuery->get()->groupBy('credit_id');
 
         // What each balance has already paid for. Keyed by credit so a row can
         // show its own drawdowns rather than one undifferentiated list.
@@ -2739,6 +2830,13 @@ class TaxController extends Controller
             'canSeeAll' => $canSeeAll,
             'features' => $this->getFeatureFlags(),
             'upfrontKeyword' => $this->walletService->getUpfrontKeyword(),
+            // Money the corporation has agreed to hand back and, as far as the
+            // wallet shows, has not. Worth surfacing: it is the one number here
+            // that represents a promise rather than a fact.
+            'refunds' => $refunds,
+            'pendingRefundTotal' => (float) $refunds->flatten()
+                ->where('status', \MiningManager\Models\PaymentRefund::STATUS_PENDING)
+                ->sum('amount'),
         ]);
     }
 

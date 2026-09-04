@@ -53,6 +53,19 @@
                 <div class="icon"><i class="fas fa-arrow-right"></i></div>
             </div>
         </div>
+        @if(($pendingRefundTotal ?? 0) > 0)
+        {{-- The only figure here that is a promise rather than a fact: agreed
+             to be returned, not yet seen leaving the wallet. --}}
+        <div class="col-md-4">
+            <div class="small-box bg-warning">
+                <div class="inner">
+                    <h3>{{ number_format($pendingRefundTotal, 0) }}</h3>
+                    <p>{{ trans('mining-manager::taxes.refunds_outstanding') }} (ISK)</p>
+                </div>
+                <div class="icon"><i class="fas fa-undo"></i></div>
+            </div>
+        </div>
+        @endif
     </div>
 
     {{-- How money gets here in the first place. Only worth explaining while
@@ -99,11 +112,17 @@
                                 <th class="text-right">{{ trans('mining-manager::taxes.balance_banked') }}</th>
                                 <th class="text-right">{{ trans('mining-manager::taxes.balance_remaining') }}</th>
                                 <th>{{ trans('mining-manager::taxes.balance_covered') }}</th>
+                                @if($canSeeAll)
+                                <th class="text-right"></th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($credits as $credit)
-                            @php $spent = $drawdowns[$credit->id] ?? collect(); @endphp
+                            @php
+                                $spent = $drawdowns[$credit->id] ?? collect();
+                                $given = ($refunds ?? collect())[$credit->id] ?? collect();
+                            @endphp
                             <tr class="{{ (float) $credit->remaining <= 0 ? 'text-muted' : '' }}">
                                 @if($canSeeAll)
                                 <td>{{ $credit->character->name ?? "Character #{$credit->character_id}" }}</td>
@@ -148,7 +167,36 @@
                                         </div>
                                         @endforeach
                                     @endif
+
+                                    @foreach($given as $refund)
+                                    <div class="mt-1">
+                                        <i class="fas fa-undo text-warning mr-1"></i>
+                                        <span class="text-muted">
+                                            {{ trans('mining-manager::taxes.refund_balance') }}
+                                            &mdash; {{ number_format($refund->amount, 0) }} ISK
+                                            on {{ $refund->created_at ? $refund->created_at->format('Y-m-d') : '' }}
+                                        </span>
+                                        @if($refund->status === \MiningManager\Models\PaymentRefund::STATUS_PENDING)
+                                            <span class="badge badge-warning" title="{{ trans('mining-manager::taxes.refund_pending_note') }}">
+                                                {{ trans('mining-manager::taxes.refund_pending') }}
+                                            </span>
+                                        @else
+                                            <span class="badge badge-success">{{ trans('mining-manager::taxes.refund_confirmed') }}</span>
+                                        @endif
+                                        <div class="small text-muted ml-4">{{ $refund->reason }}</div>
+                                    </div>
+                                    @endforeach
                                 </td>
+                                @if($canSeeAll)
+                                <td class="text-right">
+                                    @if((float) $credit->remaining > 0)
+                                    <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="openRefund({{ $credit->id }}, '{{ addslashes($credit->character->name ?? "Character #{$credit->character_id}") }}', {{ (float) $credit->remaining }})">
+                                        <i class="fas fa-undo"></i> {{ trans('mining-manager::taxes.refund_balance') }}
+                                    </button>
+                                    @endif
+                                </td>
+                                @endif
                             </tr>
                             @endforeach
                         </tbody>
@@ -161,9 +209,104 @@
 
 </div>
 
+@if($canSeeAll)
+{{-- Refund modal. Directors only: handing money back is not a member's call. --}}
+<div class="modal fade" id="refundModal" tabindex="-1">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-undo mr-2"></i>{{ trans('mining-manager::taxes.refund_title') }}</h5>
+                <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">{{ trans('mining-manager::taxes.refund_intro') }}</p>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">{{ trans('mining-manager::taxes.refund_holder') }}</small>
+                        <strong id="rfHolder">-</strong>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">{{ trans('mining-manager::taxes.refund_available') }}</small>
+                        <strong id="rfAvailable">-</strong>
+                    </div>
+                </div>
+
+                <input type="hidden" id="rfCreditId">
+
+                <div class="form-group">
+                    <label for="rfAmount">{{ trans('mining-manager::taxes.refund_amount') }}</label>
+                    <input type="number" step="0.01" min="0.01" class="form-control" id="rfAmount"
+                           placeholder="{{ trans('mining-manager::taxes.refund_amount_help') }}">
+                    <small class="form-text text-muted">{{ trans('mining-manager::taxes.refund_amount_help') }}</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="rfReason">{{ trans('mining-manager::taxes.refund_reason') }}</label>
+                    <textarea class="form-control" id="rfReason" rows="2"
+                              placeholder="{{ trans('mining-manager::taxes.refund_reason_placeholder') }}"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ trans('mining-manager::taxes.cancel') }}</button>
+                <button type="button" class="btn btn-warning" id="rfSubmit" onclick="submitRefund()">
+                    <i class="fas fa-undo mr-1"></i> {{ trans('mining-manager::taxes.refund_balance') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
+function openRefund(creditId, holder, available) {
+    $('#rfCreditId').val(creditId);
+    $('#rfHolder').text(holder);
+    $('#rfAvailable').text(Number(available).toLocaleString('en-US', {maximumFractionDigits: 0}) + ' ISK');
+    $('#rfAmount').val('').attr('max', available);
+    $('#rfReason').val('');
+    $('#rfSubmit').prop('disabled', false);
+
+    // AdminLTE traps the backdrop above the dialog unless the modal is moved
+    // out of the content wrapper first.
+    $('#refundModal').appendTo('body').modal('show');
+}
+
+function submitRefund() {
+    var reason = $('#rfReason').val();
+
+    if (!reason || !reason.trim()) {
+        toastr.error('{{ trans("mining-manager::taxes.refund_failed_reason_required") }}');
+        return;
+    }
+
+    $('#rfSubmit').prop('disabled', true);
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.balances.refund") }}',
+        type: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            credit_id: $('#rfCreditId').val(),
+            // Empty means all of it, which the server reads as a full refund.
+            amount: $('#rfAmount').val() || '',
+            reason: reason
+        },
+        success: function(response) {
+            $('#refundModal').modal('hide');
+            toastr.success(response.message || 'Refund recorded');
+            setTimeout(function() { location.reload(); }, 1500);
+        },
+        error: function(xhr) {
+            $('#rfSubmit').prop('disabled', false);
+            var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not record that refund';
+            toastr.error(msg);
+        }
+    });
+}
+
 $(document).ready(function() {
     // Only worth paginating once the list is long enough to need it.
     if ($('#balancesTable tbody tr').length > 10) {

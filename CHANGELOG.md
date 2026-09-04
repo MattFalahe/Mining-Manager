@@ -192,6 +192,35 @@ from the calendar month, so on a fortnightly cycle a period can be invoiced and 
 fortnight before that flag turns over. The test used here reads the invoice periods
 themselves and does not care how long they are.
 
+### ✨ Give held balance back
+
+Somebody meant to pay 5b and sent 50b. Somebody is leaving and the corporation should not
+keep money that is theirs. Until now the only answer was to send the ISK back in game and
+hope somebody wrote it down, while the plugin carried on insisting they still had a
+balance.
+
+The Balances tab has a **Refund** action on each held balance, for directors. Full or
+partial, with a reason, which is required because it is the only record of why. Leaving
+the amount empty refunds whatever is left, which is what somebody leaving the corp wants
+without retyping a figure they would only get wrong.
+
+**Nothing sends ISK.** EVE has no API for moving money, so a director makes the transfer
+in game. What the plugin does is take the amount off the balance the moment the refund is
+recorded, so what a member is owed is right straight away, and then watch the corporation
+wallet for the ISK actually leaving. When an outgoing transfer to that character for that
+amount turns up, the refund is marked as sent and the transaction is attached to it.
+
+Until that happens the refund reads **Awaiting transfer**, and the total of everything
+waiting sits at the top of the page. That number is the one thing there that is a promise
+rather than a fact: money agreed to be returned and not yet gone.
+
+Refunds are looked for across every wallet division, since tax arrives in a configured one
+but a refund leaves from whichever division had the ISK. Matching is on the withdrawal a
+person makes by hand, not merely on money leaving, because market escrow also leaves the
+wallet towards characters in their thousands. If two transfers both fit, neither is
+chosen and the refund stays pending: marking money returned when it might not have been is
+worse than a person looking at it.
+
 ### ✨ Switching upfront payments off leaves held balances alone
 
 Turning the feature off stops members adding to a balance with the keyword. It does not
@@ -366,8 +395,9 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 - `000023` fills in the moon behind each existing extraction plan, so plans made before the planner could resolve one stop showing an unknown moon.
 - `000024` adds the webhook column for the outstanding digest.
 - `000025` stamps the ore classification cutover.
+- `000026` adds `mining_manager_payment_refunds`.
 
-All four are additive. No existing column is altered and no data is rewritten.
+All five are additive. No existing column is altered and no data is rewritten.
 
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 

@@ -176,6 +176,14 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        // Handing money back is a director's call, not a member's, so this is
+        // gated harder than the page it lives on.
+        Route::post('/balances/refund', [
+            'as' => 'mining-manager.taxes.balances.refund',
+            'uses' => 'TaxController@refundBalance',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/wallet', [
             'as' => 'mining-manager.taxes.wallet',
             'uses' => 'TaxController@wallet',

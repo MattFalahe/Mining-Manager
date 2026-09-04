@@ -10,6 +10,7 @@ use MiningManager\Models\ProcessedTransaction;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\PaymentAllocationService;
 use MiningManager\Services\Tax\WalletTransferService;
+use MiningManager\Services\Tax\RefundService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -147,6 +148,9 @@ class VerifyWalletPaymentsCommand extends Command
             $this->warn('No unclaimed transactions found in configured wallet divisions');
 
             $this->cleanupDismissed();
+            // Still worth looking: refunds confirm against money going out, and
+            // nothing coming in has no bearing on whether it went.
+            $this->confirmRefunds($corporationId ? (int) $corporationId : null);
 
             return Command::SUCCESS;
         }
@@ -206,8 +210,38 @@ class VerifyWalletPaymentsCommand extends Command
         }
 
         $this->cleanupDismissed();
+        $this->confirmRefunds($corporationId ? (int) $corporationId : null);
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Mark refunds confirmed once the ISK is seen leaving the wallet.
+     *
+     * Rides along with payment verification rather than taking a schedule slot
+     * of its own: this already reads the corporation wallet on a timer, and a
+     * refund confirming a few hours after the transfer went out is soon enough
+     * for something a person does by hand.
+     */
+    protected function confirmRefunds(?int $corporationId): void
+    {
+        try {
+            $result = app(RefundService::class)->reconcile($corporationId);
+
+            if ($result['confirmed'] > 0) {
+                $this->info("Confirmed {$result['confirmed']} refund(s) against outgoing transfers");
+            }
+
+            if ($result['ambiguous'] > 0) {
+                $this->warn("{$result['ambiguous']} refund(s) matched more than one transfer and were left pending.");
+                $this->line('Look at them on the Balances tab: guessing here would mark money returned that might not have been.');
+            }
+        } catch (\Exception $e) {
+            // A refund that fails to confirm stays pending, which is the safe
+            // resting state. Never let it take down payment verification.
+            $this->warn("Refund reconciliation failed: {$e->getMessage()}");
+            Log::warning('Mining Manager: refund reconciliation failed', ['error' => $e->getMessage()]);
+        }
     }
 
     /**
