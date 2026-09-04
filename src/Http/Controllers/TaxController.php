@@ -2329,7 +2329,11 @@ class TaxController extends Controller
     {
         $validated = $request->validate([
             'transaction_id' => 'required|integer|exists:corporation_wallet_journals,id',
-            'tax_id' => 'required|integer|exists:mining_taxes,id',
+            // Optional: without it the payment goes to the player's account
+            // balance instead of a named invoice. That is the only thing a
+            // director can do with a codeless transfer from somebody who has
+            // nothing outstanding, and it used to be a dead end.
+            'tax_id' => 'nullable|integer|exists:mining_taxes,id',
             'cascade' => 'nullable|boolean',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -2343,6 +2347,36 @@ class TaxController extends Controller
             $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
             $notes = trim("Assigned by {$actorName}" . (!empty($validated['notes']) ? ": {$validated['notes']}" : ''));
+
+            if (empty($validated['tax_id'])) {
+                $result = $this->walletService->manualCredit(
+                    (int) $validated['transaction_id'],
+                    [
+                        'allocated_by' => $actorId,
+                        'notes' => $notes,
+                    ]
+                );
+
+                if (!$result['success']) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $this->describeMatchFailure($result['reason']),
+                    ], 422);
+                }
+
+                Log::info('Mining Manager: wallet payment banked to account balance by hand', [
+                    'transaction_id' => (int) $validated['transaction_id'],
+                    'invoices' => count($result['allocations']),
+                    'banked' => $result['credited'],
+                    'assigned_by' => $actorName,
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $this->describeAllocation($result),
+                    'result' => $result,
+                ]);
+            }
 
             $result = $this->walletService->manualMatch(
                 (int) $validated['transaction_id'],
@@ -2438,6 +2472,14 @@ class TaxController extends Controller
     private function describeAllocation(array $result): string
     {
         $count = count($result['allocations']);
+
+        // Nothing settled means the whole payment went to the balance. Saying
+        // "assigned to invoice" here would name something that did not happen.
+        if ($count === 0) {
+            return trans('mining-manager::taxes.assign_payment_balance_only', [
+                'amount' => number_format($result['credited'], 0),
+            ]);
+        }
 
         if ($count > 1) {
             $message = trans('mining-manager::taxes.assign_payment_spread', ['count' => $count]);

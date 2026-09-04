@@ -587,6 +587,82 @@ class WalletTransferService
     }
 
     /**
+     * Bank a payment against a player's account without naming an invoice.
+     *
+     * The counterpart to manualMatch, for the case it cannot serve: a transfer
+     * arrives with no tax code, and the payer has nothing outstanding to put it
+     * against. Previously that was a dead end, and the only options were to
+     * leave the transfer sitting in the queue or dismiss it, neither of which
+     * is true. The money did arrive.
+     *
+     * Behaves exactly as a payment using the upfront keyword does, because it
+     * is the same thing arriving by a different route: it settles whatever the
+     * player already owes, oldest invoice first, and holds the rest as account
+     * balance to be drawn down against future invoices. Usually there is
+     * nothing owing and the whole amount is banked.
+     *
+     * @param  array{allocated_by?:int,notes?:string}  $options
+     * @return array{success:bool,reason:?string,allocations:array,credited:float}
+     */
+    public function manualCredit(int $transactionId, array $options = []): array
+    {
+        $result = [
+            'success' => false,
+            'reason' => null,
+            'allocations' => [],
+            'credited' => 0.0,
+        ];
+
+        $transaction = $this->findTransaction($transactionId);
+
+        if (!$transaction) {
+            $result['reason'] = 'transaction_not_found';
+
+            return $result;
+        }
+
+        if (ProcessedTransaction::isProcessed($transactionId)) {
+            $result['reason'] = 'already_claimed';
+
+            return $result;
+        }
+
+        $allocation = $this->allocator->allocate($transaction, null, [
+            'source' => PaymentAllocation::SOURCE_MANUAL,
+            'allocated_by' => $options['allocated_by'] ?? null,
+            'notes' => $options['notes'] ?? 'Assigned to account balance by hand',
+            // A director looking at the row and choosing this has overridden
+            // the cutover by the act of choosing it.
+            'ignore_cutover' => true,
+        ]);
+
+        $result['allocations'] = $allocation['allocations'];
+        $result['credited'] = $allocation['credited'];
+
+        // Success means the money landed somewhere: against invoices, in the
+        // balance, or both. Nothing anywhere means credit holding is switched
+        // off and there was nothing owing, which is a configuration answer
+        // rather than a failure to match.
+        $result['success'] = $allocation['applied'] || $allocation['credited'] > 0;
+
+        if (!$result['success']) {
+            $result['reason'] = $allocation['reason'] ?? 'upfront_not_held';
+
+            return $result;
+        }
+
+        Log::info('Mining Manager: payment assigned to account balance by hand', [
+            'transaction_id' => $transactionId,
+            'character_id' => (int) ($transaction->first_party_id ?? 0),
+            'invoices_settled' => count($allocation['allocations']),
+            'banked' => $allocation['credited'],
+        ]);
+
+        return $result;
+    }
+
+
+    /**
      * Undo a payment assignment, putting the transaction back in the queue.
      */
     public function unassign(int $transactionId, ?int $actorId = null): array

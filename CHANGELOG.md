@@ -192,6 +192,22 @@ from the calendar month, so on a fortnightly cycle a period can be invoiced and 
 fortnight before that flag turns over. The test used here reads the invoice periods
 themselves and does not care how long they are.
 
+### ✨ Assign a codeless payment to a player's balance
+
+Assigning a payment by hand only worked if there was an invoice to point it at. A
+transfer with no tax code from somebody who owes nothing was a dead end: the dropdown
+was empty, the button was disabled, and the only ways out were to leave it in the queue
+or dismiss it. Neither is true, because the money did arrive.
+
+The dropdown now offers **Hold as account balance** alongside the invoices, and picks it
+automatically when the player has nothing outstanding. It behaves exactly as a payment
+using the upfront keyword does, because it is the same thing arriving by a different
+route: it settles anything they already owe, oldest invoice first, and holds the rest
+against future invoices.
+
+The button says which of the two it will do, and the remainder option disappears when
+holding as balance, since that is what holding as balance already means.
+
 ### 🐛 Nightly re-pricing ignored which ore types you actually tax
 
 Three places work out a tax rate. Import asks the tax selector which categories are

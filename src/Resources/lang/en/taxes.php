@@ -392,4 +392,12 @@ return [
     'held_credit_none' => 'No credit is being held.',
     'held_credit_intro' => 'Money left over from payments that were larger than the invoices they settled. It comes off their next invoice automatically.',
     'credit_applied' => 'Applied :amount ISK of held credit.',
+
+    // Assigning a codeless payment to a player's balance rather than an invoice
+    'match_failed_upfront_not_held' => 'They owe nothing right now, and holding surplus as account balance is switched off, so there is nowhere for this to go. Turn on Hold surplus as credit under Settings, General, or assign it to an invoice instead.',
+    'assign_to_balance' => 'Hold as account balance',
+    'assign_balance_option' => 'Hold as account balance (no invoice)',
+    'assign_payment_balance_only' => 'Held :amount ISK as account balance. It will come off their next invoice automatically.',
+    'assign_balance_help' => 'Settles anything they already owe, oldest first, and holds the rest against future invoices.',
+    'assign_no_invoice_hint' => 'They have nothing outstanding, so this will be held as account balance.',
 ];

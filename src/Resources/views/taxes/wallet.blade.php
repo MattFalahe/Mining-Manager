@@ -394,23 +394,45 @@ function openAssign(button) {
         if (belongs) matches++;
     });
 
-    $select.val('');
+    // With nothing outstanding, holding the payment as balance is the only
+    // sensible answer, so pick it rather than leaving a dead form.
+    $select.val(matches === 0 ? '__balance__' : '');
     $('#apLegacyWarning').toggle(String($btn.data('legacy')) === '1');
     $('#apNoInvoices').toggle(matches === 0);
-    $('#apSubmit').prop('disabled', matches === 0);
     $('#apCascade').prop('checked', true);
     $('#apNotes').val('');
+    refreshAssignMode();
 
     $('#assignPaymentModal').appendTo('body').modal('show');
 }
+
+// Keep the button and the helper text honest about what will happen when it is
+// pressed. Holding as balance is a different action from settling an invoice
+// and should not hide behind a button that says otherwise.
+function refreshAssignMode() {
+    var $btn = $('#apSubmit');
+    var toBalance = $('#apTaxId').val() === '__balance__';
+
+    $('#apSubmitLabel').text(toBalance ? $btn.data('label-balance') : $btn.data('label-invoice'));
+    $btn.find('i').attr('class', toBalance ? 'fas fa-piggy-bank mr-1' : 'fas fa-link mr-1');
+    $('#apBalanceHelp').toggle(toBalance);
+    // Cascade is about where a remainder goes after settling a named invoice.
+    // Going straight to balance already does that, so the choice is not offered.
+    $('#apCascade').closest('.form-group').toggle(!toBalance);
+    $btn.prop('disabled', false);
+}
+
+$(document).on('change', '#apTaxId', refreshAssignMode);
 
 function submitAssign() {
     var taxId = $('#apTaxId').val();
 
     if (!taxId) {
-        toastr.error('Pick the invoice this payment settles');
+        toastr.error('Pick an invoice, or choose to hold it as account balance');
         return;
     }
+
+    var toBalance = taxId === '__balance__';
 
     $('#apSubmit').prop('disabled', true);
 
@@ -420,13 +442,15 @@ function submitAssign() {
         data: {
             _token: '{{ csrf_token() }}',
             transaction_id: $('#apTransactionId').val(),
-            tax_id: taxId,
-            cascade: $('#apCascade').is(':checked') ? 1 : 0,
+            // Omitted entirely for a balance assignment: the server reads an
+            // absent tax_id as "bank it against the player".
+            tax_id: toBalance ? '' : taxId,
+            cascade: toBalance ? 0 : ($('#apCascade').is(':checked') ? 1 : 0),
             notes: $('#apNotes').val()
         },
         success: function(response) {
             $('#assignPaymentModal').modal('hide');
-            toastr.success(response.message || 'Payment assigned');
+            toastr.success(response.message || (toBalance ? 'Held as account balance' : 'Payment assigned'));
             setTimeout(function() { location.reload(); }, 1500);
         },
         error: function(xhr) {
@@ -574,6 +598,7 @@ $(document).on('change', '#rpTaxId', function() {
                     <label>{{ trans('mining-manager::taxes.invoices_for_payer') }}</label>
                     <select class="form-control" id="apTaxId">
                         <option value="">&mdash; {{ trans('mining-manager::taxes.select_invoice') }} &mdash;</option>
+                        <option value="__balance__">{{ trans('mining-manager::taxes.assign_balance_option') }}</option>
                         @foreach(($unpaidTaxes ?? collect()) as $tax)
                             @php
                                 $charName = $tax->character->name ?? "Character #{$tax->character_id}";
@@ -591,6 +616,11 @@ $(document).on('change', '#rpTaxId', function() {
                     <div id="apNoInvoices" class="text-warning small mt-2" style="display: none;">
                         <i class="fas fa-exclamation-triangle mr-1"></i>
                         {{ trans('mining-manager::taxes.match_failed_no_open_invoice') }}
+                        {{ trans('mining-manager::taxes.assign_no_invoice_hint') }}
+                    </div>
+                    <div id="apBalanceHelp" class="text-muted small mt-2" style="display: none;">
+                        <i class="fas fa-piggy-bank mr-1"></i>
+                        {{ trans('mining-manager::taxes.assign_balance_help') }}
                     </div>
                 </div>
 
@@ -611,8 +641,10 @@ $(document).on('change', '#rpTaxId', function() {
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ trans('mining-manager::taxes.cancel') }}</button>
-                <button type="button" class="btn btn-primary" id="apSubmit" onclick="submitAssign()">
-                    <i class="fas fa-link mr-1"></i> {{ trans('mining-manager::taxes.assign_to_invoice') }}
+                <button type="button" class="btn btn-primary" id="apSubmit" onclick="submitAssign()"
+                        data-label-invoice="{{ trans('mining-manager::taxes.assign_to_invoice') }}"
+                        data-label-balance="{{ trans('mining-manager::taxes.assign_to_balance') }}">
+                    <i class="fas fa-link mr-1"></i> <span id="apSubmitLabel">{{ trans('mining-manager::taxes.assign_to_invoice') }}</span>
                 </button>
             </div>
         </div>
