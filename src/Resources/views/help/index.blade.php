@@ -679,93 +679,91 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
                 </div>
 
-                {{-- What's New — The Moon Planner --}}
+                {{-- What's New --}}
                 <div class="whats-new-box">
                     <h3>
-                        <i class="fas fa-calendar-check"></i>
-                        What's New &mdash; The Ecosystem Era: The Moon Planner
-                        <span class="whats-new-tag">moon-pull coordination</span>
+                        <i class="fas fa-coins"></i>
+                        What's New: Payments, Balance and Ore Classification
+                        <span class="whats-new-tag">money and ore</span>
                     </h3>
                     <p>
-                        SeAT can only <em>read</em> the moon extractions a director fires in-game &mdash; it can't reach
-                        into the structure. So the new <strong>Moon Extraction Planner</strong> is a corp-internal
-                        <strong>coordination layer</strong>: lay each refinery's projected next pull onto a calendar and
-                        <strong>stagger</strong> arrivals so a small crew isn't drowned by chunks landing together
-                        (chunks not mined promptly are wasted &mdash; the risk this feature manages).
+                        A wallet transfer is money looking for an invoice. This release makes that
+                        relationship explicit: every payment is claimed once, each invoice it touches
+                        records its own share, and whatever is left over is held as balance instead of
+                        vanishing. Alongside it, the ore registry has caught up with everything CCP has
+                        shipped since it was written.
                     </p>
-                    <h4><i class="fas fa-calendar-alt"></i> Moon Extraction Planner</h4>
+
+                    <h4><i class="fas fa-hand-holding-usd"></i> Payments and account balance</h4>
                     <ul>
                         <li>
-                            New <strong>Moon Planner</strong> page (sidebar, under Moon Manager), gated by the new
-                            standalone <code>mining-manager.moon_manager</code> ability (directors/admins included).
+                            <strong>Assign a payment by hand.</strong> A transfer that quoted no tax code
+                            can be pointed at the invoice it was meant for, in two clicks, from Wallet
+                            Verification.
                         </li>
                         <li>
-                            <strong>Auto-fill from history</strong> projects each refinery's next pull from its arrival
-                            cadence (needs &ge;2 past arrivals; median interval at &ge;3) and spreads them to honour a
-                            configurable minimum gap.
+                            <strong>Overpayment cascades.</strong> Whatever a payment does not settle rolls
+                            onto the next unpaid invoice, oldest first. Anything still left becomes
+                            <strong>account balance</strong> and is drawn down automatically against future
+                            invoices, so a member is never billed for money you are already holding.
                         </li>
                         <li>
-                            <strong>Re-anchor a recurring day</strong> &mdash; drag a Monday moon onto Tuesday and it
-                            sticks; future projections chain off the moved slot.
+                            <strong>Pay ahead.</strong> A standing keyword in the transfer reason (default
+                            <code>MM-UPFRONT</code>) lets a member pay before being invoiced. Unlike a tax
+                            code it never expires and is the same for everyone, so it can live in the corp
+                            MOTD. Off by default, under Settings, Features. The keyword and the switch are
+                            both global rather than per corporation, and are labelled that way.
                         </li>
                         <li>
-                            <strong>&lt;gap proximity guard</strong> &mdash; placing/moving a pull within the
-                            minimum-gap window of another arrival (default <strong>24h</strong>, Settings &rarr;
-                            Notifications) prompts a confirmation listing the clashing moons. Enforced client- and
-                            server-side, so it can't be bypassed.
+                            <strong>Balances tab.</strong> Directors see everyone holding a balance and the
+                            corporation total; a member sees their own, across their alts. Each balance
+                            lists what it has been spent on, linked to the invoices.
                         </li>
                         <li>
-                            <strong>Three months at once, all in EVE time (UTC)</strong> &mdash; the anchor month plus
-                            the next two, paged by prev/today/next. Times match EVE's in-game structure scheduler; the
-                            add/edit form takes EVE time and confirms what that is in your local zone.
-                        </li>
-                        <li>
-                            <strong>In-game pulls are locked</strong> &mdash; live, completed and archived extractions
-                            (and plans already reconciled to one) carry a lock and can't be edited here; clicking one
-                            explains why. They're set in EVE, so the planner only ever records them.
-                        </li>
-                        <li>
-                            <strong>30-minute dedup + off-plan detection</strong> &mdash; a plan and the real pull within
-                            30 minutes are the same pull, so it renders once. Further apart but the same cycle means the
-                            drill was fired on a different timer: the pull is flagged red, listed in a
-                            <em>Scheduling mismatches</em> banner with a one-click <strong>Dismiss</strong>, and a
-                            <strong>Moon Scheduled Off-Plan</strong> notification fires.
-                        </li>
-                        <li>
-                            <strong>Refinery panel</strong> &mdash; every refinery with its cadence, projected next pull,
-                            a coverage badge (<code>Planned 2&times;</code> / amber <code>Not planned</code> = a skipped
-                            moon, counted across the whole horizon) and a highest-ore-tier badge (<strong>R4&ndash;R64</strong>).
-                            Uncovered refineries sort to the top.
-                        </li>
-                        <li>
-                            <strong>Change history</strong> &mdash; the <em>History</em> button shows who created, moved
-                            or removed each planned pull, with before&rarr;after times.
+                            <strong>Directors get a weekly digest</strong> of who is still outstanding, with
+                            names, what each still owes and how far through they are.
                         </li>
                     </ul>
-                    <h4><i class="fas fa-bell"></i> Three new notifications</h4>
+
+                    <h4><i class="fas fa-gem"></i> Ore classification</h4>
                     <ul>
                         <li>
-                            <strong>Extraction Started</strong> &mdash; fires when a refinery lights its drill (read from
-                            the in-game <code>MoonminingExtractionStarted</code> director notification). With
-                            <strong>Manager Core</strong> installed it's detected in <strong>~2 minutes</strong> via MC's
-                            ESI fast-poll instead of the ~30 min moon-extraction endpoint cache. The fast-poll and
-                            SeAT-native paths are mutually exclusive (no duplicates); toggle at Settings &rarr;
-                            Notifications &rarr; <em>Extraction Started &mdash; Detection Speed</em>
-                            (<code>auto</code> / <code>seat_native</code>).
+                            The registry now covers <strong>539 type IDs</strong>. What was missing: the
+                            IV-Grade tier of all fifteen classic ores, the Exordium 0-Grade variants, the
+                            X-Grade families, Prismaticite, and the full gas colour sets.
                         </li>
                         <li>
-                            <strong>Next Extraction Planned</strong> &mdash; fires <em>after</em> a chunk is ready,
-                            announcing the refinery's next planned pull so a director re-fires the drill on schedule.
-                        </li>
-                        <li>
-                            <strong>Moon Scheduled Off-Plan</strong> &mdash; fires when a moon's in-game extraction is
-                            set to a materially different time than the planner called for (beyond the 30-minute
-                            tolerance, same cycle). One ping per plan, so a standing mismatch doesn't repeat.
+                            CCP has renamed every ore variant to a numeric scheme, so what was
+                            <em>Fragrant Nocxite</em> is now <em>Nocxite II-Grade</em>. Type IDs never
+                            moved, so nothing was ever mis-taxed, but the reprocessing calculator resolves
+                            what you paste against the local EVE static data. If a name looks right in game
+                            and the calculator does not recognise it, your static data needs updating, and
+                            the calculator now says so instead of quietly dropping the row.
                         </li>
                     </ul>
+
+                    <h4><i class="fas fa-shield-alt"></i> What this does not change</h4>
+                    <ul>
+                        <li>
+                            <strong>Mining already in the ledger keeps the categories and rate it was
+                            billed on.</strong> The better classification applies from the moment you
+                            upgrade and no earlier, so nobody's past bill moves.
+                        </li>
+                        <li>
+                            <strong>An invoice that has gone out is fixed.</strong> Once a payment code
+                            exists, money has arrived, or it reads as paid, its total is a record rather
+                            than a calculation and nothing recalculates it.
+                        </li>
+                        <li>
+                            <strong>Mining that arrives after its period was invoiced is exempt</strong> and
+                            says so on the entry, rather than being charged for on a bill that has already
+                            been settled.
+                        </li>
+                    </ul>
+
                     <p class="mb-0"><small class="text-muted">
-                        All three notifications are per-webhook opt-in (off by default). Everything additive &mdash;
-                        two new tables, one standalone permission, three opt-in notification types. No new ESI scopes.
+                        Everything additive: four new migrations, no altered columns, no new ESI scopes.
+                        Upfront payments are off until you switch them on.
                     </small></p>
                 </div>
 
@@ -1383,6 +1381,92 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.verification_cutover_desc') }}</p>
                     <p>{{ trans('mining-manager::help.verification_cutover_why') }}</p>
                     <p>{{ trans('mining-manager::help.verification_cutover_manual') }}</p>
+                </div>
+
+                {{-- Account balance and paying ahead --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-piggy-bank"></i>
+                        Account balance and paying ahead
+                    </h3>
+                    <p>
+                        When a payment is worth more than the invoice it settles, the remainder is not
+                        discarded. It cascades onto the next unpaid invoice, oldest first, and anything
+                        still left over is held as <strong>account balance</strong> for that member.
+                        Balance is drawn down automatically the next time an invoice is generated, so
+                        nobody is billed for money you are already holding.
+                    </p>
+
+                    <h4><i class="fas fa-hand-holding-usd"></i> Paying ahead</h4>
+                    <p>
+                        With <em>Upfront Payments</em> switched on (Settings, Features), a member can pay
+                        before being invoiced by putting a standing keyword in the transfer reason. The
+                        default is <code>MM-UPFRONT</code> and you can change it under Settings, General.
+                        Unlike a tax code it never expires and is the same for everyone, so it is safe to
+                        put in the corp MOTD.
+                    </p>
+                    <p>
+                        The payment settles whatever that member already owes, oldest invoice first, and
+                        the rest becomes balance. If someone quotes both a tax code and the keyword, the
+                        tax code wins: they asked for something specific.
+                    </p>
+                    <p>
+                        The keyword and the on/off switch are <strong>global</strong>, not per
+                        corporation, and are labelled that way in Settings. There is one tax program
+                        reading one wallet, so one keyword serves every configured corporation. The
+                        keyword also cannot overlap your tax code prefix, because both are read from the
+                        same field and an overlap would make a payment readable as either.
+                    </p>
+
+                    <h4><i class="fas fa-wallet"></i> The Balances tab</h4>
+                    <p>
+                        Directors see everyone currently holding a balance, the corporation total, and how
+                        much has already been applied to invoices. A member sees their own, counted across
+                        their alts. Every balance lists what it has been spent on, linked to the invoices
+                        it went to, so "where did my 1.2 billion go" has an answer on one page.
+                    </p>
+                    <p>
+                        The tab stays hidden until somebody holds a balance or upfront payments are
+                        switched on, so an install that does not use it never sees it.
+                    </p>
+                </div>
+
+                {{-- Ore classification and the cutover --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-gem"></i>
+                        Ore classification, and why old mining keeps its old rate
+                    </h3>
+                    <p>
+                        Which tax rate a piece of mining attracts depends on what the ore is: moon ore by
+                        rarity, ice, gas, abyssal, triglavian, or plain ore. That mapping lives in the
+                        plugin rather than being read from EVE, because rarity tiers are a Mining Manager
+                        idea rather than an EVE one.
+                    </p>
+                    <p>
+                        Recognising more ore is an improvement, but applying it backwards is not. If a
+                        type moves from an untaxed category into a taxed one, everybody who mined it would
+                        watch a historical bill grow for work they finished weeks ago. So classification
+                        changes apply <strong>from the moment you upgrade and no earlier</strong>. Mining
+                        already in the ledger keeps the categories and the rate it was billed on.
+                    </p>
+                    <p>
+                        The same principle covers mining that turns up late. Corporation observer data does
+                        not always arrive before the period it belongs to has been invoiced. When it lands
+                        afterwards it is recorded in full, with its real quantity and value, but marked
+                        <strong>not taxed</strong> with a note saying why. The ISK is not chased. Re-opening
+                        a settled invoice, or going back to somebody for more on a bill they have paid, is
+                        worse than letting it go.
+                    </p>
+
+                    <h4><i class="fas fa-tools"></i> If you need to re-classify old data anyway</h4>
+                    <p>
+                        <code>mining-manager:backfill-ore-types</code> stops at the cutover by default.
+                        Run it with <code>--dry-run</code> first: it reports every category movement it
+                        would make, and each one of those is a change of tax rate. <code>--scope=all</code>
+                        overrides the cutover deliberately, and will make past invoices disagree with the
+                        rows behind them.
+                    </p>
                 </div>
 
                 {{-- Manual Payment Entry --}}

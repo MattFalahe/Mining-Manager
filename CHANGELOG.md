@@ -46,6 +46,8 @@ Two faults in the same family, both older than the allocation work and both made
 
 Where an amount was quoted, it summed `amount_owed` and ignored `amount_paid`, so a member who had paid half would have been chased for the whole invoice. Fixed in all four places that ask someone for money: the scheduled reminder, the invoice generator, the single Send Reminder button and the bulk one. Each now asks for the outstanding balance and skips anything with nothing left to pay.
 
+Payment codes were caught by the same filters and so had the same gap: an invoice that was already part paid got no code, which is the one thing a member needs in order to pay the rest. Codes are now minted when the tax record is created, before anything can change its status. A code identifies an invoice; whether anything is still owed on it is a separate question, and not one that should decide whether it gets an identity at all.
+
 ### ✨ Tax reminders account for balance
 
 A reminder or overdue notice that follows a partial drawdown now names how much of the period was already met from the member's balance, on Discord, Slack and EVE mail. Without it the figure is smaller than the invoice they remember, with nothing to say whether that is a discount, a mistake, or their own money.
@@ -54,7 +56,7 @@ A reminder or overdue notice that follows a partial drawdown now names how much 
 
 **Upfront payments.** A standing keyword in the transfer reason (default `MM-UPFRONT`, configurable, off by default under Settings → Features) lets a member pay before being invoiced. Unlike a tax code it never expires and is the same for everyone, so it can live in the corp MOTD. The payment settles whatever they already owe, oldest invoice first, and the rest becomes account balance. A tax code still wins if both appear.
 
-The keyword is stored globally, not per corporation: there is one tax program reading one wallet, so one keyword serves every configured corp. It cannot overlap the tax code prefix in either direction, since both are read from the same field and an overlap would make a payment readable as either.
+Both the keyword and the on/off switch are global rather than per corporation, and are labelled as such in Settings. There is one tax program reading one wallet, and the matcher runs as a single corporation (the configured moon owner), so anything saved against another corporation would never be consulted. The keyword cannot overlap the tax code prefix in either direction, since both are read from the same field and an overlap would make a payment readable as either.
 
 **Balances tab.** One page, two audiences, the way the rest of the tax section works. A director sees everyone holding a balance, the corporation-wide total, and how much has already been applied to invoices; a member sees their own, alt-aware. Every balance lists what it has been spent on, linked to the invoices. The tab hides itself entirely until someone holds a balance or upfront payments are switched on.
 
@@ -164,42 +166,6 @@ The cutover keys on when a row entered the ledger, not when the ore was mined, s
 Both now leave an invoice alone once a payment code has been generated for it, money has arrived against it, or its status says paid or partial. The recalculated figure is logged alongside the stored one rather than replacing it.
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
-
-### 🐛 Upfront payments could be switched on for a corporation that would never see it
-
-The feature toggle read and wrote against whichever corporation was selected, but the
-wallet matcher runs as one corporation and one only: the configured moon owner. A flag
-saved against any other corporation was never consulted, so the switch would tick, save,
-and change nothing.
-
-The toggle is global now, on both read and write, matching the keyword it belongs with.
-Both are badged "All corporations" in Settings, because the corporation selector sits at
-the top of that page and gives no other clue that these two ignore it.
-
-### 🐛 The setup wizard stopped backfilling historical prices
-
-`mining-manager:update-ledger-prices --all-unpriced` gained a confirmation, since it
-ignores the date window. The setup wizard calls it through `Artisan::call()`, which runs
-non-interactively, so that confirmation answered with its own default and the historical
-price backfill quietly did nothing. The wizard now passes `--force`: the operator agreed
-to the backfill when they chose to run it.
-
-### 🐛 An invoice part-covered by account balance got no code and no warning
-
-Held credit is applied the moment a tax record is created, so an invoice the balance
-covers in part is already `partial` before anything else has looked at it. Every path
-that mints a payment code filtered on status and none of them included `partial`, so the
-record fell through all of them: no code, no invoice, no notification. The member still
-owed the remainder and was told nothing about it.
-
-Payment codes are now minted when the tax record is created, before credit is applied.
-A code identifies an invoice; whether anything is still owed on it is a separate
-question and not one that should decide whether it gets an identity at all. That also
-means a bill settled in full by credit still has a code, which it did not before.
-
-`mining-manager:generate-tax-codes` accepts `partial` as well now. It is the backstop
-rather than the main route: records created before this change, and any where minting
-failed at the time.
 
 ### ✨ Mining that turns up after the bill is marked, not quietly charged
 
@@ -313,17 +279,6 @@ cannot pick up display fields. `loadDisplayNames()` carries a note about the tra
 since the same shape would break any future caller that saves a model it has been
 through.
 
-### 🐛 Turning upfront payments off could wipe the keyword
-
-The keyword field is rendered disabled while the feature is off, and browsers do not
-submit disabled inputs. The save path read the absent field as an empty string and
-wrote it, so saving anything on the General tab with upfront payments switched off
-silently cleared a configured keyword. Switching the feature back on later left the
-box empty and matching quietly doing nothing.
-
-The keyword is now only written when the field was actually submitted. Deliberately
-emptying the box still turns it off, which was always a supported way to disable it.
-
 ### ✨ Resetting a month of payments now asks first
 
 `mining-manager:verify-payments --reset-month=YYYY-MM` un-does payment matching for a
@@ -378,7 +333,12 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 ### Schema
 
 - New tables `mining_manager_payment_allocations` and `mining_manager_payment_credits` (`000022`).
-- `000022` also backfills `mining_manager_processed_transactions` from the transaction ids already recorded on invoices and tax codes, so the new guard recognises what the old pipeline credited, and stamps the cutover. Additive, no existing column changes.
+- `000022` also backfills `mining_manager_processed_transactions` from the transaction ids already recorded on invoices and tax codes, so the new guard recognises what the old pipeline credited, and stamps the payment cutover.
+- `000023` fills in the moon behind each existing extraction plan, so plans made before the planner could resolve one stop showing an unknown moon.
+- `000024` adds the webhook column for the outstanding digest.
+- `000025` stamps the ore classification cutover.
+
+All four are additive. No existing column is altered and no data is rewritten.
 
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 
