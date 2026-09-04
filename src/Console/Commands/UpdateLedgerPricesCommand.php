@@ -173,7 +173,13 @@ class UpdateLedgerPricesCommand extends Command
                 if (ClassificationEpoch::existedBeforeCutover($entry->created_at)) {
                     $taxRate = (float) $entry->tax_rate;
                 } else {
-                    $taxRate = $taxService->getTaxRateForOre($entry->type_id, $characterCorpId);
+                    // Pass the row: the only_corp_moon_ore rule needs to know
+                    // which moon the ore came from, and we have it here.
+                    $taxRate = $taxService->getTaxRateForOre(
+                        $entry->type_id,
+                        $characterCorpId,
+                        $entry
+                    );
                 }
 
                 $newTaxAmount = $newTotalValue * ($taxRate / 100);

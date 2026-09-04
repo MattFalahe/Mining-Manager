@@ -165,6 +165,28 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 Nightly re-pricing ignored which ore types you actually tax
+
+Three places work out a tax rate. Import asks the tax selector which categories are
+charged. The daily summaries ask as well, and those are what invoices are built from.
+`getTaxRateForOre()`, which the nightly `mining-manager:update-ledger-prices` uses,
+never asked at all: it looked up the configured rate for the category and returned it,
+so on an install that taxes no ore it still answered 10%.
+
+Invoices were never affected, because they come from the daily summaries. What could be
+wrong was `mining_ledger.tax_rate` and `tax_amount` on recent rows, and those are shown
+on the entry detail page - so a member could open a row and read a tax figure for
+mining that is not taxed and appears on no bill.
+
+It now asks the same question the other two do, through the same helper, and is handed
+the ledger row so the "only corp moon ore" rule can be evaluated properly rather than
+falling back. All three paths were then checked against a real settings profile and
+agree on every ore category.
+
+Also aligned a stray default: the summaries treated an absent gas setting as taxed while
+everything else treated it as untaxed. Unreachable, since the selector always supplies
+every key, but two opposite defaults for one setting read as disagreement.
+
 ### ✨ The reprocessing calculator says what it did not recognise
 
 An ore name the calculator could not resolve was dropped without a word. The row

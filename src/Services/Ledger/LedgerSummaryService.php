@@ -589,7 +589,10 @@ class LedgerSummaryService
         }
 
         if (TypeIdRegistry::isGas($typeId)) {
-            return $taxSelector['gas'] ?? true;
+            // false to match getTaxSelector(), which is the only source this
+            // reads from. Unreachable while that returns every key, but two
+            // opposite defaults for the same setting read as disagreement.
+            return $taxSelector['gas'] ?? false;
         }
 
         if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {

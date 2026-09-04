@@ -681,8 +681,23 @@ class TaxCalculationService
      * @param int|null $characterCorpId Corporation ID of the character being taxed
      * @return float
      */
-    public function getTaxRateForOre(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForOre(int $typeId, ?int $characterCorpId = null, $miningEntry = null): float
     {
+        // A configured rate is not the same as a rate that applies. The tax
+        // selector decides which categories are charged at all, and this method
+        // used to skip that question entirely, so it answered "10%" for ore on
+        // an install that taxes no ore. Import and the daily summaries both ask,
+        // and the daily summaries are what invoices are built from, so this was
+        // the odd one out and the only place the three could disagree.
+        //
+        // $miningEntry matters for the only_corp_moon_ore rule, which needs to
+        // know where the ore came from. Callers that have the row should pass
+        // it; without it that rule cannot be evaluated and moon ore falls back
+        // to the broader all_moon_ore setting.
+        if (! $this->shouldTaxOre($typeId, $miningEntry)) {
+            return 0.0;
+        }
+
         // Get tax rates for this corporation (applies guest multiplier if applicable)
         $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
 
