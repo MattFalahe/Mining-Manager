@@ -362,7 +362,11 @@ class InitializeCommand extends Command
         $steps = [
             ['Process historical observer data', 'mining-manager:process-ledger', ['--days' => $days, '--recalculate' => true]],
             ['Import historical character mining', 'mining-manager:import-character-mining', ['--days' => $days]],
-            ['Update historical prices', 'mining-manager:update-ledger-prices', ['--all-unpriced' => true]],
+            // --force because Artisan::call() runs non-interactively, so the
+            // confirmation --all-unpriced now asks for would answer with its
+            // default and quietly skip the whole step. The operator confirmed
+            // this backfill when they chose to run it.
+            ['Update historical prices', 'mining-manager:update-ledger-prices', ['--all-unpriced' => true, '--force' => true]],
         ];
 
         // Generate summaries for each historical month

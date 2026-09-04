@@ -165,6 +165,14 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 The setup wizard stopped backfilling historical prices
+
+`mining-manager:update-ledger-prices --all-unpriced` gained a confirmation, since it
+ignores the date window. The setup wizard calls it through `Artisan::call()`, which runs
+non-interactively, so that confirmation answered with its own default and the historical
+price backfill quietly did nothing. The wizard now passes `--force`: the operator agreed
+to the backfill when they chose to run it.
+
 ### 🐛 An invoice part-covered by account balance got no code and no warning
 
 Held credit is applied the moment a tax record is created, so an invoice the balance
