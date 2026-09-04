@@ -10,6 +10,7 @@ use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -346,6 +347,31 @@ class TaxCalculationService
                             'triggered_by' => $triggeredBy,
                         ]);
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+
+                        // Mint the payment code now, before anything can change
+                        // this invoice's status.
+                        //
+                        // It used to be minted later, by whichever command
+                        // happened to pick the record up, and every one of those
+                        // filtered on status. Held credit is applied on the next
+                        // line, so an invoice it covers even in part was already
+                        // 'partial' by the time those filters ran, and fell
+                        // through all of them: no code, no invoice, no ping. The
+                        // member owed money and heard nothing.
+                        //
+                        // A code identifies the invoice. Whether anything is
+                        // still owed on it is a separate question, and not one
+                        // that should decide if it gets an identity at all.
+                        try {
+                            app(TaxCodeGeneratorService::class)->generateTaxCode($newTax);
+                        } catch (\Exception $e) {
+                            // Never block a tax record over its code. The invoice
+                            // run will still mint one if this failed.
+                            Log::warning('Mining Manager: could not mint a tax code at creation', [
+                                'mining_tax_id' => $newTax->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
 
                         // Someone who overpaid last period has the balance
                         // sitting as credit. Draw it down now so the invoice

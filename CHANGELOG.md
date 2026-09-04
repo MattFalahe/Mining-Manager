@@ -165,6 +165,23 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 An invoice part-covered by account balance got no code and no warning
+
+Held credit is applied the moment a tax record is created, so an invoice the balance
+covers in part is already `partial` before anything else has looked at it. Every path
+that mints a payment code filtered on status and none of them included `partial`, so the
+record fell through all of them: no code, no invoice, no notification. The member still
+owed the remainder and was told nothing about it.
+
+Payment codes are now minted when the tax record is created, before credit is applied.
+A code identifies an invoice; whether anything is still owed on it is a separate
+question and not one that should decide whether it gets an identity at all. That also
+means a bill settled in full by credit still has a code, which it did not before.
+
+`mining-manager:generate-tax-codes` accepts `partial` as well now. It is the backstop
+rather than the main route: records created before this change, and any where minting
+failed at the time.
+
 ### ✨ Mining that turns up after the bill is marked, not quietly charged
 
 Corporation observer data does not always arrive before the period it belongs to is

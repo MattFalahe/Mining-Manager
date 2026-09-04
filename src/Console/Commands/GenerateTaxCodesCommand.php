@@ -16,6 +16,17 @@ class GenerateTaxCodesCommand extends Command
 
     protected $description = 'Generate payment codes for unpaid tax records (no recalculation)';
 
+    /*
+     * 'partial' is included alongside unpaid and overdue. Held credit can settle
+     * part of an invoice the instant it is created, so a record can be partial
+     * before any code-minting path has seen it, and every one of those paths
+     * filtered on status. A member owing the remainder got no code and no ping.
+     *
+     * Codes are now minted when the tax record is created, so this is the
+     * backstop rather than the main route: it catches records that predate that
+     * change, and any where minting failed at the time.
+     */
+
     protected TaxCodeGeneratorService $codeService;
     protected SettingsManagerService $settingsService;
 
@@ -52,7 +63,7 @@ class GenerateTaxCodesCommand extends Command
                 $this->info("Generating tax codes for: {$monthLabel}");
 
                 $taxIds = MiningTax::where('month', $monthDate->format('Y-m-01'))
-                    ->whereIn('status', ['unpaid', 'overdue'])
+                    ->whereIn('status', ['unpaid', 'overdue', 'partial'])
                     ->whereDoesntHave('taxCodes', function ($q) {
                         $q->where('status', 'active');
                     })
@@ -63,7 +74,7 @@ class GenerateTaxCodesCommand extends Command
 
                 // Find any unpaid/overdue tax without an active code, regardless of month.
                 // This covers monthly, biweekly, and weekly periods without assumptions.
-                $taxIds = MiningTax::whereIn('status', ['unpaid', 'overdue'])
+                $taxIds = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
                     ->whereDoesntHave('taxCodes', function ($q) {
                         $q->where('status', 'active');
                     })
