@@ -177,11 +177,11 @@ class DiscordRoleResolver
     /**
      * Short human label for a single provider (used in source badges).
      *
-     * Display names follow the project's canonical naming convention from
-     * feedback_plugin_naming_conventions: the seat-discord-pings package is
-     * displayed as "SeAT Broadcast" in user-facing UI. The internal table
-     * identifier (PROVIDER_DISCORD_ROLES_TABLE) and underlying table name
-     * (discord_roles) stay as-is so we don't churn through unrelated layers.
+     * The seat-discord-pings package is shown as "SeAT Broadcast" wherever a
+     * user can see it, which is what it is called everywhere else. The internal
+     * identifier (PROVIDER_DISCORD_ROLES_TABLE) and the table name
+     * (discord_roles) stay as they are, so renaming a label does not churn
+     * through layers that have nothing to do with display.
      */
     public static function providerShortLabel(string $provider): string
     {
