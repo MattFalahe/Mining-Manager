@@ -133,11 +133,39 @@ class TaxController extends Controller
     /**
      * Get feature flags from settings for view visibility.
      */
+    /**
+     * Held for the life of the request. The service's flag set is two dozen
+     * reads and some pages ask for it twice, so without this the delegation
+     * would cost real round trips for a value that cannot change mid render.
+     *
+     * @var array<string,mixed>|null
+     */
+    private ?array $featureFlagCache = null;
+
     private function getFeatureFlags(): array
     {
-        return [
-            'tax_tracking' => (bool) $this->settingsService->getSetting('features.enable_tax_tracking', true),
-            'wallet_verification' => (bool) $this->settingsService->getSetting('features.verify_wallet_transactions', true),
+        if ($this->featureFlagCache !== null) {
+            return $this->featureFlagCache;
+        }
+
+        // Values come out of the service's own flag set rather than being read
+        // again here. This method used to do its own reads and list four keys,
+        // while the views it feeds asked for more than four; a key it did not
+        // define came back through `?? false` as a feature that was switched
+        // on reading as switched off, with nothing to show anything was wrong.
+        //
+        // The names below are the view-facing ones and deliberately do not all
+        // match the service's. What must not diverge again is the values, so
+        // anything added here reads from $flags, never from a fresh getSetting.
+        $flags = $this->settingsService->getFeatureFlags();
+
+        return $this->featureFlagCache = [
+            'tax_tracking' => (bool) ($flags['enable_tax_tracking'] ?? true),
+            'wallet_verification' => (bool) ($flags['verify_wallet_transactions'] ?? true),
+            'enable_upfront_payments' => (bool) ($flags['enable_upfront_payments'] ?? false),
+
+            // Not feature flags in the service's sense, they live under
+            // tax_rates, so these two stay direct reads.
             'tax_codes' => (bool) $this->settingsService->getSetting('tax_rates.auto_generate_tax_codes', true),
             'reminders' => (bool) $this->settingsService->getSetting('tax_rates.send_tax_reminders', false),
         ];

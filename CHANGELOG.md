@@ -8,6 +8,17 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### 🐛 The assign dialog said upfront payments were off when they were on
+
+Holding a payment as account balance showed a warning that you were overriding a
+switched-off feature, whatever the feature was actually set to. The Tax pages were reading
+their feature flags from a list that had four entries in it while the pages asked for more
+than four, and the missing one came back through a default as "off". Nothing was wrong with
+the setting, the saving, or the matching: only what the dialog said about it.
+
+The tax pages now take their flags from the same set every other page uses, so a flag
+cannot be on in one place and absent in another.
+
 ### 🐛 Tax Overview opened in what looked like no order at all
 
 It was ordered by amount owed, descending, as text. Sorted that way 87,534,100 comes above
