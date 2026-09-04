@@ -241,7 +241,7 @@ class SettingsManagerService
 
             // Surfaced here purely so the General tab can grey the keyword box
             // out. The canonical read for runtime gating is getFeatureFlags().
-            'enable_upfront_payments' => (bool) $this->getSetting('features.enable_upfront_payments', false),
+            'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
 
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.
@@ -1339,7 +1339,7 @@ class SettingsManagerService
             'auto_calculate_taxes' => (bool) $this->getSetting('features.auto_calculate_taxes', true),
             'auto_generate_invoices' => (bool) $this->getSetting('features.auto_generate_invoices', true),
             'verify_wallet_transactions' => (bool) $this->getSetting('features.verify_wallet_transactions', true),
-            'enable_upfront_payments' => (bool) $this->getSetting('features.enable_upfront_payments', false),
+            'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
 
             // Data retention
             'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),
@@ -1361,6 +1361,20 @@ class SettingsManagerService
         try {
             foreach ($features as $key => $value) {
                 $type = is_bool($value) ? 'boolean' : (is_int($value) ? 'integer' : 'string');
+
+                // Upfront payments is global, for the same reason the keyword
+                // is. The wallet matcher runs as one corporation, the moon
+                // owner, so a flag saved against any other corporation is never
+                // consulted: the box would tick and nothing would change.
+                if ($key === 'enable_upfront_payments') {
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting("features.{$key}", $value, $type);
+                    $this->activeCorporationId = $savedContext;
+
+                    continue;
+                }
+
                 $this->updateSetting("features.{$key}", $value, $type);
             }
 

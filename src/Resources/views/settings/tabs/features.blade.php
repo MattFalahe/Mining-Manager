@@ -325,6 +325,11 @@
                 <label class="custom-control-label" for="enable_upfront_payments">
                     <i class="fas fa-hand-holding-usd"></i>
                     <strong>Upfront Payments</strong>
+                    {{-- The corporation selector at the top of the page does not
+                         govern this one. Say so where the switch is, rather than
+                         letting somebody set it per corporation and wonder why
+                         nothing changed. --}}
+                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
                 </label>
                 <small class="form-text text-muted">
                     Lets members pay before being invoiced by putting a standing keyword

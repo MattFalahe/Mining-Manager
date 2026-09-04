@@ -165,6 +165,17 @@ Both now leave an invoice alone once a payment code has been generated for it, m
 
 The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
+### 🐛 Upfront payments could be switched on for a corporation that would never see it
+
+The feature toggle read and wrote against whichever corporation was selected, but the
+wallet matcher runs as one corporation and one only: the configured moon owner. A flag
+saved against any other corporation was never consulted, so the switch would tick, save,
+and change nothing.
+
+The toggle is global now, on both read and write, matching the keyword it belongs with.
+Both are badged "All corporations" in Settings, because the corporation selector sits at
+the top of that page and gives no other clue that these two ignore it.
+
 ### 🐛 The setup wizard stopped backfilling historical prices
 
 `mining-manager:update-ledger-prices --all-unpriced` gained a confirmation, since it

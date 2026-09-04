@@ -248,6 +248,7 @@ return [
     'export_settings' => 'Export Settings',
     'export_description' => 'Export every setting, including the ones each corporation has of its own, to a JSON file for backup or transfer.',
     'export_now' => 'Export Settings',
+    'applies_to_all_corporations' => 'All corporations',
     'export_include_webhooks' => 'Include webhooks',
     'export_webhooks_warning' => 'The file will contain your webhook URLs. Anyone who has it can post to those channels.',
     'import_settings' => 'Import Settings',

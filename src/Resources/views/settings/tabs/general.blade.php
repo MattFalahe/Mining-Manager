@@ -458,6 +458,7 @@
                         <label for="payment_upfront_keyword">
                             <i class="fas fa-hand-holding-usd"></i>
                             Upfront payment keyword
+                            <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
                         </label>
                         <input type="text"
                                class="form-control"
