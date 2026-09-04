@@ -2947,6 +2947,9 @@ class TaxController extends Controller
             // the transfer. Without it in the reason the refund cannot tell
             // itself apart from an SRP payout and will not confirm.
             'refundKeyword' => app(\MiningManager\Services\Tax\RefundService::class)->keyword(),
+            // The refund dialog says where the ISK may be sent, and that
+            // depends on the same setting tax and upfront payments read.
+            'refundAcceptsAlts' => (bool) ($this->settingsService->getPaymentSettings()['accept_alt_characters'] ?? true),
             'pendingRefundTotal' => (float) $refunds->flatten()
                 ->where('status', \MiningManager\Models\PaymentRefund::STATUS_PENDING)
                 ->sum('amount'),

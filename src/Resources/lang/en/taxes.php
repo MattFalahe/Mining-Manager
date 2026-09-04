@@ -405,6 +405,7 @@ return [
     // Refunding held account balance
     'refund_keyword_instruction' => 'Put this in the transfer reason when you send the ISK:',
     'refund_keyword_why' => 'Without it the refund cannot tell itself apart from an SRP payout or any other reimbursement, and will stay pending until somebody marks it sent by hand.',
+    'refund_any_character' => 'Send it to any character on that account, not only the one named below. The refund is matched across every character belonging to the same player.',
     'refund_keyword_label' => 'Refund keyword',
     'refund_keyword_help' => 'Goes in the reason of the transfer when you refund a balance. It is how a refund is recognised in the wallet, so it must not overlap the tax code prefix or the upfront keyword.',
     'copy' => 'Copy',

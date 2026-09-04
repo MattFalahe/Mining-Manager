@@ -257,6 +257,13 @@
                         <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy') }}
                     </button>
                     <div class="small mt-1">{{ trans('mining-manager::taxes.refund_keyword_why') }}</div>
+                    @if($refundAcceptsAlts ?? true)
+                    {{-- Worth saying out loud. The balance often sits on a mining
+                         alt while the player only logs in on their main, and
+                         without this a director assumes it has to go back to the
+                         character named above. --}}
+                    <div class="small mt-1">{{ trans('mining-manager::taxes.refund_any_character') }}</div>
+                    @endif
                 </div>
 
                 <div class="row mb-3">

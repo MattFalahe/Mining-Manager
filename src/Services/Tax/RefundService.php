@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\PaymentCredit;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Tax\Concerns\ResolvesCharacterOwnership;
 use MiningManager\Models\PaymentRefund;
 
 /**
@@ -23,6 +24,8 @@ use MiningManager\Models\PaymentRefund;
  */
 class RefundService
 {
+    use ResolvesCharacterOwnership;
+
     private SettingsManagerService $settings;
 
     public function __construct(SettingsManagerService $settings)
@@ -363,6 +366,14 @@ class RefundService
         $confirmed = 0;
         $ambiguous = 0;
 
+        // A refund is owed to a player, not to the one character that happens
+        // to be holding the balance. Somebody who paid from a mining alt gets
+        // the ISK back on whichever character they actually log in on, and a
+        // director sending it anywhere else would otherwise leave the refund
+        // pending forever. Same setting as tax and upfront payments, so an
+        // install that treats every character as its own account stays strict.
+        $acceptAlts = (bool) ($this->settings->getPaymentSettings()['accept_alt_characters'] ?? true);
+
         // Transaction ids already spoken for, so two refunds of the same amount
         // to the same person cannot both claim one transfer.
         $claimed = PaymentRefund::confirmed()
@@ -387,9 +398,11 @@ class RefundService
             ->get(['character_id', 'amount']);
 
         foreach ($pending as $refund) {
+            $eligible = $this->eligibleCharacterIds((int) $refund->character_id, $acceptAlts);
+
             $query = DB::table('corporation_wallet_journals')
                 ->where('ref_type', self::OUTGOING_REF_TYPE)
-                ->where('second_party_id', $refund->character_id)
+                ->whereIn('second_party_id', $eligible)
                 ->where('date', '>=', $since)
                 ->where('amount', '<', 0)
                 ->whereRaw('ABS(ABS(amount) - ?) <= ?', [(float) $refund->amount, self::MATCH_TOLERANCE]);
@@ -423,8 +436,12 @@ class RefundService
             // A sibling refund for the same person and amount was closed by
             // hand, so this transfer may well be the one that paid it. Leave
             // this refund alone rather than confirm it on somebody else's ISK.
-            $shadowed = $closedByHand->first(function ($other) use ($refund) {
-                return (int) $other->character_id === (int) $refund->character_id
+            // Widened the same way the search above is, so the guard cannot be
+            // narrower than the thing it is guarding: two refunds on different
+            // characters of one player are as easy to confuse as two on the
+            // same character.
+            $shadowed = $closedByHand->first(function ($other) use ($eligible, $refund) {
+                return in_array((int) $other->character_id, $eligible, true)
                     && abs((float) $other->amount - (float) $refund->amount) <= self::MATCH_TOLERANCE;
             });
 
@@ -474,8 +491,21 @@ class RefundService
                 'refund_id' => $refund->id,
                 'transaction_id' => (int) $match->id,
                 'character_id' => (int) $refund->character_id,
+                'paid_to_character_id' => (int) $match->second_party_id,
                 'amount' => (float) $refund->amount,
             ]);
+
+            // Only worth a line of its own when the ISK went to a different
+            // character than the balance sat on. Somebody reconciling a dispute
+            // can grep for it; the ordinary case stays quiet.
+            if ((int) $match->second_party_id !== (int) $refund->character_id) {
+                Log::info('Mining Manager: refund paid to an alt of the character holding the balance', [
+                    'refund_id' => $refund->id,
+                    'balance_character_id' => (int) $refund->character_id,
+                    'paid_to_character_id' => (int) $match->second_party_id,
+                    'transaction_id' => (int) $match->id,
+                ]);
+            }
         }
 
         return ['confirmed' => $confirmed, 'ambiguous' => $ambiguous];

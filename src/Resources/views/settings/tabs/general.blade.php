@@ -57,7 +57,7 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <small class="form-text text-muted">
-                            The corporation that owns your moons/structures and runs the mining tax program. All tax invoices, theft detection, moon tracking, ledger data, and webhook notifications are scoped to this corporation — regardless of ore source (moon, belt, ice, gas).
+                            The corporation that owns your moons/structures and runs the mining tax program. All tax invoices, theft detection, moon tracking, ledger data, and webhook notifications are scoped to this corporation, regardless of ore source (moon, belt, ice, gas).
                         </small>
                     </div>
                 </div>
@@ -349,7 +349,7 @@
             {{-- Accept payments from any of a player's characters
                  (alt-aware match). When ON (default), MM credits a tax
                  payment if the tax code matches AND the paying character
-                 shares a SeAT user_id with the taxed character — so a
+                 shares a SeAT user_id with the taxed character, so a
                  player can settle their main's tax bill from any alt's
                  wallet. When OFF, strict per-character matching (the
                  pre-v2.0.2 behaviour). --}}
@@ -365,19 +365,26 @@
                                    {{ old('payment_accept_alt_characters', $settings->accept_alt_characters ?? true) ? 'checked' : '' }}>
                             <label class="custom-control-label" for="payment_accept_alt_characters">
                                 <i class="fas fa-users"></i>
-                                Accept payments from any of a player's characters
+                                Treat a player's characters as one account
                             </label>
                         </div>
                         <small class="form-text text-muted">
-                            When ON (default), MM accepts a tax payment if the tax code
-                            in the transaction description matches AND the paying character
-                            shares a SeAT user with the taxed character (i.e. is an alt of
-                            the same player). When OFF, the paying character must be
-                            <em>exactly</em> the taxed character — strict pre-v2.0.2
-                            behaviour. Alt payments are logged in
-                            <code>laravel.log</code> with both the paying and taxed
-                            character IDs for audit, so directors can reconcile after
-                            the fact.
+                            When ON (default), money is matched to the player rather than
+                            to the one character. A tax payment settles the bill even when
+                            it came from a different character on the same account, an
+                            upfront payment clears that player's invoices and banks the
+                            rest for any of their characters, and a refund confirms
+                            whichever character it was sent to. Characters count as the
+                            same account when they share a SeAT user.
+                            <br>
+                            When OFF, every match is strict: the paying character must be
+                            <em>exactly</em> the taxed character, and a refund must go back
+                            to exactly the character whose balance it came off. Use this
+                            only where each character is genuinely its own account.
+                            <br>
+                            Either way, a match made across characters is recorded with
+                            both character ids, so a director can reconcile a dispute
+                            after the fact.
                         </small>
                     </div>
                 </div>
@@ -557,7 +564,7 @@
         </div>
     </div>
 
-    {{-- Guest Miner Tax Rates (Global — tied to Moon Owner Corporation) --}}
+    {{-- Guest Miner Tax Rates (Global, tied to Moon Owner Corporation) --}}
     <div class="card bg-dark mb-3 border-info">
         <div class="card-header bg-info">
             <h5 class="card-title mb-0">
@@ -708,7 +715,7 @@
             <div class="alert alert-warning mt-3 mb-0">
                 <i class="fas fa-exclamation-triangle"></i>
                 <strong>0% = No Tax.</strong> Setting any guest rate to 0% means guests pay nothing for that ore type.
-                Guest miners only appear via moon mining observer data — their character ledger mining (regular ore, ice, gas mined elsewhere) is never taxed.
+                Guest miners only appear via moon mining observer data. Their character ledger mining (regular ore, ice, gas mined elsewhere) is never taxed.
             </div>
         </div>
     </div>

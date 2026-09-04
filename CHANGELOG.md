@@ -244,6 +244,18 @@ transfer that actually paid it turns up later carrying the keyword, that transfe
 alone rather than handed to another refund of the same size for the same person. Those
 refunds stay pending and the run says so.
 
+A refund can be sent to **any character on that player's account**, not only the one whose
+balance it came off. That balance often sits on a mining alt while the player only logs in
+on their main, and requiring the ISK back to the alt would have left perfectly good refunds
+pending forever. This is the same **Treat a player's characters as one account** setting
+that tax and upfront payments already read, so an install where each character really is
+its own account stays strict on all three. When the refund is confirmed against a character
+other than the one holding the balance, both ids are recorded.
+
+The setting's description now says what it actually governs. It described tax payments
+only, which was true when it was written and has not been for a while: upfront payments
+have always read it too, and refunds now do.
+
 ### ✨ Switching upfront payments off leaves held balances alone
 
 Turning the feature off stops members adding to a balance with the keyword. It does not
