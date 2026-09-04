@@ -233,7 +233,7 @@ class VerifyWalletPaymentsCommand extends Command
             }
 
             if ($result['ambiguous'] > 0) {
-                $this->warn("{$result['ambiguous']} refund(s) matched more than one transfer and were left pending.");
+                $this->warn("{$result['ambiguous']} refund(s) could not be matched to one transfer for certain and were left pending.");
                 $this->line('Look at them on the Balances tab: guessing here would mark money returned that might not have been.');
             }
         } catch (\Exception $e) {

@@ -2718,6 +2718,115 @@ class TaxController extends Controller
     }
 
     /**
+     * Record that a refund was paid, when no transfer will ever match it.
+     *
+     * The reconciler only recognises money leaving the corporation wallet with
+     * the agreed keyword in the reason. That is the right default and it will
+     * miss things: a keyword left off, a contract, a payment from somewhere the
+     * plugin cannot see. Without a way to close those by hand they stay pending
+     * forever and the outstanding figure stops being worth reading.
+     *
+     * The note is required. A confirmed refund with no transaction behind it is
+     * only as good as the explanation attached to it.
+     */
+    public function markRefundSent(Request $request, $refundId)
+    {
+        $validated = $request->validate([
+            'note' => 'required|string|max:255',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->markSent(
+                (int) $refundId,
+                $validated['note'],
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: refund marked as sent by hand', [
+                'refund_id' => (int) $refundId,
+                'confirmed_by' => $actorName,
+                'note' => $validated['note'],
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_marked_sent'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error marking a refund as sent: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
+     * Withdraw a hand confirmation and put the refund back on the pending list.
+     *
+     * Refund rows for one person look alike, so confirming the wrong one is an
+     * ordinary slip. Only hand confirmations can be withdrawn; one matched to a
+     * real transaction is left alone.
+     */
+    public function reopenRefund(Request $request, $refundId)
+    {
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->revertToPending(
+                (int) $refundId,
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: refund reopened', [
+                'refund_id' => (int) $refundId,
+                'reopened_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_reopened'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error reopening a refund: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
      * Turn a refund failure reason into something a director can act on.
      */
     private function describeRefundFailure(?string $reason): string

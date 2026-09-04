@@ -173,6 +173,170 @@ class RefundService
     }
 
     /**
+     * Say the money went out, without a transfer to prove it.
+     *
+     * Needed because the automatic path can only ever see one shape of
+     * evidence. A director who forgets the keyword, sends the ISK by contract,
+     * or pays out of a wallet the plugin cannot read leaves a refund that no
+     * run will ever match, and it would sit pending for good. One stuck row is
+     * a nuisance; enough of them and the outstanding total on the balances page
+     * means nothing, which defeats the point of tracking refunds at all.
+     *
+     * No transaction is attached, deliberately. That absence is what marks the
+     * row as somebody's word rather than the wallet's, and everything that
+     * reads it afterwards can tell the two apart.
+     *
+     * @return array{success:bool,reason:?string,refund:?PaymentRefund}
+     */
+    public function markSent(int $refundId, string $note, ?int $actorId = null): array
+    {
+        $result = ['success' => false, 'reason' => null, 'refund' => null];
+
+        if (trim($note) === '') {
+            $result['reason'] = 'note_required';
+
+            return $result;
+        }
+
+        try {
+            $refund = DB::transaction(function () use ($refundId, $note, $actorId, &$result) {
+                // Locked because the reconciler may be partway through matching
+                // this very row. Without the lock a director and a cron run can
+                // both confirm it, and the later write silently undoes the
+                // earlier one, losing either the transaction or the note.
+                $refund = PaymentRefund::where('id', $refundId)->lockForUpdate()->first();
+
+                if (!$refund) {
+                    $result['reason'] = 'refund_not_found';
+
+                    return null;
+                }
+
+                if ($refund->status !== PaymentRefund::STATUS_PENDING) {
+                    $result['reason'] = 'refund_not_pending';
+
+                    return null;
+                }
+
+                $refund->update([
+                    'status' => PaymentRefund::STATUS_CONFIRMED,
+                    'confirmed_at' => Carbon::now(),
+                    'confirmed_by' => $actorId,
+                    'confirmation_note' => trim($note),
+                ]);
+
+                return $refund;
+            });
+        } catch (\Throwable $e) {
+            Log::error('Mining Manager: could not mark a refund as sent', [
+                'refund_id' => $refundId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $result['reason'] = 'error';
+
+            return $result;
+        }
+
+        if (!$refund) {
+            return $result;
+        }
+
+        $result['success'] = true;
+        $result['refund'] = $refund;
+
+        Log::info('Mining Manager: refund confirmed by hand, no matching transfer', [
+            'refund_id' => $refund->id,
+            'character_id' => (int) $refund->character_id,
+            'amount' => (float) $refund->amount,
+            'confirmed_by' => $actorId,
+            'note' => trim($note),
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Undo a hand confirmation and let it wait for a transfer again.
+     *
+     * Refund rows for the same person look much alike, so confirming the wrong
+     * one is an easy mistake to make and, without this, an impossible one to
+     * correct outside the database.
+     *
+     * Only rows confirmed by hand can be reopened. A refund matched to a real
+     * transaction is backed by evidence that has not changed, and reopening it
+     * would achieve nothing anyway: the next run would find the same transfer
+     * and confirm it again.
+     *
+     * Balances are untouched. They came down when the refund was recorded, and
+     * that decision is not what is being corrected here.
+     *
+     * @return array{success:bool,reason:?string,refund:?PaymentRefund}
+     */
+    public function revertToPending(int $refundId, ?int $actorId = null): array
+    {
+        $result = ['success' => false, 'reason' => null, 'refund' => null];
+
+        try {
+            $refund = DB::transaction(function () use ($refundId, &$result) {
+                $refund = PaymentRefund::where('id', $refundId)->lockForUpdate()->first();
+
+                if (!$refund) {
+                    $result['reason'] = 'refund_not_found';
+
+                    return null;
+                }
+
+                if ($refund->status !== PaymentRefund::STATUS_CONFIRMED) {
+                    $result['reason'] = 'refund_not_confirmed';
+
+                    return null;
+                }
+
+                if ($refund->transaction_id !== null) {
+                    $result['reason'] = 'refund_matched_to_transfer';
+
+                    return null;
+                }
+
+                $refund->update([
+                    'status' => PaymentRefund::STATUS_PENDING,
+                    'confirmed_at' => null,
+                    'confirmed_by' => null,
+                    'confirmation_note' => null,
+                ]);
+
+                return $refund;
+            });
+        } catch (\Throwable $e) {
+            Log::error('Mining Manager: could not reopen a refund', [
+                'refund_id' => $refundId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $result['reason'] = 'error';
+
+            return $result;
+        }
+
+        if (!$refund) {
+            return $result;
+        }
+
+        $result['success'] = true;
+        $result['refund'] = $refund;
+
+        Log::info('Mining Manager: hand confirmation withdrawn, refund pending again', [
+            'refund_id' => $refund->id,
+            'character_id' => (int) $refund->character_id,
+            'amount' => (float) $refund->amount,
+            'reopened_by' => $actorId,
+        ]);
+
+        return $result;
+    }
+
+    /**
      * Look for the ISK leaving, and confirm any refund it settles.
      *
      * Reads every division, not just the one configured for payments. That
@@ -206,6 +370,22 @@ class RefundService
             ->pluck('transaction_id')
             ->all();
 
+        // Refunds closed by hand cannot appear in that list: they have no
+        // transaction, which is the point of them. That leaves a gap. If a
+        // director closes one by hand and the transfer that actually paid it
+        // turns up afterwards carrying the keyword, nothing marks that transfer
+        // as spent, and an identical refund still waiting would take it and be
+        // confirmed on money that was never meant for it.
+        //
+        // So remember what was closed by hand, and refuse to auto-confirm
+        // anything that matches one. Character and amount are enough: they are
+        // the only things the matcher has to go on, and if those agree there is
+        // no way to tell which refund a transfer belongs to.
+        $closedByHand = PaymentRefund::confirmed()
+            ->whereNull('transaction_id')
+            ->where('confirmed_at', '>=', $since)
+            ->get(['character_id', 'amount']);
+
         foreach ($pending as $refund) {
             $query = DB::table('corporation_wallet_journals')
                 ->where('ref_type', self::OUTGOING_REF_TYPE)
@@ -237,6 +417,25 @@ class RefundService
                 ->take(2);
 
             if ($candidates->isEmpty()) {
+                continue;
+            }
+
+            // A sibling refund for the same person and amount was closed by
+            // hand, so this transfer may well be the one that paid it. Leave
+            // this refund alone rather than confirm it on somebody else's ISK.
+            $shadowed = $closedByHand->first(function ($other) use ($refund) {
+                return (int) $other->character_id === (int) $refund->character_id
+                    && abs((float) $other->amount - (float) $refund->amount) <= self::MATCH_TOLERANCE;
+            });
+
+            if ($shadowed) {
+                $ambiguous++;
+                Log::info('Mining Manager: a matching refund was closed by hand, so this transfer is not being claimed', [
+                    'refund_id' => $refund->id,
+                    'character_id' => (int) $refund->character_id,
+                    'amount' => (float) $refund->amount,
+                ]);
+
                 continue;
             }
 

@@ -26,6 +26,8 @@ class PaymentRefund extends Model
         'transaction_id',
         'refunded_by',
         'confirmed_at',
+        'confirmed_by',
+        'confirmation_note',
     ];
 
     protected $casts = [
@@ -35,6 +37,7 @@ class PaymentRefund extends Model
         'transaction_id' => 'integer',
         'refunded_by' => 'integer',
         'confirmed_at' => 'datetime',
+        'confirmed_by' => 'integer',
     ];
 
     /** Recorded, balance reduced, ISK not yet seen leaving the wallet. */
@@ -42,6 +45,25 @@ class PaymentRefund extends Model
 
     /** An outgoing transfer has been matched to this refund. */
     public const STATUS_CONFIRMED = 'confirmed';
+
+    /**
+     * Was this proved by the wallet, or asserted by a person?
+     *
+     * The distinction is the whole point of matching transfers in the first
+     * place. A matched refund is backed by a transaction anybody can go and
+     * look at; a hand-confirmed one is a director saying the money went out.
+     * Both are legitimate, they are not equally strong, and the page must not
+     * present them as though they were.
+     */
+    public function wasMatchedToTransfer(): bool
+    {
+        return $this->status === self::STATUS_CONFIRMED && $this->transaction_id !== null;
+    }
+
+    public function wasConfirmedByHand(): bool
+    {
+        return $this->status === self::STATUS_CONFIRMED && $this->transaction_id === null;
+    }
 
     public function credit()
     {

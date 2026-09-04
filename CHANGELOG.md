@@ -227,6 +227,23 @@ but a refund leaves from whichever division had the ISK. If two transfers both f
 neither is chosen and the refund stays pending: marking money returned when it might not
 have been is worse than a person looking at it.
 
+For the transfers that will never match, there is **Mark as sent**. A keyword left off, a
+payment by contract, ISK out of a wallet the plugin cannot read: none of those will ever
+be found, and without a way to close them the refund sits pending for good and the
+outstanding total quietly stops meaning anything. Marking one sent asks for a short note
+saying why, and the row afterwards reads **Sent (by hand)** rather than **Sent**. That is
+deliberate. A matched refund is backed by a transaction anybody can go and look at; a
+hand-confirmed one is a director's word, and the page should not present the two as the
+same thing. **Undo** puts it back on the pending list if the wrong row was closed, which
+is easy enough to do when somebody has two refunds the same size. Refunds matched to a
+real transfer cannot be undone: there is nothing to correct, and the next run would only
+match them again.
+
+One consequence worth knowing. A refund closed by hand claims no transaction, so if the
+transfer that actually paid it turns up later carrying the keyword, that transfer is left
+alone rather than handed to another refund of the same size for the same person. Those
+refunds stay pending and the run says so.
+
 ### ✨ Switching upfront payments off leaves held balances alone
 
 Turning the feature off stops members adding to a balance with the keyword. It does not
@@ -402,8 +419,9 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 - `000024` adds the webhook column for the outstanding digest.
 - `000025` stamps the ore classification cutover.
 - `000026` adds `mining_manager_payment_refunds`.
+- `000027` adds who confirmed a refund by hand and why.
 
-All five are additive. No existing column is altered and no data is rewritten.
+All six are additive. No existing column is altered and no data is rewritten.
 
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 

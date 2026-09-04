@@ -180,10 +180,36 @@
                                             <span class="badge badge-warning" title="{{ trans('mining-manager::taxes.refund_pending_note') }}">
                                                 {{ trans('mining-manager::taxes.refund_pending') }}
                                             </span>
+                                            @if($canSeeAll)
+                                            <button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline"
+                                                    onclick="openMarkSent({{ $refund->id }}, {{ (float) $refund->amount }}, '{{ addslashes($credit->character->name ?? "Character #{$credit->character_id}") }}')">
+                                                {{ trans('mining-manager::taxes.refund_mark_sent') }}
+                                            </button>
+                                            @endif
+                                        @elseif($refund->wasConfirmedByHand())
+                                            {{-- Deliberately not the same badge as a matched one. This
+                                                 is a director saying the money went out; the other is
+                                                 the wallet showing it. --}}
+                                            <span class="badge badge-info" title="{{ trans('mining-manager::taxes.refund_by_hand_note') }}">
+                                                {{ trans('mining-manager::taxes.refund_by_hand') }}
+                                            </span>
+                                            @if($canSeeAll)
+                                            <button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline text-muted"
+                                                    onclick="reopenRefund({{ $refund->id }})">
+                                                {{ trans('mining-manager::taxes.refund_reopen') }}
+                                            </button>
+                                            @endif
                                         @else
-                                            <span class="badge badge-success">{{ trans('mining-manager::taxes.refund_confirmed') }}</span>
+                                            <span class="badge badge-success" title="{{ trans('mining-manager::taxes.refund_confirmed_note') }}">
+                                                {{ trans('mining-manager::taxes.refund_confirmed') }}
+                                            </span>
                                         @endif
                                         <div class="small text-muted ml-4">{{ $refund->reason }}</div>
+                                        @if($refund->confirmation_note)
+                                        <div class="small text-muted ml-4">
+                                            <i class="fas fa-user-check mr-1"></i>{{ $refund->confirmation_note }}
+                                        </div>
+                                        @endif
                                     </div>
                                     @endforeach
                                 </td>
@@ -268,6 +294,53 @@
         </div>
     </div>
 </div>
+
+{{-- Marking a refund sent without a transfer behind it. Separate dialog rather
+     than a bare confirm, because the note is the only record of why this was
+     done and a confirm box cannot ask for one. --}}
+<div class="modal fade" id="markSentModal" tabindex="-1">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-user-check mr-2"></i>{{ trans('mining-manager::taxes.refund_mark_sent_title') }}</h5>
+                <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">{{ trans('mining-manager::taxes.refund_mark_sent_intro') }}</p>
+
+                <div class="alert alert-warning py-2 px-3 small">
+                    {{ trans('mining-manager::taxes.refund_mark_sent_warning') }}
+                </div>
+
+                <input type="hidden" id="msRefundId">
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">{{ trans('mining-manager::taxes.refund_holder') }}</small>
+                        <strong id="msHolder">-</strong>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-muted d-block">{{ trans('mining-manager::taxes.refund_amount') }}</small>
+                        <strong id="msAmount">-</strong>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="msNote">{{ trans('mining-manager::taxes.refund_mark_sent_note') }}</label>
+                    <textarea class="form-control" id="msNote" rows="2" maxlength="255"
+                              placeholder="{{ trans('mining-manager::taxes.refund_mark_sent_note_placeholder') }}"></textarea>
+                    <small class="form-text text-muted">{{ trans('mining-manager::taxes.refund_mark_sent_note_help') }}</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ trans('mining-manager::taxes.cancel') }}</button>
+                <button type="button" class="btn btn-info" id="msSubmit" onclick="submitMarkSent()">
+                    <i class="fas fa-user-check mr-1"></i> {{ trans('mining-manager::taxes.refund_mark_sent') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 @endif
 
 @push('javascript')
@@ -333,6 +406,66 @@ function submitRefund() {
         error: function(xhr) {
             $('#rfSubmit').prop('disabled', false);
             var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not record that refund';
+            toastr.error(msg);
+        }
+    });
+}
+
+function openMarkSent(refundId, amount, holder) {
+    $('#msRefundId').val(refundId);
+    $('#msHolder').text(holder);
+    $('#msAmount').text(Number(amount).toLocaleString('en-US', {maximumFractionDigits: 0}) + ' ISK');
+    $('#msNote').val('');
+    $('#msSubmit').prop('disabled', false);
+
+    $('#markSentModal').appendTo('body').modal('show');
+}
+
+function submitMarkSent() {
+    var note = $('#msNote').val();
+
+    if (!note || !note.trim()) {
+        toastr.error('{{ trans("mining-manager::taxes.refund_failed_note_required") }}');
+        return;
+    }
+
+    $('#msSubmit').prop('disabled', true);
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.balances.refund-sent", ["refundId" => "__ID__"]) }}'.replace('__ID__', $('#msRefundId').val()),
+        type: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            note: note
+        },
+        success: function(response) {
+            $('#markSentModal').modal('hide');
+            toastr.success(response.message || 'Refund marked as sent');
+            setTimeout(function() { location.reload(); }, 1500);
+        },
+        error: function(xhr) {
+            $('#msSubmit').prop('disabled', false);
+            var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not mark that refund as sent';
+            toastr.error(msg);
+        }
+    });
+}
+
+function reopenRefund(refundId) {
+    if (!confirm('{{ trans("mining-manager::taxes.refund_reopen_confirm") }}')) {
+        return;
+    }
+
+    $.ajax({
+        url: '{{ route("mining-manager.taxes.balances.refund-reopen", ["refundId" => "__ID__"]) }}'.replace('__ID__', refundId),
+        type: 'POST',
+        data: { _token: '{{ csrf_token() }}' },
+        success: function(response) {
+            toastr.success(response.message || 'Refund reopened');
+            setTimeout(function() { location.reload(); }, 1500);
+        },
+        error: function(xhr) {
+            var msg = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not reopen that refund';
             toastr.error(msg);
         }
     });

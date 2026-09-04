@@ -184,6 +184,21 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
+        // A refund the wallet will never match, because the keyword was left
+        // off or the ISK went out some other way. Same gate: saying money was
+        // paid is the same weight of decision as agreeing to pay it.
+        Route::post('/balances/refund/{refundId}/sent', [
+            'as' => 'mining-manager.taxes.balances.refund-sent',
+            'uses' => 'TaxController@markRefundSent',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/balances/refund/{refundId}/reopen', [
+            'as' => 'mining-manager.taxes.balances.refund-reopen',
+            'uses' => 'TaxController@reopenRefund',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/wallet', [
             'as' => 'mining-manager.taxes.wallet',
             'uses' => 'TaxController@wallet',
