@@ -416,6 +416,7 @@ function refreshAssignMode() {
     $('#apSubmitLabel').text(toBalance ? $btn.data('label-balance') : $btn.data('label-invoice'));
     $btn.find('i').attr('class', toBalance ? 'fas fa-piggy-bank mr-1' : 'fas fa-link mr-1');
     $('#apBalanceHelp').toggle(toBalance);
+    $('#apOverrideWarning').toggle(toBalance);
     // Cascade is about where a remainder goes after settling a named invoice.
     // Going straight to balance already does that, so the choice is not offered.
     $('#apCascade').closest('.form-group').toggle(!toBalance);
@@ -622,6 +623,17 @@ $(document).on('change', '#rpTaxId', function() {
                         <i class="fas fa-piggy-bank mr-1"></i>
                         {{ trans('mining-manager::taxes.assign_balance_help') }}
                     </div>
+                    @unless($features['enable_upfront_payments'] ?? false)
+                        {{-- Banking a payment by hand still works with the feature
+                             switched off, because a codeless transfer from someone
+                             who owes nothing has nowhere else to go. Say plainly
+                             that this is an override so nobody does it absent
+                             mindedly. --}}
+                        <div id="apOverrideWarning" class="alert alert-warning py-2 px-3 small mt-2" style="display: none;">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            {{ trans('mining-manager::taxes.assign_balance_feature_off') }}
+                        </div>
+                    @endunless
                 </div>
 
                 <div class="form-group">

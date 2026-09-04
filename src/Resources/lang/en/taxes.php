@@ -395,6 +395,7 @@ return [
 
     // Assigning a codeless payment to a player's balance rather than an invoice
     'match_failed_upfront_not_held' => 'They owe nothing right now, and holding surplus as account balance is switched off, so there is nowhere for this to go. Turn on Hold surplus as credit under Settings, General, or assign it to an invoice instead.',
+    'assign_balance_feature_off' => 'Upfront payments are switched off. Holding this as balance still works because you are a director and the payment has nowhere else to go, but you are overriding a setting somebody chose. The balance will be spendable against their future invoices as normal.',
     'assign_to_balance' => 'Hold as account balance',
     'assign_balance_option' => 'Hold as account balance (no invoice)',
     'assign_payment_balance_only' => 'Held :amount ISK as account balance. It will come off their next invoice automatically.',

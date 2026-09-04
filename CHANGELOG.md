@@ -192,6 +192,19 @@ from the calendar month, so on a fortnightly cycle a period can be invoiced and 
 fortnight before that flag turns over. The test used here reads the invoice periods
 themselves and does not care how long they are.
 
+### ✨ Switching upfront payments off leaves held balances alone
+
+Turning the feature off stops members adding to a balance with the keyword. It does not
+touch balances already held: they stay spendable and keep coming off invoices, because
+the money is the member's and turning off a feature is not a reason to keep it.
+
+Two routes deliberately stay open with the feature off, and both now say so. **Hold
+surplus as credit** is a separate switch, so somebody can still build a balance by
+overpaying an invoice; the setting now spells that out and points at the other switch if
+you want the route closed. And a **director can still bank a payment by hand**, because a
+codeless transfer from somebody who owes nothing has nowhere else to go: the dialog now
+carries a warning that doing so overrides a setting somebody chose.
+
 ### ✨ Assign a codeless payment to a player's balance
 
 Assigning a payment by hand only worked if there was an invoice to point it at. A

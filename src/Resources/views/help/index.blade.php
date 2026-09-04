@@ -1429,6 +1429,24 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         The tab stays hidden until somebody holds a balance or upfront payments are
                         switched on, so an install that does not use it never sees it.
                     </p>
+
+                    <h4><i class="fas fa-exclamation-triangle"></i> Switching upfront payments off</h4>
+                    <p>
+                        Balances already held are never touched. They stay spendable and keep coming
+                        off invoices automatically, because the money is the member's and turning off a
+                        feature is not a reason to take it. What stops is members adding to a balance
+                        with the keyword.
+                    </p>
+                    <p>
+                        Two routes stay open, and it is worth knowing about both.
+                        <strong>Hold surplus as credit</strong> (Settings, General) is a separate
+                        switch: with it on, somebody can still build up a balance by overpaying an
+                        invoice, even with upfront payments off. Turn that off too if you want the
+                        route closed completely. And a <strong>director can still bank a payment by
+                        hand</strong> from Wallet Verification, which is deliberate: a transfer with no
+                        tax code from somebody who owes nothing has nowhere else to go. The dialog says
+                        plainly that you are overriding a setting when you do it.
+                    </p>
                 </div>
 
                 {{-- Ore classification and the cutover --}}

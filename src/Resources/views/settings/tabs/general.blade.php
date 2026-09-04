@@ -433,6 +433,16 @@
                             listed on the Wallet Verification page. When OFF, the surplus
                             is logged and discarded.
                         </small>
+                        <small class="form-text text-warning">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            This is a separate switch from Upfront Payments. With this ON,
+                            somebody can build up a balance by overpaying an invoice even
+                            when upfront payments are switched off, so turning that feature
+                            off does not mean no new balance can appear. If you want to
+                            close that route entirely, turn this off too. Balances already
+                            held are never touched either way: they stay spendable against
+                            future invoices.
+                        </small>
                     </div>
                 </div>
             </div>
