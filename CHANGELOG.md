@@ -8,6 +8,30 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### 🐛 Personal mining came in short, and late mining never came in
+
+SeAT does not keep a character's mining for a day as one total. It adds a row each time a
+fetch finds the day has grown, so a day mined in several sittings is several rows. The
+personal import took each row as the whole day, which left every such day recorded as only
+its most recent increase.
+
+Mining can also reach SeAT days or weeks after it happened, and the scheduled import only
+ever looked at the last two days of mining dates. Anything that turned up late for an
+earlier day was never imported at all.
+
+The import now adds up every row for a day, and each run also looks at what SeAT has saved
+recently, whatever day it belongs to. Your schedule does not need to change.
+
+Personal mining that was under-counted is now counted in full, so on an install that taxes
+belt, ice or gas mining, bills for the current period will come out higher than before, and
+correct. Days that have already been invoiced keep the tax they were billed. Their volume
+and value are brought up to date, and mining that turns up for them is marked as arriving
+after the invoice and is not charged.
+
+Older days are not re-imported by themselves. To bring them up to date, run
+`mining-manager:import-character-mining --days=35 --dry-run` to see what it would change,
+then again without `--dry-run`.
+
 ### ✨ A dry run for the personal mining import
 
 `mining-manager:import-character-mining --dry-run` goes down exactly the same path as a real
