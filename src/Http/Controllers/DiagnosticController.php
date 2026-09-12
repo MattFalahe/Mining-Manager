@@ -19,6 +19,7 @@ use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
+use MiningManager\Services\OreClassifier;
 
 class DiagnosticController extends Controller
 {
@@ -596,40 +597,28 @@ class DiagnosticController extends Controller
                 return redirect()->back()->with('error', 'No test characters found. Generate characters first.');
             }
 
-            // Define ore types with their IDs and categories
+            // Real type ids, each one checked against TypeIdRegistry. Only the id is
+            // stored; the flags further down are worked out the way the importers
+            // work them out, so generated rows classify exactly like real mining.
             $oreTypes = [
-                // Moon Ores (R64 - Exceptional)
-                ['id' => 45506, 'name' => 'Xenotime', 'rarity' => 'r64', 'is_moon_ore' => true],
-                ['id' => 46676, 'name' => 'Monazite', 'rarity' => 'r64', 'is_moon_ore' => true],
-
-                // Moon Ores (R32 - Rare)
-                ['id' => 45492, 'name' => 'Chromite', 'rarity' => 'r32', 'is_moon_ore' => true],
-                ['id' => 46678, 'name' => 'Platinum', 'rarity' => 'r32', 'is_moon_ore' => true],
-
-                // Moon Ores (R16 - Uncommon)
-                ['id' => 45494, 'name' => 'Cobaltite', 'rarity' => 'r16', 'is_moon_ore' => true],
-                ['id' => 46680, 'name' => 'Titanite', 'rarity' => 'r16', 'is_moon_ore' => true],
-
-                // Moon Ores (R8 - Common)
-                ['id' => 45490, 'name' => 'Zeolites', 'rarity' => 'r8', 'is_moon_ore' => true],
-                ['id' => 46682, 'name' => 'Scheelite', 'rarity' => 'r8', 'is_moon_ore' => true],
-
-                // Moon Ores (R4 - Ubiquitous)
-                ['id' => 45488, 'name' => 'Bitumens', 'rarity' => 'r4', 'is_moon_ore' => true],
-                ['id' => 46684, 'name' => 'Sylvite', 'rarity' => 'r4', 'is_moon_ore' => true],
-
-                // Regular Ores
-                ['id' => 1230, 'name' => 'Veldspar', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1228, 'name' => 'Scordite', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1224, 'name' => 'Pyroxeres', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-
-                // Ice
-                ['id' => 16262, 'name' => 'Clear Icicle', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-                ['id' => 17975, 'name' => 'Blue Ice', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-
-                // Gas
-                ['id' => 25268, 'name' => 'Mykoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
-                ['id' => 25272, 'name' => 'Cytoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
+                45510 => 'Xenotime (R64)',
+                45511 => 'Monazite (R64)',
+                45506 => 'Cinnabar (R32)',
+                45503 => 'Zircon (R32)',
+                45501 => 'Chromite (R16)',
+                45498 => 'Otavite (R16)',
+                45494 => 'Cobaltite (R8)',
+                45497 => 'Scheelite (R8)',
+                45492 => 'Bitumens (R4)',
+                45491 => 'Sylvite (R4)',
+                1230 => 'Veldspar',
+                1228 => 'Scordite',
+                1224 => 'Pyroxeres',
+                16262 => 'Clear Icicle',
+                16264 => 'Blue Ice',
+                30370 => 'Fullerite-C50',
+                28694 => 'Amber Mykoserocin',
+                25268 => 'Amber Cytoserocin',
             ];
 
             // Solar system IDs (various null sec systems)
@@ -642,7 +631,7 @@ class DiagnosticController extends Controller
                     $date = Carbon::now()->subDays($day);
 
                     for ($entry = 0; $entry < $entriesPerDay; $entry++) {
-                        $ore = $oreTypes[array_rand($oreTypes)];
+                        $typeId = array_rand($oreTypes);
                         $quantity = rand(1000, 50000);
                         $solarSystem = $solarSystems[array_rand($solarSystems)];
 
@@ -650,14 +639,19 @@ class DiagnosticController extends Controller
                             [
                                 'character_id' => $character->character_id,
                                 'date' => $date->format('Y-m-d'),
-                                'type_id' => $ore['id'],
+                                'type_id' => $typeId,
                                 'observer_id' => null,
                             ],
                             [
                                 'quantity' => $quantity,
                                 'solar_system_id' => $solarSystem,
                                 'processed_at' => $date,
-                                'is_moon_ore' => $ore['is_moon_ore'] ?? false,
+                                'is_moon_ore' => TypeIdRegistry::isMoonOre($typeId),
+                                'is_ice' => TypeIdRegistry::isIce($typeId),
+                                'is_gas' => TypeIdRegistry::isGas($typeId),
+                                'is_abyssal' => OreClassifier::isAbyssal($typeId),
+                                'is_triglavian' => TypeIdRegistry::isTriglavianOre($typeId),
+                                'ore_category' => OreClassifier::category($typeId),
                                 'created_at' => $date,
                                 'updated_at' => $date,
                             ]

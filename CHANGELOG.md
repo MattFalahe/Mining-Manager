@@ -18,6 +18,14 @@ Worth running before a wide `--days` window on a live install. Mining that SeAT 
 ledger never picked up would otherwise land in periods that have already been invoiced, and a
 dry run shows how much of that there is before any of it happens.
 
+### 🐛 Generated test data used the wrong ore ids
+
+The Diagnostics page's test mining data generator paired most of its type ids with the wrong
+ores. Bistot IV-Grade went in as an R64 moon ore, two of the ids do not exist in EVE at all,
+and every row carried only a moon flag, so test data never classified the way real mining
+does. It now uses real ids from the registry and works out every flag and the ore category
+the same way the importers do.
+
 ### ✨ Event and quest ore is left out entirely
 
 Ore that only exists through limited-time events, quests and mission content is no longer
