@@ -8,6 +8,16 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ A dry run for the personal mining import
+
+`mining-manager:import-character-mining --dry-run` goes down exactly the same path as a real
+import and prints the same table, but writes nothing: no new ledger rows, no updates, no daily
+summary rebuilds. It also says which dates any new entries would carry.
+
+Worth running before a wide `--days` window on a live install. Mining that SeAT holds but the
+ledger never picked up would otherwise land in periods that have already been invoiced, and a
+dry run shows how much of that there is before any of it happens.
+
 ### ✨ Event and quest ore is left out entirely
 
 Ore that only exists through limited-time events, quests and mission content is no longer

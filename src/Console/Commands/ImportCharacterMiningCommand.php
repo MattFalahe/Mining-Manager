@@ -19,7 +19,8 @@ class ImportCharacterMiningCommand extends Command
     protected $signature = 'mining-manager:import-character-mining
                             {--character_id= : Import specific character ID only}
                             {--days=30 : Number of days to import}
-                            {--force : Re-import even if entries already exist}';
+                            {--force : Re-import even if entries already exist}
+                            {--dry-run : Show what an import would do without writing anything}';
 
     protected $description = 'Import character mining ledger data from SeAT core (belt, anomaly, ice, gas mining)';
 
@@ -49,6 +50,17 @@ class ImportCharacterMiningCommand extends Command
         $characterId = $this->option('character_id');
         $days = (int) $this->option('days');
         $force = $this->option('force');
+
+        // A dry run walks the same path and counts the same outcomes but writes
+        // nothing: no ledger rows, no deletions, no summary rebuilds. A wide
+        // --days window on a live install can add rows to periods invoiced long
+        // ago, and this is how to see that before it happens.
+        $dryRun = (bool) $this->option('dry-run');
+
+        if ($dryRun) {
+            $this->warn('Dry run: nothing will be written to the ledger or the daily summaries.');
+            $this->line('');
+        }
         $frozen = 0;
         $lateArrivals = 0;
         $cutoffDate = Carbon::now()->subDays($days);
@@ -91,6 +103,8 @@ class ImportCharacterMiningCommand extends Command
         $skipped = 0;
         $errors = 0;
         $ignored = 0;
+        $firstNewDate = null;
+        $lastNewDate = null;
 
         $touchedPairs = collect();
 
@@ -98,9 +112,9 @@ class ImportCharacterMiningCommand extends Command
         $progressBar->start();
 
         $query->chunk(500, function ($entries) use (
-            $valuationService, $force,
+            $valuationService, $force, $dryRun,
             &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals, &$ignored,
-            &$touchedPairs, $progressBar
+            &$touchedPairs, &$firstNewDate, &$lastNewDate, $progressBar
         ) {
         foreach ($entries as $entry) {
             try {
@@ -136,15 +150,17 @@ class ImportCharacterMiningCommand extends Command
                 if ($existing && !$force) {
                     // Update only if quantity changed
                     if ($existing->quantity != $entry->quantity) {
-                        $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                        $existing->update([
-                            'quantity' => $entry->quantity,
-                            'unit_price' => $values['unit_price'] ?? 0,
-                            'ore_value' => $values['ore_value'] ?? 0,
-                            'mineral_value' => $values['mineral_value'] ?? 0,
-                            'total_value' => $values['total_value'] ?? 0,
-                            'processed_at' => Carbon::now(),
-                        ]);
+                        if (! $dryRun) {
+                            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                            $existing->update([
+                                'quantity' => $entry->quantity,
+                                'unit_price' => $values['unit_price'] ?? 0,
+                                'ore_value' => $values['ore_value'] ?? 0,
+                                'mineral_value' => $values['mineral_value'] ?? 0,
+                                'total_value' => $values['total_value'] ?? 0,
+                                'processed_at' => Carbon::now(),
+                            ]);
+                        }
                         $updated++;
 
                         $pairKey = $entry->character_id . '|' . $entry->date;
@@ -186,7 +202,9 @@ class ImportCharacterMiningCommand extends Command
                         continue;
                     }
 
-                    $existing->delete();
+                    if (! $dryRun) {
+                        $existing->delete();
+                    }
                 }
 
                 // Same rule as the observer path: mining that surfaces for a
@@ -199,31 +217,41 @@ class ImportCharacterMiningCommand extends Command
                     $lateArrivals++;
                 }
 
-                MiningLedger::create([
-                    'character_id' => $entry->character_id,
-                    'date' => $entry->date,
-                    'type_id' => $entry->type_id,
-                    'quantity' => $entry->quantity,
-                    'solar_system_id' => $entry->solar_system_id,
-                    'unit_price' => $values['unit_price'] ?? 0,
-                    'ore_value' => $values['ore_value'] ?? 0,
-                    'mineral_value' => $values['mineral_value'] ?? 0,
-                    'total_value' => $values['total_value'] ?? 0,
-                    'is_moon_ore' => $isMoonOre,
-                    'is_ice' => $isIce,
-                    'is_gas' => $isGas,
-                    'is_abyssal' => $isAbyssal,
-                    'is_triglavian' => $isTriglavian,
-                    'ore_category' => $oreCategory,
-                    'processed_at' => Carbon::now(),
-                    'is_taxable' => ! $lateExempt,
-                    'tax_rate' => 0,
-                    'tax_amount' => 0,
-                    'notes' => $lateExempt
-                        ? 'Arrived after this period was invoiced, so it was not taxed.'
-                        : null,
-                ]);
+                if (! $dryRun) {
+                    MiningLedger::create([
+                        'character_id' => $entry->character_id,
+                        'date' => $entry->date,
+                        'type_id' => $entry->type_id,
+                        'quantity' => $entry->quantity,
+                        'solar_system_id' => $entry->solar_system_id,
+                        'unit_price' => $values['unit_price'] ?? 0,
+                        'ore_value' => $values['ore_value'] ?? 0,
+                        'mineral_value' => $values['mineral_value'] ?? 0,
+                        'total_value' => $values['total_value'] ?? 0,
+                        'is_moon_ore' => $isMoonOre,
+                        'is_ice' => $isIce,
+                        'is_gas' => $isGas,
+                        'is_abyssal' => $isAbyssal,
+                        'is_triglavian' => $isTriglavian,
+                        'ore_category' => $oreCategory,
+                        'processed_at' => Carbon::now(),
+                        'is_taxable' => ! $lateExempt,
+                        'tax_rate' => 0,
+                        'tax_amount' => 0,
+                        'notes' => $lateExempt
+                            ? 'Arrived after this period was invoiced, so it was not taxed.'
+                            : null,
+                    ]);
+                }
                 $created++;
+
+                $newDate = Carbon::parse($entry->date)->toDateString();
+                if ($firstNewDate === null || $newDate < $firstNewDate) {
+                    $firstNewDate = $newDate;
+                }
+                if ($lastNewDate === null || $newDate > $lastNewDate) {
+                    $lastNewDate = $newDate;
+                }
 
                 $pairKey = $entry->character_id . '|' . $entry->date;
                 $touchedPairs->put($pairKey, [
@@ -247,14 +275,19 @@ class ImportCharacterMiningCommand extends Command
         $this->table(
             ['Status', 'Count'],
             [
-                ['New entries created', $created],
-                ['Existing entries updated', $updated],
+                [$dryRun ? 'New entries it would create' : 'New entries created', $created],
+                [$dryRun ? 'Existing entries it would update' : 'Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
                 ['Ignored (event and quest ore)', $ignored],
-                ['Arrived after invoicing, exempt', $lateArrivals],
+                [$dryRun ? 'Would arrive after invoicing, exempt' : 'Arrived after invoicing, exempt', $lateArrivals],
                 ['Errors', $errors],
             ]
         );
+
+        if ($created > 0) {
+            $this->line('');
+            $this->info(($dryRun ? 'New entries would be dated ' : 'New entries are dated ') . "{$firstNewDate} to {$lastNewDate}.");
+        }
 
         // Only ever non-zero under --force, and worth saying out loud rather
         // than quietly not doing what was asked.
@@ -266,7 +299,10 @@ class ImportCharacterMiningCommand extends Command
         }
 
         // Update daily summaries for touched character+date pairs
-        if ($touchedPairs->isNotEmpty()) {
+        if ($touchedPairs->isNotEmpty() && $dryRun) {
+            $this->line('');
+            $this->info("Would rebuild {$touchedPairs->count()} daily summaries.");
+        } elseif ($touchedPairs->isNotEmpty()) {
             $this->line('');
             $this->info('Updating daily summaries...');
 
@@ -285,7 +321,7 @@ class ImportCharacterMiningCommand extends Command
             }
         }
 
-        $this->info('Import complete.');
+        $this->info($dryRun ? 'Dry run complete. Nothing was written.' : 'Import complete.');
 
         return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
         } finally {
