@@ -698,6 +698,30 @@ class TypeIdRegistry
     ];
 
     // ============================================
+    // EVENT AND QUEST ORE
+    // ============================================
+
+    /**
+     * Ore that only exists through limited-time events, quests or mission
+     * content. OreClassifier::isIgnored() reads this list.
+     *
+     * Mutanite is not event ore even though it looks like it. It comes from
+     * Homefront Operations, which run permanently in highsec, and it has a
+     * market price.
+     */
+    const EVENT_ORES = [
+        49789,  // Hiemal Tricarboxyl Condensate (Temporal Resources, Limited Time)
+        50015,  // Amethystic Crystallite (Limited Time)
+        56950,  // Faded Volatile Ice (Temporal Resources, unpublished)
+        57028,  // Friable Volatile Ice (Temporal Resources, unpublished)
+        60771,  // Nephrite (AIR Ore Asteroid Resources)
+        72935,  // Dense Moissanite (Gallente Federation mining initiative)
+        88105,  // Tyranite (Limited Time, Capsuleer Day XXII)
+        90421,  // Veldspar Isotope (mission and new player ore)
+        90422,  // Veldspar Isotope (mission and new player ore)
+    ];
+
+    // ============================================
     // AGGREGATE GETTERS
     // ============================================
 

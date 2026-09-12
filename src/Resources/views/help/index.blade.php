@@ -740,6 +740,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             and the calculator does not recognise it, your static data needs updating, and
                             the calculator now says so instead of quietly dropping the row.
                         </li>
+                        <li>
+                            <strong>Event and quest ore is left out.</strong> Tyranite, Nephrite, Volatile
+                            Ice and the rest of the limited-time and mission ore are no longer imported,
+                            taxed or charted. Mutanite is still counted, because Homefront Operations are
+                            permanent.
+                        </li>
                     </ul>
 
                     <h4><i class="fas fa-shield-alt"></i> What this does not change</h4>

@@ -174,6 +174,11 @@ class DiagnoseTypeIdsCommand extends Command
                 'count' => TypeIdRegistry::getCategoryCount('new-ores'),
                 'ids' => TypeIdRegistry::getTypeIdsByCategory('new-ores'),
             ],
+            'event' => [
+                'name' => 'Event and Quest Ore (left out of the ledger)',
+                'count' => count(TypeIdRegistry::EVENT_ORES),
+                'ids' => TypeIdRegistry::EVENT_ORES,
+            ],
         ];
     }
 

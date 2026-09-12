@@ -90,6 +90,7 @@ class ImportCharacterMiningCommand extends Command
         $updated = 0;
         $skipped = 0;
         $errors = 0;
+        $ignored = 0;
 
         $touchedPairs = collect();
 
@@ -98,11 +99,19 @@ class ImportCharacterMiningCommand extends Command
 
         $query->chunk(500, function ($entries) use (
             $valuationService, $force,
-            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals,
+            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals, &$ignored,
             &$touchedPairs, $progressBar
         ) {
         foreach ($entries as $entry) {
             try {
+                // Event and quest ore is left out of the ledger entirely, so
+                // nothing further along taxes it, values it or charts it.
+                if (OreClassifier::isIgnored((int) $entry->type_id)) {
+                    $ignored++;
+                    $progressBar->advance();
+                    continue;
+                }
+
                 // Skip if observer data already exists for this entry (observer is authoritative)
                 $hasObserver = MiningLedger::where('character_id', $entry->character_id)
                     ->whereDate('date', $entry->date)
@@ -241,6 +250,7 @@ class ImportCharacterMiningCommand extends Command
                 ['New entries created', $created],
                 ['Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
+                ['Ignored (event and quest ore)', $ignored],
                 ['Arrived after invoicing, exempt', $lateArrivals],
                 ['Errors', $errors],
             ]

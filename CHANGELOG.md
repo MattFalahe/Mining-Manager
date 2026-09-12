@@ -8,6 +8,20 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ Event and quest ore is left out entirely
+
+Ore that only exists through limited-time events, quests and mission content is no longer
+imported, taxed, valued or charted: Tyranite, Nephrite, Dense Moissanite, Amethystic
+Crystallite, Hiemal Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. It is not
+ongoing mining. Counting it put one-off spikes into the figures people use to judge normal
+activity, and on an install that taxes regular ore it ended up on members' bills.
+
+It is skipped when mining is imported and when mining events are tallied, so nothing further
+along ever sees it. Mining already in your ledger is left exactly as it was.
+
+Mutanite is not on the list. It comes from Homefront Operations, which run permanently in
+highsec, and it is still counted as regular ore.
+
 ### 🧹 One ore classifier instead of six
 
 The same ordered "is it moon ore, ice, gas, abyssal or regular ore" decision existed in six

@@ -25,6 +25,22 @@ namespace MiningManager\Services;
 final class OreClassifier
 {
     /**
+     * Whether an ore is left out of the plugin entirely.
+     *
+     * Event, quest and mission ore is not ongoing mining. Taxing it bills
+     * members for something no corporation set out to tax, and counting it
+     * puts one-off spikes into the figures people use to judge normal
+     * activity. It is skipped at import, so nothing further along ever sees it.
+     *
+     * Only mining imported after this check exists is affected. Rows already in
+     * a ledger stay as they were, like every other change to how ore is treated.
+     */
+    public static function isIgnored(int $typeId): bool
+    {
+        return in_array($typeId, TypeIdRegistry::EVENT_ORES, true);
+    }
+
+    /**
      * The ores that count as abyssal: the Bezdnacine, Rakovene and Talassonite
      * families.
      *

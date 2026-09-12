@@ -192,6 +192,14 @@ class ProcessMiningLedgerCommand extends Command
                 $taxSelector = $settingsService->getTaxSelector();
 
                 foreach ($entries as $entry) {
+                // Event and quest ore never enters the ledger. Observer data
+                // comes from moon drilling and should not carry any, but both
+                // import paths make the same check so they cannot drift apart.
+                if (OreClassifier::isIgnored((int) $entry->type_id)) {
+                    $progressBar->advance();
+                    continue;
+                }
+
                 // Track aggregates for summary
                 $uniqueObserverIds->push($entry->observer_id);
                 $uniqueCharacterIds->push($entry->character_id);
