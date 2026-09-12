@@ -274,45 +274,26 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     }
 
     /**
-     * Register event listeners for the plugin
-     * 
-     * IMPORTANT: As of v2.0, this plugin uses Corporation Observer data
-     * for COMPLETE moon mining tracking (not character ledgers).
-     * 
-     * The CharacterMiningUpdated listener is kept for backward compatibility
-     * but the primary data source is now corporation_industry_mining_observer_data
-     * which tracks ALL miners at your structures (not just SeAT users).
-     * 
+     * Hooks into SeAT's own jobs and events.
+     *
+     * Nothing is registered here any more. The hooks this used to hold were
+     * bound to names SeAT never uses, so none of them ever ran, and a scheduled
+     * command covers each one. The notes stay so they do not come back as they
+     * were.
+     *
      * @return void
      */
     private function registerEventListeners()
     {
-        // Hook into SeAT's character mining job completion
-        // SeAT v5 doesn't fire events — we use Queue::after to detect when the job finishes
-        \Illuminate\Support\Facades\Queue::after(function (\Illuminate\Queue\Events\JobProcessed $event) {
-            $jobName = $event->job->resolveName();
-
-            // Character mining ledger updated — import into our mining_ledger table
-            if ($jobName === 'Seat\Eveapi\Jobs\Character\Industry\Mining') {
-                try {
-                    $payload = $event->job->payload();
-                    $command = unserialize($payload['data']['command'] ?? '');
-
-                    // Extract character_id from the job
-                    $characterId = $command->character_id ?? ($command->getCharacterId() ?? null);
-
-                    if ($characterId) {
-                        \Illuminate\Support\Facades\Log::debug("Mining Manager: SeAT character mining job completed for character {$characterId}, triggering import");
-                        \Illuminate\Support\Facades\Artisan::queue('mining-manager:import-character-mining', [
-                            '--character_id' => $characterId,
-                            '--days' => 7,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::debug("Mining Manager: Could not extract character_id from mining job: " . $e->getMessage());
-                }
-            }
-        });
+        // Personal mining is imported by mining-manager:import-character-mining
+        // on its schedule. There used to be a Queue::after hook here that queued
+        // an import each time SeAT finished a character's mining job, but it
+        // matched Seat\Eveapi\Jobs\Character\Industry\Mining and the job is
+        // Seat\Eveapi\Jobs\Industry\Character\Mining, so it never fired once.
+        // Removed rather than repointed: every import run takes the same lock,
+        // so one queued per character would mostly skip, and could make the
+        // scheduled run skip too. The scheduled run already covers everything
+        // SeAT saved in the last two days, whatever date it is for.
 
         // Tax payments are matched by mining-manager:verify-payments on its
         // schedule. There used to be a listener bound to
