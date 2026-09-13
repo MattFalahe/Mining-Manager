@@ -21,9 +21,10 @@ the whole day.
 
 The scheduled import still looks at the last two days of mining only, and that is
 deliberate. SeAT sometimes saves mining for a day a week or more after it happened, and
-taking that in would change days that are already invoiced and summarised. Days imported
-before this update keep the quantities they had. A manual run with a wider `--days` would
-recount them, and would also bring in any late mining for those days, so dry-run it first.
+taking that in would change days that are already invoiced and summarised. For the same
+reason nothing already in your ledger is recounted. Mining from the update onwards is
+counted in full; days before it keep the quantities they had, apart from the last two
+days, which the import has always kept refreshing.
 
 ### ✨ A dry run for the personal mining import
 
