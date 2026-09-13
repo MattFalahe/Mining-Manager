@@ -19,7 +19,7 @@ class ImportCharacterMiningCommand extends Command
 {
     protected $signature = 'mining-manager:import-character-mining
                             {--character_id= : Import specific character ID only}
-                            {--days=30 : How far back to look, by mining date and by when SeAT last saved the row}
+                            {--days=30 : Number of days to import, by mining date}
                             {--force : Re-import even if entries already exist}
                             {--dry-run : Show what an import would do without writing anything}';
 
@@ -74,59 +74,35 @@ class ImportCharacterMiningCommand extends Command
 
         // SeAT does not store a day's mining as one row. Each time it fetches a
         // character's ledger it saves only how much each day has grown since the
-        // last fetch. Growth on an earlier day goes onto a single 23:59:59 row
-        // for that day, which the next such fetch updates in place, and that can
-        // happen days or weeks after the ore was mined. Two things follow. A
-        // day's quantity is the sum of all its rows, never any one of them. And
-        // the window has to cover when SeAT last saved a row as well as when the
-        // ore was mined.
+        // last fetch, so a day mined in several sittings is several rows. A
+        // day's quantity is the sum of all of them, never any one row.
         //
-        // --days means both. The schedule has always run this with --days=2 and
-        // existing installs keep that entry, so the command has to get it right
-        // through that option rather than through a new one.
-        $miningTable = (new \Seat\Eveapi\Models\Industry\CharacterMining())->getTable();
-
-        // ESI only returns the last 30 days, so nothing SeAT saves now is dated
-        // earlier than that, and 32 leaves a margin. Bounding on the indexed
-        // date column keeps the save-time check from scanning SeAT's whole
-        // mining history.
-        $earliestDate = Carbon::now()->subDays(max($days, 32))->toDateString();
-
-        $touched = DB::table($miningTable)
-            ->select('character_id', 'date', 'solar_system_id', 'type_id')
-            ->where('date', '>=', $earliestDate)
-            ->where(function ($q) use ($cutoffDate) {
-                $q->where('date', '>=', $cutoffDate->toDateString())
-                    ->orWhere('updated_at', '>=', $cutoffDate);
-            })
-            ->distinct();
+        // The window is by mining date and nothing else. SeAT sometimes saves
+        // mining for a day long after the day has left the window, and that is
+        // left out on purpose: by then the day can be on an invoice and in a
+        // daily summary, and neither should move because SeAT caught up late.
+        // A wider --days run still takes whatever SeAT holds for its dates.
+        $query = DB::table((new \Seat\Eveapi\Models\Industry\CharacterMining())->getTable())
+            ->select(
+                'character_id',
+                'date',
+                'solar_system_id',
+                'type_id',
+                DB::raw('SUM(quantity) as quantity')
+            )
+            ->where('date', '>=', $cutoffDate->toDateString())
+            ->groupBy('character_id', 'date', 'solar_system_id', 'type_id')
+            ->orderBy('character_id')
+            ->orderBy('date')
+            ->orderBy('solar_system_id')
+            ->orderBy('type_id');
 
         if ($characterId) {
-            $touched->where('character_id', $characterId);
+            $query->where('character_id', $characterId);
             $this->info("👤 Importing for character ID: {$characterId}");
         } else {
             $this->info("👤 Importing for ALL characters with mining data");
         }
-
-        $query = DB::table($miningTable . ' as cm')
-            ->joinSub($touched, 'touched', function ($join) {
-                $join->on('touched.character_id', '=', 'cm.character_id')
-                    ->on('touched.date', '=', 'cm.date')
-                    ->on('touched.solar_system_id', '=', 'cm.solar_system_id')
-                    ->on('touched.type_id', '=', 'cm.type_id');
-            })
-            ->select(
-                'cm.character_id',
-                'cm.date',
-                'cm.solar_system_id',
-                'cm.type_id',
-                DB::raw('SUM(cm.quantity) as quantity')
-            )
-            ->groupBy('cm.character_id', 'cm.date', 'cm.solar_system_id', 'cm.type_id')
-            ->orderBy('cm.character_id')
-            ->orderBy('cm.date')
-            ->orderBy('cm.solar_system_id')
-            ->orderBy('cm.type_id');
 
         $totalEntries = DB::query()->fromSub($query, 'daily_totals')->count();
 
@@ -140,7 +116,7 @@ class ImportCharacterMiningCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("📊 Found {$totalEntries} daily mining totals (mined in the last {$days} days, or saved by SeAT in that time)");
+        $this->info("📊 Found {$totalEntries} daily mining totals (last {$days} days)");
         $this->line('');
 
         $valuationService = app(OreValuationService::class);

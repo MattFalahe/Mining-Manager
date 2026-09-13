@@ -50,7 +50,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_after' => null,
             ],
             // Import character mining from SeAT ESI cache - runs every 30 minutes at :20 and :50
-            // --days=2 covers mining dated in the last two days and anything SeAT saved in that time
+            // --days=2 on purpose: mining SeAT saves later than that is left out so billed days stay put
             [
                 'command' => 'mining-manager:import-character-mining --days=2',
                 'expression' => '20,50 * * * *',

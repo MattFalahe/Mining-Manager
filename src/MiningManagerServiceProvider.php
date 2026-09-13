@@ -290,10 +290,11 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // an import each time SeAT finished a character's mining job, but it
         // matched Seat\Eveapi\Jobs\Character\Industry\Mining and the job is
         // Seat\Eveapi\Jobs\Industry\Character\Mining, so it never fired once.
-        // Removed rather than repointed: every import run takes the same lock,
-        // so one queued per character would mostly skip, and could make the
-        // scheduled run skip too. The scheduled run already covers everything
-        // SeAT saved in the last two days, whatever date it is for.
+        // Removed rather than repointed. It asked for seven days, and the
+        // scheduled run keeps to two so that mining which has already been
+        // billed, and its daily summaries, stay as they were. Every import run
+        // also takes the same lock, so one queued per character would mostly
+        // skip and could make the scheduled run skip too.
 
         // Tax payments are matched by mining-manager:verify-payments on its
         // schedule. There used to be a listener bound to

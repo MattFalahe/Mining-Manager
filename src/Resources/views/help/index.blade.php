@@ -2574,8 +2574,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:import-character-mining</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_30min') }}</span></td>
-                                    <td>Import personal mining data from SeAT's ESI cache (belt, anomaly, ice, gas mining). Each run also picks up mining SeAT saved late for earlier days, which can be weeks after the ore was mined.<br>
-                                        <small class="text-muted">Options: <code>--character_id=</code> specific character, <code>--days=30</code> lookback, by mining date and by when SeAT saved it, <code>--force</code> re-import existing entries, <code>--dry-run</code> show what it would change without writing anything</small>
+                                    <td>Import personal mining data from SeAT's ESI cache (belt, anomaly, ice, gas mining). Each run covers the last two days of mining. Mining SeAT only saves after that is left out on purpose, so days already billed and summarised don't change.<br>
+                                        <small class="text-muted">Options: <code>--character_id=</code> specific character, <code>--days=30</code> lookback by mining date, <code>--force</code> re-import existing entries, <code>--dry-run</code> show what it would change without writing anything</small>
                                     </td>
                                 </tr>
                                 <tr>
