@@ -171,15 +171,7 @@ class MoonExtractionService
     private function getActualOreVolumesFromNotification(int $structureId, string $extractionStartTime): ?array
     {
         try {
-            // Query character_notifications for MoonminingExtractionStarted notifications
-            // We need to find the notification for this specific extraction
-            $notification = DB::table('character_notifications')
-                ->where('type', 'MoonminingExtractionStarted')
-                ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
-                ->where('timestamp', '>=', Carbon::parse($extractionStartTime)->subMinutes(5))
-                ->where('timestamp', '<=', Carbon::parse($extractionStartTime)->addMinutes(5))
-                ->orderBy('timestamp', 'desc')
-                ->first();
+            $notification = $this->findExtractionStartedNotification($structureId, $extractionStartTime);
 
             if (!$notification) {
                 Log::debug("Mining Manager: No notification found for structure {$structureId} at {$extractionStartTime}");
@@ -215,6 +207,62 @@ class MoonExtractionService
 
         } catch (\Exception $e) {
             Log::error("Mining Manager: Error fetching notification data for structure {$structureId}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The in-game MoonminingExtractionStarted notification for one extraction.
+     *
+     * Matched on the refinery and a few minutes either side of the start time.
+     * The real ore volumes and the name of whoever started the extraction both
+     * come from it, because the corporation's extraction endpoint has neither.
+     *
+     * @param int $structureId
+     * @param mixed $extractionStartTime
+     * @return object|null
+     */
+    private function findExtractionStartedNotification(int $structureId, $extractionStartTime): ?object
+    {
+        return DB::table('character_notifications')
+            ->where('type', 'MoonminingExtractionStarted')
+            ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
+            ->where('timestamp', '>=', Carbon::parse($extractionStartTime)->subMinutes(5))
+            ->where('timestamp', '<=', Carbon::parse($extractionStartTime)->addMinutes(5))
+            ->orderBy('timestamp', 'desc')
+            ->first();
+    }
+
+    /**
+     * Who started an extraction, by name.
+     *
+     * Null when SeAT has not pulled the notification yet. Without Manager Core
+     * that can happen, because SeAT fetches the extraction endpoint and the
+     * notifications on separate schedules. The alert then goes out without the
+     * line rather than waiting for it.
+     */
+    private function extractionStartedBy(MoonExtraction $extraction): ?string
+    {
+        if (!$extraction->structure_id || !$extraction->extraction_start_time) {
+            return null;
+        }
+
+        try {
+            $notification = $this->findExtractionStartedNotification(
+                (int) $extraction->structure_id,
+                $extraction->extraction_start_time
+            );
+
+            if (!$notification) {
+                return null;
+            }
+
+            $data = Yaml::parse($notification->text);
+
+            return is_array($data) ? MoonNotificationCharacter::name($data, 'startedBy') : null;
+        } catch (\Throwable $e) {
+            Log::debug("Mining Manager: could not tell who started extraction {$extraction->id}: " . $e->getMessage());
+
             return null;
         }
     }
@@ -1031,6 +1079,7 @@ class MoonExtractionService
             $notificationService->sendExtractionStarted(array_filter([
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
+                'started_by' => $this->extractionStartedBy($extraction),
                 'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
                 'time_until_arrival' => $timeUntil,
                 'estimated_value' => $extraction->estimated_value ?? 0,

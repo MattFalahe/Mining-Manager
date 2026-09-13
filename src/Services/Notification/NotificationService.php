@@ -599,9 +599,9 @@ class NotificationService
      * sendViaWebhooks. Standalone — no cross-plugin dependency.
      *
      * Expected keys in $data (all optional, filtered if missing):
-     *   moon_name, structure_name, system_name, extraction_start_time,
-     *   chunk_arrival_time, time_until_arrival, estimated_value,
-     *   extraction_url, extraction_id
+     *   moon_name, structure_name, system_name, started_by,
+     *   extraction_start_time, chunk_arrival_time, time_until_arrival,
+     *   estimated_value, extraction_url, extraction_id
      *
      * @param array $data
      * @return array Result map from send()
@@ -1957,11 +1957,12 @@ class NotificationService
                 'subject' => sprintf('Moon Extraction Started: %s', $data['moon_name'] ?? 'Unknown Moon'),
                 'body' => sprintf(
                     "A new moon extraction has started.\n\n" .
-                    "Moon: %s\nStructure: %s\nChunk Arrives: %s\n\n" .
+                    "Moon: %s\nStructure: %s\n%sChunk Arrives: %s\n\n" .
                     "Plan your fleet around the arrival.\n\n" .
                     "%s Management",
                     $data['moon_name'] ?? 'Unknown',
                     $data['structure_name'] ?? 'Unknown Structure',
+                    !empty($data['started_by']) ? "Started By: {$data['started_by']}\n" : '',
                     $data['chunk_arrival_time'] ?? 'Unknown',
                     $this->getCorpName()
                 )
@@ -2704,6 +2705,7 @@ class NotificationService
                 isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
                 isset($data['structure_name']) ? ['title' => 'Structure', 'value' => $data['structure_name'], 'short' => true] : null,
                 isset($data['system_name']) ? ['title' => 'System', 'value' => $data['system_name'], 'short' => true] : null,
+                !empty($data['started_by']) ? ['title' => 'Started By', 'value' => $data['started_by'], 'short' => true] : null,
                 isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Arrives', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
                 isset($data['time_until_arrival']) ? ['title' => 'Time Until Arrival', 'value' => $data['time_until_arrival'], 'short' => true] : null,
                 (isset($data['estimated_value']) && $data['estimated_value'] > 0)
@@ -2969,6 +2971,7 @@ class NotificationService
                 isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
                 isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
                 isset($data['system_name']) ? ['name' => '📍 System', 'value' => $data['system_name'], 'inline' => true] : null,
+                !empty($data['started_by']) ? ['name' => '👤 Started By', 'value' => $data['started_by'], 'inline' => true] : null,
                 isset($data['chunk_arrival_time']) ? ['name' => '📦 Chunk Arrives', 'value' => $this->withEveSuffix($data['chunk_arrival_time']), 'inline' => true] : null,
                 isset($data['time_until_arrival']) ? ['name' => '⏳ Time Until Arrival', 'value' => $data['time_until_arrival'], 'inline' => true] : null,
                 (isset($data['estimated_value']) && $data['estimated_value'] > 0)

@@ -8,6 +8,13 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ Extraction Started says who lit the drill
+
+The Discord and Slack alerts now name the character who started the extraction, taken from
+the in-game notification for it. Without Manager Core the alert can go
+out before SeAT has pulled that notification, and then the line is left off rather than
+holding the alert back.
+
 ### 🐛 Payment steps sent members to their own wallet
 
 My Taxes and the member guide in Help told members to pay from their wallet, and the wallet

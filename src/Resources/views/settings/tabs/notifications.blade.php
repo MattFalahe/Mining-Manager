@@ -137,7 +137,7 @@
                     'extraction_started' => [
                         'label' => 'Extraction Started',
                         'icon' => 'fas fa-hammer text-info',
-                        'desc' => 'Fires when a refinery begins a new extraction (drill fired, chunk forming). Read from the in-game MoonminingExtractionStarted director notification. Lets the team plan around the upcoming arrival. Standalone — no Manager Core or Structure Manager required.',
+                        'desc' => 'Fires when a refinery begins a new extraction (drill fired, chunk forming). Read from the in-game MoonminingExtractionStarted director notification, which also names who started it. Lets the team plan around the upcoming arrival. Standalone — no Manager Core or Structure Manager required.',
                         'scope' => 'general',
                         'has_role_ping' => true,
                         'has_user_ping' => false,
