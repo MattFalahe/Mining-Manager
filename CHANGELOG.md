@@ -10,10 +10,20 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 ### ✨ Extraction Started says who lit the drill
 
-The Discord and Slack alerts now name the character who started the extraction, taken from
-the in-game notification for it. Without Manager Core the alert can go
-out before SeAT has pulled that notification, and then the line is left off rather than
-holding the alert back.
+The Discord and Slack alerts now name the character who started the extraction and, when that
+pilot is on SeAT, the main of their account, taken from the in-game notification for it.
+
+With Manager Core, that notification is what raises the alert in the first place, so the name
+is always there. Without it, the alert now waits for the notification to reach SeAT before it
+goes out. If it still has not arrived six hours after the extraction started, the alert goes
+out without the name, so a missing notification can delay the alert but never lose it.
+
+### 🐛 "Fractured by" was always blank
+
+The moon pages have a line for who fractured a chunk, but the plugin looked for that pilot in a
+format the in-game notification does not use, so it never found one. It now reads the fields
+the notification really carries, and shows the pilot with their main. Chunks already recorded
+as fractured keep what they had.
 
 ### 🐛 Payment steps sent members to their own wallet
 

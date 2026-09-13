@@ -137,7 +137,7 @@
                     'extraction_started' => [
                         'label' => 'Extraction Started',
                         'icon' => 'fas fa-hammer text-info',
-                        'desc' => 'Fires when a refinery begins a new extraction (drill fired, chunk forming). Read from the in-game MoonminingExtractionStarted director notification, which also names who started it. Lets the team plan around the upcoming arrival. Standalone — no Manager Core or Structure Manager required.',
+                        'desc' => 'Fires when a refinery begins a new extraction (drill fired, chunk forming). Read from the in-game MoonminingExtractionStarted director notification, which also names who started it and their main. Lets the team plan around the upcoming arrival. Standalone — no Manager Core or Structure Manager required.',
                         'scope' => 'general',
                         'has_role_ping' => true,
                         'has_user_ping' => false,
@@ -770,7 +770,8 @@
                 <strong>Fast (Manager Core)</strong> registers with Manager Core's ESI fast-poll and
                 reacts to the in-game <code>MoonminingExtractionStarted</code> notification in ~2 minutes.
                 <strong>SeAT-native</strong> waits for the corp moon-extraction endpoint to refresh
-                (~30 min cache). The two paths are mutually exclusive — only one fires, so there are
+                (~30 min cache), then for the in-game notification that names who started it, for
+                up to six hours. The two paths are mutually exclusive — only one fires, so there are
                 no duplicate notifications.
                 @if(!$mmFastPollAvailable)
                     <span class="d-block mt-1 text-warning">

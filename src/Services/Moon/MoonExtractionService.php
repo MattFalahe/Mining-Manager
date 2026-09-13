@@ -7,6 +7,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonOreHelper;
 use MiningManager\Services\Pricing\PriceProviderService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -15,6 +16,13 @@ use Symfony\Component\Yaml\Yaml;
 
 class MoonExtractionService
 {
+    /**
+     * How long an Extraction Started alert is held for the in-game notification
+     * that names who started the extraction, and how often it looks meanwhile.
+     */
+    private const STARTED_BY_WAIT_HOURS = 6;
+    private const STARTED_BY_RECHECK_SECONDS = 600;
+
     /**
      * Moon value calculation service
      *
@@ -234,12 +242,11 @@ class MoonExtractionService
     }
 
     /**
-     * Who started an extraction, by name.
+     * Who started an extraction, with their main.
      *
      * Null when SeAT has not pulled the notification yet. Without Manager Core
-     * that can happen, because SeAT fetches the extraction endpoint and the
-     * notifications on separate schedules. The alert then goes out without the
-     * line rather than waiting for it.
+     * that is normal for a while, because SeAT fetches the extraction endpoint
+     * and the notifications on separate schedules.
      */
     private function extractionStartedBy(MoonExtraction $extraction): ?string
     {
@@ -252,19 +259,32 @@ class MoonExtractionService
                 (int) $extraction->structure_id,
                 $extraction->extraction_start_time
             );
-
-            if (!$notification) {
-                return null;
-            }
-
-            $data = Yaml::parse($notification->text);
-
-            return is_array($data) ? MoonNotificationCharacter::name($data, 'startedBy') : null;
         } catch (\Throwable $e) {
-            Log::debug("Mining Manager: could not tell who started extraction {$extraction->id}: " . $e->getMessage());
+            Log::debug("Mining Manager: could not look for who started extraction {$extraction->id}: " . $e->getMessage());
 
             return null;
         }
+
+        return $notification
+            ? $this->characterFromNotification((string) $notification->text, 'startedBy')
+            : null;
+    }
+
+    /**
+     * The pilot a moon mining notification names in one of its character
+     * fields, with their main.
+     *
+     * Null when the text will not parse or the field is not there.
+     */
+    private function characterFromNotification(string $text, string $field): ?string
+    {
+        try {
+            $data = Yaml::parse($text);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return is_array($data) ? MoonNotificationCharacter::describe($data, $field) : null;
     }
 
     /**
@@ -647,13 +667,7 @@ class MoonExtractionService
                 ->first();
 
             if ($laserNotification) {
-                // Extract player name from notification text if possible
-                $firedBy = null;
-                if (preg_match('/firedBy:\s*\[.*?,\s*"([^"]+)"\]/', $laserNotification->text, $matches)) {
-                    $firedBy = $matches[1];
-                } elseif (preg_match('/fired by (.+?) and/', $laserNotification->text, $matches)) {
-                    $firedBy = $matches[1];
-                }
+                $firedBy = $this->characterFromNotification((string) $laserNotification->text, 'firedBy');
 
                 $extraction->fractured_at = Carbon::parse($laserNotification->timestamp);
                 $extraction->fractured_by = $firedBy;
@@ -732,11 +746,7 @@ class MoonExtractionService
                 ->first();
 
             if ($cancelNotification) {
-                // Extract canceller name if present in the YAML-like text
-                $cancelledBy = null;
-                if (preg_match('/cancelledBy:\s*\[.*?,\s*"([^"]+)"\]/', $cancelNotification->text, $matches)) {
-                    $cancelledBy = $matches[1];
-                }
+                $cancelledBy = $this->characterFromNotification((string) $cancelNotification->text, 'cancelledBy');
 
                 $extraction->update(['status' => 'cancelled']);
                 $cancelled++;
@@ -775,12 +785,7 @@ class MoonExtractionService
             ->first();
 
         if ($laserNotification) {
-            $firedBy = null;
-            if (preg_match('/firedBy:\s*\[.*?,\s*"([^"]+)"\]/', $laserNotification->text, $matches)) {
-                $firedBy = $matches[1];
-            } elseif (preg_match('/fired by (.+?) and/', $laserNotification->text, $matches)) {
-                $firedBy = $matches[1];
-            }
+            $firedBy = $this->characterFromNotification((string) $laserNotification->text, 'firedBy');
 
             $extraction->update([
                 'fractured_at' => Carbon::parse($laserNotification->timestamp),
@@ -1041,23 +1046,46 @@ class MoonExtractionService
      * Send an `extraction_started` notification for a freshly-started
      * extraction (new chunk forming, arrival in the future).
      *
+     * Holds the alert until the in-game notification that names who started
+     * the extraction has reached SeAT. The alert is not urgent and is worth
+     * more with a name on it, and the extraction endpoint usually lands first.
+     * The hold is capped, so an install where no character receives that
+     * notification still gets the alert, later and without the name.
+     *
      * Atomic claim on `extraction_started_sent` mirrors the moon-arrival
      * dedup pattern: UPDATE WHERE flag=false returns the claim count, so
      * only one worker dispatches even if two crons interleave. Rolls the
      * claim back on dispatch failure so a later tick retries.
      *
      * @param MoonExtraction $extraction
-     * @return void
+     * @return string sent, waiting, skipped (already claimed) or failed
      */
-    public function sendExtractionStartedNotification(MoonExtraction $extraction): void
+    public function sendExtractionStartedNotification(MoonExtraction $extraction): string
     {
+        $stillWaiting = $extraction->extraction_start_time
+            && Carbon::parse($extraction->extraction_start_time)->gt(Carbon::now()->subHours(self::STARTED_BY_WAIT_HOURS));
+
+        // character_notifications has no index on type or time, so every lookup
+        // reads the whole table, and this runs once a minute. While waiting,
+        // looking every ten minutes is enough: ESI only refreshes notifications
+        // that often anyway.
+        if ($stillWaiting && !Cache::add('mining-manager:extraction-started-by:' . $extraction->id, true, self::STARTED_BY_RECHECK_SECONDS)) {
+            return 'waiting';
+        }
+
+        $startedBy = $this->extractionStartedBy($extraction);
+
+        if ($startedBy === null && $stillWaiting) {
+            return 'waiting';
+        }
+
         $claimed = MoonExtraction::where('id', $extraction->id)
             ->where('extraction_started_sent', false)
             ->update(['extraction_started_sent' => true]);
 
         if ($claimed === 0) {
             Log::info("Mining Manager: Skipping extraction_started — already claimed for extraction {$extraction->id}");
-            return;
+            return 'skipped';
         }
 
         $extraction->refresh();
@@ -1079,7 +1107,7 @@ class MoonExtractionService
             $notificationService->sendExtractionStarted(array_filter([
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
-                'started_by' => $this->extractionStartedBy($extraction),
+                'started_by' => $startedBy,
                 'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
                 'time_until_arrival' => $timeUntil,
                 'estimated_value' => $extraction->estimated_value ?? 0,
@@ -1088,12 +1116,16 @@ class MoonExtractionService
             ], fn ($v) => $v !== null));
 
             Log::info("Mining Manager: fired extraction_started for extraction {$extraction->id}");
+
+            return 'sent';
         } catch (\Exception $e) {
             MoonExtraction::where('id', $extraction->id)->update(['extraction_started_sent' => false]);
             Log::error("Mining Manager: Failed to send extraction_started — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return 'failed';
         }
     }
 

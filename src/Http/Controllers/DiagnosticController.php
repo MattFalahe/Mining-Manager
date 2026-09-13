@@ -3507,7 +3507,7 @@ class DiagnosticController extends Controller
             'extraction_started' => $ns->sendExtractionStarted(array_merge($data, [
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
                 'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
-                'started_by' => $data['started_by'] ?? 'Diagnostic Pilot',
+                'started_by' => $data['started_by'] ?? 'Diagnostic Pilot (main: Diagnostic Main)',
                 'chunk_arrival_time' => $data['chunk_arrival_time'] ?? now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => $data['time_until_arrival'] ?? '6 days',
                 'estimated_value' => (int) ($data['estimated_value'] ?? 1200000000),
@@ -4625,7 +4625,7 @@ class DiagnosticController extends Controller
             'extraction_started' => [
                 'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
                 'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
-                'started_by' => 'Test Pilot',
+                'started_by' => 'Test Pilot (main: Test Main)',
                 'chunk_arrival_time' => now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => '6 days',
                 'estimated_value' => 250000000,
