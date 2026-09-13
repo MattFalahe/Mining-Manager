@@ -2315,6 +2315,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Grant <code>moon_manager</code> on its own when you want someone scheduling moon pulls without
                         giving them full director rights.
                     </p>
+                    <p>
+                        Moon managers can also open <strong>Moon Analytics</strong> (Analytics in the sidebar), which
+                        shows how each moon and ore has been mined, by month or by extraction. The rest of Analytics
+                        stays with directors.
+                    </p>
 
                     <h4><i class="fas fa-clock"></i> Everything is EVE time</h4>
                     <p>
@@ -2993,7 +2998,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </div>
                         <div class="feature-item" style="border-left: 4px solid #9b59b6;">
                             <h5><span class="badge" style="background:#9b59b6;">Moon Manager</span> <small class="text-muted">(capability)</small></h5>
-                            <p><code>mining-manager.moon_manager</code> &mdash; a <strong>standalone capability</strong>, not a tier. Grants access to the <strong>Moon Extraction Planner</strong> (assign / move / auto-fill planned moon pulls to stagger arrivals). Directors and admins already have this access; grant <code>moon_manager</code> to delegate moon-pull scheduling to someone who isn't a full director.</p>
+                            <p><code>mining-manager.moon_manager</code> &mdash; a <strong>standalone capability</strong>, not a tier. Grants access to the <strong>Moon Extraction Planner</strong> (assign / move / auto-fill planned moon pulls to stagger arrivals) and to <strong>Moon Analytics</strong>. Directors and admins already have this access; grant <code>moon_manager</code> to delegate moon-pull scheduling to someone who isn't a full director.</p>
                         </div>
                     </div>
 

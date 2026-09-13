@@ -8,6 +8,13 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ Moon managers can open Moon Analytics
+
+The Moon Manager permission now includes Moon Analytics, so whoever plans moon pulls can see
+how each moon and ore has been mined without being a director. Analytics appears in their
+sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
+Planner link in the sidebar also shows for directors now, who already had access to the page.
+
 ### ✨ Extraction Started says who lit the drill
 
 The Discord and Slack alerts now name the character who started the extraction and, when that

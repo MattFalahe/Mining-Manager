@@ -27,6 +27,9 @@
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
         <ul class="nav nav-tabs">
+            {{-- A moon manager can open this page and nothing else in Analytics,
+                 so the other tabs are only offered to directors. --}}
+            @can('mining-manager.director')
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics') && !Request::is('*/analytics/*') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.index') }}">
                     <i class="fas fa-chart-area"></i> {{ trans('mining-manager::menu.analytics_overview') }}
@@ -37,11 +40,13 @@
                     <i class="fas fa-chart-line"></i> {{ trans('mining-manager::menu.performance_charts') }}
                 </a>
             </li>
+            @endcan
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/moons') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.moons') }}">
                     <i class="fas fa-moon"></i> {{ trans('mining-manager::analytics.moon_analytics') }}
                 </a>
             </li>
+            @can('mining-manager.director')
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/analytics/tables') ? 'active' : '' }}" href="{{ route('mining-manager.analytics.tables') }}">
                     <i class="fas fa-table"></i> {{ trans('mining-manager::menu.data_tables') }}
@@ -52,6 +57,7 @@
                     <i class="fas fa-balance-scale"></i> {{ trans('mining-manager::menu.comparative_analysis') }}
                 </a>
             </li>
+            @endcan
         </ul>
     </div>
     <div class="card-body">

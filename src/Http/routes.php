@@ -595,10 +595,12 @@ Route::group([
     // Analytics Routes
     Route::group(['prefix' => 'analytics'], function () {
         // Director - view
+        // The overview and Moon Analytics also admit moon managers, which a
+        // single can: middleware cannot express. AnalyticsController enforces
+        // both routes itself.
         Route::get('/', [
             'as' => 'mining-manager.analytics.index',
             'uses' => 'AnalyticsController@index',
-            'middleware' => 'can:mining-manager.director',
         ]);
 
         Route::get('/charts', [
@@ -625,10 +627,10 @@ Route::group([
            'middleware' => 'can:mining-manager.director',
        ]);
 
+        // Moon managers too: see the note on the overview route.
         Route::get('/moons', [
             'as' => 'mining-manager.analytics.moons',
             'uses' => 'AnalyticsController@moons',
-            'middleware' => 'can:mining-manager.director',
         ]);
 
         // Admin - export

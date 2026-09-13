@@ -39,6 +39,28 @@ class AnalyticsController extends Controller
     public function __construct(MiningAnalyticsService $analyticsService)
     {
         $this->analyticsService = $analyticsService;
+
+        // Moon managers plan moon pulls without being directors, and Moon
+        // Analytics is what they plan with, so they get that one page. The
+        // sidebar sends everyone to the overview, which lands a moon manager
+        // on Moon Analytics instead. Every other Analytics route keeps its
+        // director-only can: middleware. The OR cannot be a single can:, so
+        // it is enforced here, the same way the Moon Planner does it.
+        $this->middleware(function ($request, $next) {
+            $user = auth()->user();
+
+            if ($user && $user->can('mining-manager.director')) {
+                return $next($request);
+            }
+
+            if ($user && $user->can('mining-manager.moon_manager')) {
+                return $request->routeIs('mining-manager.analytics.moons')
+                    ? $next($request)
+                    : redirect()->route('mining-manager.analytics.moons');
+            }
+
+            abort(403, 'You need the Director or Moon Manager role to open Analytics.');
+        })->only(['index', 'moons']);
     }
 
     /**
