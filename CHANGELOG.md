@@ -578,7 +578,8 @@ end of its run.
 
 The rule for what counts as issued now lives in one place rather than being written
 out slightly differently in each caller, and `mining-manager:update-ledger-prices`
-was moved onto it too.
+was moved onto it too. It treats the account as a whole, since an invoice is issued
+under the player's main and covers what their alts mined as well.
 
 ### 🐛 The price coverage report showed impossible percentages
 

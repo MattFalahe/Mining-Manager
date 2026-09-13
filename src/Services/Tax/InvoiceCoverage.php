@@ -16,6 +16,13 @@ use Illuminate\Support\Facades\Log;
  * -- the same three conditions TaxCalculationService::invoiceFreezeReason()
  * applies at the invoice level.
  *
+ * An invoice belongs to a player rather than to the character that mined. Tax
+ * is worked out per account and stored under the main, so an alt's mining sits
+ * on an invoice carrying a different character id. Coverage therefore looks
+ * across every character on the row's SeAT user, the same ownership rule
+ * ResolvesCharacterOwnership uses. Matching on the row's own character alone
+ * would never treat an alt's mining as billed.
+ *
  * A row that is covered is evidence of what somebody was billed. It does not
  * get deleted, shrunk, re-rated or reclassified, whatever else the pipeline
  * would normally do to it.
@@ -68,7 +75,16 @@ class InvoiceCoverage
             FROM mining_taxes t
             LEFT JOIN mining_tax_codes c
                    ON c.mining_tax_id = t.id
-            WHERE t.character_id = {$table}.character_id
+            WHERE (
+                    t.character_id = {$table}.character_id
+                    OR t.character_id IN (
+                        SELECT rt_alt.character_id
+                        FROM refresh_tokens rt_self
+                        JOIN refresh_tokens rt_alt
+                          ON rt_alt.user_id = rt_self.user_id
+                        WHERE rt_self.character_id = {$table}.character_id
+                    )
+                  )
               AND {$table}.date >= COALESCE(t.period_start, t.month)
               AND {$table}.date <= COALESCE(
                     t.period_end,
@@ -79,7 +95,7 @@ class InvoiceCoverage
     }
 
     /**
-     * Issued-invoice periods for one character, loaded once.
+     * Issued-invoice periods covering one character's mining, loaded once.
      *
      * period_start/period_end are the modern columns; older records carry only
      * `month`, so fall back to that month's span.
@@ -97,7 +113,15 @@ class InvoiceCoverage
         try {
             $rows = DB::table('mining_taxes as t')
                 ->leftJoin('mining_tax_codes as c', 'c.mining_tax_id', '=', 't.id')
-                ->where('t.character_id', $characterId)
+                ->where(function ($q) use ($characterId) {
+                    $q->where('t.character_id', $characterId)
+                      ->orWhereIn('t.character_id', function ($account) use ($characterId) {
+                          $account->select('rt_alt.character_id')
+                              ->from('refresh_tokens as rt_self')
+                              ->join('refresh_tokens as rt_alt', 'rt_alt.user_id', '=', 'rt_self.user_id')
+                              ->where('rt_self.character_id', $characterId);
+                      });
+                })
                 ->where(function ($q) {
                     $q->whereIn('t.status', ['paid', 'partial'])
                       ->orWhere('t.amount_paid', '>', 0)
