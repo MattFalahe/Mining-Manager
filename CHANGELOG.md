@@ -8,6 +8,13 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### 🐛 Payment steps sent members to their own wallet
+
+My Taxes and the member guide in Help told members to pay from their wallet, and the wallet
+can't send ISK to a corporation. Both now say to right-click the corporation's name in game
+and choose "Give Money". My Taxes also says a payment can come from any character on the
+account, where the install allows it.
+
 ### 🐛 Personal mining came in short
 
 SeAT does not keep a character's mining for a day as one total. It adds a row each time a
@@ -232,7 +239,7 @@ A reminder or overdue notice that follows a partial drawdown now names how much 
 
 Both the keyword and the on/off switch are global rather than per corporation, and are labelled as such in Settings. There is one tax program reading one wallet, and the matcher runs as a single corporation (the configured moon owner), so anything saved against another corporation would never be consulted. The keyword cannot overlap the tax code prefix in either direction, since both are read from the same field and an overlap would make a payment readable as either.
 
-**Balances tab.** One page, two audiences, the way the rest of the tax section works. A director sees everyone holding a balance, the corporation-wide total, and how much has already been applied to invoices; a member sees their own, alt-aware. Every balance lists what it has been spent on, linked to the invoices. The tab hides itself entirely until someone holds a balance or upfront payments are switched on.
+**Balances tab.** One page, two audiences, the way the rest of the tax section works. A director sees everyone holding a balance, the corporation-wide total, and how much has already been applied to invoices; a member sees their own, alt-aware. Every balance lists what it has been spent on, linked to the invoices. The tab hides itself entirely until someone holds a balance or upfront payments are switched on. While upfront payments are on, it also shows members how to pay ahead: which corporation to pay and how, the keyword with a copy button, and what happens to the money.
 
 ### 🐛 Partly paid invoices could dodge the overdue treatment forever
 

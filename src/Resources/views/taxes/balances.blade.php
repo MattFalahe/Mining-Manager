@@ -68,21 +68,59 @@
         @endif
     </div>
 
-    {{-- How money gets here in the first place. Only worth explaining while
-         upfront payments are switched on, otherwise the only route is
-         overpaying an invoice. --}}
     <div class="row">
         <div class="col-12">
             <div class="callout callout-info">
                 <p class="mb-0">{{ trans('mining-manager::taxes.balance_explained') }}</p>
-                @if($upfrontKeyword)
-                <p class="mb-0 mt-2">
-                    {!! trans('mining-manager::taxes.balance_upfront_hint', ['keyword' => '<code>' . e($upfrontKeyword) . '</code>']) !!}
-                </p>
-                @endif
             </div>
         </div>
     </div>
+
+    {{-- How to pay ahead. While upfront payments are on this tab shows for
+         everyone, which makes it the one page every member can open whether or
+         not they hold a balance yet. With the feature off there is nothing to
+         explain: overpaying an invoice is the only way money gets here. --}}
+    @if($upfrontKeyword)
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-hand-holding-usd mr-1"></i> {{ trans('mining-manager::taxes.upfront_how_title') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <p>{{ ($holdSurplus ?? true) ? trans('mining-manager::taxes.upfront_how_intro') : trans('mining-manager::taxes.upfront_how_intro_not_held') }}</p>
+                    <ol class="mb-0">
+                        <li class="mb-2">
+                            {!! trans('mining-manager::taxes.upfront_how_step_give', ['corporation' => '<strong>' . e($corpName ?? trans('mining-manager::taxes.upfront_how_your_corporation')) . '</strong>']) !!}
+                            <br><small class="text-muted">{{ trans('mining-manager::taxes.upfront_how_not_wallet') }}</small>
+                        </li>
+                        @if(($walletDivision ?? 1) !== 1)
+                        <li class="mb-2">
+                            {!! trans('mining-manager::taxes.upfront_how_step_division', ['division' => '<strong>' . e($walletDivisionName ?? '') . '</strong>']) !!}
+                        </li>
+                        @endif
+                        <li class="mb-2">{{ trans('mining-manager::taxes.upfront_how_step_amount') }}</li>
+                        <li class="mb-2">
+                            {{ trans('mining-manager::taxes.upfront_how_step_reason') }}
+                            <br>
+                            <code id="upKeyword" class="text-warning" style="font-size: 1.1em;">{{ $upfrontKeyword }}</code>
+                            <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyCodeText('upKeyword')">
+                                <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy') }}
+                            </button>
+                            <br><small class="text-muted">{{ trans('mining-manager::taxes.upfront_how_no_tax_code') }}</small>
+                        </li>
+                        <li class="mb-0">{{ trans('mining-manager::taxes.upfront_how_step_send') }}</li>
+                    </ol>
+                    @if($acceptsAlts ?? true)
+                    <p class="small text-muted mt-3 mb-0">{{ trans('mining-manager::taxes.upfront_how_any_character') }}</p>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- Balances --}}
     <div class="row">
@@ -253,11 +291,11 @@
                 <div class="alert alert-info py-2 px-3">
                     <div class="small mb-1">{{ trans('mining-manager::taxes.refund_keyword_instruction') }}</div>
                     <code id="rfKeyword" style="font-size: 1.1rem;">{{ $refundKeyword }}</code>
-                    <button type="button" class="btn btn-sm btn-outline-info ml-2" onclick="copyRefundKeyword()">
+                    <button type="button" class="btn btn-sm btn-outline-info ml-2" onclick="copyCodeText('rfKeyword')">
                         <i class="fas fa-copy"></i> {{ trans('mining-manager::taxes.copy') }}
                     </button>
                     <div class="small mt-1">{{ trans('mining-manager::taxes.refund_keyword_why') }}</div>
-                    @if($refundAcceptsAlts ?? true)
+                    @if($acceptsAlts ?? true)
                     {{-- Worth saying out loud. The balance often sits on a mining
                          alt while the player only logs in on their main, and
                          without this a director assumes it has to go back to the
@@ -353,8 +391,9 @@
 @push('javascript')
 <script src="{{ asset('vendor/mining-manager/js/vendor/jquery.dataTables.min.js') }}"></script>
 <script>
-function copyRefundKeyword() {
-    var text = $('#rfKeyword').text();
+function copyCodeText(elementId) {
+    var el = document.getElementById(elementId);
+    var text = $(el).text();
 
     // Clipboard API needs a secure context, which an internal SeAT install
     // often is not, so fall back to selecting it for a manual copy.
@@ -366,7 +405,7 @@ function copyRefundKeyword() {
     }
 
     var range = document.createRange();
-    range.selectNodeContents(document.getElementById('rfKeyword'));
+    range.selectNodeContents(el);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
     toastr.info('{{ trans("mining-manager::taxes.copy_manual") }}');

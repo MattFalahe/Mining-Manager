@@ -1562,8 +1562,6 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h4><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.pay_ingame_title') }}</h4>
                     <ol class="step-by-step">
                         <li>{{ trans('mining-manager::help.pay_ingame_step_1') }}</li>
-                        <li>{{ trans('mining-manager::help.pay_ingame_step_2') }}</li>
-                        <li>{{ trans('mining-manager::help.pay_ingame_step_3') }}</li>
                         <li>{{ trans('mining-manager::help.pay_ingame_step_4') }}</li>
                         <li>{{ trans('mining-manager::help.pay_ingame_step_5') }}</li>
                     </ol>

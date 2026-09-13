@@ -1874,12 +1874,11 @@ class TaxController extends Controller
         $paymentSettings = $this->settingsService->getPaymentSettings();
         $walletDivision = $paymentSettings['wallet_division'] ?? 1;
 
-        // Get corporation name for payment instructions
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $corpName = null;
-        if ($moonOwnerCorpId) {
-            $corpName = \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $moonOwnerCorpId)->value('name');
-        }
+        // The steps say a payment can come from any character on the account,
+        // but only where the matcher will actually accept one.
+        $acceptsAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+
+        $corpName = $this->payingCorporationName();
 
         // Money we are holding for this player from an earlier overpayment.
         // Alt-aware, because the surplus can sit on whichever character sent
@@ -1919,7 +1918,8 @@ class TaxController extends Controller
             'features',
             'walletDivisionName',
             'walletDivision',
-            'corpName'
+            'corpName',
+            'acceptsAlts'
         ));
     }
 
@@ -2878,6 +2878,23 @@ class TaxController extends Controller
             : $message;
     }
 
+    /**
+     * The corporation members pay, by the name they will find it under in game.
+     *
+     * Null when no moon owner corporation is configured, or SeAT has not pulled
+     * its details yet. The payment steps fall back to generic wording.
+     */
+    private function payingCorporationName(): ?string
+    {
+        $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
+        if (! $corporationId) {
+            return null;
+        }
+
+        return \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $corporationId)->value('name');
+    }
+
     public function balances(Request $request)
     {
         $isAdmin = $this->isAdmin();
@@ -2967,6 +2984,8 @@ class TaxController extends Controller
             'total_drawn' => (float) $drawdowns->flatten()->sum('amount'),
         ];
 
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+
         return view('mining-manager::taxes.balances', [
             'credits' => $credits,
             'openCredits' => $openCredits,
@@ -2978,6 +2997,12 @@ class TaxController extends Controller
             'canSeeAll' => $canSeeAll,
             'features' => $this->getFeatureFlags(),
             'upfrontKeyword' => $this->walletService->getUpfrontKeyword(),
+            // The pay-ahead steps name where the ISK goes, and say whether what
+            // is left after clearing invoices is kept.
+            'corpName' => $this->payingCorporationName(),
+            'walletDivision' => (int) ($paymentSettings['wallet_division'] ?? 1),
+            'walletDivisionName' => $this->settingsService->getWalletDivisionName(),
+            'holdSurplus' => (bool) ($paymentSettings['hold_surplus_as_credit'] ?? true),
             // Money the corporation has agreed to hand back and, as far as the
             // wallet shows, has not. Worth surfacing: it is the one number here
             // that represents a promise rather than a fact.
@@ -2986,9 +3011,10 @@ class TaxController extends Controller
             // the transfer. Without it in the reason the refund cannot tell
             // itself apart from an SRP payout and will not confirm.
             'refundKeyword' => app(\MiningManager\Services\Tax\RefundService::class)->keyword(),
-            // The refund dialog says where the ISK may be sent, and that
-            // depends on the same setting tax and upfront payments read.
-            'refundAcceptsAlts' => (bool) ($this->settingsService->getPaymentSettings()['accept_alt_characters'] ?? true),
+            // The refund dialog says where the ISK may be sent and the pay-ahead
+            // steps say where it may come from. Both depend on the same setting
+            // tax and upfront payments read.
+            'acceptsAlts' => (bool) ($paymentSettings['accept_alt_characters'] ?? true),
             'pendingRefundTotal' => (float) $refunds->flatten()
                 ->where('status', \MiningManager\Models\PaymentRefund::STATUS_PENDING)
                 ->sum('amount'),

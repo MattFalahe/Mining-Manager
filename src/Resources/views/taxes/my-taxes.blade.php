@@ -178,15 +178,13 @@
                                     <div class="card-body">
                                         <ol class="mb-0">
                                             <li class="mb-2">
-                                                Open your EVE wallet and click <strong>"Give Money"</strong>
-                                            </li>
-                                            <li class="mb-2">
-                                                Set the recipient to: <strong>{{ $corpName ?? 'your corporation' }}</strong>
+                                                In game, right-click <strong>{{ $corpName ?? "your corporation's name" }}</strong> and choose <strong>"Give Money"</strong>
+                                                <br><small class="text-muted">"Give ISK" in your own wallet can't send to a corporation</small>
                                             </li>
                                             @if(($walletDivision ?? 1) !== 1)
                                             <li class="mb-2">
-                                                Select wallet division: <strong>{{ $walletDivisionName ?? 'Master Wallet' }}</strong>
-                                                <br><small class="text-muted">If you don't select a division, it will go to Master Wallet (also accepted)</small>
+                                                If it asks for a wallet division, choose: <strong>{{ $walletDivisionName ?? 'Master Wallet' }}</strong>
+                                                <br><small class="text-muted">If it doesn't, the ISK goes to the Master Wallet, which is also accepted</small>
                                             </li>
                                             @endif
                                             <li class="mb-2">
@@ -206,9 +204,12 @@
                                                 @endif
                                             </li>
                                             <li class="mb-0">
-                                                Click <strong>"Send"</strong> — your payment will be automatically verified
+                                                Confirm the transfer, and your payment is matched automatically
                                             </li>
                                         </ol>
+                                        @if($acceptsAlts ?? false)
+                                        <p class="small text-muted mt-2 mb-0">You can send it from any character on your account.</p>
+                                        @endif
                                     </div>
                                 </div>
 
