@@ -8,6 +8,17 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ Diagnostics for payments, the personal import and moon notifications
+
+Master Test gains checks for the upfront payment setup (an empty keyword, a keyword that
+overlaps the tax code prefix or the refund keyword, or surplus with nowhere to go), refunds
+still waiting on a transfer after a week, the personal mining import falling behind inside
+its two-day window, moon mining notifications not reaching SeAT, Extraction Started alerts
+stuck past their wait, the ore classification cutover, and event ore turning up in the
+ledger. Data Integrity flags account balances that cannot be right and refunds whose balance
+row is gone. Settings Health lists the feature switches, and Health Checks counts payment
+allocations, held balances, pending refunds and planned pulls.
+
 ### ✨ Realign or ignore a moon scheduled off-plan
 
 A scheduling mismatch in the Moon Planner only offered Dismiss, which threw the plan away. The

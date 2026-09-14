@@ -1548,6 +1548,10 @@ class DiagnosticController extends Controller
             // Settings Health alongside the other groups.
             $settingGroups = [
                 'General' => $this->settingsService->getGeneralSettings(),
+                // Feature switches decide whole areas, upfront payments and
+                // data export among them, so their source matters as much as
+                // any other setting's.
+                'Features' => $this->settingsService->getFeatureFlags(),
                 'Tax Rates' => $this->settingsService->getTaxRates(),
                 'Pricing' => $this->settingsService->getPricingSettings(),
                 'Payment' => $this->settingsService->getPaymentSettings(),
@@ -2918,6 +2922,43 @@ class DiagnosticController extends Controller
                 ];
             }
 
+            // 11. Account balances that cannot be right: less than nothing left,
+            // or more left than was ever banked.
+            if (\Schema::hasTable('mining_manager_payment_credits')) {
+                $impossibleBalances = DB::table('mining_manager_payment_credits')
+                    ->where(function ($q) {
+                        $q->where('remaining', '<', 0)
+                          ->orWhereColumn('remaining', '>', 'amount');
+                    })
+                    ->count();
+                if ($impossibleBalances > 0) {
+                    $issues[] = [
+                        'category' => 'Impossible Account Balances',
+                        'severity' => 'error',
+                        'count' => $impossibleBalances,
+                        'message' => 'Held balance rows with a remaining amount below zero or above what was banked.',
+                    ];
+                }
+            }
+
+            // 12. Refunds whose balance row is gone. The Balances tab lists
+            // refunds under their balance, so these would never be shown.
+            if (\Schema::hasTable('mining_manager_payment_refunds') && \Schema::hasTable('mining_manager_payment_credits')) {
+                $orphanRefunds = DB::table('mining_manager_payment_refunds as r')
+                    ->leftJoin('mining_manager_payment_credits as c', 'c.id', '=', 'r.credit_id')
+                    ->whereNotNull('r.credit_id')
+                    ->whereNull('c.id')
+                    ->count();
+                if ($orphanRefunds > 0) {
+                    $issues[] = [
+                        'category' => 'Orphan Refunds',
+                        'severity' => 'warning',
+                        'count' => $orphanRefunds,
+                        'message' => 'Refund rows whose account balance row no longer exists, so the Balances tab cannot show them.',
+                    ];
+                }
+            }
+
             $duration = round((microtime(true) - $startTime) * 1000, 2);
 
             // Summary
@@ -3374,6 +3415,21 @@ class DiagnosticController extends Controller
             ? DB::table('metenox_cargo_alert_state')->count()
             : 0;
 
+        // Payments and the moon planner, guarded the same way for installs
+        // part way through their migrations.
+        $paymentAllocations = \Schema::hasTable('mining_manager_payment_allocations')
+            ? DB::table('mining_manager_payment_allocations')->count()
+            : 0;
+        $balancesHeld = \Schema::hasTable('mining_manager_payment_credits')
+            ? DB::table('mining_manager_payment_credits')->where('remaining', '>', 0)->count()
+            : 0;
+        $refundsPending = \Schema::hasTable('mining_manager_payment_refunds')
+            ? DB::table('mining_manager_payment_refunds')->where('status', 'pending')->count()
+            : 0;
+        $plannedPulls = \Schema::hasTable('moon_extraction_plans')
+            ? DB::table('moon_extraction_plans')->whereIn('status', ['planned', 'confirmed'])->count()
+            : 0;
+
         return [
             'mining_ledger' => DB::table('mining_ledger')->count(),
             'mining_taxes' => DB::table('mining_taxes')->count(),
@@ -3385,6 +3441,10 @@ class DiagnosticController extends Controller
             'metenox_structures'    => $metenoxStructures,
             'metenox_cargo_rows'    => $metenoxCargoRows,
             'metenox_alert_latches' => $metenoxAlertLatches,
+            'payment_allocations'   => $paymentAllocations,
+            'balances_held'         => $balancesHeld,
+            'refunds_pending'       => $refundsPending,
+            'planned_pulls'         => $plannedPulls,
         ];
     }
 

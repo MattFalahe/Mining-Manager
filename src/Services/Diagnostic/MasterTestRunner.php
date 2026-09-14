@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\WebhookConfiguration;
+use MiningManager\Integrations\MoonFastPollIntegration;
+use MiningManager\Models\TaxCode;
+use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Services\Pricing\PriceProviderService;
@@ -117,10 +121,21 @@ class MasterTestRunner
             // Mining lifecycle
             'checkSchedulesPresent',
             'checkMoonExtractionsHealth',
+            'checkPersonalImportWindow',
+            'checkMoonNotificationFeed',
+            'checkExtractionStartedBacklog',
+
+            // Ore classification
+            'checkClassificationCutover',
+            'checkEventOreLeftOut',
 
             // Tax pipeline
             'checkTaxPipelineSanity',
             'checkProcessedTransactionsTable',
+
+            // Payments and balances
+            'checkUpfrontPaymentsConfig',
+            'checkBalancesAndRefunds',
 
             // Security / audit hardening verification
             'checkAtomicCasColumnsIndexed',
@@ -755,6 +770,7 @@ class MasterTestRunner
 
         $expected = [
             'mining-manager:process-ledger',
+            'mining-manager:import-character-mining --days=2',
             'mining-manager:update-extractions',
             'mining-manager:check-extraction-arrivals',
             'mining-manager:calculate-taxes',
@@ -800,6 +816,234 @@ class MasterTestRunner
         );
     }
 
+    /**
+     * Personal mining in the import's own window that never reached the ledger.
+     *
+     * Only the last two days count, the same window the scheduled import reads.
+     * Mining SeAT saves later for older days is left out of the ledger on
+     * purpose, so counting it here would flag a decision rather than a fault.
+     * Day totals SeAT touched in the last 45 minutes are skipped too: the import
+     * runs every half hour and has not had its turn at those yet.
+     */
+    protected function checkPersonalImportWindow(): array
+    {
+        $name = 'Personal mining import';
+
+        if (!($this->settingsService->getFeatureFlags()['enable_ledger_tracking'] ?? true)) {
+            return $this->skip($name, 'import', 'Ledger tracking is switched off');
+        }
+
+        if (!Schema::hasTable('character_minings')) {
+            return $this->skip($name, 'import', 'SeAT character mining table not present');
+        }
+
+        $eventOre = implode(',', array_map('intval', TypeIdRegistry::EVENT_ORES));
+
+        // One statement rather than two lookups per day total: the window holds
+        // hundreds of them on a busy install.
+        $rows = DB::select(
+            "SELECT t.quantity,
+                    EXISTS (SELECT 1 FROM mining_ledger o
+                            WHERE o.character_id = t.character_id
+                              AND o.date = t.date
+                              AND o.type_id = t.type_id
+                              AND o.observer_id IS NOT NULL
+                              AND o.deleted_at IS NULL) AS has_observer,
+                    (SELECT l.quantity FROM mining_ledger l
+                     WHERE l.character_id = t.character_id
+                       AND l.date = t.date
+                       AND l.type_id = t.type_id
+                       AND l.solar_system_id = t.solar_system_id
+                       AND l.observer_id IS NULL
+                       AND l.deleted_at IS NULL
+                     ORDER BY l.id LIMIT 1) AS ledger_quantity
+             FROM (SELECT character_id, date, solar_system_id, type_id, SUM(quantity) AS quantity
+                   FROM character_minings
+                   WHERE date >= ?" . ($eventOre !== '' ? " AND type_id NOT IN ({$eventOre})" : '') . "
+                   GROUP BY character_id, date, solar_system_id, type_id
+                   HAVING MAX(updated_at) < ?) t",
+            [Carbon::now()->subDays(2)->toDateString(), Carbon::now()->subMinutes(45)->toDateTimeString()]
+        );
+
+        $compared = 0;
+        $missing = 0;
+        $different = 0;
+
+        foreach ($rows as $row) {
+            // Moon mining with observer data is imported from the observer,
+            // not from here.
+            if ($row->has_observer) {
+                continue;
+            }
+
+            $compared++;
+
+            if ($row->ledger_quantity === null) {
+                $missing++;
+            } elseif ((int) $row->ledger_quantity !== (int) $row->quantity) {
+                $different++;
+            }
+        }
+
+        if ($missing > 0 || $different > 0) {
+            return $this->warn(
+                $name,
+                'import',
+                "{$missing} personal day totals from the last two days are missing from the ledger and {$different} differ from SeAT",
+                ['hint' => 'The import runs every 30 minutes. If this has not cleared within the hour, check mining-manager:import-character-mining is scheduled and finishing without errors.']
+            );
+        }
+
+        return $this->pass($name, 'import', "{$compared} personal day totals from the last two days match SeAT");
+    }
+
+    /**
+     * Whether the in-game moon mining notifications reach SeAT at all.
+     *
+     * Several things lean on them. The Extraction Started alert names who
+     * started the extraction from one, Fractured by comes from another, and a
+     * chunk's real ore volumes come from the first. Without them, the alert
+     * without Manager Core waits its full six hours and goes out without a
+     * name, Fractured by stays empty, and volumes are estimated.
+     */
+    protected function checkMoonNotificationFeed(): array
+    {
+        $name = 'Moon notifications reaching SeAT';
+
+        if (!($this->settingsService->getFeatureFlags()['enable_moon_tracking'] ?? true)) {
+            return $this->skip($name, 'lifecycle', 'Moon tracking is switched off');
+        }
+
+        if (!Schema::hasTable('character_notifications')) {
+            return $this->skip($name, 'lifecycle', 'SeAT character notifications table not present');
+        }
+
+        $since = Carbon::now()->subDays(30);
+        $started = MoonExtraction::where('extraction_start_time', '>=', $since)->count();
+
+        if ($started === 0) {
+            return $this->skip($name, 'lifecycle', 'No extractions started in the last 30 days to compare against');
+        }
+
+        // SeAT does not index this table on type or time, so the count reads
+        // all of it. Once per Master Test run is fine.
+        $notifications = DB::table('character_notifications')
+            ->where('type', 'MoonminingExtractionStarted')
+            ->where('timestamp', '>=', $since)
+            ->count();
+
+        if ($notifications === 0) {
+            return $this->warn(
+                $name,
+                'lifecycle',
+                "{$started} extractions started in the last 30 days, but no MoonminingExtractionStarted notification reached SeAT",
+                ['hint' => 'SeAT needs a character who receives the in-game moon mining notifications (usually a director or station manager), with the notifications scope. Until then, Extraction Started alerts without Manager Core wait six hours and go out without who started them, Fractured by stays empty, and chunk volumes are estimated.']
+            );
+        }
+
+        return $this->pass($name, 'lifecycle', "{$notifications} MoonminingExtractionStarted notifications in the last 30 days, for {$started} extractions");
+    }
+
+    /**
+     * Extraction Started alerts still unsent well past their wait.
+     *
+     * Only the SeAT-native path holds an alert back, waiting up to six hours for
+     * the notification that names who started the extraction. Manager Core
+     * fast-poll sends straight from that notification, so there is nothing to
+     * check when it is the one sending.
+     */
+    protected function checkExtractionStartedBacklog(): array
+    {
+        $name = 'Extraction Started alerts going out';
+
+        if (MoonFastPollIntegration::isFastPollEnabled()) {
+            return $this->skip($name, 'notifications', 'Sent by Manager Core fast-poll, which does not hold alerts back');
+        }
+
+        if (!Schema::hasColumn('moon_extractions', 'extraction_started_sent')) {
+            return $this->skip($name, 'notifications', 'extraction_started_sent column not present');
+        }
+
+        $now = Carbon::now();
+
+        // Same rows the arrivals command considers: extracting, chunk still to
+        // come, started within its 72 hour look-back.
+        $unsent = MoonExtraction::where('status', 'extracting')
+            ->where('extraction_started_sent', false)
+            ->where('chunk_arrival_time', '>', $now)
+            ->where('extraction_start_time', '>=', $now->copy()->subHours(72));
+
+        $overdue = (clone $unsent)->where('extraction_start_time', '<', $now->copy()->subHours(7))->count();
+        $waiting = (clone $unsent)->where('extraction_start_time', '>=', $now->copy()->subHours(7))->count();
+
+        if ($overdue > 0) {
+            return $this->warn(
+                $name,
+                'notifications',
+                "{$overdue} Extraction Started alerts are still unsent more than seven hours after the extraction started",
+                ['hint' => 'An alert waits up to six hours for the notification naming who started the extraction, then goes out anyway. Check mining-manager:check-extraction-arrivals is scheduled and running.']
+            );
+        }
+
+        return $this->pass($name, 'notifications', $waiting > 0
+            ? "{$waiting} waiting for the in-game notification that names who started them"
+            : 'Nothing waiting to go out');
+    }
+
+    // =================================================================
+    // ORE CLASSIFICATION
+    // =================================================================
+
+    /**
+     * The cutover that keeps mining already in the ledger on the ore
+     * categories it was billed on.
+     */
+    protected function checkClassificationCutover(): array
+    {
+        $name = 'Ore classification cutover';
+        $epoch = ClassificationEpoch::get();
+
+        if ($epoch === null) {
+            return $this->warn(
+                $name,
+                'classification',
+                'No cutover recorded, so mining from before the upgrade is not protected from being re-rated under the new ore categories',
+                ['hint' => 'A migration records the cutover. Restarting the SeAT container runs any migration still outstanding.']
+            );
+        }
+
+        return $this->pass($name, 'classification', 'Recorded ' . $epoch->toDateTimeString() . ' UTC. Mining before it keeps the categories it was billed on');
+    }
+
+    /**
+     * Event and quest ore should no longer reach the ledger.
+     *
+     * Only the last seven days are looked at. Rows imported before the
+     * importers started skipping these types stay in the ledger as history,
+     * and are not a fault.
+     */
+    protected function checkEventOreLeftOut(): array
+    {
+        $name = 'Event and quest ore left out';
+
+        $recent = DB::table('mining_ledger')
+            ->whereIn('type_id', TypeIdRegistry::EVENT_ORES)
+            ->where('created_at', '>=', Carbon::now()->subDays(7))
+            ->whereNull('deleted_at')
+            ->count();
+
+        if ($recent > 0) {
+            return $this->warn(
+                $name,
+                'classification',
+                "{$recent} ledger rows of event or quest ore were imported in the last seven days",
+                ['hint' => 'The importers skip every type in TypeIdRegistry::EVENT_ORES. New rows mean the server is running older plugin code, or an ore is missing from that list.']
+            );
+        }
+
+        return $this->pass($name, 'classification', 'None imported in the last seven days (' . count(TypeIdRegistry::EVENT_ORES) . ' types on the list)');
+    }
+
     // =================================================================
     // TAX PIPELINE
     // =================================================================
@@ -838,6 +1082,95 @@ class MasterTestRunner
 
         $rowCount = DB::table('mining_manager_processed_transactions')->count();
         return $this->pass('Processed transactions table', 'tax', "{$rowCount} processed transaction rows");
+    }
+
+    // =================================================================
+    // PAYMENTS AND BALANCES
+    // =================================================================
+
+    /**
+     * Upfront payments need a keyword to match on, one that cannot be taken
+     * for a tax code or a refund, and somewhere for the money left over to go.
+     */
+    protected function checkUpfrontPaymentsConfig(): array
+    {
+        $name = 'Upfront payments configuration';
+
+        if (!($this->settingsService->getFeatureFlags()['enable_upfront_payments'] ?? false)) {
+            return $this->skip($name, 'payments', 'Upfront payments are switched off');
+        }
+
+        $payment = $this->settingsService->getPaymentSettings();
+        $keyword = trim((string) ($payment['upfront_keyword'] ?? ''));
+
+        if ($keyword === '') {
+            return $this->warn($name, 'payments', 'Switched on, but the keyword is empty, so no payment is recognised as paying ahead');
+        }
+
+        $others = [
+            'tax code prefix' => trim((string) TaxCode::getPrefix()),
+            // An empty refund keyword falls back to the default at match time.
+            'refund keyword' => trim((string) ($payment['refund_keyword'] ?? '')) ?: 'MM-REFUND',
+        ];
+
+        $clashes = [];
+        foreach ($others as $label => $other) {
+            if ($other !== '' && (stripos($keyword, $other) !== false || stripos($other, $keyword) !== false)) {
+                $clashes[] = "{$label} {$other}";
+            }
+        }
+
+        if (!empty($clashes)) {
+            return $this->warn(
+                $name,
+                'payments',
+                "The keyword {$keyword} overlaps the " . implode(' and the ', $clashes) . ', so a payment could be read as either'
+            );
+        }
+
+        if (!($payment['hold_surplus_as_credit'] ?? true)) {
+            return $this->warn(
+                $name,
+                'payments',
+                "Keyword {$keyword}, but Hold surplus as credit is off, so anything paid ahead beyond what a member owes is not held",
+                ['hint' => 'Turn on Hold surplus as credit under Settings, General, or a director has to assign the rest of each pay-ahead by hand.']
+            );
+        }
+
+        return $this->pass($name, 'payments', "On, keyword {$keyword}, surplus held as account balance");
+    }
+
+    /**
+     * Money held for members, and refunds agreed but not yet seen leaving the
+     * wallet.
+     */
+    protected function checkBalancesAndRefunds(): array
+    {
+        $name = 'Account balances and refunds';
+
+        if (!Schema::hasTable('mining_manager_payment_credits') || !Schema::hasTable('mining_manager_payment_refunds')) {
+            return $this->fail($name, 'payments', 'Payment credit or refund table missing');
+        }
+
+        $held = DB::table('mining_manager_payment_credits')->where('remaining', '>', 0);
+        $heldTotal = (float) (clone $held)->sum('remaining');
+        $holders = (clone $held)->distinct()->count('character_id');
+
+        $stale = DB::table('mining_manager_payment_refunds')
+            ->where('status', 'pending')
+            ->where('created_at', '<', Carbon::now()->subDays(7))
+            ->count();
+
+        if ($stale > 0) {
+            return $this->warn(
+                $name,
+                'payments',
+                "{$stale} refunds agreed more than a week ago still have no matching transfer in the wallet",
+                ['hint' => 'A refund confirms only when the refund keyword is in the transfer reason. Check the transfer went out with it, or mark the refund sent from the Balances tab.']
+            );
+        }
+
+        return $this->pass($name, 'payments', number_format($heldTotal, 0) . " ISK held on {$holders} characters, no refund waiting more than a week");
     }
 
     // =================================================================
