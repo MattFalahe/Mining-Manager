@@ -273,6 +273,17 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        // The Calculate Taxes page no longer has a Regenerate Codes button, but a
+        // copy of the page compiled before an update still asks for this route by
+        // name, and a missing route name stops the whole page rendering. Keeping
+        // it means such a page still loads, and its old button does what it
+        // always did, which is the same as Recalculate.
+        Route::post('/calculate/regenerate', [
+            'as' => 'mining-manager.taxes.regenerate-payments',
+            'uses' => 'TaxController@regeneratePayments',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/codes/generate', [
             'as' => 'mining-manager.taxes.codes.generate',
             'uses' => 'TaxController@generateCodes',

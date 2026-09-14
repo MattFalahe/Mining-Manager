@@ -2165,6 +2165,18 @@ class TaxController extends Controller
     }
 
     /**
+     * The removed Regenerate Codes button, for a copy of the page compiled before
+     * it went. It always ran the same recalculation as Recalculate, so that is
+     * what it runs. Nothing on the current page calls it.
+     */
+    public function regeneratePayments(Request $request)
+    {
+        $request->merge(['recalculate' => true]);
+
+        return $this->calculate($request);
+    }
+
+    /**
      * Verify payments — dispatches based on action parameter.
      * Handles: sync (re-fetch wallet data), auto_match (auto-match transactions), verify (verify specific transactions)
      */
