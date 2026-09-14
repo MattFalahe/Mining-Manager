@@ -22,7 +22,7 @@ class CachePriceDataCommand extends Command
     protected $signature = 'mining-manager:cache-prices
                             {--type=all : Type to cache (ore|compressed-ore|moon|materials|minerals|ice|ice-products|gas|compressed|all)}
                             {--region=10000002 : Region ID (default: The Forge)}
-                            {--force : Force refresh even if cache is fresh}';
+                            {--force : Refresh every price, including ones refreshed recently}';
 
     /**
      * The console command description.
@@ -284,13 +284,25 @@ class CachePriceDataCommand extends Command
         $skipped = 0;
         $errors = 0;
 
+        // Skip only prices refreshed within the last half of the cache
+        // duration. A scheduled run meets the previous run's prices a few
+        // seconds short of one interval old, which with the default schedule
+        // and duration is still inside the duration, so a plain freshness
+        // test skips them there and they get refreshed only every second run.
+        $cacheMinutes = (int) ($this->settingsService->getPricingSettings()['cache_duration'] ?? 240);
+        $recentlyCached = $force
+            ? []
+            : array_flip($this->priceService->typeIdsCachedSince(
+                $regionId,
+                Carbon::now()->subSeconds($cacheMinutes * 30)
+            ));
+
         $bar = $this->output->createProgressBar(count($typeIds));
         $bar->start();
 
         foreach ($typeIds as $typeId) {
             try {
-                // Check if cache is still fresh (unless forced)
-                if (!$force && $this->priceService->isCacheFresh($typeId, $regionId)) {
+                if (isset($recentlyCached[$typeId])) {
                     $skipped++;
                     $bar->advance();
                     continue;
@@ -333,7 +345,7 @@ class CachePriceDataCommand extends Command
         $this->info("Price cache update complete!");
         $this->info("Cached: {$cached} items");
         if ($skipped > 0) {
-            $this->info("Skipped: {$skipped} (cache still fresh)");
+            $this->info("Skipped: {$skipped} (refreshed within the last half of the cache duration)");
         }
         if ($errors > 0) {
             $this->warn("Errors: {$errors}");

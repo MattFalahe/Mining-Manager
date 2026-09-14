@@ -557,6 +557,21 @@ Also aligned a stray default: the summaries treated an absent gas setting as tax
 everything else treated it as untaxed. Unreachable, since the selector always supplies
 every key, but two opposite defaults for one setting read as disagreement.
 
+### 🐛 Scheduled price refreshes skipped every other run
+
+With the SeAT, Janice or Fuzzwork provider, `mining-manager:cache-prices` left alone any
+price still inside the cache duration. By default it runs every four hours against a
+four-hour duration, so each run met the prices from the run before a few seconds short
+of that and skipped them. Prices were really refreshed every eight hours and read as out
+of date for half of that time, which is what raised the stale price warning in the
+ledger import and on the reprocessing page.
+
+A run now refreshes any price older than half the cache duration, so a scheduled run
+always refreshes and a manual run straight after one still skips what was just fetched.
+`--force` still refreshes everything. The Cache Duration help on the Pricing tab now says
+how the setting and the schedule fit together. The Manager Core provider was not
+affected: it copies every price on every run.
+
 ### ✨ The reprocessing calculator says what it did not recognise
 
 An ore name the calculator could not resolve was dropped without a word. The row
