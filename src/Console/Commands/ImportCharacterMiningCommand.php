@@ -11,6 +11,7 @@ use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\Tax\InvoiceCoverage;
+use MiningManager\Services\Ledger\LateMining;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
 use MiningManager\Services\OreClassifier;
@@ -64,6 +65,7 @@ class ImportCharacterMiningCommand extends Command
         }
         $frozen = 0;
         $lateArrivals = 0;
+        $billedLeftAlone = 0;
         $cutoffDate = Carbon::now()->subDays($days);
 
         // Check if SeAT's CharacterMining model exists
@@ -136,7 +138,7 @@ class ImportCharacterMiningCommand extends Command
 
         $query->chunk(500, function ($entries) use (
             $valuationService, $force, $dryRun,
-            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals, &$ignored,
+            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals, &$billedLeftAlone, &$ignored,
             &$touchedPairs, &$firstNewDate, &$lastNewDate, $progressBar
         ) {
         foreach ($entries as $entry) {
@@ -180,18 +182,44 @@ class ImportCharacterMiningCommand extends Command
                 if ($existing && !$force) {
                     // Update only if quantity changed
                     if ((int) $existing->quantity !== $entry->quantity) {
+                        // A day on an issued invoice keeps the value and tax it was
+                        // billed at. More mining for it is recorded at today's
+                        // value with a note that it was not taxed. A smaller figure
+                        // is no reason to change the bill's evidence, so it is left alone.
+                        $billed = InvoiceCoverage::coversRow($entry->character_id, $entry->date);
+
+                        if ($billed && $entry->quantity < (int) $existing->quantity) {
+                            $skipped++;
+                            $progressBar->advance();
+                            continue;
+                        }
+
                         if (! $dryRun) {
-                            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                            $existing->update([
-                                'quantity' => $entry->quantity,
-                                'unit_price' => $values['unit_price'] ?? 0,
-                                'ore_value' => $values['ore_value'] ?? 0,
-                                'mineral_value' => $values['mineral_value'] ?? 0,
-                                'total_value' => $values['total_value'] ?? 0,
-                                'processed_at' => Carbon::now(),
-                            ]);
+                            if ($billed) {
+                                $extraValues = $valuationService->calculateOreValue(
+                                    $entry->type_id,
+                                    $entry->quantity - (int) $existing->quantity
+                                );
+                                $existing->update(LateMining::growth($existing, $entry->quantity, $extraValues) + [
+                                    'processed_at' => Carbon::now(),
+                                ]);
+                            } else {
+                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                                $existing->update([
+                                    'quantity' => $entry->quantity,
+                                    'unit_price' => $values['unit_price'] ?? 0,
+                                    'ore_value' => $values['ore_value'] ?? 0,
+                                    'mineral_value' => $values['mineral_value'] ?? 0,
+                                    'total_value' => $values['total_value'] ?? 0,
+                                    'processed_at' => Carbon::now(),
+                                ]);
+                            }
                         }
                         $updated++;
+
+                        if ($billed) {
+                            $lateArrivals++;
+                        }
 
                         $pairKey = $entry->character_id . '|' . $entry->date;
                         $touchedPairs->put($pairKey, [
@@ -232,6 +260,15 @@ class ImportCharacterMiningCommand extends Command
                         continue;
                     }
 
+                    // Nor a row an issued invoice covers. Deleting it and
+                    // importing it again would turn mining that was billed into
+                    // an untaxed late arrival.
+                    if (InvoiceCoverage::coversRow($entry->character_id, $entry->date)) {
+                        $billedLeftAlone++;
+                        $progressBar->advance();
+                        continue;
+                    }
+
                     if (! $dryRun) {
                         $existing->delete();
                     }
@@ -268,9 +305,7 @@ class ImportCharacterMiningCommand extends Command
                         'is_taxable' => ! $lateExempt,
                         'tax_rate' => 0,
                         'tax_amount' => 0,
-                        'notes' => $lateExempt
-                            ? 'Arrived after this period was invoiced, so it was not taxed.'
-                            : null,
+                        'notes' => $lateExempt ? LateMining::NEW_ROW_NOTE : null,
                     ]);
                 }
                 $created++;
@@ -309,7 +344,8 @@ class ImportCharacterMiningCommand extends Command
                 [$dryRun ? 'Existing entries it would update' : 'Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
                 ['Ignored (event ore, quest ore, Mutanite)', $ignored],
-                [$dryRun ? 'Would arrive after invoicing, exempt' : 'Arrived after invoicing, exempt', $lateArrivals],
+                [$dryRun ? 'Would arrive after invoicing, not taxed' : 'Arrived after invoicing, not taxed', $lateArrivals],
+                ['Left alone (already invoiced)', $billedLeftAlone],
                 ['Errors', $errors],
             ]
         );

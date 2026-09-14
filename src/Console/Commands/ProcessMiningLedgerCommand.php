@@ -14,6 +14,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\Tax\InvoiceCoverage;
+use MiningManager\Services\Ledger\LateMining;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -266,21 +267,15 @@ class ProcessMiningLedgerCommand extends Command
                         'processed_at' => Carbon::now(),
                     ];
 
-                    // Mining that turns up for a period already invoiced was
-                    // never in that bill and never will be: the invoice is
-                    // pinned, so charging for this would mean re-opening
-                    // something the member has settled. It lands exempt, and
-                    // says why, rather than carrying a rate nothing collected.
-                    if (InvoiceCoverage::coversRow(
+                    // Whether an issued invoice already covers this day. Mining
+                    // that turns up for it now was never on that bill and never
+                    // will be: the invoice is pinned, so charging for it would
+                    // mean re-opening something the member has settled. It is
+                    // recorded, but not taxed, and says why.
+                    $billed = InvoiceCoverage::coversRow(
                         (int) $entry->character_id,
                         Carbon::parse($entry->last_updated)->toDateString()
-                    )) {
-                        $data['tax_rate'] = 0;
-                        $data['tax_amount'] = 0;
-                        $data['is_taxable'] = false;
-                        $data['notes'] = 'Arrived after this period was invoiced, so it was not taxed.';
-                        $lateArrivals++;
-                    }
+                    );
 
                     // Unique key columns for updateOrCreate
                     $uniqueKey = [
@@ -298,7 +293,28 @@ class ProcessMiningLedgerCommand extends Command
                         ->where('observer_id', $entry->observer_id)
                         ->first();
 
-                    if ($existing) {
+                    if ($existing && $billed) {
+                        // This row was on the bill, so the value and tax it was
+                        // billed at stay put, whatever --recalculate asks for.
+                        // Observer data is cumulative, though, and can still be
+                        // catching up: only what it has added since is recorded,
+                        // at today's value, with a note that it was not taxed.
+                        if ($entry->quantity > $existing->quantity) {
+                            $extraValues = $valuationService->calculateOreValue(
+                                $entry->type_id,
+                                (int) $entry->quantity - (int) $existing->quantity
+                            );
+                            $existing->update(LateMining::growth($existing, (int) $entry->quantity, $extraValues) + [
+                                'processed_at' => Carbon::now(),
+                            ]);
+                            $updated++;
+                            $lateArrivals++;
+                        } elseif ($recalculate) {
+                            $billedSkips++;
+                        } else {
+                            $skipped++;
+                        }
+                    } elseif ($existing) {
                         // Mining from before the classification cutover keeps the
                         // rate and categories it was given at the time. Quantity
                         // and value still update, because observer data is
@@ -327,6 +343,14 @@ class ProcessMiningLedgerCommand extends Command
                             $skipped++;
                         }
                     } else {
+                        if ($billed) {
+                            $data['tax_rate'] = 0;
+                            $data['tax_amount'] = 0;
+                            $data['is_taxable'] = false;
+                            $data['notes'] = LateMining::NEW_ROW_NOTE;
+                            $lateArrivals++;
+                        }
+
                         // Cross-source dedup: adjust personal ESI record if it exists
                         // Character ESI combines ALL mining of a type in a system into one entry,
                         // so if a character mined at both a corp moon and non-corp moon,
@@ -408,7 +432,7 @@ class ProcessMiningLedgerCommand extends Command
                 [
                     ['🆕 New entries created', $processed],
                     ['🔄 Existing entries updated', $updated],
-                    ['📌 Arrived after invoicing, exempt', $lateArrivals],
+                    ['📌 Arrived after invoicing, not taxed', $lateArrivals],
                     ['🔒 Left alone, already invoiced', $billedSkips],
                     ['⏭️  Entries skipped', $skipped],
                     ['❌ Errors', $errors],

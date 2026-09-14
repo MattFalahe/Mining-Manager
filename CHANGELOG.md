@@ -410,6 +410,10 @@ a zero rate, and holds a note explaining that it arrived after the period was in
 The entry detail page shows that note beside the zero, because a bare 0 ISK invites
 exactly the question it fails to answer.
 
+Observer data can also still be catching up on a row that was already on the bill. Then
+only the extra is added, at today's value, with a note that part of the row was not taxed.
+The value and the tax the row was billed at stay exactly as they were.
+
 Daily summaries for an invoiced period keep the tax figure they were billed at, while
 volume and value continue to refresh. Freezing the whole row would have left the day's
 tonnage looking wrong, which is its own kind of confusion; this way the numbers stay

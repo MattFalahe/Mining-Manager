@@ -1963,7 +1963,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         The same principle covers mining that turns up late. Corporation observer data does not always
                         arrive before the period it belongs to has been invoiced. When it lands afterwards it is recorded
                         in full, with its real quantity and value, but marked <strong>not taxed</strong> with a note
-                        saying why. The ISK is not chased. Re-opening a settled invoice, or going back to somebody for
+                        saying why. If more turns up for mining that was already on the bill, only the extra is added,
+                        with a note, and the value and tax the row was billed at stay as they were. The ISK is not
+                        chased. Re-opening a settled invoice, or going back to somebody for
                         more on a bill they have paid, is worse than letting it go.
                     </p>
                     <p>
