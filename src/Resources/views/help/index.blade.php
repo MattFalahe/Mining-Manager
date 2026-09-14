@@ -2369,8 +2369,14 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         they're treated as the same pull, so it appears once. If they're further apart than that but
                         still in the same cycle, the drill was fired on a different timer than planned: the real pull
                         is highlighted, it's listed in a <em>Scheduling mismatches</em> banner at the top of the page,
-                        and a <strong>Moon Scheduled Off-Plan</strong> notification fires once. Use <strong>Dismiss</strong>
-                        on the banner to retire the stale plan &mdash; the in-game extraction isn't touched.
+                        and a <strong>Moon Scheduled Off-Plan</strong> notification fires once.
+                    </p>
+                    <p>
+                        Each mismatch on the banner has two buttons. <strong>Realign</strong> moves the plan to the time
+                        the drill was actually set for in-game. <strong>Ignore</strong> keeps the plan's time and records
+                        that the pull went ahead off-plan. Both clear the warning, both ask for a reason, and both are
+                        saved to the planner history with your name. Neither moves later planned pulls for that
+                        refinery, and the in-game extraction isn't touched.
                     </p>
 
                     <h4><i class="fas fa-industry"></i> The refinery panel</h4>

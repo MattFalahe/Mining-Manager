@@ -539,9 +539,16 @@ Route::group([
             'uses' => 'MoonPlannerController@update',
         ]);
 
-        Route::post('/planner/{id}/dismiss-mismatch', [
-            'as' => 'mining-manager.moon.planner.dismiss-mismatch',
-            'uses' => 'MoonPlannerController@dismissMismatch',
+        // Settling a scheduling mismatch: move the plan to the in-game time, or
+        // keep it and ignore the offset.
+        Route::post('/planner/{id}/realign', [
+            'as' => 'mining-manager.moon.planner.realign',
+            'uses' => 'MoonPlannerController@realign',
+        ]);
+
+        Route::post('/planner/{id}/ignore-offset', [
+            'as' => 'mining-manager.moon.planner.ignore-offset',
+            'uses' => 'MoonPlannerController@ignoreOffset',
         ]);
 
         Route::delete('/planner/{id}', [

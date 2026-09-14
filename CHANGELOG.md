@@ -8,6 +8,17 @@ Wallet payment verification, rebuilt. A member who sends their tax ISK without p
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
 
+### ✨ Realign or ignore a moon scheduled off-plan
+
+A scheduling mismatch in the Moon Planner only offered Dismiss, which threw the plan away. The
+banner now has two choices instead. Realign moves the plan to the time the drill was actually
+set for in-game. Ignore keeps the plan's time, records that the pull went ahead off-plan, and
+clears the warning. Both need a reason, and both are saved to the planner history with who did
+it. Later planned pulls for the refinery stay where they are either way.
+
+A cancelled extraction also no longer raises a mismatch on the planner page, which matches the
+Off-Plan alert: that already left cancelled extractions out.
+
 ### ✨ Moon managers can open Moon Analytics
 
 The Moon Manager permission now includes Moon Analytics, so whoever plans moon pulls can see

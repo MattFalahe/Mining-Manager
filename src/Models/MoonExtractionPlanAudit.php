@@ -13,7 +13,7 @@ use Carbon\Carbon;
  * @property int|null $plan_id
  * @property int|null $structure_id
  * @property int|null $moon_id
- * @property string $action           created|moved|deleted|autofilled
+ * @property string $action           created|moved|deleted|autofilled|realigned|offset_ignored
  * @property int|null $character_id
  * @property string|null $character_name
  * @property \Carbon\Carbon|null $old_arrival
@@ -31,6 +31,12 @@ class MoonExtractionPlanAudit extends Model
     public const ACTION_MOVED = 'moved';
     public const ACTION_DELETED = 'deleted';
     public const ACTION_AUTOFILLED = 'autofilled';
+
+    // Settling a pull that was fired off-plan. Kept apart from moved on
+    // purpose: re-planning ahead and accepting what already happened in-game
+    // are different decisions, and the history should say which it was.
+    public const ACTION_REALIGNED = 'realigned';
+    public const ACTION_OFFSET_IGNORED = 'offset_ignored';
 
     protected $fillable = [
         'corporation_id',

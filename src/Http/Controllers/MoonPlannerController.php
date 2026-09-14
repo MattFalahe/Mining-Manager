@@ -108,14 +108,40 @@ class MoonPlannerController extends Controller
     }
 
     /**
-     * Dismiss a scheduling mismatch by superseding the stale plan behind it.
+     * Realign a plan to the time its pull was actually set for in-game.
      *
-     * The real in-game pull is the source of truth; once the operator has
-     * eyeballed the divergence, retiring the plan clears the warning banner and
-     * the red flag without touching the extraction itself.
+     * For when the drill went off on a different timer and that time is now
+     * the plan. Only this pull moves; later planned pulls for the refinery stay
+     * where they are.
      */
-    public function dismissMismatch($id)
+    public function realign(Request $request, $id)
     {
+        return $this->settleMismatch($request, $id, true);
+    }
+
+    /**
+     * Keep a plan's time and stop flagging the offset.
+     *
+     * The pull went ahead off-plan once. The plan keeps the time that was
+     * intended, is marked done against the real pull with the variance, and
+     * the warning clears. Later planned pulls are left alone here too.
+     */
+    public function ignoreOffset(Request $request, $id)
+    {
+        return $this->settleMismatch($request, $id, false);
+    }
+
+    /**
+     * Both ways of settling a mismatch ask for a reason. An off-plan pull is
+     * usually somebody's call under pressure, and the reason, with who made
+     * it, is what stops it reading as a mistake later.
+     */
+    protected function settleMismatch(Request $request, $id, bool $realign)
+    {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:300',
+        ]);
+
         $corporationId = $this->plannerCorporationId();
         $plan = MoonExtractionPlan::where('id', $id)
             ->where('corporation_id', $corporationId)
@@ -125,23 +151,52 @@ class MoonPlannerController extends Controller
             return response()->json(['error' => 'Plan not found.'], 404);
         }
 
+        // Only a planned pull can be out of step: a confirmed one already
+        // matches its extraction.
+        $actualAt = $plan->status === MoonExtractionPlan::STATUS_PLANNED
+            ? $this->planner->offPlanArrival($plan)
+            : null;
+
+        if (!$actualAt) {
+            return response()->json(['error' => 'This plan no longer has a scheduling mismatch to settle.'], 422);
+        }
+
+        $plannedAt = $plan->planned_arrival_time->copy();
         [$actorId, $actorName] = $this->actor();
 
-        $plan->update([
-            'status' => MoonExtractionPlan::STATUS_SUPERSEDED,
-            'mismatch_notified_at' => Carbon::now(),
-        ]);
+        if ($realign) {
+            $plan->update([
+                'planned_arrival_time' => $actualAt,
+                'source' => MoonExtractionPlan::SOURCE_MANUAL,
+                // It matches its pull now, so a later divergence should be
+                // able to raise a fresh alert.
+                'mismatch_notified_at' => null,
+            ]);
+        } else {
+            $plan->update([
+                'status' => MoonExtractionPlan::STATUS_DONE,
+                'linked_extraction_id' => MoonExtraction::where('structure_id', $plan->structure_id)
+                    ->where('chunk_arrival_time', $actualAt)
+                    ->value('id'),
+                // Signed the way reconcile() records it: planned minus actual.
+                'variance_hours' => (int) round($actualAt->diffInMinutes($plannedAt, false) / 60),
+                'mismatch_notified_at' => Carbon::now(),
+            ]);
+        }
 
         \MiningManager\Models\MoonExtractionPlanAudit::record([
             'corporation_id' => $corporationId,
             'plan_id' => $plan->id,
             'structure_id' => $plan->structure_id,
             'moon_id' => $plan->moon_id,
-            'action' => \MiningManager\Models\MoonExtractionPlanAudit::ACTION_DELETED,
+            'action' => $realign
+                ? \MiningManager\Models\MoonExtractionPlanAudit::ACTION_REALIGNED
+                : \MiningManager\Models\MoonExtractionPlanAudit::ACTION_OFFSET_IGNORED,
             'character_id' => $actorId,
             'character_name' => $actorName,
-            'old_arrival' => $plan->planned_arrival_time,
-            'detail' => 'Dismissed schedule mismatch — ' . $this->planLabel($plan),
+            'old_arrival' => $plannedAt,
+            'new_arrival' => $actualAt,
+            'detail' => mb_substr($this->planLabel($plan) . ': ' . trim($validated['reason']), 0, 500),
         ]);
 
         return response()->json(['success' => true]);
@@ -536,6 +591,11 @@ class MoonPlannerController extends Controller
             $nearestOffset = null;
             foreach ($actuals as $a) {
                 if ($a['structure_id'] !== (int) $plan->structure_id) {
+                    continue;
+                }
+                // The same real pulls the mismatch check counts: a live
+                // extraction that was cancelled never ran.
+                if (!$a['archived'] && $a['status'] === 'cancelled') {
                     continue;
                 }
                 $offset = abs($plan->planned_arrival_time->diffInMinutes($a['time']));

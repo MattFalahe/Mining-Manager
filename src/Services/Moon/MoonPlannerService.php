@@ -700,6 +700,36 @@ class MoonPlannerService
     }
 
     /**
+     * The real arrival a plan is out of step with, if there is one.
+     *
+     * The nearest real pull for the refinery is further away than the match
+     * tolerance but still inside the same cycle. Null when the plan matches its
+     * pull, or no real pull is near it. The alert and the actions that settle a
+     * mismatch both ask this, so they cannot disagree about what counts.
+     */
+    public function offPlanArrival(MoonExtractionPlan $plan): ?Carbon
+    {
+        $nearest = null;
+        $nearestOffset = null;
+
+        foreach ($this->existingActualTimes((int) $plan->structure_id) as $time) {
+            $offset = abs($plan->planned_arrival_time->diffInMinutes($time));
+            if ($nearestOffset === null || $offset < $nearestOffset) {
+                $nearestOffset = $offset;
+                $nearest = $time;
+            }
+        }
+
+        if ($nearest === null
+            || $nearestOffset <= self::MATCH_TOLERANCE_MINUTES
+            || $nearestOffset > self::CYCLE_MATCH_WINDOW_HOURS * 60) {
+            return null;
+        }
+
+        return $nearest->copy();
+    }
+
+    /**
      * Find plans whose refinery has a real in-game extraction in the same
      * cycle but at a materially different time (> MATCH_TOLERANCE_MINUTES),
      * and fire a one-shot `schedule_mismatch` notification for each.
@@ -714,8 +744,6 @@ class MoonPlannerService
      */
     public function detectAndNotifyMismatches(int $corporationId): int
     {
-        $tolerance = self::MATCH_TOLERANCE_MINUTES;
-        $cycleWindow = self::CYCLE_MATCH_WINDOW_HOURS * 60;
         $fired = 0;
 
         $plans = MoonExtractionPlan::forCorporation($corporationId)
@@ -729,24 +757,13 @@ class MoonPlannerService
         MoonExtractionPlan::loadDisplayNames($plans);
 
         foreach ($plans as $plan) {
-            $actuals = $this->existingActualTimes((int) $plan->structure_id);
+            $nearest = $this->offPlanArrival($plan);
 
-            // Nearest real pull to this plan.
-            $nearest = null;
-            $nearestOffset = null;
-            foreach ($actuals as $t) {
-                $offset = abs($plan->planned_arrival_time->diffInMinutes($t));
-                if ($nearestOffset === null || $offset < $nearestOffset) {
-                    $nearestOffset = $offset;
-                    $nearest = $t;
-                }
-            }
-
-            // Same cycle but off-tolerance = mismatch. Within tolerance is the
-            // same pull (fine); beyond the cycle window is a different cycle.
-            if ($nearest === null || $nearestOffset <= $tolerance || $nearestOffset > $cycleWindow) {
+            if ($nearest === null) {
                 continue;
             }
+
+            $nearestOffset = abs($plan->planned_arrival_time->diffInMinutes($nearest));
 
             try {
                 $baseUrl = rtrim(config('app.url', ''), '/');
