@@ -2,11 +2,15 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
-## [Unreleased] — Payment Allocation
+## [2.0.4] — Unreleased — The Ecosystem Era: Payments and Balances
 
-Wallet payment verification, rebuilt. A member who sends their tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, in two clicks, with the remainder rolling onto their next unpaid invoice and any surplus held as credit.
+Wallet payments, rebuilt. A member who sends their tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance. Members can pay ahead and see their balance, and directors can give it back.
 
-> Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its slice.
+Around that: the personal mining import counts the whole day instead of its latest sitting, event and quest ore is left out, ore classification changes apply only from the update on, and nothing that has already been billed is recalculated. The Moon Planner can realign or ignore a pull set off-plan, Extraction Started names who started the extraction, and moon managers can open Moon Analytics.
+
+> Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its share. An invoice that has gone out is a record, not a calculation.
+
+**Backwards compatible.** Six new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
 
 ### ✨ Diagnostics for payments, the personal import and moon notifications
 
@@ -85,9 +89,9 @@ days, which the import has always kept refreshing.
 import and prints the same table, but writes nothing: no new ledger rows, no updates, no daily
 summary rebuilds. It also says which dates any new entries would carry.
 
-Worth running before a wide `--days` window on a live install. Mining that SeAT holds but the
-ledger never picked up would otherwise land in periods that have already been invoiced, and a
-dry run shows how much of that there is before any of it happens.
+It is the safe way to see what an import would do on a live install: what it would add, what it
+would update, and how much of the new mining falls in periods that are already invoiced and so
+would go in exempt.
 
 ### 🐛 Generated test data used the wrong ore ids
 
@@ -179,17 +183,6 @@ get told it is off, rather than an empty file.
 Your settings backup is deliberately outside this. Exporting your own configuration is not
 the same act as taking mining and tax records out of the plugin, and an admin locked out of
 their own backup by a data setting would be a worse surprise than the bug being fixed.
-
-### 🐛 The assign dialog said upfront payments were off when they were on
-
-Holding a payment as account balance showed a warning that you were overriding a
-switched-off feature, whatever the feature was actually set to. The Tax pages were reading
-their feature flags from a list that had four entries in it while the pages asked for more
-than four, and the missing one came back through a default as "off". Nothing was wrong with
-the setting, the saving, or the matching: only what the dialog said about it.
-
-The tax pages now take their flags from the same set every other page uses, so a flag
-cannot be on in one place and absent in another.
 
 ### 🐛 Tax Overview opened in what looked like no order at all
 
@@ -303,13 +296,13 @@ Tax Overview also gains an **Outstanding (not fully paid)** filter covering unpa
 
 ### ✨ Account balance is visible to the person who owns it
 
-Held credit was only ever shown to directors, on the Wallet Verification page. A member who overpaid had no way of knowing the surplus was kept rather than swallowed, and no way of knowing their next invoice was already covered.
+A member who overpays should be able to see that the surplus was kept rather than swallowed, and that their next invoice is already covered.
 
-**My Taxes** now shows an Account Balance panel, but only when there is a balance to show. It is alt-aware, so a surplus sitting on whichever character sent the ISK is visible against the account it belongs to.
+**My Taxes** shows an Account Balance panel, but only when there is a balance to show. It is alt-aware, so a surplus sitting on whichever character sent the ISK is visible against the account it belongs to.
 
 **An invoice that credit paid for says so.** The detail page carries a callout naming the amount, or saying the invoice was settled in full from balance with nothing to pay. The invoice's own notes record it too, so it reaches the exports and the receipt rather than living only in the allocation rows.
 
-The director-side card on Wallet Verification gains a total once more than one character is holding a balance.
+The director-side card on Wallet Verification shows a total once more than one character is holding a balance.
 
 ### ✨ Payments received
 
@@ -327,9 +320,9 @@ The page says how many are hidden and why, with a **Show them anyway** toggle. R
 
 The migration stamps `payment.dedup_epoch`. Automatic matching ignores transfers dated before it, so historical records are left exactly as they stand and are never re-examined or corrected. Everything from that point forward is claimed and reconcilable. Assigning an older transfer by hand still works; the guard only applies to automatic matching. `--ignore-cutover` opts a manual run out, and `--reset-month` sets it automatically.
 
-### ✨ Diagnostics
+### ✨ Payment reconciliation in Diagnostics
 
-Tax pipeline gains **Step 4b: Payment Reconciliation**. For every invoice settled since the cutover it checks that `amount_paid` equals the sum of the payments recorded against it, and flags transaction claims that produced no allocation. Scoped to post-cutover data by design: older records were credited by a pipeline that kept no breakdown and cannot be reconciled.
+The tax pipeline check gains **Step 4b: Payment Reconciliation**. For every invoice settled since the cutover it checks that `amount_paid` equals the sum of the payments recorded against it, and flags transaction claims that produced no allocation. Scoped to post-cutover data by design: older records were credited by a pipeline that kept no breakdown and cannot be reconciled.
 
 ### 🧹 Consolidation
 
@@ -365,7 +358,7 @@ Timestamps also pick up an EVE-time label, added only where a sender has not alr
 `TypeIdRegistry` carried 401 type IDs and now carries 539. What was missing:
 
 - **IV-Grade for all fifteen classic ores.** The registry held base, II-Grade and III-Grade for Veldspar through Spodumain, and IV-Grade for none of them. They were being classified by a fallthrough rather than by rule.
-- **The Exordium 0-Grade tier** — half-yield Veldspar and Scordite for the starter region, plus Pyroxeres 0-Grade.
+- **The Exordium 0-Grade tier**: half-yield Veldspar and Scordite for the starter region, plus Pyroxeres 0-Grade.
 - **Four X-Grade families** (Raspite, Polycrase, Moissanite, Kangite) and their compressed forms.
 - **Prismaticite**, from phased asteroid fields. The SDE files it under Material rather than Asteroid, which is why it had gone unnoticed.
 - **Nine gas colours** across the Cytoserocin and Mykoserocin sets, plus 27 compressed gas types and Fullerite-C32.
@@ -382,7 +375,7 @@ Recognising all of the above is an improvement, but applying it backwards would 
 
 So this release stamps a cutover. Mining that was already in the ledger keeps the rate and categories it was billed on, whatever recalculates it later. Mining from here is classified properly.
 
-Two paths would otherwise have applied it retroactively without anybody running a command: `mining-manager:update-ledger-prices` re-derives the rate from the registry on its nightly run, and `mining-manager:backfill-ore-types` re-stamps flags wholesale. Both now stop at the cutover. `backfill-ore-types` gained `--scope` (`epoch` by default, `all` as a deliberate escape hatch), a `--dry-run`, and a report of every category movement, since each one is a rate change.
+Two paths would otherwise have applied it retroactively without anybody running a command: `mining-manager:update-ledger-prices` re-derives the rate from the registry on its nightly run, and `mining-manager:backfill-ore-types` re-stamps flags wholesale. Both now stop at the cutover. `backfill-ore-types` gained `--scope` (`epoch` by default, `all` to go past the cutover), a `--dry-run`, and a report of every category movement, since each one is a rate change.
 
 The cutover keys on when a row entered the ledger, not when the ore was mined, so importing older mining after upgrading still classifies and prices it correctly.
 
@@ -392,7 +385,7 @@ The cutover keys on when a row entered the ledger, not when the ore was mined, s
 
 Both now leave an invoice alone once a payment code has been generated for it, money has arrived against it, or its status says paid or partial. The recalculated figure is logged alongside the stored one rather than replacing it.
 
-The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced — for a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
+The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced. For a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
 
 ### ✨ Mining that turns up after the bill is marked, not quietly charged
 
@@ -422,9 +415,8 @@ themselves and does not care how long they are.
 ### ✨ Give held balance back
 
 Somebody meant to pay 5b and sent 50b. Somebody is leaving and the corporation should not
-keep money that is theirs. Until now the only answer was to send the ISK back in game and
-hope somebody wrote it down, while the plugin carried on insisting they still had a
-balance.
+keep money that is theirs. Sending the ISK back in game is not enough on its own, because
+the plugin would carry on insisting they still had a balance.
 
 The Balances tab has a **Refund** action on each held balance, for directors. Full or
 partial, with a reason, which is required because it is the only record of why. Leaving
@@ -489,21 +481,20 @@ Turning the feature off stops members adding to a balance with the keyword. It d
 touch balances already held: they stay spendable and keep coming off invoices, because
 the money is the member's and turning off a feature is not a reason to keep it.
 
-Two routes deliberately stay open with the feature off, and both now say so. **Hold
-surplus as credit** is a separate switch, so somebody can still build a balance by
-overpaying an invoice; the setting now spells that out and points at the other switch if
-you want the route closed. And a **director can still bank a payment by hand**, because a
-codeless transfer from somebody who owes nothing has nowhere else to go: the dialog now
-carries a warning that doing so overrides a setting somebody chose.
+Two routes deliberately stay open with the feature off, and both say so. **Hold surplus
+as credit** is a separate switch, so somebody can still build a balance by overpaying an
+invoice; the setting spells that out and points at the other switch if you want the route
+closed. And a **director can still bank a payment by hand**, because a codeless transfer
+from somebody who owes nothing has nowhere else to go: the dialog carries a warning that
+doing so overrides a setting somebody chose.
 
 ### ✨ Assign a codeless payment to a player's balance
 
-Assigning a payment by hand only worked if there was an invoice to point it at. A
-transfer with no tax code from somebody who owes nothing was a dead end: the dropdown
-was empty, the button was disabled, and the only ways out were to leave it in the queue
-or dismiss it. Neither is true, because the money did arrive.
+A transfer with no tax code from somebody who owes nothing has no invoice to point at,
+and leaving it in the queue or dismissing it would both be untrue, because the money did
+arrive.
 
-The dropdown now offers **Hold as account balance** alongside the invoices, and picks it
+The dropdown offers **Hold as account balance** alongside the invoices, and picks it
 automatically when the player has nothing outstanding. It behaves exactly as a payment
 using the upfront keyword does, because it is the same thing arriving by a different
 route: it settles anything they already owe, oldest invoice first, and holds the rest
@@ -661,7 +652,7 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 - `000026` adds `mining_manager_payment_refunds`.
 - `000027` adds who confirmed a refund by hand and why.
 
-All six are additive. No existing column is altered and no data is rewritten.
+No existing column is altered or dropped. Two of the migrations write to rows that already exist, and neither changes an amount, a status or anything a member was billed: `000022` records the transactions older invoices were already credited with, so they can never be credited a second time, and `000023` fills in a moon only on plans and history rows that have none.
 
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 
