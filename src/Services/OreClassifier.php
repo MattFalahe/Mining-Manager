@@ -30,14 +30,30 @@ final class OreClassifier
      * Event, quest and mission ore is not ongoing mining. Taxing it bills
      * members for something no corporation set out to tax, and counting it
      * puts one-off spikes into the figures people use to judge normal
-     * activity. It is skipped at import, so nothing further along ever sees it.
+     * activity.
      *
+     * Mutanite is ongoing, but it cannot be reprocessed and a price source
+     * often has no price for it. Counted, it went into the ledger as regular
+     * ore through the fallback in category(), usually worth nothing, which
+     * says nothing true about it.
+     *
+     * Both are skipped at import, so nothing further along ever sees them.
      * Only mining imported after this check exists is affected. Rows already in
      * a ledger stay as they were, like every other change to how ore is treated.
      */
     public static function isIgnored(int $typeId): bool
     {
-        return in_array($typeId, TypeIdRegistry::EVENT_ORES, true);
+        return in_array($typeId, self::ignoredTypeIds(), true);
+    }
+
+    /**
+     * Every type id isIgnored() leaves out, for callers that filter a query.
+     *
+     * @return array<int>
+     */
+    public static function ignoredTypeIds(): array
+    {
+        return array_merge(TypeIdRegistry::EVENT_ORES, TypeIdRegistry::MUTANITE_ORES);
     }
 
     /**

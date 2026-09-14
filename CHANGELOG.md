@@ -6,7 +6,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 Wallet payments, rebuilt. A member who sends their tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance. Members can pay ahead and see their balance, and directors can give it back.
 
-Around that: the personal mining import counts the whole day instead of its latest sitting, event and quest ore is left out, ore classification changes apply only from the update on, and nothing that has already been billed is recalculated. The Moon Planner can realign or ignore a pull set off-plan, Extraction Started names who started the extraction, and moon managers can open Moon Analytics.
+Around that: the personal mining import counts the whole day instead of its latest sitting, event ore, quest ore and Mutanite are left out, ore classification changes apply only from the update on, and nothing that has already been billed is recalculated. The Moon Planner can realign or ignore a pull set off-plan, Extraction Started names who started the extraction, and moon managers can open Moon Analytics.
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its share. An invoice that has gone out is a record, not a calculation.
 
@@ -18,8 +18,8 @@ Master Test gains checks for the upfront payment setup (an empty keyword, a keyw
 overlaps the tax code prefix or the refund keyword, or surplus with nowhere to go), refunds
 still waiting on a transfer after a week, the personal mining import falling behind inside
 its two-day window, moon mining notifications not reaching SeAT, Extraction Started alerts
-stuck past their wait, the ore classification cutover, and event ore turning up in the
-ledger. Data Integrity flags account balances that cannot be right and refunds whose balance
+stuck past their wait, the ore classification cutover, and event ore, quest ore or
+Mutanite turning up in the ledger. Data Integrity flags account balances that cannot be right and refunds whose balance
 row is gone. Settings Health lists the feature switches, and Health Checks counts payment
 allocations, held balances, pending refunds and planned pulls.
 
@@ -101,7 +101,7 @@ and every row carried only a moon flag, so test data never classified the way re
 does. It now uses real ids from the registry and works out every flag and the ore category
 the same way the importers do.
 
-### ✨ Event and quest ore is left out entirely
+### ✨ Event ore, quest ore and Mutanite are left out entirely
 
 Ore that only exists through limited-time events, quests and mission content is no longer
 imported, taxed, valued or charted: Tyranite, Nephrite, Dense Moissanite, Amethystic
@@ -109,11 +109,15 @@ Crystallite, Hiemal Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. I
 ongoing mining. Counting it put one-off spikes into the figures people use to judge normal
 activity, and on an install that taxes regular ore it ended up on members' bills.
 
-It is skipped when mining is imported and when mining events are tallied, so nothing further
-along ever sees it. Mining already in your ledger is left exactly as it was.
+Mutanite is left out as well, all six types in its group: Amperum, Peregrinus, Conflagrati,
+Solis, Tenebraet and Admixti (`77118`, `77418` to `77421` and `77524`). Homefront Operations
+run permanently, so it is not event ore, but it cannot be reprocessed and a price source often
+has no price for it. The registry did not know it, so it went into the ledger as regular ore
+through the fallback, usually worth nothing. Reported in
+[#3](https://github.com/MattFalahe/Mining-Manager/issues/3).
 
-Mutanite is not on the list. It comes from Homefront Operations, which run permanently in
-highsec, and it is still counted as regular ore.
+All of it is skipped when mining is imported and when mining events are tallied, so nothing
+further along ever sees it. Mining already in your ledger is left exactly as it was.
 
 ### 🧹 One ore classifier instead of six
 

@@ -847,11 +847,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             billed on.
                         </li>
                         <li>
-                            <strong>Event and quest ore is left out.</strong> Tyranite, Nephrite, Volatile Ice and
-                            the other limited-time and mission ores are no longer imported, taxed or charted.
-                            Mutanite still counts. The reprocessing calculator now lists any ore name it could
-                            not recognise instead of quietly dropping it, which usually means your static data is
-                            older than CCP's new ore names.
+                            <strong>Event ore, quest ore and Mutanite are left out.</strong> Tyranite, Nephrite,
+                            Volatile Ice and the other limited-time and mission ores, and Mutanite from Homefront
+                            Operations, are no longer imported, taxed or charted. Rows already in the ledger stay as
+                            they are. The reprocessing calculator now lists any ore name it could not recognise
+                            instead of quietly dropping it, which usually means your static data is older than CCP's
+                            new ore names.
                         </li>
                         <li>
                             <strong>Analytics opens on your own corporation.</strong> All Corporations is still in
@@ -1630,16 +1631,21 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         underneath anybody.
                     </p>
 
-                    <h4><i class="fas fa-ban"></i> Event and quest ore</h4>
+                    <h4><i class="fas fa-ban"></i> Event ore, quest ore and Mutanite</h4>
                     <p>
                         Ore that only exists through limited-time events, quests and mission content is left
                         out entirely: Tyranite, Nephrite, Dense Moissanite, Amethystic Crystallite, Hiemal
                         Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. It is not imported, taxed,
                         valued or charted. One-off spikes would distort the figures used to judge normal
                         activity, and on an install that taxes regular ore they would end up on members'
-                        bills. Mutanite still counts as regular ore, because Homefront Operations run
-                        permanently. Event ore already in your ledger is left as it was.
+                        bills.
                     </p>
+                    <p>
+                        All six kinds of Mutanite are left out too. Homefront Operations run permanently, so
+                        it is not event ore, but it cannot be reprocessed and price sources often have no price
+                        for it. Counted, it only sat in the ledger as regular ore worth nothing.
+                    </p>
+                    <p>Rows of any of these already in your ledger are left as they were.</p>
 
                     <h4><i class="fas fa-tools"></i> The backfill command keeps to the cutover</h4>
                     <p>

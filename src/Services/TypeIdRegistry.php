@@ -703,11 +703,7 @@ class TypeIdRegistry
 
     /**
      * Ore that only exists through limited-time events, quests or mission
-     * content. OreClassifier::isIgnored() reads this list.
-     *
-     * Mutanite is not event ore even though it looks like it. It comes from
-     * Homefront Operations, which run permanently in highsec, and it has a
-     * market price.
+     * content. OreClassifier::ignoredTypeIds() reads this list.
      */
     const EVENT_ORES = [
         49789,  // Hiemal Tricarboxyl Condensate (Temporal Resources, Limited Time)
@@ -719,6 +715,24 @@ class TypeIdRegistry
         88105,  // Tyranite (Limited Time, Capsuleer Day XXII)
         90421,  // Veldspar Isotope (mission and new player ore)
         90422,  // Veldspar Isotope (mission and new player ore)
+    ];
+
+    // ============================================
+    // MUTANITE
+    // ============================================
+
+    /**
+     * Mutanite from Homefront Operations sites: all of inventory group 4568.
+     * Not event ore, since Homefront Operations run permanently, so it is kept
+     * apart from EVENT_ORES. OreClassifier::ignoredTypeIds() reads this list.
+     */
+    const MUTANITE_ORES = [
+        77118,  // Amperum Mutanite
+        77418,  // Peregrinus Mutanite
+        77419,  // Conflagrati Mutanite
+        77420,  // Solis Mutanite
+        77421,  // Tenebraet Mutanite
+        77524,  // Admixti Mutanite
     ];
 
     // ============================================

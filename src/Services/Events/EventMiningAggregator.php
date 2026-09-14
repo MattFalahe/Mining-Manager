@@ -331,9 +331,10 @@ class EventMiningAggregator
         $created = 0; $updated = 0; $skipped = 0;
 
         foreach ($rows as $row) {
-            // Event and quest ore counts towards no event, for the same reason
-            // it never reaches the ledger. This path reads SeAT's own table, so
-            // skipping it at import alone would not keep it out.
+            // Ignored ore (event ore, quest ore, Mutanite) counts towards no
+            // event, for the same reason it never reaches the ledger. This path
+            // reads SeAT's own table, so skipping it at import alone would not
+            // keep it out.
             if (OreClassifier::isIgnored((int) $row->type_id)) {
                 $skipped++;
                 continue;

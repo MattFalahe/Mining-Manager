@@ -11,7 +11,7 @@ use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Integrations\MoonFastPollIntegration;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\ClassificationEpoch;
-use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\OreClassifier;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Services\Pricing\PriceProviderService;
@@ -127,7 +127,7 @@ class MasterTestRunner
 
             // Ore classification
             'checkClassificationCutover',
-            'checkEventOreLeftOut',
+            'checkIgnoredOreLeftOut',
 
             // Tax pipeline
             'checkTaxPipelineSanity',
@@ -837,7 +837,7 @@ class MasterTestRunner
             return $this->skip($name, 'import', 'SeAT character mining table not present');
         }
 
-        $eventOre = implode(',', array_map('intval', TypeIdRegistry::EVENT_ORES));
+        $ignoredOre = implode(',', array_map('intval', OreClassifier::ignoredTypeIds()));
 
         // One statement rather than two lookups per day total: the window holds
         // hundreds of them on a busy install.
@@ -859,7 +859,7 @@ class MasterTestRunner
                      ORDER BY l.id LIMIT 1) AS ledger_quantity
              FROM (SELECT character_id, date, solar_system_id, type_id, SUM(quantity) AS quantity
                    FROM character_minings
-                   WHERE date >= ?" . ($eventOre !== '' ? " AND type_id NOT IN ({$eventOre})" : '') . "
+                   WHERE date >= ?" . ($ignoredOre !== '' ? " AND type_id NOT IN ({$ignoredOre})" : '') . "
                    GROUP BY character_id, date, solar_system_id, type_id
                    HAVING MAX(updated_at) < ?) t",
             [Carbon::now()->subDays(2)->toDateString(), Carbon::now()->subMinutes(45)->toDateTimeString()]
@@ -1016,19 +1016,30 @@ class MasterTestRunner
     }
 
     /**
-     * Event and quest ore should no longer reach the ledger.
+     * Ore the importers ignore should no longer reach the ledger.
      *
-     * Only the last seven days are looked at. Rows imported before the
-     * importers started skipping these types stay in the ledger as history,
-     * and are not a fault.
+     * Only rows created in the last seven days are looked at, and none from
+     * before the classification cutover. Rows imported before the importers
+     * started skipping these types stay in the ledger as history and are not a
+     * fault, and the cutover is when an install moved onto the version that
+     * skips them.
      */
-    protected function checkEventOreLeftOut(): array
+    protected function checkIgnoredOreLeftOut(): array
     {
-        $name = 'Event and quest ore left out';
+        $name = 'Ignored ore left out';
+
+        $since = Carbon::now()->subDays(7);
+        $epoch = ClassificationEpoch::get();
+
+        if ($epoch && $epoch->greaterThan($since)) {
+            $since = $epoch;
+        }
+
+        $ignored = OreClassifier::ignoredTypeIds();
 
         $recent = DB::table('mining_ledger')
-            ->whereIn('type_id', TypeIdRegistry::EVENT_ORES)
-            ->where('created_at', '>=', Carbon::now()->subDays(7))
+            ->whereIn('type_id', $ignored)
+            ->where('created_at', '>=', $since)
             ->whereNull('deleted_at')
             ->count();
 
@@ -1036,12 +1047,12 @@ class MasterTestRunner
             return $this->warn(
                 $name,
                 'classification',
-                "{$recent} ledger rows of event or quest ore were imported in the last seven days",
-                ['hint' => 'The importers skip every type in TypeIdRegistry::EVENT_ORES. New rows mean the server is running older plugin code, or an ore is missing from that list.']
+                "{$recent} ledger rows of event ore, quest ore or Mutanite were imported in the last seven days",
+                ['hint' => 'The importers skip every type OreClassifier::ignoredTypeIds() returns. New rows mean the server is running older plugin code, or an ore is missing from those lists.']
             );
         }
 
-        return $this->pass($name, 'classification', 'None imported in the last seven days (' . count(TypeIdRegistry::EVENT_ORES) . ' types on the list)');
+        return $this->pass($name, 'classification', 'None imported in the last seven days (' . count($ignored) . ' types on the list)');
     }
 
     // =================================================================

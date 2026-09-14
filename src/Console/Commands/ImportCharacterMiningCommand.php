@@ -148,8 +148,8 @@ class ImportCharacterMiningCommand extends Command
                 $entry->type_id = (int) $entry->type_id;
                 $entry->quantity = (int) $entry->quantity;
 
-                // Event and quest ore is left out of the ledger entirely, so
-                // nothing further along taxes it, values it or charts it.
+                // Event ore, quest ore and Mutanite are left out of the ledger
+                // entirely, so nothing further along taxes, values or charts them.
                 if (OreClassifier::isIgnored((int) $entry->type_id)) {
                     $ignored++;
                     $progressBar->advance();
@@ -308,7 +308,7 @@ class ImportCharacterMiningCommand extends Command
                 [$dryRun ? 'New entries it would create' : 'New entries created', $created],
                 [$dryRun ? 'Existing entries it would update' : 'Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
-                ['Ignored (event and quest ore)', $ignored],
+                ['Ignored (event ore, quest ore, Mutanite)', $ignored],
                 [$dryRun ? 'Would arrive after invoicing, exempt' : 'Arrived after invoicing, exempt', $lateArrivals],
                 ['Errors', $errors],
             ]
