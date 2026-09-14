@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=5">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=6">
 <style>
     .help-wrapper {
         display: flex;
@@ -679,98 +679,206 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
                 </div>
 
-                {{-- What's New --}}
+                {{-- What's New in v2 is the picture of the whole major version, so it never
+                     names a point release. What the latest update changed goes in the Recent
+                     changes box underneath, and the changelog keeps the full record. --}}
                 <div class="whats-new-box">
                     <h3>
-                        <i class="fas fa-coins"></i>
-                        What's New: Payments, Balance and Ore Classification
-                        <span class="whats-new-tag">money and ore</span>
+                        <i class="fas fa-puzzle-piece"></i>
+                        What's New in v2
+                        <span class="whats-new-tag">the ecosystem era</span>
                     </h3>
                     <p>
-                        A wallet transfer is money looking for an invoice. This release makes that
-                        relationship explicit: every payment is claimed once, each invoice it touches
-                        records its own share, and whatever is left over is held as balance instead of
-                        vanishing. Alongside it, the ore registry has caught up with everything CCP has
-                        shipped since it was written.
+                        Version 2 makes Mining Manager one plugin in a family. It still does its whole job on
+                        its own: set your Moon Owner Corporation and tax rates, and the ledger, taxes, moon
+                        tracking and alerts all run with nothing else installed. When one of its neighbours is
+                        installed, it asks that plugin for what it does best rather than doing the same work
+                        twice.
                     </p>
 
-                    <h4><i class="fas fa-hand-holding-usd"></i> Payments and account balance</h4>
+                    <h4><i class="fas fa-plug"></i> Works alone, better with neighbours</h4>
                     <ul>
                         <li>
-                            <strong>Assign a payment by hand.</strong> A transfer that quoted no tax code
-                            can be pointed at the invoice it was meant for, in two clicks, from Wallet
-                            Verification.
+                            <strong>Manager Core</strong> gives every plugin one place to set market pricing,
+                            and its ESI fast-poll spots a refinery starting an extraction in about two minutes.
+                            Moon chunks that are ready, going unstable or expired are published on its event
+                            bus for other plugins to use.
                         </li>
                         <li>
-                            <strong>Overpayment cascades.</strong> Whatever a payment does not settle rolls
-                            onto the next unpaid invoice, oldest first. Anything still left becomes
-                            <strong>account balance</strong> and is drawn down automatically against future
-                            invoices, so a member is never billed for money you are already holding.
+                            <strong>Structure Manager</strong>, with Manager Core alongside it, reports trouble at
+                            your refineries. A refinery running an extraction that is low on fuel or reinforced
+                            raises <strong>Extraction At Risk</strong>, and one that is destroyed raises
+                            <strong>Extraction Lost</strong>, each with a link to its Structure Board.
                         </li>
                         <li>
-                            <strong>Pay ahead.</strong> A standing keyword in the transfer reason (default
-                            <code>MM-UPFRONT</code>) lets a member pay before being invoiced. Unlike a tax
-                            code it never expires and is the same for everyone, so it can live in the corp
-                            MOTD. Off by default, under Settings, Features. The keyword and the switch are
-                            both global rather than per corporation, and are labelled that way.
-                        </li>
-                        <li>
-                            <strong>Balances tab.</strong> Directors see everyone holding a balance and the
-                            corporation total; a member sees their own, across their alts. Each balance
-                            lists what it has been spent on, linked to the invoices.
-                        </li>
-                        <li>
-                            <strong>Directors get a weekly digest</strong> of who is still outstanding, with
-                            names, what each still owes and how far through they are.
+                            Neither is required. Anything that depends on another plugin switches itself off
+                            when that plugin is missing.
                         </li>
                     </ul>
 
-                    <h4><i class="fas fa-gem"></i> Ore classification</h4>
+                    <h4><i class="fas fa-calendar-check"></i> Moon pulls are coordinated, not controlled</h4>
                     <ul>
                         <li>
-                            The registry now covers <strong>539 type IDs</strong>. What was missing: the
-                            IV-Grade tier of all fifteen classic ores, the Exordium 0-Grade variants, the
-                            X-Grade families, Prismaticite, and the full gas colour sets.
+                            SeAT can only read the extractions a director starts in game. The
+                            <strong>Moon Planner</strong> is where the corporation agrees when each refinery
+                            should pull, so chunks do not land faster than your miners can clear them, and it
+                            flags a pull that was set off-plan.
                         </li>
                         <li>
-                            CCP has renamed every ore variant to a numeric scheme, so what was
-                            <em>Fragrant Nocxite</em> is now <em>Nocxite II-Grade</em>. Type IDs never
-                            moved, so nothing was ever mis-taxed, but the reprocessing calculator resolves
-                            what you paste against the local EVE static data. If a name looks right in game
-                            and the calculator does not recognise it, your static data needs updating, and
-                            the calculator now says so instead of quietly dropping the row.
+                            The <strong>Moon Manager</strong> permission lets someone plan pulls and read Moon
+                            Analytics without being a director.
                         </li>
                         <li>
-                            <strong>Event and quest ore is left out.</strong> Tyranite, Nephrite, Volatile
-                            Ice and the rest of the limited-time and mission ore are no longer imported,
-                            taxed or charted. Mutanite is still counted, because Homefront Operations are
-                            permanent.
+                            Chunk arrivals, unstable warnings, extractions starting, the next planned pull and
+                            off-plan pulls each have their own alert, and a Metenox drill warns you when its
+                            bay is nearly full.
                         </li>
                     </ul>
 
-                    <h4><i class="fas fa-shield-alt"></i> What this does not change</h4>
+                    <h4><i class="fas fa-hand-holding-usd"></i> A payment is money looking for an invoice</h4>
                     <ul>
                         <li>
-                            <strong>Mining already in the ledger keeps the categories and rate it was
-                            billed on.</strong> The better classification applies from the moment you
-                            upgrade and no earlier, so nobody's past bill moves.
+                            A tax code in the transfer reason matches a payment straight away, and a director can
+                            assign one that has no code. Each transfer is claimed once, whatever it does not
+                            settle moves on to the next unpaid invoice, and anything left is held as account
+                            balance for that member.
                         </li>
                         <li>
-                            <strong>An invoice that has gone out is fixed.</strong> Once a payment code
-                            exists, money has arrived, or it reads as paid, its total is a record rather
-                            than a calculation and nothing recalculates it.
-                        </li>
-                        <li>
-                            <strong>Mining that arrives after its period was invoiced is exempt</strong> and
-                            says so on the entry, rather than being charged for on a bill that has already
-                            been settled.
+                            Members can pay ahead and see their balance, and directors can give a balance back.
                         </li>
                     </ul>
 
-                    <p class="mb-0"><small class="text-muted">
-                        Everything additive: four new migrations, no altered columns, no new ESI scopes.
-                        Upfront payments are off until you switch them on.
-                    </small></p>
+                    <h4><i class="fas fa-shield-alt"></i> What has been billed stays billed</h4>
+                    <ul>
+                        <li>
+                            An invoice that has gone out is a record, not a calculation, and nothing recalculates
+                            it.
+                        </li>
+                        <li>
+                            Changes to how ore is classified apply from the day you update, never to mining
+                            already in the ledger.
+                        </li>
+                        <li>
+                            Mining that reaches the ledger after its period was invoiced is recorded but not
+                            charged, and says so.
+                        </li>
+                    </ul>
+
+                    <h4><i class="fas fa-stethoscope"></i> You can see what it is doing</h4>
+                    <ul>
+                        <li>
+                            The <strong>Master Test</strong> on the Diagnostic page checks the whole install in
+                            one click, without changing anything.
+                        </li>
+                        <li>
+                            Times are kept in EVE time, and hovering over one shows it in your own timezone.
+                        </li>
+                    </ul>
+                </div>
+
+                {{-- Recent changes sits under What's New on purpose. That box is the v2 picture;
+                     this one is what the latest update changed that you can see on screen. --}}
+                <div class="recent-changes-box">
+                    <h4><i class="fas fa-history"></i> In this update (2.0.4)</h4>
+                    <p>
+                        The changes in this release you will notice without going looking.
+                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener">The changelog</a>
+                        has the complete record.
+                    </p>
+                    <ul>
+                        <li>
+                            <strong>Personal mining is counted in full.</strong> SeAT keeps a day mined in
+                            several sittings as several rows, and the import was keeping only the latest one.
+                            It now adds them up, so on an install that taxes belt, ice or gas mining, bills from
+                            this update on will be higher than before. The scheduled import reads the last two
+                            days by the date the mining happened, and mining SeAT saves later than that is not
+                            imported, so days already invoiced and summarised do not change. Anything older than
+                            the two days before the update keeps the quantities it had.
+                        </li>
+                        <li>
+                            <strong>Payments without a tax code can be assigned.</strong> Every waiting payment on
+                            Wallet Verification has an <em>Assign to invoice</em> button: point it at the invoice
+                            it was meant for, or hold it as account balance when the player owes nothing. What a
+                            payment does not settle moves on to their next unpaid invoice, anything left is held
+                            as balance and taken off future invoices, and each invoice lists every payment
+                            credited to it. Payments from before the update that carried a tax code stay out of
+                            the queue, with a <em>Show them anyway</em> toggle. The Sync, Auto-Match, Verify and
+                            Dismiss buttons on that page now work.
+                        </li>
+                        <li>
+                            <strong>Members can pay ahead and see their balance.</strong> With Upfront Payments
+                            switched on (Settings, Features), a transfer with the upfront keyword in its reason
+                            (<code>MM-UPFRONT</code> by default) pays before an invoice exists. The Balances tab
+                            shows directors everyone holding a balance and members their own, with the steps for
+                            paying ahead. My Taxes shows a member's balance, an invoice paid from balance says
+                            so, and reminders say how much balance already covered.
+                        </li>
+                        <li>
+                            <strong>Directors can give a balance back.</strong> <em>Refund</em> on the Balances tab
+                            takes the amount off the balance, then waits for the ISK to leave the corporation
+                            wallet. Send it in game with the refund keyword (<code>MM-REFUND</code> by default) in
+                            the reason and it confirms itself. <em>Mark as sent</em> closes one that will never
+                            match.
+                        </li>
+                        <li>
+                            <strong>The payment steps were wrong.</strong> My Taxes and the member guide told
+                            members to pay from their wallet, which cannot send ISK to a corporation. Both now say
+                            to right-click the corporation's name in game and choose Give Money.
+                        </li>
+                        <li>
+                            <strong>Partly paid invoices are chased for what is left.</strong> Reminders ask for
+                            the outstanding amount rather than the whole invoice, a partly paid invoice past its
+                            due date shows as overdue, and the new <em>Outstanding Mining Tax</em> notification
+                            gives directors a weekly list of who still owes once invoices are past due. Bind it to
+                            a webhook to receive it.
+                        </li>
+                        <li>
+                            <strong>Tax pages sort the way you would expect.</strong> Tax Overview opens with
+                            overdue invoices first and sorts money and dates as numbers, Tax History lists the
+                            second half of a month above the first, and Calculate Taxes opens grouped by account.
+                            On the Tax Codes tab, admins can mark a leftover code as used, or delete it.
+                        </li>
+                        <li>
+                            <strong>What has been billed stays billed.</strong> Once an invoice has a payment code,
+                            money against it, or reads as paid, nothing recalculates its total. Mining that
+                            reaches the ledger after its period was invoiced is recorded but not taxed, with a
+                            note saying why. Ore the plugin has only now learned to recognise is classified from
+                            the update on, and mining already in the ledger keeps the category and rate it was
+                            billed on.
+                        </li>
+                        <li>
+                            <strong>Event and quest ore is left out.</strong> Tyranite, Nephrite, Volatile Ice and
+                            the other limited-time and mission ores are no longer imported, taxed or charted.
+                            Mutanite still counts. The reprocessing calculator now lists any ore name it could
+                            not recognise instead of quietly dropping it, which usually means your static data is
+                            older than CCP's new ore names.
+                        </li>
+                        <li>
+                            <strong>Analytics opens on your own corporation.</strong> All Corporations is still in
+                            the dropdown. Performance Charts can be filtered by source (your moons, all moon ore,
+                            other moons), by ore and by player, and exports carry the same filters. The month
+                            picker on Moon Analytics works, and moon managers can open Moon Analytics.
+                        </li>
+                        <li>
+                            <strong>Allow Data Export works, and applies to everyone.</strong> Switched off under
+                            Settings, Features, it blocks every mining, tax, analytics, theft and report download
+                            for directors and admins as well. Your settings backup is not affected.
+                        </li>
+                        <li>
+                            <strong>Moon alerts say more.</strong> Extraction Started names the pilot who started
+                            the extraction, and their main. Without Manager Core it holds the alert until the
+                            in-game notification reaches SeAT so it can do that, and sends it without the name if
+                            six hours pass first. Chunks fractured from now on show who fractured them, the three
+                            Moon Planner alerts carry the refinery, moon and time on Discord, and Moon Scheduled
+                            Off-Plan alerts are delivered, which they were not before.
+                        </li>
+                        <li>
+                            <strong>The Moon Planner.</strong> Placing a pull by hand saves, where it used to fail
+                            with a database error, and plans that read Unknown Moon now show their moon. A
+                            scheduling mismatch offers Realign and Ignore, each asking for a reason, where it used
+                            to offer Dismiss.
+                        </li>
+                    </ul>
                 </div>
 
                 {{-- What is Mining Manager? --}}
@@ -815,7 +923,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <p>Plan and stagger your refinery pulls across a three-month calendar so chunks don't
                                land on top of each other. Projects each moon's next pull from its own history,
                                warns when two arrivals fall too close together, and flags moons scheduled
-                               off-plan.</p>
+                               off-plan so the plan can be realigned or the difference recorded.</p>
                         </div>
                         <div class="feature-item">
                             <i class="fas fa-calendar-alt"></i>
@@ -840,7 +948,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <div class="feature-item">
                             <i class="fas fa-rocket"></i>
                             <h5>Master Test Diagnostic</h5>
-                            <p>One-click read-only smoke chain on the Diagnostic page that runs ~26 checks across schema, settings, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security in under 30 seconds. Verify everything's healthy after upgrades or settings changes without grepping logs.</p>
+                            <p>A one-click, read-only check of the whole install on the Diagnostic page: schema, settings, cross-plugin integration, pricing, notifications, the mining imports, the moon lifecycle, the tax pipeline, payments and refunds, and security. Run it after an update or a settings change rather than reading logs.</p>
                         </div>
                     </div>
                 </div>
@@ -1432,8 +1540,40 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         it went to, so "where did my 1.2 billion go" has an answer on one page.
                     </p>
                     <p>
+                        While upfront payments are on, members get the steps for paying ahead there as well:
+                        which corporation to pay and how, the keyword with a copy button, and what happens to
+                        the money.
+                    </p>
+                    <p>
                         The tab stays hidden until somebody holds a balance or upfront payments are
                         switched on, so an install that does not use it never sees it.
+                    </p>
+
+                    <h4><i class="fas fa-undo-alt"></i> Giving a balance back</h4>
+                    <p>
+                        Somebody sent 50b when they meant 5b, or is leaving and the balance is theirs.
+                        Directors have a <strong>Refund</strong> action on each held balance on the Balances
+                        tab. Enter an amount, or leave it empty to refund everything left, and give a reason:
+                        it is required, because it is the only record of why.
+                    </p>
+                    <p>
+                        The plugin cannot send ISK, so you make the transfer in game. The refund comes off the
+                        balance as soon as you record it and reads <strong>Awaiting transfer</strong> until
+                        the ISK is seen leaving the corporation wallet. Put the refund keyword
+                        (<code>MM-REFUND</code> by default, set under Settings, General) in the transfer
+                        reason and it confirms itself as <strong>Sent</strong>. The keyword is what tells a
+                        refund apart from an SRP payout of the same amount to the same person. Every wallet
+                        division is checked, and with <em>Treat a player's characters as one account</em>
+                        switched on, the ISK can go to any of that player's characters. If two transfers fit
+                        equally well, neither is picked and the refund waits for a person to look at it.
+                    </p>
+                    <p>
+                        A transfer that will never match (the keyword left off, paid by contract, or sent from
+                        a wallet the plugin cannot read) is closed with <strong>Mark as sent</strong>, which
+                        asks for a note. It then reads <strong>Sent (by hand)</strong> rather than
+                        <strong>Sent</strong>, so a refund resting on a director's word never looks the same
+                        as one backed by a real transaction. <strong>Undo</strong> puts a refund closed by
+                        hand back on the pending list.
                     </p>
 
                     <h4><i class="fas fa-exclamation-triangle"></i> Switching upfront payments off</h4>
@@ -1482,14 +1622,32 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         a settled invoice, or going back to somebody for more on a bill they have paid, is
                         worse than letting it go.
                     </p>
-
-                    <h4><i class="fas fa-tools"></i> If you need to re-classify old data anyway</h4>
                     <p>
-                        <code>mining-manager:backfill-ore-types</code> stops at the cutover by default.
-                        Run it with <code>--dry-run</code> first: it reports every category movement it
-                        would make, and each one of those is a change of tax rate. <code>--scope=all</code>
-                        overrides the cutover deliberately, and will make past invoices disagree with the
-                        rows behind them.
+                        Character mining that SeAT saves late is handled differently again. The scheduled
+                        personal import reads the last two days of mining, by the day it was mined, and SeAT
+                        sometimes saves a day's mining a week or more after it happened. That mining is not
+                        imported at all, so days that have already been invoiced and summarised never change
+                        underneath anybody.
+                    </p>
+
+                    <h4><i class="fas fa-ban"></i> Event and quest ore</h4>
+                    <p>
+                        Ore that only exists through limited-time events, quests and mission content is left
+                        out entirely: Tyranite, Nephrite, Dense Moissanite, Amethystic Crystallite, Hiemal
+                        Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. It is not imported, taxed,
+                        valued or charted. One-off spikes would distort the figures used to judge normal
+                        activity, and on an install that taxes regular ore they would end up on members'
+                        bills. Mutanite still counts as regular ore, because Homefront Operations run
+                        permanently. Event ore already in your ledger is left as it was.
+                    </p>
+
+                    <h4><i class="fas fa-tools"></i> The backfill command keeps to the cutover</h4>
+                    <p>
+                        <code>mining-manager:backfill-ore-types</code> stops at the cutover by default, so it
+                        never re-classifies mining that has already been billed. <code>--dry-run</code> reports
+                        every category movement it would make, and each one of those is a change of tax rate.
+                        <code>--scope=all</code> ignores the cutover and would make past invoices disagree with
+                        the rows behind them.
                     </p>
                 </div>
 
@@ -1681,6 +1839,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <div class="alert alert-secondary mt-2">
                         <i class="fas fa-ban text-warning"></i>
                         <strong>Cancellation handling:</strong> If a director cancels an extraction in-game before chunk arrival, EVE sends a <code>MoonminingExtractionCancelled</code> character notification. The state system picks this up on its next 2h ESI poll and marks the extraction as <code>cancelled</code>. The notification watchdog then skips it — no false "Moon Chunk Ready" alert fires at the originally scheduled arrival time. The canceller's name is recorded in the log entry when detectable.
+                    </div>
+
+                    <div class="alert alert-secondary mt-2">
+                        <i class="fas fa-hammer text-info"></i>
+                        <strong>Extraction Started:</strong> fires when a refinery starts an extraction, and names the pilot who started it, with the main of their account when that pilot is on SeAT. With <strong>Manager Core</strong> installed, its ESI fast-poll picks up the in-game notification in about two minutes and the name comes with it. Without Manager Core the extraction is picked up from SeAT's moon extraction data on the plugin's regular schedule, and the alert then waits for the in-game notification to reach SeAT so it can say who started it. If that notification has still not arrived six hours after the extraction started, the alert goes out without the name: a slow notification can delay the alert but never lose it. The <em>Detection Speed</em> setting for Extraction Started, under Settings &rarr; Notifications, chooses between the two.
                     </div>
 
                     <div class="alert alert-secondary mt-2">
@@ -2478,6 +2641,36 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                 <div class="help-card">
                     <h3>
+                        <i class="fas fa-chart-line"></i>
+                        Performance Charts
+                    </h3>
+                    <p>
+                        Analytics pages open on your own corporation. <em>All Corporations</em> is still in the
+                        dropdown when you want every corporation on the install, but it is a choice you make
+                        rather than where you land.
+                    </p>
+                    <p>On top of the dates and corporation, Performance Charts can be narrowed three ways:</p>
+                    <ul>
+                        <li><strong>Source:</strong> all mining, my moons only, all moon ore, or other moons only. <em>My moons</em> reads your corporation's moon observers, so it means what it says.</li>
+                        <li><strong>Ore:</strong> regular ore, moon ore, ice, gas, abyssal or triglavian.</li>
+                        <li><strong>Player:</strong> picked by main character, and counted across every character that player mines on.</li>
+                    </ul>
+                    <p>
+                        The export button carries the same filters, so a downloaded file matches the page.
+                        <em>Other moons</em> is worked out rather than recorded: it is moon ore none of your
+                        observers saw, which usually means somebody else's moon and occasionally one of yours
+                        without an observer. Filters that read ore categories say so, because mining from before
+                        the classification cutover keeps the categories it was billed on. When the filters find
+                        nothing, the page says why instead of showing empty charts.
+                    </p>
+                    <p>
+                        Moon managers can open <strong>Moon Analytics</strong>, below. The rest of Analytics is
+                        for directors.
+                    </p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
                         <i class="fas fa-moon"></i>
                         {{ trans('mining-manager::help.moon_analytics') }}
                     </h3>
@@ -2496,6 +2689,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         {{ trans('mining-manager::help.exporting_data') }}
                     </h3>
                     <p>{{ trans('mining-manager::help.exporting_desc') }}</p>
+                    <p>
+                        Exporting can be switched off under Settings, Features, <strong>Allow Data Export</strong>.
+                        Off means off for everyone, directors and admins included, and it covers the mining
+                        ledger, tax records, members' own exports, analytics, theft incidents and report
+                        downloads. The check sits on the downloads themselves, so an old export link stops
+                        working too. Your settings backup is separate and stays available.
+                    </p>
                 </div>
             </div>
 
@@ -2700,6 +2900,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:send-outstanding-digest</code></td>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 10:30 AM</td>
+                                    <td>Posts the Outstanding Mining Tax digest for directors: who still owes, how much is left and how far through they are. Checks daily, sends once invoices are past due, then every 7 days until everything is paid.<br>
+                                        <small class="text-muted">Options: <code>--limit=25</code> most members to name, <code>--force</code> send even if the last digest was under a week ago, <code>--dry-run</code> print the digest without sending it</small>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:generate-invoices</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily_smart') }}</span> 2:30 AM</td>
                                     <td>Generate invoice records for unpaid taxes with completed periods. Smart: only creates invoices for taxes that don't already have one. Runs daily so biweekly periods get invoices promptly after each period ends.<br>
@@ -2895,15 +3102,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <tbody>
                                 <tr>
                                     <td style="width: 55%;"><code>mining-manager:update-daily-summaries --month=2026-03</code></td>
-                                    <td>Regenerate all daily summaries for March 2026 with current prices and tax rates</td>
+                                    <td>Regenerate all daily summaries for March 2026 with current prices and tax rates. Days that have been invoiced keep the tax they were billed at</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:update-ledger-prices --force --days=30</code></td>
-                                    <td>Force re-price all entries from last 30 days (also regenerates affected daily summaries)</td>
+                                    <td>Force re-price entries from the last 30 days and regenerate their daily summaries. Days that have been invoiced are skipped</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes --month=2026-03 --recalculate</code></td>
-                                    <td>Recalculate taxes for March 2026 (monthly mode), updating existing tax records</td>
+                                    <td>Recalculate taxes for March 2026 (monthly mode). Invoices that have already gone out keep their totals</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:calculate-taxes --period-start=2026-03-15 --period-type=biweekly</code></td>
@@ -2926,8 +3133,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                     <td>Generate payment codes for March 2026 unpaid taxes (manual fallback — codes are auto-generated on invoice creation)</td>
                                 </tr>
                                 <tr>
-                                    <td><code>mining-manager:import-character-mining --days=7</code></td>
-                                    <td>Import character mining data from ESI cache for the last 7 days</td>
+                                    <td><code>mining-manager:import-character-mining --dry-run</code></td>
+                                    <td>Show what the next personal mining import would add or change, without writing anything</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-theft --days=30 --notify</code></td>
