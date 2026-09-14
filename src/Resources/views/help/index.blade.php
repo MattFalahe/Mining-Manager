@@ -388,6 +388,91 @@
         color: #e2e8f0 !important;
     }
 
+    /* Ore classification flow: plain boxes and arrows, so it needs no
+       diagram library and still reads on a narrow screen. */
+    .ore-flow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        margin: 20px 0;
+    }
+
+    .ore-flow-node {
+        background: rgba(102, 126, 234, 0.1);
+        border: 1px solid rgba(102, 126, 234, 0.35);
+        border-radius: 8px;
+        padding: 10px 14px;
+        text-align: center;
+        width: 100%;
+        max-width: 420px;
+    }
+
+    .ore-flow-node strong {
+        display: block;
+        color: #e2e8f0 !important;
+    }
+
+    .ore-flow-node span {
+        display: block;
+        margin-top: 2px;
+        font-size: 0.85rem;
+        color: #9ca3af !important;
+    }
+
+    .ore-flow-arrow {
+        color: #667eea;
+        line-height: 1;
+    }
+
+    .ore-flow-row,
+    .ore-flow-branches {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+    }
+
+    .ore-flow-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-width: 700px;
+    }
+
+    .ore-flow-branches {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ore-flow-row .ore-flow-node,
+    .ore-flow-branches .ore-flow-node {
+        max-width: none;
+    }
+
+    .ore-flow-registry {
+        background: rgba(28, 200, 138, 0.1);
+        border-color: rgba(28, 200, 138, 0.5);
+    }
+
+    .ore-flow-ledger {
+        background: rgba(102, 126, 234, 0.2);
+        border-color: rgba(102, 126, 234, 0.7);
+    }
+
+    .ore-flow-skip {
+        background: rgba(220, 53, 69, 0.1);
+        border: 1px dashed rgba(220, 53, 69, 0.6);
+    }
+
+    .ore-flow-unknown {
+        background: rgba(255, 193, 7, 0.1);
+        border-color: rgba(255, 193, 7, 0.55);
+    }
+
+    @media (max-width: 768px) {
+        .ore-flow-row,
+        .ore-flow-branches {
+            grid-template-columns: 1fr;
+        }
+    }
+
     @media (max-width: 768px) {
         .help-wrapper {
             flex-direction: column;
@@ -442,6 +527,12 @@
                             <a href="#" class="nav-link" data-section="tax-system">
                                 <i class="fas fa-coins"></i>
                                 {{ trans('mining-manager::help.tax_system') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="ore-classification">
+                                <i class="fas fa-gem"></i>
+                                Ore Classification
                             </a>
                         </li>
                         <li class="nav-item">
@@ -850,7 +941,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <strong>Event ore, quest ore and Mutanite are left out.</strong> Tyranite, Nephrite,
                             Volatile Ice and the other limited-time and mission ores, and Mutanite from Homefront
                             Operations, are no longer imported, taxed or charted. Rows already in the ledger stay as
-                            they are. The reprocessing calculator now lists any ore name it could not recognise
+                            they are. The Master Test lists any mined ore the registry does not recognise, and the
+                            <a href="#ore-classification" data-section-link="ore-classification">Ore Classification</a>
+                            page explains how it all works. The reprocessing calculator now lists any ore name it could
+                            not recognise
                             instead of quietly dropping it, which usually means your static data is older than CCP's
                             new ore names.
                         </li>
@@ -1596,64 +1690,17 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                 </div>
 
-                {{-- Ore classification and the cutover --}}
+                {{-- Ore classification has its own page --}}
                 <div class="help-card">
                     <h3>
                         <i class="fas fa-gem"></i>
-                        Ore classification, and why old mining keeps its old rate
+                        Ore classification
                     </h3>
                     <p>
-                        Which tax rate a piece of mining attracts depends on what the ore is: moon ore by
-                        rarity, ice, gas, abyssal, triglavian, or plain ore. That mapping lives in the
-                        plugin rather than being read from EVE, because rarity tiers are a Mining Manager
-                        idea rather than an EVE one.
-                    </p>
-                    <p>
-                        Recognising more ore is an improvement, but applying it backwards is not. If a
-                        type moves from an untaxed category into a taxed one, everybody who mined it would
-                        watch a historical bill grow for work they finished weeks ago. So classification
-                        changes apply <strong>from the moment you upgrade and no earlier</strong>. Mining
-                        already in the ledger keeps the categories and the rate it was billed on.
-                    </p>
-                    <p>
-                        The same principle covers mining that turns up late. Corporation observer data does
-                        not always arrive before the period it belongs to has been invoiced. When it lands
-                        afterwards it is recorded in full, with its real quantity and value, but marked
-                        <strong>not taxed</strong> with a note saying why. The ISK is not chased. Re-opening
-                        a settled invoice, or going back to somebody for more on a bill they have paid, is
-                        worse than letting it go.
-                    </p>
-                    <p>
-                        Character mining that SeAT saves late is handled differently again. The scheduled
-                        personal import reads the last two days of mining, by the day it was mined, and SeAT
-                        sometimes saves a day's mining a week or more after it happened. That mining is not
-                        imported at all, so days that have already been invoiced and summarised never change
-                        underneath anybody.
-                    </p>
-
-                    <h4><i class="fas fa-ban"></i> Event ore, quest ore and Mutanite</h4>
-                    <p>
-                        Ore that only exists through limited-time events, quests and mission content is left
-                        out entirely: Tyranite, Nephrite, Dense Moissanite, Amethystic Crystallite, Hiemal
-                        Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. It is not imported, taxed,
-                        valued or charted. One-off spikes would distort the figures used to judge normal
-                        activity, and on an install that taxes regular ore they would end up on members'
-                        bills.
-                    </p>
-                    <p>
-                        All six kinds of Mutanite are left out too. Homefront Operations run permanently, so
-                        it is not event ore, but it cannot be reprocessed and price sources often have no price
-                        for it. Counted, it only sat in the ledger as regular ore worth nothing.
-                    </p>
-                    <p>Rows of any of these already in your ledger are left as they were.</p>
-
-                    <h4><i class="fas fa-tools"></i> The backfill command keeps to the cutover</h4>
-                    <p>
-                        <code>mining-manager:backfill-ore-types</code> stops at the cutover by default, so it
-                        never re-classifies mining that has already been billed. <code>--dry-run</code> reports
-                        every category movement it would make, and each one of those is a change of tax rate.
-                        <code>--scope=all</code> ignores the cutover and would make past invoices disagree with
-                        the rows behind them.
+                        Which tax rate a piece of mining attracts depends on what the ore is. How that is decided,
+                        what is left out, and why mining already in the ledger keeps its old rate are all on the
+                        <a href="#ore-classification" data-section-link="ore-classification" style="color: #667eea;">Ore Classification</a>
+                        page.
                     </p>
                 </div>
 
@@ -1700,6 +1747,261 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         listener will not interfere. The payment is recorded directly — no automatic matching will occur
                         for these entries.
                     </div>
+                </div>
+            </div>
+
+            {{-- Ore Classification Section --}}
+            <div id="ore-classification" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-gem"></i>
+                        How ore classification works
+                    </h3>
+                    <p>
+                        Every piece of mining in the ledger carries a category, and the category decides which of your
+                        tax rates applies to it. That is decided once, when the mining is imported, and it follows the
+                        same path for character mining and for moon observer data.
+                    </p>
+
+                    <div class="ore-flow">
+                        <div class="ore-flow-node">
+                            <strong>EVE ESI</strong>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-node">
+                            <strong>SeAT</strong>
+                            <span>Character mining and moon observer data, stored exactly as received</span>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-node">
+                            <strong>Mining Manager imports</strong>
+                            <span>The personal mining import and the observer import</span>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-row">
+                            <div class="ore-flow-node ore-flow-registry">
+                                <strong>TypeIdRegistry</strong>
+                                <span>Knows every mining type ID, by family. Can be checked against the SDE</span>
+                            </div>
+                            <div class="ore-flow-node">
+                                <strong>OreClassifier</strong>
+                                <span>Decides what each type ID means: skip it, or which category it gets</span>
+                            </div>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-branches">
+                            <div class="ore-flow-node ore-flow-skip">
+                                <strong><i class="fas fa-ban"></i> Skipped</strong>
+                                <span>Event ore, quest ore and Mutanite. They never reach the ledger</span>
+                            </div>
+                            <div class="ore-flow-node ore-flow-ledger">
+                                <strong><i class="fas fa-book"></i> Mining ledger</strong>
+                                <span>Moon ore R4 to R64, ice, gas, abyssal, triglavian or regular ore</span>
+                            </div>
+                            <div class="ore-flow-node ore-flow-unknown">
+                                <strong><i class="fas fa-question-circle"></i> Not in the registry</strong>
+                                <span>Goes into the ledger as regular ore, and the Master Test lists it</span>
+                            </div>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-row">
+                            <div class="ore-flow-node">
+                                <strong>Ore values</strong>
+                                <span>From your price provider, with reprocessing yields from the SDE</span>
+                            </div>
+                            <div class="ore-flow-node">
+                                <strong>Your tax rates</strong>
+                                <span>One rate per category. The tax selector decides which are charged</span>
+                            </div>
+                        </div>
+                        <div class="ore-flow-arrow"><i class="fas fa-arrow-down"></i></div>
+                        <div class="ore-flow-row">
+                            <div class="ore-flow-node">
+                                <strong>Daily summaries, then tax invoices</strong>
+                            </div>
+                            <div class="ore-flow-node">
+                                <strong>Dashboard, analytics and reports</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4><i class="fas fa-sitemap"></i> The three parts</h4>
+                    <ul>
+                        <li>
+                            <strong>TypeIdRegistry</strong> is the single source of truth. It lists every type ID the
+                            plugin knows, grouped by family: moon ore by rarity, ice, gas, abyssal, triglavian, regular
+                            ore, the compressed forms, event and quest ore, and Mutanite. It holds data only, no rules,
+                            and it is the one place to update when CCP releases new ore.
+                        </li>
+                        <li>
+                            <strong>OreClassifier</strong> is the one place that decides what a type ID means for the
+                            plugin: whether it is skipped, and which ledger category and tax category it gets. Both
+                            imports, the mining event tally, daily summaries, tax calculation, the dashboard and
+                            analytics all ask it, so they cannot disagree.
+                        </li>
+                        <li>
+                            <strong>SeAT's static data (SDE)</strong> supports the registry but never decides a
+                            category. It supplies type names, the reprocessing yields behind refined ore values and the
+                            reprocessing calculator, and a way to check that every registry ID really exists. Moon
+                            rarity tiers and tax categories are Mining Manager ideas rather than EVE ones, and CCP's
+                            own groups do not line up with them.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-tags"></i>
+                        Categories and the tax rate each uses
+                    </h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm" style="color: #d1d5db;">
+                            <thead>
+                                <tr>
+                                    <th style="color: #9ca3af;">Category</th>
+                                    <th style="color: #9ca3af;">What it covers</th>
+                                    <th style="color: #9ca3af;">Rate used</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Moon ore R4 to R64</td>
+                                    <td>Moon ore, by rarity</td>
+                                    <td>The moon ore rate for that rarity</td>
+                                </tr>
+                                <tr>
+                                    <td>Ice</td>
+                                    <td>Ice and compressed ice</td>
+                                    <td>Ice</td>
+                                </tr>
+                                <tr>
+                                    <td>Gas</td>
+                                    <td>Harvested gas, fullerites included</td>
+                                    <td>Gas</td>
+                                </tr>
+                                <tr>
+                                    <td>Abyssal</td>
+                                    <td>Bezdnacine, Rakovene and Talassonite</td>
+                                    <td>Abyssal ore</td>
+                                </tr>
+                                <tr>
+                                    <td>Triglavian</td>
+                                    <td>The registry's Triglavian ore list</td>
+                                    <td>Triglavian ore</td>
+                                </tr>
+                                <tr>
+                                    <td>Regular ore</td>
+                                    <td>Every other registered ore, including the Deep Space Survey and Ore Prospecting Array families</td>
+                                    <td>Regular ore</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Rates are set per corporation under Settings, Tax Rates, where the tax selector also decides
+                        which categories are charged at all. Moon ore is decided first, so a moon rock counts as moon
+                        ore whatever else it might also be.
+                    </p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-ban"></i>
+                        What is left out
+                    </h3>
+                    <p>
+                        Ore that only exists through limited-time events, quests and mission content is left out
+                        entirely: Tyranite, Nephrite, Dense Moissanite, Amethystic Crystallite, Hiemal Tricarboxyl
+                        Condensate, Volatile Ice and Veldspar Isotope. It is not imported, taxed, valued or charted.
+                        One-off spikes would distort the figures used to judge normal activity, and on an install that
+                        taxes regular ore they would end up on members' bills.
+                    </p>
+                    <p>
+                        All six kinds of Mutanite are left out too: Amperum, Peregrinus, Conflagrati, Solis, Tenebraet
+                        and Admixti (<code>77118</code>, <code>77418</code> to <code>77421</code> and <code>77524</code>).
+                        Homefront Operations run permanently, so it is not event ore, but it cannot be reprocessed and
+                        price sources often have no price for it. Counted, it only sat in the ledger as regular ore
+                        worth nothing.
+                    </p>
+                    <p>
+                        Both are skipped when mining is imported and when mining events are tallied, so nothing further
+                        along ever sees them. Rows of any of these already in your ledger are left as they were.
+                    </p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-question-circle"></i>
+                        Types the registry does not know
+                    </h3>
+                    <p>
+                        When CCP releases a new ore before the plugin has caught up, that mining is not skipped. It goes
+                        into the ledger as regular ore, which is right for most new ore, and is taxed at your regular ore
+                        rate. Skipping it would lose it for good: the imports only read recent days, so nothing goes
+                        back for it once the registry is updated.
+                    </p>
+                    <p>
+                        The Master Test on the Diagnostic page has an <strong>Unrecognised ore types</strong> check. It
+                        lists any type mined in the last 30 days that the registry does not know, with its name from the
+                        SDE. Anything it shows needs adding to the registry in a plugin update.
+                    </p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-history"></i>
+                        Why old mining keeps its old rate
+                    </h3>
+                    <p>
+                        Recognising more ore is an improvement, but applying it backwards is not. If a type moves from an
+                        untaxed category into a taxed one, everybody who mined it would watch a historical bill grow for
+                        work they finished weeks ago. So classification changes apply <strong>from the moment you upgrade
+                        and no earlier</strong>. Mining already in the ledger keeps the categories and the rate it was
+                        billed on, and an invoice that has gone out never changes.
+                    </p>
+                    <p>
+                        The same principle covers mining that turns up late. Corporation observer data does not always
+                        arrive before the period it belongs to has been invoiced. When it lands afterwards it is recorded
+                        in full, with its real quantity and value, but marked <strong>not taxed</strong> with a note
+                        saying why. The ISK is not chased. Re-opening a settled invoice, or going back to somebody for
+                        more on a bill they have paid, is worse than letting it go.
+                    </p>
+                    <p>
+                        Character mining that SeAT saves late is handled differently again. The scheduled personal import
+                        reads the last two days of mining, by the day it was mined, and SeAT sometimes saves a day's
+                        mining a week or more after it happened. That mining is not imported at all, so days that have
+                        already been invoiced and summarised never change underneath anybody.
+                    </p>
+
+                    <h4><i class="fas fa-tools"></i> The backfill command keeps to the cutover</h4>
+                    <p>
+                        <code>mining-manager:backfill-ore-types</code> stops at the cutover by default, so it never
+                        re-classifies mining that has already been billed. <code>--dry-run</code> reports every category
+                        movement it would make, and each one of those is a change of tax rate. <code>--scope=all</code>
+                        ignores the cutover and would make past invoices disagree with the rows behind them.
+                    </p>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-stethoscope"></i>
+                        Checking it on your install
+                    </h3>
+                    <ul>
+                        <li>
+                            <strong>Master Test, Unrecognised ore types:</strong> ore mined in the last 30 days that the
+                            registry does not know.
+                        </li>
+                        <li>
+                            <strong>Master Test, Ignored ore left out:</strong> warns if event ore, quest ore or Mutanite
+                            still reaches the ledger.
+                        </li>
+                        <li>
+                            <code>mining-manager:diagnose-type-ids --verify-db</code> checks every registry ID against
+                            your SDE. Add <code>--category=event</code> or <code>--category=mutanite</code> to check one
+                            list.
+                        </li>
+                    </ul>
                 </div>
             </div>
 
@@ -3382,6 +3684,13 @@ $(document).ready(function() {
         const hash = window.location.hash.substring(1);
         $(`.help-nav .nav-link[data-section="${hash}"]`).click();
     }
+
+    // Links inside a section that open another section
+    $('.help-content').on('click', 'a[data-section-link]', function(e) {
+        e.preventDefault();
+        $(`.help-nav .nav-link[data-section="${$(this).data('section-link')}"]`).click();
+        window.scrollTo(0, 0);
+    });
 
     // FAQ Accordion
     $('.faq-question').on('click', function() {

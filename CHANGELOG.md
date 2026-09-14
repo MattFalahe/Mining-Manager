@@ -18,8 +18,8 @@ Master Test gains checks for the upfront payment setup (an empty keyword, a keyw
 overlaps the tax code prefix or the refund keyword, or surplus with nowhere to go), refunds
 still waiting on a transfer after a week, the personal mining import falling behind inside
 its two-day window, moon mining notifications not reaching SeAT, Extraction Started alerts
-stuck past their wait, the ore classification cutover, and event ore, quest ore or
-Mutanite turning up in the ledger. Data Integrity flags account balances that cannot be right and refunds whose balance
+stuck past their wait, the ore classification cutover, event ore, quest ore or Mutanite
+turning up in the ledger, and mined ore types the registry does not recognise. Data Integrity flags account balances that cannot be right and refunds whose balance
 row is gone. Settings Health lists the feature switches, and Health Checks counts payment
 allocations, held balances, pending refunds and planned pulls.
 
@@ -118,6 +118,13 @@ through the fallback, usually worth nothing. Reported in
 
 All of it is skipped when mining is imported and when mining events are tallied, so nothing
 further along ever sees it. Mining already in your ledger is left exactly as it was.
+
+A type the registry does not know at all is still imported, as regular ore, rather than
+skipped: the imports only read recent days, so mining skipped while the registry was behind
+could never be brought back. A new Master Test check, **Unrecognised ore types**, lists any
+such type mined in the last 30 days with its name from the SDE. How classification works,
+from import to invoice, is set out in the [README](README.md#how-ore-classification-works)
+and on a new Ore Classification page in Help.
 
 ### 🧹 One ore classifier instead of six
 

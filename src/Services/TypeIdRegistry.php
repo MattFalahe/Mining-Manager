@@ -1190,6 +1190,35 @@ class TypeIdRegistry
         return in_array($typeId, self::TRIGLAVIAN_ORES);
     }
 
+    /**
+     * Whether any list in this registry holds the type id.
+     *
+     * Reads every array constant, so a list added later is covered without
+     * touching this. Minerals and refined materials are in there too; nobody
+     * mines them, so they make no difference to the question this answers:
+     * does the registry know what this piece of mining is?
+     */
+    public static function isRegistered(int $typeId): bool
+    {
+        static $registered = null;
+
+        if ($registered === null) {
+            $registered = [];
+
+            foreach ((new \ReflectionClass(self::class))->getConstants() as $value) {
+                if (is_array($value)) {
+                    array_walk_recursive($value, function ($id) use (&$registered) {
+                        if (is_int($id)) {
+                            $registered[$id] = true;
+                        }
+                    });
+                }
+            }
+        }
+
+        return isset($registered[$typeId]);
+    }
+
     // ============================================
     // NEW ORE FAMILY HELPERS
     // ============================================

@@ -12,6 +12,7 @@ use MiningManager\Integrations\MoonFastPollIntegration;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
 use MiningManager\Services\Pricing\PriceProviderService;
@@ -128,6 +129,7 @@ class MasterTestRunner
             // Ore classification
             'checkClassificationCutover',
             'checkIgnoredOreLeftOut',
+            'checkUnrecognisedOreTypes',
 
             // Tax pipeline
             'checkTaxPipelineSanity',
@@ -1053,6 +1055,64 @@ class MasterTestRunner
         }
 
         return $this->pass($name, 'classification', 'None imported in the last seven days (' . count($ignored) . ' types on the list)');
+    }
+
+    /**
+     * Mined ore the registry does not recognise.
+     *
+     * An unknown type is not skipped. It goes into the ledger as regular ore
+     * through the classifier's fallback, because skipping it would lose that
+     * mining for good: the imports only read recent days, and nothing goes back
+     * for it once the registry catches up. This check is what makes the gap
+     * visible. Names come from SeAT's SDE when it has them.
+     */
+    protected function checkUnrecognisedOreTypes(): array
+    {
+        $name = 'Unrecognised ore types';
+
+        $rows = DB::table('mining_ledger')
+            ->select('type_id', DB::raw('COUNT(*) as row_count'))
+            ->where('date', '>=', Carbon::now()->subDays(30)->toDateString())
+            ->whereNull('deleted_at')
+            ->groupBy('type_id')
+            ->get();
+
+        $unknown = [];
+
+        foreach ($rows as $row) {
+            if (!TypeIdRegistry::isRegistered((int) $row->type_id)) {
+                $unknown[(int) $row->type_id] = (int) $row->row_count;
+            }
+        }
+
+        if (empty($unknown)) {
+            return $this->pass($name, 'classification', 'Every ore type mined in the last 30 days is in the registry (' . count($rows) . ' types)');
+        }
+
+        arsort($unknown);
+
+        try {
+            $names = DB::table('invTypes')
+                ->whereIn('typeID', array_keys($unknown))
+                ->pluck('typeName', 'typeID');
+        } catch (Throwable $e) {
+            $names = [];
+        }
+
+        $types = [];
+        foreach ($unknown as $typeId => $count) {
+            $types[] = $typeId . ' ' . ($names[$typeId] ?? '(no name in the SDE)') . ', ' . $count . ' ledger rows';
+        }
+
+        return $this->warn(
+            $name,
+            'classification',
+            count($unknown) . ' ore types mined in the last 30 days are not in the registry, so they were counted as regular ore',
+            [
+                'types' => $types,
+                'hint' => 'Each one needs adding to TypeIdRegistry under its family, or to the ignored lists if it should not be counted. Until then it is taxed at the regular ore rate wherever regular ore is taxed.',
+            ]
+        );
     }
 
     // =================================================================
