@@ -28,6 +28,7 @@ use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
 use MiningManager\Console\Commands\DiagnoseCharacterCommand;
 use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
 use MiningManager\Console\Commands\DiagnoseTypeIdsCommand;
+use MiningManager\Console\Commands\ProbeJaniceCommand;
 use MiningManager\Console\Commands\GenerateTestDataCommand;
 use MiningManager\Console\Commands\RecalculateExtractionValuesCommand;
 use MiningManager\Console\Commands\ArchiveOldExtractionsCommand;
@@ -153,6 +154,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 DiagnoseCharacterCommand::class,
                 DiagnoseMoonExtractionsCommand::class,
                 DiagnoseTypeIdsCommand::class,
+                ProbeJaniceCommand::class,
                 GenerateTestDataCommand::class,
                 RecalculateExtractionValuesCommand::class,
                 ArchiveOldExtractionsCommand::class,
