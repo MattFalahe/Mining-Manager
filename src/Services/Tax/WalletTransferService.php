@@ -830,11 +830,13 @@ class WalletTransferService
 
         return $donations
             ->map(function ($donation) use ($claimed) {
-                $taxId = $claimed[(int) $donation->id] ?? null;
+                $id = (int) $donation->id;
 
-                $donation->verified = $taxId !== null;
+                // Being claimed is what makes a payment verified. Pointing at
+                // an invoice is not: one banked to balance points at none.
+                $donation->verified = array_key_exists($id, $claimed);
                 $donation->mismatch = false;
-                $donation->matched_tax_id = $taxId;
+                $donation->matched_tax_id = $claimed[$id] ?? null;
 
                 return $donation;
             });
@@ -966,7 +968,8 @@ class WalletTransferService
         foreach ($donations as $donation) {
             $transactionId = (int) $donation->id;
 
-            if (isset($claimed[$transactionId]) || in_array($transactionId, $dismissedIds, true)) {
+            // array_key_exists, not isset: see claimedTransactionMap().
+            if (array_key_exists($transactionId, $claimed) || in_array($transactionId, $dismissedIds, true)) {
                 continue;
             }
 
@@ -1021,7 +1024,12 @@ class WalletTransferService
     }
 
     /**
-     * transaction_id => tax_id for everything already credited.
+     * transaction_id => tax_id for everything already claimed.
+     *
+     * tax_id is null when no invoice took any of the payment, which is what a
+     * payment banked wholly to account balance looks like. Test membership
+     * with array_key_exists, never isset, or those payments read as unclaimed
+     * and go back in the queue.
      *
      * Scoped to the ids actually on screen. The claim table only grows, so
      * loading all of it to answer a question about thirty days of donations

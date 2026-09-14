@@ -362,7 +362,7 @@ return [
     'match_failed_no_tax_code' => 'No tax code in this payment, so it cannot be matched automatically. Use Assign to invoice.',
     'match_failed_tax_code_not_recognised' => 'The code on this payment does not match any invoice.',
     'match_failed_invoice_missing' => 'The code on this payment points at an invoice that no longer exists.',
-    'match_failed_already_claimed' => 'This payment has already been credited to an invoice.',
+    'match_failed_already_claimed' => 'This payment has already been assigned, to an invoice or to account balance.',
     'match_failed_before_cutover' => 'This payment predates the verification cutover and is left out of automatic matching. Assign it by hand if it still needs settling.',
     'match_failed_transaction_not_found' => 'That payment is not in the corporation wallet any more.',
     'match_failed_no_open_invoice' => 'That player has no open invoice to put this against.',
