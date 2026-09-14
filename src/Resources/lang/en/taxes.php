@@ -80,7 +80,6 @@ return [
     'copy_tax_code' => 'Copy Tax Code',
     'generate_codes' => 'Generate Tax Codes',
     'assign_codes' => 'Assign Codes',
-    'regenerate_codes' => 'Regenerate Codes',
     'no_codes' => 'No tax codes found',
     'copy' => 'Copy',
     'expiry_days' => 'Expires in :days days',
@@ -103,7 +102,11 @@ return [
     'actions' => 'Actions',
     'calculate' => 'Calculate',
     'recalculate' => 'Recalculate',
-    'recalculate_help' => 'Recalculate taxes even if they already exist for this month',
+    'recalculate_help' => 'Rebuilds the daily summaries for the month, then recalculates every invoice that has not gone out and creates any that are missing. Invoices already issued stay as they are.',
+    'calculate_help' => 'Creates tax records for each period in the month that does not have them yet. Each one gets its payment code straight away.',
+    'assign_codes_help' => 'Gives a payment code to any unpaid or overdue record for the month that has none. Records normally get their code when they are created, so this is a fallback.',
+    'refresh_tracking_help' => 'Reloads the live tracking figures below. It changes nothing.',
+    'recalculate_confirm' => 'This rebuilds the daily summaries for the selected month from the ledger, using your current tax rates for days not yet invoiced, then recalculates every invoice that has not gone out and creates any that are missing. Invoices that already have a payment code, money against them, or read as paid stay exactly as they are. Continue?',
     'generate' => 'Generate',
     'submit' => 'Submit',
     'confirm' => 'Confirm',
@@ -240,13 +243,11 @@ return [
     'error_sending_reminders' => 'Error sending reminders',
     'error_occurred' => 'An error occurred',
     'error_refreshing_tracking' => 'Error refreshing tracking data',
-    'regenerate_confirm' => 'Are you sure you want to regenerate tax codes? Existing codes will be replaced.',
     'code_copied' => 'Tax code copied to clipboard',
 
     // These three were referenced by buttons and result panels but never
     // defined, so the raw key was showing on screen instead of a word.
     'generating' => 'Generating...',
-    'regenerating' => 'Regenerating...',
     'errors' => 'Errors',
     'code_copy_failed' => 'Failed to copy tax code',
     'syncing_wallet' => 'Syncing wallet data...',
@@ -264,8 +265,6 @@ return [
     'auto_match_complete' => 'Auto-matching completed',
     'auto_match_error' => 'An error occurred during auto-matching',
     'payments_verified' => 'Payments verified successfully',
-    'payments_regenerated' => 'Payment tracking regenerated successfully',
-    'regeneration_error' => 'An error occurred during regeneration',
 
     // Tax Code Management
     'no_unpaid_taxes_for_codes' => 'No unpaid taxes found to generate codes for',

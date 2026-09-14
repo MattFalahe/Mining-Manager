@@ -5,7 +5,7 @@ return [
         'name'          => 'Mining Manager',
         'label'         => 'mining-manager::menu.mining_manager',
         'plural'        => true,
-        'icon'          => 'fas fa-industry',
+        'icon'          => 'fas fa-gem',
         'route_segment' => 'mining-manager',
         'permission'    => 'mining-manager.member',
         'entries'       => [

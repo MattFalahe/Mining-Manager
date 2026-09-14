@@ -234,6 +234,23 @@ not exist at all, which the plugin could already do but never showed a button fo
 What is being worked out on that page is a bill per player. The flat list is the working
 underneath it, and is still one click away.
 
+### 🧹 Calculate Taxes loses Regenerate Codes
+
+The button ran exactly what Recalculate runs, and its name promised new payment codes,
+which an issued invoice never gets: the code a member already holds stays the code for that
+invoice. Recalculate stays. Each button on the page now explains itself on hover, and Help no
+longer says Recalculate re-prices mining, which it never did.
+
+### 🧹 Sidebar icon
+
+Mining Manager's sidebar icon is now the gem, the icon the plugin map in Manager Core uses.
+
+### 🐛 Help offered a --dry-run for detect-theft
+
+The Theft Detection section suggested a `--dry-run` flag that the command has never had, so
+following the tip ended in an error. It now says every run records incidents, and points at the
+Theft Detection tab on the Diagnostic page for a look that records nothing.
+
 ### 🐛 Three buttons showed their own translation key
 
 "Generating", "Regenerating" and "Errors" were referenced but never defined, so the raw key

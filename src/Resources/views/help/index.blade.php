@@ -927,7 +927,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <strong>Tax pages sort the way you would expect.</strong> Tax Overview opens with
                             overdue invoices first and sorts money and dates as numbers, Tax History lists the
                             second half of a month above the first, and Calculate Taxes opens grouped by account.
-                            On the Tax Codes tab, admins can mark a leftover code as used, or delete it.
+                            On the Tax Codes tab, admins can mark a leftover code as used, or delete it. Calculate
+                            Taxes no longer has a Regenerate Codes button: it did the same as Recalculate.
                         </li>
                         <li>
                             <strong>What has been billed stays billed.</strong> Once an invoice has a payment code,
@@ -1440,7 +1441,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li><strong>{{ trans('mining-manager::help.calc_calculate') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_recalculate') }}</strong></li>
                         <li><strong>{{ trans('mining-manager::help.calc_assign_codes') }}</strong></li>
-                        <li><strong>{{ trans('mining-manager::help.calc_regenerate_codes') }}</strong></li>
+                        <li><strong>{{ trans('mining-manager::help.calc_refresh_tracking') }}</strong></li>
                     </ul>
                 </div>
 

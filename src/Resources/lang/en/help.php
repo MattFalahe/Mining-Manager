@@ -178,7 +178,7 @@ return [
     'triggered_by_desc' => 'Every tax record logs who or what created it in the "Triggered By" field:',
     'triggered_by_scheduled' => 'Scheduled Task — Created automatically by the nightly calculate-taxes cron job.',
     'triggered_by_manual' => 'Manual: CharacterName — Created by an admin clicking Calculate or Recalculate in the UI.',
-    'triggered_by_regenerate' => 'Regenerate: CharacterName — Created by an admin clicking Regenerate Codes in the UI.',
+    'triggered_by_regenerate' => 'Regenerate: CharacterName. Made by the Regenerate Codes button in earlier versions, which did the same as Recalculate.',
 
     // Admin Tax Controls
     'admin_controls_title' => 'Admin Tax Management',
@@ -308,11 +308,11 @@ return [
 
     // Calculation Buttons
     'calculation_methods' => 'Calculate Taxes Page — Buttons',
-    'calculation_methods_desc' => 'The Calculate Taxes page provides three action buttons. All of them read from daily summaries as the single source of truth:',
-    'calc_calculate' => 'Calculate — Sums existing daily summaries to create tax records for all periods within the selected month. This is fast because it only reads stored data. Use this for routine tax finalization when you are happy with the current daily summaries. For biweekly/weekly, this creates a separate record for each period in the month.',
-    'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates tax records for all periods. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
-    'calc_assign_codes' => 'Assign Codes — Generates payment codes for any unpaid tax records that don\'t already have one. Does NOT recalculate taxes or regenerate daily summaries — it only assigns codes to existing tax records. Use this after running Calculate when you are ready to issue codes to members.',
-    'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member for each period. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
+    'calculation_methods_desc' => 'Taxes are calculated for you on schedule. This page is for doing it by hand, and none of its buttons changes an invoice that has gone out: once an invoice has a payment code, money against it, or reads as paid, its total stays as it is.',
+    'calc_calculate' => 'Calculate: creates tax records for each period in the selected month from the daily summaries, skipping any period that already has them. Each new record gets its payment code straight away. With biweekly periods it makes one record per period.',
+    'calc_recalculate' => 'Recalculate: first rebuilds the daily summaries for the month from the ledger, using your current tax rates for days that are not yet invoiced, then recalculates every invoice that has not gone out and creates any that are missing. Use it after changing tax rates. It does not re-price mining: ledger values come from the imports and the nightly price update.',
+    'calc_assign_codes' => 'Assign Codes: gives a payment code to any unpaid or overdue record for the month that has none. Records normally get their code when they are created, so this is a fallback for older records, or one whose code could not be made at the time.',
+    'calc_refresh_tracking' => 'Refresh Tracking: reloads the live tracking figures on the page. It changes nothing, and it also runs by itself every five minutes.',
 
     // Exemptions and Minimum Tax
     'exemptions_explained' => 'Exemptions and Minimum Tax',
@@ -439,7 +439,7 @@ return [
     'theft_commands' => 'Theft Detection Commands',
     'theft_detect_desc' => 'Full scan for unauthorized mining on all tracked moons. Runs automatically on the 1st and 15th of each month.',
     'theft_monitor_desc' => 'Monitors currently active theft incidents for ongoing unauthorized mining. Runs every 6 hours.',
-    'theft_dry_run' => 'Use the --dry-run flag to preview detection results without creating incident records.',
+    'theft_dry_run' => 'detect-theft has no dry run: every run records what it finds as incidents. To check a character without recording anything, use the Theft Detection tab on the Diagnostic page.',
     'theft_note' => 'Theft detection relies on ESI mining observer data. Only structures with active moon mining observers will be monitored.',
 
     // Analytics & Reports

@@ -273,12 +273,6 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/calculate/regenerate', [
-            'as' => 'mining-manager.taxes.regenerate-payments',
-            'uses' => 'TaxController@regeneratePayments',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
-
         Route::post('/codes/generate', [
             'as' => 'mining-manager.taxes.codes.generate',
             'uses' => 'TaxController@generateCodes',
