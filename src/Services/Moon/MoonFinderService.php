@@ -49,7 +49,10 @@ class MoonFinderService
      */
     public const QUALITY_DAYS = 28;
 
-    public const SORTS = ['value_desc', 'value_asc', 'share_desc', 'name'];
+    /**
+     * The columns the results table can be sorted on.
+     */
+    public const SORTS = ['name', 'system', 'constellation', 'region', 'class', 'share', 'value', 'quality'];
 
     public const PAGE_SIZES = [25, 50, 100];
 
@@ -131,7 +134,8 @@ class MoonFinderService
             'value_max' => $number($input['value_max'] ?? null),
             'quality_min' => is_string($quality) && $quality !== 'poor' && in_array($quality, self::QUALITY_ORDER, true) ? $quality : null,
             'station' => in_array($station, ['ours', 'free'], true) ? $station : null,
-            'sort' => in_array($sort, self::SORTS, true) ? $sort : 'value_desc',
+            'sort' => in_array($sort, self::SORTS, true) ? $sort : 'value',
+            'direction' => ($input['direction'] ?? null) === 'asc' ? 'asc' : 'desc',
             'page' => max(1, (int) ($input['page'] ?? 1)),
             'per_page' => in_array($perPage, self::PAGE_SIZES, true) ? $perPage : self::PAGE_SIZES[0],
         ];
@@ -198,7 +202,7 @@ class MoonFinderService
             $matches[] = $this->row($moon, $valued, $class, $rarityShares, $band, $quality, $value, $station);
         }
 
-        $this->sortRows($matches, $criteria['sort']);
+        $this->sortRows($matches, $criteria['sort'], $criteria['direction']);
 
         $matched = count($matches);
         $perPage = $criteria['per_page'];
@@ -213,6 +217,8 @@ class MoonFinderService
             'per_page' => $perPage,
             'days' => $criteria['days'],
             'basis' => $criteria['basis'],
+            'sort' => $criteria['sort'],
+            'direction' => $criteria['direction'],
             'rows' => $paginate ? array_slice($matches, ($page - 1) * $perPage, $perPage) : $matches,
         ];
     }
@@ -303,7 +309,7 @@ class MoonFinderService
             }
 
             if (!empty($better)) {
-                $this->sortRows($better, 'value_desc');
+                $this->sortRows($better, 'value', 'desc');
 
                 return ['class' => $class, 'scope' => $scopeInfo, 'days' => $days, 'moons' => array_slice($better, 0, 3)];
             }
@@ -750,20 +756,64 @@ class MoonFinderService
         ];
     }
 
-    protected function sortRows(array &$rows, string $sort): void
+    /**
+     * Sort by one column, ties broken by moon name so a page never shuffles.
+     */
+    protected function sortRows(array &$rows, string $sort, string $direction = 'desc'): void
     {
-        usort($rows, function ($a, $b) use ($sort) {
-            switch ($sort) {
-                case 'value_asc':
-                    return [$a['value'], $a['name']] <=> [$b['value'], $b['name']];
-                case 'share_desc':
-                    return [$b['moon_ore_percent'], $b['value']] <=> [$a['moon_ore_percent'], $a['value']];
-                case 'name':
-                    return strnatcasecmp($a['name'], $b['name']);
-                default:
-                    return [$b['value'], $a['name']] <=> [$a['value'], $b['name']];
-            }
+        $sign = $direction === 'asc' ? 1 : -1;
+
+        usort($rows, function ($a, $b) use ($sort, $sign) {
+            $order = $this->compareRows($a, $b, $sort);
+
+            return $order === 0 ? strnatcasecmp($a['name'], $b['name']) : $order * $sign;
         });
+    }
+
+    /**
+     * Compares two rows on one column, lowest first. A moon with nothing in
+     * the column (no class, no rating) counts as the lowest.
+     */
+    protected function compareRows(array $a, array $b, string $sort): int
+    {
+        switch ($sort) {
+            case 'name':
+                return strnatcasecmp($a['name'], $b['name']);
+            case 'system':
+            case 'constellation':
+            case 'region':
+                return strnatcasecmp((string) $a[$sort], (string) $b[$sort]);
+            case 'class':
+                return $this->classOrder($a['class']) <=> $this->classOrder($b['class']);
+            case 'share':
+                return $a['moon_ore_percent'] <=> $b['moon_ore_percent'];
+            case 'quality':
+                return $this->qualityOrder($a['quality']) <=> $this->qualityOrder($b['quality']);
+            default:
+                return $a['value'] <=> $b['value'];
+        }
+    }
+
+    /**
+     * A class as something sortable, rarest highest. No class sorts lowest.
+     */
+    protected function classOrder(?string $class): int
+    {
+        $index = array_search($class, self::CLASSES, true);
+
+        return $index === false ? -1 : (int) $index;
+    }
+
+    /**
+     * A rating as something sortable: its band, then its place inside it.
+     */
+    protected function qualityOrder(?array $quality): array
+    {
+        if ($quality === null) {
+            return [-1, 0];
+        }
+
+        return [(int) array_search($quality['key'], self::QUALITY_ORDER, true), -$quality['top_percent']];
     }
 
     protected function qualityAtLeast(?array $quality, string $minimum): bool

@@ -387,7 +387,7 @@
             <div class="info-banner mb-3">
                 <i class="fas fa-info-circle"></i>
                 <strong>Info:</strong>
-                When enabled, moon extraction values and mining taxes are calculated based on refined mineral prices instead of raw ore prices. This gives you a more accurate value based on what you actually get when reprocessing the ore.
+                Decides which value the Extraction Simulator and Find Moons lead with: what the ore reprocesses into at your refining efficiency, or what the raw ore is worth on the market. Raw moon ore barely trades, so a thin market can put a silly price on it, which is why refined value is the default. Both are always shown, and Find Moons can be switched per search with Value by. Mining taxes are not affected.
             </div>
 
             <div class="form-group">
@@ -403,7 +403,7 @@
                     </label>
                 </div>
                 <small class="form-text text-muted">
-                    Calculate moon and tax values based on refined mineral prices instead of raw ore prices
+                    Lead with refined value on the Extraction Simulator and Find Moons
                 </small>
             </div>
 

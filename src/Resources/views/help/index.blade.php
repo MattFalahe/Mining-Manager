@@ -2744,6 +2744,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         part of a moon's name to pick it. Every member can use the simulator.
                     </p>
                     <p>
+                        <strong>Refined value leads.</strong> Raw moon ore barely trades, so one thin sell order
+                        can put a silly price on a moon, while what the ore reprocesses into holds steady. Both
+                        figures are always shown and both are named, and <em>Use Refined Mineral Value</em> under
+                        Settings, Pricing decides which one leads.
+                    </p>
+                    <p>
                         Prices come from the price cache that the scheduled price refresh keeps, never from a live
                         lookup, so simulating costs your price provider nothing. An ore with no cached price yet is
                         named in a warning and counts as zero until the next refresh.
@@ -2755,7 +2761,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         band, class, moon ore share, ores a moon must contain, composition rules such as
                         <em>R16 at least 20%</em>, value over a chosen number of days (<code>1.5b</code> and
                         <code>800m</code> work) and quality. Region, constellation and system can be picked in any
-                        order, and picking a system fills in the other two. Results are sorted by value. <strong>Simulate</strong>
+                        order, and picking a system fills in the other two. Results are sorted by value, and
+                        clicking a column heading sorts by that column instead. <strong>Simulate</strong>
                         on a row opens that moon in the simulator, and <strong>Export CSV</strong> downloads every
                         match while Allow Data Export is on.
                     </p>

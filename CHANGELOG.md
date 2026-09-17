@@ -49,7 +49,8 @@ composition rules such as R16 at least 20%, value over a chosen number of days a
 value, and quality. Region, constellation and system can be picked in any order, and picking a
 system fills in the other two. Results show each moon's place, class, ores, value and quality,
 sorted by value, with the ones a refinery of yours still sits on marked Ours, which you can also
-show on their own or hide while you look for new ground. Simulate opens a moon in the simulator
+show on their own or hide while you look for new ground. Click any column heading to sort by it,
+and click it again to turn it around. Simulate opens a moon in the simulator
 and Export CSV downloads every match. When you
 simulate a moon, Find Moons also lists up to three better scanned moons of the same class in the
 constellation or region you searched, or around the moon itself.
@@ -73,6 +74,12 @@ with Janice meant a live request per ore. It now reads the price cache that the 
 keeps, as Find Moons does, and names any ore that has no cached price yet. It also shows each ore's
 refined value at your refining efficiency, and the moon box searches by name instead of listing
 every scanned moon.
+
+Refined value now leads, in the simulator and in Find Moons. Raw moon ore barely trades, so one
+thin sell order can put a silly price on a moon, while what the ore reprocesses into is steady.
+Both figures are always shown and both are named, so the headline and the search column can never
+be read as the same number. Settings, Pricing decides which one leads, and Find Moons can be
+switched per search with Value by.
 
 ### ✨ Extraction Started says who lit the drill
 

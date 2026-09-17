@@ -26,6 +26,9 @@
     .moon-simulator-page .finder-rule select,
     .moon-simulator-page .finder-rule input { max-width: 110px; }
     .moon-simulator-page .finder-actions { border-top: 1px solid var(--mm-border); padding-top: 15px; }
+    .moon-simulator-page .finder-sortable { cursor: pointer; white-space: nowrap; }
+    .moon-simulator-page .finder-sortable .finder-sort-mark { opacity: 0.45; margin-left: 4px; }
+    .moon-simulator-page .finder-sortable.finder-sorted .finder-sort-mark { opacity: 1; }
     .moon-simulator-page #finderTable td,
     .moon-simulator-page #suggestionsTable td { vertical-align: middle; }
     .moon-simulator-page .finder-ore-badge { margin: 1px 3px 1px 0; font-weight: 500; }
@@ -370,13 +373,7 @@
 
                     <div id="finderResults" class="mt-2" style="display: none;">
                         <div class="d-flex flex-wrap align-items-center mb-2">
-                            <label for="finderSort" class="small text-muted mb-0 mr-2">{{ trans('mining-manager::moons.finder_sort') }}</label>
-                            <select class="form-control form-control-sm mr-3" id="finderSort" style="width: auto;">
-                                <option value="value_desc">{{ trans('mining-manager::moons.finder_sort_value_desc') }}</option>
-                                <option value="value_asc">{{ trans('mining-manager::moons.finder_sort_value_asc') }}</option>
-                                <option value="share_desc">{{ trans('mining-manager::moons.finder_sort_share_desc') }}</option>
-                                <option value="name">{{ trans('mining-manager::moons.finder_sort_name') }}</option>
-                            </select>
+                            <span class="small text-muted mr-3">{{ trans('mining-manager::moons.finder_sort_hint') }}</span>
                             <label for="finderPerPage" class="small text-muted mb-0 mr-2">{{ trans('mining-manager::moons.finder_per_page') }}</label>
                             <select class="form-control form-control-sm" id="finderPerPage" style="width: auto;">
                                 <option value="25">25</option>
@@ -388,15 +385,15 @@
                             <table class="table table-dark table-striped table-sm" id="finderTable">
                                 <thead>
                                     <tr>
-                                        <th>{{ trans('mining-manager::moons.moon') }}</th>
-                                        <th>{{ trans('mining-manager::moons.finder_col_system') }}</th>
-                                        <th>{{ trans('mining-manager::moons.finder_col_constellation') }}</th>
-                                        <th>{{ trans('mining-manager::moons.finder_col_region') }}</th>
-                                        <th class="text-center">{{ trans('mining-manager::moons.finder_col_class') }}</th>
-                                        <th class="text-right">{{ trans('mining-manager::moons.finder_col_moon_ore') }}</th>
+                                        <th class="finder-sortable" data-sort="name">{{ trans('mining-manager::moons.moon') }}</th>
+                                        <th class="finder-sortable" data-sort="system">{{ trans('mining-manager::moons.finder_col_system') }}</th>
+                                        <th class="finder-sortable" data-sort="constellation">{{ trans('mining-manager::moons.finder_col_constellation') }}</th>
+                                        <th class="finder-sortable" data-sort="region">{{ trans('mining-manager::moons.finder_col_region') }}</th>
+                                        <th class="text-center finder-sortable" data-sort="class" data-default="desc">{{ trans('mining-manager::moons.finder_col_class') }}</th>
+                                        <th class="text-right finder-sortable" data-sort="share" data-default="desc">{{ trans('mining-manager::moons.finder_col_moon_ore') }}</th>
                                         <th>{{ trans('mining-manager::moons.finder_col_ores') }}</th>
-                                        <th class="text-right" id="finderValueHeader"></th>
-                                        <th class="text-center">{{ trans('mining-manager::moons.finder_col_quality') }}</th>
+                                        <th class="text-right finder-sortable" data-sort="value" data-default="desc" id="finderValueHeader"></th>
+                                        <th class="text-center finder-sortable" data-sort="quality" data-default="desc">{{ trans('mining-manager::moons.finder_col_quality') }}</th>
                                         <th></th>
                                     </tr>
                                 </thead>
@@ -541,11 +538,11 @@
                     <div id="resultsState" style="display: none;">
                         {{-- Total Value --}}
                         <div class="mm-result-panel text-center p-4 mb-4" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 8px;">
-                            <h5 class="text-muted mb-2">{{ trans('mining-manager::moons.total_value') }}</h5>
+                            <h5 class="text-muted mb-2" id="totalValueLabel">{{ trans('mining-manager::moons.total_value') }}</h5>
                             <div class="mm-result-value" id="totalValue" style="font-size: 2.5rem; font-weight: bold; color: #27ae60;">
                                 0 <small style="font-size: 1rem;">ISK</small>
                             </div>
-                            <div class="text-muted" id="refinedValue"></div>
+                            <div class="text-muted" id="otherValue"></div>
                             <p class="mb-0 mt-2">
                                 <span id="resultDuration" class="badge badge-secondary"></span>
                                 <span id="resultVolume" class="badge badge-info ml-1"></span>
@@ -711,6 +708,9 @@
         'simulation_complete' => trans('mining-manager::moons.simulation_complete'),
         'copied_to_clipboard' => trans('mining-manager::moons.copied_to_clipboard'),
         'refined_total' => trans('mining-manager::moons.refined_total'),
+        'refined_headline' => trans('mining-manager::moons.refined_headline'),
+        'ore_total' => trans('mining-manager::moons.ore_total'),
+        'basis_ore' => trans('mining-manager::moons.basis_ore'),
         'unpriced_ores' => trans('mining-manager::moons.unpriced_ores'),
         'quality_rank' => trans('mining-manager::moons.quality_rank'),
         'station_badge' => trans('mining-manager::moons.station_badge'),
@@ -727,7 +727,8 @@
         'finder_error' => trans('mining-manager::moons.finder_error'),
         'finder_summary' => trans('mining-manager::moons.finder_summary'),
         'finder_no_results' => trans('mining-manager::moons.finder_no_results'),
-        'finder_col_value' => trans('mining-manager::moons.finder_col_value'),
+        'finder_col_value_ore' => trans('mining-manager::moons.finder_col_value_ore'),
+        'finder_col_value_refined' => trans('mining-manager::moons.finder_col_value_refined'),
         'finder_page_of' => trans('mining-manager::moons.finder_page_of'),
     ];
     $qualityLabels = [];
@@ -884,13 +885,24 @@ function displayResults(data) {
     $('#resultMoonName').text(data.moon_name).show();
     $('#resultStation').html(stationBadge(data.station));
 
-    // Update total value
-    const totalValue = parseFloat(data.total_value) || 0;
-    $('#totalValue').html(formatNumber(totalValue) + ' <small style="font-size: 1rem;">ISK</small>');
-    $('#refinedValue').text(
-        MOON_LANG.refined_total
-            .replace(':value', formatNumber(data.total_refined_value))
-            .replace(':efficiency', data.refining_efficiency)
+    // The page leads with the value it is working in, and names both, so the
+    // ore value and the refined value can never be read as the same number.
+    const oreValue = parseFloat(data.total_value) || 0;
+    const refinedValue = parseFloat(data.total_refined_value) || 0;
+    const leadsWithRefined = simulationBasis === 'refined';
+
+    $('#totalValueLabel').text(
+        leadsWithRefined
+            ? MOON_LANG.refined_headline.replace(':efficiency', data.refining_efficiency)
+            : MOON_LANG.basis_ore
+    );
+    $('#totalValue').html(formatNumber(leadsWithRefined ? refinedValue : oreValue) + ' <small style="font-size: 1rem;">ISK</small>');
+    $('#otherValue').text(
+        leadsWithRefined
+            ? MOON_LANG.ore_total.replace(':value', formatNumber(oreValue))
+            : MOON_LANG.refined_total
+                .replace(':value', formatNumber(refinedValue))
+                .replace(':efficiency', data.refining_efficiency)
     );
 
     // Update duration and volume badges
@@ -917,7 +929,7 @@ function displayResults(data) {
         const sortedOres = [...data.composition].sort((a, b) => b.value - a.value);
 
         sortedOres.forEach((ore, index) => {
-            const percentage = (ore.value / totalValue * 100) || 0;
+            const percentage = (ore.value / oreValue * 100) || 0;
             const barColor = getBarColor(index);
             const rarityBadge = getRarityBadge(ore.rarity);
 
@@ -1098,7 +1110,7 @@ function exportJSON() {
 function exportCSV() {
     if (!simulationResults) return;
 
-    let csv = 'Ore Name,Percentage,Volume (m3),Unit Price (ISK),Total Value (ISK),Refined Value (ISK)\n';
+    let csv = 'Ore Name,Percentage,Volume (m3),Unit Price (ISK),Ore Value (ISK),Refined Value (ISK)\n';
     simulationResults.composition.forEach(ore => {
         csv += `"${ore.ore_name}",${ore.percentage},${ore.volume},${ore.unit_price},${ore.value},${ore.refined_value}\n`;
     });
@@ -1122,7 +1134,7 @@ function copyToClipboard() {
     text += `Moon: ${simulationResults.moon_name}\n`;
     text += `Duration: ${simulationResults.extraction_days} days\n`;
     text += `Total Volume: ${formatNumber(simulationResults.total_volume_m3)} m³\n`;
-    text += `Total Value: ${formatNumber(simulationResults.total_value)} ISK\n`;
+    text += `Ore Value: ${formatNumber(simulationResults.total_value)} ISK\n`;
     text += `Refined Value: ${formatNumber(simulationResults.total_refined_value)} ISK\n\n`;
     text += 'Ore Breakdown:\n';
     simulationResults.composition.forEach(ore => {
@@ -1139,6 +1151,8 @@ function copyToClipboard() {
 <script>
 let finderPage = 1;
 let finderCriteriaUsed = null;
+let finderSort = 'value';
+let finderDirection = 'desc';
 // The constellation and system picked, with the places above them, so a
 // region picked later can tell whether they still lie inside it.
 let finderPlaces = { constellation: null, system: null };
@@ -1212,10 +1226,24 @@ function initMoonFinder() {
     $('#finderNext').on('click', function() {
         runFinder(finderPage + 1);
     });
-    $('#finderSort, #finderPerPage').on('change', function() {
+    $('#finderPerPage').on('change', function() {
         if (finderCriteriaUsed) {
             runFinder(1);
         }
+    });
+
+    // Clicking a column sorts by it, and clicking the column already sorted
+    // turns it around.
+    $('#finderTable').on('click', '.finder-sortable', function() {
+        const sort = $(this).data('sort');
+        if (sort === finderSort) {
+            finderDirection = finderDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            finderSort = sort;
+            finderDirection = $(this).data('default') === 'desc' ? 'desc' : 'asc';
+        }
+
+        runFinder(1);
     });
 }
 
@@ -1344,7 +1372,8 @@ function finderCriteria() {
         value_max: valueMax === null ? '' : valueMax,
         quality_min: $('#finderQuality').val(),
         station: $('#finderStation').val(),
-        sort: $('#finderSort').val(),
+        sort: finderSort,
+        direction: finderDirection,
         per_page: $('#finderPerPage').val()
     };
 }
@@ -1384,7 +1413,10 @@ function renderFinder(data) {
             .replace(':matched', formatNumber(data.matched))
             .replace(':total', formatNumber(data.total_scanned))
     );
-    $('#finderValueHeader').text(MOON_LANG.finder_col_value.replace(':days', data.days));
+    $('#finderValueHeader').text(
+        MOON_LANG[data.basis === 'refined' ? 'finder_col_value_refined' : 'finder_col_value_ore'].replace(':days', data.days)
+    );
+    markFinderSort(data.sort, data.direction);
 
     let html = '';
     if (data.rows.length === 0) {
@@ -1424,6 +1456,18 @@ function renderFinder(data) {
     $('#finderResults').show();
 }
 
+// Puts an arrow on the sorted column and a faint one on the rest.
+function markFinderSort(sort, direction) {
+    $('#finderTable .finder-sortable').each(function() {
+        const $header = $(this);
+        const sorted = $header.data('sort') === sort;
+        const icon = !sorted ? 'fa-sort' : (direction === 'asc' ? 'fa-sort-up' : 'fa-sort-down');
+
+        $header.toggleClass('finder-sorted', sorted).find('.finder-sort-mark').remove();
+        $header.append(` <i class="fas ${icon} finder-sort-mark"></i>`);
+    });
+}
+
 function resetFinder() {
     $('#finderRegion').val(null).trigger('change');
     clearFinderPlace('constellation');
@@ -1435,7 +1479,8 @@ function resetFinder() {
     $('#finderDays').val(28);
     $('#finderQuality').val('');
     $('#finderStation').val('');
-    $('#finderSort').val('value_desc');
+    finderSort = 'value';
+    finderDirection = 'desc';
     $('#finderPerPage').val('25');
     $('#finderResults').hide();
     $('#finderSummary').text('');

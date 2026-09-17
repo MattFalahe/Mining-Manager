@@ -1045,7 +1045,7 @@ class SettingsManagerService
             'manager_core_variant' => 'min',
 
             // Refining settings
-            'use_refined_value' => $this->getSetting('pricing.use_refined_value', false),
+            'use_refined_value' => $this->getSetting('pricing.use_refined_value', config('mining-manager.pricing.use_refined_value', true)),
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
         ];
     }
