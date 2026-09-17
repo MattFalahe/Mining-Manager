@@ -4,6 +4,10 @@ namespace MiningManager\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
+use MiningManager\Http\Controllers\Concerns\GuardsDataExport;
+use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Moon\MoonFinderService;
+use MiningManager\Services\Moon\MoonValuation;
 use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Services\Moon\MetenoxCargoService;
@@ -13,9 +17,12 @@ use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MiningLedger;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class MoonController extends Controller
 {
+    use GuardsDataExport;
+
     /**
      * Moon extraction service
      *
@@ -710,23 +717,19 @@ class MoonController extends Controller
      *
      * @return \Illuminate\View\View
      */
-    public function calculator()
+    public function calculator(MoonFinderService $finder, MoonValuation $valuation, SettingsManagerService $settings)
     {
-        // Get all scanned moons for the dropdown
-        $scannedMoons = $this->extractionService->getScannedMoons();
+        $canFindMoons = $this->canFindMoons();
 
-        // Get recent extractions for comparison
-        $recentExtractions = MoonExtraction::whereNotNull('ore_composition')
-            ->with(['structure'])
-            ->orderBy('extraction_start_time', 'desc')
-            ->limit(5)
-            ->get();
-
-        foreach ($recentExtractions as $extraction) {
-            $extraction->calculated_value = $this->computeDisplayValue($extraction);
-        }
-
-        return view('mining-manager::moon.calculator', compact('scannedMoons', 'recentExtractions'));
+        return view('mining-manager::moon.calculator', [
+            'scannedMoonCount' => $finder->scannedMoonCount(),
+            'canFindMoons' => $canFindMoons,
+            'finderRegions' => $canFindMoons ? $finder->regions() : [],
+            'finderOres' => $canFindMoons ? $finder->oreOptions() : [],
+            'pricesUpdatedAt' => $valuation->pricesUpdatedAt(),
+            'defaultBasis' => !empty($settings->getPricingSettings()['use_refined_value']) ? 'refined' : 'ore',
+            'features' => $settings->getFeatureFlags(),
+        ]);
     }
 
     /**
@@ -735,12 +738,12 @@ class MoonController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function simulate(Request $request)
+    public function simulate(Request $request, MoonFinderService $finder)
     {
-        $moonId = $request->input('moon_id');
+        $moonId = (int) $request->input('moon_id');
         $extractionDays = $request->input('extraction_days', 14);
 
-        if (!$moonId) {
+        if ($moonId <= 0) {
             return response()->json(['error' => 'Moon ID is required'], 400);
         }
 
@@ -753,7 +756,178 @@ class MoonController extends Controller
             return response()->json(['error' => 'Moon not found or not scanned'], 404);
         }
 
+        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+
+        // Quality and suggestions come on top of the simulation. If either
+        // fails, the simulation still comes back.
+        try {
+            $assessed = $finder->assess($moonId, $basis);
+            $result['quality'] = $assessed['quality'] ?? null;
+            $result['station'] = $assessed['station'] ?? null;
+
+            if ($this->canFindMoons()) {
+                $result['suggestions'] = $finder->betterMoons(
+                    $moonId,
+                    $extractionDays,
+                    $basis,
+                    $this->positiveInt($request->input('scope_constellation_id')),
+                    $this->positiveInt($request->input('scope_region_id'))
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: moon quality or suggestions failed', [
+                'moon_id' => $moonId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return response()->json($result);
+    }
+
+    /**
+     * Scanned moons whose name contains the typed text, for the simulator's moon box.
+     */
+    public function scannedMoons(Request $request, MoonFinderService $finder)
+    {
+        return response()->json([
+            'results' => $finder->moonsNamed((string) $request->input('q', '')),
+        ]);
+    }
+
+    /**
+     * Find Moons: one page of constellations or systems holding scanned moons,
+     * matched by name and narrowed by any region or constellation picked.
+     */
+    public function finderLocations(Request $request, MoonFinderService $finder)
+    {
+        $this->authorizeMoonFinder();
+
+        $level = $request->input('level') === 'system' ? 'system' : 'constellation';
+        $text = $request->input('q');
+
+        return response()->json($finder->places(
+            $level,
+            [
+                'region_id' => $this->positiveInt($request->input('region_id')),
+                'constellation_id' => $level === 'system' ? $this->positiveInt($request->input('constellation_id')) : null,
+            ],
+            is_string($text) ? $text : '',
+            $this->positiveInt($request->input('page')) ?? 1
+        ));
+    }
+
+    /**
+     * Find Moons search (AJAX endpoint)
+     */
+    public function finderSearch(Request $request, MoonFinderService $finder)
+    {
+        $this->authorizeMoonFinder();
+
+        return response()->json($finder->search($finder->normalizeCriteria($request->all())));
+    }
+
+    /**
+     * Find Moons results as CSV: every match, not one page.
+     */
+    public function finderExport(Request $request, MoonFinderService $finder)
+    {
+        $this->authorizeMoonFinder();
+
+        if (!$this->dataExportIsAllowed()) {
+            return $this->refuseDataExport($request);
+        }
+
+        $result = $finder->search($finder->normalizeCriteria($request->all()), false);
+
+        $qualityLabels = [];
+        foreach (MoonFinderService::QUALITY_ORDER as $key) {
+            $qualityLabels[$key] = trans('mining-manager::moons.' . $key);
+        }
+
+        $filename = 'moon_finder_' . Carbon::now()->format('Y-m-d_His') . '.csv';
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $callback = function () use ($result, $qualityLabels) {
+            $file = fopen('php://output', 'w');
+
+            fputcsv($file, [
+                'Moon', 'Moon ID', 'System', 'Security', 'Constellation', 'Region',
+                'Class', 'Moon ore %', 'R4 %', 'R8 %', 'R16 %', 'R32 %', 'R64 %', 'Ores',
+                'Days', 'Ore value (ISK)', 'Refined value (ISK)', 'Quality', 'Top % of class',
+                'Our refinery', 'Refinery corporation',
+            ]);
+
+            foreach ($result['rows'] as $row) {
+                // As the game shows it: anything above zero reads at least 0.1.
+                $security = $row['security'] > 0 && $row['security'] < 0.05 ? 0.1 : round($row['security'], 1);
+
+                $ores = [];
+                foreach ($row['ores'] as $ore) {
+                    $ores[] = $ore['name'] . ' ' . $ore['percent'] . '%';
+                }
+
+                fputcsv($file, [
+                    $row['name'],
+                    $row['moon_id'],
+                    $row['system'],
+                    $row['security_band'] === 'wormhole' ? '' : number_format($security, 1),
+                    $row['constellation'],
+                    $row['region'],
+                    $row['class'] ?? '',
+                    $row['moon_ore_percent'],
+                    $row['rarity_percent']['R4'],
+                    $row['rarity_percent']['R8'],
+                    $row['rarity_percent']['R16'],
+                    $row['rarity_percent']['R32'],
+                    $row['rarity_percent']['R64'],
+                    implode('; ', $ores),
+                    $result['days'],
+                    $row['ore_value'],
+                    $row['refined_value'],
+                    $row['quality'] ? $qualityLabels[$row['quality']['key']] : '',
+                    $row['quality']['top_percent'] ?? '',
+                    $row['station']['structure'] ?? '',
+                    $row['station']['corporation'] ?? '',
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Find Moons can list every valuable moon in a region at once, which is
+     * far stronger intel than the one-moon simulator every member has. It
+     * needs Director, Moon Manager or its own Moon Finder permission; the OR
+     * cannot be a single can: middleware.
+     */
+    private function canFindMoons(): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null && (
+            $user->can('mining-manager.director')
+            || $user->can('mining-manager.moon_manager')
+            || $user->can('mining-manager.moon_finder')
+        );
+    }
+
+    private function authorizeMoonFinder(): void
+    {
+        if (!$this->canFindMoons()) {
+            abort(403, trans('mining-manager::moons.finder_no_access'));
+        }
+    }
+
+    private function positiveInt($value): ?int
+    {
+        return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
     }
 
     /**

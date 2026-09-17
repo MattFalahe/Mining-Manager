@@ -75,15 +75,146 @@ class MoonPlannerService
     }
 
     /**
+     * Resolved structure_id => moon_id, memoised for the request.
+     *
+     * @var array<int,int|null>
+     */
+    protected array $moonIdCache = [];
+
+    /**
      * Every refinery (Athanor/Tatara) belonging to a corporation.
+     *
+     * Each structure comes back with a resolved `moon_id`. SeAT's
+     * corporation_structures table has no such column, so callers reading
+     * `$refinery->moon_id` straight off the model silently got null forever
+     * (Eloquent returns null for an attribute that was never selected, rather
+     * than complaining). Resolving it here means every consumer of this method
+     * gets a real moon without having to know where moons actually live.
      *
      * @return \Illuminate\Support\Collection<int,CorporationStructure>
      */
     public function refineriesForCorporation(int $corporationId): Collection
     {
-        return CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
+        $refineries = CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
             ->where('corporation_id', $corporationId)
             ->get();
+
+        if ($refineries->isEmpty()) {
+            return $refineries;
+        }
+
+        $moonIds = $this->moonIdsForStructures(
+            $refineries->pluck('structure_id')->map(fn ($id) => (int) $id)->all()
+        );
+
+        foreach ($refineries as $refinery) {
+            $refinery->moon_id = $moonIds[(int) $refinery->structure_id] ?? null;
+        }
+
+        return $refineries;
+    }
+
+    /**
+     * The moon a refinery is anchored on, or null if nothing knows yet.
+     *
+     * An Upwell structure is anchored on exactly one moon and cannot move, so
+     * this mapping is stable once anything has observed it.
+     */
+    public function resolveMoonId(int $structureId): ?int
+    {
+        return $this->moonIdsForStructures([$structureId])[$structureId] ?? null;
+    }
+
+    /**
+     * Bulk structure_id => moon_id.
+     *
+     * Three sources, in order of how much we trust them to be current:
+     * our own live extractions, our archived history, and finally SeAT's raw
+     * extraction table for a refinery we have not imported yet. A refinery
+     * that has never run an extraction resolves to null, which is a legitimate
+     * answer and why the plan column is nullable.
+     *
+     * @param  array<int,int>  $structureIds
+     * @return array<int,int|null>
+     */
+    public function moonIdsForStructures(array $structureIds): array
+    {
+        $wanted = array_values(array_unique(array_filter(array_map('intval', $structureIds))));
+
+        if (empty($wanted)) {
+            return [];
+        }
+
+        $resolved = [];
+        $outstanding = [];
+
+        foreach ($wanted as $id) {
+            if (array_key_exists($id, $this->moonIdCache)) {
+                $resolved[$id] = $this->moonIdCache[$id];
+            } else {
+                $outstanding[] = $id;
+            }
+        }
+
+        if (empty($outstanding)) {
+            return $resolved;
+        }
+
+        // Ordered oldest first on purpose: pluck() keys by structure_id and the
+        // last row processed wins, so ascending order leaves the most recently
+        // observed moon in place. A refinery's moon never changes, but a
+        // structure id can be reused after an unanchor, and the newest
+        // observation is the right answer if it ever is.
+        $lookups = [
+            fn (array $ids) => MoonExtraction::whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+
+            fn (array $ids) => MoonExtractionHistory::whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+
+            fn (array $ids) => DB::table('corporation_industry_mining_extractions')
+                ->whereIn('structure_id', $ids)
+                ->whereNotNull('moon_id')
+                ->orderBy('chunk_arrival_time')
+                ->pluck('moon_id', 'structure_id'),
+        ];
+
+        foreach ($lookups as $lookup) {
+            if (empty($outstanding)) {
+                break;
+            }
+
+            try {
+                foreach ($lookup($outstanding) as $structureId => $moonId) {
+                    $resolved[(int) $structureId] = (int) $moonId;
+                }
+            } catch (\Exception $e) {
+                Log::warning('Mining Manager: a moon lookup failed, falling through to the next source', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $outstanding = array_values(array_filter(
+                $outstanding,
+                fn ($id) => !isset($resolved[$id])
+            ));
+        }
+
+        // Remember the misses too, so a refinery with no extraction history
+        // does not re-run all three lookups on every call within a request.
+        foreach ($outstanding as $id) {
+            $resolved[$id] = null;
+        }
+
+        foreach ($wanted as $id) {
+            $this->moonIdCache[$id] = $resolved[$id] ?? null;
+        }
+
+        return $resolved;
     }
 
     /**
@@ -569,6 +700,36 @@ class MoonPlannerService
     }
 
     /**
+     * The real arrival a plan is out of step with, if there is one.
+     *
+     * The nearest real pull for the refinery is further away than the match
+     * tolerance but still inside the same cycle. Null when the plan matches its
+     * pull, or no real pull is near it. The alert and the actions that settle a
+     * mismatch both ask this, so they cannot disagree about what counts.
+     */
+    public function offPlanArrival(MoonExtractionPlan $plan): ?Carbon
+    {
+        $nearest = null;
+        $nearestOffset = null;
+
+        foreach ($this->existingActualTimes((int) $plan->structure_id) as $time) {
+            $offset = abs($plan->planned_arrival_time->diffInMinutes($time));
+            if ($nearestOffset === null || $offset < $nearestOffset) {
+                $nearestOffset = $offset;
+                $nearest = $time;
+            }
+        }
+
+        if ($nearest === null
+            || $nearestOffset <= self::MATCH_TOLERANCE_MINUTES
+            || $nearestOffset > self::CYCLE_MATCH_WINDOW_HOURS * 60) {
+            return null;
+        }
+
+        return $nearest->copy();
+    }
+
+    /**
      * Find plans whose refinery has a real in-game extraction in the same
      * cycle but at a materially different time (> MATCH_TOLERANCE_MINUTES),
      * and fire a one-shot `schedule_mismatch` notification for each.
@@ -583,8 +744,6 @@ class MoonPlannerService
      */
     public function detectAndNotifyMismatches(int $corporationId): int
     {
-        $tolerance = self::MATCH_TOLERANCE_MINUTES;
-        $cycleWindow = self::CYCLE_MATCH_WINDOW_HOURS * 60;
         $fired = 0;
 
         $plans = MoonExtractionPlan::forCorporation($corporationId)
@@ -598,24 +757,13 @@ class MoonPlannerService
         MoonExtractionPlan::loadDisplayNames($plans);
 
         foreach ($plans as $plan) {
-            $actuals = $this->existingActualTimes((int) $plan->structure_id);
+            $nearest = $this->offPlanArrival($plan);
 
-            // Nearest real pull to this plan.
-            $nearest = null;
-            $nearestOffset = null;
-            foreach ($actuals as $t) {
-                $offset = abs($plan->planned_arrival_time->diffInMinutes($t));
-                if ($nearestOffset === null || $offset < $nearestOffset) {
-                    $nearestOffset = $offset;
-                    $nearest = $t;
-                }
-            }
-
-            // Same cycle but off-tolerance = mismatch. Within tolerance is the
-            // same pull (fine); beyond the cycle window is a different cycle.
-            if ($nearest === null || $nearestOffset <= $tolerance || $nearestOffset > $cycleWindow) {
+            if ($nearest === null) {
                 continue;
             }
+
+            $nearestOffset = abs($plan->planned_arrival_time->diffInMinutes($nearest));
 
             try {
                 $baseUrl = rtrim(config('app.url', ''), '/');
@@ -628,7 +776,14 @@ class MoonPlannerService
                     'planner_url' => $baseUrl . '/mining-manager/moon/planner',
                 ]);
 
-                $plan->update(['mismatch_notified_at' => Carbon::now()]);
+                // Write through the query builder, not the model. This plan has
+                // been through loadDisplayNames(), which puts moon_name and
+                // structure_name into its attribute bag, and neither is a real
+                // column. $plan->update() saves every dirty attribute, not just
+                // the one handed to it, so it would try to persist those too and
+                // the whole notification would fail on an unknown column.
+                MoonExtractionPlan::where('id', $plan->id)
+                    ->update(['mismatch_notified_at' => Carbon::now()]);
                 $fired++;
 
                 Log::info("Mining Manager: fired schedule_mismatch for plan {$plan->id}", [

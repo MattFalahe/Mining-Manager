@@ -16,7 +16,7 @@ class DiagnoseTypeIdsCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:diagnose-type-ids
-                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|refined-materials|minerals|ice|gas|ice-products|new-ores|jackpot|all)}
+                            {--category= : Diagnose specific category only (ore|compressed-ore|moon|compressed-moon|materials|refined-materials|minerals|ice|gas|ice-products|new-ores|jackpot|event|mutanite|all)}
                             {--include-abyssal : Include abyssal ore diagnosis (Pochven ores)}
                             {--test-jackpot : Test jackpot detection logic}
                             {--verify-db : Verify against local SeAT database instead of ESI API}';
@@ -173,6 +173,16 @@ class DiagnoseTypeIdsCommand extends Command
                 'name' => 'New Ores (YC124-YC126: Deep Space Survey + Ore Prospecting Arrays)',
                 'count' => TypeIdRegistry::getCategoryCount('new-ores'),
                 'ids' => TypeIdRegistry::getTypeIdsByCategory('new-ores'),
+            ],
+            'event' => [
+                'name' => 'Event and Quest Ore (left out of the ledger)',
+                'count' => count(TypeIdRegistry::EVENT_ORES),
+                'ids' => TypeIdRegistry::EVENT_ORES,
+            ],
+            'mutanite' => [
+                'name' => 'Mutanite (left out of the ledger)',
+                'count' => count(TypeIdRegistry::MUTANITE_ORES),
+                'ids' => TypeIdRegistry::MUTANITE_ORES,
             ],
         ];
     }

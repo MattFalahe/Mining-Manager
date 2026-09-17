@@ -15,7 +15,9 @@ return [
 
     // Moon Manager capability (standalone, not a tier)
     'moon_manager_label' => 'Moon Manager',
-    'moon_manager_description' => 'Access the Moon Extraction Planner: assign, move, and auto-fill planned moon pulls across refineries to stagger arrivals. Directors and admins also have this access.',
+    'moon_manager_description' => 'Access the Moon Extraction Planner (assign, move, and auto-fill planned moon pulls across refineries to stagger arrivals), Moon Analytics and Find Moons. Directors and admins also have this access.',
+    'moon_finder_label' => 'Moon Finder',
+    'moon_finder_description' => 'Use Find Moons on the Extraction Simulator: search every scanned moon by location, composition, value and quality, and see better moons of the same class nearby. Directors and moon managers have this access as well.',
 
     // Admin tier
     'admin_label' => 'Admin',

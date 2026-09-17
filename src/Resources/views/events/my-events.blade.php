@@ -44,6 +44,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard events-my-events-page">
 
 {{-- TAB NAVIGATION --}}

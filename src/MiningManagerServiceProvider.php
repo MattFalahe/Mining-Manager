@@ -12,6 +12,7 @@ use MiningManager\Console\Commands\UpdateMiningEventsCommand;
 use MiningManager\Console\Commands\GenerateReportsCommand;
 use MiningManager\Console\Commands\VerifyWalletPaymentsCommand;
 use MiningManager\Console\Commands\SendTaxRemindersCommand;
+use MiningManager\Console\Commands\SendOutstandingDigestCommand;
 use MiningManager\Console\Commands\UpdateMoonExtractionsCommand;
 use MiningManager\Console\Commands\CheckExtractionArrivalsCommand;
 use MiningManager\Console\Commands\BackfillExtractionHistoryCommand;
@@ -27,6 +28,7 @@ use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
 use MiningManager\Console\Commands\DiagnoseCharacterCommand;
 use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
 use MiningManager\Console\Commands\DiagnoseTypeIdsCommand;
+use MiningManager\Console\Commands\ProbeJaniceCommand;
 use MiningManager\Console\Commands\GenerateTestDataCommand;
 use MiningManager\Console\Commands\RecalculateExtractionValuesCommand;
 use MiningManager\Console\Commands\ArchiveOldExtractionsCommand;
@@ -42,14 +44,6 @@ use MiningManager\Console\Commands\BackupDataCommand;
 use MiningManager\Console\Commands\RestoreDataCommand;
 use MiningManager\Database\Seeders\ScheduleSeeder;
 use Illuminate\Support\Facades\Event;
-
-// Import Events
-
-use Seat\Eveapi\Events\CharacterWalletJournalUpdated;
-
-// Import Listeners
-
-use MiningManager\Listeners\ProcessWalletJournalListener;
 
 class MiningManagerServiceProvider extends AbstractSeatPlugin
 {
@@ -93,6 +87,12 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         \Illuminate\Support\Facades\Blade::directive('miningDateShort', function ($expression) {
             return "<?php echo ($expression) ? \Carbon\Carbon::parse($expression)->format('M d, Y') : '-'; ?>";
         });
+
+        // Decide whether the tax section shows a Balances tab. Done here rather
+        // than in each controller because the tab lives in a partial that every
+        // tax page includes, and threading one boolean through six actions to
+        // hide one link is not worth it.
+        $this->registerBalancesTabComposer();
 
         // Register event listeners
         $this->registerEventListeners();
@@ -141,6 +141,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 GenerateReportsCommand::class,
                 VerifyWalletPaymentsCommand::class,
                 SendTaxRemindersCommand::class,
+                SendOutstandingDigestCommand::class,
                 UpdateMoonExtractionsCommand::class,
                 CheckExtractionArrivalsCommand::class,
                 DetectJackpotsCommand::class,
@@ -153,6 +154,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 DiagnoseCharacterCommand::class,
                 DiagnoseMoonExtractionsCommand::class,
                 DiagnoseTypeIdsCommand::class,
+                ProbeJaniceCommand::class,
                 GenerateTestDataCommand::class,
                 RecalculateExtractionValuesCommand::class,
                 ArchiveOldExtractionsCommand::class,
@@ -208,6 +210,13 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             \MiningManager\Services\Configuration\SettingsManagerService::class
         );
 
+        // Shared so the controller, the wallet service and the tax calculator
+        // all talk to the same allocator, and therefore the same corporation
+        // context, within a request.
+        $this->app->singleton(
+            \MiningManager\Services\Tax\PaymentAllocationService::class
+        );
+
         $this->app->singleton(
             \MiningManager\Services\Pricing\PriceProviderService::class
         );
@@ -225,51 +234,77 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
     }
 
     /**
-     * Register event listeners for the plugin
-     * 
-     * IMPORTANT: As of v2.0, this plugin uses Corporation Observer data
-     * for COMPLETE moon mining tracking (not character ledgers).
-     * 
-     * The CharacterMiningUpdated listener is kept for backward compatibility
-     * but the primary data source is now corporation_industry_mining_observer_data
-     * which tracks ALL miners at your structures (not just SeAT users).
-     * 
+     * Show the Balances tab only when it would have something to say.
+     *
+     * Either someone is already holding a balance, or upfront payments are
+     * switched on and members could start creating one. On a fresh install with
+     * neither, an empty tab just looks broken.
+     *
+     * The visibility query is cached briefly: this runs on every tax page load,
+     * and the answer changes rarely.
+     */
+    private function registerBalancesTabComposer(): void
+    {
+        \Illuminate\Support\Facades\View::composer(
+            'mining-manager::taxes.partials.tab-navigation',
+            function ($view) {
+                $visible = false;
+
+                try {
+                    $visible = \Illuminate\Support\Facades\Cache::remember(
+                        'mining_manager_balances_tab_visible',
+                        300,
+                        function () {
+                            if (\MiningManager\Models\PaymentCredit::where('remaining', '>', 0)->exists()) {
+                                return true;
+                            }
+
+                            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+
+                            return (bool) ($settings->getFeatureFlags()['enable_upfront_payments'] ?? false);
+                        }
+                    );
+                } catch (\Exception $e) {
+                    // Before migrations have run the table does not exist yet.
+                    // A missing tab is a better failure than a broken tax page.
+                    $visible = false;
+                }
+
+                $view->with('balancesTabVisible', $visible);
+            }
+        );
+    }
+
+    /**
+     * Hooks into SeAT's own jobs and events.
+     *
+     * Nothing is registered here any more. The hooks this used to hold were
+     * bound to names SeAT never uses, so none of them ever ran, and a scheduled
+     * command covers each one. The notes stay so they do not come back as they
+     * were.
+     *
      * @return void
      */
     private function registerEventListeners()
     {
-        // Hook into SeAT's character mining job completion
-        // SeAT v5 doesn't fire events — we use Queue::after to detect when the job finishes
-        \Illuminate\Support\Facades\Queue::after(function (\Illuminate\Queue\Events\JobProcessed $event) {
-            $jobName = $event->job->resolveName();
+        // Personal mining is imported by mining-manager:import-character-mining
+        // on its schedule. There used to be a Queue::after hook here that queued
+        // an import each time SeAT finished a character's mining job, but it
+        // matched Seat\Eveapi\Jobs\Character\Industry\Mining and the job is
+        // Seat\Eveapi\Jobs\Industry\Character\Mining, so it never fired once.
+        // Removed rather than repointed. It asked for seven days, and the
+        // scheduled run keeps to two so that mining which has already been
+        // billed, and its daily summaries, stay as they were. Every import run
+        // also takes the same lock, so one queued per character would mostly
+        // skip and could make the scheduled run skip too.
 
-            // Character mining ledger updated — import into our mining_ledger table
-            if ($jobName === 'Seat\Eveapi\Jobs\Character\Industry\Mining') {
-                try {
-                    $payload = $event->job->payload();
-                    $command = unserialize($payload['data']['command'] ?? '');
-
-                    // Extract character_id from the job
-                    $characterId = $command->character_id ?? ($command->getCharacterId() ?? null);
-
-                    if ($characterId) {
-                        \Illuminate\Support\Facades\Log::debug("Mining Manager: SeAT character mining job completed for character {$characterId}, triggering import");
-                        \Illuminate\Support\Facades\Artisan::queue('mining-manager:import-character-mining', [
-                            '--character_id' => $characterId,
-                            '--days' => 7,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::debug("Mining Manager: Could not extract character_id from mining job: " . $e->getMessage());
-                }
-            }
-        });
-
-        // Wallet Journal Updates - Track tax payments
-        Event::listen(
-            CharacterWalletJournalUpdated::class,
-            ProcessWalletJournalListener::class
-        );
+        // Tax payments are matched by mining-manager:verify-payments on its
+        // schedule. There used to be a listener bound to
+        // Seat\Eveapi\Events\CharacterWalletJournalUpdated here, but SeAT has
+        // no such event, so it never fired once. It also read the character
+        // wallet journal, which is the wrong side of a donation. Removed
+        // rather than repointed: the corp journal is what the scheduled run
+        // reads, and there is no SeAT event for that either.
     }
 
     /**

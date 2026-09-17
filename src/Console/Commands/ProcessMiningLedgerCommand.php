@@ -12,9 +12,13 @@ use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\InvoiceCoverage;
+use MiningManager\Services\Ledger\LateMining;
 use MiningManager\Http\Controllers\DashboardController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use MiningManager\Services\OreClassifier;
 
 class ProcessMiningLedgerCommand extends Command
 {
@@ -108,6 +112,8 @@ class ProcessMiningLedgerCommand extends Command
 
         $processed = 0;
         $updated = 0;
+        $billedSkips = 0;
+        $lateArrivals = 0;
         $skipped = 0;
         $errors = 0;
 
@@ -169,7 +175,7 @@ class ProcessMiningLedgerCommand extends Command
                 $settingsService, $recalculate, $cutoffDate,
                 &$processed, &$updated, &$skipped, &$errors,
                 &$uniqueObserverIds, &$uniqueCharacterIds, &$totalQuantity,
-                &$touchedPairsMap, &$jackpotCheckEntries,
+                &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips, &$lateArrivals,
                 $progressBar
             ) {
             $byObserver = $chunk->groupBy('observer_id');
@@ -187,6 +193,15 @@ class ProcessMiningLedgerCommand extends Command
                 $taxSelector = $settingsService->getTaxSelector();
 
                 foreach ($entries as $entry) {
+                // Event ore, quest ore and Mutanite never enter the ledger.
+                // Observer data comes from moon drilling and should not carry
+                // any, but both import paths make the same check so they cannot
+                // drift apart.
+                if (OreClassifier::isIgnored((int) $entry->type_id)) {
+                    $progressBar->advance();
+                    continue;
+                }
+
                 // Track aggregates for summary
                 $uniqueObserverIds->push($entry->observer_id);
                 $uniqueCharacterIds->push($entry->character_id);
@@ -222,7 +237,7 @@ class ProcessMiningLedgerCommand extends Command
                     $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
                     $isIce = TypeIdRegistry::isIce($entry->type_id);
                     $isGas = TypeIdRegistry::isGas($entry->type_id);
-                    $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
+                    $isAbyssal = OreClassifier::isAbyssal($entry->type_id);
                     $isTriglavian = TypeIdRegistry::isTriglavianOre($entry->type_id);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
 
@@ -252,6 +267,16 @@ class ProcessMiningLedgerCommand extends Command
                         'processed_at' => Carbon::now(),
                     ];
 
+                    // Whether an issued invoice already covers this day. Mining
+                    // that turns up for it now was never on that bill and never
+                    // will be: the invoice is pinned, so charging for it would
+                    // mean re-opening something the member has settled. It is
+                    // recorded, but not taxed, and says why.
+                    $billed = InvoiceCoverage::coversRow(
+                        (int) $entry->character_id,
+                        Carbon::parse($entry->last_updated)->toDateString()
+                    );
+
                     // Unique key columns for updateOrCreate
                     $uniqueKey = [
                         'character_id' => $entry->character_id,
@@ -268,7 +293,47 @@ class ProcessMiningLedgerCommand extends Command
                         ->where('observer_id', $entry->observer_id)
                         ->first();
 
-                    if ($existing) {
+                    if ($existing && $billed) {
+                        // This row was on the bill, so the value and tax it was
+                        // billed at stay put, whatever --recalculate asks for.
+                        // Observer data is cumulative, though, and can still be
+                        // catching up: only what it has added since is recorded,
+                        // at today's value, with a note that it was not taxed.
+                        if ($entry->quantity > $existing->quantity) {
+                            $extraValues = $valuationService->calculateOreValue(
+                                $entry->type_id,
+                                (int) $entry->quantity - (int) $existing->quantity
+                            );
+                            $existing->update(LateMining::growth($existing, (int) $entry->quantity, $extraValues) + [
+                                'processed_at' => Carbon::now(),
+                            ]);
+                            $updated++;
+                            $lateArrivals++;
+                        } elseif ($recalculate) {
+                            $billedSkips++;
+                        } else {
+                            $skipped++;
+                        }
+                    } elseif ($existing) {
+                        // Mining from before the classification cutover keeps the
+                        // rate and categories it was given at the time. Quantity
+                        // and value still update, because observer data is
+                        // cumulative, but the rate they are multiplied by does
+                        // not move under a member retrospectively.
+                        if (ClassificationEpoch::existedBeforeCutover($existing->created_at)) {
+                            $frozenRate = (float) $existing->tax_rate;
+                            $data['tax_rate'] = $frozenRate;
+                            $data['tax_amount'] = $totalValue * ($frozenRate / 100);
+                            unset(
+                                $data['is_moon_ore'],
+                                $data['is_ice'],
+                                $data['is_gas'],
+                                $data['is_abyssal'],
+                                $data['is_triglavian'],
+                                $data['ore_category']
+                            );
+                        }
+
                         // Observer data is CUMULATIVE — quantity grows as miners mine more.
                         // Always update if quantity increased or if recalculating prices.
                         if ($recalculate || $entry->quantity > $existing->quantity) {
@@ -278,6 +343,14 @@ class ProcessMiningLedgerCommand extends Command
                             $skipped++;
                         }
                     } else {
+                        if ($billed) {
+                            $data['tax_rate'] = 0;
+                            $data['tax_amount'] = 0;
+                            $data['is_taxable'] = false;
+                            $data['notes'] = LateMining::NEW_ROW_NOTE;
+                            $lateArrivals++;
+                        }
+
                         // Cross-source dedup: adjust personal ESI record if it exists
                         // Character ESI combines ALL mining of a type in a system into one entry,
                         // so if a character mined at both a corp moon and non-corp moon,
@@ -287,6 +360,22 @@ class ProcessMiningLedgerCommand extends Command
                             ->where('type_id', $entry->type_id)
                             ->whereNull('observer_id')
                             ->first();
+
+                        // Dedup is a correction, and a correction to mining that
+                        // has already been billed is a change to the bill's
+                        // evidence. Leave those rows exactly as they were.
+                        if ($personalDupe && InvoiceCoverage::coversRow(
+                            (int) $personalDupe->character_id,
+                            $personalDupe->date
+                        )) {
+                            $billedSkips++;
+                            Log::info('Mining Manager: left a personal ledger row alone, an issued invoice covers it', [
+                                'character_id' => $personalDupe->character_id,
+                                'date' => (string) $personalDupe->date,
+                                'type_id' => $personalDupe->type_id,
+                            ]);
+                            $personalDupe = null;
+                        }
 
                         if ($personalDupe) {
                             $remainder = $personalDupe->quantity - $entry->quantity;
@@ -343,6 +432,8 @@ class ProcessMiningLedgerCommand extends Command
                 [
                     ['🆕 New entries created', $processed],
                     ['🔄 Existing entries updated', $updated],
+                    ['📌 Arrived after invoicing, not taxed', $lateArrivals],
+                    ['🔒 Left alone, already invoiced', $billedSkips],
                     ['⏭️  Entries skipped', $skipped],
                     ['❌ Errors', $errors],
                 ]
@@ -408,7 +499,7 @@ class ProcessMiningLedgerCommand extends Command
                         ->whereNull('observer_id')
                         ->where('is_moon_ore', true)
                         ->where('date', '>=', $cutoffDate->toDateString())
-                        ->chunk(500, function ($orphans) use ($valuationSvc, &$cleaned, &$adjusted) {
+                        ->chunk(500, function ($orphans) use ($valuationSvc, &$cleaned, &$adjusted, &$billedSkips) {
                             foreach ($orphans as $orphan) {
                                 // Sum all observer quantities for same character+date+type
                                 $observerQty = MiningLedger::where('character_id', $orphan->character_id)
@@ -418,6 +509,16 @@ class ProcessMiningLedgerCommand extends Command
                                     ->sum('quantity');
 
                                 if ($observerQty <= 0) {
+                                    continue;
+                                }
+
+                                if (InvoiceCoverage::coversRow((int) $orphan->character_id, $orphan->date)) {
+                                    $billedSkips++;
+                                    Log::info('Mining Manager: left an orphaned ledger row alone, an issued invoice covers it', [
+                                        'character_id' => $orphan->character_id,
+                                        'date' => (string) $orphan->date,
+                                        'type_id' => $orphan->type_id,
+                                    ]);
                                     continue;
                                 }
 
@@ -586,28 +687,7 @@ class ProcessMiningLedgerCommand extends Command
      */
     private function classifyOreCategory(int $typeId): string
     {
-        if (TypeIdRegistry::isMoonOre($typeId)) {
-            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
-            return $rarity ? 'moon_' . $rarity : 'moon';
-        }
-
-        if (TypeIdRegistry::isIce($typeId)) {
-            return 'ice';
-        }
-
-        if (TypeIdRegistry::isGas($typeId)) {
-            return 'gas';
-        }
-
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
-            return 'abyssal';
-        }
-
-        if (TypeIdRegistry::isTriglavianOre($typeId)) {
-            return 'triglavian';
-        }
-
-        return 'ore';
+        return OreClassifier::category($typeId);
     }
 
     /**

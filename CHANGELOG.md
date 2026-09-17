@@ -2,6 +2,739 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [2.0.4] — Unreleased — The Ecosystem Era: Payments and Balances
+
+Wallet payments, rebuilt. A member who sends their tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance. Members can pay ahead and see their balance, and directors can give it back.
+
+Around that: the personal mining import counts the whole day instead of its latest sitting, event ore, quest ore and Mutanite are left out, ore classification changes apply only from the update on, and nothing that has already been billed is recalculated. The Moon Planner can realign or ignore a pull set off-plan, Extraction Started names who started the extraction, and moon managers can open Moon Analytics.
+
+> Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its share. An invoice that has gone out is a record, not a calculation.
+
+**Backwards compatible.** Six new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
+
+### ✨ Diagnostics for payments, the personal import and moon notifications
+
+Master Test gains checks for the upfront payment setup (an empty keyword, a keyword that
+overlaps the tax code prefix or the refund keyword, or surplus with nowhere to go), refunds
+still waiting on a transfer after a week, the personal mining import falling behind inside
+its two-day window, moon mining notifications not reaching SeAT, Extraction Started alerts
+stuck past their wait, the ore classification cutover, event ore, quest ore or Mutanite
+turning up in the ledger, and mined ore types the registry does not recognise. Data Integrity flags account balances that cannot be right and refunds whose balance
+row is gone. Settings Health lists the feature switches, and Health Checks counts payment
+allocations, held balances, pending refunds and planned pulls.
+
+### ✨ Realign or ignore a moon scheduled off-plan
+
+A scheduling mismatch in the Moon Planner only offered Dismiss, which threw the plan away. The
+banner now has two choices instead. Realign moves the plan to the time the drill was actually
+set for in-game. Ignore keeps the plan's time, records that the pull went ahead off-plan, and
+clears the warning. Both need a reason, and both are saved to the planner history with who did
+it. Later planned pulls for the refinery stay where they are either way.
+
+A cancelled extraction also no longer raises a mismatch on the planner page, which matches the
+Off-Plan alert: that already left cancelled extractions out.
+
+### ✨ Moon managers can open Moon Analytics
+
+The Moon Manager permission now includes Moon Analytics, so whoever plans moon pulls can see
+how each moon and ore has been mined without being a director. Analytics appears in their
+sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
+Planner link in the sidebar also shows for directors now, who already had access to the page.
+
+### ✨ Find Moons on the Extraction Simulator
+
+A search across every scanned moon, above the simulator. Filter by region, constellation and
+system, security band, class (a moon's rarest ore), moon ore share, ores a moon must contain,
+composition rules such as R16 at least 20%, value over a chosen number of days as ore or refined
+value, and quality. Region, constellation and system can be picked in any order, and picking a
+system fills in the other two. Results show each moon's place, class, ores, value and quality,
+sorted by value, with the ones a refinery of yours still sits on marked Ours, which you can also
+show on their own or hide while you look for new ground. Simulate opens a moon in the simulator
+and Export CSV downloads every match. When you
+simulate a moon, Find Moons also lists up to three better scanned moons of the same class in the
+constellation or region you searched, or around the moon itself.
+
+It can list every valuable moon in a region at once, which is far stronger intel than looking
+moons up one at a time, so it is for directors, moon managers and a new **Moon Finder** permission
+you can grant on its own. Members keep the simulator.
+
+### ✨ Moon quality is rated within its class
+
+Quality was a fixed ISK amount per 28 days, so an R4 moon could barely rate above Poor and a
+rating moved whenever prices did. A moon is now ranked by its 28-day value against every scanned
+moon of the same class: Exceptional is the top 10%, Excellent the top 25%, Good the top half,
+Average the top 75% and Poor the rest, and the simulator shows where it sits, such as "top 38% of
+1,204 R4 moons". A class needs five scanned moons before its moons are rated.
+
+### ✨ The simulator prices from the cache
+
+A simulation asked your price provider for every ore each time someone pressed Simulate, which
+with Janice meant a live request per ore. It now reads the price cache that the scheduled refresh
+keeps, as Find Moons does, and names any ore that has no cached price yet. It also shows each ore's
+refined value at your refining efficiency, and the moon box searches by name instead of listing
+every scanned moon.
+
+### ✨ Extraction Started says who lit the drill
+
+The Discord and Slack alerts now name the character who started the extraction and, when that
+pilot is on SeAT, the main of their account, taken from the in-game notification for it.
+
+With Manager Core, that notification is what raises the alert in the first place, so the name
+is always there. Without it, the alert now waits for the notification to reach SeAT before it
+goes out. If it still has not arrived six hours after the extraction started, the alert goes
+out without the name, so a missing notification can delay the alert but never lose it.
+
+### 🐛 "Fractured by" was always blank
+
+The moon pages have a line for who fractured a chunk, but the plugin looked for that pilot in a
+format the in-game notification does not use, so it never found one. It now reads the fields
+the notification really carries, and shows the pilot with their main. Chunks already recorded
+as fractured keep what they had.
+
+### 🐛 Payment steps sent members to their own wallet
+
+My Taxes and the member guide in Help told members to pay from their wallet, and the wallet
+can't send ISK to a corporation. Both now say to right-click the corporation's name in game
+and choose "Give Money". My Taxes also says a payment can come from any character on the
+account, where the install allows it.
+
+### 🐛 Personal mining came in short
+
+SeAT does not keep a character's mining for a day as one total. It adds a row each time a
+fetch finds the day has grown, so a day mined in several sittings is several rows. The
+personal import took each row as the whole day, which left every such day recorded as only
+its most recent increase.
+
+The import now adds up every row for a day. On an install that taxes belt, ice or gas
+mining, expect bills from this update on to be higher than before, because they now include
+the whole day.
+
+The scheduled import still looks at the last two days of mining only, and that is
+deliberate. SeAT sometimes saves mining for a day a week or more after it happened, and
+taking that in would change days that are already invoiced and summarised. For the same
+reason nothing already in your ledger is recounted. Mining from the update onwards is
+counted in full; days before it keep the quantities they had, apart from the last two
+days, which the import has always kept refreshing.
+
+### ✨ A dry run for the personal mining import
+
+`mining-manager:import-character-mining --dry-run` goes down exactly the same path as a real
+import and prints the same table, but writes nothing: no new ledger rows, no updates, no daily
+summary rebuilds. It also says which dates any new entries would carry.
+
+It is the safe way to see what an import would do on a live install: what it would add, what it
+would update, and how much of the new mining falls in periods that are already invoiced and so
+would go in exempt.
+
+### 🐛 Generated test data used the wrong ore ids
+
+The Diagnostics page's test mining data generator paired most of its type ids with the wrong
+ores. Bistot IV-Grade went in as an R64 moon ore, two of the ids do not exist in EVE at all,
+and every row carried only a moon flag, so test data never classified the way real mining
+does. It now uses real ids from the registry and works out every flag and the ore category
+the same way the importers do.
+
+### ✨ Event ore, quest ore and Mutanite are left out entirely
+
+Ore that only exists through limited-time events, quests and mission content is no longer
+imported, taxed, valued or charted: Tyranite, Nephrite, Dense Moissanite, Amethystic
+Crystallite, Hiemal Tricarboxyl Condensate, Volatile Ice and Veldspar Isotope. It is not
+ongoing mining. Counting it put one-off spikes into the figures people use to judge normal
+activity, and on an install that taxes regular ore it ended up on members' bills.
+
+Mutanite is left out as well, all six types in its group: Amperum, Peregrinus, Conflagrati,
+Solis, Tenebraet and Admixti (`77118`, `77418` to `77421` and `77524`). Homefront Operations
+run permanently, so it is not event ore, but it cannot be reprocessed and a price source often
+has no price for it. The registry did not know it, so it went into the ledger as regular ore
+through the fallback, usually worth nothing. Reported in
+[#3](https://github.com/MattFalahe/Mining-Manager/issues/3).
+
+All of it is skipped when mining is imported and when mining events are tallied, so nothing
+further along ever sees it. Mining already in your ledger is left exactly as it was.
+
+A type the registry does not know at all is still imported, as regular ore, rather than
+skipped: the imports only read recent days, so mining skipped while the registry was behind
+could never be brought back. A new Master Test check, **Unrecognised ore types**, lists any
+such type mined in the last 30 days with its name from the SDE. How classification works,
+from import to invoice, is set out in the [README](README.md#how-ore-classification-works)
+and on a new Ore Classification page in Help.
+
+### 🧹 One ore classifier instead of six
+
+The same ordered "is it moon ore, ice, gas, abyssal or regular ore" decision existed in six
+places: both importers, the backfill command, the event aggregator, the ledger summaries and
+the tax calculator. They were copied from each other and had already drifted, one of them
+answering `moon_r4` for a moon ore with no rarity on file where the other five answered
+`moon`. Nothing that is actually mined reaches that case, which is why it went unseen, but a
+copy drifting quietly is how a real misclassification starts.
+
+There is now a single `OreClassifier` the six call into. No ore that can be mined changes
+category. `TypeIdRegistry` is untouched and stays a list of type ids.
+
+### ✨ Performance Charts can be sliced
+
+Overview and Performance Charts were showing much the same material: three of the five
+charts were the same queries in a different container. Charts now has a job Overview
+cannot do.
+
+Three filters, on top of the dates and corporation already there:
+
+**Source.** All mining, my moons only, all moon ore, or other moons only. My moons reads
+the corporation observer list, so it means what it says rather than guessing from the ore.
+
+**Ore.** Regular ore, moon ore, ice, gas, abyssal, triglavian.
+
+**Player.** Picked by main character and applied across every character that player mines
+on, using the same account resolution the payment matcher uses. One question, one answer,
+rather than two implementations that drift.
+
+The export button carries the same slice, so a downloaded file matches the page it came
+from.
+
+Two things the page tells you rather than leaving you to find out. **Other moons is
+inferred**, not recorded: it means moon ore that none of your observers saw, which usually
+means somebody else's moon and occasionally means one of yours with no observer. And any
+filter that reads ore classification says so when it does, because mining from before the
+classification cutover carries the categories it was billed on. Those older rows
+under-report the ore families CCP added after the original registry was written, and that
+history was left alone on purpose so no past bill can change.
+
+Filtering that finds nothing says so, and says why, instead of showing five empty charts.
+
+Under the surface, the filter is one object that owns both the query it builds and the
+cache key that describes it. Every figure on this page is cached for fifteen minutes on a
+hand-built key, so a filter added to a query but forgotten in a key would have served
+another slice's numbers: no error, no empty result, just plausible wrong totals. Keeping
+both halves in one place is what stops that, rather than remembering to.
+
+### 🐛 Allow Data Export decided nothing
+
+The setting had never worked. Two of the views reading it were served by a controller that
+did not define the key, two more by a controller that did not pass the flags at all, and
+every one of them fell back to its own default and left the button on. A director could
+switch exporting off and watch nothing change.
+
+It works now, and it means what it says: **off is off for everyone**, directors and admins
+included. It covers mining ledger, tax records, personal exports of both, analytics, theft
+incidents, report downloads and the Extraction Simulator's exports. Anyone who turns it off can
+turn it back on, since only an
+admin can reach the setting.
+
+The check is on the endpoints, not only on the buttons. An export is a GET with a query
+string, so anyone who had used one once still had a working link; hiding the button would
+have looked like a fix without being one. Follow an old link with the setting off and you
+get told it is off, rather than an empty file.
+
+Your settings backup is deliberately outside this. Exporting your own configuration is not
+the same act as taking mining and tax records out of the plugin, and an admin locked out of
+their own backup by a data setting would be a worse surprise than the bug being fixed.
+
+### 🐛 Tax Overview opened in what looked like no order at all
+
+It was ordered by amount owed, descending, as text. Sorted that way 87,534,100 comes above
+796,982,374, which is why the page looked shuffled. Every money column, every date column
+and the period column now carry their own sort key, so they sort as money and dates rather
+than as the strings they are printed as.
+
+The page now opens on what needs chasing: overdue first, then unpaid, then partly paid,
+then settled, and newest period first inside each group. A part-paid invoice that has gone
+past its due date sorts with the overdue ones, which is what the red badge already sitting
+next to it says.
+
+The same string ordering was making Tax Codes list periods out of order. Fixed there too.
+
+### 🐛 Tax History put the first half of a month above the second
+
+Both halves of a fortnightly month carry the same month value, so ordering by that left
+them tied, and the tie fell to whatever the database returned first. "Jul 1-14" sat above
+"Jul 15-31" even though the second half was the later period and the more recent payment.
+Ordering is now on the period's own start date, in My Taxes, on the overview, and in every
+export that lists tax records.
+
+### ✨ Closing off a tax code that was left behind
+
+A code is marked used by the payment that quotes it. A payment assigned by hand quotes
+nothing, so its invoice went paid while the code stayed active and eventually expired. The
+result was an expired code against a settled invoice, with nothing on the page able to
+resolve it.
+
+Admins get two actions on the Tax Codes tab. **Mark used** closes the code off, and is
+offered only where the invoice really is settled: doing it while money is still owed would
+take away the reference the member is meant to quote. **Delete** removes a code that should
+not exist at all, which the plugin could already do but never showed a button for.
+
+### ✨ Calculate Taxes opens grouped by account
+
+What is being worked out on that page is a bill per player. The flat list is the working
+underneath it, and is still one click away.
+
+### 🧹 Calculate Taxes loses Regenerate Codes
+
+The button ran exactly what Recalculate runs, and its name promised new payment codes,
+which an issued invoice never gets: the code a member already holds stays the code for that
+invoice. Recalculate stays. Each button on the page now explains itself on hover, and Help no
+longer says Recalculate re-prices mining, which it never did.
+
+### 🧹 Sidebar icon
+
+Mining Manager's sidebar icon is now the gem, the icon the plugin map in Manager Core uses.
+
+### 🐛 Help offered a --dry-run for detect-theft
+
+The Theft Detection section suggested a `--dry-run` flag that the command has never had, so
+following the tip ended in an error. It now says every run records incidents, and points at the
+Theft Detection tab on the Diagnostic page for a look that records nothing.
+
+### 🐛 Three buttons showed their own translation key
+
+"Generating", "Regenerating" and "Errors" were referenced but never defined, so the raw key
+appeared on screen in place of the word.
+
+### 🐛 The buttons on Wallet Verification did nothing
+
+Four separate faults, stacked:
+
+- **`toastr` was never loaded.** Every page in this plugin reports through `toastr`, SeAT's layout does not ship it, and neither did we, despite the library sitting unused in our own assets. `toastr.info()` on the first line of Sync and Auto-Match threw before the request was even sent. In Verify and Dismiss it threw in the success handler, so `location.reload()` never ran and a working action looked dead. Now loaded via a shared partial on all 20 pages that use it, backed by a fallback that stands in if the asset ever fails to load, so that failure mode cannot silently kill every button again.
+- **Verify could never succeed.** The page lists exactly the donations where no tax code was found, and Verify re-ran the same code-based matcher that had already rejected them. It also looked the transaction up in `character_wallet_journals` while the page reads `corporation_wallet_journals`, so for any payer without a personal wallet token it could not find the row at all. Verification now reads the corporation journal throughout.
+- **Sync Wallet Journal returned a 500 every time.** It called `WalletTransferService::verifyPayment()`, which does not exist. PHP raised an `Error`, which the surrounding `catch (\Exception)` does not catch.
+- **Failures were reported as success.** A batch where every row failed still answered `200` with "0 payments verified", so the page showed a green toast and reloaded unchanged. Failures now answer as failures and say what is actually wrong.
+
+### 🐛 Partial payments could be credited twice
+
+`mining-manager:verify-payments` guarded against re-crediting by checking `mining_taxes.transaction_id`, a single column overwritten on every payment. An invoice settled in two instalments inside the lookback window lost the reference to the earlier one, so the next run credited it again and the invoice reached "paid" while still short. The command now claims every transaction in `mining_manager_processed_transactions` before touching an invoice, the same guard the rest of the codebase already used.
+
+### 🐛 Tax codes in the reason field were invisible to two of three matchers
+
+EVE puts the note a player types into `reason`; `description` is CCP's generated sentence and never contains the code. The scheduled command read both, but `WalletTransferService::processTransaction()` and the wallet journal listener read only `description`. All matching now reads both fields.
+
+### 🗑️ Removed: a listener that never ran
+
+`ProcessWalletJournalListener` was bound to `Seat\Eveapi\Events\CharacterWalletJournalUpdated`. SeAT has no such event, so it never fired once since it was written. It also read the character wallet journal, the wrong side of a donation. Removed rather than repointed. The scheduled run is and always was the real matching engine.
+
+### ✨ Assign a payment to an invoice
+
+- **Assign to invoice** on every pending row. Shows who paid and how much, lists that player's open invoices (alts included when the accept-alts setting is on), and credits the payment where you point it.
+- **Remainder cascades** onto the next-oldest unpaid invoice for that player, and keeps going until the money runs out. One transfer can settle three months. Toggle in Settings → General → Payment Settings.
+- **Surplus is held as credit** against the paying character and comes off their next invoice automatically when it is calculated. Listed on the Wallet Verification page. Toggle alongside the cascade setting.
+- **Undo**, which reopens the invoices and returns the transfer to the pending queue. Refused when part of the surplus has already gone somewhere else, rather than silently reopening a settled invoice.
+- Status badges now say *why* a payment is still waiting: no tax code, unknown code, not yet applied, or before the cutover.
+- The "Mismatched" tile used to repeat the pending count. It now means a payment carrying a code that matches no invoice.
+
+### 🐛 Partly paid invoices were never chased, and reminders quoted the wrong number
+
+Two faults in the same family, both older than the allocation work and both made worse by it.
+
+`SendTaxRemindersCommand` and `GenerateTaxInvoicesCommand` selected only `unpaid` and `overdue`. A **partly** settled invoice matched neither, so it was never invoiced for the remainder and never reminded about. It simply went quiet. That was survivable when partial payments barely worked; now that instalments, cascades and account balance all produce them, a partly paid invoice is a normal state.
+
+Where an amount was quoted, it summed `amount_owed` and ignored `amount_paid`, so a member who had paid half would have been chased for the whole invoice. Fixed in all four places that ask someone for money: the scheduled reminder, the invoice generator, the single Send Reminder button and the bulk one. Each now asks for the outstanding balance and skips anything with nothing left to pay.
+
+Payment codes were caught by the same filters and so had the same gap: an invoice that was already part paid got no code, which is the one thing a member needs in order to pay the rest. Codes are now minted when the tax record is created, before anything can change its status. A code identifies an invoice; whether anything is still owed on it is a separate question, and not one that should decide whether it gets an identity at all.
+
+### ✨ Tax reminders account for balance
+
+A reminder or overdue notice that follows a partial drawdown now names how much of the period was already met from the member's balance, on Discord, Slack and EVE mail. Without it the figure is smaller than the invoice they remember, with nothing to say whether that is a discount, a mistake, or their own money.
+
+### ✨ Pay ahead, and a Balances tab to see it
+
+**Upfront payments.** A standing keyword in the transfer reason (default `MM-UPFRONT`, configurable, off by default under Settings → Features) lets a member pay before being invoiced. Unlike a tax code it never expires and is the same for everyone, so it can live in the corp MOTD. The payment settles whatever they already owe, oldest invoice first, and the rest becomes account balance. A tax code still wins if both appear.
+
+Both the keyword and the on/off switch are global rather than per corporation, and are labelled as such in Settings. There is one tax program reading one wallet, and the matcher runs as a single corporation (the configured moon owner), so anything saved against another corporation would never be consulted. The keyword cannot overlap the tax code prefix in either direction, since both are read from the same field and an overlap would make a payment readable as either.
+
+**Balances tab.** One page, two audiences, the way the rest of the tax section works. A director sees everyone holding a balance, the corporation-wide total, and how much has already been applied to invoices; a member sees their own, alt-aware. Every balance lists what it has been spent on, linked to the invoices. The tab hides itself entirely until someone holds a balance or upfront payments are switched on. While upfront payments are on, it also shows members how to pay ahead: which corporation to pay and how, the keyword with a copy button, and what happens to the money.
+
+### 🐛 Partly paid invoices could dodge the overdue treatment forever
+
+A part payment moves an invoice to `partial`, and `updateOverdueTaxes()` only promotes `unpaid`, so it could never become overdue however late it got. A token payment bought permanent immunity from escalation.
+
+`MiningTax::isOverdue()` has always been date-based and has always been right about this; nothing was asking it. Reminders now do, gated on `payment.overdue_paid_threshold_pct` (default 95) so a genuine near-miss from price drift keeps the gentler wording while a token payment does not. The tax list shows an Overdue badge next to Partial, because showing only "Partial" made the page look calm about something the reminder was already chasing.
+
+### ✨ A weekly digest of who still owes
+
+Directors had no view of the whole picture, so an invoice missed by the per-member notifications went unnoticed. The digest names each member, what is left to pay, the percentage already covered and how many invoices it spans, largest debt first.
+
+It follows the chain rather than a fixed weekday: invoices go out, the due date passes, then the first digest, then every 7 days until everything clears, at which point it goes quiet and resets. Per-webhook opt-in, off by default (migration `000024`), corp-scoped so it never reaches the members it names.
+
+Tax Overview also gains an **Outstanding (not fully paid)** filter covering unpaid, overdue and partial together, which is where the digest links to.
+
+### ✨ Account balance is visible to the person who owns it
+
+A member who overpays should be able to see that the surplus was kept rather than swallowed, and that their next invoice is already covered.
+
+**My Taxes** shows an Account Balance panel, but only when there is a balance to show. It is alt-aware, so a surplus sitting on whichever character sent the ISK is visible against the account it belongs to.
+
+**An invoice that credit paid for says so.** The detail page carries a callout naming the amount, or saying the invoice was settled in full from balance with nothing to pay. The invoice's own notes record it too, so it reaches the exports and the receipt rather than living only in the allocation rows.
+
+The director-side card on Wallet Verification shows a total once more than one character is holding a balance.
+
+### ✨ Payments received
+
+The invoice detail page has a **Payments received** table listing every payment credited to it, with amount, date, origin (matched by code, recorded by hand, rolled over, drawn from credit) and notes. `mining_taxes.transaction_id` only ever held the most recent payment, so instalments were invisible.
+
+### ✨ Older payments stay out of the queue
+
+A payment from before the cutover that carries a valid tax code is withheld from the pending list. The old pipeline recorded only the most recent payment per invoice, so for anything settled in instalments the earlier payments cannot be proven to have been credited even though they were. Left visible, they invite a director to assign a payment that has already been applied, and a manual assignment is deliberate so the cutover guard does not stop it.
+
+Payments from before the cutover with **no** tax code stay visible, because nothing could ever have matched those automatically and they are exactly the ones still needing a human. Same for a code matching no invoice at all.
+
+The page says how many are hidden and why, with a **Show them anyway** toggle. Revealed rows are styled as a warning, and the assign panel repeats the caution before you commit.
+
+### ✨ Verification cutover
+
+The migration stamps `payment.dedup_epoch`. Automatic matching ignores transfers dated before it, so historical records are left exactly as they stand and are never re-examined or corrected. Everything from that point forward is claimed and reconcilable. Assigning an older transfer by hand still works; the guard only applies to automatic matching. `--ignore-cutover` opts a manual run out, and `--reset-month` sets it automatically.
+
+### ✨ Payment reconciliation in Diagnostics
+
+The tax pipeline check gains **Step 4b: Payment Reconciliation**. For every invoice settled since the cutover it checks that `amount_paid` equals the sum of the payments recorded against it, and flags transaction claims that produced no allocation. Scoped to post-cutover data by design: older records were credited by a pipeline that kept no breakdown and cannot be reconciled.
+
+### 🧹 Consolidation
+
+Matching and crediting lived in four places that disagreed with each other. `PaymentAllocationService` is now the only thing that credits an invoice; `WalletTransferService` reads and matches; the command schedules and reports. The alt-ownership lookup, previously two hand-synced copies, is a single trait.
+
+Mark as Paid, bulk Mark as Paid and the status dropdown now record a payment row as well, so hand-settled invoices reconcile like any other. Bulk Mark as Paid also marks tax codes used, which it previously skipped.
+
+### ✨ Analytics opens on your own corporation
+
+Every analytics page defaulted to All Corporations, mixing every corp on the install into the charts and totals. That is rarely the question anyone is asking, and on a shared SeAT it quietly shows a director other people's mining before they have chosen to look at it.
+
+With no corporation in the query, the filter now defaults to the viewer's own corporation, and the dropdown lists it first. All Corporations stays as a deliberate second choice rather than the accident you land on.
+
+Two things it is careful about: an explicitly empty `corporation_id` means the viewer chose All Corporations and is honoured, so the choice survives every submit; and the default only applies when their corporation is actually one of the dropdown's options, since filtering to a corporation the select cannot show would leave the page reading "All Corporations" while quietly filtering to something else.
+
+### 🐛 Moon Analytics ignored the month you picked
+
+The filter form carried two inputs named `month`: the visible picker, and a hidden one inside the extraction-mode block added to "keep month in sync". Hiding an element with CSS does not stop it submitting, so both went into the query string on every submit, and PHP keeps the last duplicate. The last one was the hidden field, still holding the month the page had been rendered with, so choosing a new month submitted it and then overwrote it with the old one. The page always came back where it started.
+
+The hidden field was never needed: the visible picker submits from inside its own hidden div in extraction mode, which is what carries the month across. Removed, with a note on the toggle function so nobody re-adds it.
+
+### 🐛 The three Moon Planner notifications posted to Discord with no detail
+
+`formatFieldsForDiscord()` never learned about `extraction_started`, `next_extraction_planned` or `schedule_mismatch`. They fell through to the empty default, so the embed carried a title, a description and a footer and nothing else. The "Next Extraction Planned" ping said the next pull was "planned below" with nothing below it: no refinery, no moon, no date.
+
+Everything else about these three was wired up when they shipped, which is why it went unnoticed: Slack fields, EVE-mail bodies, embed colours, titles and ping text all handled them. Only the Discord field builder was missed. All three now carry the same detail their Slack counterparts already did, and a check of all 23 notification types confirms `custom` is the only one left without fields, which is correct for a free-form message.
+
+Timestamps also pick up an EVE-time label, added only where a sender has not already added one. `detectAndNotifyMismatches()` appends it itself while the other three callers do not, so a shared suffix would have rendered "14:00 EVE EVE" on the mismatch embed.
+
+
+### ✨ Every ore CCP has shipped since the registry was written
+
+`TypeIdRegistry` carried 401 type IDs and now carries 539. What was missing:
+
+- **IV-Grade for all fifteen classic ores.** The registry held base, II-Grade and III-Grade for Veldspar through Spodumain, and IV-Grade for none of them. They were being classified by a fallthrough rather than by rule.
+- **The Exordium 0-Grade tier**: half-yield Veldspar and Scordite for the starter region, plus Pyroxeres 0-Grade.
+- **Four X-Grade families** (Raspite, Polycrase, Moissanite, Kangite) and their compressed forms.
+- **Prismaticite**, from phased asteroid fields. The SDE files it under Material rather than Asteroid, which is why it had gone unnoticed.
+- **Nine gas colours** across the Cytoserocin and Mykoserocin sets, plus 27 compressed gas types and Fullerite-C32.
+- **Base Rakovene and Bezdnacine**, and the compressed forms of both, where only Talassonite's had been present.
+- 63 batch-compressed variants, recognised by `isCompressedOre()` but deliberately kept out of the priced set, since nothing mines them.
+
+CCP has also renamed every ore variant to a numeric scheme: what was Fragrant Nocxite is now Nocxite II-Grade, Thick Blue Ice is Blue Ice IV-Grade, and so on across the whole game. Type IDs never moved, so nothing was mis-taxed, but the comments in the registry described ore names that no longer exist and have been brought up to date.
+
+That rename is also why the reprocessing tab appeared broken. It resolves pasted ore names against `invTypes` with an exact match, so a member pasting a current in-game name against an out-of-date SDE had their row silently dropped. Updating the SDE fixes it; no code change was needed.
+
+### ✨ New ore categories apply from this version forward
+
+Recognising all of the above is an improvement, but applying it backwards would change what people owe for mining they finished weeks ago. On an install that taxes gas, the nine newly recognised gas types would move out of an untaxed bucket and into a taxed one, and historical bills would grow.
+
+So this release stamps a cutover. Mining that was already in the ledger keeps the rate and categories it was billed on, whatever recalculates it later. Mining from here is classified properly.
+
+Two paths would otherwise have applied it retroactively without anybody running a command: `mining-manager:update-ledger-prices` re-derives the rate from the registry on its nightly run, and `mining-manager:backfill-ore-types` re-stamps flags wholesale. Both now stop at the cutover. `backfill-ore-types` gained `--scope` (`epoch` by default, `all` to go past the cutover), a `--dry-run`, and a report of every category movement, since each one is a rate change.
+
+The cutover keys on when a row entered the ledger, not when the ore was mined, so importing older mining after upgrading still classifies and prices it correctly.
+
+### 🐛 An issued invoice could be rewritten
+
+`recalculateTax()` and the recalculation path inside `calculateTaxes()` both overwrote `amount_owed` with no check for whether the invoice had already gone out. Running `mining-manager:calculate-taxes --recalculate` could therefore change the total on an invoice a member had already been sent, and already paid.
+
+Both now leave an invoice alone once a payment code has been generated for it, money has arrived against it, or its status says paid or partial. The recalculated figure is logged alongside the stored one rather than replacing it.
+
+The same protection extends to the ledger underneath. `update-ledger-prices` was re-pricing rows inside periods that had already been invoiced. For a fortnightly period closing on the 3rd, the 01:00 run on the 4th would re-price the 3rd's mining after the bill had gone out. It now skips any row covered by an invoice that has been issued. Bills still being worked out are untouched by this and continue to re-price as before.
+
+### ✨ Mining that turns up after the bill is marked, not quietly charged
+
+Corporation observer data does not always arrive before the period it belongs to is
+invoiced. When it landed late, the day's summary was rebuilt from scratch and started
+reporting more tax than the member had been billed, while the invoice itself stayed put.
+Nothing said the two had parted company.
+
+Late mining is now exempt and says so. The row keeps its real quantity and value, carries
+a zero rate, and holds a note explaining that it arrived after the period was invoiced.
+The entry detail page shows that note beside the zero, because a bare 0 ISK invites
+exactly the question it fails to answer.
+
+Observer data can also still be catching up on a row that was already on the bill. Then
+only the extra is added, at today's value, with a note that part of the row was not taxed.
+The value and the tax the row was billed at stay exactly as they were.
+
+Daily summaries for an invoiced period keep the tax figure they were billed at, while
+volume and value continue to refresh. Freezing the whole row would have left the day's
+tonnage looking wrong, which is its own kind of confusion; this way the numbers stay
+honest and the money stays settled.
+
+The ISK on genuinely late mining is not recovered. Re-opening a settled invoice, or
+chasing somebody for more on a bill they have already paid, is worse.
+
+Note for anyone reading the schema: `is_finalized` plays no part in this. It is derived
+from the calendar month, so on a fortnightly cycle a period can be invoiced and paid a
+fortnight before that flag turns over. The test used here reads the invoice periods
+themselves and does not care how long they are.
+
+### ✨ Give held balance back
+
+Somebody meant to pay 5b and sent 50b. Somebody is leaving and the corporation should not
+keep money that is theirs. Sending the ISK back in game is not enough on its own, because
+the plugin would carry on insisting they still had a balance.
+
+The Balances tab has a **Refund** action on each held balance, for directors. Full or
+partial, with a reason, which is required because it is the only record of why. Leaving
+the amount empty refunds whatever is left, which is what somebody leaving the corp wants
+without retyping a figure they would only get wrong.
+
+**Nothing sends ISK.** EVE has no API for moving money, so a director makes the transfer
+in game. What the plugin does is take the amount off the balance the moment the refund is
+recorded, so what a member is owed is right straight away, and then watch the corporation
+wallet for the ISK actually leaving. When an outgoing transfer to that character for that
+amount turns up, the refund is marked as sent and the transaction is attached to it.
+
+Until that happens the refund reads **Awaiting transfer**, and the total of everything
+waiting sits at the top of the page. That number is the one thing there that is a promise
+rather than a fact: money agreed to be returned and not yet gone.
+
+A refund is recognised by a keyword in the transfer reason, `MM-REFUND` by default and
+configurable next to the upfront one. The dialog shows the keyword to copy before you go
+and send the ISK. It is not decoration: an SRP payout, a ship reimbursement and a refund
+are all the same kind of wallet entry to the same person, and without something to tell
+them apart a reimbursement that happened to match a refund would take a real debt off the
+books. The keyword cannot overlap the tax code prefix or the upfront keyword, since all
+three are read from the same field.
+
+Refunds are looked for across every wallet division, since tax arrives in a configured one
+but a refund leaves from whichever division had the ISK. If two transfers both fit,
+neither is chosen and the refund stays pending: marking money returned when it might not
+have been is worse than a person looking at it.
+
+For the transfers that will never match, there is **Mark as sent**. A keyword left off, a
+payment by contract, ISK out of a wallet the plugin cannot read: none of those will ever
+be found, and without a way to close them the refund sits pending for good and the
+outstanding total quietly stops meaning anything. Marking one sent asks for a short note
+saying why, and the row afterwards reads **Sent (by hand)** rather than **Sent**. That is
+deliberate. A matched refund is backed by a transaction anybody can go and look at; a
+hand-confirmed one is a director's word, and the page should not present the two as the
+same thing. **Undo** puts it back on the pending list if the wrong row was closed, which
+is easy enough to do when somebody has two refunds the same size. Refunds matched to a
+real transfer cannot be undone: there is nothing to correct, and the next run would only
+match them again.
+
+One consequence worth knowing. A refund closed by hand claims no transaction, so if the
+transfer that actually paid it turns up later carrying the keyword, that transfer is left
+alone rather than handed to another refund of the same size for the same person. Those
+refunds stay pending and the run says so.
+
+A refund can be sent to **any character on that player's account**, not only the one whose
+balance it came off. That balance often sits on a mining alt while the player only logs in
+on their main, and requiring the ISK back to the alt would have left perfectly good refunds
+pending forever. This is the same **Treat a player's characters as one account** setting
+that tax and upfront payments already read, so an install where each character really is
+its own account stays strict on all three. When the refund is confirmed against a character
+other than the one holding the balance, both ids are recorded.
+
+The setting's description now says what it actually governs. It described tax payments
+only, which was true when it was written and has not been for a while: upfront payments
+have always read it too, and refunds now do.
+
+### ✨ Switching upfront payments off leaves held balances alone
+
+Turning the feature off stops members adding to a balance with the keyword. It does not
+touch balances already held: they stay spendable and keep coming off invoices, because
+the money is the member's and turning off a feature is not a reason to keep it.
+
+Two routes deliberately stay open with the feature off, and both say so. **Hold surplus
+as credit** is a separate switch, so somebody can still build a balance by overpaying an
+invoice; the setting spells that out and points at the other switch if you want the route
+closed. And a **director can still bank a payment by hand**, because a codeless transfer
+from somebody who owes nothing has nowhere else to go: the dialog carries a warning that
+doing so overrides a setting somebody chose.
+
+### ✨ Assign a codeless payment to a player's balance
+
+A transfer with no tax code from somebody who owes nothing has no invoice to point at,
+and leaving it in the queue or dismissing it would both be untrue, because the money did
+arrive.
+
+The dropdown offers **Hold as account balance** alongside the invoices, and picks it
+automatically when the player has nothing outstanding. It behaves exactly as a payment
+using the upfront keyword does, because it is the same thing arriving by a different
+route: it settles anything they already owe, oldest invoice first, and holds the rest
+against future invoices.
+
+The button says which of the two it will do, and the remainder option disappears when
+holding as balance, since that is what holding as balance already means.
+
+### 🐛 Nightly re-pricing ignored which ore types you actually tax
+
+Three places work out a tax rate. Import asks the tax selector which categories are
+charged. The daily summaries ask as well, and those are what invoices are built from.
+`getTaxRateForOre()`, which the nightly `mining-manager:update-ledger-prices` uses,
+never asked at all: it looked up the configured rate for the category and returned it,
+so on an install that taxes no ore it still answered 10%.
+
+Invoices were never affected, because they come from the daily summaries. What could be
+wrong was `mining_ledger.tax_rate` and `tax_amount` on recent rows, and those are shown
+on the entry detail page - so a member could open a row and read a tax figure for
+mining that is not taxed and appears on no bill.
+
+It now asks the same question the other two do, through the same helper, and is handed
+the ledger row so the "only corp moon ore" rule can be evaluated properly rather than
+falling back. All three paths were then checked against a real settings profile and
+agree on every ore category.
+
+Also aligned a stray default: the summaries treated an absent gas setting as taxed while
+everything else treated it as untaxed. Unreachable, since the selector always supplies
+every key, but two opposite defaults for one setting read as disagreement.
+
+### 🐛 Scheduled price refreshes skipped every other run
+
+With the SeAT, Janice or Fuzzwork provider, `mining-manager:cache-prices` left alone any
+price still inside the cache duration. By default it runs every four hours against a
+four-hour duration, so each run met the prices from the run before a few seconds short
+of that and skipped them. Prices were really refreshed every eight hours and read as out
+of date for half of that time, which is what raised the stale price warning in the
+ledger import and on the reprocessing page.
+
+A run now refreshes any price older than half the cache duration, so a scheduled run
+always refreshes and a manual run straight after one still skips what was just fetched.
+`--force` still refreshes everything. The Cache Duration help on the Pricing tab now says
+how the setting and the schedule fit together. The Manager Core provider was not
+affected: it copies every price on every run.
+
+### ✨ The reprocessing calculator says what it did not recognise
+
+An ore name the calculator could not resolve was dropped without a word. The row
+simply left the totals, which looks exactly like the ore being worthless, and that
+ambiguity is why a stale static-data file took two reports and a database dig to
+identify rather than five minutes.
+
+Names that cannot be placed are now listed above the results, with the totals
+explicitly described as excluding them, and a note that a name which looks right in
+game usually means the local static data is behind.
+
+### 🐛 Settings export could not represent a multi-corporation install
+
+The export keyed its map on the setting name alone and threw `corporation_id`
+away. Most keys exist several times over, once globally and once for each
+configured corporation, so they collapsed into one entry each and whichever row
+the database returned last silently won. Import then wrote everything back into a
+single context. Webhooks were never in the file at all, because they live in their
+own table and the export only read the settings one.
+
+Settings now export as rows that each carry their own corporation, and import
+writes each row into the context it names. Files produced by the old export still
+import exactly as before, treated as global, and say so afterwards.
+
+Webhooks can now travel too, but only when asked for: a webhook URL is a
+credential, and anyone holding the file can post to that channel. The checkbox
+says as much, and delivery statistics stay behind with the install that earned
+them. Re-importing matches on name and corporation, so it updates rather than
+piling up duplicates.
+
+### ✨ Six commands that could run twice at once now hold a lock
+
+`backfill-ore-types`, `backfill-event-records`, `backfill-extraction-history`,
+`backfill-extraction-notifications`, `restore-data` and `initialize` all write, and
+none of them checked whether another copy was already running. Two at once would
+duplicate work at best and interleave writes to the same rows at worst. Every other
+writing command in the plugin already took a lock; these now do too, released in a
+`finally` so a failure cannot leave one stuck.
+
+### ✨ --all-unpriced says how much it is about to touch
+
+The flag drops the date window entirely. Invoiced periods are excluded from
+re-pricing now, so it can no longer disturb a bill, but it can still rewrite value
+and rate across all of history in one go. It reports the count and asks first.
+
+### 🐛 restore-data could leave constraint checks switched off
+
+The restore disables foreign key checks and turned them back on at the end, but an
+exception on the way there skipped that line and left the connection accepting rows
+it should have rejected. It is a `finally` now.
+
+### 🐛 Moon Planner: the schedule-mismatch alert could never finish
+
+Every mismatch warning failed with `Unknown column 'moon_name'` and the notification
+never went out. `detectAndNotifyMismatches()` calls `loadDisplayNames()` so the alert
+can name the moon and the refinery, and that helper attaches `moon_name` and
+`structure_name` to the model. Neither is a real column. Saving the "already warned"
+latch through the model then tried to write them too, because Eloquent saves every
+dirty attribute rather than only the one it was handed.
+
+The latch is now written through the query builder, which touches one column and
+cannot pick up display fields. `loadDisplayNames()` carries a note about the trap,
+since the same shape would break any future caller that saves a model it has been
+through.
+
+### ✨ Resetting a month of payments now asks first
+
+`mining-manager:verify-payments --reset-month=YYYY-MM` un-does payment matching for a
+whole month: invoices go back to unpaid, the ISK recorded against them is cleared,
+allocation rows are deleted, released transactions become claimable again, and payment
+codes members are already holding go live a second time. That is a reasonable thing to
+want after a bad match, and a very unreasonable thing to do to the wrong month by
+accident, which is what a bare `YYYY-MM` and no confirmation allowed.
+
+It now shows what is at stake before it does any of it: how many invoices are in scope,
+how many are actually paid or partial, the ISK about to be cleared, the allocation rows
+and payment codes involved, and a list of the invoices themselves. Then it asks.
+
+`--dry-run` prints all of that and stops. `--force` skips the prompt for scripted use.
+With neither, a non-interactive run cancels rather than proceeding on a default.
+
+### 🐛 Dedup could rewrite mining that had already been billed
+
+Cross-source dedup exists because the character endpoint and the observer endpoint
+both report the same mining, so one of the two records has to give way. It ran on
+anything up to thirty days old and took no interest in whether an invoice already
+covered it. A late-arriving observer record could therefore delete or shrink a
+ledger row sitting behind an invoice a member had been sent and paid, leaving the
+bill with nothing to stand on.
+
+Three places did this: the import-time dedup and the orphan sweep in
+`mining-manager:process-ledger`, and the orphan sweep in
+`mining-manager:update-daily-summaries`. All three now leave covered rows exactly as
+they are and log each one they skip, with `process-ledger` reporting the count at the
+end of its run.
+
+The rule for what counts as issued now lives in one place rather than being written
+out slightly differently in each caller, and `mining-manager:update-ledger-prices`
+was moved onto it too. It treats the account as a whole, since an invoice is issued
+under the player's main and covers what their alts mined as well.
+
+### 🐛 The price coverage report showed impossible percentages
+
+`mining-manager:diagnose-prices --show-coverage` carried its own hardcoded counts, which had drifted from the registry, so it reported Gas as 16 of 12 items and Regular Ores as 46 of 45. The denominators now come from the registry itself and cannot drift again.
+
+### 🐛 Moon Planner: saving a planned pull threw a database error
+
+The planner resolved a refinery's moon by reading a `moon_id` column off `corporation_structures`. SeAT has no such column there. Saving a planned pull put that read in the SELECT list, so it failed outright with `SQLSTATE[42S22] Unknown column 'moon_id'` and the pull was never stored.
+
+The same wrong assumption elsewhere failed quietly instead. Auto-fill and the refinery sidebar reached for `$refinery->moon_id` on an already-loaded model, where Eloquent returns null for an attribute it never selected rather than complaining. So every auto-filled plan was stored with no moon, the calendar showed **Unknown Moon** on every entry, and the refinery panel showed no moon names at all.
+
+A refinery is anchored on exactly one moon and cannot move, so the moon is recoverable from any extraction ever seen for that structure. `MoonPlannerService` now resolves it from our live extractions, then our archived history, then SeAT's own extraction table, memoised per request and resolved in bulk rather than per refinery. `refineriesForCorporation()` attaches it, so every caller reading `$refinery->moon_id` gets a real answer. Moving a plan also fills in a moon that was not known when it was created.
+
+Migration `000023` backfills the plans and audit rows already saved without one. Data only, idempotent, and it leaves a refinery nothing has ever observed as null, which the column allows.
+
+Because the browser never sent a `moon_id` in the first place, that fallback branch was taken on every single save: **placing a pull by hand has never worked**, on any refinery, on any day. Auto-fill was the only way to get a plan onto the calendar. Saving also now checks the structure is a refinery this corporation owns, instead of accepting any integer and producing a plan captioned "Structure 12345" that nothing could ever reconcile.
+
+### Schema
+
+- New tables `mining_manager_payment_allocations` and `mining_manager_payment_credits` (`000022`).
+- `000022` also backfills `mining_manager_processed_transactions` from the transaction ids already recorded on invoices and tax codes, so the new guard recognises what the old pipeline credited, and stamps the payment cutover.
+- `000023` fills in the moon behind each existing extraction plan, so plans made before the planner could resolve one stop showing an unknown moon.
+- `000024` adds the webhook column for the outstanding digest.
+- `000025` stamps the ore classification cutover.
+- `000026` adds `mining_manager_payment_refunds`.
+- `000027` adds who confirmed a refund by hand and why.
+
+No existing column is altered or dropped. Two of the migrations write to rows that already exist, and neither changes an amount, a status or anything a member was billed: `000022` records the transactions older invoices were already credited with, so they can never be credited a second time, and `000023` fills in a moon only on plans and history rows that have none.
+
 ## [2.0.3] — 2026-07-24 — The Ecosystem Era: The Moon Planner
 
 The Moon Extraction Planner: a corp-internal calendar for staggering refinery pulls so chunks don't clump faster than a small crew can mine them. SeAT can only read the extractions a director fires in-game, so the planner is a coordination tool — it never controls the structure. Additive: one new permission, two new tables, a handful of columns, three opt-in notifications. No new ESI scopes.

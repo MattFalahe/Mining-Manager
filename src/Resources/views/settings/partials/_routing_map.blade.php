@@ -205,6 +205,7 @@
                 'extraction_started'  => ['label' => 'Extraction Started',              'col' => 'notify_extraction_started'],
                 'next_extraction_planned' => ['label' => 'Next Extraction Planned',     'col' => 'notify_next_extraction_planned'],
                 'schedule_mismatch'   => ['label' => 'Moon Scheduled Off-Plan',        'col' => 'notify_schedule_mismatch'],
+                'tax_outstanding_digest' => ['label' => 'Outstanding Mining Tax (digest)', 'col' => 'notify_tax_outstanding_digest'],
                 'extraction_at_risk'  => ['label' => 'Extraction at Risk (MC+SM)',      'col' => 'notify_extraction_at_risk',  'requires_mc' => true, 'requires_sm' => true],
                 'extraction_lost'     => ['label' => 'Extraction Lost (MC+SM)',         'col' => 'notify_extraction_lost',     'requires_mc' => true, 'requires_sm' => true],
                 'metenox_cargo_full'  => ['label' => 'Metenox Cargo Bay Full',          'col' => 'notify_metenox_cargo_full'],

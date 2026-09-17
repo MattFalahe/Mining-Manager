@@ -5,8 +5,8 @@ namespace MiningManager\Services\Moon;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonOreHelper;
-use MiningManager\Services\Pricing\PriceProviderService;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -15,6 +15,13 @@ use Symfony\Component\Yaml\Yaml;
 
 class MoonExtractionService
 {
+    /**
+     * How long an Extraction Started alert is held for the in-game notification
+     * that names who started the extraction, and how often it looks meanwhile.
+     */
+    private const STARTED_BY_WAIT_HOURS = 6;
+    private const STARTED_BY_RECHECK_SECONDS = 600;
+
     /**
      * Moon value calculation service
      *
@@ -30,24 +37,15 @@ class MoonExtractionService
     protected $settingsService;
 
     /**
-     * Price provider service
-     *
-     * @var PriceProviderService
-     */
-    protected $priceService;
-
-    /**
      * Constructor
      *
      * @param MoonValueCalculationService $valueService
      * @param SettingsManagerService $settingsService
-     * @param PriceProviderService $priceService
      */
-    public function __construct(MoonValueCalculationService $valueService, SettingsManagerService $settingsService, PriceProviderService $priceService)
+    public function __construct(MoonValueCalculationService $valueService, SettingsManagerService $settingsService)
     {
         $this->valueService = $valueService;
         $this->settingsService = $settingsService;
-        $this->priceService = $priceService;
     }
 
     /**
@@ -171,15 +169,7 @@ class MoonExtractionService
     private function getActualOreVolumesFromNotification(int $structureId, string $extractionStartTime): ?array
     {
         try {
-            // Query character_notifications for MoonminingExtractionStarted notifications
-            // We need to find the notification for this specific extraction
-            $notification = DB::table('character_notifications')
-                ->where('type', 'MoonminingExtractionStarted')
-                ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
-                ->where('timestamp', '>=', Carbon::parse($extractionStartTime)->subMinutes(5))
-                ->where('timestamp', '<=', Carbon::parse($extractionStartTime)->addMinutes(5))
-                ->orderBy('timestamp', 'desc')
-                ->first();
+            $notification = $this->findExtractionStartedNotification($structureId, $extractionStartTime);
 
             if (!$notification) {
                 Log::debug("Mining Manager: No notification found for structure {$structureId} at {$extractionStartTime}");
@@ -217,6 +207,74 @@ class MoonExtractionService
             Log::error("Mining Manager: Error fetching notification data for structure {$structureId}: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * The in-game MoonminingExtractionStarted notification for one extraction.
+     *
+     * Matched on the refinery and a few minutes either side of the start time.
+     * The real ore volumes and the name of whoever started the extraction both
+     * come from it, because the corporation's extraction endpoint has neither.
+     *
+     * @param int $structureId
+     * @param mixed $extractionStartTime
+     * @return object|null
+     */
+    private function findExtractionStartedNotification(int $structureId, $extractionStartTime): ?object
+    {
+        return DB::table('character_notifications')
+            ->where('type', 'MoonminingExtractionStarted')
+            ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
+            ->where('timestamp', '>=', Carbon::parse($extractionStartTime)->subMinutes(5))
+            ->where('timestamp', '<=', Carbon::parse($extractionStartTime)->addMinutes(5))
+            ->orderBy('timestamp', 'desc')
+            ->first();
+    }
+
+    /**
+     * Who started an extraction, with their main.
+     *
+     * Null when SeAT has not pulled the notification yet. Without Manager Core
+     * that is normal for a while, because SeAT fetches the extraction endpoint
+     * and the notifications on separate schedules.
+     */
+    private function extractionStartedBy(MoonExtraction $extraction): ?string
+    {
+        if (!$extraction->structure_id || !$extraction->extraction_start_time) {
+            return null;
+        }
+
+        try {
+            $notification = $this->findExtractionStartedNotification(
+                (int) $extraction->structure_id,
+                $extraction->extraction_start_time
+            );
+        } catch (\Throwable $e) {
+            Log::debug("Mining Manager: could not look for who started extraction {$extraction->id}: " . $e->getMessage());
+
+            return null;
+        }
+
+        return $notification
+            ? $this->characterFromNotification((string) $notification->text, 'startedBy')
+            : null;
+    }
+
+    /**
+     * The pilot a moon mining notification names in one of its character
+     * fields, with their main.
+     *
+     * Null when the text will not parse or the field is not there.
+     */
+    private function characterFromNotification(string $text, string $field): ?string
+    {
+        try {
+            $data = Yaml::parse($text);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return is_array($data) ? MoonNotificationCharacter::describe($data, $field) : null;
     }
 
     /**
@@ -599,13 +657,7 @@ class MoonExtractionService
                 ->first();
 
             if ($laserNotification) {
-                // Extract player name from notification text if possible
-                $firedBy = null;
-                if (preg_match('/firedBy:\s*\[.*?,\s*"([^"]+)"\]/', $laserNotification->text, $matches)) {
-                    $firedBy = $matches[1];
-                } elseif (preg_match('/fired by (.+?) and/', $laserNotification->text, $matches)) {
-                    $firedBy = $matches[1];
-                }
+                $firedBy = $this->characterFromNotification((string) $laserNotification->text, 'firedBy');
 
                 $extraction->fractured_at = Carbon::parse($laserNotification->timestamp);
                 $extraction->fractured_by = $firedBy;
@@ -684,11 +736,7 @@ class MoonExtractionService
                 ->first();
 
             if ($cancelNotification) {
-                // Extract canceller name if present in the YAML-like text
-                $cancelledBy = null;
-                if (preg_match('/cancelledBy:\s*\[.*?,\s*"([^"]+)"\]/', $cancelNotification->text, $matches)) {
-                    $cancelledBy = $matches[1];
-                }
+                $cancelledBy = $this->characterFromNotification((string) $cancelNotification->text, 'cancelledBy');
 
                 $extraction->update(['status' => 'cancelled']);
                 $cancelled++;
@@ -727,12 +775,7 @@ class MoonExtractionService
             ->first();
 
         if ($laserNotification) {
-            $firedBy = null;
-            if (preg_match('/firedBy:\s*\[.*?,\s*"([^"]+)"\]/', $laserNotification->text, $matches)) {
-                $firedBy = $matches[1];
-            } elseif (preg_match('/fired by (.+?) and/', $laserNotification->text, $matches)) {
-                $firedBy = $matches[1];
-            }
+            $firedBy = $this->characterFromNotification((string) $laserNotification->text, 'firedBy');
 
             $extraction->update([
                 'fractured_at' => Carbon::parse($laserNotification->timestamp),
@@ -993,23 +1036,46 @@ class MoonExtractionService
      * Send an `extraction_started` notification for a freshly-started
      * extraction (new chunk forming, arrival in the future).
      *
+     * Holds the alert until the in-game notification that names who started
+     * the extraction has reached SeAT. The alert is not urgent and is worth
+     * more with a name on it, and the extraction endpoint usually lands first.
+     * The hold is capped, so an install where no character receives that
+     * notification still gets the alert, later and without the name.
+     *
      * Atomic claim on `extraction_started_sent` mirrors the moon-arrival
      * dedup pattern: UPDATE WHERE flag=false returns the claim count, so
      * only one worker dispatches even if two crons interleave. Rolls the
      * claim back on dispatch failure so a later tick retries.
      *
      * @param MoonExtraction $extraction
-     * @return void
+     * @return string sent, waiting, skipped (already claimed) or failed
      */
-    public function sendExtractionStartedNotification(MoonExtraction $extraction): void
+    public function sendExtractionStartedNotification(MoonExtraction $extraction): string
     {
+        $stillWaiting = $extraction->extraction_start_time
+            && Carbon::parse($extraction->extraction_start_time)->gt(Carbon::now()->subHours(self::STARTED_BY_WAIT_HOURS));
+
+        // character_notifications has no index on type or time, so every lookup
+        // reads the whole table, and this runs once a minute. While waiting,
+        // looking every ten minutes is enough: ESI only refreshes notifications
+        // that often anyway.
+        if ($stillWaiting && !Cache::add('mining-manager:extraction-started-by:' . $extraction->id, true, self::STARTED_BY_RECHECK_SECONDS)) {
+            return 'waiting';
+        }
+
+        $startedBy = $this->extractionStartedBy($extraction);
+
+        if ($startedBy === null && $stillWaiting) {
+            return 'waiting';
+        }
+
         $claimed = MoonExtraction::where('id', $extraction->id)
             ->where('extraction_started_sent', false)
             ->update(['extraction_started_sent' => true]);
 
         if ($claimed === 0) {
             Log::info("Mining Manager: Skipping extraction_started — already claimed for extraction {$extraction->id}");
-            return;
+            return 'skipped';
         }
 
         $extraction->refresh();
@@ -1031,6 +1097,7 @@ class MoonExtractionService
             $notificationService->sendExtractionStarted(array_filter([
                 'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
                 'structure_name' => $structureName,
+                'started_by' => $startedBy,
                 'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
                 'time_until_arrival' => $timeUntil,
                 'estimated_value' => $extraction->estimated_value ?? 0,
@@ -1039,12 +1106,16 @@ class MoonExtractionService
             ], fn ($v) => $v !== null));
 
             Log::info("Mining Manager: fired extraction_started for extraction {$extraction->id}");
+
+            return 'sent';
         } catch (\Exception $e) {
             MoonExtraction::where('id', $extraction->id)->update(['extraction_started_sent' => false]);
             Log::error("Mining Manager: Failed to send extraction_started — claim rolled back", [
                 'extraction_id' => $extraction->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return 'failed';
         }
     }
 
@@ -1493,36 +1564,9 @@ class MoonExtractionService
     }
 
     /**
-     * Get all scanned moons with their basic info.
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    public function getScannedMoons(): \Illuminate\Support\Collection
-    {
-        if (!Schema::hasTable('universe_moon_contents')) {
-            return collect();
-        }
-
-        // Get unique moon IDs that have been scanned
-        $moonIds = DB::table('universe_moon_contents')
-            ->select('moon_id')
-            ->distinct()
-            ->pluck('moon_id');
-
-        if ($moonIds->isEmpty()) {
-            return collect();
-        }
-
-        // Get moon details
-        return DB::table('moons')
-            ->whereIn('moon_id', $moonIds)
-            ->select('moon_id', 'name')
-            ->orderBy('name')
-            ->get();
-    }
-
-    /**
      * Simulate an extraction for a given moon and duration.
+     *
+     * Priced from the price cache only; see MoonValuation for why.
      *
      * @param int $moonId
      * @param int $extractionDays Number of days for extraction (6-56)
@@ -1534,84 +1578,37 @@ class MoonExtractionService
             return null;
         }
 
-        // Get moon composition percentages
-        $contents = DB::table('universe_moon_contents')
+        $ores = DB::table('universe_moon_contents')
             ->where('moon_id', $moonId)
-            ->get();
+            ->pluck('rate', 'type_id')
+            ->map(function ($rate) {
+                return (float) $rate;
+            })
+            ->all();
 
-        if ($contents->isEmpty()) {
+        if (empty($ores)) {
             return null;
         }
 
-        // Calculate total composition percentage (moon ore vs regular ore)
-        // Moons don't always have 100% moon ore - the remainder is regular asteroid ore
-        $compositionSum = $contents->sum('rate');
-        $compositionPercent = round($compositionSum * 100, 1);
+        $valuation = app(MoonValuation::class);
+        $valued = $valuation->value($ores, $extractionDays);
 
-        // Dynamic extraction rate based on composition percentage
-        // Based on observed real data:
-        // - ~100% composition = ~30,000-31,000 m³/h
-        // - ~80% composition  = ~30,000 m³/h
-        // - ~70% composition  = ~21,000 m³/h
-        // Formula derived: base rate scales with composition richness
-        // Using linear interpolation between observed data points
-        $baseRateAt100Percent = 31000;  // m³/h for 100% composition moon
-        $baseRateAt70Percent = 21000;   // m³/h for 70% composition moon
-
-        // Linear interpolation: rate = minRate + (compositionSum - 0.70) * slope
-        // slope = (31000 - 21000) / (1.0 - 0.70) = 10000 / 0.30 = 33333
-        if ($compositionSum >= 0.70) {
-            $extractionRatePerHour = $baseRateAt70Percent + (($compositionSum - 0.70) / 0.30) * ($baseRateAt100Percent - $baseRateAt70Percent);
-        } else {
-            // For very low composition moons, extrapolate down (minimum ~15,000)
-            $extractionRatePerHour = max(15000, $baseRateAt70Percent * ($compositionSum / 0.70));
-        }
-
-        $extractionRatePerHour = round($extractionRatePerHour);
-        $totalHours = $extractionDays * 24;
-        $totalVolume = $extractionRatePerHour * $totalHours;
-
-        // Get moon name
         $moon = DB::table('moons')->where('moon_id', $moonId)->first();
         $moonName = $moon ? $moon->name : "Moon {$moonId}";
 
-        // Build composition with calculated volumes and values
         $composition = [];
-        $totalValue = 0;
-
-        foreach ($contents as $content) {
-            // Get ore type info
-            $oreType = DB::table('invTypes')
-                ->where('typeID', $content->type_id)
-                ->first();
-
-            if ($oreType) {
-                // Calculate volume for this ore based on percentage
-                $oreVolume = $totalVolume * $content->rate;
-
-                // Convert volume to quantity (units)
-                $unitVolume = $oreType->volume ?? 16; // Moon ores typically 16 m³/unit
-                $quantityInUnits = floor($oreVolume / $unitVolume);
-
-                // Get unit price for the ore itself using price provider
-                $unitPrice = $this->priceService->getPrice($content->type_id) ?? 0;
-                $oreValue = $quantityInUnits * $unitPrice;
-                $totalValue += $oreValue;
-
-                // Get R-value classification for this ore
-                $rarity = MoonOreHelper::getRarity($content->type_id);
-
-                $composition[] = [
-                    'ore_name' => $oreType->typeName,
-                    'type_id' => $content->type_id,
-                    'percentage' => round($content->rate * 100, 2),
-                    'volume' => round($oreVolume, 0),
-                    'quantity' => $quantityInUnits,
-                    'unit_price' => $unitPrice,
-                    'value' => $oreValue,
-                    'rarity' => $rarity,
-                ];
-            }
+        foreach ($valued['ores'] as $line) {
+            $composition[] = [
+                'ore_name' => $line['ore_name'],
+                'type_id' => $line['type_id'],
+                'percentage' => round($line['share'] * 100, 2),
+                'volume' => round($line['volume'], 0),
+                'quantity' => $line['quantity'],
+                'unit_price' => $line['unit_price'],
+                'value' => $line['value'],
+                'refined_value' => $line['refined_value'],
+                'rarity' => MoonOreHelper::getRarity($line['type_id']),
+            ];
         }
 
         // Sort by value descending
@@ -1619,20 +1616,21 @@ class MoonExtractionService
             return $b['value'] <=> $a['value'];
         });
 
-        // Determine moon classification based on highest R-value ore
-        $moonClassification = $this->determineMoonClassification($composition);
-
         return [
             'moon_id' => $moonId,
             'moon_name' => $moonName,
             'extraction_days' => $extractionDays,
-            'extraction_hours' => $totalHours,
-            'extraction_rate_m3h' => $extractionRatePerHour,
-            'composition_percent' => $compositionPercent,
-            'total_volume_m3' => $totalVolume,
-            'total_value' => $totalValue,
+            'extraction_hours' => $extractionDays * 24,
+            'extraction_rate_m3h' => $valued['rate'],
+            'composition_percent' => round($valued['share'] * 100, 1),
+            'total_volume_m3' => $valued['volume'],
+            'total_value' => $valued['raw'],
+            'total_refined_value' => $valued['refined'],
+            'refining_efficiency' => round($valuation->refiningEfficiency() * 100, 1),
+            'unpriced_ores' => $valued['unpriced'],
+            'prices_updated_at' => $valuation->pricesUpdatedAt(),
             'composition' => $composition,
-            'moon_classification' => $moonClassification,
+            'moon_classification' => $this->determineMoonClassification($composition),
         ];
     }
 

@@ -67,8 +67,13 @@ class GenerateTaxInvoicesCommand extends Command
                 $this->warn('DRY RUN MODE - No invoices will be created');
             }
 
-            // Build query for unpaid taxes with completed periods that need invoices
-            $query = MiningTax::where('status', 'unpaid')
+            // Build query for outstanding taxes with completed periods that need
+            // invoices. 'partial' belongs here: an invoice settled in part still
+            // has a balance to ask for, and leaving it out meant a member who
+            // paid half was never billed for the rest. That mattered little when
+            // partial payments barely worked; now that instalments, cascades and
+            // account balance all produce them, it matters a lot.
+            $query = MiningTax::whereIn('status', ['unpaid', 'partial'])
                 ->where('amount_owed', '>', 0)
                 ->whereDoesntHave('taxInvoices', function ($q) {
                     $q->whereIn('status', ['pending', 'sent']);
@@ -112,8 +117,18 @@ class GenerateTaxInvoicesCommand extends Command
 
             foreach ($unpaidTaxes as $tax) {
                 try {
+                    // Bill what is left, not what was originally charged. On a
+                    // partly settled invoice those are different numbers, and
+                    // quoting the original asks the member to pay twice for the
+                    // part they already covered.
+                    $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
+                    if ($outstanding <= 0) {
+                        continue;
+                    }
+
                     if ($dryRun) {
-                        $this->line("Would generate invoice for character {$tax->character_id}: " . number_format($tax->amount_owed, 2) . " ISK");
+                        $this->line("Would generate invoice for character {$tax->character_id}: " . number_format($outstanding, 2) . " ISK");
                         $generated++;
                         continue;
                     }
@@ -125,7 +140,7 @@ class GenerateTaxInvoicesCommand extends Command
                     $invoice = TaxInvoice::create([
                         'mining_tax_id' => $tax->id,
                         'character_id' => $tax->character_id,
-                        'amount' => $tax->amount_owed,
+                        'amount' => $outstanding,
                         'status' => 'pending',
                         'generated_at' => Carbon::now(),
                         'expires_at' => $tax->due_date,
@@ -161,7 +176,7 @@ class GenerateTaxInvoicesCommand extends Command
                         ]);
                     }
 
-                    $this->line("Generated invoice for character {$tax->character_id}: " . number_format($tax->amount_owed, 2) . " ISK");
+                    $this->line("Generated invoice for character {$tax->character_id}: " . number_format($outstanding, 2) . " ISK");
                     $generated++;
 
                 } catch (\Exception $e) {

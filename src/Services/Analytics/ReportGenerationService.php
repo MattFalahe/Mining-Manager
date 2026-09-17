@@ -463,7 +463,7 @@ class ReportGenerationService
     {
         return MiningTax::with('character')
             ->whereBetween('month', [$startDate->startOfMonth(), $endDate->endOfMonth()])
-            ->orderBy('month', 'desc')
+            ->orderByRaw('COALESCE(period_start, month) DESC')
             ->get()
             ->map(function ($tax) {
                 return [

@@ -9,6 +9,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard taxes-calculate-page">
 
 
@@ -132,23 +133,19 @@
                     <!-- Action Buttons -->
                     <div class="row">
                         <div class="col-md-12">
-                            <button type="submit" class="btn btn-primary" id="calculate-btn">
+                            <button type="submit" class="btn btn-primary" id="calculate-btn" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.calculate_help') }}">
                                 <i class="fas fa-calculator"></i>
                                 {{ trans('mining-manager::taxes.calculate') }}
                             </button>
-                            <button type="button" class="btn btn-warning ml-2" id="recalculate-btn">
+                            <button type="button" class="btn btn-warning ml-2" id="recalculate-btn" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.recalculate_help') }}">
                                 <i class="fas fa-sync-alt"></i>
                                 {{ trans('mining-manager::taxes.recalculate') }}
                             </button>
-                            <button type="button" class="btn btn-secondary ml-2" id="assign-codes-btn">
+                            <button type="button" class="btn btn-secondary ml-2" id="assign-codes-btn" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.assign_codes_help') }}">
                                 <i class="fas fa-barcode"></i>
                                 {{ trans('mining-manager::taxes.assign_codes') }}
                             </button>
-                            <button type="button" class="btn btn-success ml-2" id="regenerate-payments-btn">
-                                <i class="fas fa-sync"></i>
-                                {{ trans('mining-manager::taxes.regenerate_codes') }}
-                            </button>
-                            <button type="button" class="btn btn-info ml-2" id="refresh-tracking-btn">
+                            <button type="button" class="btn btn-info ml-2" id="refresh-tracking-btn" data-toggle="tooltip" title="{{ trans('mining-manager::taxes.refresh_tracking_help') }}">
                                 <i class="fas fa-refresh"></i>
                                 {{ trans('mining-manager::taxes.refresh_tracking') }}
                             </button>
@@ -231,10 +228,10 @@
                         <!-- View Toggle -->
                         <div class="mb-3 mt-3">
                             <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-primary active" id="view-flat-btn">
+                                <button type="button" class="btn btn-outline-primary" id="view-flat-btn">
                                     <i class="fas fa-list"></i> Flat View
                                 </button>
-                                <button type="button" class="btn btn-outline-primary" id="view-grouped-btn">
+                                <button type="button" class="btn btn-outline-primary active" id="view-grouped-btn">
                                     <i class="fas fa-layer-group"></i> Grouped by Account
                                     @if(isset($liveTracking['account_count']))
                                         <span class="badge badge-light">{{ $liveTracking['account_count'] }}</span>
@@ -243,8 +240,10 @@
                             </div>
                         </div>
 
-                        <!-- FLAT VIEW (default) -->
-                        <div id="flat-view">
+                        {{-- Grouped is the view this page opens on. What is being
+                             calculated is a bill per player, and the flat list is
+                             the working underneath it. --}}
+                        <div id="flat-view" style="display:none;">
                             <div class="table-responsive">
                                 <table class="table table-striped table-hover" id="live-tracking-table">
                                     <thead>
@@ -284,7 +283,7 @@
                         </div>
 
                         <!-- GROUPED BY ACCOUNT VIEW -->
-                        <div id="grouped-view" style="display:none;">
+                        <div id="grouped-view">
                             @php
                                 $groupedEntries = collect($liveTracking['entries'])->groupBy('main_character_id');
                                 // Ensure all accounts from full totals appear, even if no entries in limited display
@@ -511,9 +510,10 @@ $(document).ready(function() {
         });
     }
 
-    // Recalculate Button — regenerates daily summaries with current prices/rates, then calculates
+    // Recalculate rebuilds the month's daily summaries, then recalculates the
+    // invoices that have not gone out. Issued invoices are left as they are.
     $('#recalculate-btn').on('click', function() {
-        if (!confirm('This will re-price all mining for the selected month using current market prices and tax rates. This may take a moment. Continue?')) {
+        if (!confirm('{{ trans("mining-manager::taxes.recalculate_confirm") }}')) {
             return;
         }
         submitRecalculation(false);
@@ -626,65 +626,6 @@ $(document).ready(function() {
         });
     });
 
-    // Regenerate Codes Button — recalculate + generate/update payment codes
-    $('#regenerate-payments-btn').on('click', function() {
-        if (!confirm('{{ trans("mining-manager::taxes.regenerate_confirm") }}')) {
-            return;
-        }
-        submitRegenerate(false);
-    });
-
-    function submitRegenerate(confirmIncomplete) {
-        const month = $('#year').val() + '-' + String($('#month').val()).padStart(2, '0');
-        const corporationId = $('#corporation_id').val();
-        const characterId = $('#character_id').val();
-        const paymentMethod = '{{ $paymentSettings["method"] }}';
-
-        $('#regenerate-payments-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> {{ trans("mining-manager::taxes.regenerating") }}');
-
-        var data = {
-            _token: '{{ csrf_token() }}',
-            month: month,
-            corporation_id: corporationId,
-            character_id: characterId,
-            payment_method: paymentMethod
-        };
-        if (confirmIncomplete) {
-            data.confirm_incomplete = 1;
-        }
-
-        $.ajax({
-            url: '{{ route("mining-manager.taxes.regenerate-payments") }}',
-            method: 'POST',
-            data: data,
-            success: function(response) {
-                if (response.status === 'incomplete_month') {
-                    $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
-                    if (response.is_future) {
-                        alert(response.message);
-                    } else {
-                        if (confirm(response.message + '\n\nDo you want to proceed anyway?')) {
-                            submitRegenerate(true);
-                        }
-                    }
-                    return;
-                }
-
-                if (response.status === 'success') {
-                    toastr.success(response.message);
-                    refreshLiveTracking();
-                } else {
-                    toastr.error(response.message);
-                }
-                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
-            },
-            error: function(xhr) {
-                alert('{{ trans("mining-manager::taxes.error_occurred") }}');
-                $('#regenerate-payments-btn').prop('disabled', false).html('<i class="fas fa-sync"></i> {{ trans("mining-manager::taxes.regenerate_codes") }}');
-            }
-        });
-    }
-
     // Refresh Tracking
     $('#refresh-tracking-btn').on('click', refreshLiveTracking);
 
@@ -723,6 +664,13 @@ $(document).ready(function() {
         $('#grouped-view').hide();
         $(this).addClass('active');
         $('#view-grouped-btn').removeClass('active');
+
+        // The flat table is built while its container is hidden, so DataTables
+        // measures every column at zero and the header sits apart from the body
+        // the first time it is shown. Re-measuring once it is visible fixes it.
+        if ($.fn.DataTable.isDataTable('#live-tracking-table')) {
+            $('#live-tracking-table').DataTable().columns.adjust();
+        }
     });
 
     $('#view-grouped-btn').on('click', function() {

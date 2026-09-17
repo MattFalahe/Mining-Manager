@@ -40,6 +40,15 @@ return [
         'division' => 'financial',
     ],
 
+    // Standalone capability, not a tier: Find Moons on the Extraction
+    // Simulator. Directors and moon managers have it already; this gives the
+    // moon search to someone who has neither role.
+    'moon_finder' => [
+        'label' => 'mining-manager::permissions.moon_finder_label',
+        'description' => 'mining-manager::permissions.moon_finder_description',
+        'division' => 'financial',
+    ],
+
     'admin' => [
         'label' => 'mining-manager::permissions.admin_label',
         'description' => 'mining-manager::permissions.admin_description',

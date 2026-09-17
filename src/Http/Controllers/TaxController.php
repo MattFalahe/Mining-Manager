@@ -5,6 +5,7 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Seat\Web\Http\Controllers\Controller;
+use MiningManager\Services\Tax\PaymentAllocationService;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Tax\WalletTransferService;
@@ -22,17 +23,23 @@ use MiningManager\Models\MiningEvent;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\TaxInvoice;
 use MiningManager\Models\TaxCode;
+use MiningManager\Models\PaymentAllocation;
+use MiningManager\Models\PaymentCredit;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use MiningManager\Http\Controllers\Concerns\GuardsDataExport;
 
 class TaxController extends Controller
 {
+    use GuardsDataExport;
+
     use EnrichesCharacterData;
 
     protected $taxService;
     protected $walletService;
+    protected $allocationService;
     protected $codeService;
     protected $settingsService;
     protected $characterInfoService;
@@ -42,6 +49,7 @@ class TaxController extends Controller
     public function __construct(
         TaxCalculationService $taxService,
         WalletTransferService $walletService,
+        PaymentAllocationService $allocationService,
         TaxCodeGeneratorService $codeService,
         SettingsManagerService $settingsService,
         CharacterInfoService $characterInfoService,
@@ -50,6 +58,7 @@ class TaxController extends Controller
     ) {
         $this->taxService = $taxService;
         $this->walletService = $walletService;
+        $this->allocationService = $allocationService;
         $this->codeService = $codeService;
         $this->settingsService = $settingsService;
         $this->characterInfoService = $characterInfoService;
@@ -66,6 +75,8 @@ class TaxController extends Controller
      */
     protected function setCorporationContext(?int $corporationId): void
     {
+        $this->allocationService->setCorporationContext($corporationId);
+
         if ($corporationId) {
             $this->settingsService->setActiveCorporation($corporationId);
             $this->taxService->setCorporationContext($corporationId);
@@ -125,11 +136,40 @@ class TaxController extends Controller
     /**
      * Get feature flags from settings for view visibility.
      */
+    /**
+     * Held for the life of the request. The service's flag set is two dozen
+     * reads and some pages ask for it twice, so without this the delegation
+     * would cost real round trips for a value that cannot change mid render.
+     *
+     * @var array<string,mixed>|null
+     */
+    private ?array $featureFlagCache = null;
+
     private function getFeatureFlags(): array
     {
-        return [
-            'tax_tracking' => (bool) $this->settingsService->getSetting('features.enable_tax_tracking', true),
-            'wallet_verification' => (bool) $this->settingsService->getSetting('features.verify_wallet_transactions', true),
+        if ($this->featureFlagCache !== null) {
+            return $this->featureFlagCache;
+        }
+
+        // Values come out of the service's own flag set rather than being read
+        // again here. This method used to do its own reads and list four keys,
+        // while the views it feeds asked for more than four; a key it did not
+        // define came back through `?? false` as a feature that was switched
+        // on reading as switched off, with nothing to show anything was wrong.
+        //
+        // The names below are the view-facing ones and deliberately do not all
+        // match the service's. What must not diverge again is the values, so
+        // anything added here reads from $flags, never from a fresh getSetting.
+        $flags = $this->settingsService->getFeatureFlags();
+
+        return $this->featureFlagCache = [
+            'tax_tracking' => (bool) ($flags['enable_tax_tracking'] ?? true),
+            'wallet_verification' => (bool) ($flags['verify_wallet_transactions'] ?? true),
+            'enable_upfront_payments' => (bool) ($flags['enable_upfront_payments'] ?? false),
+            'allow_export_data' => (bool) ($flags['allow_export_data'] ?? true),
+
+            // Not feature flags in the service's sense, they live under
+            // tax_rates, so these two stay direct reads.
             'tax_codes' => (bool) $this->settingsService->getSetting('tax_rates.auto_generate_tax_codes', true),
             'reminders' => (bool) $this->settingsService->getSetting('tax_rates.send_tax_reminders', false),
         ];
@@ -185,7 +225,14 @@ class TaxController extends Controller
         $query = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
-            $query->where('status', $status);
+            // "outstanding" is the view a director actually wants: everything
+            // with money still on it, rather than checking unpaid, overdue and
+            // partial in turn and holding the total in their head.
+            if ($status === 'outstanding') {
+                $query->whereIn('status', ['unpaid', 'overdue', 'partial']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($month) {
@@ -229,7 +276,7 @@ class TaxController extends Controller
         }
 
         $taxes = $query->with('taxCodes')
-            ->orderBy('month', 'desc')
+            ->orderByRaw('COALESCE(period_start, month) DESC')
             ->orderBy('character_id')
             ->get();
 
@@ -881,6 +928,10 @@ class TaxController extends Controller
                 'features' => $this->getFeatureFlags(),
                 'unpaidTaxes' => collect(),
                 'corpCharacterIds' => collect(),
+                'payerInvoiceMap' => [],
+                'heldCredits' => collect(),
+                'showLegacy' => false,
+                'hiddenLegacy' => 0,
             ]);
         }
 
@@ -897,7 +948,14 @@ class TaxController extends Controller
         $donations = $this->walletService->getCorporationDonations($corporationId, $days);
 
         // Get unmatched donations (donations without tax codes)
-        $unmatchedDonations = $this->walletService->getUnmatchedDonations($corporationId, $days);
+        // Payments from before the verification cutover that carry a valid tax
+        // code are withheld unless asked for. See unmatchedDonationBreakdown()
+        // for why: they were most likely already credited, and we cannot prove
+        // it for anything settled in instalments.
+        $showLegacy = $request->boolean('show_legacy');
+        $breakdown = $this->walletService->unmatchedDonationBreakdown($corporationId, $days, $showLegacy);
+        $unmatchedDonations = $breakdown['donations'];
+        $hiddenLegacy = $breakdown['hidden_legacy'];
 
         // Scope transactions for regular members: only show their own transfers
         if (!$canSeeAll && !empty($userCharacterIds)) {
@@ -926,10 +984,17 @@ class TaxController extends Controller
             ->where('paid_at', '>=', Carbon::now()->subDays($days))
             ->count();
 
+        // "Mismatched" used to repeat the pending count, which made the two
+        // tiles say the same thing. It now means what it sounds like: a
+        // payment carrying a code that matches no invoice we know about.
+        $mismatchedCount = $canSeeAll
+            ? $unmatchedDonations->where('blocker', 'tax_code_not_recognised')->count()
+            : 0;
+
         $stats = [
             'pending' => $pendingCount,
             'verified' => $verifiedCount,
-            'mismatched' => $canSeeAll ? $unmatchedDonations->count() : 0,
+            'mismatched' => $mismatchedCount,
             'total_amount' => $totalVerifiedIsk,
         ];
 
@@ -960,10 +1025,12 @@ class TaxController extends Controller
         // Get unpaid/overdue invoices for manual payment modal (director/admin only)
         $unpaidTaxes = collect();
         $corpCharacterIds = [];
+        $payerInvoiceMap = [];
+        $heldCredits = collect();
         if ($canSeeAll && $corporationId) {
             $unpaidTaxes = MiningTax::with('character')
                 ->whereIn('status', ['unpaid', 'overdue', 'partial'])
-                ->orderBy('character_id')
+                ->orderByRaw('COALESCE(period_start, month) asc')
                 ->get();
 
             // Get corporation member IDs for manual entry character dropdown
@@ -972,6 +1039,17 @@ class TaxController extends Controller
                 ->join('character_infos', 'character_affiliations.character_id', '=', 'character_infos.character_id')
                 ->select('character_infos.character_id', 'character_infos.name')
                 ->orderBy('character_infos.name')
+                ->get();
+
+            // Which open invoices each pending payer could legitimately settle.
+            // Resolved here rather than in the browser because working out who
+            // is an alt of whom needs the SeAT user link. Bounded by the number
+            // of distinct payers on screen, so it stays cheap.
+            $payerInvoiceMap = $this->buildPayerInvoiceMap($transactions, $unpaidTaxes);
+
+            $heldCredits = PaymentCredit::with('character')
+                ->where('remaining', '>', 0)
+                ->orderBy('created_at')
                 ->get();
         }
 
@@ -987,8 +1065,62 @@ class TaxController extends Controller
             'viewAll',
             'features',
             'unpaidTaxes',
-            'corpCharacterIds'
+            'corpCharacterIds',
+            'payerInvoiceMap',
+            'heldCredits',
+            'showLegacy',
+            'hiddenLegacy'
         ));
+    }
+
+    /**
+     * Map each paying character on the pending list to the invoice ids they
+     * are allowed to settle, honouring the accept-alts setting.
+     *
+     * @param  \Illuminate\Support\Collection  $transactions
+     * @param  \Illuminate\Support\Collection  $unpaidTaxes
+     */
+    private function buildPayerInvoiceMap($transactions, $unpaidTaxes): array
+    {
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $acceptAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+
+        $payerIds = collect($transactions)
+            ->map(fn ($t) => (int) ($t->first_party_id ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $map = [];
+
+        foreach ($payerIds as $payerId) {
+            $eligible = [$payerId];
+
+            if ($acceptAlts) {
+                $userId = DB::table('refresh_tokens')->where('character_id', $payerId)->value('user_id');
+
+                if ($userId !== null) {
+                    $eligible = DB::table('refresh_tokens')
+                        ->where('user_id', $userId)
+                        ->pluck('character_id')
+                        ->map(fn ($id) => (int) $id)
+                        ->all();
+
+                    if (!in_array($payerId, $eligible, true)) {
+                        $eligible[] = $payerId;
+                    }
+                }
+            }
+
+            $map[$payerId] = $unpaidTaxes
+                ->filter(fn ($tax) => in_array((int) $tax->character_id, $eligible, true))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        return $map;
     }
 
     /**
@@ -1001,11 +1133,19 @@ class TaxController extends Controller
         $this->setCorporationContext($moonOwnerCorpId);
 
         try {
-            $result = $this->walletService->verifyPayment($transactionId);
+            $days = (int) $request->input('days', 30);
+
+            // This used to call a verifyPayment() that does not exist on the
+            // service, so the Sync button returned a 500 every time it was
+            // pressed. It is a rescan of the configured wallet divisions.
+            $result = $this->walletService->verifyPayments($days, true);
 
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.payment_verified'),
+                'message' => trans('mining-manager::taxes.wallet_synced', [
+                    'matched' => $result['matched'],
+                    'unmatched' => $result['unmatched'],
+                ]),
                 'result' => $result,
             ]);
 
@@ -1120,6 +1260,22 @@ class TaxController extends Controller
                 $tax->notes = $tax->notes ? $tax->notes . "\n\n" . $paymentNote : $paymentNote;
                 $tax->save();
 
+                // Record the slice even though there is no wallet transaction
+                // behind it. Without this the invoice's amount_paid would not
+                // match the payments recorded against it and the reconciliation
+                // check would flag every hand-marked invoice as a fault.
+                PaymentAllocation::create([
+                    'transaction_id' => null,
+                    'credit_id' => null,
+                    'mining_tax_id' => $tax->id,
+                    'character_id' => (int) $tax->character_id,
+                    'amount' => $amountPaid,
+                    'source' => PaymentAllocation::SOURCE_MANUAL,
+                    'allocated_by' => auth()->user()->main_character_id ?? auth()->id(),
+                    'notes' => $paymentNote,
+                    'allocated_at' => Carbon::now(),
+                ]);
+
                 // Mark any active tax codes as used to prevent wallet listener from double-processing
                 if ($tax->status === 'paid') {
                     $tax->taxCodes()->where('status', 'active')->update([
@@ -1221,6 +1377,20 @@ class TaxController extends Controller
                 'notes' => $paymentNote,
             ]);
 
+            // Born fully paid, so record the payment behind it for the same
+            // reconciliation reason as markPaid().
+            PaymentAllocation::create([
+                'transaction_id' => null,
+                'credit_id' => null,
+                'mining_tax_id' => $tax->id,
+                'character_id' => $characterId,
+                'amount' => $amount,
+                'source' => PaymentAllocation::SOURCE_MANUAL,
+                'allocated_by' => $user->main_character_id ?? $user->id,
+                'notes' => $paymentNote,
+                'allocated_at' => Carbon::now(),
+            ]);
+
             Log::info('Manual tax entry created', [
                 'tax_id' => $tax->id,
                 'character_id' => $characterId,
@@ -1268,11 +1438,19 @@ class TaxController extends Controller
             $dueDate = $tax->due_date ? Carbon::parse($tax->due_date) : Carbon::now();
             $daysRemaining = (int) max(0, Carbon::now()->startOfDay()->diffInDays($dueDate->startOfDay(), false));
 
+            // Ask for what is left, not what was originally charged, and say
+            // how much of it their balance already met.
+            $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+            $creditApplied = round((float) PaymentAllocation::where('mining_tax_id', $tax->id)
+                ->where('source', PaymentAllocation::SOURCE_CREDIT)
+                ->sum('amount'), 2);
+
             $result = $this->notificationService->sendTaxReminder(
                 (int) $tax->character_id,
-                (float) $tax->amount_owed,
+                $outstanding,
                 $dueDate,
-                $daysRemaining
+                $daysRemaining,
+                ['credit_applied' => $creditApplied]
             );
 
             // Update reminder tracking on the tax record
@@ -1316,18 +1494,67 @@ class TaxController extends Controller
 
         try {
             $taxIds = $request->input('tax_ids', []);
-            $paymentDate = $request->input('payment_date', Carbon::now());
+            $paymentDate = Carbon::parse($request->input('payment_date', Carbon::now()));
 
-            $updated = MiningTax::whereIn('id', $taxIds)
-                ->update([
-                    'status' => 'paid',
-                    'paid_at' => Carbon::parse($paymentDate),
-                    'amount_paid' => DB::raw('amount_owed'),
-                ]);
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            // Was a single mass UPDATE setting amount_paid = amount_owed. That
+            // left no record of what was paid, skipped the tax codes so they
+            // stayed active, and could not be reconciled afterwards. Slower per
+            // row, but each invoice now leaves the same trail as any other
+            // payment.
+            $updated = 0;
+
+            DB::transaction(function () use ($taxIds, $paymentDate, $actorId, $actorName, &$updated) {
+                $taxes = MiningTax::whereIn('id', $taxIds)->lockForUpdate()->get();
+
+                foreach ($taxes as $tax) {
+                    $owed = (float) $tax->amount_owed;
+                    $alreadyPaid = (float) ($tax->amount_paid ?? 0);
+                    $delta = round($owed - $alreadyPaid, 2);
+
+                    if ($delta <= 0) {
+                        continue;
+                    }
+
+                    $note = "Bulk marked as paid by {$actorName} on " . Carbon::now()->format('Y-m-d H:i');
+
+                    $tax->update([
+                        'status' => 'paid',
+                        'paid_at' => $paymentDate,
+                        'amount_paid' => $owed,
+                        'notes' => $tax->notes ? $tax->notes . "\n\n" . $note : $note,
+                    ]);
+
+                    PaymentAllocation::create([
+                        'transaction_id' => null,
+                        'credit_id' => null,
+                        'mining_tax_id' => $tax->id,
+                        'character_id' => (int) $tax->character_id,
+                        'amount' => $delta,
+                        'source' => PaymentAllocation::SOURCE_MANUAL,
+                        'allocated_by' => $actorId,
+                        'notes' => $note,
+                        'allocated_at' => Carbon::now(),
+                    ]);
+
+                    TaxCode::where('mining_tax_id', $tax->id)
+                        ->where('status', 'active')
+                        ->update([
+                            'status' => 'used',
+                            'used_at' => Carbon::now(),
+                            'notes' => "Bulk marked paid by {$actorName}",
+                        ]);
+
+                    $updated++;
+                }
+            });
 
             Log::info('Taxes bulk marked as paid', [
                 'count' => $updated,
-                'marked_by' => auth()->user()->name,
+                'marked_by' => $actorName,
             ]);
 
             return response()->json([
@@ -1368,7 +1595,17 @@ class TaxController extends Controller
 
             foreach ($taxesByCharacter as $characterId => $characterTaxes) {
                 try {
-                    $totalOwed = $characterTaxes->sum('amount_owed');
+                    $totalOwed = round($characterTaxes->sum(
+                        fn ($t) => max(0, (float) $t->amount_owed - (float) ($t->amount_paid ?? 0))
+                    ), 2);
+
+                    if ($totalOwed <= 0) {
+                        continue;
+                    }
+
+                    $creditApplied = round((float) PaymentAllocation::whereIn('mining_tax_id', $characterTaxes->pluck('id'))
+                        ->where('source', PaymentAllocation::SOURCE_CREDIT)
+                        ->sum('amount'), 2);
 
                     // Find the earliest due date among these taxes
                     $earliestDueDate = $characterTaxes->min('due_date');
@@ -1379,7 +1616,8 @@ class TaxController extends Controller
                         (int) $characterId,
                         (float) $totalOwed,
                         $dueDate,
-                        $daysRemaining
+                        $daysRemaining,
+                        ['credit_applied' => $creditApplied]
                     );
 
                     // Update reminder tracking on each tax record
@@ -1458,6 +1696,8 @@ class TaxController extends Controller
             [$periodStartEmpty, $periodEndEmpty] = $periodHelperEmpty->getPeriodBounds(Carbon::now(), $periodTypeEmpty);
 
             return view('mining-manager::taxes.my-taxes', [
+                'creditBalance' => 0.0,
+                'creditRecords' => collect(),
                 'taxHistory' => collect(),
                 'summary' => [
                     'total_owed' => 0,
@@ -1516,7 +1756,14 @@ class TaxController extends Controller
             $query->where('month', Carbon::parse($month)->format('Y-m-01'));
         }
 
-        $taxHistory = $query->orderBy('month', 'desc')
+        // Ordered on the period's own start date, not on the month it falls in.
+        // Both halves of a fortnightly month carry the same `month` value, so
+        // ordering by that alone left them tied and the tie broken by whatever
+        // came out of the table first: "Jul 1-14" above "Jul 15-31" even though
+        // the second half is the later period. COALESCE covers the monthly
+        // records made before fortnightly periods existed, which have no
+        // period_start.
+        $taxHistory = $query->orderByRaw('COALESCE(period_start, month) DESC')
             ->orderBy('character_id')
             ->paginate(25);
 
@@ -1627,14 +1874,26 @@ class TaxController extends Controller
         $paymentSettings = $this->settingsService->getPaymentSettings();
         $walletDivision = $paymentSettings['wallet_division'] ?? 1;
 
-        // Get corporation name for payment instructions
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $corpName = null;
-        if ($moonOwnerCorpId) {
-            $corpName = \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $moonOwnerCorpId)->value('name');
-        }
+        // The steps say a payment can come from any character on the account,
+        // but only where the matcher will actually accept one.
+        $acceptsAlts = (bool) ($paymentSettings['accept_alt_characters'] ?? true);
+
+        $corpName = $this->payingCorporationName();
+
+        // Money we are holding for this player from an earlier overpayment.
+        // Alt-aware, because the surplus can sit on whichever character sent
+        // the ISK while the invoices belong to their main.
+        $creditBalance = PaymentCredit::balanceFor($characterIds);
+        $creditRecords = $creditBalance > 0
+            ? PaymentCredit::whereIn('character_id', $characterIds)
+                ->where('remaining', '>', 0)
+                ->orderBy('created_at')
+                ->get()
+            : collect();
 
         return view('mining-manager::taxes.my-taxes', compact(
+            'creditBalance',
+            'creditRecords',
             'taxHistory',
             'summary',
             'currentTax',
@@ -1659,7 +1918,8 @@ class TaxController extends Controller
             'features',
             'walletDivisionName',
             'walletDivision',
-            'corpName'
+            'corpName',
+            'acceptsAlts'
         ));
     }
 
@@ -1905,92 +2165,15 @@ class TaxController extends Controller
     }
 
     /**
-     * Regenerate payments for a specific month.
-     * Always recalculates daily summaries with current prices/rates,
-     * then calculates taxes and regenerates payment codes.
+     * The removed Regenerate Codes button, for a copy of the page compiled before
+     * it went. It always ran the same recalculation as Recalculate, so that is
+     * what it runs. Nothing on the current page calls it.
      */
     public function regeneratePayments(Request $request)
     {
-        // Set corporation context for settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $corporationId = $request->input('corporation_id') ?: $moonOwnerCorpId;
-        $this->setCorporationContext($corporationId);
+        $request->merge(['recalculate' => true]);
 
-        try {
-            $month = $request->input('month');
-
-            if (!$month) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Month parameter is required',
-                ], 400);
-            }
-
-            $periodHelper = app(TaxPeriodHelper::class);
-            $periodType = $periodHelper->getConfiguredPeriodType();
-            $monthDate = Carbon::parse($month)->startOfMonth();
-            $monthLabel = $monthDate->format('F Y');
-
-            // Get all periods in the month
-            $periods = $periodHelper->getPeriodsInMonth($monthDate, $periodType);
-            $lastPeriodEnd = end($periods)[1];
-            $firstPeriodStart = $periods[0][0];
-
-            // Warn if regenerating for incomplete period
-            if (!$periodHelper->isPeriodComplete($lastPeriodEnd) && !$request->input('confirm_incomplete')) {
-                $isFuture = $firstPeriodStart->gt(Carbon::now());
-                return response()->json([
-                    'status' => 'incomplete_month',
-                    'message' => $isFuture
-                        ? "{$monthLabel} hasn't started yet."
-                        : "Not all periods in {$monthLabel} have ended yet. Regenerated codes will be based on incomplete data.",
-                    'is_future' => $isFuture,
-                ], 200);
-            }
-
-            $user = auth()->user();
-            $triggeredBy = $user
-                ? 'Regenerate: ' . ($user->main_character->name ?? 'User #' . $user->id)
-                : 'Regenerate: Unknown';
-
-            Log::info("Mining Manager: Regenerate codes triggered by {$triggeredBy} for {$monthLabel} ({$periodType}, " . count($periods) . " periods)");
-
-            // Regenerate all daily summaries with current prices and tax rates
-            $regenerated = $this->taxService->regenerateMonthSummaries($monthDate, $corporationId);
-            Log::info("Regenerate codes: regenerated {$regenerated} daily summaries for {$monthLabel}");
-
-            // Recalculate taxes for each period in the month
-            $totalCount = 0;
-            $totalAmount = 0;
-            $allErrors = [];
-
-            foreach ($periods as [$startDate, $endDate]) {
-                $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, true, $triggeredBy);
-                $totalCount += $results['count'];
-                $totalAmount += $results['total'];
-                $allErrors = array_merge($allErrors, $results['errors'] ?? []);
-            }
-
-            return response()->json([
-                'status' => 'success',
-                'message' => trans('mining-manager::taxes.payments_regenerated'),
-                'results' => [
-                    'method' => "regenerate ({$periodType})",
-                    'count' => $totalCount,
-                    'total' => $totalAmount,
-                    'errors' => $allErrors,
-                ],
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Payment regeneration error: ' . $e->getMessage());
-
-            return response()->json([
-                'status' => 'error',
-                'message' => trans('mining-manager::taxes.regeneration_error'),
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+        return $this->calculate($request);
     }
 
     /**
@@ -2031,16 +2214,18 @@ class TaxController extends Controller
 
             foreach ($transactionIds as $transactionId) {
                 try {
-                    $result = $this->walletService->matchTransactionToTax($transactionId);
-                    if ($result) {
+                    $outcome = $this->walletService->matchTransaction((int) $transactionId, ['apply' => true]);
+
+                    if ($outcome['applied']) {
                         $results['verified']++;
-                    } else {
-                        $results['failed']++;
-                        $results['errors'][] = [
-                            'transaction_id' => $transactionId,
-                            'error' => 'No matching tax record found',
-                        ];
+                        continue;
                     }
+
+                    $results['failed']++;
+                    $results['errors'][] = [
+                        'transaction_id' => $transactionId,
+                        'error' => $this->describeMatchFailure($outcome['reason']),
+                    ];
                 } catch (\Exception $e) {
                     $results['failed']++;
                     $results['errors'][] = [
@@ -2048,6 +2233,17 @@ class TaxController extends Controller
                         'error' => $e->getMessage(),
                     ];
                 }
+            }
+
+            // Reporting a 200 with "0 verified" for a batch where nothing
+            // worked is how this page came to look like the buttons did
+            // nothing. Anything that failed outright answers as a failure.
+            if ($results['verified'] === 0 && $results['failed'] > 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $results['errors'][0]['error'],
+                    'results' => $results,
+                ], 422);
             }
 
             return response()->json([
@@ -2065,6 +2261,201 @@ class TaxController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Turn a match failure into something a director can act on.
+     */
+    private function describeMatchFailure(?string $reason): string
+    {
+        $key = 'mining-manager::taxes.match_failed_' . ($reason ?: 'unknown');
+        $message = trans($key);
+
+        // trans() hands back the key itself when there is no translation, which
+        // would put a raw lang path in a toast.
+        return $message === $key
+            ? trans('mining-manager::taxes.match_failed_unknown')
+            : $message;
+    }
+
+    /**
+     * Assign a wallet payment to an invoice by hand.
+     *
+     * This is the answer to a member who transferred the ISK but left the tax
+     * code out of the reason field. Nothing can match it automatically, so a
+     * director points it at the right invoice. Anything left over after that
+     * invoice is settled rolls onto their next-oldest unpaid one, and a final
+     * surplus is held as credit.
+     */
+    public function assignPayment(Request $request)
+    {
+        $validated = $request->validate([
+            'transaction_id' => 'required|integer|exists:corporation_wallet_journals,id',
+            // Optional: without it the payment goes to the player's account
+            // balance instead of a named invoice. That is the only thing a
+            // director can do with a codeless transfer from somebody who has
+            // nothing outstanding, and it used to be a dead end.
+            'tax_id' => 'nullable|integer|exists:mining_taxes,id',
+            'cascade' => 'nullable|boolean',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $notes = trim("Assigned by {$actorName}" . (!empty($validated['notes']) ? ": {$validated['notes']}" : ''));
+
+            if (empty($validated['tax_id'])) {
+                $result = $this->walletService->manualCredit(
+                    (int) $validated['transaction_id'],
+                    [
+                        'allocated_by' => $actorId,
+                        'notes' => $notes,
+                    ]
+                );
+
+                if (!$result['success']) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $this->describeMatchFailure($result['reason']),
+                    ], 422);
+                }
+
+                Log::info('Mining Manager: wallet payment banked to account balance by hand', [
+                    'transaction_id' => (int) $validated['transaction_id'],
+                    'invoices' => count($result['allocations']),
+                    'banked' => $result['credited'],
+                    'assigned_by' => $actorName,
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $this->describeAllocation($result),
+                    'result' => $result,
+                ]);
+            }
+
+            $result = $this->walletService->manualMatch(
+                (int) $validated['transaction_id'],
+                (int) $validated['tax_id'],
+                [
+                    'allocated_by' => $actorId,
+                    'notes' => $notes,
+                    'cascade' => $request->has('cascade') ? (bool) $validated['cascade'] : null,
+                ]
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeMatchFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: wallet payment assigned by hand', [
+                'transaction_id' => (int) $validated['transaction_id'],
+                'tax_id' => (int) $validated['tax_id'],
+                'invoices' => count($result['allocations']),
+                'surplus_held' => $result['credited'],
+                'assigned_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $this->describeAllocation($result),
+                'result' => $result,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error assigning wallet payment: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.assign_payment_error'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Undo an assignment and put the payment back in the queue.
+     */
+    public function unassignPayment(Request $request)
+    {
+        $validated = $request->validate([
+            'transaction_id' => 'required|integer|exists:corporation_wallet_journals,id',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+
+            $result = $this->walletService->unassign((int) $validated['transaction_id'], $actorId);
+
+            if (!$result['reversed']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['reason'] === 'credit_partially_spent'
+                        ? trans('mining-manager::taxes.unassign_credit_spent')
+                        : trans('mining-manager::taxes.unassign_failed'),
+                ], 422);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.unassign_success', [
+                    'count' => count($result['invoices']),
+                ]),
+                'result' => $result,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error unassigning wallet payment: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.unassign_failed'),
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Plain-language summary of where an assigned payment ended up.
+     */
+    private function describeAllocation(array $result): string
+    {
+        $count = count($result['allocations']);
+
+        // Nothing settled means the whole payment went to the balance. Saying
+        // "assigned to invoice" here would name something that did not happen.
+        if ($count === 0) {
+            return trans('mining-manager::taxes.assign_payment_balance_only', [
+                'amount' => number_format($result['credited'], 0),
+            ]);
+        }
+
+        if ($count > 1) {
+            $message = trans('mining-manager::taxes.assign_payment_spread', ['count' => $count]);
+        } else {
+            $message = trans('mining-manager::taxes.assign_payment_success');
+        }
+
+        if ($result['credited'] > 0) {
+            $message .= ' ' . trans('mining-manager::taxes.assign_payment_credit', [
+                'amount' => number_format($result['credited'], 0),
+            ]);
+        }
+
+        return $message;
     }
 
     /**
@@ -2135,6 +2526,15 @@ class TaxController extends Controller
         // Always use accumulated (per-account) mode
         $taxCalculationMethod = 'accumulated';
 
+        $paymentHistory = $this->getPaymentHistory((int) $tax->id);
+
+        // How much of this invoice was settled from money we were already
+        // holding, rather than from a payment the member made for it. Without
+        // saying so, an invoice that arrives part-paid looks like a mistake.
+        $creditApplied = (float) $paymentHistory
+            ->where('source', PaymentAllocation::SOURCE_CREDIT)
+            ->sum('amount');
+
         // Get mining breakdown for the tax's period (or fall back to month)
         $startDate = $tax->period_start ? Carbon::parse($tax->period_start) : Carbon::parse($tax->month)->startOfMonth();
         $endDate = $tax->period_end ? Carbon::parse($tax->period_end) : Carbon::parse($tax->month)->endOfMonth();
@@ -2201,8 +2601,377 @@ class TaxController extends Controller
             'isAdmin',
             'isDirector',
             'viewAll',
-            'features'
+            'features',
+            'paymentHistory',
+            'creditApplied'
         ));
+    }
+
+    /**
+     * Account balances: money held from overpayments and paying ahead.
+     *
+     * One page, two audiences, the way the rest of the tax section already
+     * works. A director sees everyone who is holding a balance and where it
+     * came from; a member sees their own, alt-aware, because the surplus sits
+     * on whichever character sent the ISK while the invoices belong to their
+     * main.
+     */
+    /**
+     * Give held balance back to a member.
+     *
+     * Reduces the balance now so what they are owed is right immediately, and
+     * leaves the row pending until the ISK is seen leaving the corporation
+     * wallet. Nothing here sends money: EVE has no API for that, so a director
+     * makes the transfer in game and this records it was agreed.
+     */
+    public function refundBalance(Request $request)
+    {
+        $validated = $request->validate([
+            'credit_id' => 'required|integer|exists:mining_manager_payment_credits,id',
+            // Absent means all of it, which is what somebody leaving the corp
+            // wants and saves retyping a figure they would only get wrong.
+            'amount' => 'nullable|numeric|min:0.01',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->record(
+                (int) $validated['credit_id'],
+                isset($validated['amount']) ? (float) $validated['amount'] : null,
+                $validated['reason'],
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: balance refunded by hand', [
+                'credit_id' => (int) $validated['credit_id'],
+                'amount' => $result['refunded'],
+                'refunded_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_recorded', [
+                    'amount' => number_format($result['refunded'], 0),
+                ]),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error refunding balance: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
+     * Record that a refund was paid, when no transfer will ever match it.
+     *
+     * The reconciler only recognises money leaving the corporation wallet with
+     * the agreed keyword in the reason. That is the right default and it will
+     * miss things: a keyword left off, a contract, a payment from somewhere the
+     * plugin cannot see. Without a way to close those by hand they stay pending
+     * forever and the outstanding figure stops being worth reading.
+     *
+     * The note is required. A confirmed refund with no transaction behind it is
+     * only as good as the explanation attached to it.
+     */
+    public function markRefundSent(Request $request, $refundId)
+    {
+        $validated = $request->validate([
+            'note' => 'required|string|max:255',
+        ]);
+
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->markSent(
+                (int) $refundId,
+                $validated['note'],
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: refund marked as sent by hand', [
+                'refund_id' => (int) $refundId,
+                'confirmed_by' => $actorName,
+                'note' => $validated['note'],
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_marked_sent'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error marking a refund as sent: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
+     * Withdraw a hand confirmation and put the refund back on the pending list.
+     *
+     * Refund rows for one person look alike, so confirming the wrong one is an
+     * ordinary slip. Only hand confirmations can be withdrawn; one matched to a
+     * real transaction is left alone.
+     */
+    public function reopenRefund(Request $request, $refundId)
+    {
+        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($moonOwnerCorpId);
+
+        try {
+            $user = auth()->user();
+            $actorId = $user->main_character_id ?? $user->id;
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            $result = app(\MiningManager\Services\Tax\RefundService::class)->revertToPending(
+                (int) $refundId,
+                $actorId
+            );
+
+            if (!$result['success']) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $this->describeRefundFailure($result['reason']),
+                ], 422);
+            }
+
+            Log::info('Mining Manager: refund reopened', [
+                'refund_id' => (int) $refundId,
+                'reopened_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.refund_reopened'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error reopening a refund: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.refund_error'),
+            ], 500);
+        }
+    }
+
+    /**
+     * Turn a refund failure reason into something a director can act on.
+     */
+    private function describeRefundFailure(?string $reason): string
+    {
+        $key = 'mining-manager::taxes.refund_failed_' . ($reason ?: 'unknown');
+        $message = trans($key);
+
+        return $message === $key
+            ? trans('mining-manager::taxes.refund_failed_unknown')
+            : $message;
+    }
+
+    /**
+     * The corporation members pay, by the name they will find it under in game.
+     *
+     * Null when no moon owner corporation is configured, or SeAT has not pulled
+     * its details yet. The payment steps fall back to generic wording.
+     */
+    private function payingCorporationName(): ?string
+    {
+        $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+
+        if (! $corporationId) {
+            return null;
+        }
+
+        return \Seat\Eveapi\Models\Corporation\CorporationInfo::where('corporation_id', $corporationId)->value('name');
+    }
+
+    public function balances(Request $request)
+    {
+        $isAdmin = $this->isAdmin();
+        $isDirector = $this->isDirector();
+        $viewAll = $this->isViewingAll();
+        $canSeeAll = $isAdmin || $isDirector;
+
+        $corporationId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        $this->setCorporationContext($corporationId ? (int) $corporationId : null);
+
+        // A member only ever sees money held against their own characters.
+        // Scoping on the way in rather than filtering a full list afterwards,
+        // so a bug here cannot leak someone else's balance.
+        $scopeCharacterIds = $canSeeAll ? null : $this->getUserCharacterIds();
+
+        $creditsQuery = PaymentCredit::with('character')->orderByDesc('created_at');
+
+        if ($scopeCharacterIds !== null) {
+            if (empty($scopeCharacterIds)) {
+                $creditsQuery->whereRaw('1 = 0');
+            } else {
+                $creditsQuery->whereIn('character_id', $scopeCharacterIds);
+            }
+        }
+
+        $credits = $creditsQuery->get();
+        $openCredits = $credits->where('remaining', '>', 0);
+
+        // Refunds, scoped exactly as the balances above are. Keyed by credit so
+        // a row can show what has been handed back off it alongside what it was
+        // spent on.
+        $refundsQuery = \MiningManager\Models\PaymentRefund::orderByDesc('created_at');
+
+        if ($scopeCharacterIds !== null) {
+            if (empty($scopeCharacterIds)) {
+                $refundsQuery->whereRaw('1 = 0');
+            } else {
+                $refundsQuery->whereIn('character_id', $scopeCharacterIds);
+            }
+        }
+
+        $refunds = $refundsQuery->get()->groupBy('credit_id');
+
+        // What each balance has already paid for. Keyed by credit so a row can
+        // show its own drawdowns rather than one undifferentiated list.
+        $drawdowns = collect();
+
+        if ($credits->isNotEmpty()) {
+            $drawdowns = PaymentAllocation::with('tax.character')
+                ->whereIn('credit_id', $credits->pluck('id'))
+                ->orderByDesc('allocated_at')
+                ->get()
+                ->groupBy('credit_id');
+        }
+
+        // A credit records only the surplus, so on its own it cannot answer the
+        // question a member actually asks: "I sent 1.2b, where did it go?".
+        // Pair each one with what the SAME payment settled outright, and the
+        // two add back up to the transfer. Read from the allocation rows rather
+        // than the wallet journal so the figures reconcile against each other
+        // by construction; a journal lookup could disagree with our own ledger
+        // and there would be no way to tell which was right.
+        $settledByPayment = collect();
+        $transactionIds = $credits->pluck('transaction_id')->filter()->unique();
+
+        if ($transactionIds->isNotEmpty()) {
+            $settledByPayment = PaymentAllocation::whereIn('transaction_id', $transactionIds)
+                ->whereNull('credit_id')
+                ->selectRaw('transaction_id, SUM(amount) as total')
+                ->groupBy('transaction_id')
+                ->pluck('total', 'transaction_id');
+        }
+
+        foreach ($credits as $credit) {
+            $settled = (float) ($settledByPayment[$credit->transaction_id] ?? 0);
+
+            $credit->settled_on_arrival = $settled;
+            $credit->payment_total = round($settled + (float) $credit->amount, 2);
+        }
+
+        $stats = [
+            'total_held' => (float) $openCredits->sum('remaining'),
+            'holders' => $openCredits->pluck('character_id')->unique()->count(),
+            // Balance spent on later invoices. Deliberately NOT the same as the
+            // money a payment settled the moment it arrived, which never became
+            // balance at all.
+            'total_drawn' => (float) $drawdowns->flatten()->sum('amount'),
+        ];
+
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+
+        return view('mining-manager::taxes.balances', [
+            'credits' => $credits,
+            'openCredits' => $openCredits,
+            'drawdowns' => $drawdowns,
+            'stats' => $stats,
+            'isAdmin' => $isAdmin,
+            'isDirector' => $isDirector,
+            'viewAll' => $viewAll,
+            'canSeeAll' => $canSeeAll,
+            'features' => $this->getFeatureFlags(),
+            'upfrontKeyword' => $this->walletService->getUpfrontKeyword(),
+            // The pay-ahead steps name where the ISK goes, and say whether what
+            // is left after clearing invoices is kept.
+            'corpName' => $this->payingCorporationName(),
+            'walletDivision' => (int) ($paymentSettings['wallet_division'] ?? 1),
+            'walletDivisionName' => $this->settingsService->getWalletDivisionName(),
+            'holdSurplus' => (bool) ($paymentSettings['hold_surplus_as_credit'] ?? true),
+            // Money the corporation has agreed to hand back and, as far as the
+            // wallet shows, has not. Worth surfacing: it is the one number here
+            // that represents a promise rather than a fact.
+            'refunds' => $refunds,
+            // Shown in the refund dialog so a director knows what to type into
+            // the transfer. Without it in the reason the refund cannot tell
+            // itself apart from an SRP payout and will not confirm.
+            'refundKeyword' => app(\MiningManager\Services\Tax\RefundService::class)->keyword(),
+            // The refund dialog says where the ISK may be sent and the pay-ahead
+            // steps say where it may come from. Both depend on the same setting
+            // tax and upfront payments read.
+            'acceptsAlts' => (bool) ($paymentSettings['accept_alt_characters'] ?? true),
+            'pendingRefundTotal' => (float) $refunds->flatten()
+                ->where('status', \MiningManager\Models\PaymentRefund::STATUS_PENDING)
+                ->sum('amount'),
+        ]);
+    }
+
+    /**
+     * Every payment recorded against an invoice, newest first.
+     *
+     * mining_taxes.transaction_id only ever holds the most recent payment, so
+     * an invoice settled in instalments used to show just the last one. The
+     * allocation rows carry the full picture.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    private function getPaymentHistory(int $taxId)
+    {
+        return PaymentAllocation::where('mining_tax_id', $taxId)
+            ->orderByDesc('allocated_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($allocation) {
+                $label = match ($allocation->source) {
+                    PaymentAllocation::SOURCE_AUTO => trans('mining-manager::taxes.payment_source_auto'),
+                    PaymentAllocation::SOURCE_MANUAL => trans('mining-manager::taxes.payment_source_manual'),
+                    PaymentAllocation::SOURCE_CASCADE => trans('mining-manager::taxes.payment_source_cascade'),
+                    PaymentAllocation::SOURCE_CREDIT => trans('mining-manager::taxes.payment_source_credit'),
+                    default => $allocation->source,
+                };
+
+                $allocation->source_label = $label;
+
+                return $allocation;
+            });
     }
 
     /**
@@ -2258,6 +3027,87 @@ class TaxController extends Controller
     /**
      * Delete a tax code
      */
+    /**
+     * Close off a code whose invoice was settled some other way.
+     *
+     * A code is normally marked used by the payment that quotes it. A payment
+     * assigned by hand does not quote it, so the invoice goes paid while its
+     * code sits there active and eventually expires. The page then shows an
+     * expired code against a settled invoice, with no way to say what actually
+     * happened, and no way to remove it either.
+     *
+     * Only for codes whose invoice is genuinely settled. Marking a code used
+     * while money is still owed would take away the reference the member is
+     * meant to quote, which is the one thing that must not happen by accident.
+     */
+    public function markCodeUsed(Request $request, $id)
+    {
+        try {
+            $taxCode = TaxCode::with('miningTax')->findOrFail($id);
+
+            if ($taxCode->status === 'used') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_already_used'),
+                ], 422);
+            }
+
+            $tax = $taxCode->miningTax;
+
+            if (!$tax) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_no_invoice'),
+                ], 422);
+            }
+
+            // Settled means paid, or paid enough that the remainder is rounding.
+            // Reading the figures rather than trusting the status alone, because
+            // a hand-assigned payment is exactly the case where the two can
+            // disagree.
+            $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
+            if ($tax->status !== 'paid' && $outstanding > 1) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.code_invoice_not_settled', [
+                        'amount' => number_format($outstanding, 0),
+                    ]),
+                ], 422);
+            }
+
+            $taxCode->update([
+                'status' => 'used',
+                'used_at' => $tax->paid_at ?? Carbon::now(),
+                // Whatever settled the invoice, if the invoice recorded it.
+                'transaction_id' => $taxCode->transaction_id ?? $tax->transaction_id,
+            ]);
+
+            $user = auth()->user();
+            $actorName = $user->main_character->name ?? $user->name ?? 'Unknown';
+
+            Log::info('Mining Manager: tax code marked used by hand', [
+                'tax_code_id' => (int) $taxCode->id,
+                'code' => $taxCode->code,
+                'mining_tax_id' => (int) $tax->id,
+                'marked_by' => $actorName,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => trans('mining-manager::taxes.code_marked_used'),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Tax code mark-used error: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => trans('mining-manager::taxes.code_mark_used_error'),
+            ], 500);
+        }
+    }
+
     public function destroyCode(Request $request, $id)
     {
         try {
@@ -2311,8 +3161,26 @@ class TaxController extends Controller
 
                 // If marking as paid, set payment date and deactivate tax codes
                 if ($validated['status'] === 'paid' && $oldStatus !== 'paid') {
+                    $delta = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
                     $tax->paid_at = Carbon::now();
                     $tax->amount_paid = $tax->amount_owed;
+
+                    // Same reason as markPaid(): keep amount_paid and the
+                    // payments recorded against it in step.
+                    if ($delta > 0) {
+                        PaymentAllocation::create([
+                            'transaction_id' => null,
+                            'credit_id' => null,
+                            'mining_tax_id' => $tax->id,
+                            'character_id' => (int) $tax->character_id,
+                            'amount' => $delta,
+                            'source' => PaymentAllocation::SOURCE_MANUAL,
+                            'allocated_by' => auth()->user()->main_character_id ?? auth()->id(),
+                            'notes' => "Status changed to paid by {$userName}",
+                            'allocated_at' => Carbon::now(),
+                        ]);
+                    }
                 }
 
                 $tax->save();
@@ -2398,6 +3266,10 @@ class TaxController extends Controller
      */
     public function export(Request $request)
     {
+        if (!$this->dataExportIsAllowed()) {
+            return $this->refuseDataExport($request);
+        }
+
         try {
             $status = $request->input('status', 'all');
             $month = $request->input('month');
@@ -2424,7 +3296,9 @@ class TaxController extends Controller
                 $query->where('month', Carbon::parse($month)->format('Y-m-01'));
             }
 
-            $taxes = $query->orderBy('month', 'desc')->orderBy('character_id')->get();
+            $taxes = $query->orderByRaw('COALESCE(period_start, month) DESC')
+                ->orderBy('character_id')
+                ->get();
 
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
@@ -2497,6 +3371,10 @@ class TaxController extends Controller
      */
     public function exportPersonal(Request $request)
     {
+        if (!$this->dataExportIsAllowed()) {
+            return $this->refuseDataExport($request);
+        }
+
         $user = auth()->user();
         $characterIds = $user->characters->pluck('character_id')->toArray();
 
@@ -2510,7 +3388,7 @@ class TaxController extends Controller
 
             $taxes = MiningTax::with(['character'])
                 ->whereIn('character_id', $characterIds)
-                ->orderBy('month', 'desc')
+                ->orderByRaw('COALESCE(period_start, month) DESC')
                 ->orderBy('character_id')
                 ->get();
 

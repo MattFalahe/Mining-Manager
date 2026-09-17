@@ -57,7 +57,7 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <small class="form-text text-muted">
-                            The corporation that owns your moons/structures and runs the mining tax program. All tax invoices, theft detection, moon tracking, ledger data, and webhook notifications are scoped to this corporation — regardless of ore source (moon, belt, ice, gas).
+                            The corporation that owns your moons/structures and runs the mining tax program. All tax invoices, theft detection, moon tracking, ledger data, and webhook notifications are scoped to this corporation, regardless of ore source (moon, belt, ice, gas).
                         </small>
                     </div>
                 </div>
@@ -336,11 +336,11 @@
                             </label>
                         </div>
                         <small class="form-text text-muted">
-                            When ON (default), the wallet listener applies matched payments
-                            to taxes automatically as ESI wallet updates arrive. When OFF,
-                            matches are detected and listed on the Wallet Verification page
-                            but require manual confirmation before any tax row updates.
-                            Recommended for most installs to leave ON.
+                            When ON (default), the scheduled verification run applies
+                            matched payments to invoices as soon as it finds them. When
+                            OFF, matches are detected and listed on the Wallet
+                            Verification page but require manual confirmation before any
+                            invoice updates. Recommended for most installs to leave ON.
                         </small>
                     </div>
                 </div>
@@ -349,7 +349,7 @@
             {{-- Accept payments from any of a player's characters
                  (alt-aware match). When ON (default), MM credits a tax
                  payment if the tax code matches AND the paying character
-                 shares a SeAT user_id with the taxed character — so a
+                 shares a SeAT user_id with the taxed character, so a
                  player can settle their main's tax bill from any alt's
                  wallet. When OFF, strict per-character matching (the
                  pre-v2.0.2 behaviour). --}}
@@ -365,19 +365,188 @@
                                    {{ old('payment_accept_alt_characters', $settings->accept_alt_characters ?? true) ? 'checked' : '' }}>
                             <label class="custom-control-label" for="payment_accept_alt_characters">
                                 <i class="fas fa-users"></i>
-                                Accept payments from any of a player's characters
+                                Treat a player's characters as one account
                             </label>
                         </div>
                         <small class="form-text text-muted">
-                            When ON (default), MM accepts a tax payment if the tax code
-                            in the transaction description matches AND the paying character
-                            shares a SeAT user with the taxed character (i.e. is an alt of
-                            the same player). When OFF, the paying character must be
-                            <em>exactly</em> the taxed character — strict pre-v2.0.2
-                            behaviour. Alt payments are logged in
-                            <code>laravel.log</code> with both the paying and taxed
-                            character IDs for audit, so directors can reconcile after
-                            the fact.
+                            When ON (default), money is matched to the player rather than
+                            to the one character. A tax payment settles the bill even when
+                            it came from a different character on the same account, an
+                            upfront payment clears that player's invoices and banks the
+                            rest for any of their characters, and a refund confirms
+                            whichever character it was sent to. Characters count as the
+                            same account when they share a SeAT user.
+                            <br>
+                            When OFF, every match is strict: the paying character must be
+                            <em>exactly</em> the taxed character, and a refund must go back
+                            to exactly the character whose balance it came off. Use this
+                            only where each character is genuinely its own account.
+                            <br>
+                            Either way, a match made across characters is recorded with
+                            both character ids, so a director can reconcile a dispute
+                            after the fact.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            {{-- What to do when a payment is bigger than the invoice it settles. --}}
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_cascade_remainder"
+                                   name="payment_cascade_remainder"
+                                   value="1"
+                                   {{ old('payment_cascade_remainder', $settings->cascade_remainder ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_cascade_remainder">
+                                <i class="fas fa-angle-double-right"></i>
+                                Roll leftover payment onto the next unpaid invoice
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), a payment larger than the invoice it settles
+                            keeps going: the remainder pays down that player's next-oldest
+                            unpaid invoice, and so on until the money runs out. Covers the
+                            common case of someone clearing three months in one transfer.
+                            When OFF, a payment only ever touches the one invoice it was
+                            matched to.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox"
+                                   class="custom-control-input"
+                                   id="payment_hold_surplus_as_credit"
+                                   name="payment_hold_surplus_as_credit"
+                                   value="1"
+                                   {{ old('payment_hold_surplus_as_credit', $settings->hold_surplus_as_credit ?? true) ? 'checked' : '' }}>
+                            <label class="custom-control-label" for="payment_hold_surplus_as_credit">
+                                <i class="fas fa-piggy-bank"></i>
+                                Hold surplus as credit against the next invoice
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When ON (default), money still left over once every open
+                            invoice is settled is parked against the paying character and
+                            comes off their next invoice automatically. Held credit is
+                            listed on the Wallet Verification page. When OFF, the surplus
+                            is logged and discarded.
+                        </small>
+                        <small class="form-text text-warning">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            This is a separate switch from Upfront Payments. With this ON,
+                            somebody can build up a balance by overpaying an invoice even
+                            when upfront payments are switched off, so turning that feature
+                            off does not mean no new balance can appear. If you want to
+                            close that route entirely, turn this off too. Balances already
+                            held are never touched either way: they stay spendable against
+                            future invoices.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Standing keyword for paying ahead of an invoice. Greyed out with
+                 a banner when the feature is off, so the box does not look
+                 broken or invite someone to type into a field that does
+                 nothing. --}}
+            @php $upfrontOn = (bool) ($settings->enable_upfront_payments ?? false); @endphp
+            <div class="row">
+                <div class="col-12">
+                    @unless($upfrontOn)
+                    <div class="alert alert-danger py-2">
+                        <i class="fas fa-times-circle mr-1"></i>
+                        <strong>Upfront payments are turned off.</strong>
+                        Nothing below has any effect until you enable the feature under
+                        Settings &rarr; Features &rarr; Upfront Payments.
+                    </div>
+                    @endunless
+                </div>
+                <div class="col-md-6" @unless($upfrontOn) style="opacity: 0.5;" @endunless>
+                    <div class="form-group">
+                        <label for="payment_upfront_keyword">
+                            <i class="fas fa-hand-holding-usd"></i>
+                            Upfront payment keyword
+                            <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="payment_upfront_keyword"
+                               name="payment_upfront_keyword"
+                               maxlength="32"
+                               placeholder="MM-UPFRONT"
+                               @unless($upfrontOn) disabled @endunless
+                               value="{{ old('payment_upfront_keyword', $settings->upfront_keyword ?? 'MM-UPFRONT') }}">
+                        <small class="form-text text-muted">
+                            A standing keyword members can put in the transfer reason to pay
+                            ahead, without waiting to be invoiced. Unlike a tax code it never
+                            expires and is the same for everyone, so it can live in the corp
+                            MOTD. The payment settles whatever they already owe, oldest first,
+                            and the rest becomes account balance against future invoices.
+                            Matching ignores case. <strong>Leave empty to turn the feature
+                            off.</strong> It cannot overlap the tax code prefix, since both are
+                            read from the same field.
+                        </small>
+                        <div class="alert alert-info py-2 mt-2 mb-0">
+                            <i class="fas fa-globe mr-1"></i>
+                            <strong>One keyword for every corporation.</strong>
+                            This is stored globally, not per corporation, and is not
+                            affected by the corporation context selected above. There is
+                            one tax program reading one wallet, so a per-corporation
+                            keyword would be saved somewhere the matcher never looks.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="payment_refund_keyword">
+                            <i class="fas fa-undo"></i>
+                            {{ trans('mining-manager::taxes.refund_keyword_label') }}
+                            <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                        </label>
+                        <input type="text"
+                               class="form-control"
+                               id="payment_refund_keyword"
+                               name="payment_refund_keyword"
+                               maxlength="32"
+                               placeholder="MM-REFUND"
+                               value="{{ old('payment_refund_keyword', $settings->refund_keyword ?? 'MM-REFUND') }}">
+                        <small class="form-text text-muted">
+                            {{ trans('mining-manager::taxes.refund_keyword_help') }}
+                        </small>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="payment_overdue_paid_threshold_pct">
+                            <i class="fas fa-percentage"></i>
+                            Treat as overdue below (% paid)
+                        </label>
+                        <input type="number"
+                               class="form-control"
+                               id="payment_overdue_paid_threshold_pct"
+                               name="payment_overdue_paid_threshold_pct"
+                               min="0" max="100" step="1"
+                               value="{{ old('payment_overdue_paid_threshold_pct', $settings->overdue_paid_threshold_pct ?? 95) }}">
+                        <small class="form-text text-muted">
+                            A part-paid invoice past its due date gets the overdue wording
+                            unless at least this much of it is covered. Without it, a token
+                            payment buys permanent immunity: 1m against a 1b invoice stays
+                            "partial" forever, however late it gets. The default of 95%
+                            forgives rounding and price drift, which is the only honest
+                            reason to be slightly short. Set to <strong>0</strong> to
+                            restore the old behaviour where any payment at all softened
+                            the tone.
                         </small>
                     </div>
                 </div>
@@ -395,7 +564,7 @@
         </div>
     </div>
 
-    {{-- Guest Miner Tax Rates (Global — tied to Moon Owner Corporation) --}}
+    {{-- Guest Miner Tax Rates (Global, tied to Moon Owner Corporation) --}}
     <div class="card bg-dark mb-3 border-info">
         <div class="card-header bg-info">
             <h5 class="card-title mb-0">
@@ -546,7 +715,7 @@
             <div class="alert alert-warning mt-3 mb-0">
                 <i class="fas fa-exclamation-triangle"></i>
                 <strong>0% = No Tax.</strong> Setting any guest rate to 0% means guests pay nothing for that ore type.
-                Guest miners only appear via moon mining observer data — their character ledger mining (regular ore, ice, gas mined elsewhere) is never taxed.
+                Guest miners only appear via moon mining observer data. Their character ledger mining (regular ore, ice, gas mined elsewhere) is never taxed.
             </div>
         </div>
     </div>

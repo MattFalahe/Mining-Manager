@@ -1327,6 +1327,22 @@ class PriceProviderService
     }
 
     /**
+     * Type IDs whose cached price was written at or after the given moment
+     *
+     * @param int $regionId
+     * @param Carbon $since
+     * @return int[]
+     */
+    public function typeIdsCachedSince(int $regionId, Carbon $since): array
+    {
+        return MiningPriceCache::where('region_id', $regionId)
+            ->where('cached_at', '>=', $since)
+            ->pluck('type_id')
+            ->map(fn ($typeId) => (int) $typeId)
+            ->all();
+    }
+
+    /**
      * Cache price data for a type ID
      *
      * @param int $typeId

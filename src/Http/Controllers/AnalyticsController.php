@@ -10,9 +10,20 @@ use MiningManager\Models\MiningLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use MiningManager\Http\Controllers\Concerns\GuardsDataExport;
+use MiningManager\Services\Analytics\ChartFilter;
+use MiningManager\Services\Tax\Concerns\ResolvesCharacterOwnership;
+use MiningManager\Services\Tax\ClassificationEpoch;
 
 class AnalyticsController extends Controller
 {
+    use GuardsDataExport;
+
+    // Same helper the payment matcher uses to decide which characters belong to
+    // one player. Charts ask the same question, and two answers to it would
+    // eventually disagree.
+    use ResolvesCharacterOwnership;
+
     /**
      * Analytics service
      *
@@ -28,19 +39,76 @@ class AnalyticsController extends Controller
     public function __construct(MiningAnalyticsService $analyticsService)
     {
         $this->analyticsService = $analyticsService;
+
+        // Moon managers plan moon pulls without being directors, and Moon
+        // Analytics is what they plan with, so they get that one page. The
+        // sidebar sends everyone to the overview, which lands a moon manager
+        // on Moon Analytics instead. Every other Analytics route keeps its
+        // director-only can: middleware. The OR cannot be a single can:, so
+        // it is enforced here, the same way the Moon Planner does it.
+        $this->middleware(function ($request, $next) {
+            $user = auth()->user();
+
+            if ($user && $user->can('mining-manager.director')) {
+                return $next($request);
+            }
+
+            if ($user && $user->can('mining-manager.moon_manager')) {
+                return $request->routeIs('mining-manager.analytics.moons')
+                    ? $next($request)
+                    : redirect()->route('mining-manager.analytics.moons');
+            }
+
+            abort(403, 'You need the Director or Moon Manager role to open Analytics.');
+        })->only(['index', 'moons']);
     }
 
     /**
      * Extract corporation filter from request.
      * Returns null for "all corporations", or the corporation_id integer.
      *
-     * @param Request $request
+     * With no corporation_id in the query at all - a first visit, or a link
+     * from elsewhere - this defaults to the viewer's own corporation rather
+     * than every corporation on the install. Analytics opened on "All
+     * Corporations" mixes other people's mining into every chart and total,
+     * which is almost never the question being asked.
+     *
+     * has() rather than filled() is the important part: an empty
+     * corporation_id means the viewer deliberately chose All Corporations, and
+     * that has to survive. Treating empty as "no preference" would snap the
+     * dropdown back on every submit and make All Corporations unselectable.
+     *
+     * The default only applies when the viewer's corporation is actually in
+     * the list offered by the dropdown. Filtering to a corporation that is not
+     * an option would leave the select showing "All Corporations" while the
+     * page silently filtered to something else.
+     *
+     * @param  Request  $request
+     * @param  \Illuminate\Support\Collection|array|null  $available  Corporations the page offers
      * @return int|null
      */
-    protected function getCorporationFilter(Request $request): ?int
+    protected function getCorporationFilter(Request $request, $available = null): ?int
     {
-        $corpId = $request->input('corporation_id');
-        return $corpId ? (int) $corpId : null;
+        if ($request->has('corporation_id')) {
+            $corpId = $request->input('corporation_id');
+
+            return $corpId ? (int) $corpId : null;
+        }
+
+        $userCorporationId = $this->getUserCorporationId();
+
+        if (!$userCorporationId) {
+            return null;
+        }
+
+        $available = $available ?? $this->analyticsService->getCorporationsWithData();
+        $keys = $available instanceof \Illuminate\Support\Collection
+            ? $available->keys()->all()
+            : array_keys((array) $available);
+
+        // Loose comparison on purpose: these ids arrive as ints from the
+        // affiliation lookup and as string keys off a plucked collection.
+        return in_array($userCorporationId, $keys) ? (int) $userCorporationId : null;
     }
 
     /**
@@ -97,8 +165,8 @@ class AnalyticsController extends Controller
             $oreCategory = $request->input('ore_category');
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Get top miners based on grouping
@@ -139,6 +207,9 @@ class AnalyticsController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'corporation_id' => 'nullable|integer',
+            'moon_source' => 'nullable|in:' . implode(',', ChartFilter::MOON_SOURCES),
+            'ore_category' => 'nullable|in:' . implode(',', array_keys(ChartFilter::ORE_CATEGORIES)),
+            'player_id' => 'nullable|integer',
         ]);
 
         try {
@@ -151,23 +222,53 @@ class AnalyticsController extends Controller
                 : Carbon::now();
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
+
+            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $moonOwnerCorporationId = (int) $settings->getSetting('general.moon_owner_corporation_id') ?: null;
+
+            // A player is picked by their main, and the filter wants every
+            // character they mine on. Same resolution the payment matcher uses.
+            $playerId = $request->input('player_id') ? (int) $request->input('player_id') : null;
+            $playerCharacterIds = $playerId ? $this->getCharacterIdsForUserOf($playerId) : [];
+
+            $filter = new ChartFilter(
+                (string) $request->input('moon_source', ChartFilter::MOON_ALL),
+                $request->input('ore_category'),
+                $playerCharacterIds,
+                $moonOwnerCorporationId
+            );
 
             // Get chart data
             $chartData = [
-                'mining_trends' => $this->analyticsService->getMiningTrendData($startDate, $endDate, $corporationId),
-                'ore_distribution' => $this->analyticsService->getOreDistributionData($startDate, $endDate, $corporationId),
-                'miner_activity' => $this->analyticsService->getMinerActivityData($startDate, $endDate, $corporationId),
-                'system_activity' => $this->analyticsService->getSystemActivityData($startDate, $endDate, $corporationId),
-                'heatmap' => $this->analyticsService->getHeatmapData($startDate, $endDate, $corporationId),
+                'mining_trends' => $this->analyticsService->getMiningTrendData($startDate, $endDate, $corporationId, $filter),
+                'ore_distribution' => $this->analyticsService->getOreDistributionData($startDate, $endDate, $corporationId, $filter),
+                'miner_activity' => $this->analyticsService->getMinerActivityData($startDate, $endDate, $corporationId, $filter),
+                'system_activity' => $this->analyticsService->getSystemActivityData($startDate, $endDate, $corporationId, $filter),
+                'heatmap' => $this->analyticsService->getHeatmapData($startDate, $endDate, $corporationId, $filter),
             ];
 
-            return view('mining-manager::analytics.charts', compact(
+            // Who to offer in the player picker. Deliberately unfiltered, so
+            // choosing a player never removes them from the list they were
+            // chosen from, and choosing "my moons" does not hide everybody who
+            // only mines belts.
+            $playerOptions = $this->analyticsService
+                ->getTopMinersByAccount($startDate, $endDate, 500, $corporationId);
+
+            // Mining before the classification cutover carries the flags it was
+            // billed on, right or wrong. A chart reading those flags says so
+            // rather than quietly averaging the two eras together.
+            $classificationCutover = $filter->dependsOnClassification()
+                ? ClassificationEpoch::get()
+                : null;
+
+            return view('mining-manager::analytics.charts', array_merge(compact(
                 'chartData', 'startDate', 'endDate',
-                'corporationId', 'corporations', 'userCorporationId'
-            ));
+                'corporationId', 'corporations', 'userCorporationId',
+                'filter', 'playerOptions', 'playerId', 'classificationCutover'
+            ), ['features' => $settings->getFeatureFlags()]));
         } catch (\Exception $e) {
             Log::error('Mining Manager: Analytics error: ' . $e->getMessage());
             return back()->with('error', 'An error occurred loading analytics data.');
@@ -198,8 +299,8 @@ class AnalyticsController extends Controller
                 : Carbon::now();
 
             // Corporation filter
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getCorporationsWithData();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Get detailed table data
@@ -237,8 +338,8 @@ class AnalyticsController extends Controller
 
         try {
             // Corporation filter — for compare, show ALL corporations (even without data)
-            $corporationId = $this->getCorporationFilter($request);
             $corporations = $this->analyticsService->getAllCorporations();
+            $corporationId = $this->getCorporationFilter($request, $corporations);
             $userCorporationId = $this->getUserCorporationId();
 
             // Check if comparison data should be generated
@@ -266,10 +367,10 @@ class AnalyticsController extends Controller
                     break;
             }
 
-            return view('mining-manager::analytics.compare', compact(
+            return view('mining-manager::analytics.compare', array_merge(compact(
                 'comparisonData', 'comparisonType',
                 'corporationId', 'corporations', 'userCorporationId'
-            ));
+            ), ['features' => app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getFeatureFlags()]));
         } catch (\Exception $e) {
             Log::error('Mining Manager: Analytics error: ' . $e->getMessage());
             return back()->with('error', 'An error occurred loading analytics data.');
@@ -721,11 +822,18 @@ class AnalyticsController extends Controller
      */
     public function export(Request $request)
     {
+        if (!$this->dataExportIsAllowed()) {
+            return $this->refuseDataExport($request);
+        }
+
         $validated = $request->validate([
             'format' => 'nullable|in:csv,json',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'corporation_id' => 'nullable|integer',
+            'moon_source' => 'nullable|in:' . implode(',', ChartFilter::MOON_SOURCES),
+            'ore_category' => 'nullable|in:' . implode(',', array_keys(ChartFilter::ORE_CATEGORIES)),
+            'player_id' => 'nullable|integer',
         ]);
 
         try {
@@ -740,8 +848,20 @@ class AnalyticsController extends Controller
 
             $corporationId = $this->getCorporationFilter($request);
 
+            // The same slice the charts page was showing when the button was
+            // pressed, rebuilt from the query string it passed along.
+            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+            $playerId = $request->input('player_id') ? (int) $request->input('player_id') : null;
+
+            $filter = new ChartFilter(
+                (string) $request->input('moon_source', ChartFilter::MOON_ALL),
+                $request->input('ore_category'),
+                $playerId ? $this->getCharacterIdsForUserOf($playerId) : [],
+                (int) $settings->getSetting('general.moon_owner_corporation_id') ?: null
+            );
+
             // Get export data
-            $data = $this->analyticsService->getExportData($startDate, $endDate, $corporationId);
+            $data = $this->analyticsService->getExportData($startDate, $endDate, $corporationId, $filter);
 
             if ($format === 'json') {
                 return response()->json(['data' => $data]);

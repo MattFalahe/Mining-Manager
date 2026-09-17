@@ -3,6 +3,7 @@
 namespace MiningManager\Services\Configuration;
 
 use MiningManager\Models\Setting;
+use MiningManager\Models\WebhookConfiguration;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -207,10 +208,7 @@ class SettingsManagerService
 
             // Payment auto-match toggle. Surfaced here so the General settings
             // blade can render the checkbox's current state. The canonical
-            // read site for runtime gating is `getPaymentSettings()` /
-            // `getSetting('payment.auto_match_payments')` — see
-            // ProcessWalletJournalListener for how the listener consults it
-            // before applying a matched payment.
+            // read site for runtime gating is getPaymentSettings().
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
 
             // Accept payments from any of a player's characters (alt-aware
@@ -221,6 +219,46 @@ class SettingsManagerService
             // consults `getPaymentSettings()['accept_alt_characters']` at
             // match time.
             'accept_alt_characters' => (bool) $this->getSetting('payment.accept_alt_characters', true),
+
+            // Roll the remainder of an oversized payment onto the payer's
+            // next-oldest unpaid invoice, and keep going until the money runs
+            // out. Covers the common "settles three months in one transfer"
+            // case without a director splitting it by hand. Off means a
+            // payment only ever touches the one invoice it was matched to.
+            'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
+
+            // What to do with money left over once every open invoice is
+            // settled. On (default) parks it against the paying character and
+            // draws it down when their next invoice is calculated. Off
+            // discards it, which is the pre-allocation-ledger behaviour.
+            'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
+
+            // A standing keyword a member can put in the transfer reason to
+            // pay ahead of being invoiced. Unlike a tax code it never expires
+            // and is the same for everyone, so it can be pinned in a corp MOTD.
+            // Empty disables the feature entirely.
+            'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
+
+            // The mirror of that, for money going the other way. A refund is a
+            // corporation_account_withdrawal to a character, and so is an SRP
+            // payout or any other reimbursement, so amount and recipient alone
+            // cannot tell them apart. Requiring this in the transfer reason
+            // means a refund only confirms against a transfer meant to be one.
+            // Global for the same reason the other is: one wallet, one keyword.
+            'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
+
+            // Surfaced here purely so the General tab can grey the keyword box
+            // out. The canonical read for runtime gating is getFeatureFlags().
+            'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
+
+            // An invoice past its due date is treated as overdue for
+            // notification purposes unless this much of it is already paid.
+            // Guards the token-payment loophole: 1m against a 1b invoice is
+            // 0.1% paid, nowhere near settled, and should not buy the gentler
+            // wording forever. The default forgives rounding and price drift,
+            // which is the only honest reason to be slightly short. 0 restores
+            // the old behaviour where any payment at all softened the tone.
+            'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
 
             // Notification settings have moved to the dedicated Notifications tab
             // See getNotificationSettings() for the new per-channel configuration
@@ -323,7 +361,31 @@ class SettingsManagerService
                     $this->activeCorporationId = null; // Force global save
                     $this->updateSetting('general.moon_owner_corporation_id', $value, 'integer');
                     $this->activeCorporationId = $savedContext;
-                } elseif (in_array($key, ['payment_match_tolerance', 'payment_grace_period_hours', 'payment_auto_match_payments', 'payment_accept_alt_characters'])) {
+                } elseif ($key === 'payment_refund_keyword') {
+                    // Global, like the upfront keyword and for the same reason.
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting('payment.refund_keyword', $value);
+                    $this->activeCorporationId = $savedContext;
+                } elseif ($key === 'payment_upfront_keyword') {
+                    // Global for the same reason the moon owner corp is. There
+                    // is one tax program and one wallet it reads, so one keyword
+                    // serves every configured corporation. Saved per-corp it
+                    // would land in a context the matcher never reads, and the
+                    // feature would silently do nothing.
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting('payment.upfront_keyword', $value);
+                    $this->activeCorporationId = $savedContext;
+                } elseif (in_array($key, [
+                    'payment_match_tolerance',
+                    'payment_grace_period_hours',
+                    'payment_auto_match_payments',
+                    'payment_accept_alt_characters',
+                    'payment_cascade_remainder',
+                    'payment_hold_surplus_as_credit',
+                    'payment_overdue_paid_threshold_pct',
+                ])) {
                     // Payment settings use payment. prefix instead of general.
                     // form input `payment_<x>` → setting key `payment.<x>`.
                     $settingKey = str_replace('payment_', 'payment.', $key);
@@ -385,15 +447,41 @@ class SettingsManagerService
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
             'minimum_tax_amount' => (float) $this->getSetting('payment.minimum_tax_amount',
                 config('mining-manager.tax_payment.minimum_tax_amount', 1000000)),
-            // Auto-match toggle. Read by ProcessWalletJournalListener (the
-            // queued listener that fires per CharacterWalletJournalUpdated
-            // event) to decide whether to apply matched payments
-            // automatically. true (default) = listener applies the payment
-            // immediately; false = match is detected and shown on the
-            // wallet-verification page but the operator must manually
-            // confirm. Useful for installs that want a human-review step
-            // before any tax row is updated.
+            // Auto-match toggle, read by the scheduled verify-payments run.
+            // true (default) applies a matched payment as soon as it is found;
+            // false detects the match and leaves it on the wallet verification
+            // page for someone to confirm. Useful for installs that want a
+            // human-review step before any invoice is updated.
             'auto_match_payments' => (bool) $this->getSetting('payment.auto_match_payments', true),
+
+            // Read by PaymentAllocationService when deciding how far a payment
+            // reaches. Surfaced in getGeneralSettings() as well so the settings
+            // blade can render the checkboxes.
+            'cascade_remainder' => (bool) $this->getSetting('payment.cascade_remainder', true),
+            'hold_surplus_as_credit' => (bool) $this->getSetting('payment.hold_surplus_as_credit', true),
+
+            // A standing keyword a member can put in the transfer reason to
+            // pay ahead of being invoiced. Unlike a tax code it never expires
+            // and is the same for everyone, so it can be pinned in a corp MOTD.
+            // Empty disables the feature entirely.
+            'upfront_keyword' => trim((string) $this->getSettingForCorporation('payment.upfront_keyword', null, 'MM-UPFRONT')),
+
+            // The mirror of that, for money going the other way. A refund is a
+            // corporation_account_withdrawal to a character, and so is an SRP
+            // payout or any other reimbursement, so amount and recipient alone
+            // cannot tell them apart. Requiring this in the transfer reason
+            // means a refund only confirms against a transfer meant to be one.
+            // Global for the same reason the other is: one wallet, one keyword.
+            'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
+
+            // An invoice past its due date is treated as overdue for
+            // notification purposes unless this much of it is already paid.
+            // Guards the token-payment loophole: 1m against a 1b invoice is
+            // 0.1% paid, nowhere near settled, and should not buy the gentler
+            // wording forever. The default forgives rounding and price drift,
+            // which is the only honest reason to be slightly short. 0 restores
+            // the old behaviour where any payment at all softened the tone.
+            'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
             // Accept payments from any of a player's characters, not just
             // the exact taxed character. Players routinely send ISK from
             // their wallet-richest alt rather than the alt that mined the
@@ -1273,6 +1361,7 @@ class SettingsManagerService
             'auto_calculate_taxes' => (bool) $this->getSetting('features.auto_calculate_taxes', true),
             'auto_generate_invoices' => (bool) $this->getSetting('features.auto_generate_invoices', true),
             'verify_wallet_transactions' => (bool) $this->getSetting('features.verify_wallet_transactions', true),
+            'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
 
             // Data retention
             'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),
@@ -1294,6 +1383,20 @@ class SettingsManagerService
         try {
             foreach ($features as $key => $value) {
                 $type = is_bool($value) ? 'boolean' : (is_int($value) ? 'integer' : 'string');
+
+                // Upfront payments is global, for the same reason the keyword
+                // is. The wallet matcher runs as one corporation, the moon
+                // owner, so a flag saved against any other corporation is never
+                // consulted: the box would tick and nothing would change.
+                if ($key === 'enable_upfront_payments') {
+                    $savedContext = $this->activeCorporationId;
+                    $this->activeCorporationId = null;
+                    $this->updateSetting("features.{$key}", $value, $type);
+                    $this->activeCorporationId = $savedContext;
+
+                    continue;
+                }
+
                 $this->updateSetting("features.{$key}", $value, $type);
             }
 
@@ -1352,45 +1455,182 @@ class SettingsManagerService
      *
      * @return array
      */
-    public function exportSettings(): array
+    /**
+     * Export settings for moving a configuration between installs.
+     *
+     * Every row carries its own corporation_id. A flat key => value map cannot
+     * represent this data: most keys exist several times over, once globally and
+     * once per configured corporation, and flattening them silently keeps
+     * whichever row the database happened to return last.
+     *
+     * Webhooks are opt-in because webhook_url is a credential. Anyone holding
+     * the exported file can post to those channels, so putting them in by
+     * default would turn a settings backup into a secret people email around.
+     *
+     * @param bool $includeWebhooks
+     * @return array
+     */
+    public function exportSettings(bool $includeWebhooks = false): array
     {
-        $settings = Setting::all()->mapWithKeys(function ($setting) {
-            return [$setting->key => $this->castValue($setting->value, $setting->type)];
-        })->toArray();
+        $settings = Setting::query()
+            ->orderBy('corporation_id')
+            ->orderBy('key')
+            ->get()
+            ->map(function ($setting) {
+                return [
+                    'key' => $setting->key,
+                    'value' => $setting->value,
+                    'type' => $setting->type,
+                    'corporation_id' => $setting->corporation_id,
+                    'description' => $setting->description,
+                ];
+            })
+            ->values()
+            ->all();
 
-        return [
+        $export = [
             'exported_at' => now()->toDateTimeString(),
             'version' => config('mining-manager.version', '1.0.0'),
+            'format' => 2,
             'settings' => $settings,
         ];
+
+        if ($includeWebhooks) {
+            $export['webhooks'] = WebhookConfiguration::query()
+                ->orderBy('corporation_id')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($hook) {
+                    $row = $hook->toArray();
+
+                    // Delivery statistics belong to the install that produced
+                    // them, not to the configuration being moved.
+                    foreach ([
+                        'id', 'success_count', 'failure_count',
+                        'last_success_at', 'last_failure_at', 'last_error',
+                        'created_at', 'updated_at',
+                    ] as $drop) {
+                        unset($row[$drop]);
+                    }
+
+                    return $row;
+                })
+                ->values()
+                ->all();
+        }
+
+        return $export;
     }
 
     /**
-     * Import settings from array
+     * Import a settings export.
+     *
+     * Understands both shapes: the current one, where settings are rows that
+     * each name their own corporation, and the original flat key => value map,
+     * which had no corporation information at all and is therefore treated as
+     * global. Files produced before this change still import exactly as they
+     * did before.
+     *
+     * Additive. Nothing is deleted, so importing a partial file tops up a
+     * configuration rather than replacing it.
      *
      * @param array $data
-     * @return void
+     * @return array{settings:int,webhooks:int,skipped:int,legacy:bool}
      */
-    public function importSettings(array $data)
+    public function importSettings(array $data): array
     {
         if (!isset($data['settings'])) {
             throw new \Exception('Invalid settings format');
         }
 
+        $rows = $data['settings'];
+        $legacy = !array_is_list($rows);
+
+        $imported = 0;
+        $skipped = 0;
+        $webhooks = 0;
+        $savedContext = $this->activeCorporationId;
+
         DB::beginTransaction();
-        
+
         try {
-            foreach ($data['settings'] as $key => $value) {
-                $this->updateSetting($key, $value);
+            if ($legacy) {
+                // Original format: a flat map with no corporation context, so
+                // everything lands globally, which is where it came from.
+                $this->activeCorporationId = null;
+
+                foreach ($rows as $key => $value) {
+                    $this->updateSetting($key, $value);
+                    $imported++;
+                }
+            } else {
+                foreach ($rows as $row) {
+                    if (!is_array($row) || !isset($row['key'])) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Write in the row's own context, not the caller's.
+                    $this->activeCorporationId = isset($row['corporation_id'])
+                        ? ($row['corporation_id'] === null ? null : (int) $row['corporation_id'])
+                        : null;
+
+                    $this->updateSetting(
+                        $row['key'],
+                        $row['value'] ?? null,
+                        $row['type'] ?? null
+                    );
+
+                    $imported++;
+                }
             }
-            
-            Log::info('Mining Manager: Settings imported successfully');
-            
+
+            if (!empty($data['webhooks']) && is_array($data['webhooks'])) {
+                foreach ($data['webhooks'] as $hook) {
+                    if (!is_array($hook) || empty($hook['name'])) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Name plus corporation identifies a webhook well enough to
+                    // re-import over itself without piling up duplicates.
+                    WebhookConfiguration::updateOrCreate(
+                        [
+                            'name' => $hook['name'],
+                            'corporation_id' => $hook['corporation_id'] ?? null,
+                        ],
+                        $hook
+                    );
+
+                    $webhooks++;
+                }
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
+            $this->activeCorporationId = $savedContext;
             throw $e;
         }
+
+        $this->activeCorporationId = $savedContext;
+
+        // updateSetting() drops each key's own cache entry as it writes. The
+        // wider flush (aggregate getters, tab visibility) belongs to the caller,
+        // which knows whether it is finishing a request.
+        Log::info('Mining Manager: settings imported', [
+            'settings' => $imported,
+            'webhooks' => $webhooks,
+            'skipped' => $skipped,
+            'legacy_format' => $legacy,
+        ]);
+
+        return [
+            'settings' => $imported,
+            'webhooks' => $webhooks,
+            'skipped' => $skipped,
+            'legacy' => $legacy,
+        ];
     }
 
     /**

@@ -13,6 +13,8 @@ use Seat\Eveapi\Models\Sde\SolarSystem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Tax\InvoiceCoverage;
+use MiningManager\Services\OreClassifier;
 
 class LedgerSummaryService
 {
@@ -393,6 +395,32 @@ class LedgerSummaryService
         // Current month = not finalized (still in progress)
         $isFinalized = !$dateCarbon->isSameMonth(now());
 
+        // Once an invoice covering this day has gone out, the tax on it is a
+        // fact rather than a calculation. Volume and value still refresh, so
+        // late-arriving mining shows up as the real thing it is, but the tax
+        // stays at what the member was actually billed.
+        //
+        // Freezing the whole row instead would leave the day's tonnage looking
+        // wrong, which is its own kind of confusion. This keeps the numbers
+        // honest and the money settled.
+        //
+        // is_finalized is no use for this: it is set from the calendar month,
+        // so on a fortnightly cycle a period can be billed and paid a fortnight
+        // before the flag turns over. InvoiceCoverage reads the invoice periods
+        // themselves and does not care how long they are.
+        $billed = InvoiceCoverage::coversRow($characterId, $dateCarbon->toDateString());
+
+        if ($billed) {
+            $existing = MiningLedgerDailySummary::where('character_id', $characterId)
+                ->whereDate('date', $dateCarbon->toDateString())
+                ->first();
+
+            if ($existing) {
+                $totalTax = (float) $existing->total_tax;
+                $eventDiscountTotal = (float) $existing->event_discount_total;
+            }
+        }
+
         // Create or update daily summary
         return MiningLedgerDailySummary::updateOrCreate(
             [
@@ -542,7 +570,7 @@ class LedgerSummaryService
             return (float) ($taxRates['gas'] ?? 10.0);
         }
 
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+        if (OreClassifier::isAbyssal($typeId)) {
             return (float) ($taxRates['abyssal_ore'] ?? 15.0);
         }
 
@@ -589,10 +617,13 @@ class LedgerSummaryService
         }
 
         if (TypeIdRegistry::isGas($typeId)) {
-            return $taxSelector['gas'] ?? true;
+            // false to match getTaxSelector(), which is the only source this
+            // reads from. Unreachable while that returns every key, but two
+            // opposite defaults for the same setting read as disagreement.
+            return $taxSelector['gas'] ?? false;
         }
 
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
+        if (OreClassifier::isAbyssal($typeId)) {
             return $taxSelector['abyssal_ore'] ?? false;
         }
 
@@ -658,23 +689,7 @@ class LedgerSummaryService
      */
     private function getOreCategory(int $typeId): string
     {
-        if (TypeIdRegistry::isMoonOre($typeId)) {
-            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
-            return $rarity ? 'moon_' . $rarity : 'moon_r4';
-        }
-        if (TypeIdRegistry::isIce($typeId)) {
-            return 'ice';
-        }
-        if (TypeIdRegistry::isGas($typeId)) {
-            return 'gas';
-        }
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES, true)) {
-            return 'abyssal';
-        }
-        if (TypeIdRegistry::isTriglavianOre($typeId)) {
-            return 'triglavian';
-        }
-        return 'ore';
+        return OreClassifier::category($typeId);
     }
 
     /**

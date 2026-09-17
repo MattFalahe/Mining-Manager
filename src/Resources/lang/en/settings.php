@@ -217,7 +217,8 @@ return [
     'show_character_names' => 'Show Character Names',
     'show_character_names_help' => 'Display full character names in public areas',
     'allow_export_data' => 'Allow Data Export',
-    'allow_export_data_help' => 'Let members export their own mining data',
+    'allow_export_data_help' => 'Exporting is off for everyone when this is off, directors and admins included. Covers mining, tax, analytics, theft, report and moon downloads. Your settings backup is separate and always available.',
+    'data_export_disabled' => 'Exporting is switched off. An administrator can turn it back on under Settings, Features, Allow Data Export.',
     
     // Automation & Processing
     'automation_processing' => 'Automation & Processing',
@@ -246,8 +247,11 @@ return [
     'advanced_settings' => 'Advanced Settings',
     'advanced_warning' => 'These settings are for advanced users only. Incorrect settings may cause issues.',
     'export_settings' => 'Export Settings',
-    'export_description' => 'Export all settings to a JSON file for backup or transfer.',
+    'export_description' => 'Export every setting, including the ones each corporation has of its own, to a JSON file for backup or transfer.',
     'export_now' => 'Export Settings',
+    'applies_to_all_corporations' => 'All corporations',
+    'export_include_webhooks' => 'Include webhooks',
+    'export_webhooks_warning' => 'The file will contain your webhook URLs. Anyone who has it can post to those channels.',
     'import_settings' => 'Import Settings',
     'import_description' => 'Import settings from a previously exported JSON file.',
     'choose_file' => 'Choose File',

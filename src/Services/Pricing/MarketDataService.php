@@ -68,6 +68,10 @@ class MarketDataService
             Cache::forget($cacheKey);
         }
 
+        // Laravel reads a whole-number lifetime as seconds, so this copy lasts
+        // as many seconds as the cache duration has minutes. Keep it short:
+        // mining_price_cache is the cache the plugin relies on, and changing
+        // the market or price type does not clear these entries.
         return Cache::remember($cacheKey, $cacheDuration, function () use ($typeIds) {
             Log::info('Cache miss - fetching fresh prices', ['type_count' => count($typeIds)]);
             return $this->priceProvider->getPrices($typeIds);
@@ -135,8 +139,8 @@ class MarketDataService
     {
         $cacheKey = $this->getHistoricalCacheKey($typeId, $startDate, $endDate);
 
-        // Historical prices cache for 24 hours (1440 minutes) by default, use setting if configured
-        $historicalCacheDuration = $this->getCacheDuration() * 24; // 24x normal cache for historical data
+        // Seconds as well, so about an hour and a half with the default duration.
+        $historicalCacheDuration = $this->getCacheDuration() * 24;
         return Cache::remember($cacheKey, $historicalCacheDuration, function () use ($typeId, $startDate, $endDate) {
             return DB::table('mining_historical_prices')
                 ->where('type_id', $typeId)

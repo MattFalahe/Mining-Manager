@@ -319,8 +319,9 @@
                     @enderror
                 </div>
                 <small class="form-text text-muted">
-                    How long to cache prices before considering them stale. Range: 30-1440 minutes (30 min - 24 hours). <strong>Default: 240 minutes (4 hours)</strong>.
-                    If you change this, also update the <code>cache-prices</code> scheduled job frequency to match.
+                    How long a cached price counts as current. Range: 30-1440 minutes (30 min - 24 hours). <strong>Default: 240 minutes (4 hours)</strong>.
+                    The scheduled <code>cache-prices</code> job refreshes any price older than half of this, so keep that job running at least this often.
+                    With Manager Core as the provider, every run copies every price.
                 </small>
             </div>
 

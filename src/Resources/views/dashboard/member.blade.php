@@ -47,6 +47,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-dashboard member-dashboard">
     
     {{-- CURRENT MONTH STATISTICS --}}

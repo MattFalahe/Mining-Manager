@@ -8,6 +8,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-dashboard">
 {{-- TAB NAVIGATION --}}
 <div class="card card-dark card-tabs">

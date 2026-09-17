@@ -170,6 +170,35 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::get('/balances', [
+            'as' => 'mining-manager.taxes.balances',
+            'uses' => 'TaxController@balances',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        // Handing money back is a director's call, not a member's, so this is
+        // gated harder than the page it lives on.
+        Route::post('/balances/refund', [
+            'as' => 'mining-manager.taxes.balances.refund',
+            'uses' => 'TaxController@refundBalance',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        // A refund the wallet will never match, because the keyword was left
+        // off or the ISK went out some other way. Same gate: saying money was
+        // paid is the same weight of decision as agreeing to pay it.
+        Route::post('/balances/refund/{refundId}/sent', [
+            'as' => 'mining-manager.taxes.balances.refund-sent',
+            'uses' => 'TaxController@markRefundSent',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/balances/refund/{refundId}/reopen', [
+            'as' => 'mining-manager.taxes.balances.refund-reopen',
+            'uses' => 'TaxController@reopenRefund',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/wallet', [
             'as' => 'mining-manager.taxes.wallet',
             'uses' => 'TaxController@wallet',
@@ -207,6 +236,18 @@ Route::group([
             'middleware' => 'can:mining-manager.director',
         ]);
 
+        Route::post('/wallet/assign', [
+            'as' => 'mining-manager.taxes.wallet.assign',
+            'uses' => 'TaxController@assignPayment',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
+        Route::post('/wallet/unassign', [
+            'as' => 'mining-manager.taxes.wallet.unassign',
+            'uses' => 'TaxController@unassignPayment',
+            'middleware' => 'can:mining-manager.director',
+        ]);
+
         Route::get('/export', [
             'as' => 'mining-manager.taxes.export',
             'uses' => 'TaxController@export',
@@ -232,6 +273,11 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        // The Calculate Taxes page no longer has a Regenerate Codes button, but a
+        // copy of the page compiled before an update still asks for this route by
+        // name, and a missing route name stops the whole page rendering. Keeping
+        // it means such a page still loads, and its old button does what it
+        // always did, which is the same as Recalculate.
         Route::post('/calculate/regenerate', [
             'as' => 'mining-manager.taxes.regenerate-payments',
             'uses' => 'TaxController@regeneratePayments',
@@ -253,6 +299,14 @@ Route::group([
         Route::delete('/codes/{id}', [
             'as' => 'mining-manager.taxes.codes.destroy',
             'uses' => 'TaxController@destroyCode',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        // Closing off a code whose invoice was settled some other way, usually
+        // a payment assigned by hand. Same gate as deleting one.
+        Route::post('/codes/{id}/mark-used', [
+            'as' => 'mining-manager.taxes.codes.mark-used',
+            'uses' => 'TaxController@markCodeUsed',
             'middleware' => 'can:mining-manager.admin',
         ]);
 
@@ -436,6 +490,33 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::get('/scanned-moons', [
+            'as' => 'mining-manager.moon.scanned-moons',
+            'uses' => 'MoonController@scannedMoons',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        // Find Moons needs Director, Moon Manager or Moon Finder. The OR
+        // cannot be one can: middleware, so MoonController checks it. Literal
+        // paths, registered before the /{id} catch-all below.
+        Route::get('/finder/locations', [
+            'as' => 'mining-manager.moon.finder.locations',
+            'uses' => 'MoonController@finderLocations',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::get('/finder/search', [
+            'as' => 'mining-manager.moon.finder.search',
+            'uses' => 'MoonController@finderSearch',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::get('/finder/export', [
+            'as' => 'mining-manager.moon.finder.export',
+            'uses' => 'MoonController@finderExport',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/active', [
             'as' => 'mining-manager.moon.active',
             'uses' => 'MoonController@active',
@@ -490,9 +571,16 @@ Route::group([
             'uses' => 'MoonPlannerController@update',
         ]);
 
-        Route::post('/planner/{id}/dismiss-mismatch', [
-            'as' => 'mining-manager.moon.planner.dismiss-mismatch',
-            'uses' => 'MoonPlannerController@dismissMismatch',
+        // Settling a scheduling mismatch: move the plan to the in-game time, or
+        // keep it and ignore the offset.
+        Route::post('/planner/{id}/realign', [
+            'as' => 'mining-manager.moon.planner.realign',
+            'uses' => 'MoonPlannerController@realign',
+        ]);
+
+        Route::post('/planner/{id}/ignore-offset', [
+            'as' => 'mining-manager.moon.planner.ignore-offset',
+            'uses' => 'MoonPlannerController@ignoreOffset',
         ]);
 
         Route::delete('/planner/{id}', [
@@ -546,10 +634,12 @@ Route::group([
     // Analytics Routes
     Route::group(['prefix' => 'analytics'], function () {
         // Director - view
+        // The overview and Moon Analytics also admit moon managers, which a
+        // single can: middleware cannot express. AnalyticsController enforces
+        // both routes itself.
         Route::get('/', [
             'as' => 'mining-manager.analytics.index',
             'uses' => 'AnalyticsController@index',
-            'middleware' => 'can:mining-manager.director',
         ]);
 
         Route::get('/charts', [
@@ -576,10 +666,10 @@ Route::group([
            'middleware' => 'can:mining-manager.director',
        ]);
 
+        // Moon managers too: see the note on the overview route.
         Route::get('/moons', [
             'as' => 'mining-manager.analytics.moons',
             'uses' => 'AnalyticsController@moons',
-            'middleware' => 'can:mining-manager.director',
         ]);
 
         // Admin - export

@@ -24,7 +24,7 @@ class DiagnosePricesCommand extends Command
                             {--test-provider : Test current price provider}
                             {--show-missing : Show which specific items are missing prices}
                             {--show-sources : Show where prices are coming from (cache vs fallback)}
-                            {--show-coverage : Show complete coverage statistics for all 357 items}';
+                            {--show-coverage : Show complete coverage statistics for every tracked type}';
 
     /**
      * The console command description.
@@ -653,7 +653,8 @@ class DiagnosePricesCommand extends Command
      */
     /**
      * Show complete coverage statistics for all items
-     * UPDATED: Now tracks all 357 items (was 197)
+     * Counts come from TypeIdRegistry rather than being restated here, so
+     * the report cannot drift from the registry the way it used to.
      */
     protected function showCompleteCoverage()
     {
@@ -667,51 +668,42 @@ class DiagnosePricesCommand extends Command
             // RAW ORES (Ore Value Taxation)
             'Regular Ores' => [
                 'type_ids' => TypeIdRegistry::REGULAR_ORES,
-                'total' => 45,
                 'purpose' => 'Ore value taxation',
             ],
             'Compressed Ores' => [
                 'type_ids' => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
-                'total' => 45,
                 'purpose' => 'Hauler ore taxation',
             ],
             'Moon Ores (All Variants)' => [
                 'type_ids' => TypeIdRegistry::MOON_ORES,
-                'total' => 60,
                 'purpose' => 'Moon ore taxation (all variants)',
             ],
             'Compressed Moon Ores (All Variants)' => [
                 'type_ids' => TypeIdRegistry::COMPRESSED_MOON_ORES,
-                'total' => 60,
                 'purpose' => 'Compressed moon ore taxation',
             ],
             // NOTE: Jackpot ores are already included in moon ore counts above
             // They are tracked for detection purposes but not counted separately
             'Ice (Raw + Compressed)' => [
                 'type_ids' => TypeIdRegistry::getAllIce(),
-                'total' => 16,
                 'purpose' => 'Ice value taxation',
             ],
             'Gas' => [
                 'type_ids' => TypeIdRegistry::getAllGas(),
-                'total' => 12,
                 'purpose' => 'Gas value taxation',
             ],
             
             // REFINED MATERIALS (Refined Value Taxation)
             'Minerals' => [
                 'type_ids' => TypeIdRegistry::MINERALS,
-                'total' => 8,
                 'purpose' => 'Refined ore value',
             ],
             'Moon Materials' => [
                 'type_ids' => TypeIdRegistry::getAllMoonMaterials(),
-                'total' => 20,  // Fixed: was 24, but TypeIdRegistry has 20 (4 per rarity × 5 rarities)
                 'purpose' => 'Refined moon value',
             ],
             'Ice Products' => [
                 'type_ids' => TypeIdRegistry::ICE_PRODUCTS,
-                'total' => 7,
                 'purpose' => '✨ Refined ice value',
             ],
         ];
@@ -723,7 +715,8 @@ class DiagnosePricesCommand extends Command
 
         foreach ($categories as $category => $data) {
             $typeIds = $data['type_ids'];
-            $expectedTotal = $data['total'];
+            // Derive the denominator from the registry so the two can never drift.
+            $expectedTotal = count(array_unique($typeIds));
             $totalExpected += $expectedTotal;
             
             // Count cached items
@@ -823,18 +816,30 @@ class DiagnosePricesCommand extends Command
         $this->line("  💎 Jackpot Detection: " . ($jackpotDetectionReady ? '✅ Ready' : '❌ Incomplete'));
         
         $this->newLine();
+        // Counted off the registry, like the table above. These numbers used to
+        // be typed in by hand and had drifted a long way from reality.
+        $breakdown = [
+            'Regular Ores'     => TypeIdRegistry::REGULAR_ORES,
+            'Compressed Ores'  => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
+            'Moon Ores'        => TypeIdRegistry::MOON_ORES,
+            'Compressed Moon'  => TypeIdRegistry::COMPRESSED_MOON_ORES,
+            'Ice'              => TypeIdRegistry::getAllIce(),
+            'Gas'              => TypeIdRegistry::getAllGas(),
+            'Minerals'         => TypeIdRegistry::MINERALS,
+            'Moon Materials'   => TypeIdRegistry::getAllMoonMaterials(),
+            'Ice Products'     => TypeIdRegistry::ICE_PRODUCTS,
+        ];
+
         $this->line("  <fg=yellow>📊 COVERAGE BREAKDOWN:</>");
-        $this->line("  - Regular Ores: 45 items (base + variants)");
-        $this->line("  - Compressed Ores: 45 items");
-        $this->line("  - Moon Ores: 60 items (base + improved + jackpot)");
-        $this->line("  - Compressed Moon: 60 items (base + improved + jackpot)");
-        $this->line("  - Ice: 16 items");
-        $this->line("  - Gas: 12 items");
-        $this->line("  - Minerals: 8 items");
-        $this->line("  - Moon Materials: 20 items");
-        $this->line("  - Ice Products: 7 items");
+
+        $everything = [];
+        foreach ($breakdown as $label => $ids) {
+            $this->line("  - {$label}: " . count(array_unique($ids)) . " items");
+            $everything = array_merge($everything, $ids);
+        }
+
         $this->line("  ───────────────────────");
-        $this->line("  <fg=green>TOTAL: 273 UNIQUE ITEMS!</>");
+        $this->line("  <fg=green>TOTAL: " . count(array_unique($everything)) . " UNIQUE ITEMS</>");
         $this->newLine();
         $this->line("  <fg=cyan>Note:</> Jackpot ores (40 items) are included in moon ore counts above");
     }
@@ -931,7 +936,7 @@ class DiagnosePricesCommand extends Command
         $this->line('  <fg=cyan>Tip:</> Run with --test-provider to test price fetching');
         $this->line('  <fg=cyan>Tip:</> Run with --show-missing to see missing type IDs');
         $this->line('  <fg=cyan>Tip:</> Run with --show-sources to see cache vs fallback usage');
-        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 357 items coverage');
+        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see full coverage');
     }
 
     /**

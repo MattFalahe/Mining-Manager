@@ -19,6 +19,7 @@ use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
+use MiningManager\Services\OreClassifier;
 
 class DiagnosticController extends Controller
 {
@@ -596,40 +597,28 @@ class DiagnosticController extends Controller
                 return redirect()->back()->with('error', 'No test characters found. Generate characters first.');
             }
 
-            // Define ore types with their IDs and categories
+            // Real type ids, each one checked against TypeIdRegistry. Only the id is
+            // stored; the flags further down are worked out the way the importers
+            // work them out, so generated rows classify exactly like real mining.
             $oreTypes = [
-                // Moon Ores (R64 - Exceptional)
-                ['id' => 45506, 'name' => 'Xenotime', 'rarity' => 'r64', 'is_moon_ore' => true],
-                ['id' => 46676, 'name' => 'Monazite', 'rarity' => 'r64', 'is_moon_ore' => true],
-
-                // Moon Ores (R32 - Rare)
-                ['id' => 45492, 'name' => 'Chromite', 'rarity' => 'r32', 'is_moon_ore' => true],
-                ['id' => 46678, 'name' => 'Platinum', 'rarity' => 'r32', 'is_moon_ore' => true],
-
-                // Moon Ores (R16 - Uncommon)
-                ['id' => 45494, 'name' => 'Cobaltite', 'rarity' => 'r16', 'is_moon_ore' => true],
-                ['id' => 46680, 'name' => 'Titanite', 'rarity' => 'r16', 'is_moon_ore' => true],
-
-                // Moon Ores (R8 - Common)
-                ['id' => 45490, 'name' => 'Zeolites', 'rarity' => 'r8', 'is_moon_ore' => true],
-                ['id' => 46682, 'name' => 'Scheelite', 'rarity' => 'r8', 'is_moon_ore' => true],
-
-                // Moon Ores (R4 - Ubiquitous)
-                ['id' => 45488, 'name' => 'Bitumens', 'rarity' => 'r4', 'is_moon_ore' => true],
-                ['id' => 46684, 'name' => 'Sylvite', 'rarity' => 'r4', 'is_moon_ore' => true],
-
-                // Regular Ores
-                ['id' => 1230, 'name' => 'Veldspar', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1228, 'name' => 'Scordite', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1224, 'name' => 'Pyroxeres', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-
-                // Ice
-                ['id' => 16262, 'name' => 'Clear Icicle', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-                ['id' => 17975, 'name' => 'Blue Ice', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-
-                // Gas
-                ['id' => 25268, 'name' => 'Mykoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
-                ['id' => 25272, 'name' => 'Cytoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
+                45510 => 'Xenotime (R64)',
+                45511 => 'Monazite (R64)',
+                45506 => 'Cinnabar (R32)',
+                45503 => 'Zircon (R32)',
+                45501 => 'Chromite (R16)',
+                45498 => 'Otavite (R16)',
+                45494 => 'Cobaltite (R8)',
+                45497 => 'Scheelite (R8)',
+                45492 => 'Bitumens (R4)',
+                45491 => 'Sylvite (R4)',
+                1230 => 'Veldspar',
+                1228 => 'Scordite',
+                1224 => 'Pyroxeres',
+                16262 => 'Clear Icicle',
+                16264 => 'Blue Ice',
+                30370 => 'Fullerite-C50',
+                28694 => 'Amber Mykoserocin',
+                25268 => 'Amber Cytoserocin',
             ];
 
             // Solar system IDs (various null sec systems)
@@ -642,7 +631,7 @@ class DiagnosticController extends Controller
                     $date = Carbon::now()->subDays($day);
 
                     for ($entry = 0; $entry < $entriesPerDay; $entry++) {
-                        $ore = $oreTypes[array_rand($oreTypes)];
+                        $typeId = array_rand($oreTypes);
                         $quantity = rand(1000, 50000);
                         $solarSystem = $solarSystems[array_rand($solarSystems)];
 
@@ -650,14 +639,19 @@ class DiagnosticController extends Controller
                             [
                                 'character_id' => $character->character_id,
                                 'date' => $date->format('Y-m-d'),
-                                'type_id' => $ore['id'],
+                                'type_id' => $typeId,
                                 'observer_id' => null,
                             ],
                             [
                                 'quantity' => $quantity,
                                 'solar_system_id' => $solarSystem,
                                 'processed_at' => $date,
-                                'is_moon_ore' => $ore['is_moon_ore'] ?? false,
+                                'is_moon_ore' => TypeIdRegistry::isMoonOre($typeId),
+                                'is_ice' => TypeIdRegistry::isIce($typeId),
+                                'is_gas' => TypeIdRegistry::isGas($typeId),
+                                'is_abyssal' => OreClassifier::isAbyssal($typeId),
+                                'is_triglavian' => TypeIdRegistry::isTriglavianOre($typeId),
+                                'ore_category' => OreClassifier::category($typeId),
                                 'created_at' => $date,
                                 'updated_at' => $date,
                             ]
@@ -1554,6 +1548,10 @@ class DiagnosticController extends Controller
             // Settings Health alongside the other groups.
             $settingGroups = [
                 'General' => $this->settingsService->getGeneralSettings(),
+                // Feature switches decide whole areas, upfront payments and
+                // data export among them, so their source matters as much as
+                // any other setting's.
+                'Features' => $this->settingsService->getFeatureFlags(),
                 'Tax Rates' => $this->settingsService->getTaxRates(),
                 'Pricing' => $this->settingsService->getPricingSettings(),
                 'Payment' => $this->settingsService->getPaymentSettings(),
@@ -2242,6 +2240,9 @@ class DiagnosticController extends Controller
                 $pipeline['pending_payments'] = ['status' => 'error', 'error' => $e->getMessage()];
             }
 
+            // Step 4b: Payment reconciliation
+            $pipeline['payment_reconciliation'] = $this->reconcilePayments();
+
             // Step 5: Overdue check
             $overdueCount = $taxRecords->filter(fn($t) => $t->isOverdue())->count();
             $pipeline['overdue'] = [
@@ -2290,6 +2291,92 @@ class DiagnosticController extends Controller
         } catch (\Exception $e) {
             Log::error('Tax pipeline diagnostic failed', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Check that credited payments still add up, from the cutover forward.
+     *
+     * Every payment applied since the allocation ledger shipped writes a row
+     * per invoice it touched, so an invoice's amount_paid should equal the sum
+     * of its allocations. A mismatch means something credited an invoice
+     * without going through the allocator, which is the failure mode this
+     * whole mechanism exists to prevent.
+     *
+     * Deliberately scoped to invoices settled after the cutover. Older records
+     * were credited by a pipeline that kept no such breakdown, so they cannot
+     * be reconciled and are not something to raise alarms about now.
+     */
+    private function reconcilePayments(): array
+    {
+        try {
+            $allocator = app(\MiningManager\Services\Tax\PaymentAllocationService::class);
+            $epoch = $allocator->getDedupEpoch();
+
+            if (!$epoch) {
+                return [
+                    'status' => 'warning',
+                    'message' => 'No verification cutover is recorded, so nothing can be reconciled.',
+                ];
+            }
+
+            $taxes = \MiningManager\Models\MiningTax::where('paid_at', '>=', $epoch)
+                ->whereIn('status', ['paid', 'partial'])
+                ->get(['id', 'character_id', 'amount_owed', 'amount_paid', 'status']);
+
+            if ($taxes->isEmpty()) {
+                return [
+                    'status' => 'pass',
+                    'cutover' => $epoch->toDateTimeString(),
+                    'checked' => 0,
+                    'message' => 'No payments have been credited since the cutover yet.',
+                ];
+            }
+
+            $allocated = \MiningManager\Models\PaymentAllocation::whereIn('mining_tax_id', $taxes->pluck('id'))
+                ->selectRaw('mining_tax_id, SUM(amount) as total')
+                ->groupBy('mining_tax_id')
+                ->pluck('total', 'mining_tax_id');
+
+            $discrepancies = [];
+
+            foreach ($taxes as $tax) {
+                $expected = round((float) ($allocated[$tax->id] ?? 0), 2);
+                $actual = round((float) $tax->amount_paid, 2);
+
+                // A tolerance of 1 ISK matches the settled threshold used when
+                // applying payments, so decimal dust does not read as a fault.
+                if (abs($expected - $actual) < 1.0) {
+                    continue;
+                }
+
+                $discrepancies[] = [
+                    'tax_id' => (int) $tax->id,
+                    'character_id' => (int) $tax->character_id,
+                    'amount_paid' => $actual,
+                    'sum_of_allocations' => $expected,
+                    'difference' => round($actual - $expected, 2),
+                ];
+            }
+
+            $orphanClaims = \MiningManager\Models\ProcessedTransaction::where('matched_at', '>=', $epoch)
+                ->whereNotIn('transaction_id', function ($query) {
+                    $query->select('transaction_id')
+                        ->from('mining_manager_payment_allocations')
+                        ->whereNotNull('transaction_id');
+                })
+                ->count();
+
+            return [
+                'status' => empty($discrepancies) && $orphanClaims === 0 ? 'pass' : 'warning',
+                'cutover' => $epoch->toDateTimeString(),
+                'checked' => $taxes->count(),
+                'discrepancies' => array_slice($discrepancies, 0, 20),
+                'discrepancy_count' => count($discrepancies),
+                'claims_without_allocations' => $orphanClaims,
+            ];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'error' => $e->getMessage()];
         }
     }
 
@@ -2835,6 +2922,43 @@ class DiagnosticController extends Controller
                 ];
             }
 
+            // 11. Account balances that cannot be right: less than nothing left,
+            // or more left than was ever banked.
+            if (\Schema::hasTable('mining_manager_payment_credits')) {
+                $impossibleBalances = DB::table('mining_manager_payment_credits')
+                    ->where(function ($q) {
+                        $q->where('remaining', '<', 0)
+                          ->orWhereColumn('remaining', '>', 'amount');
+                    })
+                    ->count();
+                if ($impossibleBalances > 0) {
+                    $issues[] = [
+                        'category' => 'Impossible Account Balances',
+                        'severity' => 'error',
+                        'count' => $impossibleBalances,
+                        'message' => 'Held balance rows with a remaining amount below zero or above what was banked.',
+                    ];
+                }
+            }
+
+            // 12. Refunds whose balance row is gone. The Balances tab lists
+            // refunds under their balance, so these would never be shown.
+            if (\Schema::hasTable('mining_manager_payment_refunds') && \Schema::hasTable('mining_manager_payment_credits')) {
+                $orphanRefunds = DB::table('mining_manager_payment_refunds as r')
+                    ->leftJoin('mining_manager_payment_credits as c', 'c.id', '=', 'r.credit_id')
+                    ->whereNotNull('r.credit_id')
+                    ->whereNull('c.id')
+                    ->count();
+                if ($orphanRefunds > 0) {
+                    $issues[] = [
+                        'category' => 'Orphan Refunds',
+                        'severity' => 'warning',
+                        'count' => $orphanRefunds,
+                        'message' => 'Refund rows whose account balance row no longer exists, so the Balances tab cannot show them.',
+                    ];
+                }
+            }
+
             $duration = round((microtime(true) - $startTime) * 1000, 2);
 
             // Summary
@@ -3291,6 +3415,21 @@ class DiagnosticController extends Controller
             ? DB::table('metenox_cargo_alert_state')->count()
             : 0;
 
+        // Payments and the moon planner, guarded the same way for installs
+        // part way through their migrations.
+        $paymentAllocations = \Schema::hasTable('mining_manager_payment_allocations')
+            ? DB::table('mining_manager_payment_allocations')->count()
+            : 0;
+        $balancesHeld = \Schema::hasTable('mining_manager_payment_credits')
+            ? DB::table('mining_manager_payment_credits')->where('remaining', '>', 0)->count()
+            : 0;
+        $refundsPending = \Schema::hasTable('mining_manager_payment_refunds')
+            ? DB::table('mining_manager_payment_refunds')->where('status', 'pending')->count()
+            : 0;
+        $plannedPulls = \Schema::hasTable('moon_extraction_plans')
+            ? DB::table('moon_extraction_plans')->whereIn('status', ['planned', 'confirmed'])->count()
+            : 0;
+
         return [
             'mining_ledger' => DB::table('mining_ledger')->count(),
             'mining_taxes' => DB::table('mining_taxes')->count(),
@@ -3302,6 +3441,10 @@ class DiagnosticController extends Controller
             'metenox_structures'    => $metenoxStructures,
             'metenox_cargo_rows'    => $metenoxCargoRows,
             'metenox_alert_latches' => $metenoxAlertLatches,
+            'payment_allocations'   => $paymentAllocations,
+            'balances_held'         => $balancesHeld,
+            'refunds_pending'       => $refundsPending,
+            'planned_pulls'         => $plannedPulls,
         ];
     }
 
@@ -3424,6 +3567,7 @@ class DiagnosticController extends Controller
             'extraction_started' => $ns->sendExtractionStarted(array_merge($data, [
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
                 'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'started_by' => $data['started_by'] ?? 'Diagnostic Pilot (main: Diagnostic Main)',
                 'chunk_arrival_time' => $data['chunk_arrival_time'] ?? now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => $data['time_until_arrival'] ?? '6 days',
                 'estimated_value' => (int) ($data['estimated_value'] ?? 1200000000),
@@ -4541,6 +4685,7 @@ class DiagnosticController extends Controller
             'extraction_started' => [
                 'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
                 'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'started_by' => 'Test Pilot (main: Test Main)',
                 'chunk_arrival_time' => now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => '6 days',
                 'estimated_value' => 250000000,

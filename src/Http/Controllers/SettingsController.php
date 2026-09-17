@@ -37,6 +37,12 @@ class SettingsController extends Controller
      */
     private function clearSettingsCache(): void
     {
+        // Whether the Balances tab shows depends on a feature flag, and its
+        // visibility answer is cached for five minutes. Without dropping it
+        // here, turning upfront payments on would leave the operator staring
+        // at an unchanged tab bar wondering what they did wrong.
+        cache()->forget('mining_manager_balances_tab_visible');
+
         try {
             cache()->tags(['mining-manager'])->flush();
         } catch (\Exception $e) {
@@ -356,6 +362,11 @@ class SettingsController extends Controller
             'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
             'payment_auto_match_payments' => 'nullable|boolean',
             'payment_accept_alt_characters' => 'nullable|boolean',
+            'payment_cascade_remainder' => 'nullable|boolean',
+            'payment_hold_surplus_as_credit' => 'nullable|boolean',
+            'payment_upfront_keyword' => 'nullable|string|max:32',
+            'payment_refund_keyword' => 'nullable|string|max:32',
+            'payment_overdue_paid_threshold_pct' => 'nullable|numeric|min:0|max:100',
 
             // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
             'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
@@ -409,6 +420,75 @@ class SettingsController extends Controller
             // to switch to strict per-character matching is to actually
             // persist the false value.
             $data['payment_accept_alt_characters'] = $request->has('payment_accept_alt_characters');
+            // Both default to true in getPaymentSettings(), so an unchecked box
+            // has to be persisted as false or it can never be turned off.
+            $data['payment_cascade_remainder'] = $request->has('payment_cascade_remainder');
+            $data['payment_hold_surplus_as_credit'] = $request->has('payment_hold_surplus_as_credit');
+
+            // The upfront keyword and the tax code prefix are both matched
+            // against the same reason field. If one contains the other, a
+            // payment could read as either and the behaviour would depend on
+            // matching order, which is not something an operator could ever
+            // diagnose from the outside. Refuse the ambiguity instead.
+            //
+            // Only touch the stored keyword when the field was actually on the
+            // form. It is rendered disabled while the feature is off, and a
+            // disabled input is not submitted, so an absent key means "not
+            // offered" rather than "cleared". Writing an empty string here would
+            // wipe a configured keyword every time somebody saved the General
+            // tab with upfront payments switched off, and they would find it
+            // gone when they switched the feature back on. has() rather than
+            // filled(), so deliberately emptying the box still turns it off.
+            // Null when the field was not on the form, which happens whenever
+            // upfront payments are off. The refund guard below reads it and
+            // falls back to what is stored.
+            $upfrontKeyword = null;
+
+            if ($request->has('payment_upfront_keyword')) {
+                $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
+
+                if ($upfrontKeyword !== '') {
+                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
+
+                    if ($taxPrefix !== ''
+                        && (stripos($upfrontKeyword, $taxPrefix) !== false
+                            || stripos($taxPrefix, $upfrontKeyword) !== false)) {
+                        return redirect()->back()
+                            ->withInput()
+                            ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                    }
+                }
+
+                $data['payment_upfront_keyword'] = $upfrontKeyword;
+            } else {
+                unset($data['payment_upfront_keyword']);
+            }
+
+            // The refund keyword is read from the same field as the other two,
+            // so it has to be distinguishable from both. An overlap would make
+            // a transfer readable as more than one thing and the behaviour
+            // would depend on matching order, which nobody could diagnose from
+            // the outside.
+            if ($request->has('payment_refund_keyword')) {
+                $refundKeyword = trim((string) $data['payment_refund_keyword']);
+
+                if ($refundKeyword !== '') {
+                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
+                    $upfront = trim((string) ($upfrontKeyword ?? ($this->settingsService->getPaymentSettings()['upfront_keyword'] ?? '')));
+
+                    foreach (array_filter([$taxPrefix, $upfront]) as $other) {
+                        if (stripos($refundKeyword, $other) !== false || stripos($other, $refundKeyword) !== false) {
+                            return redirect()->back()
+                                ->withInput()
+                                ->with('error', "The refund keyword cannot overlap {$other}. Both are read from the transfer reason, so an overlap would make a payment readable as either. Pick something clearly different, for example MM-REFUND.");
+                        }
+                    }
+                }
+
+                $data['payment_refund_keyword'] = $refundKeyword;
+            } else {
+                unset($data['payment_refund_keyword']);
+            }
             $this->settingsService->updateGeneralSettings($data);
             $this->clearSettingsCache();
 
@@ -963,6 +1043,7 @@ class SettingsController extends Controller
             'auto_calculate_taxes' => 'nullable|boolean',
             'auto_generate_invoices' => 'nullable|boolean',
             'verify_wallet_transactions' => 'nullable|boolean',
+            'enable_upfront_payments' => 'nullable|boolean',
             'auto_cleanup_old_data' => 'nullable|boolean',
         ]);
 
@@ -1002,6 +1083,7 @@ class SettingsController extends Controller
                 'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
                 'auto_generate_invoices' => $request->has('auto_generate_invoices'),
                 'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),
+                'enable_upfront_payments' => $request->has('enable_upfront_payments'),
 
                 // Data retention
                 'ledger_retention_days' => $data['ledger_retention_days'],
@@ -1044,10 +1126,13 @@ class SettingsController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function export()
+    public function export(Request $request)
     {
         try {
-            $settings = $this->settingsService->exportSettings();
+            // Webhook URLs are credentials, so they travel only when asked for.
+            $settings = $this->settingsService->exportSettings(
+                $request->boolean('include_webhooks')
+            );
 
             return response()->json($settings, 200, [
                 'Content-Type' => 'application/json',
@@ -1082,10 +1167,27 @@ class SettingsController extends Controller
                 throw new \Exception('Invalid JSON file: ' . json_last_error_msg());
             }
 
-            $this->settingsService->importSettings($settings);
+            $result = $this->settingsService->importSettings($settings);
+            $this->clearSettingsCache();
+
+            $message = "Imported {$result['settings']} setting(s)";
+
+            if ($result['webhooks'] > 0) {
+                $message .= " and {$result['webhooks']} webhook(s)";
+            }
+
+            if ($result['skipped'] > 0) {
+                $message .= ", skipped {$result['skipped']} unreadable row(s)";
+            }
+
+            if ($result['legacy']) {
+                $message .= '. This file predates per-corporation export, so everything'
+                    . ' was applied globally. Re-export from the source install to keep'
+                    . ' corporation settings separate.';
+            }
 
             return redirect()->route('mining-manager.settings.index')
-                ->with('success', 'Settings imported successfully');
+                ->with('success', $message);
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Error importing settings: ' . $e->getMessage());
@@ -1255,6 +1357,7 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1326,6 +1429,7 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1502,6 +1606,7 @@ class SettingsController extends Controller
             'notify_extraction_started' => 'nullable|boolean',
             'notify_next_extraction_planned' => 'nullable|boolean',
             'notify_schedule_mismatch' => 'nullable|boolean',
+            'notify_tax_outstanding_digest' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
             'notify_event_created' => 'nullable|boolean',
