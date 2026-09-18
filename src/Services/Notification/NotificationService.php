@@ -59,6 +59,7 @@ class NotificationService
     const TYPE_TAX_INVOICE = 'tax_invoice';
     const TYPE_TAX_OVERDUE = 'tax_overdue';
     const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
+    const TYPE_PRICE_PROVIDER = 'price_provider';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
@@ -289,6 +290,24 @@ class NotificationService
      * @param array $data
      * @return array
      */
+    /**
+     * Price provider trouble: it stopped answering, or it is answering again.
+     *
+     * Sent on the change only. A provider that is down stays down for hours,
+     * and an alert every refresh would be noise nobody reads.
+     *
+     * @param array $data provider, failing, error, since, last_success
+     * @return array
+     */
+    public function sendPriceProviderStatus(array $data): array
+    {
+        $data['description'] = $data['description'] ?? (!empty($data['failing'])
+            ? 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.'
+            : 'Price refreshes are working again.');
+
+        return $this->send(self::TYPE_PRICE_PROVIDER, [], $data);
+    }
+
     public function sendOutstandingDigest(array $data): array
     {
         $data['description'] = $data['description']
@@ -893,6 +912,7 @@ class NotificationService
             'tax_invoice' => self::TYPE_TAX_INVOICE,
             'tax_overdue' => self::TYPE_TAX_OVERDUE,
             'tax_outstanding_digest' => self::TYPE_TAX_OUTSTANDING_DIGEST,
+            'price_provider' => self::TYPE_PRICE_PROVIDER,
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
@@ -1351,6 +1371,7 @@ class NotificationService
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1387,6 +1408,7 @@ class NotificationService
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1535,6 +1557,7 @@ class NotificationService
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1755,6 +1778,7 @@ class NotificationService
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -2169,6 +2193,7 @@ class NotificationService
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 'danger',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
+            self::TYPE_PRICE_PROVIDER => 'warning',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
@@ -2196,6 +2221,9 @@ class NotificationService
             self::TYPE_TAX_INVOICE => "New Tax Invoice: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_OVERDUE => "Overdue Tax: {$data['formatted_amount']} - {$data['days_overdue']} days overdue",
             self::TYPE_TAX_OUTSTANDING_DIGEST => "Outstanding mining tax: " . ($data['member_count'] ?? 0) . " member(s), " . ($data['formatted_total'] ?? '0 ISK') . " still owed",
+            self::TYPE_PRICE_PROVIDER => !empty($data['failing'])
+                ? "Price provider " . ($data['provider'] ?? 'unknown') . " is not answering: " . ($data['error'] ?? 'no detail')
+                : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
@@ -2518,6 +2546,7 @@ class NotificationService
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 15158332, // Red
             self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
+            self::TYPE_PRICE_PROVIDER => 15158332, // Red while it is failing; the title says which way it went
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
@@ -2550,6 +2579,7 @@ class NotificationService
             self::TYPE_TAX_INVOICE => '📧 New Tax Invoice',
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
             self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
+            self::TYPE_PRICE_PROVIDER => '💱 Price Provider',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
@@ -2624,6 +2654,13 @@ class NotificationService
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
+            ])),
+            self::TYPE_PRICE_PROVIDER => array_values(array_filter([
+                ['title' => 'Provider', 'value' => $data['provider'] ?? 'unknown', 'short' => true],
+                ['title' => 'State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'short' => true],
+                !empty($data['error']) ? ['title' => 'Last error', 'value' => $data['error'], 'short' => false] : null,
+                !empty($data['since']) ? ['title' => 'Since', 'value' => $data['since'], 'short' => true] : null,
+                !empty($data['last_success']) ? ['title' => 'Last good refresh', 'value' => $data['last_success'], 'short' => true] : null,
             ])),
             self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
                 ['title' => 'Members', 'value' => (string) ($data['member_count'] ?? 0), 'short' => true],
@@ -2864,6 +2901,14 @@ class NotificationService
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
                 isset($data['help_url']) ? ['name' => '❓ How to Pay', 'value' => '[Payment Guide](' . $data['help_url'] . ')', 'inline' => true] : null,
+            ])),
+            self::TYPE_PRICE_PROVIDER => array_values(array_filter([
+                ['name' => '🏷️ Provider', 'value' => $data['provider'] ?? 'unknown', 'inline' => true],
+                ['name' => '📡 State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'inline' => true],
+                !empty($data['error']) ? ['name' => '⚠️ Last error', 'value' => $data['error'], 'inline' => false] : null,
+                !empty($data['since']) ? ['name' => '🕒 Since', 'value' => $data['since'], 'inline' => true] : null,
+                !empty($data['last_success']) ? ['name' => '✅ Last good refresh', 'value' => $data['last_success'], 'inline' => true] : null,
+                ['name' => '💾 Cached prices', 'value' => 'Kept as they are. Nothing is zeroed while the provider is down.', 'inline' => false],
             ])),
             self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
                 ['name' => '👥 Members', 'value' => (string) ($data['member_count'] ?? 0), 'inline' => true],

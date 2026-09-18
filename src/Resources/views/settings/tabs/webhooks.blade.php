@@ -448,6 +448,13 @@
                                 Outstanding Mining Tax (weekly director digest)
                             </label>
                         </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
+                            <label class="custom-control-label" for="notify-price-provider">
+                                <i class="fas fa-coins text-danger"></i>
+                                Price Provider Trouble
+                            </label>
+                        </div>
 
                         @php
                             // Cross-plugin checks for extraction_at_risk + extraction_lost.

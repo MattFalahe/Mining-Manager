@@ -93,6 +93,14 @@ class PriceProviderService
     const JANICE_RETRY_PAUSE_US = 1000000;
     const JANICE_MAX_SPLITS = 3;
     const JANICE_TIMEOUT_SECONDS = 30;
+
+    /**
+     * Where the provider's state is kept, and how many ids an answer has to
+     * cover before an empty one counts as the provider being down rather than
+     * a few ores nobody trades.
+     */
+    const PROVIDER_STATUS_KEY = 'pricing.provider_status';
+    const PROVIDER_DOWN_MIN_IDS = 5;
     const JANICE_APPRAISAL_URL = 'https://janice.e-351.com/api/rest/v2/appraisal';
     const FUZZWORK_MARKET_URL = 'https://market.fuzzwork.co.uk/aggregates/';
 
@@ -131,6 +139,19 @@ class PriceProviderService
                 default => $this->getPricesFromSeAT($typeIds),
             };
 
+            // An ask of any size that comes back with nothing at all is the
+            // provider being down, not an ore without a market: a few ids can
+            // legitimately have no price between them, a few hundred cannot.
+            $answered = count(array_filter($prices, function ($price) {
+                return $price > 0;
+            }));
+
+            if ($answered === 0 && count($typeIds) >= self::PROVIDER_DOWN_MIN_IDS) {
+                $this->recordProviderOutcome($provider, false, 'The provider answered, but with no prices at all');
+            } else {
+                $this->recordProviderOutcome($provider, true);
+            }
+
             // Fallback to Jita: if enabled and market is not Jita, retry zero-price items with Jita
             $prices = $this->applyJitaFallback($provider, $prices, $typeIds);
 
@@ -140,6 +161,8 @@ class PriceProviderService
                 'provider' => $provider,
                 'error' => $e->getMessage()
             ]);
+
+            $this->recordProviderOutcome($provider, false, $e->getMessage());
 
             // Fallback to SeAT database if configured provider fails
             if ($provider !== self::PROVIDER_SEAT) {
@@ -1411,6 +1434,76 @@ class PriceProviderService
             ]);
 
             return 0;
+        }
+    }
+
+    /**
+     * What the price provider is doing: failing, and since when.
+     *
+     * @return array{failing: bool, provider: ?string, error: ?string, since: ?string, last_success: ?string}
+     */
+    public function providerStatus(): array
+    {
+        $status = $this->settingsService->getSetting(self::PROVIDER_STATUS_KEY, []);
+        if (!is_array($status)) {
+            $status = [];
+        }
+
+        return [
+            'failing' => (bool) ($status['failing'] ?? false),
+            'provider' => $status['provider'] ?? null,
+            'error' => $status['error'] ?? null,
+            'since' => $status['since'] ?? null,
+            'last_success' => $status['last_success'] ?? null,
+        ];
+    }
+
+    /**
+     * Remember how the last fetch went, and say so once when that changes.
+     *
+     * Only the change is worth an alert: a provider that is down stays down
+     * for hours and one message per refresh would be noise nobody reads. An
+     * ore without a price is not failure at all, so nothing here fires for it.
+     */
+    protected function recordProviderOutcome(string $provider, bool $ok, ?string $error = null): void
+    {
+        try {
+            $status = $this->providerStatus();
+            $now = Carbon::now()->format('Y-m-d H:i');
+            $changed = $status['failing'] === $ok;
+
+            $this->settingsService->updateSetting(self::PROVIDER_STATUS_KEY, [
+                'failing' => !$ok,
+                'provider' => $provider,
+                'error' => $ok ? null : $error,
+                'since' => $ok ? null : ($status['since'] ?? $now),
+                'last_success' => $ok ? $now : $status['last_success'],
+            ], 'json');
+
+            if (!$changed) {
+                return;
+            }
+
+            $this->announceProviderStatus([
+                'provider' => $provider,
+                'failing' => !$ok,
+                'error' => $ok ? null : $error,
+                'since' => $ok ? $status['since'] : $now,
+                'last_success' => $ok ? $now : $status['last_success'],
+            ]);
+        } catch (Exception $e) {
+            // Fetching prices must not fall over because a status note or an
+            // alert did.
+            Log::warning('Mining Manager: could not record the price provider status', ['error' => $e->getMessage()]);
+        }
+    }
+
+    protected function announceProviderStatus(array $data): void
+    {
+        try {
+            app(\MiningManager\Services\Notification\NotificationService::class)->sendPriceProviderStatus($data);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: price provider alert could not be sent', ['error' => $e->getMessage()]);
         }
     }
 }

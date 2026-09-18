@@ -624,6 +624,7 @@
                         'next_extraction_planned' => ['label' => 'Next Extraction Planned', 'icon' => 'fas fa-calendar-check text-primary'],
                         'schedule_mismatch' => ['label' => 'Moon Scheduled Off-Plan', 'icon' => 'fas fa-exclamation-triangle text-danger'],
                         'tax_outstanding_digest' => ['label' => 'Outstanding Mining Tax (digest)', 'icon' => 'fas fa-clipboard-list text-warning'],
+                        'price_provider' => ['label' => 'Price Provider Trouble', 'icon' => 'fas fa-coins text-danger'],
                         'theft_detected' => ['label' => 'Theft Detected', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'critical_theft' => ['label' => 'Critical Theft', 'icon' => 'fas fa-skull-crossbones text-danger'],
                         'active_theft' => ['label' => 'Active Theft', 'icon' => 'fas fa-bolt text-danger'],

@@ -975,6 +975,14 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             to offer Dismiss.
                         </li>
                         <li>
+                            <strong>Prices are fetched in bulk, and a failed lookup keeps the old price.</strong>
+                            A refresh used to ask Janice for one price at a time, hundreds of requests every four
+                            hours, and wrote a zero over a good price whenever one failed. It now asks for a
+                            hundred at a time, and a price that does not arrive leaves the cached one alone. A new
+                            <strong>Price Provider Trouble</strong> notification says so once when refreshes start
+                            failing and once when they work again; bind it to a webhook under Settings, Webhooks.
+                        </li>
+                        <li>
                             <strong>Find Moons, and moon quality that means something.</strong> The Extraction
                             Simulator can search every scanned moon by region, constellation, system, security,
                             class, composition rules, value and quality, and points out better moons of the same

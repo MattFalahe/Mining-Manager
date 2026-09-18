@@ -10,7 +10,7 @@ Around that: the personal mining import counts the whole day instead of its late
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its share. An invoice that has gone out is a record, not a calculation.
 
-**Backwards compatible.** Eight new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
+**Backwards compatible.** Nine new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
 
 ### ✨ Diagnostics for payments, the personal import and moon notifications
 
@@ -40,6 +40,21 @@ The Moon Manager permission now includes Moon Analytics, so whoever plans moon p
 how each moon and ore has been mined without being a director. Analytics appears in their
 sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
 Planner link in the sidebar also shows for directors now, who already had access to the page.
+
+### ✨ Price Provider Trouble, an alert for the quietest failure
+
+A price provider that stops answering breaks nothing loudly: prices simply stop
+refreshing, and now that a failed lookup keeps the old price, the numbers stay
+plausible while they age. With Janice it can also be deliberate, since the owner
+blocks keys for excessive traffic, and the only sign was a refusal in a log
+nobody reads.
+
+Bind **Price Provider Trouble** to a webhook and you get one message when
+refreshes start failing, with the provider, the error and when it started, and
+one more when they work again. Only that: not a message per price, and not one
+per refresh while it stays down. An ore with no market is not failure, so it
+never fires for one. The Master Test carries the same state with the last error
+for as long as it lasts.
 
 ### 🐛 A failed price lookup no longer wipes a good price
 
@@ -811,6 +826,7 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 - `000027` adds who confirmed a refund by hand and why.
 - `000028` adds `mining_manager_moon_claims`, the moons somebody else already holds.
 - `000029` adds `mining_manager_moon_watchlist`, the moons to come back to.
+- `000030` adds the webhook column for the price provider alert.
 
 No existing column is altered or dropped. Two of the migrations write to rows that already exist, and neither changes an amount, a status or anything a member was billed: `000022` records the transactions older invoices were already credited with, so they can never be credited a second time, and `000023` fills in a moon only on plans and history rows that have none.
 

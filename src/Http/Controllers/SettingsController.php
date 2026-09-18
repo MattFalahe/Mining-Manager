@@ -1358,6 +1358,7 @@ class SettingsController extends Controller
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
+            $data['notify_price_provider'] = $request->boolean('notify_price_provider');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1430,6 +1431,7 @@ class SettingsController extends Controller
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
+            $data['notify_price_provider'] = $request->boolean('notify_price_provider');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1607,6 +1609,7 @@ class SettingsController extends Controller
             'notify_next_extraction_planned' => 'nullable|boolean',
             'notify_schedule_mismatch' => 'nullable|boolean',
             'notify_tax_outstanding_digest' => 'nullable|boolean',
+            'notify_price_provider' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
             'notify_event_created' => 'nullable|boolean',

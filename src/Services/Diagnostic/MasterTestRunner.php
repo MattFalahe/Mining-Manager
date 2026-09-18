@@ -114,6 +114,7 @@ class MasterTestRunner
             // Pricing path
             'checkConfiguredProviderValid',
             'checkPriceProviderRoundtrip',
+            'checkPriceProviderHealth',
             'checkPricesWeNeverAskFor',
 
             // Notifications path
@@ -649,6 +650,37 @@ class MasterTestRunner
      * into, which come from the SDE rather than from our own lists. Either
      * one values as zero without saying so.
      */
+    /**
+     * Whether price refreshes are getting through, as the last refresh found
+     * it. The alert says so once; this says so for as long as it lasts.
+     */
+    protected function checkPriceProviderHealth(): array
+    {
+        $name = 'Price provider health';
+        $status = $this->priceProvider->providerStatus();
+
+        if (empty($status['failing'])) {
+            return $this->pass(
+                $name,
+                'pricing',
+                'Refreshes are getting through'
+                . (!empty($status['last_success']) ? ', last good one ' . $status['last_success'] : '')
+            );
+        }
+
+        return $this->warn(
+            $name,
+            'pricing',
+            'Price refreshes have been failing since ' . ($status['since'] ?? 'an unknown time'),
+            [
+                'provider' => $status['provider'] ?? 'unknown',
+                'last error' => $status['error'] ?? 'not recorded',
+                'last good refresh' => $status['last_success'] ?? 'not recorded',
+                'hint' => 'Cached prices are kept as they are while this lasts, so values age rather than drop to zero. With Janice, a 401 or 403 means the key, and a 429 means too much traffic.',
+            ]
+        );
+    }
+
     protected function checkPricesWeNeverAskFor(): array
     {
         $name = 'Prices we never ask for';
