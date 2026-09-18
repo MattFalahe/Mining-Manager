@@ -587,7 +587,7 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="guest_moon_ore_r64">
-                            <i class="fas fa-star" style="color: #FFD700;"></i> R64
+                            <span class="badge badge-r64">R64</span>
                         </label>
                         <div class="input-group">
                             <input type="number" class="form-control" id="guest_moon_ore_r64" name="guest_moon_ore_r64"
@@ -600,7 +600,7 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="guest_moon_ore_r32">
-                            <i class="fas fa-star" style="color: #C0C0C0;"></i> R32
+                            <span class="badge badge-r32">R32</span>
                         </label>
                         <div class="input-group">
                             <input type="number" class="form-control" id="guest_moon_ore_r32" name="guest_moon_ore_r32"
@@ -613,7 +613,7 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="guest_moon_ore_r16">
-                            <i class="fas fa-star" style="color: #CD7F32;"></i> R16
+                            <span class="badge badge-r16">R16</span>
                         </label>
                         <div class="input-group">
                             <input type="number" class="form-control" id="guest_moon_ore_r16" name="guest_moon_ore_r16"
@@ -626,7 +626,7 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="guest_moon_ore_r8">
-                            <i class="fas fa-certificate" style="color: #90EE90;"></i> R8
+                            <span class="badge badge-r8">R8</span>
                         </label>
                         <div class="input-group">
                             <input type="number" class="form-control" id="guest_moon_ore_r8" name="guest_moon_ore_r8"
@@ -639,7 +639,7 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="guest_moon_ore_r4">
-                            <i class="fas fa-circle" style="color: #808080;"></i> R4
+                            <span class="badge badge-r4">R4</span>
                         </label>
                         <div class="input-group">
                             <input type="number" class="form-control" id="guest_moon_ore_r4" name="guest_moon_ore_r4"
