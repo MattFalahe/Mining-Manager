@@ -40,6 +40,12 @@ class VersionChecker
     /** Cache key for the fetched-latest result. */
     private const CACHE_KEY = 'mining-manager:packagist_latest';
 
+    /** GitHub repository behind the dev branches, for the commit lookup. */
+    private const GITHUB_REPO = 'MattFalahe/Mining-Manager';
+
+    /** Cache key prefix for the dev-branch commit lookup. */
+    private const COMMIT_CACHE_KEY = 'mining-manager:dev_commit:';
+
     /** Cache TTL (seconds). 6 hours is generous to Packagist + responsive enough. */
     private const CACHE_TTL = 6 * 60 * 60;
 
@@ -77,7 +83,7 @@ class VersionChecker
         // state. Show as 'dev_branch' and leave operators to make their own
         // judgement against the latest-release pill rendered alongside.
         if ($isDevBranch) {
-            return [
+            return $this->withCommit([
                 'current'        => $current,
                 'current_source' => $source,
                 'is_dev_branch'  => true,
@@ -85,7 +91,7 @@ class VersionChecker
                 'status'         => 'dev_branch',
                 'message'        => 'You are running a development branch (' . $current . '), not a tagged release. The "Latest release" pill above is the most recent stable Packagist tag — your branch may be ahead of or behind that depending on local commits. Switch to a tagged version (composer require mattfalahe/mining-manager:^X.Y.Z) for a definitive "up to date" comparison.',
                 'release_url'    => null,
-            ];
+            ], $current);
         }
 
         if ($latest === null) {
@@ -150,6 +156,132 @@ class VersionChecker
      * The dual return lets the Help card render a small "(via composer)" /
      * "(via config)" hint so operators know whether the value is trustworthy.
      */
+    /**
+     * Add which commit a dev branch is actually running, and what has landed
+     * on the branch since.
+     *
+     * A production install cannot be rebooted for every commit, so "dev-5.0"
+     * on its own says nothing about what is in there. Composer records the
+     * exact commit it checked out, which answers half of it offline; GitHub
+     * answers the other half, and the card still reads fine when it cannot be
+     * reached.
+     */
+    protected function withCommit(array $status, string $version): array
+    {
+        $status['commit'] = null;
+
+        $sha = $this->resolveInstalledReference();
+        if ($sha === null) {
+            return $status;
+        }
+
+        $branch = $this->branchFromVersion($version);
+        $commit = [
+            'sha' => $sha,
+            'short' => substr($sha, 0, 7),
+            'url' => 'https://github.com/' . self::GITHUB_REPO . '/commit/' . $sha,
+            'subject' => null,
+            'date' => null,
+            'behind' => null,
+            'branch' => $branch,
+            'compare_url' => $branch === null
+                ? null
+                : 'https://github.com/' . self::GITHUB_REPO . '/compare/' . $sha . '...' . $branch,
+        ];
+
+        $status['commit'] = array_merge($commit, $this->fetchCommitDetail($sha, $branch));
+
+        return $status;
+    }
+
+    /**
+     * The commit Composer checked out for this package, when it installed a
+     * branch rather than a tag.
+     */
+    protected function resolveInstalledReference(): ?string
+    {
+        if (!class_exists('\\Composer\\InstalledVersions')) {
+            return null;
+        }
+
+        try {
+            if (!\Composer\InstalledVersions::isInstalled(self::PACKAGE_KEY)) {
+                return null;
+            }
+
+            $reference = \Composer\InstalledVersions::getReference(self::PACKAGE_KEY);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return is_string($reference) && preg_match('/^[0-9a-f]{40}$/i', $reference) ? $reference : null;
+    }
+
+    /**
+     * 'dev-dev-5.0' is Composer's name for the branch 'dev-5.0'.
+     */
+    protected function branchFromVersion(string $version): ?string
+    {
+        $branch = str_starts_with($version, 'dev-') ? substr($version, 4) : null;
+
+        return $branch !== null && $branch !== '' ? $branch : null;
+    }
+
+    /**
+     * What that commit says, and how far behind the branch head it is.
+     *
+     * One GitHub call, cached like the Packagist one. Everything here is
+     * optional: a failure leaves the card showing the commit id alone.
+     *
+     * @return array{subject: ?string, date: ?string, behind: ?int}
+     */
+    protected function fetchCommitDetail(string $sha, ?string $branch): array
+    {
+        $empty = ['subject' => null, 'date' => null, 'behind' => null];
+
+        return Cache::remember(self::COMMIT_CACHE_KEY . $sha, self::CACHE_TTL, function () use ($sha, $branch, $empty) {
+            try {
+                $client = new Client([
+                    'timeout' => self::HTTP_TIMEOUT,
+                    'connect_timeout' => self::HTTP_TIMEOUT,
+                    'verify' => true,
+                    'headers' => [
+                        'Accept' => 'application/vnd.github+json',
+                        'User-Agent' => 'SeAT-MiningManager/' . config('mining-manager.version', 'unknown'),
+                    ],
+                ]);
+
+                // Comparing the installed commit with the branch head answers
+                // both questions at once: what this commit is, and what has
+                // landed since.
+                $url = $branch === null
+                    ? 'https://api.github.com/repos/' . self::GITHUB_REPO . '/commits/' . $sha
+                    : 'https://api.github.com/repos/' . self::GITHUB_REPO . '/compare/' . $sha . '...' . $branch;
+
+                $body = json_decode((string) $client->get($url)->getBody(), true);
+                if (!is_array($body)) {
+                    return $empty;
+                }
+
+                $commit = $branch === null ? ($body['commit'] ?? []) : ($body['base_commit']['commit'] ?? []);
+                $message = (string) ($commit['message'] ?? '');
+                $subject = $message === '' ? null : trim(strtok($message, "\n"));
+
+                return [
+                    'subject' => $subject,
+                    'date' => $commit['author']['date'] ?? ($commit['committer']['date'] ?? null),
+                    'behind' => $branch === null ? null : (int) ($body['behind_by'] ?? 0),
+                ];
+            } catch (\Throwable $e) {
+                Log::warning('Mining Manager: could not read the installed commit from GitHub', [
+                    'error' => $e->getMessage(),
+                ]);
+
+                return $empty;
+            }
+        });
+    }
+
     protected function resolveInstalledVersion(): array
     {
         if (class_exists('\\Composer\\InstalledVersions')) {

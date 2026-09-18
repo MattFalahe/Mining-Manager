@@ -744,6 +744,35 @@
                         @endif
                     </div>
                     <small class="text-muted">{{ $vs['message'] }}</small>
+                    @if($vs['is_dev_branch'] ?? false)
+                        @php($commit = $vs['commit'] ?? null)
+                        @if($commit)
+                            {{-- A branch name says nothing about what is actually deployed, and a
+                                 production stack cannot be rebooted per commit, so name the commit. --}}
+                            <div class="info-box" style="margin-top: 0.75rem;">
+                                <i class="fas fa-code-branch"></i>
+                                <strong>Running commit:</strong>
+                                <a href="{{ $commit['url'] }}" target="_blank" rel="noopener"><code>{{ $commit['short'] }}</code></a>
+                                @if($commit['subject'])
+                                    &mdash; {{ $commit['subject'] }}
+                                @endif
+                                @if($commit['date'])
+                                    <small class="text-muted">({{ \Carbon\Carbon::parse($commit['date'])->format('Y-m-d H:i') }} EVE time)</small>
+                                @endif
+                                <div style="margin-top: 0.4rem;">
+                                    @if($commit['behind'] === null)
+                                        <small class="text-muted">Could not reach GitHub to see what has landed since. The commit id above still tells you exactly what is deployed.</small>
+                                    @elseif($commit['behind'] === 0)
+                                        <small class="text-muted">Nothing newer on <code>{{ $commit['branch'] }}</code>: this install is at the head of the branch.</small>
+                                    @else
+                                        <a href="{{ $commit['compare_url'] }}" target="_blank" rel="noopener" class="btn btn-sm btn-mm-primary">
+                                            <i class="fas fa-list"></i> {{ $commit['behind'] }} commit(s) on {{ $commit['branch'] }} since this one
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
+                    @endif
                     @if($vs['status'] === 'outdated')
                         <div class="info-box" style="margin-top: 0.75rem;">
                             <i class="fas fa-arrow-circle-up"></i>
@@ -758,6 +787,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <small class="text-muted" style="display: block; margin-top: 0.4rem; font-size: 0.75rem;">
                         <i class="fas fa-info-circle"></i>
                         Installed version {{ $sourceHint }}. Latest checked via Packagist's public API (6h cache, safe on outages).
+                        On a development branch, the running commit comes from Composer and what has landed since from GitHub's public API, both cached for 6 hours.
                     </small>
                 </div>
 

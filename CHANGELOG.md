@@ -41,6 +41,15 @@ how each moon and ore has been mined without being a director. Analytics appears
 sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
 Planner link in the sidebar also shows for directors now, who already had access to the page.
 
+### ✨ Help says which commit a development branch is running
+
+"dev-5.0" in the Version Status box said nothing about what was actually
+deployed, and a production stack cannot be rebooted for every commit. On a
+development branch the box now names the commit Composer checked out, with its
+subject and date, and how many commits have landed on the branch since, linking
+straight to the comparison on GitHub. A tagged release shows none of this, and
+GitHub being unreachable still leaves the commit id in place.
+
 ### ✨ Price Provider Trouble, an alert for the quietest failure
 
 A price provider that stops answering breaks nothing loudly: prices simply stop
