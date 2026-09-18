@@ -111,6 +111,34 @@ class SettingsManagerService
     }
 
     /**
+     * Update or create a setting that belongs to the install rather than to a
+     * corporation.
+     *
+     * Several commands set an active corporation on this service and leave it
+     * set for the rest of their run. Anything written in that window lands on
+     * that corporation, which is right for a tax rate and wrong for a fact
+     * about the install, such as whether the price provider is answering:
+     * those end up scattered across a row per corporation, each with its own
+     * half of the story.
+     *
+     * @param string $key
+     * @param mixed $value
+     * @param string|null $type
+     * @return void
+     */
+    public function updateGlobalSetting(string $key, $value, ?string $type = null)
+    {
+        $previous = $this->activeCorporationId;
+
+        try {
+            $this->activeCorporationId = null;
+            $this->updateSetting($key, $value, $type);
+        } finally {
+            $this->activeCorporationId = $previous;
+        }
+    }
+
+    /**
      * Update or create a setting
      * Now supports corporation-specific settings
      *

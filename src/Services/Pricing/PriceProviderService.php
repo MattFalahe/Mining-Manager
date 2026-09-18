@@ -1457,7 +1457,9 @@ class PriceProviderService
      */
     public function providerStatus(): array
     {
-        $status = $this->settingsService->getSetting(self::PROVIDER_STATUS_KEY, []);
+        // Read it as a global setting whatever corporation the caller left
+        // active, so there is one status and one alert, not one per corp.
+        $status = $this->settingsService->getSettingForCorporation(self::PROVIDER_STATUS_KEY, null, []);
         if (!is_array($status)) {
             $status = [];
         }
@@ -1494,7 +1496,7 @@ class PriceProviderService
             $now = Carbon::now()->format('Y-m-d H:i');
             $changed = $status['failing'] === $ok;
 
-            $this->settingsService->updateSetting(self::PROVIDER_STATUS_KEY, [
+            $this->settingsService->updateGlobalSetting(self::PROVIDER_STATUS_KEY, [
                 'failing' => !$ok,
                 'provider' => $provider,
                 'error' => $ok ? null : $error,
