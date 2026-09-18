@@ -33,6 +33,23 @@
     .moon-simulator-page #suggestionsTable td { vertical-align: middle; }
     .moon-simulator-page .finder-ore-badge { margin: 1px 3px 1px 0; font-weight: 500; }
     .moon-simulator-page .quality-rank { display: block; font-size: 0.72rem; opacity: 0.85; }
+    /* Moon classes, coloured as SeAT's own extraction page colours them. Set
+       here rather than left to the generic badge classes, because a skin can
+       dull those into something hard to read, yellow worst of all. */
+    .moon-simulator-page .badge-r4 { background-color: #28a745; color: #fff !important; }
+    .moon-simulator-page .badge-r8 { background-color: #007bff; color: #fff !important; }
+    .moon-simulator-page .badge-r16 { background-color: #17a2b8; color: #fff !important; }
+    .moon-simulator-page .badge-r32 { background-color: #ffc107; color: #212529 !important; }
+    .moon-simulator-page .badge-r64 { background-color: #dc3545; color: #fff !important; }
+    .moon-simulator-page .badge-sec-high { background-color: #28a745; color: #fff !important; }
+    .moon-simulator-page .badge-sec-low { background-color: #ffc107; color: #212529 !important; }
+    .moon-simulator-page .badge-sec-null { background-color: #dc3545; color: #fff !important; }
+    .moon-simulator-page .badge-sec-wormhole { background-color: #343a40; color: #fff !important; }
+    .moon-simulator-page .badge-quality-exceptional { background: linear-gradient(135deg, #9b59b6, #8e44ad); color: #fff !important; }
+    .moon-simulator-page .badge-quality-excellent { background-color: #28a745; color: #fff !important; }
+    .moon-simulator-page .badge-quality-good { background-color: #17a2b8; color: #fff !important; }
+    .moon-simulator-page .badge-quality-average { background-color: #ffc107; color: #212529 !important; }
+    .moon-simulator-page .badge-quality-poor { background-color: #6c757d; color: #fff !important; }
     .moon-simulator-page .badge-claimed {
         background: #b45309;
         color: #fff !important;
@@ -54,10 +71,11 @@
     // One colour per moon class and per security band, used by the filters,
     // the results and the simulator alike, so a class reads the same wherever
     // it appears on this page.
-    // SeAT's own moon extraction page colours the tiers this way, so a moon
-    // reads the same here as it does there.
-    $rarityBadges = ['R4' => 'badge-success', 'R8' => 'badge-primary', 'R16' => 'badge-info', 'R32' => 'badge-warning', 'R64' => 'badge-danger'];
-    $securityBadges = ['high' => 'badge-success', 'low' => 'badge-warning', 'null' => 'badge-danger', 'wormhole' => 'badge-dark'];
+    // SeAT's own moon extraction page colours the tiers green, blue, cyan,
+    // yellow and red, so a moon reads the same here as it does there. The
+    // classes are ours and the page styles them, so a skin cannot dull them.
+    $rarityBadges = ['R4' => 'badge-r4', 'R8' => 'badge-r8', 'R16' => 'badge-r16', 'R32' => 'badge-r32', 'R64' => 'badge-r64'];
+    $securityBadges = ['high' => 'badge-sec-high', 'low' => 'badge-sec-low', 'null' => 'badge-sec-null', 'wormhole' => 'badge-sec-wormhole'];
 @endphp
 <div class="mining-manager-wrapper mining-dashboard moon-simulator-page">
 
@@ -1116,8 +1134,7 @@ function qualityBadge(quality) {
         return '<span class="text-muted">-</span>';
     }
 
-    const classes = { exceptional: 'bg-purple', excellent: 'badge-success', good: 'badge-info', average: 'badge-warning', poor: 'badge-secondary' };
-    return `<span class="badge ${classes[quality.key] || 'badge-secondary'}">${escapeHtml(QUALITY_LABELS[quality.key] || quality.key)}</span>`
+    return `<span class="badge badge-quality-${escapeHtml(quality.key)}">${escapeHtml(QUALITY_LABELS[quality.key] || quality.key)}</span>`
         + `<span class="quality-rank text-muted">${escapeHtml(qualityRankText(quality))}</span>`;
 }
 
