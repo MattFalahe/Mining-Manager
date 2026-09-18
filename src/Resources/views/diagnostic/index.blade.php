@@ -998,7 +998,8 @@
                             <p class="text-muted">
                                 Verifies the Moon Extraction Planner: schema, the Manager Core
                                 fast-poll handler registration, planner coverage (skipped moons),
-                                and open scheduling mismatches. Read-only — each check is a single
+                                open scheduling mismatches, and the flags Find Moons keeps on moons.
+                                Read-only — each check is a single
                                 <code>SELECT</code> or <code>Schema::hasX</code> probe.
                             </p>
                             @if(isset($plannerValidation['summary']))
@@ -3269,6 +3270,8 @@ function renderDataCounts(target, dc) {
         '<tr><td>&nbsp;&nbsp;Account balances holding ISK</td><td>' + (dc.balances_held || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>&nbsp;&nbsp;Refunds waiting for a transfer</td><td>' + (dc.refunds_pending || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>&nbsp;&nbsp;Planned moon pulls (planned or confirmed)</td><td>' + (dc.planned_pulls || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Moons claimed by another corporation</td><td>' + (dc.moon_claims || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Moons on the watchlist</td><td>' + (dc.watched_moons || 0).toLocaleString() + '</td></tr>' +
         '</table>'
     );
 }

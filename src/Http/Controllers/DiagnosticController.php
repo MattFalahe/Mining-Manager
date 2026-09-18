@@ -302,6 +302,51 @@ class DiagnosticController extends Controller
             }
         }
 
+        // 8. The flags Find Moons keeps on moons: claims and the watchlist.
+        $hasClaims = \Schema::hasTable('mining_manager_moon_claims');
+        $hasWatchlist = \Schema::hasTable('mining_manager_moon_watchlist');
+        $checks[] = [
+            'label'   => 'Migrations 000028 / 000029: moon claim and watchlist tables',
+            'status'  => ($hasClaims && $hasWatchlist) ? 'ok' : 'fail',
+            'message' => ($hasClaims && $hasWatchlist)
+                ? 'Both present — Find Moons can mark moons another corporation holds and keep a watchlist.'
+                : 'Table(s) missing — run migrations. Find Moons will refuse to save a claim or a watched moon.',
+        ];
+
+        // Both flags are dropped once one of our refineries drills the moon,
+        // by the extraction update. Anything left here means that run has not
+        // happened since the moon was taken.
+        if ($hasClaims || $hasWatchlist) {
+            try {
+                $ourMoons = array_keys(app(\MiningManager\Services\Moon\MoonFinderService::class)->refineryMoons());
+                $stale = 0;
+                if (!empty($ourMoons)) {
+                    if ($hasClaims) {
+                        $stale += \MiningManager\Models\MoonClaim::whereNull('cleared_at')
+                            ->whereIn('moon_id', $ourMoons)
+                            ->count();
+                    }
+                    if ($hasWatchlist) {
+                        $stale += \MiningManager\Models\MoonWatch::whereIn('moon_id', $ourMoons)->count();
+                    }
+                }
+
+                $checks[] = [
+                    'label'   => 'Moon flags: claims and watched moons we now drill',
+                    'status'  => $stale === 0 ? 'ok' : 'warn',
+                    'message' => $stale === 0
+                        ? 'Nothing left flagged on a moon of ours.'
+                        : "{$stale} flag(s) still sit on moons one of our refineries drills. The pages already ignore them; the extraction update clears them on its next run.",
+                ];
+            } catch (\Throwable $e) {
+                $checks[] = [
+                    'label'   => 'Moon flags: claims and watched moons we now drill',
+                    'status'  => 'warn',
+                    'message' => 'Could not evaluate the moon flags: ' . $e->getMessage(),
+                ];
+            }
+        }
+
         // Overall summary pill (worst-status wins) — same contract as the
         // Metenox validation set so the blade renders both identically.
         $hasFailure = false;
@@ -3429,6 +3474,12 @@ class DiagnosticController extends Controller
         $plannedPulls = \Schema::hasTable('moon_extraction_plans')
             ? DB::table('moon_extraction_plans')->whereIn('status', ['planned', 'confirmed'])->count()
             : 0;
+        $moonClaims = \Schema::hasTable('mining_manager_moon_claims')
+            ? DB::table('mining_manager_moon_claims')->whereNull('cleared_at')->count()
+            : 0;
+        $watchedMoons = \Schema::hasTable('mining_manager_moon_watchlist')
+            ? DB::table('mining_manager_moon_watchlist')->count()
+            : 0;
 
         return [
             'mining_ledger' => DB::table('mining_ledger')->count(),
@@ -3445,6 +3496,8 @@ class DiagnosticController extends Controller
             'balances_held'         => $balancesHeld,
             'refunds_pending'       => $refundsPending,
             'planned_pulls'         => $plannedPulls,
+            'moon_claims'           => $moonClaims,
+            'watched_moons'         => $watchedMoons,
         ];
     }
 
