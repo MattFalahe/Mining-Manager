@@ -2820,18 +2820,31 @@ class DiagnosticController extends Controller
                 ];
             }
 
-            // 4. Price cache entries with all-zero prices
-            $zeroPrices = MiningPriceCache::where('sell_price', '<=', 0)
-                ->where('buy_price', '<=', 0)
-                ->where('average_price', '<=', 0)
-                ->count();
+            // 4. Ore people mine that the provider has no price for
+            //
+            // A zero on its own is not a fault. Plenty of type ids cannot be
+            // mined any more, or never trade in the configured market, and a
+            // provider is right to have nothing for them. A failed lookup no
+            // longer overwrites a good price either, so those rows just sit at
+            // zero for good. What is worth saying is a zero on something that
+            // turned up in the ledger, because that is a mining entry booked at
+            // no value and a miner billed for nothing.
+            $zeroPricedMined = DB::table('mining_price_cache as pc')
+                ->join('mining_ledger as ml', 'ml.type_id', '=', 'pc.type_id')
+                ->where('pc.sell_price', '<=', 0)
+                ->where('pc.buy_price', '<=', 0)
+                ->where('pc.average_price', '<=', 0)
+                ->where('ml.date', '>=', Carbon::now()->subDays(30)->toDateString())
+                ->whereNull('ml.deleted_at')
+                ->distinct()
+                ->count('pc.type_id');
 
-            if ($zeroPrices > 0) {
+            if ($zeroPricedMined > 0) {
                 $issues[] = [
                     'category' => 'Zero Price Cache',
                     'severity' => 'warning',
-                    'count' => $zeroPrices,
-                    'message' => 'Price cache entries with all prices at zero',
+                    'count' => $zeroPricedMined,
+                    'message' => 'Ore types mined in the last 30 days that the price provider has no price for',
                 ];
             }
 
