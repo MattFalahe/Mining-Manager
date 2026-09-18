@@ -51,7 +51,8 @@ nobody reads.
 
 Bind **Price Provider Trouble** to a webhook and you get one message when
 refreshes start failing, with the provider, the error and when it started, and
-one more when they work again. Only that: not a message per price, and not one
+one more when they work again. Every provider is covered: Janice, Fuzzwork,
+SeAT's own market data and Manager Core, including Manager Core's direct sync. Only that: not a message per price, and not one
 per refresh while it stays down. An ore with no market is not failure, so it
 never fires for one. The Master Test carries the same state with the last error
 for as long as it lasts.
@@ -72,6 +73,11 @@ four hours, each with up to six quick retries when one was refused. Janice
 publishes no rate limit, but its owner blocks keys for excessive traffic. The
 whole list now goes in one request per hundred ids, a couple of seconds apart,
 which turns a refresh into a handful of requests.
+
+Every provider gained from the same change, because the refresh itself used to
+ask for one price at a time whatever it was talking to. Fuzzwork was one web
+request per price and is now a couple of requests for the lot, and SeAT and
+Manager Core read what they need in one go as before.
 
 If a request fails with a server error, a timeout or a rejection, it is retried
 in halves rather than abandoned. If Janice refuses the key outright (401, 403

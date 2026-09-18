@@ -196,10 +196,12 @@ class CachePriceDataCommand extends Command
                 }
             } elseif ($rawResult === null) {
                 $this->warn('Manager Core capability pricing.getPrices not registered; nothing to sync.');
+                $this->priceService->noteProviderOutcome(false, 'Manager Core capability pricing.getPrices is not registered');
             }
         } catch (\Throwable $e) {
             $this->error('Manager Core bridge call failed: ' . $e->getMessage());
             Log::warning('CachePriceDataCommand: pricing.getPrices threw', ['error' => $e->getMessage()]);
+            $this->priceService->noteProviderOutcome(false, $e->getMessage());
             return;
         }
 
@@ -245,6 +247,13 @@ class CachePriceDataCommand extends Command
 
         $bar->finish();
         $this->newLine(2);
+
+        // Same rule as the other providers: nothing at all from a decent-sized
+        // ask is Manager Core being empty or broken, not a quiet market.
+        $this->priceService->noteProviderOutcome(
+            $synced > 0 || count($typeIds) < PriceProviderService::PROVIDER_DOWN_MIN_IDS,
+            'Manager Core held no prices for any of the types asked for'
+        );
 
         $this->info("Manager Core sync complete!");
         $this->info("Synced: {$synced} items");

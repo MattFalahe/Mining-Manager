@@ -101,6 +101,7 @@ class PriceProviderService
      */
     const PROVIDER_STATUS_KEY = 'pricing.provider_status';
     const PROVIDER_DOWN_MIN_IDS = 5;
+    const FUZZWORK_BATCH_SIZE = 200;
     const JANICE_APPRAISAL_URL = 'https://janice.e-351.com/api/rest/v2/appraisal';
     const FUZZWORK_MARKET_URL = 'https://market.fuzzwork.co.uk/aggregates/';
 
@@ -400,8 +401,20 @@ class PriceProviderService
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
         $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
         $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
+
+        // Fuzzwork takes the ids in the query string, so a whole refresh in
+        // one call is a URL thousands of characters long. Chunk it.
+        if (count($typeIds) > self::FUZZWORK_BATCH_SIZE) {
+            $prices = [];
+            foreach (array_chunk(array_values($typeIds), self::FUZZWORK_BATCH_SIZE) as $batch) {
+                $prices += $this->getPricesFromFuzzwork($batch);
+            }
+
+            return $prices;
+        }
+
+        $pricingSettings = $this->settingsService->getPricingSettings();
         $typeIdsString = implode(',', $typeIds);
 
         $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
@@ -1456,6 +1469,15 @@ class PriceProviderService
             'since' => $status['since'] ?? null,
             'last_success' => $status['last_success'] ?? null,
         ];
+    }
+
+    /**
+     * Report how a fetch went from a path that does not go through
+     * getPrices(), such as the Manager Core sync in the cache command.
+     */
+    public function noteProviderOutcome(bool $ok, ?string $error = null): void
+    {
+        $this->recordProviderOutcome($this->getConfiguredProvider(), $ok, $error);
     }
 
     /**
