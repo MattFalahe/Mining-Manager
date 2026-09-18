@@ -73,6 +73,11 @@ class MoonFinderService
      */
     protected $refineryMoons;
 
+    /**
+     * @var array<int, array>|null moon id => the live claim on it
+     */
+    protected $claimedMoons;
+
     public function __construct(MoonValuation $valuation)
     {
         $this->valuation = $valuation;
@@ -114,6 +119,7 @@ class MoonFinderService
         $richness = $number($input['richness_min'] ?? null);
         $quality = $input['quality_min'] ?? null;
         $station = $input['station'] ?? null;
+        $claim = $input['claim'] ?? null;
         $sort = $input['sort'] ?? null;
         $perPage = (int) ($input['per_page'] ?? 0);
         $days = is_numeric($input['days'] ?? null) ? (int) $input['days'] : self::QUALITY_DAYS;
@@ -134,6 +140,7 @@ class MoonFinderService
             'value_max' => $number($input['value_max'] ?? null),
             'quality_min' => is_string($quality) && $quality !== 'poor' && in_array($quality, self::QUALITY_ORDER, true) ? $quality : null,
             'station' => in_array($station, ['ours', 'free'], true) ? $station : null,
+            'claim' => in_array($claim, ['claimed', 'free'], true) ? $claim : null,
             'sort' => in_array($sort, self::SORTS, true) ? $sort : 'value',
             'direction' => ($input['direction'] ?? null) === 'asc' ? 'asc' : 'desc',
             'page' => max(1, (int) ($input['page'] ?? 1)),
@@ -152,6 +159,7 @@ class MoonFinderService
         $this->valuation->prepare($this->oreTypesIn($moons));
         $classValues = $this->classValues();
         $refineries = $this->refineryMoons();
+        $claims = $this->claimedMoons();
 
         $matches = [];
         foreach ($moons as $moon) {
@@ -160,6 +168,14 @@ class MoonFinderService
                 continue;
             }
             if ($criteria['station'] === 'free' && $station !== null) {
+                continue;
+            }
+
+            $claim = $claims[$moon['moon_id']] ?? null;
+            if ($criteria['claim'] === 'claimed' && $claim === null) {
+                continue;
+            }
+            if ($criteria['claim'] === 'free' && $claim !== null) {
                 continue;
             }
 
@@ -199,7 +215,10 @@ class MoonFinderService
                 continue;
             }
 
-            $matches[] = $this->row($moon, $valued, $class, $rarityShares, $band, $quality, $value, $station);
+            $matches[] = $this->row($moon, $valued, $class, $rarityShares, $band, $quality, $value, [
+                'station' => $station,
+                'claim' => $claim,
+            ]);
         }
 
         $this->sortRows($matches, $criteria['sort'], $criteria['direction']);
@@ -241,6 +260,7 @@ class MoonFinderService
             'class' => $class,
             'quality' => $this->quality($class, $value, $basis),
             'station' => $this->refineryMoons()[$moonId] ?? null,
+            'claim' => $this->claimedMoons()[$moonId] ?? null,
         ];
     }
 
@@ -284,6 +304,7 @@ class MoonFinderService
             $moons = $this->loadMoons($scope);
             $this->valuation->prepare($this->oreTypesIn($moons));
             $refineries = $this->refineryMoons();
+            $claims = $this->claimedMoons();
 
             $better = [];
             foreach ($moons as $moon) {
@@ -303,8 +324,11 @@ class MoonFinderService
                 }
 
                 $band = self::securityBand($moon['region_id'], $moon['security']);
-                $station = $refineries[$moon['moon_id']] ?? null;
-                $better[] = $this->row($moon, $candidate, $class, $rarityShares, $band, null, $value, $station)
+                $marks = [
+                    'station' => $refineries[$moon['moon_id']] ?? null,
+                    'claim' => $claims[$moon['moon_id']] ?? null,
+                ];
+                $better[] = $this->row($moon, $candidate, $class, $rarityShares, $band, null, $value, $marks)
                     + ['difference' => round($value - $targetValue)];
             }
 
@@ -511,6 +535,42 @@ class MoonFinderService
     }
 
     /**
+     * Moons reported as held by somebody else, keyed by moon id.
+     *
+     * Only live claims: a moon found free again has its claim closed, and the
+     * closed row stays for the history.
+     *
+     * @return array<int, array{claimed_by: ?string, note: ?string, reported_by: ?string, reported_at: ?string}>
+     */
+    public function claimedMoons(): array
+    {
+        if ($this->claimedMoons !== null) {
+            return $this->claimedMoons;
+        }
+
+        if (!Schema::hasTable('mining_manager_moon_claims')) {
+            return $this->claimedMoons = [];
+        }
+
+        $claims = [];
+        $rows = DB::table('mining_manager_moon_claims')
+            ->whereNull('cleared_at')
+            ->orderBy('id')
+            ->get(['moon_id', 'claimed_by', 'note', 'character_name', 'created_at']);
+
+        foreach ($rows as $row) {
+            $claims[(int) $row->moon_id] = [
+                'claimed_by' => $row->claimed_by,
+                'note' => $row->note,
+                'reported_by' => $row->character_name,
+                'reported_at' => $row->created_at === null ? null : (string) $row->created_at,
+            ];
+        }
+
+        return $this->claimedMoons = $claims;
+    }
+
+    /**
      * Which of these structures SeAT still lists as a refinery, with its name
      * and the corporation holding it.
      */
@@ -714,7 +774,11 @@ class MoonFinderService
         return true;
     }
 
-    protected function row(array $moon, array $valued, ?string $class, array $rarityShares, string $band, ?array $quality, float $value, ?array $station = null): array
+    /**
+     * @param array $marks what we know about the moon beyond its scan: the
+     *                     refinery of ours on it, and any claim reported on it
+     */
+    protected function row(array $moon, array $valued, ?string $class, array $rarityShares, string $band, ?array $quality, float $value, array $marks = []): array
     {
         $rarity = $this->rarityByType();
 
@@ -752,7 +816,8 @@ class MoonFinderService
             'ore_value' => round($valued['raw']),
             'refined_value' => round($valued['refined']),
             'quality' => $quality,
-            'station' => $station,
+            'station' => $marks['station'] ?? null,
+            'claim' => $marks['claim'] ?? null,
         ];
     }
 

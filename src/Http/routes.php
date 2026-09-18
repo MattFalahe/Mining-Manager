@@ -517,6 +517,18 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::post('/finder/claim', [
+            'as' => 'mining-manager.moon.finder.claim',
+            'uses' => 'MoonController@claimMoon',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/finder/claim/clear', [
+            'as' => 'mining-manager.moon.finder.claim-clear',
+            'uses' => 'MoonController@clearMoonClaim',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/active', [
             'as' => 'mining-manager.moon.active',
             'uses' => 'MoonController@active',

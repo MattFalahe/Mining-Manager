@@ -12,6 +12,7 @@ use MiningManager\Services\Moon\MoonExtractionService;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Services\Moon\MetenoxCargoService;
 use MiningManager\Services\Pricing\PriceProviderService;
+use MiningManager\Models\MoonClaim;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MiningLedger;
@@ -858,7 +859,7 @@ class MoonController extends Controller
                 'Moon', 'Moon ID', 'System', 'Security', 'Constellation', 'Region',
                 'Class', 'Moon ore %', 'R4 %', 'R8 %', 'R16 %', 'R32 %', 'R64 %', 'Ores',
                 'Days', 'Ore value (ISK)', 'Refined value (ISK)', 'Quality', 'Top % of class',
-                'Our refinery', 'Refinery corporation',
+                'Our refinery', 'Refinery corporation', 'Claimed by', 'Claim note',
             ]);
 
             foreach ($result['rows'] as $row) {
@@ -892,6 +893,8 @@ class MoonController extends Controller
                     $row['quality']['top_percent'] ?? '',
                     $row['station']['structure'] ?? '',
                     $row['station']['corporation'] ?? '',
+                    $row['claim'] ? ($row['claim']['claimed_by'] ?? trans('mining-manager::moons.claim_unknown')) : '',
+                    $row['claim']['note'] ?? '',
                 ]);
             }
 
@@ -899,6 +902,97 @@ class MoonController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Report that another corporation holds a moon, or update what we know
+     * about one that is already reported.
+     */
+    public function claimMoon(Request $request)
+    {
+        $this->authorizeMoonFinder();
+
+        $moonId = $this->positiveInt($request->input('moon_id'));
+        if ($moonId === null) {
+            return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
+        }
+
+        $request->validate([
+            'claimed_by' => 'nullable|string|max:100',
+            'note' => 'nullable|string|max:255',
+        ]);
+
+        [$characterId, $characterName] = $this->actor();
+
+        // A second report replaces the first rather than sitting beside it,
+        // and the old row stays closed for the history.
+        $this->closeClaims($moonId, $characterId, $characterName);
+
+        $claim = MoonClaim::create([
+            'moon_id' => $moonId,
+            'claimed_by' => $this->trimmedOrNull($request->input('claimed_by')),
+            'note' => $this->trimmedOrNull($request->input('note')),
+            'character_id' => $characterId,
+            'character_name' => $characterName,
+        ]);
+
+        return response()->json([
+            'claim' => [
+                'claimed_by' => $claim->claimed_by,
+                'note' => $claim->note,
+                'reported_by' => $claim->character_name,
+                'reported_at' => (string) $claim->created_at,
+            ],
+        ]);
+    }
+
+    /**
+     * The moon turned out to be free, so close the claim on it.
+     */
+    public function clearMoonClaim(Request $request)
+    {
+        $this->authorizeMoonFinder();
+
+        $moonId = $this->positiveInt($request->input('moon_id'));
+        if ($moonId === null) {
+            return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
+        }
+
+        [$characterId, $characterName] = $this->actor();
+        $this->closeClaims($moonId, $characterId, $characterName);
+
+        return response()->json(['claim' => null]);
+    }
+
+    private function closeClaims(int $moonId, ?int $characterId, ?string $characterName): void
+    {
+        MoonClaim::where('moon_id', $moonId)
+            ->whereNull('cleared_at')
+            ->update([
+                'cleared_at' => Carbon::now(),
+                'cleared_by' => $characterId,
+                'cleared_by_name' => $characterName,
+            ]);
+    }
+
+    private function trimmedOrNull($value): ?string
+    {
+        $value = is_string($value) ? trim($value) : '';
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * Who is acting: [character_id, character_name] of their main character.
+     */
+    private function actor(): array
+    {
+        $characterId = auth()->user()->main_character_id ?? null;
+        $name = $characterId
+            ? DB::table('character_infos')->where('character_id', $characterId)->value('name')
+            : null;
+
+        return [$characterId, $name];
     }
 
     /**

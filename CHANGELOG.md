@@ -10,7 +10,7 @@ Around that: the personal mining import counts the whole day instead of its late
 
 > Mental model: a wallet transfer is money looking for an invoice. Matching it by tax code is the fast path; assigning it by hand is the fallback. Either way the transfer is claimed exactly once, and every invoice it touches records its share. An invoice that has gone out is a record, not a calculation.
 
-**Backwards compatible.** Six new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
+**Backwards compatible.** Seven new migrations, none of which alters or drops a column, and no new ESI scopes. Invoices already issued keep their totals, and mining already in the ledger keeps the categories and rates it was billed on. Upfront payments stay off until you switch them on, and the outstanding digest sends nothing until it is bound to a webhook. Cascading a remainder onto the next invoice and holding surplus as balance are on by default, for payments from the update on, and both are switches under Settings, General. Schema, at the end of this section, says exactly what the migrations write.
 
 ### ✨ Diagnostics for payments, the personal import and moon notifications
 
@@ -40,6 +40,21 @@ The Moon Manager permission now includes Moon Analytics, so whoever plans moon p
 how each moon and ore has been mined without being a director. Analytics appears in their
 sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
 Planner link in the sidebar also shows for directors now, who already had access to the page.
+
+### ✨ Mark the moons somebody else already holds
+
+A search over a region turns up plenty of moons another corporation is already
+drilling, and nothing in the game tells us which: ESI only reports our own
+structures. So Find Moons users can now mark one, with the corporation or
+alliance holding it and a note if there is anything worth remembering, and the
+moon carries a **Claimed** badge everywhere the page shows it, naming who
+reported it and when. **Claimed moons** in the filters can show only those moons
+or hide them while you hunt for free ground, and the export carries them too.
+
+When a moon turns out to be free again, **Moon is free** clears it. The old
+report is closed rather than deleted, so a moon that changes hands keeps its
+history. Marking and clearing need Director, Moon Manager or Moon Finder;
+everyone who can open the simulator sees the badge.
 
 ### ✨ Find Moons on the Extraction Simulator
 
@@ -739,6 +754,7 @@ Because the browser never sent a `moon_id` in the first place, that fallback bra
 - `000025` stamps the ore classification cutover.
 - `000026` adds `mining_manager_payment_refunds`.
 - `000027` adds who confirmed a refund by hand and why.
+- `000028` adds `mining_manager_moon_claims`, the moons somebody else already holds.
 
 No existing column is altered or dropped. Two of the migrations write to rows that already exist, and neither changes an amount, a status or anything a member was billed: `000022` records the transactions older invoices were already credited with, so they can never be credited a second time, and `000023` fills in a moon only on plans and history rows that have none.
 

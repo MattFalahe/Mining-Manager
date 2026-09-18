@@ -2767,6 +2767,16 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         match while Allow Data Export is on.
                     </p>
                     <p>
+                        <strong>Moons somebody else holds.</strong> ESI only reports your own structures, so the
+                        plugin cannot know which moons are already taken. Mark one with the <i class="fas fa-flag"></i>
+                        button on its row or in the simulator, naming the corporation or alliance if you know it,
+                        and it carries a <strong>Claimed</strong> badge from then on, with who reported it and when
+                        in the tooltip. <strong>Claimed moons</strong> in the filters shows only those or hides
+                        them. When a moon turns out to be free, <strong>Moon is free</strong> clears it, and the
+                        old report is kept rather than deleted. Marking and clearing need Find Moons; every member
+                        sees the badge.
+                    </p>
+                    <p>
                         A moon one of your refineries still sits on is marked <strong>Ours</strong>, with the
                         refinery and the corporation holding it named in the tooltip, and <strong>Our
                         refineries</strong> can show only those moons or hide them while you look for new ground.

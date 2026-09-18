@@ -33,6 +33,11 @@
     .moon-simulator-page #suggestionsTable td { vertical-align: middle; }
     .moon-simulator-page .finder-ore-badge { margin: 1px 3px 1px 0; font-weight: 500; }
     .moon-simulator-page .quality-rank { display: block; font-size: 0.72rem; opacity: 0.85; }
+    .moon-simulator-page .badge-claimed {
+        background: #b45309;
+        color: #fff !important;
+        margin-left: 4px;
+    }
     .moon-simulator-page .badge-ours {
         background: linear-gradient(135deg, var(--mm-primary-start), var(--mm-primary-end));
         color: #fff !important;
@@ -255,6 +260,17 @@
                                     <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_station_help') }}</small>
                                 </div>
                             </div>
+                            <div class="col-lg-3 col-md-6">
+                                <div class="form-group">
+                                    <label for="finderClaim">{{ trans('mining-manager::moons.finder_claim') }}</label>
+                                    <select class="form-control" id="finderClaim">
+                                        <option value="">{{ trans('mining-manager::moons.finder_claim_any') }}</option>
+                                        <option value="claimed">{{ trans('mining-manager::moons.finder_claim_claimed') }}</option>
+                                        <option value="free">{{ trans('mining-manager::moons.finder_claim_free') }}</option>
+                                    </select>
+                                    <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_claim_help') }}</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -414,6 +430,39 @@
             </div>
         </div>
     </div>
+
+    {{-- REPORT A CLAIM --}}
+    <div class="modal fade" id="claimModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_title') }}</h5>
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1"><strong id="claimMoonName"></strong></p>
+                    <p class="small text-muted" id="claimCurrent" style="display: none;"></p>
+                    <div class="form-group">
+                        <label for="claimHeldBy">{{ trans('mining-manager::moons.claim_held_by') }}</label>
+                        <input type="text" class="form-control" id="claimHeldBy" maxlength="100" placeholder="{{ trans('mining-manager::moons.claim_held_by_placeholder') }}">
+                    </div>
+                    <div class="form-group mb-0">
+                        <label for="claimNote">{{ trans('mining-manager::moons.claim_note') }}</label>
+                        <input type="text" class="form-control" id="claimNote" maxlength="255" placeholder="{{ trans('mining-manager::moons.claim_note_placeholder') }}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::moons.claim_cancel') }}</button>
+                    <button type="button" class="btn btn-outline-success" id="claimClear" style="display: none;">
+                        <i class="fas fa-flag-checkered"></i> {{ trans('mining-manager::moons.claim_clear') }}
+                    </button>
+                    <button type="button" class="btn btn-mm-primary" id="claimSave">
+                        <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     @endif
 
     <div class="row" id="simulatorRow">
@@ -515,6 +564,12 @@
                     <div class="card-tools">
                         <span class="badge badge-info" id="resultMoonName" style="display: none;"></span>
                         <span id="resultStation"></span>
+                        <span id="resultClaim"></span>
+                        @if($canFindMoons)
+                            <button type="button" class="btn btn-xs btn-outline-warning ml-1" id="resultClaimButton" style="display: none;">
+                                <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_button') }}
+                            </button>
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">
@@ -715,6 +770,13 @@
         'quality_rank' => trans('mining-manager::moons.quality_rank'),
         'station_badge' => trans('mining-manager::moons.station_badge'),
         'station_tooltip' => trans('mining-manager::moons.station_tooltip'),
+        'claim_badge' => trans('mining-manager::moons.claim_badge'),
+        'claim_unknown' => trans('mining-manager::moons.claim_unknown'),
+        'claim_reported_by' => trans('mining-manager::moons.claim_reported_by'),
+        'claim_title' => trans('mining-manager::moons.claim_title'),
+        'claim_saved' => trans('mining-manager::moons.claim_saved'),
+        'claim_cleared' => trans('mining-manager::moons.claim_cleared'),
+        'claim_failed' => trans('mining-manager::moons.claim_failed'),
         'suggestions_title' => trans('mining-manager::moons.suggestions_title'),
         'suggestions_intro' => trans('mining-manager::moons.suggestions_intro'),
         'suggestions_none' => trans('mining-manager::moons.suggestions_none'),
@@ -743,6 +805,8 @@
         $moonRoutes['locations'] = route('mining-manager.moon.finder.locations');
         $moonRoutes['search'] = route('mining-manager.moon.finder.search');
         $moonRoutes['export'] = route('mining-manager.moon.finder.export');
+        $moonRoutes['claim'] = route('mining-manager.moon.finder.claim');
+        $moonRoutes['claim_clear'] = route('mining-manager.moon.finder.claim-clear');
     }
 @endphp
 <script>
@@ -884,6 +948,11 @@ function displayResults(data) {
     // Update moon name badge
     $('#resultMoonName').text(data.moon_name).show();
     $('#resultStation').html(stationBadge(data.station));
+    $('#resultClaim').html(claimBadge(data.claim));
+    $('#resultClaimButton').show();
+    if (typeof rememberClaim === 'function') {
+        rememberClaim($('#moonSelect').val(), data.claim, data.moon_name);
+    }
 
     // The page leads with the value it is working in, and names both, so the
     // ore value and the refined value can never be read as the same number.
@@ -1062,6 +1131,27 @@ function stationBadge(station) {
         + `<i class="fas fa-industry"></i> ${escapeHtml(MOON_LANG.station_badge)}</span>`;
 }
 
+// Marks a moon somebody else already holds, with what was reported in the
+// tooltip. Every member sees it; reporting needs Find Moons.
+function claimBadge(claim) {
+    if (!claim) {
+        return '';
+    }
+
+    const parts = [claim.claimed_by || MOON_LANG.claim_unknown];
+    if (claim.note) {
+        parts.push(claim.note);
+    }
+    if (claim.reported_by) {
+        parts.push(MOON_LANG.claim_reported_by
+            .replace(':who', claim.reported_by)
+            .replace(':when', (claim.reported_at || '').substring(0, 10)));
+    }
+
+    return `<span class="badge badge-claimed" title="${escapeHtml(parts.join(' - '))}">`
+        + `<i class="fas fa-flag"></i> ${escapeHtml(MOON_LANG.claim_badge)}</span>`;
+}
+
 function securityBadge(moon) {
     if (moon.security_band === 'wormhole') {
         return `<span class="badge ${SECURITY_BADGES.wormhole}">WH</span>`;
@@ -1153,6 +1243,9 @@ let finderPage = 1;
 let finderCriteriaUsed = null;
 let finderSort = 'value';
 let finderDirection = 'desc';
+let claims = {};
+let claimNames = {};
+let claimMoonId = null;
 // The constellation and system picked, with the places above them, so a
 // region picked later can tell whether they still lie inside it.
 let finderPlaces = { constellation: null, system: null };
@@ -1205,6 +1298,22 @@ function initMoonFinder() {
         showFinderPlace('#finderRegion', place.region_id, place.region);
     }).on('select2:unselect', function() {
         finderPlaces.system = null;
+    });
+
+    $('#finderTable').on('click', '.claim-moon', function() {
+        openClaimModal($(this).data('moon-id'), $(this).data('moon-name'));
+    });
+    $('#resultClaimButton').on('click', function() {
+        const moonId = $('#moonSelect').val();
+        if (moonId) {
+            openClaimModal(moonId, claimNames[moonId] || $('#moonSelect option:selected').text());
+        }
+    });
+    $('#claimSave').on('click', function() {
+        saveClaim(false);
+    });
+    $('#claimClear').on('click', function() {
+        saveClaim(true);
     });
 
     $('#finderAddRule').on('click', function() {
@@ -1372,6 +1481,7 @@ function finderCriteria() {
         value_max: valueMax === null ? '' : valueMax,
         quality_min: $('#finderQuality').val(),
         station: $('#finderStation').val(),
+        claim: $('#finderClaim').val(),
         sort: finderSort,
         direction: finderDirection,
         per_page: $('#finderPerPage').val()
@@ -1424,13 +1534,14 @@ function renderFinder(data) {
     }
 
     data.rows.forEach(row => {
+        rememberClaim(row.moon_id, row.claim, row.name);
         const ores = row.ores.map(ore => {
             return `<span class="badge ${RARITY_BADGES[ore.rarity] || 'badge-dark'} finder-ore-badge">${escapeHtml(ore.name)} ${ore.percent}%</span>`;
         }).join('');
 
         html += `
             <tr>
-                <td>${escapeHtml(row.name)}${stationBadge(row.station)}</td>
+                <td>${escapeHtml(row.name)}${stationBadge(row.station)}${claimBadge(row.claim)}</td>
                 <td class="text-nowrap">${securityBadge(row)} ${escapeHtml(row.system || '-')}</td>
                 <td>${escapeHtml(row.constellation || '-')}</td>
                 <td>${escapeHtml(row.region || '-')}</td>
@@ -1439,9 +1550,12 @@ function renderFinder(data) {
                 <td>${ores}</td>
                 <td class="text-right text-success text-nowrap">${formatNumber(row.value)} ISK</td>
                 <td class="text-center">${qualityBadge(row.quality)}</td>
-                <td class="text-right">
+                <td class="text-right text-nowrap">
                     <button type="button" class="btn btn-xs btn-outline-info simulate-moon" data-moon-id="${row.moon_id}" data-moon-name="${escapeHtml(row.name)}" data-from-finder="1">
                         ${escapeHtml(MOON_LANG.finder_simulate)}
+                    </button>
+                    <button type="button" class="btn btn-xs btn-outline-warning claim-moon ml-1" data-moon-id="${row.moon_id}" data-moon-name="${escapeHtml(row.name)}" title="${escapeHtml(MOON_LANG.claim_title)}">
+                        <i class="fas fa-flag"></i>
                     </button>
                 </td>
             </tr>
@@ -1454,6 +1568,83 @@ function renderFinder(data) {
     $('#finderNext').prop('disabled', data.page >= data.pages);
     $('#finderExport').prop('disabled', data.matched === 0);
     $('#finderResults').show();
+}
+
+// What has been reported about each moon on screen, so the form opens on
+// what is already known rather than empty.
+function rememberClaim(moonId, claim, name) {
+    if (claim) {
+        claims[moonId] = claim;
+    } else {
+        delete claims[moonId];
+    }
+
+    if (name) {
+        claimNames[moonId] = name;
+    }
+}
+
+function openClaimModal(moonId, moonName) {
+    const claim = claims[moonId] || null;
+
+    claimMoonId = moonId;
+    $('#claimMoonName').text(moonName || '');
+    $('#claimHeldBy').val(claim ? (claim.claimed_by || '') : '');
+    $('#claimNote').val(claim ? (claim.note || '') : '');
+    $('#claimClear').toggle(claim !== null);
+
+    if (claim && claim.reported_by) {
+        $('#claimCurrent').text(MOON_LANG.claim_reported_by
+            .replace(':who', claim.reported_by)
+            .replace(':when', (claim.reported_at || '').substring(0, 16))).show();
+    } else {
+        $('#claimCurrent').hide();
+    }
+
+    // AdminLTE stacks a modal behind the page unless it hangs off the body.
+    $('#claimModal').appendTo('body').modal('show');
+}
+
+function saveClaim(clearing) {
+    const moonId = claimMoonId;
+    if (!moonId) {
+        return;
+    }
+
+    $.ajax({
+        url: clearing ? MOON_ROUTES.claim_clear : MOON_ROUTES.claim,
+        method: 'POST',
+        data: {
+            _token: CSRF_TOKEN,
+            moon_id: moonId,
+            claimed_by: $('#claimHeldBy').val(),
+            note: $('#claimNote').val()
+        },
+        success: function(response) {
+            showClaim(moonId, response.claim);
+            $('#claimModal').modal('hide');
+            toastr.success(clearing ? MOON_LANG.claim_cleared : MOON_LANG.claim_saved);
+        },
+        error: function(xhr) {
+            toastr.error(xhr.responseJSON?.error || MOON_LANG.claim_failed);
+        }
+    });
+}
+
+// Moves the badge on the row and on the simulator without running the search
+// again, so a page of results stays where it was.
+function showClaim(moonId, claim) {
+    rememberClaim(moonId, claim);
+
+    const $cell = $(`#finderTable .claim-moon[data-moon-id="${moonId}"]`).closest('tr').find('td').first();
+    $cell.find('.badge-claimed').remove();
+    if (claim) {
+        $cell.append(claimBadge(claim));
+    }
+
+    if (String(moonId) === String($('#moonSelect').val())) {
+        $('#resultClaim').html(claimBadge(claim));
+    }
 }
 
 // Puts an arrow on the sorted column and a faint one on the rest.
@@ -1479,6 +1670,7 @@ function resetFinder() {
     $('#finderDays').val(28);
     $('#finderQuality').val('');
     $('#finderStation').val('');
+    $('#finderClaim').val('');
     finderSort = 'value';
     finderDirection = 'desc';
     $('#finderPerPage').val('25');
