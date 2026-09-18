@@ -62,6 +62,24 @@
     }
     /* Select2 lists open outside the page wrapper, so this cannot be scoped to it. */
     .finder-place-where { display: block; font-size: 0.8em; opacity: 0.75; }
+    /* The claim form hangs off the body, outside the wrapper, so its buttons
+       carry their own colours or a skin leaves them as bare text. Yellow for
+       the one that marks a moon, matching the badge it produces. */
+    #claimModal .btn-claim-save { background-color: #ffc107; border-color: #ffc107; color: #212529 !important; font-weight: 600; }
+    #claimModal .btn-claim-save:hover { background-color: #e0a800; border-color: #d39e00; }
+    #claimModal .btn-claim-clear { background-color: transparent; border: 1px solid #28a745; color: #28a745 !important; }
+    #claimModal .btn-claim-clear:hover { background-color: #28a745; color: #fff !important; }
+    #claimModal .btn-claim-cancel { background-color: transparent; border: 1px solid #6c757d; color: #adb5bd !important; }
+    #claimModal .btn-claim-cancel:hover { background-color: #6c757d; color: #fff !important; }
+    /* Select2's clear cross is easy to lose against a dark skin, and it is the
+       only way to put a place filter back to Any. */
+    .moon-simulator-page .select2-selection__clear {
+        color: #dc3545 !important;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-right: 6px;
+    }
+    .moon-simulator-page .select2-selection__choice__remove { color: #dc3545 !important; font-weight: 700; }
 </style>
 @endpush
 
@@ -472,11 +490,11 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">{{ trans('mining-manager::moons.claim_cancel') }}</button>
-                    <button type="button" class="btn btn-outline-success" id="claimClear" style="display: none;">
+                    <button type="button" class="btn btn-claim-cancel" data-dismiss="modal">{{ trans('mining-manager::moons.claim_cancel') }}</button>
+                    <button type="button" class="btn btn-claim-clear" id="claimClear" style="display: none;">
                         <i class="fas fa-flag-checkered"></i> {{ trans('mining-manager::moons.claim_clear') }}
                     </button>
-                    <button type="button" class="btn btn-mm-primary" id="claimSave">
+                    <button type="button" class="btn btn-claim-save" id="claimSave">
                         <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_save') }}
                     </button>
                 </div>

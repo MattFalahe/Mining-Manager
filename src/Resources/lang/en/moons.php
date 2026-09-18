@@ -267,7 +267,7 @@ return [
     'finder_constellation' => 'Constellation',
     'finder_system' => 'System',
     'finder_any' => 'Any',
-    'finder_location_help' => 'Pick in any order and type to search. A system fills in its constellation and region.',
+    'finder_location_help' => 'Pick in any order and type to search. A system fills in its constellation and region, and the cross in a box puts it back to Any.',
     'finder_security' => 'Security',
     'security_high' => 'High',
     'security_low' => 'Low',
