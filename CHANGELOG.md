@@ -56,6 +56,11 @@ report is closed rather than deleted, so a moon that changes hands keeps its
 history. Marking and clearing need Director, Moon Manager or Moon Finder;
 everyone who can open the simulator sees the badge.
 
+A claim also clears itself when the moon becomes yours. Buy the structure or
+anchor your own and the moon reads as Ours immediately, with the report closed
+on the next extraction update and the reason recorded, so nobody has to
+remember to tidy up after taking a moon.
+
 ### ✨ Find Moons on the Extraction Simulator
 
 A search across every scanned moon, above the simulator. Filter by region, constellation and

@@ -199,6 +199,18 @@ class UpdateMoonExtractionsCommand extends Command
             $this->error("Planner reconciliation failed: {$e->getMessage()}");
         }
 
+        // A moon marked as somebody else's that one of our refineries now
+        // drills is ours, whoever held it before. Close the claim here, where
+        // the extraction that proves it has just been imported.
+        try {
+            $cleared = app(\MiningManager\Services\Moon\MoonClaimService::class)->closeClaimsOnOurMoons();
+            if ($cleared > 0) {
+                $this->info("Cleared {$cleared} moon claim(s) on moons we now drill.");
+            }
+        } catch (\Exception $e) {
+            $this->error("Moon claim cleanup failed: {$e->getMessage()}");
+        }
+
         $this->info("\nMoon extraction update complete!");
         $this->info("Created: {$created} new extractions");
         $this->info("Updated: {$updated} existing extractions");

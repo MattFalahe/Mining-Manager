@@ -2777,6 +2777,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         sees the badge.
                     </p>
                     <p>
+                        A claim also clears itself. If you buy the structure or anchor your own, the moon reads as
+                        <strong>Ours</strong> straight away, and the report is closed on the next extraction
+                        update with the reason recorded, so nobody has to remember to tidy it up.
+                    </p>
+                    <p>
                         A moon one of your refineries still sits on is marked <strong>Ours</strong>, with the
                         refinery and the corporation holding it named in the tooltip, and <strong>Our
                         refineries</strong> can show only those moons or hide them while you look for new ground.

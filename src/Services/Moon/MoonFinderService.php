@@ -538,7 +538,9 @@ class MoonFinderService
      * Moons reported as held by somebody else, keyed by moon id.
      *
      * Only live claims: a moon found free again has its claim closed, and the
-     * closed row stays for the history.
+     * closed row stays for the history. A moon one of our own refineries
+     * drills is never reported as somebody else's, whatever was recorded
+     * before we took it: we are the ones on it now.
      *
      * @return array<int, array{claimed_by: ?string, note: ?string, reported_by: ?string, reported_at: ?string}>
      */
@@ -548,8 +550,27 @@ class MoonFinderService
             return $this->claimedMoons;
         }
 
+        $ours = $this->refineryMoons();
+
+        $claims = [];
+        foreach ($this->loadClaims() as $moonId => $claim) {
+            if (!isset($ours[$moonId])) {
+                $claims[$moonId] = $claim;
+            }
+        }
+
+        return $this->claimedMoons = $claims;
+    }
+
+    /**
+     * Every live claim as recorded, our own moons included.
+     *
+     * @return array<int, array>
+     */
+    protected function loadClaims(): array
+    {
         if (!Schema::hasTable('mining_manager_moon_claims')) {
-            return $this->claimedMoons = [];
+            return [];
         }
 
         $claims = [];
@@ -567,7 +588,7 @@ class MoonFinderService
             ];
         }
 
-        return $this->claimedMoons = $claims;
+        return $claims;
     }
 
     /**
