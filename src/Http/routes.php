@@ -529,6 +529,18 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::post('/finder/watch', [
+            'as' => 'mining-manager.moon.finder.watch',
+            'uses' => 'MoonController@watchMoon',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
+        Route::post('/finder/watch/remove', [
+            'as' => 'mining-manager.moon.finder.watch-remove',
+            'uses' => 'MoonController@unwatchMoon',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/active', [
             'as' => 'mining-manager.moon.active',
             'uses' => 'MoonController@active',

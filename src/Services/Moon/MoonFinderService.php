@@ -78,6 +78,11 @@ class MoonFinderService
      */
     protected $claimedMoons;
 
+    /**
+     * @var array<int, array>|null moon id => why it is being watched
+     */
+    protected $watchedMoons;
+
     public function __construct(MoonValuation $valuation)
     {
         $this->valuation = $valuation;
@@ -120,12 +125,15 @@ class MoonFinderService
         $quality = $input['quality_min'] ?? null;
         $station = $input['station'] ?? null;
         $claim = $input['claim'] ?? null;
+        $watch = $input['watch'] ?? null;
+        $name = $input['name'] ?? null;
         $sort = $input['sort'] ?? null;
         $perPage = (int) ($input['per_page'] ?? 0);
         $days = is_numeric($input['days'] ?? null) ? (int) $input['days'] : self::QUALITY_DAYS;
 
         return [
             'moon_id' => null,
+            'name' => is_string($name) && trim($name) !== '' ? mb_substr(trim($name), 0, 100) : null,
             'region_id' => $id($input['region_id'] ?? null),
             'constellation_id' => $id($input['constellation_id'] ?? null),
             'system_id' => $id($input['system_id'] ?? null),
@@ -141,6 +149,7 @@ class MoonFinderService
             'quality_min' => is_string($quality) && $quality !== 'poor' && in_array($quality, self::QUALITY_ORDER, true) ? $quality : null,
             'station' => in_array($station, ['ours', 'free'], true) ? $station : null,
             'claim' => in_array($claim, ['claimed', 'free'], true) ? $claim : null,
+            'watch' => in_array($watch, ['watched', 'free'], true) ? $watch : null,
             'sort' => in_array($sort, self::SORTS, true) ? $sort : 'value',
             'direction' => ($input['direction'] ?? null) === 'asc' ? 'asc' : 'desc',
             'page' => max(1, (int) ($input['page'] ?? 1)),
@@ -160,6 +169,7 @@ class MoonFinderService
         $classValues = $this->classValues();
         $refineries = $this->refineryMoons();
         $claims = $this->claimedMoons();
+        $watchlist = $this->watchedMoons();
 
         $matches = [];
         foreach ($moons as $moon) {
@@ -176,6 +186,14 @@ class MoonFinderService
                 continue;
             }
             if ($criteria['claim'] === 'free' && $claim !== null) {
+                continue;
+            }
+
+            $watch = $watchlist[$moon['moon_id']] ?? null;
+            if ($criteria['watch'] === 'watched' && $watch === null) {
+                continue;
+            }
+            if ($criteria['watch'] === 'free' && $watch !== null) {
                 continue;
             }
 
@@ -218,6 +236,7 @@ class MoonFinderService
             $matches[] = $this->row($moon, $valued, $class, $rarityShares, $band, $quality, $value, [
                 'station' => $station,
                 'claim' => $claim,
+                'watch' => $watch,
             ]);
         }
 
@@ -261,6 +280,7 @@ class MoonFinderService
             'quality' => $this->quality($class, $value, $basis),
             'station' => $this->refineryMoons()[$moonId] ?? null,
             'claim' => $this->claimedMoons()[$moonId] ?? null,
+            'watch' => $this->watchedMoons()[$moonId] ?? null,
         ];
     }
 
@@ -305,6 +325,7 @@ class MoonFinderService
             $this->valuation->prepare($this->oreTypesIn($moons));
             $refineries = $this->refineryMoons();
             $claims = $this->claimedMoons();
+            $watchlist = $this->watchedMoons();
 
             $better = [];
             foreach ($moons as $moon) {
@@ -327,6 +348,7 @@ class MoonFinderService
                 $marks = [
                     'station' => $refineries[$moon['moon_id']] ?? null,
                     'claim' => $claims[$moon['moon_id']] ?? null,
+                    'watch' => $watchlist[$moon['moon_id']] ?? null,
                 ];
                 $better[] = $this->row($moon, $candidate, $class, $rarityShares, $band, null, $value, $marks)
                     + ['difference' => round($value - $targetValue)];
@@ -592,6 +614,59 @@ class MoonFinderService
     }
 
     /**
+     * Moons on the watchlist, keyed by moon id.
+     *
+     * A moon we have anchored on is off the list whatever it says, because
+     * watching a moon ends when we take it.
+     *
+     * @return array<int, array{note: ?string, added_by: ?string, added_at: ?string}>
+     */
+    public function watchedMoons(): array
+    {
+        if ($this->watchedMoons !== null) {
+            return $this->watchedMoons;
+        }
+
+        $ours = $this->refineryMoons();
+
+        $watched = [];
+        foreach ($this->loadWatchlist() as $moonId => $watch) {
+            if (!isset($ours[$moonId])) {
+                $watched[$moonId] = $watch;
+            }
+        }
+
+        return $this->watchedMoons = $watched;
+    }
+
+    /**
+     * The watchlist as recorded, our own moons included.
+     *
+     * @return array<int, array>
+     */
+    protected function loadWatchlist(): array
+    {
+        if (!Schema::hasTable('mining_manager_moon_watchlist')) {
+            return [];
+        }
+
+        $watched = [];
+        $rows = DB::table('mining_manager_moon_watchlist')
+            ->orderBy('moon_id')
+            ->get(['moon_id', 'note', 'character_name', 'created_at']);
+
+        foreach ($rows as $row) {
+            $watched[(int) $row->moon_id] = [
+                'note' => $row->note,
+                'added_by' => $row->character_name,
+                'added_at' => $row->created_at === null ? null : (string) $row->created_at,
+            ];
+        }
+
+        return $watched;
+    }
+
+    /**
      * Which of these structures SeAT still lists as a refinery, with its name
      * and the corporation holding it.
      */
@@ -723,6 +798,9 @@ class MoonFinderService
         if (!empty($where['moon_id'])) {
             $query->where('c.moon_id', (int) $where['moon_id']);
         }
+        if (!empty($where['name'])) {
+            $query->where('m.name', 'like', '%' . addcslashes($where['name'], '%_\\') . '%');
+        }
         foreach (['region_id', 'constellation_id', 'system_id'] as $column) {
             if (!empty($where[$column])) {
                 $query->where('m.' . $column, (int) $where[$column]);
@@ -839,6 +917,7 @@ class MoonFinderService
             'quality' => $quality,
             'station' => $marks['station'] ?? null,
             'claim' => $marks['claim'] ?? null,
+            'watch' => $marks['watch'] ?? null,
         ];
     }
 

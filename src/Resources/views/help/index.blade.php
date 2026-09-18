@@ -2782,6 +2782,14 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         update with the reason recorded, so nobody has to remember to tidy it up.
                     </p>
                     <p>
+                        <strong>The watchlist.</strong> A moon worth having that you cannot have today, because
+                        somebody else is on it or you have no refinery spare, can be starred with a note saying
+                        why. The list is shared, so anyone searching sees it, <strong>Watchlist</strong> in the
+                        filters shows only those moons or hides them, and a moon drops off the list by itself once
+                        one of your refineries drills it. <strong>Moon name</strong> finds a single moon: type any
+                        part of its name.
+                    </p>
+                    <p>
                         A moon one of your refineries still sits on is marked <strong>Ours</strong>, with the
                         refinery and the corporation holding it named in the tooltip, and <strong>Our
                         refineries</strong> can show only those moons or hide them while you look for new ground.

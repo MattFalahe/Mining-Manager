@@ -50,6 +50,11 @@
     .moon-simulator-page .badge-quality-good { background-color: #17a2b8; color: #fff !important; }
     .moon-simulator-page .badge-quality-average { background-color: #ffc107; color: #212529 !important; }
     .moon-simulator-page .badge-quality-poor { background-color: #6c757d; color: #fff !important; }
+    .moon-simulator-page .badge-watching {
+        background: #0d9488;
+        color: #fff !important;
+        margin-left: 4px;
+    }
     .moon-simulator-page .badge-claimed {
         background: #b45309;
         color: #fff !important;
@@ -69,8 +74,12 @@
     #claimModal .btn-claim-save:hover { background-color: #e0a800; border-color: #d39e00; }
     #claimModal .btn-claim-clear { background-color: transparent; border: 1px solid #28a745; color: #28a745 !important; }
     #claimModal .btn-claim-clear:hover { background-color: #28a745; color: #fff !important; }
-    #claimModal .btn-claim-cancel { background-color: transparent; border: 1px solid #6c757d; color: #adb5bd !important; }
-    #claimModal .btn-claim-cancel:hover { background-color: #6c757d; color: #fff !important; }
+    #claimModal .btn-claim-cancel, #watchModal .btn-claim-cancel { background-color: transparent; border: 1px solid #6c757d; color: #adb5bd !important; }
+    #claimModal .btn-claim-cancel:hover, #watchModal .btn-claim-cancel:hover { background-color: #6c757d; color: #fff !important; }
+    #watchModal .btn-watch-save { background-color: #0d9488; border-color: #0d9488; color: #fff !important; font-weight: 600; }
+    #watchModal .btn-watch-save:hover { background-color: #0f766e; border-color: #0f766e; }
+    #watchModal .btn-watch-remove { background-color: transparent; border: 1px solid #dc3545; color: #dc3545 !important; }
+    #watchModal .btn-watch-remove:hover { background-color: #dc3545; color: #fff !important; }
     /* Select2's clear cross is easy to lose against a dark skin, and it is the
        only way to put a place filter back to Any. */
     .moon-simulator-page .select2-selection__clear {
@@ -300,6 +309,13 @@
                             </div>
                             <div class="col-lg-3 col-md-6">
                                 <div class="form-group">
+                                    <label for="finderName">{{ trans('mining-manager::moons.finder_name') }}</label>
+                                    <input type="text" class="form-control" id="finderName" maxlength="100" placeholder="{{ trans('mining-manager::moons.finder_name_placeholder') }}">
+                                    <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_name_help') }}</small>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6">
+                                <div class="form-group">
                                     <label for="finderClaim">{{ trans('mining-manager::moons.finder_claim') }}</label>
                                     <select class="form-control" id="finderClaim">
                                         <option value="">{{ trans('mining-manager::moons.finder_claim_any') }}</option>
@@ -307,6 +323,17 @@
                                         <option value="free">{{ trans('mining-manager::moons.finder_claim_free') }}</option>
                                     </select>
                                     <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_claim_help') }}</small>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6">
+                                <div class="form-group">
+                                    <label for="finderWatch">{{ trans('mining-manager::moons.finder_watch') }}</label>
+                                    <select class="form-control" id="finderWatch">
+                                        <option value="">{{ trans('mining-manager::moons.finder_watch_any') }}</option>
+                                        <option value="watched">{{ trans('mining-manager::moons.finder_watch_watched') }}</option>
+                                        <option value="free">{{ trans('mining-manager::moons.finder_watch_free') }}</option>
+                                    </select>
+                                    <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_watch_help') }}</small>
                                 </div>
                             </div>
                         </div>
@@ -469,6 +496,35 @@
         </div>
     </div>
 
+    {{-- WATCH A MOON --}}
+    <div class="modal fade" id="watchModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-star"></i> {{ trans('mining-manager::moons.watch_title') }}</h5>
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1"><strong id="watchMoonName"></strong></p>
+                    <p class="small text-muted" id="watchCurrent" style="display: none;"></p>
+                    <div class="form-group mb-0">
+                        <label for="watchNote">{{ trans('mining-manager::moons.watch_note') }}</label>
+                        <input type="text" class="form-control" id="watchNote" maxlength="255" placeholder="{{ trans('mining-manager::moons.watch_note_placeholder') }}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-claim-cancel" data-dismiss="modal">{{ trans('mining-manager::moons.claim_cancel') }}</button>
+                    <button type="button" class="btn btn-watch-remove" id="watchRemove" style="display: none;">
+                        <i class="fas fa-times"></i> {{ trans('mining-manager::moons.watch_remove') }}
+                    </button>
+                    <button type="button" class="btn btn-watch-save" id="watchSave">
+                        <i class="fas fa-star"></i> {{ trans('mining-manager::moons.watch_save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- REPORT A CLAIM --}}
     <div class="modal fade" id="claimModal" tabindex="-1" role="dialog">
         <div class="modal-dialog" role="document">
@@ -603,9 +659,13 @@
                         <span class="badge badge-info" id="resultMoonName" style="display: none;"></span>
                         <span id="resultStation"></span>
                         <span id="resultClaim"></span>
+                        <span id="resultWatch"></span>
                         @if($canFindMoons)
                             <button type="button" class="btn btn-xs btn-outline-warning ml-1" id="resultClaimButton" style="display: none;">
                                 <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_button') }}
+                            </button>
+                            <button type="button" class="btn btn-xs btn-outline-info ml-1" id="resultWatchButton" style="display: none;">
+                                <i class="fas fa-star"></i> {{ trans('mining-manager::moons.watch_button') }}
                             </button>
                         @endif
                     </div>
@@ -815,6 +875,13 @@
         'claim_saved' => trans('mining-manager::moons.claim_saved'),
         'claim_cleared' => trans('mining-manager::moons.claim_cleared'),
         'claim_failed' => trans('mining-manager::moons.claim_failed'),
+        'watch_badge' => trans('mining-manager::moons.watch_badge'),
+        'watch_reason' => trans('mining-manager::moons.watch_reason'),
+        'watch_added_by' => trans('mining-manager::moons.watch_added_by'),
+        'watch_title' => trans('mining-manager::moons.watch_title'),
+        'watch_saved' => trans('mining-manager::moons.watch_saved'),
+        'watch_removed' => trans('mining-manager::moons.watch_removed'),
+        'watch_failed' => trans('mining-manager::moons.watch_failed'),
         'suggestions_title' => trans('mining-manager::moons.suggestions_title'),
         'suggestions_intro' => trans('mining-manager::moons.suggestions_intro'),
         'suggestions_none' => trans('mining-manager::moons.suggestions_none'),
@@ -845,6 +912,8 @@
         $moonRoutes['export'] = route('mining-manager.moon.finder.export');
         $moonRoutes['claim'] = route('mining-manager.moon.finder.claim');
         $moonRoutes['claim_clear'] = route('mining-manager.moon.finder.claim-clear');
+        $moonRoutes['watch'] = route('mining-manager.moon.finder.watch');
+        $moonRoutes['watch_remove'] = route('mining-manager.moon.finder.watch-remove');
     }
 @endphp
 <script>
@@ -987,9 +1056,11 @@ function displayResults(data) {
     $('#resultMoonName').text(data.moon_name).show();
     $('#resultStation').html(stationBadge(data.station));
     $('#resultClaim').html(claimBadge(data.claim));
-    $('#resultClaimButton').show();
+    $('#resultWatch').html(watchBadge(data.watch));
+    $('#resultClaimButton, #resultWatchButton').show();
     if (typeof rememberClaim === 'function') {
         rememberClaim($('#moonSelect').val(), data.claim, data.moon_name);
+        rememberWatch($('#moonSelect').val(), data.watch);
     }
 
     // The page leads with the value it is working in, and names both, so the
@@ -1189,6 +1260,24 @@ function claimBadge(claim) {
         + `<i class="fas fa-flag"></i> ${escapeHtml(MOON_LANG.claim_badge)}</span>`;
 }
 
+// Marks a moon somebody wants to come back to, with the reason in the
+// tooltip. Everyone sees it; the list is kept by Find Moons users.
+function watchBadge(watch) {
+    if (!watch) {
+        return '';
+    }
+
+    const parts = [watch.note || MOON_LANG.watch_reason];
+    if (watch.added_by) {
+        parts.push(MOON_LANG.watch_added_by
+            .replace(':who', watch.added_by)
+            .replace(':when', (watch.added_at || '').substring(0, 10)));
+    }
+
+    return `<span class="badge badge-watching" title="${escapeHtml(parts.join(' - '))}">`
+        + `<i class="fas fa-star"></i> ${escapeHtml(MOON_LANG.watch_badge)}</span>`;
+}
+
 function securityBadge(moon) {
     if (moon.security_band === 'wormhole') {
         return `<span class="badge ${SECURITY_BADGES.wormhole}">WH</span>`;
@@ -1283,6 +1372,7 @@ let finderDirection = 'desc';
 let claims = {};
 let claimNames = {};
 let claimMoonId = null;
+let watches = {};
 // The constellation and system picked, with the places above them, so a
 // region picked later can tell whether they still lie inside it.
 let finderPlaces = { constellation: null, system: null };
@@ -1345,6 +1435,21 @@ function initMoonFinder() {
         if (moonId) {
             openClaimModal(moonId, claimNames[moonId] || $('#moonSelect option:selected').text());
         }
+    });
+    $('#finderTable').on('click', '.watch-moon', function() {
+        openWatchModal($(this).data('moon-id'), $(this).data('moon-name'));
+    });
+    $('#resultWatchButton').on('click', function() {
+        const moonId = $('#moonSelect').val();
+        if (moonId) {
+            openWatchModal(moonId, claimNames[moonId] || $('#moonSelect option:selected').text());
+        }
+    });
+    $('#watchSave').on('click', function() {
+        saveWatch(false);
+    });
+    $('#watchRemove').on('click', function() {
+        saveWatch(true);
     });
     $('#claimSave').on('click', function() {
         saveClaim(false);
@@ -1519,6 +1624,8 @@ function finderCriteria() {
         quality_min: $('#finderQuality').val(),
         station: $('#finderStation').val(),
         claim: $('#finderClaim').val(),
+        watch: $('#finderWatch').val(),
+        name: $('#finderName').val(),
         sort: finderSort,
         direction: finderDirection,
         per_page: $('#finderPerPage').val()
@@ -1572,13 +1679,14 @@ function renderFinder(data) {
 
     data.rows.forEach(row => {
         rememberClaim(row.moon_id, row.claim, row.name);
+        rememberWatch(row.moon_id, row.watch);
         const ores = row.ores.map(ore => {
             return `<span class="badge ${RARITY_BADGES[ore.rarity] || 'badge-dark'} finder-ore-badge">${escapeHtml(ore.name)} ${ore.percent}%</span>`;
         }).join('');
 
         html += `
             <tr>
-                <td>${escapeHtml(row.name)}${stationBadge(row.station)}${claimBadge(row.claim)}</td>
+                <td>${escapeHtml(row.name)}${stationBadge(row.station)}${claimBadge(row.claim)}${watchBadge(row.watch)}</td>
                 <td class="text-nowrap">${securityBadge(row)} ${escapeHtml(row.system || '-')}</td>
                 <td>${escapeHtml(row.constellation || '-')}</td>
                 <td>${escapeHtml(row.region || '-')}</td>
@@ -1593,6 +1701,9 @@ function renderFinder(data) {
                     </button>
                     <button type="button" class="btn btn-xs btn-outline-warning claim-moon ml-1" data-moon-id="${row.moon_id}" data-moon-name="${escapeHtml(row.name)}" title="${escapeHtml(MOON_LANG.claim_title)}">
                         <i class="fas fa-flag"></i>
+                    </button>
+                    <button type="button" class="btn btn-xs btn-outline-info watch-moon ml-1" data-moon-id="${row.moon_id}" data-moon-name="${escapeHtml(row.name)}" title="${escapeHtml(MOON_LANG.watch_title)}">
+                        <i class="fas fa-star"></i>
                     </button>
                 </td>
             </tr>
@@ -1618,6 +1729,72 @@ function rememberClaim(moonId, claim, name) {
 
     if (name) {
         claimNames[moonId] = name;
+    }
+}
+
+function rememberWatch(moonId, watch) {
+    if (watch) {
+        watches[moonId] = watch;
+    } else {
+        delete watches[moonId];
+    }
+}
+
+function openWatchModal(moonId, moonName) {
+    const watch = watches[moonId] || null;
+
+    claimMoonId = moonId;
+    $('#watchMoonName').text(moonName || '');
+    $('#watchNote').val(watch ? (watch.note || '') : '');
+    $('#watchRemove').toggle(watch !== null);
+
+    if (watch && watch.added_by) {
+        $('#watchCurrent').text(MOON_LANG.watch_added_by
+            .replace(':who', watch.added_by)
+            .replace(':when', (watch.added_at || '').substring(0, 16))).show();
+    } else {
+        $('#watchCurrent').hide();
+    }
+
+    $('#watchModal').appendTo('body').modal('show');
+}
+
+function saveWatch(removing) {
+    const moonId = claimMoonId;
+    if (!moonId) {
+        return;
+    }
+
+    $.ajax({
+        url: removing ? MOON_ROUTES.watch_remove : MOON_ROUTES.watch,
+        method: 'POST',
+        data: {
+            _token: CSRF_TOKEN,
+            moon_id: moonId,
+            note: $('#watchNote').val()
+        },
+        success: function(response) {
+            showWatch(moonId, response.watch);
+            $('#watchModal').modal('hide');
+            toastr.success(removing ? MOON_LANG.watch_removed : MOON_LANG.watch_saved);
+        },
+        error: function(xhr) {
+            toastr.error(xhr.responseJSON?.error || MOON_LANG.watch_failed);
+        }
+    });
+}
+
+function showWatch(moonId, watch) {
+    rememberWatch(moonId, watch);
+
+    const $cell = $(`#finderTable .watch-moon[data-moon-id="${moonId}"]`).closest('tr').find('td').first();
+    $cell.find('.badge-watching').remove();
+    if (watch) {
+        $cell.append(watchBadge(watch));
+    }
+
+    if (String(moonId) === String($('#moonSelect').val())) {
+        $('#resultWatch').html(watchBadge(watch));
     }
 }
 
@@ -1708,6 +1885,8 @@ function resetFinder() {
     $('#finderQuality').val('');
     $('#finderStation').val('');
     $('#finderClaim').val('');
+    $('#finderWatch').val('');
+    $('#finderName').val('');
     finderSort = 'value';
     finderDirection = 'desc';
     $('#finderPerPage').val('25');

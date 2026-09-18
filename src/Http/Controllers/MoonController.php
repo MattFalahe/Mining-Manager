@@ -13,6 +13,7 @@ use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Services\Moon\MetenoxCargoService;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Models\MoonClaim;
+use MiningManager\Models\MoonWatch;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MiningLedger;
@@ -860,6 +861,7 @@ class MoonController extends Controller
                 'Class', 'Moon ore %', 'R4 %', 'R8 %', 'R16 %', 'R32 %', 'R64 %', 'Ores',
                 'Days', 'Ore value (ISK)', 'Refined value (ISK)', 'Quality', 'Top % of class',
                 'Our refinery', 'Refinery corporation', 'Claimed by', 'Claim note',
+                'Watching', 'Watch note',
             ]);
 
             foreach ($result['rows'] as $row) {
@@ -895,6 +897,8 @@ class MoonController extends Controller
                     $row['station']['corporation'] ?? '',
                     $row['claim'] ? ($row['claim']['claimed_by'] ?? trans('mining-manager::moons.claim_unknown')) : '',
                     $row['claim']['note'] ?? '',
+                    $row['watch'] ? 'Yes' : '',
+                    $row['watch']['note'] ?? '',
                 ]);
             }
 
@@ -962,6 +966,57 @@ class MoonController extends Controller
         $this->closeClaims($moonId, $characterId, $characterName);
 
         return response()->json(['claim' => null]);
+    }
+
+    /**
+     * Put a moon on the watchlist, or update the note on one already there.
+     */
+    public function watchMoon(Request $request)
+    {
+        $this->authorizeMoonFinder();
+
+        $moonId = $this->positiveInt($request->input('moon_id'));
+        if ($moonId === null) {
+            return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
+        }
+
+        $request->validate(['note' => 'nullable|string|max:255']);
+
+        [$characterId, $characterName] = $this->actor();
+
+        $watch = MoonWatch::updateOrCreate(
+            ['moon_id' => $moonId],
+            [
+                'note' => $this->trimmedOrNull($request->input('note')),
+                'character_id' => $characterId,
+                'character_name' => $characterName,
+            ]
+        );
+
+        return response()->json([
+            'watch' => [
+                'note' => $watch->note,
+                'added_by' => $watch->character_name,
+                'added_at' => (string) $watch->created_at,
+            ],
+        ]);
+    }
+
+    /**
+     * Take a moon off the watchlist.
+     */
+    public function unwatchMoon(Request $request)
+    {
+        $this->authorizeMoonFinder();
+
+        $moonId = $this->positiveInt($request->input('moon_id'));
+        if ($moonId === null) {
+            return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
+        }
+
+        MoonWatch::where('moon_id', $moonId)->delete();
+
+        return response()->json(['watch' => null]);
     }
 
     private function closeClaims(int $moonId, ?int $characterId, ?string $characterName): void
