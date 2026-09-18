@@ -297,50 +297,63 @@ class CachePriceDataCommand extends Command
                 Carbon::now()->subSeconds($cacheMinutes * 30)
             ));
 
-        $bar = $this->output->createProgressBar(count($typeIds));
+        $due = [];
+        foreach ($typeIds as $typeId) {
+            if (isset($recentlyCached[$typeId])) {
+                $skipped++;
+                continue;
+            }
+
+            $due[] = (int) $typeId;
+        }
+
+        // Ask for the whole list in one go and let the provider decide how to
+        // split it. Janice takes a hundred ids per request, so a refresh is a
+        // handful of requests rather than one per price.
+        $priced = [];
+        if (!empty($due)) {
+            $this->line('Asking the price provider for ' . count($due) . ' price(s)...');
+
+            try {
+                $priced = $this->marketService->getCachedPrices($due, $force);
+            } catch (\Exception $e) {
+                $this->error('  The price provider failed: ' . $e->getMessage());
+                $this->warn('  Cached prices are left as they are.');
+                $errors = count($due);
+                $priced = [];
+            }
+        }
+
+        $bar = $this->output->createProgressBar(count($due));
         $bar->start();
 
-        foreach ($typeIds as $typeId) {
-            try {
-                if (isset($recentlyCached[$typeId])) {
-                    $skipped++;
-                    $bar->advance();
-                    continue;
-                }
+        $missing = [];
+        foreach ($due as $typeId) {
+            $price = (float) ($priced[$typeId] ?? 0);
 
-                // getCachedPrice will fetch from provider and cache automatically
-                $price = $this->marketService->getCachedPrice($typeId, $force);
-
-                if ($price !== null) {
-                    $priceData = [
-                        'sell' => $price,
-                        'buy' => $price,
-                        'average' => $price,
-                    ];
-
-                    $this->priceService->cachePriceData($typeId, $regionId, $priceData);
-                    $cached++;
-                } else {
-                    $this->newLine();
-                    $this->warn("  No price data available for type ID: {$typeId}");
-                    $errors++;
-                }
-
-                $bar->advance();
-
-                // Rate limiting - sleep briefly between requests
-                usleep(100000); // 100ms delay
-
-            } catch (\Exception $e) {
-                $this->newLine();
-                $this->error("  Error caching type ID {$typeId}: {$e->getMessage()}");
-                $errors++;
-                $bar->advance();
+            if ($price > 0) {
+                $this->priceService->cachePriceData($typeId, $regionId, [
+                    'sell' => $price,
+                    'buy' => $price,
+                    'average' => $price,
+                ]);
+                $cached++;
+            } elseif ($errors === 0) {
+                // No price this time. Whatever is cached stays, so this is
+                // worth naming but is not an error on its own.
+                $missing[] = $typeId;
             }
+
+            $bar->advance();
         }
 
         $bar->finish();
         $this->newLine(2);
+
+        if (!empty($missing)) {
+            $this->warn('No price came back for ' . count($missing) . ' type(s); their cached prices are unchanged.');
+            $this->line('  ' . implode(', ', array_slice($missing, 0, 20)) . (count($missing) > 20 ? ', ...' : ''));
+        }
 
         $this->info("Price cache update complete!");
         $this->info("Cached: {$cached} items");

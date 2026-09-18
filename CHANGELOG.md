@@ -41,6 +41,31 @@ how each moon and ore has been mined without being a director. Analytics appears
 sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
 Planner link in the sidebar also shows for directors now, who already had access to the page.
 
+### 🐛 A failed price lookup no longer wipes a good price
+
+A price that could not be fetched was written to the cache as zero with a fresh
+timestamp. That threw away the last good price and made the miss look like a
+current price of nothing, so an ore could value at zero until the next refresh
+happened to succeed. A price is now only written when there is one, each side
+of the market on its own, and a type nothing came back for keeps what it had,
+stale timestamp included, so the next run still counts it as due.
+
+### ✨ Janice is asked once per hundred prices, not once per price
+
+A refresh asked Janice for one price at a time, several hundred requests every
+four hours, each with up to six quick retries when one was refused. Janice
+publishes no rate limit, but its owner blocks keys for excessive traffic. The
+whole list now goes in one request per hundred ids, a couple of seconds apart,
+which turns a refresh into a handful of requests.
+
+If a request fails with a server error, a timeout or a rejection, it is retried
+in halves rather than abandoned. If Janice refuses the key outright (401, 403
+or 429) the refresh stops instead of asking again in smaller pieces, which is
+exactly the traffic that gets a key blocked. Split pricing also reads the
+prices Janice actually returns, and falls back to whichever side of the market
+has orders, so moon ore that only trades one way is no longer valued at half of
+nothing.
+
 ### 🧹 One colour for each moon class
 
 R4 to R64 were coloured three different ways: the Moon Planner had its own gold

@@ -3190,7 +3190,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:cache-prices</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
-                                    <td>Cache market price data from your configured price provider for all ore types.<br>
+                                    <td>Cache market price data from your configured price provider for all ore types.
+                                        Prices are asked for in one request per hundred types, and a type nothing came
+                                        back for keeps the price it had rather than being zeroed.<br>
                                         <small class="text-muted">Options: <code>--type=all</code> (ore|compressed-ore|moon|materials|minerals|ice|gas|all), <code>--region=10000002</code> region ID, <code>--force</code> refresh even if cache is fresh</small>
                                     </td>
                                 </tr>

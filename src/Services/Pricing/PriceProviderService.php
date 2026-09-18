@@ -82,6 +82,17 @@ class PriceProviderService
      * API endpoints
      */
     const JANICE_PRICER_URL = 'https://janice.e-351.com/api/rest/v2/pricer';
+
+    /**
+     * How many ids go in one Janice request, and how long to wait between
+     * them. A whole refresh is a handful of requests at this size, which is
+     * the point: the owner blocks keys for excessive traffic.
+     */
+    const JANICE_BATCH_SIZE = 100;
+    const JANICE_BATCH_PAUSE_US = 2000000;
+    const JANICE_RETRY_PAUSE_US = 1000000;
+    const JANICE_MAX_SPLITS = 3;
+    const JANICE_TIMEOUT_SECONDS = 30;
     const JANICE_APPRAISAL_URL = 'https://janice.e-351.com/api/rest/v2/appraisal';
     const FUZZWORK_MARKET_URL = 'https://market.fuzzwork.co.uk/aggregates/';
 
@@ -194,10 +205,15 @@ class PriceProviderService
     }
 
     /**
-     * Fetch prices from Janice API
+     * Fetch prices from Janice.
+     *
+     * One request per batch of ids, not one per id: Janice publishes no rate
+     * limit, but its owner blocks keys for excessive traffic, and a refresh
+     * used to be one request per price several hundred times over. The pricer
+     * endpoint takes a list and answers with the same prices.
      *
      * @param array $typeIds
-     * @return array
+     * @return array [type_id => price]
      */
     protected function getPricesFromJanice(array $typeIds): array
     {
@@ -210,91 +226,116 @@ class PriceProviderService
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
-        $prices = [];
-        $market = $pricingSettings['janice_market'] ?? 'jita';
-        $batchSize = $this->settingsService->getSetting('janice_batch_size', 50);
-        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000); // microseconds
-        $maxRetries = $this->settingsService->getSetting('janice_max_retries', 3);
+        $market = ($pricingSettings['janice_market'] ?? 'jita') === 'jita' ? '2' : '1';
+        $method = $pricingSettings['janice_price_method'] ?? 'buy';
+        $batchSize = max(1, min(500, (int) $this->settingsService->getSetting('janice_batch_size', self::JANICE_BATCH_SIZE)));
+        $pause = max(0, (int) $this->settingsService->getSetting('janice_rate_limit_delay', self::JANICE_BATCH_PAUSE_US));
 
-        // For large batches, use appraisal endpoint (more efficient)
-        if (count($typeIds) > $batchSize) {
-            return $this->getPricesFromJaniceAppraisal($typeIds, $apiKey, $market);
+        $wanted = array_values(array_unique(array_map('intval', $typeIds)));
+        $prices = [];
+
+        foreach (array_chunk($wanted, $batchSize) as $index => $batch) {
+            if ($index > 0 && $pause > 0) {
+                usleep($pause);
+            }
+
+            $prices += $this->fetchJaniceBatch($batch, $apiKey, $market, $method);
         }
 
-        // Use the pricer endpoint for smaller batches
-        foreach ($typeIds as $typeId) {
-            $attempts = 0;
-            $success = false;
+        // Ids Janice does not answer for keep no price here. Nothing writes a
+        // zero over a good price, so they simply keep whatever was cached.
+        return $prices;
+    }
 
-            while ($attempts < $maxRetries && !$success) {
-                try {
-                    $url = sprintf('%s/%d?market=%s',
-                        self::JANICE_PRICER_URL,
-                        $typeId,
-                        $market === 'jita' ? '2' : '1' // 2=Jita, 1=Amarr
-                    );
+    /**
+     * One batch, with a staged retreat when the request itself fails.
+     *
+     * A refused key (401, 403, 429) stops the whole refresh: asking again in
+     * smaller pieces is exactly the traffic that gets a key blocked. A server
+     * error, a timeout or a rejected request is worth retrying in halves, and
+     * a handful of leftovers one at a time, because those can be a single bad
+     * id or a blip rather than a closed door.
+     *
+     * @return array [type_id => price]
+     */
+    protected function fetchJaniceBatch(array $typeIds, string $apiKey, string $market, string $method, int $depth = 0): array
+    {
+        if (empty($typeIds)) {
+            return [];
+        }
 
-                    $response = Http::timeout(10)
-                        ->retry(2, 100)
-                        ->withHeaders([
-                            'X-ApiKey' => $apiKey,
-                            'accept' => 'application/json'
-                        ])->get($url);
+        try {
+            return $this->janicePricerRequest($typeIds, $apiKey, $market, $method);
+        } catch (JaniceRefusedException $e) {
+            // Nothing to salvage: the key is the problem, not the batch.
+            throw $e;
+        } catch (Exception $e) {
+            Log::warning('Mining Manager: Janice batch failed', [
+                'ids' => count($typeIds),
+                'depth' => $depth,
+                'error' => $e->getMessage(),
+            ]);
 
-                    if (!$response->successful()) {
-                        Log::warning('Janice API error for type', [
-                            'type_id' => $typeId,
-                            'status' => $response->status(),
-                            'attempt' => $attempts + 1
-                        ]);
-                        $attempts++;
+            if (count($typeIds) === 1 || $depth >= self::JANICE_MAX_SPLITS) {
+                return [];
+            }
 
-                        if ($attempts < $maxRetries) {
-                            usleep(1000000); // 1 second delay before retry
-                            continue;
-                        }
+            $half = (int) ceil(count($typeIds) / 2);
+            $prices = [];
+            foreach (array_chunk($typeIds, $half) as $piece) {
+                usleep(self::JANICE_RETRY_PAUSE_US);
+                $prices += $this->fetchJaniceBatch($piece, $apiKey, $market, $method, $depth + 1);
+            }
 
-                        $prices[$typeId] = 0;
-                        break;
-                    }
+            return $prices;
+        }
+    }
 
-                    $data = $response->json();
+    /**
+     * The pricer call itself: ids as text, one per line.
+     *
+     * @return array [type_id => price]
+     * @throws JaniceRefusedException when Janice refuses the key
+     * @throws Exception when the request fails in a way worth retrying
+     */
+    protected function janicePricerRequest(array $typeIds, string $apiKey, string $market, string $method): array
+    {
+        $response = Http::timeout(self::JANICE_TIMEOUT_SECONDS)
+            ->withHeaders([
+                'X-ApiKey' => $apiKey,
+                'Content-Type' => 'text/plain',
+                'accept' => 'application/json',
+            ])
+            ->withBody(implode("
+", $typeIds), 'text/plain')
+            ->post(self::JANICE_PRICER_URL . '?market=' . $market);
 
-                    // Get price based on configured method
-                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
+        if (in_array($response->status(), [401, 403, 429], true)) {
+            throw new JaniceRefusedException(
+                'Janice refused the request with HTTP ' . $response->status()
+                . ($response->status() === 429 ? ' (too many requests)' : ' (check the API key)')
+            );
+        }
 
-                    if (isset($data['immediatePrices'])) {
-                        $prices[$typeId] = match($priceMethod) {
-                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
-                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
-                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
-                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
-                        };
-                    } else {
-                        $prices[$typeId] = 0;
-                    }
+        if (!$response->successful()) {
+            throw new Exception('Janice returned HTTP ' . $response->status());
+        }
 
-                    $success = true;
+        $items = $response->json();
+        if (!is_array($items)) {
+            throw new Exception('Janice returned something other than a list of prices');
+        }
 
-                    // Configurable rate limiting
-                    if ($rateLimitDelay > 0) {
-                        usleep($rateLimitDelay);
-                    }
+        $prices = [];
+        foreach ($items as $item) {
+            $typeId = (int) ($item['itemType']['eid'] ?? 0);
+            if ($typeId <= 0) {
+                continue;
+            }
 
-                } catch (Exception $e) {
-                    $attempts++;
-                    Log::error('Failed to fetch Janice price', [
-                        'type_id' => $typeId,
-                        'error' => $e->getMessage(),
-                        'attempt' => $attempts
-                    ]);
-
-                    if ($attempts >= $maxRetries) {
-                        $prices[$typeId] = 0;
-                    } else {
-                        usleep(1000000); // 1 second delay before retry
-                    }
-                }
+            $price = $this->janicePrice($item['immediatePrices'] ?? [], $method);
+            if ($price > 0) {
+                $prices[$typeId] = $price;
             }
         }
 
@@ -302,82 +343,29 @@ class PriceProviderService
     }
 
     /**
-     * Fetch prices from Janice for large batches.
-     * Uses the individual pricer endpoint since the appraisal endpoint
-     * only returns totals, not per-item prices.
+     * The price Janice's answer gives for the configured method.
      *
-     * @param array $typeIds
-     * @param string $apiKey
-     * @param string $market
-     * @return array
+     * Moon ore often trades on one side only, and a split of a side with no
+     * orders is half of nothing, so split falls back to whichever side has a
+     * price rather than reporting a moon as worthless.
      */
-    protected function getPricesFromJaniceAppraisal(array $typeIds, string $apiKey, string $market): array
+    protected function janicePrice(array $immediate, string $method): float
     {
-        // The appraisal endpoint only returns totals, not per-item prices.
-        // Use the individual pricer endpoint directly for per-item pricing.
-        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
-    }
+        $buy = (float) ($immediate['buyPrice'] ?? 0);
+        $sell = (float) ($immediate['sellPrice'] ?? 0);
 
-    /**
-     * Fetch prices using individual pricer endpoint
-     *
-     * @param array $typeIds
-     * @param string $apiKey
-     * @param string $market
-     * @return array
-     */
-    protected function getPricesFromJanicePricer(array $typeIds, string $apiKey, string $market): array
-    {
-        $prices = [];
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000);
-
-        foreach ($typeIds as $typeId) {
-            try {
-                $url = sprintf('%s/%d?market=%s',
-                    self::JANICE_PRICER_URL,
-                    $typeId,
-                    $market === 'jita' ? '2' : '1'
-                );
-
-                $response = Http::timeout(10)
-                    ->withHeaders([
-                        'X-ApiKey' => $apiKey,
-                        'accept' => 'application/json'
-                    ])->get($url);
-
-                if ($response->successful()) {
-                    $data = $response->json();
-                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
-
-                    if (isset($data['immediatePrices'])) {
-                        $prices[$typeId] = match($priceMethod) {
-                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
-                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
-                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
-                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
-                        };
-                    } else {
-                        $prices[$typeId] = 0;
-                    }
-                } else {
-                    $prices[$typeId] = 0;
+        switch ($method) {
+            case 'sell':
+                return $sell;
+            case 'split':
+                if ($buy > 0 && $sell > 0) {
+                    return (float) ($immediate['splitPrice'] ?? (($buy + $sell) / 2));
                 }
 
-                if ($rateLimitDelay > 0) {
-                    usleep($rateLimitDelay);
-                }
-
-            } catch (Exception $e) {
-                Log::error('Failed to fetch Janice price', [
-                    'type_id' => $typeId,
-                    'error' => $e->getMessage()
-                ]);
-                $prices[$typeId] = 0;
-            }
+                return $buy > 0 ? $buy : $sell;
+            default:
+                return $buy;
         }
-
-        return $prices;
     }
 
     /**
@@ -857,7 +845,14 @@ class PriceProviderService
             return [];
         }
 
-        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
+        // Only the prices that came back empty land here, so this is a small
+        // list and one request covers it.
+        return $this->fetchJaniceBatch(
+            array_values(array_unique(array_map('intval', $typeIds))),
+            $apiKey,
+            $market === 'jita' ? '2' : '1',
+            $pricingSettings['janice_price_method'] ?? 'buy'
+        );
     }
 
     /**
@@ -1352,18 +1347,40 @@ class PriceProviderService
      */
     public function cachePriceData(int $typeId, int $regionId, array $priceData): bool
     {
+        $sell = max(0.0, (float) ($priceData['sell'] ?? 0));
+        $buy = max(0.0, (float) ($priceData['buy'] ?? 0));
+        $average = max(0.0, (float) ($priceData['average'] ?? 0));
+
+        // Nothing arrived. A zero used to be written here with a fresh
+        // timestamp, which threw away a good price and made the miss look
+        // like a current price of nothing. The row is left exactly as it is,
+        // stale timestamp and all, so the next refresh still counts it as due.
+        if ($sell <= 0 && $buy <= 0 && $average <= 0) {
+            return false;
+        }
+
         try {
+            $values = ['cached_at' => Carbon::now()];
+
+            // Each side only replaces what is cached when a real price for it
+            // turned up: a provider with orders on one side of the market
+            // must not wipe the other side.
+            if ($sell > 0) {
+                $values['sell_price'] = $sell;
+            }
+            if ($buy > 0) {
+                $values['buy_price'] = $buy;
+            }
+            if ($average > 0) {
+                $values['average_price'] = $average;
+            }
+
             MiningPriceCache::updateOrCreate(
                 [
                     'type_id' => $typeId,
                     'region_id' => $regionId,
                 ],
-                [
-                    'sell_price' => $priceData['sell'] ?? 0,
-                    'buy_price' => $priceData['buy'] ?? 0,
-                    'average_price' => $priceData['average'] ?? 0,
-                    'cached_at' => Carbon::now(),
-                ]
+                $values
             );
 
             return true;

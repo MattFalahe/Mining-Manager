@@ -114,6 +114,7 @@ class MasterTestRunner
             // Pricing path
             'checkConfiguredProviderValid',
             'checkPriceProviderRoundtrip',
+            'checkPricesWeNeverAskFor',
 
             // Notifications path
             'checkWebhookConfigurations',
@@ -641,6 +642,86 @@ class MasterTestRunner
      * the configured provider can return at least one non-zero price right
      * now without exercising network on every other provider.
      */
+    /**
+     * Everything the plugin values has to be in the list the price refresh
+     * asks for. Two things can fall outside it: an ore somebody has scanned
+     * that the registry does not know, and the materials an ore reprocesses
+     * into, which come from the SDE rather than from our own lists. Either
+     * one values as zero without saying so.
+     */
+    protected function checkPricesWeNeverAskFor(): array
+    {
+        $name = 'Prices we never ask for';
+        $asked = array_flip(TypeIdRegistry::getTypeIdsByCategory('all'));
+
+        try {
+            $scannedOres = DB::table('universe_moon_contents')
+                ->distinct()
+                ->pluck('type_id')
+                ->map(function ($typeId) {
+                    return (int) $typeId;
+                })
+                ->all();
+
+            $materials = DB::table('invTypeMaterials')
+                ->whereIn('typeID', array_keys($asked))
+                ->distinct()
+                ->pluck('materialTypeID')
+                ->map(function ($typeId) {
+                    return (int) $typeId;
+                })
+                ->all();
+        } catch (Throwable $e) {
+            return $this->warn($name, 'pricing', 'Could not read the SDE: ' . $e->getMessage());
+        }
+
+        $missingOres = array_values(array_diff($scannedOres, array_keys($asked)));
+        $missingMaterials = array_values(array_diff($materials, array_keys($asked)));
+
+        if (empty($missingOres) && empty($missingMaterials)) {
+            return $this->pass(
+                $name,
+                'pricing',
+                'The refresh asks for every scanned moon ore and every material they reprocess into (' . count($asked) . ' type ids)'
+            );
+        }
+
+        $names = [];
+        try {
+            $names = DB::table('invTypes')
+                ->whereIn('typeID', array_merge($missingOres, $missingMaterials))
+                ->pluck('typeName', 'typeID')
+                ->all();
+        } catch (Throwable $e) {
+            $names = [];
+        }
+
+        $describe = function (array $ids) use ($names) {
+            $out = [];
+            foreach (array_slice($ids, 0, 20) as $typeId) {
+                $out[] = $typeId . ' ' . ($names[$typeId] ?? '(no name in the SDE)');
+            }
+
+            return $out;
+        };
+
+        $details = [];
+        if (!empty($missingOres)) {
+            $details['scanned ore with no price'] = $describe($missingOres);
+        }
+        if (!empty($missingMaterials)) {
+            $details['reprocessing output with no price'] = $describe($missingMaterials);
+        }
+        $details['hint'] = 'Add them to TypeIdRegistry so the price refresh asks for them. Until then anything valued from them counts as zero: scanned ore on the Extraction Simulator, and refined value everywhere.';
+
+        return $this->warn(
+            $name,
+            'pricing',
+            (count($missingOres) + count($missingMaterials)) . ' type(s) are valued by the plugin but never priced',
+            $details
+        );
+    }
+
     protected function checkPriceProviderRoundtrip(): array
     {
         try {
