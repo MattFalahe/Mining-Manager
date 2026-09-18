@@ -54,7 +54,9 @@
     // One colour per moon class and per security band, used by the filters,
     // the results and the simulator alike, so a class reads the same wherever
     // it appears on this page.
-    $rarityBadges = ['R4' => 'badge-secondary', 'R8' => 'badge-success', 'R16' => 'badge-info', 'R32' => 'badge-warning', 'R64' => 'badge-danger'];
+    // SeAT's own moon extraction page colours the tiers this way, so a moon
+    // reads the same here as it does there.
+    $rarityBadges = ['R4' => 'badge-success', 'R8' => 'badge-primary', 'R16' => 'badge-info', 'R32' => 'badge-warning', 'R64' => 'badge-danger'];
     $securityBadges = ['high' => 'badge-success', 'low' => 'badge-warning', 'null' => 'badge-danger', 'wormhole' => 'badge-dark'];
 @endphp
 <div class="mining-manager-wrapper mining-dashboard moon-simulator-page">
