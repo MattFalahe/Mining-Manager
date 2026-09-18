@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=7">
 <style>
     .moon-simulator-page .finder-section { margin-bottom: 12px; }
     .moon-simulator-page .finder-section-title {
@@ -33,14 +33,6 @@
     .moon-simulator-page #suggestionsTable td { vertical-align: middle; }
     .moon-simulator-page .finder-ore-badge { margin: 1px 3px 1px 0; font-weight: 500; }
     .moon-simulator-page .quality-rank { display: block; font-size: 0.72rem; opacity: 0.85; }
-    /* Moon classes, coloured as SeAT's own extraction page colours them. Set
-       here rather than left to the generic badge classes, because a skin can
-       dull those into something hard to read, yellow worst of all. */
-    .moon-simulator-page .badge-r4 { background-color: #28a745; color: #fff !important; }
-    .moon-simulator-page .badge-r8 { background-color: #007bff; color: #fff !important; }
-    .moon-simulator-page .badge-r16 { background-color: #17a2b8; color: #fff !important; }
-    .moon-simulator-page .badge-r32 { background-color: #ffc107; color: #212529 !important; }
-    .moon-simulator-page .badge-r64 { background-color: #dc3545; color: #fff !important; }
     .moon-simulator-page .badge-sec-high { background-color: #28a745; color: #fff !important; }
     .moon-simulator-page .badge-sec-low { background-color: #ffc107; color: #212529 !important; }
     .moon-simulator-page .badge-sec-null { background-color: #dc3545; color: #fff !important; }
@@ -98,10 +90,10 @@
     // One colour per moon class and per security band, used by the filters,
     // the results and the simulator alike, so a class reads the same wherever
     // it appears on this page.
-    // SeAT's own moon extraction page colours the tiers green, blue, cyan,
-    // yellow and red, so a moon reads the same here as it does there. The
-    // classes are ours and the page styles them, so a skin cannot dull them.
-    $rarityBadges = ['R4' => 'badge-r4', 'R8' => 'badge-r8', 'R16' => 'badge-r16', 'R32' => 'badge-r32', 'R64' => 'badge-r64'];
+    $rarityBadges = [];
+    foreach (\MiningManager\Services\Moon\MoonFinderService::CLASSES as $moonClass) {
+        $rarityBadges[$moonClass] = \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($moonClass);
+    }
     $securityBadges = ['high' => 'badge-sec-high', 'low' => 'badge-sec-low', 'null' => 'badge-sec-null', 'wormhole' => 'badge-sec-wormhole'];
 @endphp
 <div class="mining-manager-wrapper mining-dashboard moon-simulator-page">

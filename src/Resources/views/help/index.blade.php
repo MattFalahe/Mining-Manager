@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::help.help_documentation'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=6">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=7">
 <style>
     .help-wrapper {
         display: flex;
@@ -2713,11 +2713,11 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </h3>
                     <p>{{ trans('mining-manager::help.moon_classification_desc') }}</p>
                     <ul>
-                        <li><span class="badge badge-danger">R64</span> {{ trans('mining-manager::help.moon_r64') }}</li>
-                        <li><span class="badge badge-warning">R32</span> {{ trans('mining-manager::help.moon_r32') }}</li>
-                        <li><span class="badge badge-info">R16</span> {{ trans('mining-manager::help.moon_r16') }}</li>
-                        <li><span class="badge badge-success">R8</span> {{ trans('mining-manager::help.moon_r8') }}</li>
-                        <li><span class="badge badge-secondary">R4</span> {{ trans('mining-manager::help.moon_r4') }}</li>
+                        <li><span class="badge badge-r64">R64</span> {{ trans('mining-manager::help.moon_r64') }}</li>
+                        <li><span class="badge badge-r32">R32</span> {{ trans('mining-manager::help.moon_r32') }}</li>
+                        <li><span class="badge badge-r16">R16</span> {{ trans('mining-manager::help.moon_r16') }}</li>
+                        <li><span class="badge badge-r8">R8</span> {{ trans('mining-manager::help.moon_r8') }}</li>
+                        <li><span class="badge badge-r4">R4</span> {{ trans('mining-manager::help.moon_r4') }}</li>
                     </ul>
 
                     <h4 class="mt-4">{{ trans('mining-manager::help.moon_quality') }}</h4>

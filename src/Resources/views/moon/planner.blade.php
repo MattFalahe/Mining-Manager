@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_planner'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=7">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <style>
     /* Event backgrounds must be set (not just a left border) or FullCalendar's
@@ -233,16 +233,12 @@
                     <div class="card-tools"><span class="badge badge-primary">{{ count($refinerySummaries) }}</span></div>
                 </div>
                 <div class="card-body p-2" style="max-height: 640px; overflow-y: auto;">
-                    @php
-                        // R-tier badge colours (richest = gold, down to grey).
-                        $rarityColors = ['R64' => '#f1c40f', 'R32' => '#e74c3c', 'R16' => '#9b59b6', 'R8' => '#3498db', 'R4' => '#7f8c8d'];
-                    @endphp
                     @forelse($refinerySummaries as $r)
                         <div class="mm-sidebar-item mm-refinery-card mb-2">
                             <div class="mm-structure-name d-flex justify-content-between align-items-start">
                                 <span><i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}</span>
                                 @if(!empty($r['rarity']))
-                                    <span class="badge ml-1" style="background: {{ $rarityColors[$r['rarity']] ?? '#7f8c8d' }}; color:#000; font-weight:700;"
+                                    <span class="badge ml-1 {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($r['rarity']) }}"
                                           title="Highest ore tier on this moon">{{ $r['rarity'] }}</span>
                                 @endif
                             </div>

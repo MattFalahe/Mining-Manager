@@ -36,6 +36,24 @@ class MoonOreHelper
     }
 
     /**
+     * The badge class for a moon ore class, R4 or r4 alike.
+     *
+     * One place decides what an R-tier looks like, so a moon reads the same
+     * on the planner, the simulator, the tax pages and in Help. The colours
+     * themselves live in the plugin stylesheet, next to the other badges.
+     *
+     * @param string|null $rarity R4 to R64, in either case
+     */
+    public static function rarityBadgeClass(?string $rarity): string
+    {
+        $tier = strtolower(trim((string) $rarity));
+
+        return in_array($tier, ['r4', 'r8', 'r16', 'r32', 'r64'], true)
+            ? 'badge-' . $tier
+            : 'badge-secondary';
+    }
+
+    /**
      * Get the rarity level of a moon ore
      *
      * @param int $typeId

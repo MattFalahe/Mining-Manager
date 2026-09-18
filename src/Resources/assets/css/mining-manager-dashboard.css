@@ -236,6 +236,26 @@
 /* ============================================
    Badges & Labels
    ============================================ */
+
+/* Moon ore classes. SeAT's own extraction page colours the tiers green, blue,
+   cyan, yellow and red, so a moon reads the same in the plugin as it does in
+   SeAT. Set here rather than left to the generic badge classes, because a skin
+   can dull those into something hard to read, yellow worst of all. */
+.mining-dashboard .badge-r4,
+.mining-manager-wrapper .badge-r4 { background-color: #28a745; color: #fff !important; }
+
+.mining-dashboard .badge-r8,
+.mining-manager-wrapper .badge-r8 { background-color: #007bff; color: #fff !important; }
+
+.mining-dashboard .badge-r16,
+.mining-manager-wrapper .badge-r16 { background-color: #17a2b8; color: #fff !important; }
+
+.mining-dashboard .badge-r32,
+.mining-manager-wrapper .badge-r32 { background-color: #ffc107; color: #212529 !important; }
+
+.mining-dashboard .badge-r64,
+.mining-manager-wrapper .badge-r64 { background-color: #dc3545; color: #fff !important; }
+
 .mining-dashboard .badge-mm,
 .mining-manager-wrapper .badge-mm {
     padding: 4px 8px;

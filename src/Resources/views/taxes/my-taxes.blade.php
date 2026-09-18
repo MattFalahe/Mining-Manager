@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=7">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/tax-management.css') }}">
 @endpush
 
@@ -391,7 +391,7 @@
                                     <td>
                                         {{ $ore['name'] }}
                                         @if($ore['rarity'])
-                                            <span class="badge badge-{{ $ore['rarity'] === 'r64' ? 'warning' : ($ore['rarity'] === 'r32' ? 'info' : 'secondary') }}">
+                                            <span class="badge {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($ore['rarity']) }}">
                                                 {{ strtoupper($ore['rarity']) }}
                                             </span>
                                         @endif

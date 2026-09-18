@@ -41,6 +41,17 @@ how each moon and ore has been mined without being a director. Analytics appears
 sidebar and opens straight onto that page; the rest of Analytics stays with directors. The Moon
 Planner link in the sidebar also shows for directors now, who already had access to the page.
 
+### 🧹 One colour for each moon class
+
+R4 to R64 were coloured three different ways: the Moon Planner had its own gold
+to grey set, the tax pages coloured only R64 and R32, and the simulator and Help
+used a third. The same moon could read gold on one page and grey on the next.
+
+Every page now uses the set SeAT itself uses on its moon extraction page: R4
+green, R8 blue, R16 cyan, R32 yellow, R64 red. The plugin sets those colours
+itself rather than leaving them to the theme, so a skin cannot wash them out,
+and one helper decides the badge, so the pages cannot drift apart again.
+
 ### ✨ A watchlist, and finding one moon by name
 
 Searching turns up moons worth having that cannot be had today: somebody else
