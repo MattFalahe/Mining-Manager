@@ -261,6 +261,13 @@
                         <div class="row">
                             <div class="col-lg-3 col-md-6">
                                 <div class="form-group">
+                                    <label for="finderName">{{ trans('mining-manager::moons.finder_name') }}</label>
+                                    <input type="text" class="form-control" id="finderName" maxlength="100" placeholder="{{ trans('mining-manager::moons.finder_name_placeholder') }}">
+                                    <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_name_help') }}</small>
+                                </div>
+                            </div>
+                            <div class="col-lg-3 col-md-6">
+                                <div class="form-group">
                                     <label for="finderRegion">{{ trans('mining-manager::moons.finder_region') }}</label>
                                     <select class="form-control" id="finderRegion" style="width: 100%;">
                                         <option value=""></option>
@@ -305,13 +312,6 @@
                                         <option value="free">{{ trans('mining-manager::moons.finder_station_free') }}</option>
                                     </select>
                                     <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_station_help') }}</small>
-                                </div>
-                            </div>
-                            <div class="col-lg-3 col-md-6">
-                                <div class="form-group">
-                                    <label for="finderName">{{ trans('mining-manager::moons.finder_name') }}</label>
-                                    <input type="text" class="form-control" id="finderName" maxlength="100" placeholder="{{ trans('mining-manager::moons.finder_name_placeholder') }}">
-                                    <small class="form-text text-muted">{{ trans('mining-manager::moons.finder_name_help') }}</small>
                                 </div>
                             </div>
                             <div class="col-lg-3 col-md-6">
