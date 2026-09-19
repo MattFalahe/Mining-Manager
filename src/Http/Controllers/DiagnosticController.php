@@ -2836,6 +2836,16 @@ class DiagnosticController extends Controller
                 ->where('pc.average_price', '<=', 0)
                 ->where('ml.date', '>=', Carbon::now()->subDays(30)->toDateString())
                 ->whereNull('ml.deleted_at')
+                // Ore that reprocesses into nothing cannot be valued from its
+                // minerals either, so a missing price is the end of the road
+                // rather than something to go and fix. Saying so every day
+                // would be noise, and the ones worth chasing are the ores we
+                // could have valued and did not.
+                ->whereExists(function ($query) {
+                    $query->select(DB::raw(1))
+                        ->from('invTypeMaterials')
+                        ->whereColumn('invTypeMaterials.typeID', 'pc.type_id');
+                })
                 ->distinct()
                 ->count('pc.type_id');
 
