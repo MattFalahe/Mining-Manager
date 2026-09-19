@@ -572,6 +572,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="#" class="nav-link" data-section="find-moons">
+                                <i class="fas fa-search-location"></i>
+                                Find Moons
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="#" class="nav-link" data-section="theft-detection">
                                 <i class="fas fa-user-secret"></i>
                                 {{ trans('mining-manager::help.theft_detection') }}
@@ -793,7 +799,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <small class="text-muted" style="display: block; margin-top: 0.4rem; font-size: 0.75rem;">
                         <i class="fas fa-info-circle"></i>
                         Installed version {{ $sourceHint }}. Latest checked via Packagist's public API (6h cache, safe on outages).
-                        On a development branch, the running commit comes from Composer and what has landed since from GitHub's public API, both cached for 6 hours.
+                        @if($vs['is_dev_branch'] ?? false)
+                            The running commit comes from Composer and what has landed since from GitHub's public API, both cached for 6 hours.
+                        @endif
                     </small>
                 </div>
 
@@ -1023,6 +1031,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             Simulator can search every scanned moon by region, constellation, system, security,
                             class, composition rules, value and quality, and points out better moons of the same
                             class nearby. It is for directors, moon managers and the new Moon Finder permission.
+                            The <a href="#find-moons" data-section-link="find-moons">Find Moons</a> page walks
+                            through every filter.
                             Quality now ranks a moon against the scanned moons of its own class instead of fixed ISK
                             amounts, the simulator shows refined value next to ore value, and it prices from the
                             cache instead of asking your price provider on every click.
@@ -3038,6 +3048,211 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <strong>Getting started:</strong> open the Moon Planner, press
                         <strong>Auto-fill from History</strong>, then adjust anything that looks wrong. Refineries
                         flagged <code>Not planned</code> or "not enough history" are the ones needing a manual slot.
+                    </div>
+                </div>
+            </div>
+
+            {{-- Find Moons Section --}}
+            <div id="find-moons" class="help-section">
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-search-location"></i>
+                        Find Moons
+                    </h3>
+                    <p>
+                        Find Moons sits at the top of the <strong>Extraction Simulator</strong> and searches every moon
+                        SeAT has a scan for, rather than making you look them up one at a time. It answers questions
+                        like "which R32 moons in this region are worth anchoring on", "is there anything better than
+                        this moon nearby", and "which moons did we already decide were taken".
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-key"></i>
+                        <strong>Who can use it:</strong> Directors, Moon Managers, and anyone with the standalone
+                        <code>mining-manager.moon_finder</code> permission. Listing every valuable moon in a region at
+                        once is stronger intel than a single lookup, so it is gated separately. Members keep the
+                        simulator underneath it.
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-map-marked-alt"></i>
+                        Where to look
+                    </h3>
+                    <ul>
+                        <li>
+                            <strong>Moon name.</strong> Any part of a moon's name finds it on its own, so
+                            <code>9OLQ-6 V - Moon 15</code> or just <code>9OLQ-6</code> both work. Use this when you
+                            already know the moon and want its class, value and quality.
+                        </li>
+                        <li>
+                            <strong>Region, Constellation and System.</strong> Pick them in any order. Choosing a
+                            system fills in the constellation and region for you, so you never have to drill down from
+                            the top if you already know where you are going. Each box searches as you type.
+                        </li>
+                        <li>
+                            <strong>Security.</strong> High, low or null security. Worth pairing with class, since the
+                            rarest ores only occur in the lower bands.
+                        </li>
+                    </ul>
+                    <div class="info-box">
+                        <i class="fas fa-eraser"></i>
+                        <strong>Clearing a place filter:</strong> each box has a small red cross on the right once
+                        something is chosen. Use that rather than deleting the text, which leaves the choice behind.
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-gem"></i>
+                        What the moon has to contain
+                    </h3>
+                    <ul>
+                        <li>
+                            <strong>Class</strong> is a moon's rarest ore, not its average. A moon holding a sliver of
+                            R64 alongside three common ores is an R64 moon. It is the quickest way to cut a region down
+                            to the moons worth reading.
+                        </li>
+                        <li>
+                            <strong>Moon ore share</strong> is how much of the chunk is moon ore rather than regular
+                            asteroid ore. A high-class moon with a thin share can be worth less per pull than a plainer
+                            moon that is mostly moon ore, which is why this is a filter and not just a column.
+                        </li>
+                        <li>
+                            <strong>Required ores</strong> narrows to moons containing specific ores, for when you are
+                            chasing a reaction chain rather than ISK.
+                        </li>
+                        <li>
+                            <strong>Composition rules</strong> set a minimum share for a rarity, such as R16 at least
+                            20%. Use it to rule out moons where the valuable ore is technically present but not in
+                            enough quantity to be worth the cycle.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-coins"></i>
+                        Value and quality
+                    </h3>
+                    <ul>
+                        <li>
+                            <strong>Value by</strong> switches between refined value and raw ore value for this search.
+                            Refined leads by default: raw moon ore barely trades, so a single thin sell order can put a
+                            silly price on a moon, while what the ore reprocesses into is steady. Both numbers are
+                            always shown and both are labelled, so they can never be read as the same figure. The
+                            default for the whole plugin is under <strong>Settings, Pricing</strong>.
+                        </li>
+                        <li>
+                            <strong>Days</strong> is the extraction window the value is worked out over. It has to
+                            match what you actually pull: a value over 28 days is four times a weekly one, and
+                            comparing the two will mislead you.
+                        </li>
+                        <li>
+                            <strong>Value range</strong> filters on that figure once it is calculated.
+                        </li>
+                        <li>
+                            <strong>Quality</strong> ranks a moon against every scanned moon <em>of its own class</em>,
+                            not against all moons. Exceptional is the top 10%, Excellent the top 25%, Good the top
+                            half, Average the top 75% and Poor the rest. So an Exceptional R4 is a very good R4 and
+                            still worth far less than an average R64. The results say where a moon sits, such as
+                            "top 38% of 1,204 R4 moons". A class needs at least five scanned moons before anything in
+                            it is rated.
+                        </li>
+                    </ul>
+                    <div class="info-box">
+                        <i class="fas fa-database"></i>
+                        <strong>Where the prices come from:</strong> the price cache your scheduled refresh keeps, not
+                        a live lookup per search. If an ore has no cached price yet the page names it rather than
+                        quietly valuing it at nothing.
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-flag"></i>
+                        Marking moons: ours, theirs, and worth a look
+                    </h3>
+                    <p>
+                        ESI only reports structures your own corporation owns, so nothing in the game tells you which
+                        moons somebody else is already drilling. These three marks are how the page remembers what your
+                        corp has worked out between searches.
+                    </p>
+                    <ul>
+                        <li>
+                            <strong>Ours</strong> is automatic. A moon one of your refineries still sits on is marked
+                            for you, using your own extraction history. Nothing to maintain.
+                        </li>
+                        <li>
+                            <strong>Claimed</strong> is something a person records: the corporation or alliance holding
+                            the moon, and a note if there is anything worth remembering. The badge names who reported
+                            it and when, so an old claim can be judged on its age. <strong>Moon is free</strong> clears
+                            it when the moon comes back on the market, closing the report rather than deleting it, so a
+                            moon that changes hands keeps its history. A claim also clears itself once one of your own
+                            refineries starts drilling that moon.
+                        </li>
+                        <li>
+                            <strong>Watchlist</strong> is the shared "come back to this one" list, with a note saying
+                            why. Star a moon you cannot take today and the next person searching picks up where you
+                            left off instead of rediscovering it. A watched moon drops off by itself once you put a
+                            refinery on it.
+                        </li>
+                    </ul>
+                    <p>
+                        Each of the three has its own filter, and each can <em>show only</em> those moons or
+                        <em>hide</em> them. Hiding all three is how you look for free ground you have not already
+                        assessed.
+                    </p>
+                    <div class="info-box">
+                        <i class="fas fa-user-shield"></i>
+                        <strong>Who can mark:</strong> claiming and watching need Director, Moon Manager or Moon
+                        Finder. Anyone who can open the simulator sees the badges.
+                    </div>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-table"></i>
+                        Reading the results
+                    </h3>
+                    <ul>
+                        <li>
+                            Results list each moon's location, class, ores, value and quality, with whatever is flagged
+                            on it. <strong>Click any column heading to sort by it, and click it again to turn it
+                            around.</strong>
+                        </li>
+                        <li>
+                            <strong>Simulate</strong> opens that moon in the simulator below, with its full ore
+                            breakdown and both value figures.
+                        </li>
+                        <li>
+                            When you simulate a moon, Find Moons also lists up to three <strong>better scanned moons of
+                            the same class</strong> in the constellation or region you searched, or around the moon
+                            itself. That is the answer to "is this the best we can do here".
+                        </li>
+                        <li>
+                            <strong>Export CSV</strong> downloads every match, not just the page you are looking at,
+                            carrying the marks with it. Note that this respects <strong>Allow Data Export</strong> in
+                            Settings, Features.
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-lightbulb"></i>
+                        Two searches worth knowing
+                    </h3>
+                    <div class="info-box">
+                        <strong>Free ground worth taking.</strong> Pick a region, set class to R32 or R64, hide Ours,
+                        hide Claimed, and sort by value. What is left is the moons nobody has assessed and nobody is
+                        known to hold.
+                    </div>
+                    <div class="info-box" style="margin-top: 0.75rem;">
+                        <strong>Is this refinery in the right place.</strong> Search the system you are in, sort by
+                        value, and see where your own moon lands. Simulate it and read the better moons of the same
+                        class nearby.
                     </div>
                 </div>
             </div>
