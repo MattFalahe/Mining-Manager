@@ -748,17 +748,21 @@
                         @php($commit = $vs['commit'] ?? null)
                         @if($commit)
                             {{-- A branch name says nothing about what is actually deployed, and a
-                                 production stack cannot be rebooted per commit, so name the commit. --}}
-                            <div class="info-box" style="margin-top: 0.75rem;">
-                                <i class="fas fa-code-branch"></i>
-                                <strong>Running commit:</strong>
-                                <a href="{{ $commit['url'] }}" target="_blank" rel="noopener"><code>{{ $commit['short'] }}</code></a>
-                                @if($commit['subject'])
-                                    &mdash; {{ $commit['subject'] }}
-                                @endif
-                                @if($commit['date'])
-                                    <small class="text-muted">({{ \Carbon\Carbon::parse($commit['date'])->format('Y-m-d H:i') }} EVE time)</small>
-                                @endif
+                                 production stack cannot be rebooted per commit, so name the commit.
+                                 .info-box lays its children out in a row, so each line needs its own
+                                 block and the box has to be told to stack them. --}}
+                            <div class="info-box" style="margin-top: 0.75rem; flex-direction: column; align-items: flex-start; min-height: 0;">
+                                <div>
+                                    <i class="fas fa-code-branch"></i>
+                                    <strong>Running commit:</strong>
+                                    <a href="{{ $commit['url'] }}" target="_blank" rel="noopener"><code>{{ $commit['short'] }}</code></a>
+                                    @if($commit['subject'])
+                                        &mdash; {{ $commit['subject'] }}
+                                    @endif
+                                    @if($commit['date'])
+                                        <small class="text-muted">({{ \Carbon\Carbon::parse($commit['date'])->format('Y-m-d H:i') }} EVE time)</small>
+                                    @endif
+                                </div>
                                 <div style="margin-top: 0.4rem;">
                                     @if($commit['behind'] === null)
                                         <small class="text-muted">Could not reach GitHub to see what has landed since. The commit id above still tells you exactly what is deployed.</small>
@@ -774,9 +778,11 @@
                         @endif
                     @endif
                     @if($vs['status'] === 'outdated')
-                        <div class="info-box" style="margin-top: 0.75rem;">
-                            <i class="fas fa-arrow-circle-up"></i>
-                            <strong>Upgrade recipe (SeAT Docker stack):</strong>
+                        <div class="info-box" style="margin-top: 0.75rem; flex-direction: column; align-items: stretch; min-height: 0;">
+                            <div>
+                                <i class="fas fa-arrow-circle-up"></i>
+                                <strong>Upgrade recipe (SeAT Docker stack):</strong>
+                            </div>
                             <pre style="margin-top: 0.4rem; margin-bottom: 0;"><code>docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-compose.traefik.yml down
 docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-compose.traefik.yml up -d</code></pre>
                             <small class="text-muted" style="display: block; margin-top: 0.4rem;">

@@ -66,6 +66,17 @@ per refresh while it stays down. An ore with no market is not failure, so it
 never fires for one. The Master Test carries the same state with the last error
 for as long as it lasts.
 
+### 🐛 Editing a webhook switched four alerts off
+
+Four event checkboxes sat on the webhook form but were never filled in when an
+existing webhook was opened, so they always looked switched off. Saving that
+webhook for any other reason then switched them off for real: the weekly
+outstanding tax digest, Price Provider Trouble, and the two cross-plugin
+extraction alerts. The row of icons in the webhook list left the same events
+out as well, along with Extraction Started and the two planner alerts, so the
+page could not be used to tell what a webhook was subscribed to. Both now
+show everything the form offers.
+
 ### 🐛 A failed price lookup no longer wipes a good price
 
 A price that could not be fetched was written to the cache as zero with a fresh
