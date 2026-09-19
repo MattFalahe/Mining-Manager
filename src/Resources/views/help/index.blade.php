@@ -1027,6 +1027,28 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             amounts, the simulator shows refined value next to ore value, and it prices from the
                             cache instead of asking your price provider on every click.
                         </li>
+                        <li>
+                            <strong>Marking moons as yours, theirs, or worth a look.</strong> A result can be
+                            flagged as held by another corporation, with a note of who holds it, and added to a
+                            shared watchlist. Moons one of your own refineries still drills are marked
+                            automatically. Each of the three can be filtered on or hidden, a claim clears itself
+                            once you are the one drilling that moon, and a watched moon drops off the list when
+                            you put a refinery on it.
+                        </li>
+                        <li>
+                            <strong>One colour for each moon class.</strong> R4 to R64 were coloured three
+                            different ways, so the same moon could read gold on one page and grey on the next.
+                            Every page now uses the colours SeAT itself uses, and the plugin sets them rather
+                            than leaving them to your theme.
+                        </li>
+                        <li>
+                            <strong>Check your webhooks after this update.</strong> Four alerts were on the
+                            webhook form but showed as off whenever a webhook was opened for editing, so saving
+                            that webhook for any other reason switched them off: the weekly outstanding tax
+                            digest, Price Provider Trouble, and the two cross-plugin extraction alerts. That is
+                            fixed, and the icons in the webhook list now cover every event, but anything
+                            switched off this way stays off until you switch it back on.
+                        </li>
                     </ul>
                 </div>
 
