@@ -1593,6 +1593,13 @@ class MoonExtractionService
         $valuation = app(MoonValuation::class);
         $valued = $valuation->value($ores, $extractionDays);
 
+        $moonOreShare = 0.0;
+        foreach ($ores as $typeId => $oreShare) {
+            if (MoonOreHelper::getRarity((int) $typeId)) {
+                $moonOreShare += (float) $oreShare;
+            }
+        }
+
         $moon = DB::table('moons')->where('moon_id', $moonId)->first();
         $moonName = $moon ? $moon->name : "Moon {$moonId}";
 
@@ -1622,7 +1629,10 @@ class MoonExtractionService
             'extraction_days' => $extractionDays,
             'extraction_hours' => $extractionDays * 24,
             'extraction_rate_m3h' => $valued['rate'],
-            'composition_percent' => round($valued['share'] * 100, 1),
+            // Moon ore as a share of the scan. $valued['share'] is every ore
+            // in it, regular asteroid ore included, so it reads as 100% on any
+            // fully scanned moon and says nothing about how rich it is.
+            'composition_percent' => round($moonOreShare * 100, 1),
             'total_volume_m3' => $valued['volume'],
             'total_value' => $valued['raw'],
             'total_refined_value' => $valued['refined'],

@@ -1038,6 +1038,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             cache instead of asking your price provider on every click.
                         </li>
                         <li>
+                            <strong>Moon ore share is a real number now.</strong> The column on Find Moons and the
+                            figure under the simulator added up every ore in the scan, regular asteroid ore included,
+                            so almost every moon read 100% and the <strong>moon ore at least</strong> filter never
+                            excluded anything. Both now count the moon ores only, so a moon that is half Veldspar
+                            reads 50%.
+                        </li>
+                        <li>
                             <strong>Marking moons as yours, theirs, or worth a look.</strong> A result can be
                             flagged as held by another corporation, with a note of who holds it, and added to a
                             shared watchlist. Moons one of your own refineries still drills are marked
@@ -3116,7 +3123,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </li>
                         <li>
                             <strong>Moon ore share</strong> is how much of the chunk is moon ore rather than regular
-                            asteroid ore. A high-class moon with a thin share can be worth less per pull than a plainer
+                            asteroid ore: the moon ores in the scan added together, with the rest being Veldspar and
+                            its like. A high-class moon with a thin share can be worth less per pull than a plainer
                             moon that is mostly moon ore, which is why this is a filter and not just a column.
                         </li>
                         <li>

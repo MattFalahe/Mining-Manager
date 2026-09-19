@@ -852,9 +852,13 @@ class MoonFinderService
             return false;
         }
 
+        // Moon ore share, not the whole scan. Summing every ore counts the
+        // regular asteroid ore alongside it, which puts all but a part-scanned
+        // moon at 100% and leaves this filter with nothing to bite on.
+        //
         // Shares are stored to two decimals, so compare in whole percent with
         // a little room for floating point.
-        if ($criteria['richness_min'] !== null && array_sum($moon['ores']) * 100 + 1e-6 < $criteria['richness_min']) {
+        if ($criteria['richness_min'] !== null && array_sum($rarityShares) * 100 + 1e-6 < $criteria['richness_min']) {
             return false;
         }
 
@@ -906,7 +910,10 @@ class MoonFinderService
             'region_id' => $moon['region_id'],
             'region' => $moon['region'],
             'class' => $class,
-            'moon_ore_percent' => round($valued['share'] * 100, 1),
+            // The R4 to R64 shares only. $valued['share'] is the whole scan,
+            // regular ore included, which is what the chunk volume is worked
+            // out from but is not what this column means.
+            'moon_ore_percent' => round(array_sum($rarityShares) * 100, 1),
             'rarity_percent' => array_map(function ($share) {
                 return round($share * 100, 1);
             }, $rarityShares),

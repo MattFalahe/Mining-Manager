@@ -76,6 +76,7 @@ Wallet payments, rebuilt. A member who sends tax ISK without pasting the tax cod
 - **Prices come from the cache** the scheduled refresh keeps, instead of a live request per ore every time somebody presses Simulate, and any ore with no cached price yet is named.
 - **Mark the moons somebody else holds.** ESI only reports our own structures, so a search over a region cannot tell which moons are taken. A result can be marked with the corporation or alliance holding it and a note, and carries a **Claimed** badge naming who reported it and when. **Moon is free** closes the report rather than deleting it, so a moon that changes hands keeps its history, and a claim clears itself once one of your own refineries drills that moon.
 - **Watchlist.** Star a moon worth coming back to, with a note saying why, so the next person searching picks up where you left off. A watched moon drops off the list by itself once a refinery of yours drills it.
+- Fixed: **moon ore share read as 100% on nearly every moon.** It summed every ore in the scan, regular asteroid ore included, so it said how complete the scan was rather than how much of the chunk is moon ore, and the **moon ore at least** filter had nothing left to exclude. Both the column and the filter now count the R4 to R64 ores only, so a moon that is half Veldspar reads 50%. The same figure under the simulator was wrong the same way.
 - Moons one of your refineries still sits on are marked **Ours** automatically. Each of the three marks can be filtered on or hidden, and the CSV carries them.
 
 ### Moon Planner
