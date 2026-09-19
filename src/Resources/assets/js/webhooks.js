@@ -82,6 +82,17 @@ function loadWebhookData(webhookId) {
                 document.getElementById('notify-tax-invoice').checked = webhook.notify_tax_invoice;
                 document.getElementById('notify-tax-overdue').checked = webhook.notify_tax_overdue;
                 document.getElementById('notify-report-generated').checked = webhook.notify_report_generated;
+                // These four are on the form but were never filled in here, so
+                // opening a webhook to change anything showed them as off and
+                // saving switched them off for real.
+                const digestField = document.getElementById('notify-tax-outstanding-digest');
+                if (digestField) digestField.checked = !!webhook.notify_tax_outstanding_digest;
+                const providerField = document.getElementById('notify-price-provider');
+                if (providerField) providerField.checked = !!webhook.notify_price_provider;
+                const atRiskField = document.getElementById('notify-extraction-at-risk');
+                if (atRiskField) atRiskField.checked = !!webhook.notify_extraction_at_risk;
+                const lostField = document.getElementById('notify-extraction-lost');
+                if (lostField) lostField.checked = !!webhook.notify_extraction_lost;
 
                 // Discord settings
                 const discordUsernameField = document.getElementById('discord-username');

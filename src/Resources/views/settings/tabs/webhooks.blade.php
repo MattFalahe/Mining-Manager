@@ -218,6 +218,31 @@
                                                     <i class="fas fa-chart-bar"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_extraction_started ?? false)
+                                                <span class="badge badge-info" title="Extraction Started">
+                                                    <i class="fas fa-hourglass-start"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_next_extraction_planned ?? false)
+                                                <span class="badge badge-primary" title="Next Extraction Planned">
+                                                    <i class="fas fa-calendar-check"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_schedule_mismatch ?? false)
+                                                <span class="badge badge-warning" title="Moon Scheduled Off-Plan">
+                                                    <i class="fas fa-exclamation-triangle"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_tax_outstanding_digest ?? false)
+                                                <span class="badge badge-warning" title="Outstanding Mining Tax (weekly director digest)">
+                                                    <i class="fas fa-clipboard-list"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_price_provider ?? false)
+                                                <span class="badge badge-danger" title="Price Provider Trouble">
+                                                    <i class="fas fa-coins"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
