@@ -4,12 +4,13 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/tax-management.css') }}">
 @include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard taxes-index-page">
 
 @include('mining-manager::taxes.partials.tab-navigation')
@@ -222,6 +223,7 @@
                                     <label for="statusFilter">{{ trans('mining-manager::taxes.status') }}</label>
                                     <select class="form-control" id="statusFilter" name="status">
                                         <option value="">{{ trans('mining-manager::taxes.all_statuses') }}</option>
+                                        <option value="outstanding" {{ request('status') == 'outstanding' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.outstanding_status') }}</option>
                                         <option value="unpaid" {{ request('status') == 'unpaid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.unpaid') }}</option>
                                         <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.paid') }}</option>
                                         <option value="overdue" {{ request('status') == 'overdue' ? 'selected' : '' }}>{{ trans('mining-manager::taxes.overdue') }}</option>
@@ -391,8 +393,15 @@
                                             <span class="text-primary"><i class="fas fa-star ml-1"></i></span>
                                         @endif
                                     </td>
-                                    <td>{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}</td>
-                                    <td class="text-right">
+                                    {{-- Sorted on the period's own start date. The printed label
+                                         ("Aug 15-31, 2026") sorts alphabetically, which puts April
+                                         above March and the first half of a month above the
+                                         second. --}}
+                                    <td data-order="{{ \Carbon\Carbon::parse($tax->period_start ?? $tax->month)->format('Y-m-d') }}">{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}</td>
+                                    {{-- Money sorted as text reads 87,534,100 as larger than
+                                         796,982,374, which is what made this table look randomly
+                                         ordered. --}}
+                                    <td class="text-right" data-order="{{ (float) $tax->amount_owed }}">
                                         <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
                                         @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
@@ -401,11 +410,26 @@
                                         </button>
                                         @endif
                                     </td>
-                                    <td class="text-right">
+                                    <td class="text-right" data-order="{{ (float) $tax->amount_paid }}">
                                         <strong>{{ number_format($tax->amount_paid, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
                                     </td>
-                                    <td>
+                                    @php
+                                        // Sort key for the status column. Ordered by what a director
+                                        // has to do about it, not alphabetically: chase, then wait,
+                                        // then nothing. A part-paid invoice that has gone past its
+                                        // due date ranks as overdue, because the row already shows a
+                                        // red overdue badge next to the calm blue "Partial" one and
+                                        // the sort should agree with what it is showing.
+                                        $statusRank = match ($tax->status) {
+                                            'overdue' => 0,
+                                            'unpaid' => 1,
+                                            'partial' => $tax->isOverdue() ? 0 : 2,
+                                            'paid' => 3,
+                                            default => 4,
+                                        };
+                                    @endphp
+                                    <td data-order="{{ $statusRank }}">
                                         @switch($tax->status)
                                             @case('paid')
                                                 <span class="badge badge-success">
@@ -426,10 +450,20 @@
                                                 <span class="badge badge-info">
                                                     <i class="fas fa-adjust"></i> {{ trans('mining-manager::taxes.partial') }}
                                                 </span>
+                                                {{-- A part-paid invoice keeps status 'partial' however late it
+                                                     gets, because the status column records how much is paid, not
+                                                     how late it is. Without this second badge the page would show
+                                                     a calm "Partial" for something the reminder is already
+                                                     chasing as overdue. --}}
+                                                @if($tax->isOverdue())
+                                                <span class="badge badge-danger" title="{{ trans('mining-manager::taxes.partial_overdue_help') }}">
+                                                    <i class="fas fa-exclamation-circle"></i> {{ trans('mining-manager::taxes.overdue') }}
+                                                </span>
+                                                @endif
                                                 @break
                                         @endswitch
                                     </td>
-                                    <td>
+                                    <td data-order="{{ $tax->due_date ? \Carbon\Carbon::parse($tax->due_date)->format('Y-m-d') : '' }}">
                                         @if($tax->due_date)
                                             @php
                                                 $dueDate = \Carbon\Carbon::parse($tax->due_date);
@@ -445,7 +479,7 @@
                                             <span class="text-muted">-</span>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td data-order="{{ $tax->paid_at ? \Carbon\Carbon::parse($tax->paid_at)->format('Y-m-d H:i') : '' }}">
                                         @if($tax->paid_at)
                                             {{ \Carbon\Carbon::parse($tax->paid_at)->format('Y-m-d H:i') }}
                                         @else
@@ -630,7 +664,13 @@ $(document).ready(function() {
         $('#taxTable').DataTable({
             pageLength: 25,
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-            order: [[{{ ($isAdmin ?? false) ? 4 : 3 }}, 'desc']],
+            // What needs chasing first, newest period first inside each group.
+            // Was amount owed descending, which answered a question nobody
+            // opens this page to ask.
+            order: [
+                [{{ ($isAdmin ?? false) ? 6 : 5 }}, 'asc'],
+                [{{ ($isAdmin ?? false) ? 3 : 2 }}, 'desc']
+            ],
             language: {
                 search: "Search:",
                 lengthMenu: "Show _MENU_ entries",

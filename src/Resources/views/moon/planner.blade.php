@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_planner'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
 <style>
     /* Event backgrounds must be set (not just a left border) or FullCalendar's
@@ -47,9 +47,9 @@
     .mm-note-warn .mm-note-icon { color:#ffc107; }
     .mm-note-warn ul { margin-bottom:0; padding-left:1.1rem; }
     .mm-offset-badge { background:#ffc107; color:#1a1d24; font-weight:700; }
-    /* High-contrast dismiss button — outline-secondary washes out on a tint. */
-    .btn-dismiss-mismatch { background:transparent; border:1px solid #ffc107; color:#ffd75e; }
-    .btn-dismiss-mismatch:hover { background:#ffc107; color:#1a1d24; }
+    /* High-contrast mismatch buttons: outline-secondary washes out on a tint. */
+    .btn-mismatch-action { background:transparent; border:1px solid #ffc107; color:#ffd75e; }
+    .btn-mismatch-action:hover { background:#ffc107; color:#1a1d24; }
     .mm-refinery-card { font-size: 0.85rem; }
     .mm-refinery-card .mm-proj { font-weight: 600; }
     .mm-conflict-row { padding: 6px 10px; border-radius: 4px; background: rgba(255,193,7,0.12); margin-bottom: 6px; }
@@ -155,17 +155,30 @@
     @if(!empty($warnings))
         <div class="mm-note mm-note-warn">
             <h6><i class="fas fa-exclamation-triangle mm-note-icon"></i> Scheduling mismatches ({{ count($warnings) }})</h6>
-            <div class="mm-note-sub mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer.</div>
+            <div class="mm-note-sub mb-2">These moons are scheduled in-game at a materially different time than planned. Check whether the drill was fired on the wrong timer, then realign the plan to the in-game time or ignore the offset.</div>
             <ul style="font-size: 0.88em;">
                 @foreach($warnings as $w)
                     <li class="mb-1">
                         <strong>{{ $w['moon_name'] }}</strong> ({{ $w['structure_name'] }}) —
                         planned <strong>{{ $w['planned'] }}</strong>, in-game <strong>{{ $w['actual'] }}</strong>
                         <span class="badge mm-offset-badge">{{ $w['offset_hours'] }}h off</span>
-                        <button type="button" class="btn btn-xs ml-1 btn-dismiss-mismatch"
+                        <button type="button" class="btn btn-xs ml-1 btn-mismatch-action"
+                                data-action="realign"
                                 data-plan-id="{{ $w['plan_id'] }}"
-                                title="Retire the stale plan behind this warning (the in-game pull is unaffected)">
-                            <i class="fas fa-check"></i> Dismiss
+                                data-label="{{ $w['moon_name'] }} ({{ $w['structure_name'] }})"
+                                data-planned="{{ $w['planned'] }}"
+                                data-actual="{{ $w['actual'] }}"
+                                title="Move this plan to the in-game time">
+                            <i class="fas fa-clock"></i> Realign
+                        </button>
+                        <button type="button" class="btn btn-xs ml-1 btn-mismatch-action"
+                                data-action="ignore"
+                                data-plan-id="{{ $w['plan_id'] }}"
+                                data-label="{{ $w['moon_name'] }} ({{ $w['structure_name'] }})"
+                                data-planned="{{ $w['planned'] }}"
+                                data-actual="{{ $w['actual'] }}"
+                                title="Keep the plan's time and clear this warning">
+                            <i class="fas fa-check"></i> Ignore
                         </button>
                     </li>
                 @endforeach
@@ -220,16 +233,12 @@
                     <div class="card-tools"><span class="badge badge-primary">{{ count($refinerySummaries) }}</span></div>
                 </div>
                 <div class="card-body p-2" style="max-height: 640px; overflow-y: auto;">
-                    @php
-                        // R-tier badge colours (richest = gold, down to grey).
-                        $rarityColors = ['R64' => '#f1c40f', 'R32' => '#e74c3c', 'R16' => '#9b59b6', 'R8' => '#3498db', 'R4' => '#7f8c8d'];
-                    @endphp
                     @forelse($refinerySummaries as $r)
                         <div class="mm-sidebar-item mm-refinery-card mb-2">
                             <div class="mm-structure-name d-flex justify-content-between align-items-start">
                                 <span><i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}</span>
                                 @if(!empty($r['rarity']))
-                                    <span class="badge ml-1" style="background: {{ $rarityColors[$r['rarity']] ?? '#7f8c8d' }}; color:#000; font-weight:700;"
+                                    <span class="badge ml-1 {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($r['rarity']) }}"
                                           title="Highest ore tier on this moon">{{ $r['rarity'] }}</span>
                                 @endif
                             </div>
@@ -375,6 +384,34 @@
     </div>
 </div>
 
+{{-- SETTLE A SCHEDULING MISMATCH. Realign and Ignore share it: both need a
+     reason, which goes into the planner history with who gave it. --}}
+<div class="modal fade" id="mismatchModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle text-warning"></i> <span id="mismatch-title"></span></h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p id="mismatch-summary" class="mb-2"></p>
+                <p id="mismatch-effect" class="text-muted small"></p>
+                <div class="form-group mb-0">
+                    <label for="mismatch-reason">Reason <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="mismatch-reason" rows="2" maxlength="300"
+                              placeholder="e.g. fired early to beat downtime"></textarea>
+                    <small class="form-text text-muted">Saved to the planner history with your name.</small>
+                </div>
+                <div id="mismatch-error" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="btn-mismatch-confirm"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- CHANGE-HISTORY MODAL --}}
 <div class="modal fade" id="historyModal" tabindex="-1" role="dialog">
     <div class="modal-dialog modal-lg" role="document">
@@ -414,15 +451,60 @@ document.addEventListener('DOMContentLoaded', function () {
         base: '{{ url('mining-manager/moon/planner') }}',
     };
 
-    // Retire the stale plan behind a scheduling-mismatch warning.
-    $('.btn-dismiss-mismatch').on('click', function () {
-        const planId = $(this).data('plan-id');
-        if (!confirm('Retire this stale plan? The in-game extraction is unaffected.')) return;
+    // Settle a scheduling mismatch: move the plan to the in-game time, or keep
+    // it and ignore the offset. Either way a reason is required.
+    const MISMATCH_ACTIONS = {
+        realign: {
+            title: 'Realign the plan to the in-game time',
+            effect: 'The plan moves to the in-game time. Later planned pulls for this refinery stay where they are.',
+            button: '<i class="fas fa-clock"></i> Realign',
+            path: 'realign',
+        },
+        ignore: {
+            title: 'Keep the plan and ignore the offset',
+            effect: 'The plan keeps its time, the pull is recorded as having gone ahead off-plan, and the warning clears. Later planned pulls for this refinery stay where they are.',
+            button: '<i class="fas fa-check"></i> Ignore offset',
+            path: 'ignore-offset',
+        },
+    };
+    let pendingMismatch = null;
+
+    $('.btn-mismatch-action').on('click', function () {
+        const $btn = $(this);
+        const action = MISMATCH_ACTIONS[$btn.data('action')];
+        if (!action) return;
+
+        pendingMismatch = { planId: $btn.data('plan-id'), action: action };
+        $('#mismatch-title').text(action.title);
+        $('#mismatch-summary').text($btn.data('label') + ': planned ' + $btn.data('planned') + ', in-game ' + $btn.data('actual') + '.');
+        $('#mismatch-effect').text(action.effect);
+        $('#mismatch-reason').val('');
+        $('#mismatch-error').hide().text('');
+        $('#btn-mismatch-confirm').html(action.button).prop('disabled', false);
+        $('#mismatchModal').appendTo('body').modal('show');
+    });
+
+    $('#btn-mismatch-confirm').on('click', function () {
+        if (!pendingMismatch) return;
+
+        const reason = $('#mismatch-reason').val().trim();
+        if (!reason) {
+            $('#mismatch-error').show().text('Give a reason. It is saved to the planner history.');
+            return;
+        }
+
+        const $btn = $(this).prop('disabled', true);
         $.ajax({
-            url: routes.base + '/' + planId + '/dismiss-mismatch',
+            url: routes.base + '/' + pendingMismatch.planId + '/' + pendingMismatch.action.path,
             method: 'POST',
-            data: { _token: CSRF },
-        }).done(() => window.location.reload()).fail(() => alert('Could not dismiss the mismatch.'));
+            data: { _token: CSRF, reason: reason },
+        }).done(() => window.location.reload())
+          .fail(xhr => {
+              $btn.prop('disabled', false);
+              const msg = (xhr.responseJSON && (xhr.responseJSON.error
+                  || Object.values(xhr.responseJSON.errors || {})[0])) || 'Could not save that.';
+              $('#mismatch-error').show().text(msg);
+          });
     });
 
     // ---- Build FullCalendar events from the day-grouped payload ----
@@ -579,7 +661,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const localStr = localFromIso(raw.iso);
         let lead;
         if (kind === 'mismatch') {
-            lead = '⚠️ This extraction is scheduled in-game at a <strong>different time than planned</strong>. Check whether the drill was fired on the wrong timer — the in-game time below is what EVE will actually run.';
+            lead = '⚠️ This extraction is scheduled in-game at a <strong>different time than planned</strong>. Check whether the drill was fired on the wrong timer — the in-game time below is what EVE will actually run. Realign or ignore it from the banner at the top of the page.';
         } else if (kind === 'actual') {
             lead = 'This is a <strong>live / completed extraction</strong> — it was set in-game and reflects what EVE actually scheduled.';
         } else {
@@ -607,6 +689,8 @@ document.addEventListener('DOMContentLoaded', function () {
         moved:      { icon: 'fa-arrows-alt-h text-info',     label: 'moved' },
         deleted:    { icon: 'fa-trash text-danger',          label: 'removed' },
         autofilled: { icon: 'fa-magic text-primary',         label: 'auto-filled' },
+        realigned:  { icon: 'fa-clock text-warning',         label: 'realigned to in-game' },
+        offset_ignored: { icon: 'fa-check text-warning',     label: 'ignored offset' },
     };
 
     function fmtLocal(iso) {
@@ -631,8 +715,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     const meta = ACTION_META[e.action] || { icon: 'fa-circle', label: e.action };
                     // Escape server text (structure names are player-set).
                     let detail = $('<div>').text(e.detail || '').html();
-                    if (e.action === 'moved' && e.old_arrival && e.new_arrival) {
+                    if ((e.action === 'moved' || e.action === 'realigned') && e.old_arrival && e.new_arrival) {
                         detail += ' <span class="text-muted">(' + fmtLocal(e.old_arrival) + ' → ' + fmtLocal(e.new_arrival) + ')</span>';
+                    } else if (e.action === 'offset_ignored' && e.old_arrival && e.new_arrival) {
+                        detail += ' <span class="text-muted">(planned ' + fmtLocal(e.old_arrival) + ', in-game ' + fmtLocal(e.new_arrival) + ')</span>';
                     }
                     html += '<tr>' +
                         '<td class="text-muted" style="white-space:nowrap;">' + fmtLocal(e.when) + '</td>' +

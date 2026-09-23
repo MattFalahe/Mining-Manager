@@ -50,7 +50,7 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_after' => null,
             ],
             // Import character mining from SeAT ESI cache - runs every 30 minutes at :20 and :50
-            // Safety net: Queue::after hook handles real-time import, this catches any missed entries
+            // --days=2 on purpose: mining SeAT saves later than that is left out so billed days stay put
             [
                 'command' => 'mining-manager:import-character-mining --days=2',
                 'expression' => '20,50 * * * *',
@@ -131,6 +131,22 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             [
                 'command' => 'mining-manager:send-reminders',
                 'expression' => '0 10 * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            // Outstanding tax digest for directors. Runs daily but sends rarely:
+            // the command holds off until something is actually past its due
+            // date, then repeats at most every 7 days until everything clears.
+            // Checking daily is what lets the first one land promptly after a
+            // due date rather than waiting for a fixed weekday, which matters
+            // when biweekly and monthly periods fall due on different days.
+            // 10:30, half an hour after the member reminders, so the two do not
+            // arrive together.
+            [
+                'command' => 'mining-manager:send-outstanding-digest',
+                'expression' => '30 10 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,

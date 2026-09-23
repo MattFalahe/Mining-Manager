@@ -4,11 +4,12 @@
 @section('page_header', trans('mining-manager::menu.mining_events'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard events-create-page">
 
 {{-- TAB NAVIGATION --}}

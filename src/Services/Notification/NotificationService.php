@@ -58,6 +58,8 @@ class NotificationService
     const TYPE_TAX_REMINDER = 'tax_reminder';
     const TYPE_TAX_INVOICE = 'tax_invoice';
     const TYPE_TAX_OVERDUE = 'tax_overdue';
+    const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
+    const TYPE_PRICE_PROVIDER = 'price_provider';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
@@ -157,7 +159,7 @@ class NotificationService
      * @param int $daysRemaining
      * @return array
      */
-    public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining): array
+    public function sendTaxReminder(int $characterId, float $amount, Carbon $dueDate, int $daysRemaining, array $context = []): array
     {
         $typeSettings = $this->settings->getTypeNotificationSettings('tax_reminder');
 
@@ -176,6 +178,17 @@ class NotificationService
             // can receive tax notifications for just their own members.
             'miner_corporation_id' => $this->resolveMinerCorporationId($characterId),
         ];
+
+        // Money already met from the member's balance. Passed by the caller
+        // because only it knows which invoices this figure covers. Without it a
+        // member sees a smaller number than the invoice they remember and has
+        // no way to tell whether it is a discount, an error, or their own money.
+        $creditApplied = round((float) ($context['credit_applied'] ?? 0), 2);
+
+        if ($creditApplied > 0) {
+            $data['credit_applied'] = $creditApplied;
+            $data['formatted_credit_applied'] = number_format($creditApplied, 2) . ' ISK';
+        }
 
         return $this->send(self::TYPE_TAX_REMINDER, [$characterId], $data);
     }
@@ -227,7 +240,7 @@ class NotificationService
      * @param int $daysOverdue
      * @return array
      */
-    public function sendTaxOverdue(int $characterId, float $amount, Carbon $dueDate, int $daysOverdue): array
+    public function sendTaxOverdue(int $characterId, float $amount, Carbon $dueDate, int $daysOverdue, array $context = []): array
     {
         $typeSettings = $this->settings->getTypeNotificationSettings('tax_overdue');
 
@@ -244,7 +257,63 @@ class NotificationService
             'miner_corporation_id' => $this->resolveMinerCorporationId($characterId),
         ];
 
+        // Money already met from the member's balance. Passed by the caller
+        // because only it knows which invoices this figure covers. Without it a
+        // member sees a smaller number than the invoice they remember and has
+        // no way to tell whether it is a discount, an error, or their own money.
+        $creditApplied = round((float) ($context['credit_applied'] ?? 0), 2);
+
+        if ($creditApplied > 0) {
+            $data['credit_applied'] = $creditApplied;
+            $data['formatted_credit_applied'] = number_format($creditApplied, 2) . ' ISK';
+        }
+
         return $this->send(self::TYPE_TAX_OVERDUE, [$characterId], $data);
+    }
+
+    /**
+     * Send the outstanding-tax digest to directors.
+     *
+     * Every other tax notification speaks to one member about one debt. This is
+     * the only one that shows the whole picture, which is what makes it the
+     * backstop: an invoice missed by the per-member notifications (no Discord
+     * on that member, a delivery that failed quietly, a gap in matching we have
+     * not found yet) still surfaces here.
+     *
+     * Corp-scoped rather than personal, so it goes to director webhooks and
+     * never to the members it names.
+     *
+     * Expected keys in $data:
+     *   member_count, formatted_total, rows (each: character_name,
+     *   formatted_outstanding, percent_paid, invoice_count), tax_page_url
+     *
+     * @param array $data
+     * @return array
+     */
+    /**
+     * Price provider trouble: it stopped answering, or it is answering again.
+     *
+     * Sent on the change only. A provider that is down stays down for hours,
+     * and an alert every refresh would be noise nobody reads.
+     *
+     * @param array $data provider, failing, error, since, last_success
+     * @return array
+     */
+    public function sendPriceProviderStatus(array $data): array
+    {
+        $data['description'] = $data['description'] ?? (!empty($data['failing'])
+            ? 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.'
+            : 'Price refreshes are working again.');
+
+        return $this->send(self::TYPE_PRICE_PROVIDER, [], $data);
+    }
+
+    public function sendOutstandingDigest(array $data): array
+    {
+        $data['description'] = $data['description']
+            ?? 'Mining tax still outstanding. Amounts are what is left to pay, not what was originally charged.';
+
+        return $this->send(self::TYPE_TAX_OUTSTANDING_DIGEST, [], $data);
     }
 
     /**
@@ -549,9 +618,9 @@ class NotificationService
      * sendViaWebhooks. Standalone — no cross-plugin dependency.
      *
      * Expected keys in $data (all optional, filtered if missing):
-     *   moon_name, structure_name, system_name, extraction_start_time,
-     *   chunk_arrival_time, time_until_arrival, estimated_value,
-     *   extraction_url, extraction_id
+     *   moon_name, structure_name, system_name, started_by,
+     *   extraction_start_time, chunk_arrival_time, time_until_arrival,
+     *   estimated_value, extraction_url, extraction_id
      *
      * @param array $data
      * @return array Result map from send()
@@ -842,6 +911,8 @@ class NotificationService
             'tax_reminder' => self::TYPE_TAX_REMINDER,
             'tax_invoice' => self::TYPE_TAX_INVOICE,
             'tax_overdue' => self::TYPE_TAX_OVERDUE,
+            'tax_outstanding_digest' => self::TYPE_TAX_OUTSTANDING_DIGEST,
+            'price_provider' => self::TYPE_PRICE_PROVIDER,
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
@@ -1299,6 +1370,8 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1334,6 +1407,8 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1481,6 +1556,8 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1700,6 +1777,8 @@ class NotificationService
             self::TYPE_TAX_REMINDER => 'tax_reminder',
             self::TYPE_TAX_INVOICE => 'tax_invoice',
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
+            self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1766,12 +1845,15 @@ class NotificationService
                 'subject' => 'Mining Tax Payment Reminder',
                 'body' => sprintf(
                     "Hello,\n\nThis is a reminder that you have an outstanding mining tax payment due.\n\n" .
-                    "Amount: %s\nDue Date: %s\nDays Remaining: %d\n\n" .
+                    "Amount: %s\nDue Date: %s\nDays Remaining: %d\n%s\n" .
                     "Please make your payment before the due date to avoid any penalties.\n\n" .
                     "Thank you,\n%s Management",
                     $data['formatted_amount'],
                     $data['due_date'],
                     $data['days_remaining'],
+                    !empty($data['formatted_credit_applied'])
+                        ? "\n{$data['formatted_credit_applied']} of this period was already covered from your account balance.\n"
+                        : '',
                     $this->getCorpName()
                 )
             ],
@@ -1899,11 +1981,12 @@ class NotificationService
                 'subject' => sprintf('Moon Extraction Started: %s', $data['moon_name'] ?? 'Unknown Moon'),
                 'body' => sprintf(
                     "A new moon extraction has started.\n\n" .
-                    "Moon: %s\nStructure: %s\nChunk Arrives: %s\n\n" .
+                    "Moon: %s\nStructure: %s\n%sChunk Arrives: %s\n\n" .
                     "Plan your fleet around the arrival.\n\n" .
                     "%s Management",
                     $data['moon_name'] ?? 'Unknown',
                     $data['structure_name'] ?? 'Unknown Structure',
+                    !empty($data['started_by']) ? "Started By: {$data['started_by']}\n" : '',
                     $data['chunk_arrival_time'] ?? 'Unknown',
                     $this->getCorpName()
                 )
@@ -2109,6 +2192,8 @@ class NotificationService
     {
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 'danger',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
+            self::TYPE_PRICE_PROVIDER => 'warning',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
@@ -2135,6 +2220,10 @@ class NotificationService
             self::TYPE_TAX_REMINDER => "Tax Payment Reminder: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_INVOICE => "New Tax Invoice: {$data['formatted_amount']} due {$data['due_date']}",
             self::TYPE_TAX_OVERDUE => "Overdue Tax: {$data['formatted_amount']} - {$data['days_overdue']} days overdue",
+            self::TYPE_TAX_OUTSTANDING_DIGEST => "Outstanding mining tax: " . ($data['member_count'] ?? 0) . " member(s), " . ($data['formatted_total'] ?? '0 ISK') . " still owed",
+            self::TYPE_PRICE_PROVIDER => !empty($data['failing'])
+                ? "Price provider " . ($data['provider'] ?? 'unknown') . " is not answering: " . ($data['error'] ?? 'no detail')
+                : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
@@ -2456,6 +2545,8 @@ class NotificationService
     {
         $color = match ($type) {
             self::TYPE_TAX_OVERDUE => 15158332, // Red
+            self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
+            self::TYPE_PRICE_PROVIDER => 15158332, // Red while it is failing; the title says which way it went
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
@@ -2487,6 +2578,8 @@ class NotificationService
             self::TYPE_TAX_REMINDER => '⏰ Tax Payment Reminder',
             self::TYPE_TAX_INVOICE => '📧 New Tax Invoice',
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
+            self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
+            self::TYPE_PRICE_PROVIDER => '💱 Price Provider',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
@@ -2555,12 +2648,31 @@ class NotificationService
             ])),
             self::TYPE_TAX_REMINDER, self::TYPE_TAX_INVOICE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['title' => 'Already covered from balance', 'value' => $data['formatted_credit_applied'], 'short' => true]
+                    : null,
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
                 isset($data['help_url']) ? ['title' => 'How to Pay', 'value' => '<' . $data['help_url'] . '|Payment Guide>', 'short' => true] : null,
             ])),
+            self::TYPE_PRICE_PROVIDER => array_values(array_filter([
+                ['title' => 'Provider', 'value' => $data['provider'] ?? 'unknown', 'short' => true],
+                ['title' => 'State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'short' => true],
+                !empty($data['error']) ? ['title' => 'Last error', 'value' => $data['error'], 'short' => false] : null,
+                !empty($data['since']) ? ['title' => 'Since', 'value' => $data['since'], 'short' => true] : null,
+                !empty($data['last_success']) ? ['title' => 'Last good refresh', 'value' => $data['last_success'], 'short' => true] : null,
+            ])),
+            self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
+                ['title' => 'Members', 'value' => (string) ($data['member_count'] ?? 0), 'short' => true],
+                ['title' => 'Still Owed', 'value' => $data['formatted_total'] ?? '0 ISK', 'short' => true],
+                !empty($data['rows']) ? ['title' => 'Who still owes', 'value' => $data['rows_text'], 'short' => false] : null,
+                !empty($data['tax_page_url']) ? ['title' => 'Full list', 'value' => '<' . $data['tax_page_url'] . '|Outstanding tax>', 'short' => false] : null,
+            ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['title' => 'Amount', 'value' => $data['formatted_amount'], 'short' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['title' => 'Already covered from balance', 'value' => $data['formatted_credit_applied'], 'short' => true]
+                    : null,
                 ['title' => 'Due Date', 'value' => $data['due_date'], 'short' => true],
                 ['title' => 'Days Overdue', 'value' => (string) $data['days_overdue'], 'short' => true],
                 isset($data['my_taxes_url']) ? ['title' => 'My Taxes', 'value' => '<' . $data['my_taxes_url'] . '|View My Taxes>', 'short' => true] : null,
@@ -2630,6 +2742,7 @@ class NotificationService
                 isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
                 isset($data['structure_name']) ? ['title' => 'Structure', 'value' => $data['structure_name'], 'short' => true] : null,
                 isset($data['system_name']) ? ['title' => 'System', 'value' => $data['system_name'], 'short' => true] : null,
+                !empty($data['started_by']) ? ['title' => 'Started By', 'value' => $data['started_by'], 'short' => true] : null,
                 isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Arrives', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
                 isset($data['time_until_arrival']) ? ['title' => 'Time Until Arrival', 'value' => $data['time_until_arrival'], 'short' => true] : null,
                 (isset($data['estimated_value']) && $data['estimated_value'] > 0)
@@ -2736,6 +2849,23 @@ class NotificationService
      * @param array $data
      * @return array
      */
+    /**
+     * Label a timestamp as EVE time without doubling the suffix.
+     *
+     * The senders disagree: detectAndNotifyMismatches() appends " EVE" itself,
+     * sendNextExtractionPlannedNotification() and the two extraction_started
+     * callers do not. Rather than pick a side and leave the other rendering
+     * "14:00 EVE EVE", the field builder adds it only when it is missing.
+     */
+    protected function withEveSuffix(?string $time): ?string
+    {
+        if ($time === null || $time === '') {
+            return $time;
+        }
+
+        return str_ends_with(strtoupper(trim($time)), ' EVE') ? $time : $time . ' EVE';
+    }
+
     protected function formatFieldsForDiscord(string $type, array $data): array
     {
         return match ($type) {
@@ -2758,6 +2888,9 @@ class NotificationService
             ])),
             self::TYPE_TAX_REMINDER => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['name' => '💰 Amount', 'value' => $data['formatted_amount'], 'inline' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['name' => '🐷 Already covered from balance', 'value' => $data['formatted_credit_applied'], 'inline' => true]
+                    : null,
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 isset($data['days_remaining']) ? ['name' => '⏳ Days Remaining', 'value' => (string) $data['days_remaining'], 'inline' => true] : null,
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
@@ -2769,8 +2902,33 @@ class NotificationService
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
                 isset($data['help_url']) ? ['name' => '❓ How to Pay', 'value' => '[Payment Guide](' . $data['help_url'] . ')', 'inline' => true] : null,
             ])),
+            self::TYPE_PRICE_PROVIDER => array_values(array_filter([
+                ['name' => '🏷️ Provider', 'value' => $data['provider'] ?? 'unknown', 'inline' => true],
+                ['name' => '📡 State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'inline' => true],
+                !empty($data['error']) ? ['name' => '⚠️ Last error', 'value' => $data['error'], 'inline' => false] : null,
+                !empty($data['since']) ? ['name' => '🕒 Since', 'value' => $data['since'], 'inline' => true] : null,
+                !empty($data['last_success']) ? ['name' => '✅ Last good refresh', 'value' => $data['last_success'], 'inline' => true] : null,
+                ['name' => '💾 Cached prices', 'value' => 'Kept as they are. Nothing is zeroed while the provider is down.', 'inline' => false],
+            ])),
+            self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
+                ['name' => '👥 Members', 'value' => (string) ($data['member_count'] ?? 0), 'inline' => true],
+                ['name' => '💰 Still Owed', 'value' => $data['formatted_total'] ?? '0 ISK', 'inline' => true],
+                ['name' => '📆 Covers', 'value' => $data['period_label'] ?? 'All open invoices', 'inline' => true],
+                !empty($data['rows'])
+                    ? ['name' => '🧾 Who still owes', 'value' => $data['rows_text'], 'inline' => false]
+                    : null,
+                !empty($data['truncated_count'])
+                    ? ['name' => 'And more', 'value' => $data['truncated_count'] . ' further member(s) not listed. Open the tax page for the full list.', 'inline' => false]
+                    : null,
+                !empty($data['tax_page_url'])
+                    ? ['name' => '🔗 Full list', 'value' => '[Outstanding tax](' . $data['tax_page_url'] . ')', 'inline' => false]
+                    : null,
+            ])),
             self::TYPE_TAX_OVERDUE => array_values(array_filter([
                 ($data['show_amount'] ?? true) ? ['name' => '💰 Amount', 'value' => $data['formatted_amount'], 'inline' => true] : null,
+                (($data['show_amount'] ?? true) && !empty($data['formatted_credit_applied']))
+                    ? ['name' => '🐷 Already covered from balance', 'value' => $data['formatted_credit_applied'], 'inline' => true]
+                    : null,
                 ['name' => '📅 Due Date', 'value' => $data['due_date'], 'inline' => true],
                 ['name' => '⚠️ Days Overdue', 'value' => (string) $data['days_overdue'], 'inline' => true],
                 isset($data['my_taxes_url']) ? ['name' => '📋 My Taxes', 'value' => '[View My Taxes](' . $data['my_taxes_url'] . ')', 'inline' => true] : null,
@@ -2848,6 +3006,43 @@ class NotificationService
                     ? ['name' => '💰 Estimated Value', 'value' => number_format($data['estimated_value'], 0) . ' ISK', 'inline' => true]
                     : null,
                 !empty($data['extraction_url']) ? ['name' => '🔗 Extraction Details', 'value' => '[View Extraction](' . $data['extraction_url'] . ')', 'inline' => false] : null,
+            ])),
+            // The three planner types were wired into every other surface when
+            // they shipped - Slack fields, EVE-mail bodies, colours, titles,
+            // ping text - but never into this builder, so they fell through to
+            // the empty default and posted as a bare title and description
+            // with no detail at all.
+            self::TYPE_EXTRACTION_STARTED => array_values(array_filter([
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['system_name']) ? ['name' => '📍 System', 'value' => $data['system_name'], 'inline' => true] : null,
+                !empty($data['started_by']) ? ['name' => '👤 Started By', 'value' => $data['started_by'], 'inline' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['name' => '📦 Chunk Arrives', 'value' => $this->withEveSuffix($data['chunk_arrival_time']), 'inline' => true] : null,
+                isset($data['time_until_arrival']) ? ['name' => '⏳ Time Until Arrival', 'value' => $data['time_until_arrival'], 'inline' => true] : null,
+                (isset($data['estimated_value']) && $data['estimated_value'] > 0)
+                    ? ['name' => '💰 Est. Value', 'value' => number_format((float) $data['estimated_value'], 0) . ' ISK', 'inline' => true]
+                    : null,
+                !empty($data['extraction_url']) ? ['name' => '🔗 Extraction Details', 'value' => '[View Extraction](' . $data['extraction_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']), 'inline' => true] : null,
+                !empty($data['cadence_label']) ? ['name' => '🔁 Cadence', 'value' => $data['cadence_label'], 'inline' => true] : null,
+                !empty($data['source']) ? [
+                    'name' => '📋 Source',
+                    'value' => $data['source'] === 'auto' ? 'Projected from history' : 'Placed by hand',
+                    'inline' => true,
+                ] : null,
+                !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_SCHEDULE_MISMATCH => array_values(array_filter([
+                isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
+                isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
+                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']), 'inline' => true] : null,
+                isset($data['actual_arrival_time']) ? ['name' => '🎮 Scheduled In-Game', 'value' => $this->withEveSuffix($data['actual_arrival_time']), 'inline' => true] : null,
+                isset($data['offset_hours']) ? ['name' => '⚠️ Difference', 'value' => $data['offset_hours'] . 'h off plan', 'inline' => true] : null,
+                !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 // Flavor indicator — important for quick triage in a noisy channel

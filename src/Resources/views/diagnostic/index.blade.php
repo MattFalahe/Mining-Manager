@@ -4,7 +4,7 @@
 @section('page_header', 'Mining Manager - Diagnostic Tools')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <style>
 /* Diagnostic Page Specific Styles - Inline to override caching issues */
 
@@ -353,10 +353,11 @@
             <div class="diag-tab-intro">
                 <p>
                     <strong>What this tab does:</strong> One-click read-only smoke chain. Runs
-                    ~26 checks across schema integrity, settings consistency, cross-plugin
+                    checks across schema integrity, settings consistency, cross-plugin
                     integration (MC pricing + SM event subscription), pricing path, notification
-                    surface coverage, lifecycle, tax pipeline, and security hardening. Sub-30s
-                    runtime. No writes anywhere.
+                    surface coverage, lifecycle, the personal mining import, moon notifications,
+                    ore classification, the tax pipeline, upfront payments, balances and refunds,
+                    and security hardening. Sub-30s runtime. No writes anywhere.
                 </p>
                 <p>
                     <strong>When to use:</strong> After a deploy, after upgrading Manager Core
@@ -367,7 +368,9 @@
                 <p>
                     <strong>Heads up:</strong> Master Test is read-only but the underlying checks
                     DO query the database and external APIs (MC PricingService, SM availability
-                    probe). Don't fire it in a loop &mdash; once per investigation is plenty.
+                    probe). The moon notification check reads SeAT's whole notifications table,
+                    which has no index to help it, so expect it to be the slowest. Don't fire it in
+                    a loop &mdash; once per investigation is plenty.
                 </p>
             </div>
             <div class="row">
@@ -885,17 +888,17 @@
                                 <label>Select Category</label>
                                 <select id="validateCategory" class="form-control">
                                     <option value="refined-materials">All Refined Materials (35 items) - Moon + Minerals + Ice Products</option>
-                                    <option value="materials">Moon Materials Only (20 items)</option>
-                                    <option value="minerals">Minerals Only (8 items)</option>
-                                    <option value="ice-products">Ice Products Only (7 items)</option>
-                                    <option value="moon">Moon Ores (60 items)</option>
-                                    <option value="ore">Regular Ores (48 items)</option>
-                                    <option value="compressed-ore">Compressed Ores (63 items)</option>
-                                    <option value="ice">Ice (20 items)</option>
-                                    <option value="gas">Gas (12 items)</option>
-                                    <option value="new-ores">New Ores YC124-YC126 (72 items)</option>
-                                    <option value="abyssal">Abyssal Ores (10 items)</option>
-                                    <option value="triglavian">Triglavian Ores (9 items)</option>
+                                    <option value="materials">Moon Materials Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('materials') }} items)</option>
+                                    <option value="minerals">Minerals Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('minerals') }} items)</option>
+                                    <option value="ice-products">Ice Products Only ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ice-products') }} items)</option>
+                                    <option value="moon">Moon Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('moon') }} items)</option>
+                                    <option value="ore">Regular Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ore') }} items)</option>
+                                    <option value="compressed-ore">Compressed Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('compressed-ore') }} items)</option>
+                                    <option value="ice">Ice ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('ice') }} items)</option>
+                                    <option value="gas">Gas ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('gas') }} items)</option>
+                                    <option value="new-ores">New Ores YC124-YC126 ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('new-ores') }} items)</option>
+                                    <option value="abyssal">Abyssal Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('abyssal') }} items)</option>
+                                    <option value="triglavian">Triglavian Ores ({{ \MiningManager\Services\TypeIdRegistry::getCategoryCount('triglavian') }} items)</option>
                                     <option value="all">All Categories</option>
                                 </select>
                             </div>
@@ -995,7 +998,8 @@
                             <p class="text-muted">
                                 Verifies the Moon Extraction Planner: schema, the Manager Core
                                 fast-poll handler registration, planner coverage (skipped moons),
-                                and open scheduling mismatches. Read-only — each check is a single
+                                open scheduling mismatches, and the flags Find Moons keeps on moons.
+                                Read-only — each check is a single
                                 <code>SELECT</code> or <code>Schema::hasX</code> probe.
                             </p>
                             @if(isset($plannerValidation['summary']))
@@ -1072,12 +1076,11 @@
         <div class="tab-pane" id="settings-health">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> Audits every plugin setting. Shows the
-                    current value, default value, whether it's been changed from default,
-                    whether it's actually respected by the code that should read it, and whether
-                    the value is valid (e.g. webhook URLs parse, tax rates in range). Catches
-                    drift between the Settings UI and the runtime that bit Structure Manager
-                    multiple times.
+                    <strong>What this tab does:</strong> Lists every plugin setting group
+                    (General, Features, Tax Rates, Pricing, Payment, Notifications) with each
+                    value, its type, and where it comes from: saved in the database, set in
+                    config, or the built-in default. Also counts per-corporation overrides and
+                    settings left behind for corporations that no longer exist.
                 </p>
                 <p>
                     <strong>When to use:</strong> When a setting toggle "doesn't seem to do
@@ -1085,10 +1088,10 @@
                     upgrading to a new plugin version where setting keys may have changed.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> Orphaned setting keys (rows the code no longer
-                    reads) are listed here too. They're safe to leave but can be cleaned up via
-                    Data Integrity. Settings changes you make in the Settings UI are reflected
-                    here on the next tab click.
+                    <strong>Heads up:</strong> A value showing <code>default</code> has never been
+                    saved, so it follows the shipped default and moves if that default does.
+                    Settings changes you make in the Settings UI are reflected here on the next
+                    tab click.
                 </p>
             </div>
             <div class="row">
@@ -1181,21 +1184,19 @@
             <div class="diag-tab-intro">
                 <p>
                     <strong>What this tab does:</strong> DB-level consistency checks across MM's
-                    tables. Looks for orphan rows (FK references to missing parents), stale
-                    dedup-latch rows past their retention window, queue jobs piled up with the
-                    same payload, soft-deleted vs hard-deleted inconsistencies, duplicate
-                    setting keys, and NULL columns where NOT NULL is implied.
+                    tables: unknown type IDs, zero quantities and negative tax, ledger and tax
+                    rows for unknown characters, duplicate ledger entries, corrupt settings,
+                    Metenox cargo latches, account balances that cannot be right, and refunds
+                    whose balance row is gone.
                 </p>
                 <p>
                     <strong>When to use:</strong> Periodically (monthly is plenty), after a
                     failed migration, or when something looks visibly inconsistent in the UI.
-                    Each issue shows a row count plus a cleanup button where the fix is safe.
+                    Each issue shows a row count and what the rows are.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> Cleanup buttons here DO mutate the database
-                    &mdash; they're guarded by transactions and only act on rows the check
-                    flagged. Read the issue description before clicking. For diagnostic
-                    investigation without writes, use Tax Trace or Health Checks instead.
+                    <strong>Heads up:</strong> The scan only reads. Nothing on this tab changes
+                    data, so any fix is made separately once you know what the flagged rows are.
                 </p>
             </div>
             <div class="row">
@@ -1268,7 +1269,8 @@
                 <p>
                     <strong>What this tab does:</strong> At-a-glance dashboard of the plugin's runtime
                     state. Loads daily-summary freshness, multi-corp settings sanity, price-cache
-                    freshness, scheduled-job last activity, and per-table row counts. All read-only.
+                    freshness, scheduled-job last activity, and row counts, including payment
+                    allocations, held balances, pending refunds and planned moon pulls. All read-only.
                     Data is fetched fresh each time you click the tab (no caching).
                 </p>
                 <p>
@@ -2385,10 +2387,10 @@ function loadCacheHealth() {
                             <p><strong>Fresh Items:</strong> ${data.statistics.fresh_items}</p>
                         </div>
                         <div class="col-md-3">
-                            <p><strong>Stale Items:</strong> ${data.statistics.stale_items}</p>
+                            <p><strong>Keeping an Older Price:</strong> ${data.statistics.keeping_older}</p>
                         </div>
                         <div class="col-md-3">
-                            <p><strong>Zero Prices:</strong> ${data.statistics.zero_price_items}</p>
+                            <p><strong>No Market Price:</strong> ${data.statistics.no_market}</p>
                         </div>
                     </div>
 
@@ -2396,19 +2398,17 @@ function loadCacheHealth() {
                         <div class="col-md-4">
                             <p><strong>Cache Duration:</strong> ${data.statistics.cache_duration_minutes} minutes</p>
                         </div>
-                        <div class="col-md-4">
-                            <p><strong>Oldest Entry:</strong> ${data.statistics.oldest_cache_hours} hours ago</p>
-                        </div>
-                        <div class="col-md-4">
-                            <p><strong>Newest Entry:</strong> ${data.statistics.newest_cache_minutes} minutes ago</p>
+                        <div class="col-md-8">
+                            <p><strong>Last Price Written:</strong> ${data.statistics.last_written ? escapeHtml(data.statistics.last_written) + ' EVE time' : 'never'}</p>
                         </div>
                     </div>
+                    <p class="small mb-0">A type that comes back empty keeps its last good price, and one with no market has none. Neither is a fault.</p>
             `;
 
             if (data.issues && data.issues.length > 0) {
                 html += '<hr><h6>Issues Found:</h6><ul>';
                 data.issues.forEach(issue => {
-                    html += `<li>${issue}</li>`;
+                    html += `<li>${escapeHtml(issue)}</li>`;
                 });
                 html += '</ul>';
             }
@@ -3218,11 +3218,17 @@ function renderPriceCache(target, pc) {
     if (pc.provider) {
         html += ' <span class="badge badge-info mb-2"><i class="fas fa-server"></i> ' + pc.provider + '</span>';
     }
+    (pc.reasons || []).forEach(function(reason) {
+        html += '<p class="text-warning small mb-2">' + escapeHtml(reason) + '</p>';
+    });
     html += '<table class="table table-sm table-dark">' +
         '<tr><td>Total cached prices</td><td><strong>' + (pc.total_cached || 0) + '</strong></td></tr>' +
         '<tr><td>Fresh (within ' + (pc.cache_duration_minutes || 240) + ' min)</td><td class="text-success">' + (pc.fresh || 0) + '</td></tr>' +
-        '<tr><td>Stale</td><td class="' + (pc.stale > 0 ? 'text-warning' : '') + '">' + (pc.stale || 0) + '</td></tr>' +
-        '</table>';
+        '<tr><td>Keeping an older price</td><td>' + (pc.keeping_older || 0) + '</td></tr>' +
+        '<tr><td>No market price</td><td>' + (pc.no_market || 0) + '</td></tr>' +
+        '<tr><td>Last price written</td><td>' + (pc.last_written ? escapeHtml(pc.last_written) + ' EVE time' : 'never') + '</td></tr>' +
+        '</table>' +
+        '<p class="text-muted small mb-0">A type that comes back empty keeps its last good price, and one with no market has none. Neither is a fault.</p>';
     $(target).html(html);
 }
 
@@ -3263,6 +3269,13 @@ function renderDataCounts(target, dc) {
         '<tr><td>&nbsp;&nbsp;Metenox structures (type 81826)</td><td>' + (dc.metenox_structures || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>&nbsp;&nbsp;MoonMaterialBay asset rows</td><td>' + (dc.metenox_cargo_rows || 0).toLocaleString() + '</td></tr>' +
         '<tr><td>&nbsp;&nbsp;Cargo-full alert latches</td><td>' + (dc.metenox_alert_latches || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td colspan="2" class="text-muted small pt-2"><i class="fas fa-wallet"></i> Payments and planner</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Payment allocations</td><td>' + (dc.payment_allocations || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Account balances holding ISK</td><td>' + (dc.balances_held || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Refunds waiting for a transfer</td><td>' + (dc.refunds_pending || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Planned moon pulls (planned or confirmed)</td><td>' + (dc.planned_pulls || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Moons claimed by another corporation</td><td>' + (dc.moon_claims || 0).toLocaleString() + '</td></tr>' +
+        '<tr><td>&nbsp;&nbsp;Moons on the watchlist</td><td>' + (dc.watched_moons || 0).toLocaleString() + '</td></tr>' +
         '</table>'
     );
 }
@@ -4021,6 +4034,44 @@ function runTaxPipeline() {
                 <div class="col-md-6"><strong>Status:</strong> <span class="badge badge-${step4.status === 'pass' ? 'success' : (step4.status === 'error' ? 'danger' : 'warning')}">${(step4.status || 'unknown').toUpperCase()}</span></div>
             </div>
         </div>`;
+
+        // Step 4b: Payment reconciliation - does amount_paid still equal the
+        // sum of the allocations behind it, for every invoice raised since the cutover
+        const recon = pipe.payment_reconciliation || {};
+        const reconState = recon.status === 'pass' ? 'success' : (recon.status === 'error' ? 'error' : 'warning');
+        html += `<div class="provider-test-result ${reconState}" style="margin-top: 10px;">
+            <h5><i class="fas fa-balance-scale"></i> Step 4b: Payment Reconciliation</h5>`;
+        if (recon.error) {
+            html += `<div class="text-danger">${recon.error}</div>`;
+        } else if (recon.message && !recon.checked) {
+            html += `<div class="text-muted">${recon.message}</div>`;
+            if (recon.cutover) {
+                html += `<div class="text-muted small mt-1">Cutover: ${recon.cutover}</div>`;
+            }
+        } else {
+            html += `<div class="row mb-2">
+                <div class="col-md-3"><strong>Invoices Checked:</strong> ${fmtNum(recon.checked || 0)}</div>
+                <div class="col-md-3"><strong>Discrepancies:</strong> <span class="${(recon.discrepancy_count || 0) > 0 ? 'text-warning' : 'text-success'}">${fmtNum(recon.discrepancy_count || 0)}</span></div>
+                <div class="col-md-3"><strong>Claims Without Allocations:</strong> <span class="${(recon.claims_without_allocations || 0) > 0 ? 'text-warning' : 'text-success'}">${fmtNum(recon.claims_without_allocations || 0)}</span></div>
+                <div class="col-md-3"><strong>Cutover:</strong> <span class="small">${recon.cutover || 'N/A'}</span></div>
+            </div>`;
+            const reconRows = recon.discrepancies || [];
+            if (reconRows.length > 0) {
+                html += `<table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
+                    <thead><tr><th>Invoice</th><th>Character ID</th><th class="text-right">Recorded Paid</th><th class="text-right">Sum of Payments</th><th class="text-right">Difference</th></tr></thead><tbody>`;
+                reconRows.forEach(item => {
+                    html += `<tr>
+                        <td>${item.tax_id}</td>
+                        <td>${item.character_id}</td>
+                        <td class="text-right">${fmtISK(item.amount_paid)} ISK</td>
+                        <td class="text-right">${fmtISK(item.sum_of_allocations)} ISK</td>
+                        <td class="text-right text-warning">${fmtISK(item.difference)} ISK</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+            }
+        }
+        html += '</div>';
 
         // Step 5: Overdue - controller returns {status, count, overdue_records[{id, character_id, amount_owed, due_date}]}
         const step5 = pipe.overdue || {};

@@ -9,6 +9,7 @@ use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\Pricing\OreValuationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Tax\InvoiceCoverage;
 
 /**
  * Daily summary update command.
@@ -240,6 +241,16 @@ class UpdateDailySummariesCommand extends Command
                 'character_id' => $orphan->character_id,
                 'date' => $orphan->date instanceof Carbon ? $orphan->date->format('Y-m-d') : (string) $orphan->date,
             ]);
+
+            // Never correct mining that an issued invoice already accounts for.
+            if (InvoiceCoverage::coversRow((int) $orphan->character_id, $orphan->date)) {
+                Log::info('Mining Manager: left an orphaned ledger row alone, an issued invoice covers it', [
+                    'character_id' => $orphan->character_id,
+                    'date' => (string) $orphan->date,
+                    'type_id' => $orphan->type_id,
+                ]);
+                continue;
+            }
 
             $remainder = $orphan->quantity - $observerQty;
             if ($remainder <= 0) {

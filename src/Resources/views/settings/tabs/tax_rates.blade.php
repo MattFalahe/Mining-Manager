@@ -51,8 +51,8 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="moon_ore_r64">
-                            <i class="fas fa-star" style="color: #FFD700;"></i>
-                            R64 (Exceptional)
+                            <span class="badge badge-r64">R64</span>
+                            Exceptional
                         </label>
                         <div class="input-group">
                             <input type="number"
@@ -74,8 +74,8 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="moon_ore_r32">
-                            <i class="fas fa-star" style="color: #C0C0C0;"></i>
-                            R32 (Rare)
+                            <span class="badge badge-r32">R32</span>
+                            Rare
                         </label>
                         <div class="input-group">
                             <input type="number"
@@ -97,8 +97,8 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="moon_ore_r16">
-                            <i class="fas fa-star" style="color: #CD7F32;"></i>
-                            R16 (Uncommon)
+                            <span class="badge badge-r16">R16</span>
+                            Uncommon
                         </label>
                         <div class="input-group">
                             <input type="number"
@@ -120,8 +120,8 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="moon_ore_r8">
-                            <i class="fas fa-circle" style="color: #90EE90;"></i>
-                            R8 (Common)
+                            <span class="badge badge-r8">R8</span>
+                            Common
                         </label>
                         <div class="input-group">
                             <input type="number"
@@ -143,8 +143,8 @@
                 <div class="col-md-4 col-lg-2">
                     <div class="form-group">
                         <label for="moon_ore_r4">
-                            <i class="fas fa-circle" style="color: #A9A9A9;"></i>
-                            R4 (Ubiquitous)
+                            <span class="badge badge-r4">R4</span>
+                            Ubiquitous
                         </label>
                         <div class="input-group">
                             <input type="number"

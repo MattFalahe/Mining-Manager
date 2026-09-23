@@ -38,8 +38,28 @@ class GenerateTestDataCommand extends Command
         $this->info('Mining Manager Test Data Generator');
         $this->info('===================================');
 
-        // Cleanup if requested
+        // Cleanup if requested.
+        //
+        // The prompt further down is about generating rows, and this used to
+        // run before it, so --cleanup deleted before anyone had been asked
+        // anything. It also reaches character_infos and corporation_infos,
+        // which belong to SeAT rather than to this plugin, so it says what it
+        // is about to remove and counts it first.
         if ($this->option('cleanup')) {
+            $testCharacters = DB::table('character_infos')->where('name', 'like', 'Test Miner%')->count();
+            $testCorporations = DB::table('corporation_infos')->where('name', 'like', 'Test Corp%')->count();
+
+            $this->warn("\nCleanup will remove:");
+            $this->line("  {$testCorporations} corporations named \"Test Corp...\" and {$testCharacters} characters named \"Test Miner...\"");
+            $this->line('  their mining ledger rows, tax records, affiliations and corporation settings');
+            $this->line('  character_infos and corporation_infos rows, which belong to SeAT rather than to this plugin');
+
+            if (!$this->confirm('Remove that test data first?', false)) {
+                $this->warn('Operation cancelled.');
+
+                return Command::FAILURE;
+            }
+
             $this->info("\nCleaning up existing test data...");
             $this->cleanupTestData();
         }

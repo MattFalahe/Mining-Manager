@@ -20,6 +20,7 @@ return [
     'my_taxes' => 'My Taxes',
     'tax_codes' => 'Tax Codes',
     'wallet_verification' => 'Wallet Verification',
+    'account_balances' => 'Balances',
     
     // Mining Events
     'mining_events' => 'Mining Events',

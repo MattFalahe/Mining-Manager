@@ -119,6 +119,14 @@ class MoonExtraction extends Model
      */
     public static function loadDisplayNames($extractions)
     {
+        // NOTE: these are set with setAttribute() so views can read
+        // $extraction->moon_name directly, but neither is a real column on
+        // moon_extractions, moon_extraction_plans or moon_extraction_history.
+        // That makes them dirty attributes, so calling save() or update() on a
+        // model that has been through here will try to write them and fail with
+        // "Unknown column 'moon_name'". Write with the query builder instead:
+        //     Model::where('id', $m->id)->update([...])
+
         if ($extractions->isEmpty()) {
             return $extractions;
         }

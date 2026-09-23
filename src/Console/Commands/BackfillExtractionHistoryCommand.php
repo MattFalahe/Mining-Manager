@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -56,7 +57,31 @@ class BackfillExtractionHistoryCommand extends Command
      */
     private const FILETIME_EPOCH_OFFSET_SECONDS = 11644473600;
 
+        /**
+     * Acquire the run lock, then do the work.
+     *
+     * Two of these running at once would duplicate effort at best and interleave
+     * writes to the same rows at worst. Deliberately NOT named run(): Symfony's
+     * Command already has one, and shadowing it breaks every artisan call.
+     */
     public function handle(): int
+    {
+        $lock = Cache::lock('mining-manager:backfill-extraction-history', 3600);
+
+        if (! $lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleLocked();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleLocked(): int
     {
         $structureId = $this->option('structure');
         $days = (int) $this->option('days');

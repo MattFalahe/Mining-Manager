@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Moon\MoonNotificationCharacter;
 use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
@@ -119,6 +120,7 @@ class MoonNotificationHandler
         app(NotificationService::class)->sendExtractionStarted(array_filter([
             'moon_name' => $moonName,
             'structure_name' => $structureName,
+            'started_by' => MoonNotificationCharacter::describe($data, 'startedBy'),
             'chunk_arrival_time' => $arrival ? $arrival->format('Y-m-d H:i') : null,
             'time_until_arrival' => $timeUntil,
             'extraction_url' => $extractionUrl,

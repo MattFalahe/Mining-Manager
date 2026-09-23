@@ -328,6 +328,7 @@ class CheckExtractionArrivalsCommand extends Command
                 $this->info("Found {$started->count()} newly-started extraction(s):");
                 $startedDispatched = 0;
                 $startedFailed = 0;
+                $startedWaiting = 0;
 
                 foreach ($started as $extraction) {
                     $moonLabel = $extraction->moon_name ?? "Moon {$extraction->moon_id}";
@@ -339,8 +340,16 @@ class CheckExtractionArrivalsCommand extends Command
                     }
 
                     try {
-                        $this->extractionService->sendExtractionStartedNotification($extraction);
-                        $startedDispatched++;
+                        $outcome = $this->extractionService->sendExtractionStartedNotification($extraction);
+
+                        if ($outcome === 'waiting') {
+                            $startedWaiting++;
+                            $this->line('    Waiting for the in-game notification that names who started it.');
+                        } elseif ($outcome === 'failed') {
+                            $startedFailed++;
+                        } else {
+                            $startedDispatched++;
+                        }
                     } catch (\Exception $e) {
                         $startedFailed++;
                         $this->error("  Failed: {$e->getMessage()}");
@@ -351,7 +360,9 @@ class CheckExtractionArrivalsCommand extends Command
                 }
 
                 if (!$dryRun) {
-                    $this->info("Extraction-started dispatched: {$startedDispatched}" . ($startedFailed > 0 ? ", Failed: {$startedFailed}" : ''));
+                    $this->info("Extraction-started dispatched: {$startedDispatched}"
+                        . ($startedFailed > 0 ? ", Failed: {$startedFailed}" : '')
+                        . ($startedWaiting > 0 ? ", Waiting for who started it: {$startedWaiting}" : ''));
                 }
             }
 

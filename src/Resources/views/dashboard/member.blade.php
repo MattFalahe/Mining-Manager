@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::dashboard.member_dashboard'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <style>
 /* ULTRA-AGGRESSIVE CSS OVERRIDES - INLINE TO BEAT EVERYTHING */
 .mining-dashboard .tab-content {
@@ -47,6 +47,7 @@
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-dashboard member-dashboard">
     
     {{-- CURRENT MONTH STATISTICS --}}

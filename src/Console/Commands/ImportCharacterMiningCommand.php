@@ -4,19 +4,25 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\InvoiceCoverage;
+use MiningManager\Services\Ledger\LateMining;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use Carbon\Carbon;
+use MiningManager\Services\OreClassifier;
 
 class ImportCharacterMiningCommand extends Command
 {
     protected $signature = 'mining-manager:import-character-mining
                             {--character_id= : Import specific character ID only}
-                            {--days=30 : Number of days to import}
-                            {--force : Re-import even if entries already exist}';
+                            {--days=30 : Number of days to import, by mining date}
+                            {--force : Re-import even if entries already exist}
+                            {--dry-run : Show what an import would do without writing anything}';
 
     protected $description = 'Import character mining ledger data from SeAT core (belt, anomaly, ice, gas mining)';
 
@@ -46,6 +52,20 @@ class ImportCharacterMiningCommand extends Command
         $characterId = $this->option('character_id');
         $days = (int) $this->option('days');
         $force = $this->option('force');
+
+        // A dry run walks the same path and counts the same outcomes but writes
+        // nothing: no ledger rows, no deletions, no summary rebuilds. A wide
+        // --days window on a live install can add rows to periods invoiced long
+        // ago, and this is how to see that before it happens.
+        $dryRun = (bool) $this->option('dry-run');
+
+        if ($dryRun) {
+            $this->warn('Dry run: nothing will be written to the ledger or the daily summaries.');
+            $this->line('');
+        }
+        $frozen = 0;
+        $lateArrivals = 0;
+        $billedLeftAlone = 0;
         $cutoffDate = Carbon::now()->subDays($days);
 
         // Check if SeAT's CharacterMining model exists
@@ -54,8 +74,30 @@ class ImportCharacterMiningCommand extends Command
             return Command::FAILURE;
         }
 
-        // Build query for SeAT character mining data
-        $query = \Seat\Eveapi\Models\Industry\CharacterMining::where('date', '>=', $cutoffDate->toDateString());
+        // SeAT does not store a day's mining as one row. Each time it fetches a
+        // character's ledger it saves only how much each day has grown since the
+        // last fetch, so a day mined in several sittings is several rows. A
+        // day's quantity is the sum of all of them, never any one row.
+        //
+        // The window is by mining date and nothing else. SeAT sometimes saves
+        // mining for a day long after the day has left the window, and that is
+        // left out on purpose: by then the day can be on an invoice and in a
+        // daily summary, and neither should move because SeAT caught up late.
+        // A wider --days run still takes whatever SeAT holds for its dates.
+        $query = DB::table((new \Seat\Eveapi\Models\Industry\CharacterMining())->getTable())
+            ->select(
+                'character_id',
+                'date',
+                'solar_system_id',
+                'type_id',
+                DB::raw('SUM(quantity) as quantity')
+            )
+            ->where('date', '>=', $cutoffDate->toDateString())
+            ->groupBy('character_id', 'date', 'solar_system_id', 'type_id')
+            ->orderBy('character_id')
+            ->orderBy('date')
+            ->orderBy('solar_system_id')
+            ->orderBy('type_id');
 
         if ($characterId) {
             $query->where('character_id', $characterId);
@@ -64,7 +106,7 @@ class ImportCharacterMiningCommand extends Command
             $this->info("👤 Importing for ALL characters with mining data");
         }
 
-        $totalEntries = $query->count();
+        $totalEntries = DB::query()->fromSub($query, 'daily_totals')->count();
 
         if ($totalEntries === 0) {
             $this->warn('⚠️  No character mining data found in SeAT.');
@@ -76,7 +118,7 @@ class ImportCharacterMiningCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("📊 Found {$totalEntries} character mining entries (last {$days} days)");
+        $this->info("📊 Found {$totalEntries} daily mining totals (last {$days} days)");
         $this->line('');
 
         $valuationService = app(OreValuationService::class);
@@ -85,6 +127,9 @@ class ImportCharacterMiningCommand extends Command
         $updated = 0;
         $skipped = 0;
         $errors = 0;
+        $ignored = 0;
+        $firstNewDate = null;
+        $lastNewDate = null;
 
         $touchedPairs = collect();
 
@@ -92,12 +137,27 @@ class ImportCharacterMiningCommand extends Command
         $progressBar->start();
 
         $query->chunk(500, function ($entries) use (
-            $valuationService, $force,
-            &$created, &$updated, &$skipped, &$errors,
-            &$touchedPairs, $progressBar
+            $valuationService, $force, $dryRun,
+            &$created, &$updated, &$skipped, &$errors, &$frozen, &$lateArrivals, &$billedLeftAlone, &$ignored,
+            &$touchedPairs, &$firstNewDate, &$lastNewDate, $progressBar
         ) {
         foreach ($entries as $entry) {
             try {
+                // Day totals come back from SQL as strings, and every comparison
+                // against the ledger below needs whole numbers.
+                $entry->character_id = (int) $entry->character_id;
+                $entry->solar_system_id = (int) $entry->solar_system_id;
+                $entry->type_id = (int) $entry->type_id;
+                $entry->quantity = (int) $entry->quantity;
+
+                // Event ore, quest ore and Mutanite are left out of the ledger
+                // entirely, so nothing further along taxes, values or charts them.
+                if (OreClassifier::isIgnored((int) $entry->type_id)) {
+                    $ignored++;
+                    $progressBar->advance();
+                    continue;
+                }
+
                 // Skip if observer data already exists for this entry (observer is authoritative)
                 $hasObserver = MiningLedger::where('character_id', $entry->character_id)
                     ->whereDate('date', $entry->date)
@@ -121,17 +181,45 @@ class ImportCharacterMiningCommand extends Command
 
                 if ($existing && !$force) {
                     // Update only if quantity changed
-                    if ($existing->quantity != $entry->quantity) {
-                        $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
-                        $existing->update([
-                            'quantity' => $entry->quantity,
-                            'unit_price' => $values['unit_price'] ?? 0,
-                            'ore_value' => $values['ore_value'] ?? 0,
-                            'mineral_value' => $values['mineral_value'] ?? 0,
-                            'total_value' => $values['total_value'] ?? 0,
-                            'processed_at' => Carbon::now(),
-                        ]);
+                    if ((int) $existing->quantity !== $entry->quantity) {
+                        // A day on an issued invoice keeps the value and tax it was
+                        // billed at. More mining for it is recorded at today's
+                        // value with a note that it was not taxed. A smaller figure
+                        // is no reason to change the bill's evidence, so it is left alone.
+                        $billed = InvoiceCoverage::coversRow($entry->character_id, $entry->date);
+
+                        if ($billed && $entry->quantity < (int) $existing->quantity) {
+                            $skipped++;
+                            $progressBar->advance();
+                            continue;
+                        }
+
+                        if (! $dryRun) {
+                            if ($billed) {
+                                $extraValues = $valuationService->calculateOreValue(
+                                    $entry->type_id,
+                                    $entry->quantity - (int) $existing->quantity
+                                );
+                                $existing->update(LateMining::growth($existing, $entry->quantity, $extraValues) + [
+                                    'processed_at' => Carbon::now(),
+                                ]);
+                            } else {
+                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                                $existing->update([
+                                    'quantity' => $entry->quantity,
+                                    'unit_price' => $values['unit_price'] ?? 0,
+                                    'ore_value' => $values['ore_value'] ?? 0,
+                                    'mineral_value' => $values['mineral_value'] ?? 0,
+                                    'total_value' => $values['total_value'] ?? 0,
+                                    'processed_at' => Carbon::now(),
+                                ]);
+                            }
+                        }
                         $updated++;
+
+                        if ($billed) {
+                            $lateArrivals++;
+                        }
 
                         $pairKey = $entry->character_id . '|' . $entry->date;
                         $touchedPairs->put($pairKey, [
@@ -152,34 +240,83 @@ class ImportCharacterMiningCommand extends Command
                 $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);
                 $isIce = TypeIdRegistry::isIce($entry->type_id);
                 $isGas = TypeIdRegistry::isGas($entry->type_id);
-                $isAbyssal = in_array($entry->type_id, TypeIdRegistry::ABYSSAL_ORES);
+                $isAbyssal = OreClassifier::isAbyssal($entry->type_id);
                 $isTriglavian = TypeIdRegistry::isTriglavianOre($entry->type_id);
                 $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                // Delete existing if force mode
+                // Delete existing if force mode.
+                //
+                // Except when the row predates the classification cutover.
+                // Deleting and recreating it would hand old mining this
+                // version's categories and reset its rate to the column
+                // default, which is exactly the retroactive change the cutover
+                // exists to prevent. Leave those rows alone; the normal
+                // non-force path above still keeps their quantity and value
+                // current.
                 if ($existing && $force) {
-                    $existing->delete();
+                    if (ClassificationEpoch::existedBeforeCutover($existing->created_at)) {
+                        $frozen++;
+                        $progressBar->advance();
+                        continue;
+                    }
+
+                    // Nor a row an issued invoice covers. Deleting it and
+                    // importing it again would turn mining that was billed into
+                    // an untaxed late arrival.
+                    if (InvoiceCoverage::coversRow($entry->character_id, $entry->date)) {
+                        $billedLeftAlone++;
+                        $progressBar->advance();
+                        continue;
+                    }
+
+                    if (! $dryRun) {
+                        $existing->delete();
+                    }
                 }
 
-                MiningLedger::create([
-                    'character_id' => $entry->character_id,
-                    'date' => $entry->date,
-                    'type_id' => $entry->type_id,
-                    'quantity' => $entry->quantity,
-                    'solar_system_id' => $entry->solar_system_id,
-                    'unit_price' => $values['unit_price'] ?? 0,
-                    'ore_value' => $values['ore_value'] ?? 0,
-                    'mineral_value' => $values['mineral_value'] ?? 0,
-                    'total_value' => $values['total_value'] ?? 0,
-                    'is_moon_ore' => $isMoonOre,
-                    'is_ice' => $isIce,
-                    'is_gas' => $isGas,
-                    'is_abyssal' => $isAbyssal,
-                    'is_triglavian' => $isTriglavian,
-                    'ore_category' => $oreCategory,
-                    'processed_at' => Carbon::now(),
-                ]);
+                // Same rule as the observer path: mining that surfaces for a
+                // period already invoiced is exempt. is_taxable defaults to
+                // true, so without this it would read as taxable at a rate of
+                // zero, which explains nothing to whoever is looking at it.
+                $lateExempt = InvoiceCoverage::coversRow((int) $entry->character_id, $entry->date);
+
+                if ($lateExempt) {
+                    $lateArrivals++;
+                }
+
+                if (! $dryRun) {
+                    MiningLedger::create([
+                        'character_id' => $entry->character_id,
+                        'date' => $entry->date,
+                        'type_id' => $entry->type_id,
+                        'quantity' => $entry->quantity,
+                        'solar_system_id' => $entry->solar_system_id,
+                        'unit_price' => $values['unit_price'] ?? 0,
+                        'ore_value' => $values['ore_value'] ?? 0,
+                        'mineral_value' => $values['mineral_value'] ?? 0,
+                        'total_value' => $values['total_value'] ?? 0,
+                        'is_moon_ore' => $isMoonOre,
+                        'is_ice' => $isIce,
+                        'is_gas' => $isGas,
+                        'is_abyssal' => $isAbyssal,
+                        'is_triglavian' => $isTriglavian,
+                        'ore_category' => $oreCategory,
+                        'processed_at' => Carbon::now(),
+                        'is_taxable' => ! $lateExempt,
+                        'tax_rate' => 0,
+                        'tax_amount' => 0,
+                        'notes' => $lateExempt ? LateMining::NEW_ROW_NOTE : null,
+                    ]);
+                }
                 $created++;
+
+                $newDate = Carbon::parse($entry->date)->toDateString();
+                if ($firstNewDate === null || $newDate < $firstNewDate) {
+                    $firstNewDate = $newDate;
+                }
+                if ($lastNewDate === null || $newDate > $lastNewDate) {
+                    $lastNewDate = $newDate;
+                }
 
                 $pairKey = $entry->character_id . '|' . $entry->date;
                 $touchedPairs->put($pairKey, [
@@ -203,15 +340,35 @@ class ImportCharacterMiningCommand extends Command
         $this->table(
             ['Status', 'Count'],
             [
-                ['New entries created', $created],
-                ['Existing entries updated', $updated],
+                [$dryRun ? 'New entries it would create' : 'New entries created', $created],
+                [$dryRun ? 'Existing entries it would update' : 'Existing entries updated', $updated],
                 ['Skipped (observer data exists)', $skipped],
+                ['Ignored (event ore, quest ore, Mutanite)', $ignored],
+                [$dryRun ? 'Would arrive after invoicing, not taxed' : 'Arrived after invoicing, not taxed', $lateArrivals],
+                ['Left alone (already invoiced)', $billedLeftAlone],
                 ['Errors', $errors],
             ]
         );
 
+        if ($created > 0) {
+            $this->line('');
+            $this->info(($dryRun ? 'New entries would be dated ' : 'New entries are dated ') . "{$firstNewDate} to {$lastNewDate}.");
+        }
+
+        // Only ever non-zero under --force, and worth saying out loud rather
+        // than quietly not doing what was asked.
+        if ($frozen > 0) {
+            $this->line('');
+            $this->warn("{$frozen} entr" . ($frozen === 1 ? 'y was' : 'ies were') . " left as they are: they predate the");
+            $this->warn('classification cutover, so re-importing them would change the tax');
+            $this->warn('categories and rate that mining was already billed on.');
+        }
+
         // Update daily summaries for touched character+date pairs
-        if ($touchedPairs->isNotEmpty()) {
+        if ($touchedPairs->isNotEmpty() && $dryRun) {
+            $this->line('');
+            $this->info("Would rebuild {$touchedPairs->count()} daily summaries.");
+        } elseif ($touchedPairs->isNotEmpty()) {
             $this->line('');
             $this->info('Updating daily summaries...');
 
@@ -230,7 +387,7 @@ class ImportCharacterMiningCommand extends Command
             }
         }
 
-        $this->info('Import complete.');
+        $this->info($dryRun ? 'Dry run complete. Nothing was written.' : 'Import complete.');
 
         return $errors > 0 ? Command::FAILURE : Command::SUCCESS;
         } finally {
@@ -240,14 +397,6 @@ class ImportCharacterMiningCommand extends Command
 
     private function classifyOreCategory(int $typeId): string
     {
-        if (TypeIdRegistry::isMoonOre($typeId)) {
-            $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
-            return $rarity ? 'moon_' . $rarity : 'moon';
-        }
-        if (TypeIdRegistry::isIce($typeId)) return 'ice';
-        if (TypeIdRegistry::isGas($typeId)) return 'gas';
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) return 'abyssal';
-        if (TypeIdRegistry::isTriglavianOre($typeId)) return 'triglavian';
-        return 'ore';
+        return OreClassifier::category($typeId);
     }
 }

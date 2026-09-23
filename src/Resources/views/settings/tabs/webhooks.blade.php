@@ -218,6 +218,31 @@
                                                     <i class="fas fa-chart-bar"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_extraction_started ?? false)
+                                                <span class="badge badge-info" title="Extraction Started">
+                                                    <i class="fas fa-hourglass-start"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_next_extraction_planned ?? false)
+                                                <span class="badge badge-primary" title="Next Extraction Planned">
+                                                    <i class="fas fa-calendar-check"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_schedule_mismatch ?? false)
+                                                <span class="badge badge-warning" title="Moon Scheduled Off-Plan">
+                                                    <i class="fas fa-exclamation-triangle"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_tax_outstanding_digest ?? false)
+                                                <span class="badge badge-warning" title="Outstanding Mining Tax (weekly director digest)">
+                                                    <i class="fas fa-clipboard-list"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_price_provider ?? false)
+                                                <span class="badge badge-danger" title="Price Provider Trouble">
+                                                    <i class="fas fa-coins"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -439,6 +464,20 @@
                             <label class="custom-control-label" for="notify-schedule-mismatch">
                                 <i class="fas fa-exclamation-triangle text-danger"></i>
                                 Moon Scheduled Off-Plan
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-tax-outstanding-digest" name="notify_tax_outstanding_digest" value="1">
+                            <label class="custom-control-label" for="notify-tax-outstanding-digest">
+                                <i class="fas fa-clipboard-list text-warning"></i>
+                                Outstanding Mining Tax (weekly director digest)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
+                            <label class="custom-control-label" for="notify-price-provider">
+                                <i class="fas fa-coins text-danger"></i>
+                                Price Provider Trouble
                             </label>
                         </div>
 

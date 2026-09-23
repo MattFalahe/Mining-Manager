@@ -42,6 +42,8 @@ class MoonExtractionPlan extends Model
     public const STATUS_PLANNED = 'planned';
     public const STATUS_CONFIRMED = 'confirmed';
     public const STATUS_SUPERSEDED = 'superseded';
+    // A pull that went ahead off-plan and had the offset ignored. The row
+    // keeps the time that was intended, alongside the variance.
     public const STATUS_DONE = 'done';
     public const STATUS_CANCELLED = 'cancelled';
 

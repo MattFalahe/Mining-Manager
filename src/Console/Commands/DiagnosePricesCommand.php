@@ -24,7 +24,7 @@ class DiagnosePricesCommand extends Command
                             {--test-provider : Test current price provider}
                             {--show-missing : Show which specific items are missing prices}
                             {--show-sources : Show where prices are coming from (cache vs fallback)}
-                            {--show-coverage : Show complete coverage statistics for all 357 items}';
+                            {--show-coverage : Show complete coverage statistics for every tracked type}';
 
     /**
      * The console command description.
@@ -46,6 +46,11 @@ class DiagnosePricesCommand extends Command
      * @var SettingsManagerService
      */
     protected $settingsService;
+
+    /**
+     * @var array|null
+     */
+    protected $health = null;
 
     /**
      * Create a new command instance.
@@ -184,38 +189,33 @@ class DiagnosePricesCommand extends Command
         $this->info('💾 PRICE CACHE STATISTICS');
         $this->line('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        $totalCached = MiningPriceCache::count();
-        $withPrices = MiningPriceCache::where('sell_price', '>', 0)->count();
-        $withoutPrices = $totalCached - $withPrices;
-
-        // Get cache freshness
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
-        $cutoff = Carbon::now()->subMinutes($cacheDuration);
-        $fresh = MiningPriceCache::where('cached_at', '>', $cutoff)->count();
-        $stale = $totalCached - $fresh;
-
-        // Get oldest and newest
-        $oldest = MiningPriceCache::orderBy('cached_at', 'asc')->first();
-        $newest = MiningPriceCache::orderBy('cached_at', 'desc')->first();
+        $health = $this->cacheHealth();
 
         $this->table(
             ['Metric', 'Count', 'Status'],
             [
-                ['Total Items Cached', $totalCached, $this->getStatusIcon($totalCached > 0)],
-                ['Items With Prices', $withPrices, $this->getStatusIcon($withPrices > 0)],
-                ['Items Without Prices', $withoutPrices, $this->getStatusIcon($withoutPrices === 0)],
-                ['Fresh Cache Entries', $fresh, $this->getStatusIcon($fresh > 0)],
-                ['Stale Cache Entries', $stale, $stale > 0 ? '⚠️' : '✅'],
+                ['Total Items Cached', $health['total'], $this->getStatusIcon($health['total'] > 0)],
+                ['Items With a Price', $health['priced'], $this->getStatusIcon($health['priced'] > 0)],
+                ['Fresh (within ' . $health['cache_duration_minutes'] . ' min)', $health['fresh'], $this->getStatusIcon($health['fresh'] > 0)],
+                ['Keeping an Older Price', $health['keeping_older'], 'ℹ️'],
+                ['No Market Price', $health['no_market'], 'ℹ️'],
             ]
         );
 
-        if ($oldest) {
-            $this->line('  Oldest Entry: ' . $oldest->cached_at->diffForHumans());
-        }
-        if ($newest) {
-            $this->line('  Newest Entry: ' . $newest->cached_at->diffForHumans());
-        }
+        $this->line('  Last price written: ' . ($health['last_written']
+            ? $health['last_written'] . ' (' . Carbon::parse($health['last_written'])->diffForHumans() . ')'
+            : 'never'));
+        $this->line('  A type that comes back empty keeps its last good price, and one with no market has none.');
+        $this->line('  Neither is a fault.');
+    }
+
+    /**
+     * The cache judged the same way the Diagnostics page judges it, worked
+     * out once per run.
+     */
+    protected function cacheHealth(): array
+    {
+        return $this->health ??= $this->priceService->cacheHealth();
     }
 
     /**
@@ -562,7 +562,9 @@ class DiagnosePricesCommand extends Command
     }
 
     /**
-     * Check price provider health by analyzing cache vs fallback ratio
+     * Check price provider health from what the refreshes recorded. Counting
+     * rows without a price says nothing about the provider: those are types
+     * with no market, and a failed lookup never writes a row at all.
      */
     protected function checkProviderHealth()
     {
@@ -572,79 +574,52 @@ class DiagnosePricesCommand extends Command
 
         $pricingSettings = $this->settingsService->getPricingSettings();
         $provider = $pricingSettings['price_provider'] ?? 'seat';
+        $health = $this->cacheHealth();
+        $status = $health['provider'];
 
-        // Count items in cache with valid prices
-        $cacheWithPrices = MiningPriceCache::where('sell_price', '>', 0)->count();
-        $cacheWithoutPrices = MiningPriceCache::where('sell_price', '=', 0)->count();
-        $totalCache = MiningPriceCache::count();
-        
-        // Calculate success rate
-        $successRate = $totalCache > 0 ? round(($cacheWithPrices / $totalCache) * 100, 1) : 0;
-        
-        // Determine health status
-        $status = '✅ Healthy';
-        $color = 'green';
-        
-        if ($successRate < 50) {
-            $status = '❌ Critical';
-            $color = 'red';
-        } elseif ($successRate < 80) {
-            $status = '⚠️  Degraded';
-            $color = 'yellow';
-        }
-        
         $this->table(
             ['Metric', 'Value', 'Status'],
             [
                 ['Active Provider', $provider, '📡'],
-                ['Cache Success Rate', $successRate . '%', $status],
-                ['Items Cached Successfully', $cacheWithPrices, $this->getStatusIcon($cacheWithPrices > 0)],
-                ['Items Failed to Cache', $cacheWithoutPrices, $cacheWithoutPrices > 0 ? '⚠️' : '✅'],
+                [
+                    'Refreshes',
+                    $health['provider_failing'] ? 'Failing since ' . ($status['since'] ?? 'the last run') : 'Working',
+                    $this->getStatusIcon(!$health['provider_failing']),
+                ],
+                ['Last Successful Fetch', $status['last_success'] ?? 'not recorded yet', $status['last_success'] ? '✅' : 'ℹ️'],
+                [
+                    'Last Price Written',
+                    $health['last_written'] ?? 'never',
+                    $health['last_written'] === null ? '❌' : ($health['refresh_overdue'] ? '⚠️' : '✅'),
+                ],
             ]
         );
-        
+
+        foreach ($health['reasons'] as $reason) {
+            $this->warn('  ⚠️  ' . $reason);
+        }
+
         // Provider-specific diagnostics
         if ($provider === 'janice') {
-            $apiKey = $pricingSettings['janice_api_key'] ?? '';
-            $hasKey = !empty($apiKey);
-            
+            $hasKey = !empty($pricingSettings['janice_api_key'] ?? '');
+
             $this->line("\n  <fg=cyan>Janice Provider Status:</>");
             $this->line("  API Key: " . ($hasKey ? '✅ Configured' : '❌ Not configured'));
-            
+
             if (!$hasKey) {
                 $this->warn("  ⚠️  Janice API key is missing!");
                 $this->line("  Configure it in Settings → Pricing");
-            } elseif ($cacheWithoutPrices > 10) {
-                $this->warn("  ⚠️  {$cacheWithoutPrices} items failed to get prices from Janice");
-                $this->line("  Possible reasons:");
-                $this->line("    - API key invalid or expired");
-                $this->line("    - Rate limiting");
-                $this->line("    - Network issues");
-                $this->line("  Fallback to market_prices is active");
-            }
-        } elseif ($provider === 'fuzzwork') {
-            $this->line("\n  <fg=cyan>Fuzzwork Provider Status:</>");
-            
-            if ($cacheWithoutPrices > 10) {
-                $this->warn("  ⚠️  {$cacheWithoutPrices} items failed to get prices from Fuzzwork");
-                $this->line("  Possible reasons:");
-                $this->line("    - Fuzzwork API temporarily down");
-                $this->line("    - Network issues");
-                $this->line("  Fallback to market_prices is active");
-            } else {
-                $this->info("  ✅ Fuzzwork provider working normally");
             }
         } elseif ($provider === 'seat') {
             $this->line("\n  <fg=cyan>SeAT Provider Status:</>");
             $this->info("  ✅ Using SeAT's built-in market_prices table");
             $this->line("  No external API calls required");
         }
-        
-        // Recommendations based on health
-        if ($successRate < 80 && $provider !== 'seat') {
+
+        if ($health['provider_failing'] && $provider !== 'seat') {
             $this->newLine();
-            $this->warn("  💡 Recommendation: Consider switching to 'seat' provider temporarily");
-            $this->line("  Or run: php artisan mining-manager:cache-prices --type=all --force");
+            $this->warn("  💡 Cached prices stay as they are until refreshes work again.");
+            $this->line("  Check the provider settings under Settings → Pricing, then run with --test-provider.");
         }
     }
 
@@ -653,7 +628,8 @@ class DiagnosePricesCommand extends Command
      */
     /**
      * Show complete coverage statistics for all items
-     * UPDATED: Now tracks all 357 items (was 197)
+     * Counts come from TypeIdRegistry rather than being restated here, so
+     * the report cannot drift from the registry the way it used to.
      */
     protected function showCompleteCoverage()
     {
@@ -667,51 +643,42 @@ class DiagnosePricesCommand extends Command
             // RAW ORES (Ore Value Taxation)
             'Regular Ores' => [
                 'type_ids' => TypeIdRegistry::REGULAR_ORES,
-                'total' => 45,
                 'purpose' => 'Ore value taxation',
             ],
             'Compressed Ores' => [
                 'type_ids' => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
-                'total' => 45,
                 'purpose' => 'Hauler ore taxation',
             ],
             'Moon Ores (All Variants)' => [
                 'type_ids' => TypeIdRegistry::MOON_ORES,
-                'total' => 60,
                 'purpose' => 'Moon ore taxation (all variants)',
             ],
             'Compressed Moon Ores (All Variants)' => [
                 'type_ids' => TypeIdRegistry::COMPRESSED_MOON_ORES,
-                'total' => 60,
                 'purpose' => 'Compressed moon ore taxation',
             ],
             // NOTE: Jackpot ores are already included in moon ore counts above
             // They are tracked for detection purposes but not counted separately
             'Ice (Raw + Compressed)' => [
                 'type_ids' => TypeIdRegistry::getAllIce(),
-                'total' => 16,
                 'purpose' => 'Ice value taxation',
             ],
             'Gas' => [
                 'type_ids' => TypeIdRegistry::getAllGas(),
-                'total' => 12,
                 'purpose' => 'Gas value taxation',
             ],
             
             // REFINED MATERIALS (Refined Value Taxation)
             'Minerals' => [
                 'type_ids' => TypeIdRegistry::MINERALS,
-                'total' => 8,
                 'purpose' => 'Refined ore value',
             ],
             'Moon Materials' => [
                 'type_ids' => TypeIdRegistry::getAllMoonMaterials(),
-                'total' => 20,  // Fixed: was 24, but TypeIdRegistry has 20 (4 per rarity × 5 rarities)
                 'purpose' => 'Refined moon value',
             ],
             'Ice Products' => [
                 'type_ids' => TypeIdRegistry::ICE_PRODUCTS,
-                'total' => 7,
                 'purpose' => '✨ Refined ice value',
             ],
         ];
@@ -723,7 +690,8 @@ class DiagnosePricesCommand extends Command
 
         foreach ($categories as $category => $data) {
             $typeIds = $data['type_ids'];
-            $expectedTotal = $data['total'];
+            // Derive the denominator from the registry so the two can never drift.
+            $expectedTotal = count(array_unique($typeIds));
             $totalExpected += $expectedTotal;
             
             // Count cached items
@@ -823,18 +791,30 @@ class DiagnosePricesCommand extends Command
         $this->line("  💎 Jackpot Detection: " . ($jackpotDetectionReady ? '✅ Ready' : '❌ Incomplete'));
         
         $this->newLine();
+        // Counted off the registry, like the table above. These numbers used to
+        // be typed in by hand and had drifted a long way from reality.
+        $breakdown = [
+            'Regular Ores'     => TypeIdRegistry::REGULAR_ORES,
+            'Compressed Ores'  => TypeIdRegistry::COMPRESSED_REGULAR_ORES,
+            'Moon Ores'        => TypeIdRegistry::MOON_ORES,
+            'Compressed Moon'  => TypeIdRegistry::COMPRESSED_MOON_ORES,
+            'Ice'              => TypeIdRegistry::getAllIce(),
+            'Gas'              => TypeIdRegistry::getAllGas(),
+            'Minerals'         => TypeIdRegistry::MINERALS,
+            'Moon Materials'   => TypeIdRegistry::getAllMoonMaterials(),
+            'Ice Products'     => TypeIdRegistry::ICE_PRODUCTS,
+        ];
+
         $this->line("  <fg=yellow>📊 COVERAGE BREAKDOWN:</>");
-        $this->line("  - Regular Ores: 45 items (base + variants)");
-        $this->line("  - Compressed Ores: 45 items");
-        $this->line("  - Moon Ores: 60 items (base + improved + jackpot)");
-        $this->line("  - Compressed Moon: 60 items (base + improved + jackpot)");
-        $this->line("  - Ice: 16 items");
-        $this->line("  - Gas: 12 items");
-        $this->line("  - Minerals: 8 items");
-        $this->line("  - Moon Materials: 20 items");
-        $this->line("  - Ice Products: 7 items");
+
+        $everything = [];
+        foreach ($breakdown as $label => $ids) {
+            $this->line("  - {$label}: " . count(array_unique($ids)) . " items");
+            $everything = array_merge($everything, $ids);
+        }
+
         $this->line("  ───────────────────────");
-        $this->line("  <fg=green>TOTAL: 273 UNIQUE ITEMS!</>");
+        $this->line("  <fg=green>TOTAL: " . count(array_unique($everything)) . " UNIQUE ITEMS</>");
         $this->newLine();
         $this->line("  <fg=cyan>Note:</> Jackpot ores (40 items) are included in moon ore counts above");
     }
@@ -860,26 +840,22 @@ class DiagnosePricesCommand extends Command
             ];
         }
 
-        // Check for prices without values
-        $emptyPrices = MiningPriceCache::where('sell_price', 0)->count();
-        if ($emptyPrices > 0) {
+        // Rows without a price, or keeping an older one, are not faults, so
+        // they are not raised here. What is: the provider failing, or the
+        // refresh no longer writing anything.
+        $health = $this->cacheHealth();
+        if ($health['provider_failing']) {
             $recommendations[] = [
                 '⚠️',
-                "{$emptyPrices} cached items have 0 price",
-                'Check price provider configuration or use --force to refresh',
+                'Price refreshes are failing',
+                'Check the provider settings under Settings → Pricing',
             ];
         }
-
-        // Check cache freshness
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
-        $cutoff = Carbon::now()->subMinutes($cacheDuration);
-        $stale = MiningPriceCache::where('cached_at', '<', $cutoff)->count();
-        if ($stale > 10) {
+        if ($health['refresh_overdue']) {
             $recommendations[] = [
                 '⚠️',
-                "{$stale} cached prices are stale",
-                'php artisan mining-manager:cache-prices --type=all',
+                'No price written for ' . intdiv((int) $health['minutes_since_write'], 60) . ' hours',
+                'php artisan mining-manager:cache-prices, then check its schedule is running',
             ];
         }
 
@@ -931,7 +907,7 @@ class DiagnosePricesCommand extends Command
         $this->line('  <fg=cyan>Tip:</> Run with --test-provider to test price fetching');
         $this->line('  <fg=cyan>Tip:</> Run with --show-missing to see missing type IDs');
         $this->line('  <fg=cyan>Tip:</> Run with --show-sources to see cache vs fallback usage');
-        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see all 357 items coverage');
+        $this->line('  <fg=cyan>Tip:</> Run with --show-coverage to see full coverage');
     }
 
     /**

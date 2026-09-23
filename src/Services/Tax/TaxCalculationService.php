@@ -10,11 +10,13 @@ use MiningManager\Models\MiningEvent;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
 use MiningManager\Services\TypeIdRegistry;
+use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Seat\Eveapi\Models\Character\CharacterInfo;
+use MiningManager\Services\OreClassifier;
 
 class TaxCalculationService
 {
@@ -26,13 +28,22 @@ class TaxCalculationService
     protected $settingsService;
 
     /**
+     * Draws down credit held from earlier overpayments.
+     *
+     * @var PaymentAllocationService
+     */
+    protected $allocationService;
+
+    /**
      * Constructor
      *
      * @param SettingsManagerService $settingsService
+     * @param PaymentAllocationService $allocationService
      */
-    public function __construct(SettingsManagerService $settingsService)
+    public function __construct(SettingsManagerService $settingsService, PaymentAllocationService $allocationService)
     {
         $this->settingsService = $settingsService;
+        $this->allocationService = $allocationService;
     }
 
     /**
@@ -45,6 +56,8 @@ class TaxCalculationService
     public function setCorporationContext(?int $corporationId): self
     {
         $this->settingsService->setActiveCorporation($corporationId);
+        $this->allocationService->setCorporationContext($corporationId);
+
         return $this;
     }
 
@@ -290,6 +303,22 @@ class TaxCalculationService
                     }
 
                     if ($existingTax) {
+                        // Same rule as recalculateTax: once a payment code has
+                        // gone out or money has arrived, the invoice stands.
+                        $frozenReason = $this->invoiceFreezeReason($existingTax);
+
+                        if ($frozenReason !== null) {
+                            Log::info('Mining Manager: left an issued tax record untouched during recalculation', [
+                                'mining_tax_id' => $existingTax->id,
+                                'character_id'  => $mainCharacterId,
+                                'reason'        => $frozenReason,
+                                'stored'        => (float) $existingTax->amount_owed,
+                                'recalculated'  => round($combinedTaxAmount, 2),
+                            ]);
+
+                            return;
+                        }
+
                         // Update existing
                         $existingTax->update([
                             'amount_owed' => round($combinedTaxAmount, 2),
@@ -319,6 +348,42 @@ class TaxCalculationService
                             'triggered_by' => $triggeredBy,
                         ]);
                         Log::info("Mining Manager: Calculated accumulated tax for main character {$mainCharacterId}: " . number_format($combinedTaxAmount, 2) . " ISK (from " . count($characterIds) . " characters)");
+
+                        // Mint the payment code now, before anything can change
+                        // this invoice's status.
+                        //
+                        // It used to be minted later, by whichever command
+                        // happened to pick the record up, and every one of those
+                        // filtered on status. Held credit is applied on the next
+                        // line, so an invoice it covers even in part was already
+                        // 'partial' by the time those filters ran, and fell
+                        // through all of them: no code, no invoice, no ping. The
+                        // member owed money and heard nothing.
+                        //
+                        // A code identifies the invoice. Whether anything is
+                        // still owed on it is a separate question, and not one
+                        // that should decide if it gets an identity at all.
+                        try {
+                            app(TaxCodeGeneratorService::class)->generateTaxCode($newTax);
+                        } catch (\Exception $e) {
+                            // Never block a tax record over its code. The invoice
+                            // run will still mint one if this failed.
+                            Log::warning('Mining Manager: could not mint a tax code at creation', [
+                                'mining_tax_id' => $newTax->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+
+                        // Someone who overpaid last period has the balance
+                        // sitting as credit. Draw it down now so the invoice
+                        // they are about to be shown is already net of it,
+                        // rather than billing them for money we are holding.
+                        $creditApplied = $this->allocationService->applyCreditsToTax($newTax);
+
+                        if ($creditApplied > 0) {
+                            $newTax->refresh();
+                            Log::info("Mining Manager: applied " . number_format($creditApplied, 2) . " ISK of held credit to invoice {$newTax->id}");
+                        }
 
                         // B1a: announce on the cross-plugin event bus so other
                         // plugins (Discord Pings, HR Manager, etc.) can react.
@@ -643,8 +708,23 @@ class TaxCalculationService
      * @param int|null $characterCorpId Corporation ID of the character being taxed
      * @return float
      */
-    public function getTaxRateForOre(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForOre(int $typeId, ?int $characterCorpId = null, $miningEntry = null): float
     {
+        // A configured rate is not the same as a rate that applies. The tax
+        // selector decides which categories are charged at all, and this method
+        // used to skip that question entirely, so it answered "10%" for ore on
+        // an install that taxes no ore. Import and the daily summaries both ask,
+        // and the daily summaries are what invoices are built from, so this was
+        // the odd one out and the only place the three could disagree.
+        //
+        // $miningEntry matters for the only_corp_moon_ore rule, which needs to
+        // know where the ore came from. Callers that have the row should pass
+        // it; without it that rule cannot be evaluated and moon ore falls back
+        // to the broader all_moon_ore setting.
+        if (! $this->shouldTaxOre($typeId, $miningEntry)) {
+            return 0.0;
+        }
+
         // Get tax rates for this corporation (applies guest multiplier if applicable)
         $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
 
@@ -756,43 +836,7 @@ class TaxCalculationService
      */
     private function getOreCategory(int $typeId): string
     {
-        // Check each category using TypeIdRegistry
-        if (TypeIdRegistry::isMoonOre($typeId)) {
-            return 'moon';
-        }
-        
-        if (TypeIdRegistry::isIce($typeId)) {
-            return 'ice';
-        }
-        
-        if (TypeIdRegistry::isGas($typeId)) {
-            return 'gas';
-        }
-        
-        if (in_array($typeId, TypeIdRegistry::ABYSSAL_ORES)) {
-            return 'abyssal_ore';
-        }
-
-        if (TypeIdRegistry::isTriglavianOre($typeId)) {
-            return 'triglavian_ore';
-        }
-
-        // Check if it's one of the new ore types
-        if (TypeIdRegistry::isOreProspectingArrayOre($typeId)) {
-            return 'ore';
-        }
-        
-        if (TypeIdRegistry::isDeepSpaceSurveyOre($typeId)) {
-            return 'ore';
-        }
-        
-        // Check if it's a regular ore
-        if (TypeIdRegistry::isRegularOre($typeId)) {
-            return 'ore';
-        }
-        
-        // Default fallback
-        return 'ore';
+        return OreClassifier::taxCategory($typeId);
     }
 
     /**
@@ -1002,6 +1046,35 @@ class TaxCalculationService
      * @param Carbon $month
      * @return float
      */
+    /**
+     * Why a tax record must not have its amount rewritten, or null when it may.
+     *
+     * Two things pin an invoice: a payment code, because that code is already in
+     * a member's hands and is what the wallet matcher looks for; and any money
+     * received against it, because a changed total would silently re-open
+     * something that was settled.
+     *
+     * @return string|null
+     */
+    private function invoiceFreezeReason(MiningTax $tax): ?string
+    {
+        if (in_array($tax->status, ['paid', 'partial'], true)) {
+            return 'status:' . $tax->status;
+        }
+
+        if ((float) $tax->amount_paid > 0) {
+            return 'payment received';
+        }
+
+        // Any code, whatever its status. 'used' means it was redeemed, which is
+        // an even stronger reason to leave the invoice alone than 'active'.
+        $hasCode = DB::table('mining_tax_codes')
+            ->where('mining_tax_id', $tax->id)
+            ->exists();
+
+        return $hasCode ? 'tax code issued' : null;
+    }
+
     public function recalculateTax(int $characterId, Carbon $month): float
     {
         $startDate = $month->copy()->startOfMonth();
@@ -1021,6 +1094,24 @@ class TaxCalculationService
         }
 
         if ($tax) {
+            // An invoice that has been issued is a record of what somebody was
+            // asked to pay. Once a payment code exists, or money has landed
+            // against it, the amount stops being a derived figure and becomes a
+            // fact, so recalculation reports the new number without writing it.
+            $frozenReason = $this->invoiceFreezeReason($tax);
+
+            if ($frozenReason !== null) {
+                Log::info('Mining Manager: skipped recalculating an issued tax record', [
+                    'mining_tax_id' => $tax->id,
+                    'character_id'  => $characterId,
+                    'reason'        => $frozenReason,
+                    'stored'        => (float) $tax->amount_owed,
+                    'recalculated'  => round($taxAmount),
+                ]);
+
+                return (float) $tax->amount_owed;
+            }
+
             $tax->update([
                 'amount_owed' => round($taxAmount),
                 'calculated_at' => Carbon::now(),

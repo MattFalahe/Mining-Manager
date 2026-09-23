@@ -117,8 +117,10 @@ return [
         // Cache price data duration (minutes)
         'cache_duration' => 240,
 
-        // Use refined mineral values instead of raw ore
-        'use_refined_value' => false,
+        // Which value the Extraction Simulator and Find Moons lead with. Raw
+        // moon ore barely trades, so its market price says less about a moon
+        // than what the ore reprocesses into.
+        'use_refined_value' => true,
 
         // Refining efficiency percentage (for refined value calculations)
         'refining_efficiency' => 87.5,

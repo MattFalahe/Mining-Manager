@@ -19,6 +19,7 @@ use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
+use MiningManager\Services\OreClassifier;
 
 class DiagnosticController extends Controller
 {
@@ -297,6 +298,51 @@ class DiagnosticController extends Controller
                     'label'   => 'Planner data sanity',
                     'status'  => 'warn',
                     'message' => 'Could not evaluate planner data: ' . $e->getMessage(),
+                ];
+            }
+        }
+
+        // 8. The flags Find Moons keeps on moons: claims and the watchlist.
+        $hasClaims = \Schema::hasTable('mining_manager_moon_claims');
+        $hasWatchlist = \Schema::hasTable('mining_manager_moon_watchlist');
+        $checks[] = [
+            'label'   => 'Migrations 000028 / 000029: moon claim and watchlist tables',
+            'status'  => ($hasClaims && $hasWatchlist) ? 'ok' : 'fail',
+            'message' => ($hasClaims && $hasWatchlist)
+                ? 'Both present — Find Moons can mark moons another corporation holds and keep a watchlist.'
+                : 'Table(s) missing — run migrations. Find Moons will refuse to save a claim or a watched moon.',
+        ];
+
+        // Both flags are dropped once one of our refineries drills the moon,
+        // by the extraction update. Anything left here means that run has not
+        // happened since the moon was taken.
+        if ($hasClaims || $hasWatchlist) {
+            try {
+                $ourMoons = array_keys(app(\MiningManager\Services\Moon\MoonFinderService::class)->refineryMoons());
+                $stale = 0;
+                if (!empty($ourMoons)) {
+                    if ($hasClaims) {
+                        $stale += \MiningManager\Models\MoonClaim::whereNull('cleared_at')
+                            ->whereIn('moon_id', $ourMoons)
+                            ->count();
+                    }
+                    if ($hasWatchlist) {
+                        $stale += \MiningManager\Models\MoonWatch::whereIn('moon_id', $ourMoons)->count();
+                    }
+                }
+
+                $checks[] = [
+                    'label'   => 'Moon flags: claims and watched moons we now drill',
+                    'status'  => $stale === 0 ? 'ok' : 'warn',
+                    'message' => $stale === 0
+                        ? 'Nothing left flagged on a moon of ours.'
+                        : "{$stale} flag(s) still sit on moons one of our refineries drills. The pages already ignore them; the extraction update clears them on its next run.",
+                ];
+            } catch (\Throwable $e) {
+                $checks[] = [
+                    'label'   => 'Moon flags: claims and watched moons we now drill',
+                    'status'  => 'warn',
+                    'message' => 'Could not evaluate the moon flags: ' . $e->getMessage(),
                 ];
             }
         }
@@ -596,40 +642,28 @@ class DiagnosticController extends Controller
                 return redirect()->back()->with('error', 'No test characters found. Generate characters first.');
             }
 
-            // Define ore types with their IDs and categories
+            // Real type ids, each one checked against TypeIdRegistry. Only the id is
+            // stored; the flags further down are worked out the way the importers
+            // work them out, so generated rows classify exactly like real mining.
             $oreTypes = [
-                // Moon Ores (R64 - Exceptional)
-                ['id' => 45506, 'name' => 'Xenotime', 'rarity' => 'r64', 'is_moon_ore' => true],
-                ['id' => 46676, 'name' => 'Monazite', 'rarity' => 'r64', 'is_moon_ore' => true],
-
-                // Moon Ores (R32 - Rare)
-                ['id' => 45492, 'name' => 'Chromite', 'rarity' => 'r32', 'is_moon_ore' => true],
-                ['id' => 46678, 'name' => 'Platinum', 'rarity' => 'r32', 'is_moon_ore' => true],
-
-                // Moon Ores (R16 - Uncommon)
-                ['id' => 45494, 'name' => 'Cobaltite', 'rarity' => 'r16', 'is_moon_ore' => true],
-                ['id' => 46680, 'name' => 'Titanite', 'rarity' => 'r16', 'is_moon_ore' => true],
-
-                // Moon Ores (R8 - Common)
-                ['id' => 45490, 'name' => 'Zeolites', 'rarity' => 'r8', 'is_moon_ore' => true],
-                ['id' => 46682, 'name' => 'Scheelite', 'rarity' => 'r8', 'is_moon_ore' => true],
-
-                // Moon Ores (R4 - Ubiquitous)
-                ['id' => 45488, 'name' => 'Bitumens', 'rarity' => 'r4', 'is_moon_ore' => true],
-                ['id' => 46684, 'name' => 'Sylvite', 'rarity' => 'r4', 'is_moon_ore' => true],
-
-                // Regular Ores
-                ['id' => 1230, 'name' => 'Veldspar', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1228, 'name' => 'Scordite', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-                ['id' => 1224, 'name' => 'Pyroxeres', 'rarity' => null, 'is_moon_ore' => false, 'is_ore' => true],
-
-                // Ice
-                ['id' => 16262, 'name' => 'Clear Icicle', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-                ['id' => 17975, 'name' => 'Blue Ice', 'rarity' => null, 'is_moon_ore' => false, 'is_ice' => true],
-
-                // Gas
-                ['id' => 25268, 'name' => 'Mykoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
-                ['id' => 25272, 'name' => 'Cytoserocin', 'rarity' => null, 'is_moon_ore' => false, 'is_gas' => true],
+                45510 => 'Xenotime (R64)',
+                45511 => 'Monazite (R64)',
+                45506 => 'Cinnabar (R32)',
+                45503 => 'Zircon (R32)',
+                45501 => 'Chromite (R16)',
+                45498 => 'Otavite (R16)',
+                45494 => 'Cobaltite (R8)',
+                45497 => 'Scheelite (R8)',
+                45492 => 'Bitumens (R4)',
+                45491 => 'Sylvite (R4)',
+                1230 => 'Veldspar',
+                1228 => 'Scordite',
+                1224 => 'Pyroxeres',
+                16262 => 'Clear Icicle',
+                16264 => 'Blue Ice',
+                30370 => 'Fullerite-C50',
+                28694 => 'Amber Mykoserocin',
+                25268 => 'Amber Cytoserocin',
             ];
 
             // Solar system IDs (various null sec systems)
@@ -642,7 +676,7 @@ class DiagnosticController extends Controller
                     $date = Carbon::now()->subDays($day);
 
                     for ($entry = 0; $entry < $entriesPerDay; $entry++) {
-                        $ore = $oreTypes[array_rand($oreTypes)];
+                        $typeId = array_rand($oreTypes);
                         $quantity = rand(1000, 50000);
                         $solarSystem = $solarSystems[array_rand($solarSystems)];
 
@@ -650,14 +684,19 @@ class DiagnosticController extends Controller
                             [
                                 'character_id' => $character->character_id,
                                 'date' => $date->format('Y-m-d'),
-                                'type_id' => $ore['id'],
+                                'type_id' => $typeId,
                                 'observer_id' => null,
                             ],
                             [
                                 'quantity' => $quantity,
                                 'solar_system_id' => $solarSystem,
                                 'processed_at' => $date,
-                                'is_moon_ore' => $ore['is_moon_ore'] ?? false,
+                                'is_moon_ore' => TypeIdRegistry::isMoonOre($typeId),
+                                'is_ice' => TypeIdRegistry::isIce($typeId),
+                                'is_gas' => TypeIdRegistry::isGas($typeId),
+                                'is_abyssal' => OreClassifier::isAbyssal($typeId),
+                                'is_triglavian' => TypeIdRegistry::isTriglavianOre($typeId),
+                                'ore_category' => OreClassifier::category($typeId),
                                 'created_at' => $date,
                                 'updated_at' => $date,
                             ]
@@ -1057,95 +1096,60 @@ class DiagnosticController extends Controller
     }
 
     /**
-     * Get price cache health statistics
-     * FIXED: Uses settingsService for cache duration instead of wrong Setting key
+     * Get price cache health statistics, judged the way the Health Checks tab
+     * and diagnose-prices judge them (PriceProviderService::cacheHealth).
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function getCacheHealth()
     {
         try {
-            // Get cache duration from settings service (correct key path)
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
+            $health = $this->priceService->cacheHealth();
 
-            // Get total cached items
-            $totalCached = MiningPriceCache::count();
+            $column = PriceProviderService::cachedPriceColumn(
+                $this->settingsService->getPricingSettings()['price_type'] ?? 'sell'
+            );
 
-            // Get fresh items (within cache duration)
-            $freshCutoff = now()->subMinutes($cacheDuration);
-            $freshItems = MiningPriceCache::where('cached_at', '>=', $freshCutoff)->count();
-
-            // Get stale items
-            $staleItems = $totalCached - $freshItems;
-
-            // Get items with zero prices (potential issues)
-            $zeroPriceItems = MiningPriceCache::where(function($query) {
-                $query->where('sell_price', '<=', 0)
-                      ->where('buy_price', '<=', 0)
-                      ->where('average_price', '<=', 0);
-            })->count();
-
-            // Get oldest cache entry
-            $oldestCache = MiningPriceCache::oldest('cached_at')->first();
-            $oldestCacheAge = $oldestCache ? now()->diffInHours($oldestCache->cached_at) : 0;
-
-            // Get newest cache entry
-            $newestCache = MiningPriceCache::latest('cached_at')->first();
-            $newestCacheAge = $newestCache ? now()->diffInMinutes($newestCache->cached_at) : 0;
-
-            // Check essential ore types
-            $essentialOres = [
+            // Minerals every refined value needs. Raw ore is left out on
+            // purpose: plenty of it has no market at all, which is normal.
+            $essentialMinerals = [
                 34 => 'Tritanium',
                 35 => 'Pyerite',
                 36 => 'Mexallon',
                 37 => 'Isogen',
-                1230 => 'Veldspar',
-                45506 => 'Bistot',
             ];
 
             $missingEssential = [];
-            foreach ($essentialOres as $typeId => $name) {
-                $cached = MiningPriceCache::where('type_id', $typeId)->first();
-                if (!$cached) {
+            foreach ($essentialMinerals as $typeId => $name) {
+                if (!MiningPriceCache::where('type_id', $typeId)->where($column, '>', 0)->exists()) {
                     $missingEssential[] = ['type_id' => $typeId, 'name' => $name];
                 }
             }
 
-            // Determine health status
-            $healthStatus = 'healthy';
-            $issues = [];
+            $healthStatus = $health['status'];
+            $issues = $health['reasons'];
 
-            if ($totalCached === 0) {
-                $healthStatus = 'critical';
-                $issues[] = 'No prices cached. Run: php artisan mining-manager:cache-prices';
-            } elseif ($staleItems > ($totalCached * 0.5)) {
-                $healthStatus = 'warning';
-                $issues[] = 'More than 50% of cache is stale. Consider running cache refresh.';
-            } elseif (!empty($missingEssential)) {
-                $healthStatus = 'warning';
-                $issues[] = 'Essential ore types missing from cache.';
-            }
-
-            if ($zeroPriceItems > 0) {
-                $issues[] = "{$zeroPriceItems} items have zero prices.";
+            if (!empty($missingEssential)) {
+                $issues[] = 'Essential mineral prices are missing from the cache.';
+                if ($healthStatus === 'healthy') {
+                    $healthStatus = 'warning';
+                }
             }
 
             return response()->json([
                 'success' => true,
                 'health_status' => $healthStatus,
                 'statistics' => [
-                    'total_cached' => $totalCached,
-                    'fresh_items' => $freshItems,
-                    'stale_items' => $staleItems,
-                    'zero_price_items' => $zeroPriceItems,
-                    'cache_duration_minutes' => $cacheDuration,
-                    'oldest_cache_hours' => $oldestCacheAge,
-                    'newest_cache_minutes' => $newestCacheAge,
+                    'total_cached' => $health['total'],
+                    'fresh_items' => $health['fresh'],
+                    'keeping_older' => $health['keeping_older'],
+                    'no_market' => $health['no_market'],
+                    'cache_duration_minutes' => $health['cache_duration_minutes'],
+                    'last_written' => $health['last_written'],
                 ],
                 'missing_essential' => $missingEssential,
                 'issues' => $issues,
-                'recommendations' => $this->getCacheRecommendations($totalCached, $staleItems, $missingEssential)
+                'recommendations' => $this->getCacheRecommendations($health, $missingEssential)
             ]);
 
         } catch (\Exception $e) {
@@ -1160,34 +1164,43 @@ class DiagnosticController extends Controller
     /**
      * Get cache recommendations based on health
      *
-     * @param int $totalCached
-     * @param int $staleItems
+     * @param array $health from PriceProviderService::cacheHealth()
      * @param array $missingEssential
      * @return array
      */
-    protected function getCacheRecommendations(int $totalCached, int $staleItems, array $missingEssential): array
+    protected function getCacheRecommendations(array $health, array $missingEssential): array
     {
         $recommendations = [];
 
-        if ($totalCached === 0) {
+        if ($health['total'] === 0) {
             $recommendations[] = [
                 'severity' => 'critical',
                 'message' => 'Price cache is empty. Tax calculations will fail or return zero values.',
                 'action' => 'Run: php artisan mining-manager:cache-prices --type=all'
             ];
-        } elseif ($staleItems > ($totalCached * 0.7)) {
+        }
+
+        if ($health['provider_failing']) {
             $recommendations[] = [
                 'severity' => 'warning',
-                'message' => 'Most of your price cache is stale.',
-                'action' => 'Run: php artisan mining-manager:cache-prices --force'
+                'message' => 'Price refreshes are failing. Cached prices stay as they are until they work again.',
+                'action' => 'Check the price provider settings under Settings, Pricing'
+            ];
+        }
+
+        if ($health['refresh_overdue']) {
+            $recommendations[] = [
+                'severity' => 'warning',
+                'message' => 'No price has been written for longer than the scheduled refresh allows.',
+                'action' => 'Run: php artisan mining-manager:cache-prices'
             ];
         }
 
         if (!empty($missingEssential)) {
             $recommendations[] = [
                 'severity' => 'warning',
-                'message' => 'Essential ore types are missing from cache.',
-                'action' => 'Run: php artisan mining-manager:cache-prices --type=ore'
+                'message' => 'Essential mineral prices are missing from the cache.',
+                'action' => 'Run: php artisan mining-manager:cache-prices --type=minerals'
             ];
         }
 
@@ -1195,7 +1208,7 @@ class DiagnosticController extends Controller
             $recommendations[] = [
                 'severity' => 'info',
                 'message' => 'Cache health looks good!',
-                'action' => 'Schedule regular cache refreshes with a cron job for best results.'
+                'action' => 'Nothing to do. The scheduled refresh keeps it current.'
             ];
         }
 
@@ -1554,6 +1567,10 @@ class DiagnosticController extends Controller
             // Settings Health alongside the other groups.
             $settingGroups = [
                 'General' => $this->settingsService->getGeneralSettings(),
+                // Feature switches decide whole areas, upfront payments and
+                // data export among them, so their source matters as much as
+                // any other setting's.
+                'Features' => $this->settingsService->getFeatureFlags(),
                 'Tax Rates' => $this->settingsService->getTaxRates(),
                 'Pricing' => $this->settingsService->getPricingSettings(),
                 'Payment' => $this->settingsService->getPaymentSettings(),
@@ -1757,6 +1774,7 @@ class DiagnosticController extends Controller
             $storedTotalTax = 0;
             $storedTotalQuantity = 0;
             $storedWarnings = [];
+            $taxSelector = $this->settingsService->getTaxSelector();
 
             foreach ($dailySummaries as $summary) {
                 $oreEntries = $summary->ore_types ?? [];
@@ -1768,11 +1786,14 @@ class DiagnosticController extends Controller
                     if (($ore['unit_price'] ?? 0) == 0 && ($ore['quantity'] ?? 0) > 0) {
                         $warnings[] = 'Zero price — pricing may have failed';
                     }
-                    if (($ore['is_taxable'] ?? false) && ($ore['effective_rate'] ?? 0) == 0) {
-                        $warnings[] = 'Taxable ore with 0% effective rate';
-                    }
-                    if (($ore['total_value'] ?? 0) > 0 && ($ore['estimated_tax'] ?? 0) == 0 && ($ore['is_taxable'] ?? true)) {
-                        $warnings[] = 'Has value but zero tax — check tax rate config';
+                    // A zero rate is usually the tax selector doing its job. An
+                    // install that only taxes corp moon ore rates everything else
+                    // at nothing, moon ore from somebody else's moon is rated at
+                    // nothing under that same rule, and mining that arrives after
+                    // its period was invoiced is left untaxed on purpose. Warning
+                    // on all of those buried the one case worth reading.
+                    if ($this->taxedCategoryCameOutAtZero($ore, $taxSelector)) {
+                        $warnings[] = 'This category is taxed and has a rate, but this ore came out at 0%. Expected on moon ore from another corporation\'s moon, or on mining that reached the ledger after its period was invoiced.';
                     }
                     $ore['warnings'] = $warnings;
                     if (!empty($warnings)) {
@@ -2242,6 +2263,9 @@ class DiagnosticController extends Controller
                 $pipeline['pending_payments'] = ['status' => 'error', 'error' => $e->getMessage()];
             }
 
+            // Step 4b: Payment reconciliation
+            $pipeline['payment_reconciliation'] = $this->reconcilePayments();
+
             // Step 5: Overdue check
             $overdueCount = $taxRecords->filter(fn($t) => $t->isOverdue())->count();
             $pipeline['overdue'] = [
@@ -2290,6 +2314,131 @@ class DiagnosticController extends Controller
         } catch (\Exception $e) {
             Log::error('Tax pipeline diagnostic failed', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Check that credited payments still add up, from the cutover forward.
+     *
+     * Every payment applied since the allocation ledger shipped writes a row
+     * per invoice it touched, so an invoice's amount_paid should equal the sum
+     * of its allocations. A mismatch means something credited an invoice
+     * without going through the allocator, which is the failure mode this
+     * whole mechanism exists to prevent.
+     *
+     * Deliberately scoped to invoices settled after the cutover. Older records
+     * were credited by a pipeline that kept no such breakdown, so they cannot
+     * be reconciled and are not something to raise alarms about now.
+     */
+    /**
+     * Whether a zero effective rate on one ore is worth remarking on.
+     *
+     * Only when the category is switched on in the tax selector and carries a
+     * rate above zero. Everything else is configuration, not a fault. Moon ore
+     * is left out entirely while "only corporation moon ore" is set, because a
+     * zero there means the ore came off somebody else's moon, which is the
+     * setting working.
+     */
+    private function taxedCategoryCameOutAtZero(array $ore, array $taxSelector): bool
+    {
+        if (($ore['effective_rate'] ?? 0) != 0 || ($ore['tax_rate'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $category = (string) ($ore['category'] ?? '');
+
+        if (str_starts_with($category, 'moon')) {
+            if (!empty($taxSelector['only_corp_moon_ore']) || !empty($taxSelector['no_moon_ore'])) {
+                return false;
+            }
+
+            return !empty($taxSelector['all_moon_ore']);
+        }
+
+        return match ($category) {
+            'ore' => !empty($taxSelector['ore']),
+            'ice' => !empty($taxSelector['ice']),
+            'gas' => !empty($taxSelector['gas']),
+            'abyssal', 'abyssal_ore' => !empty($taxSelector['abyssal_ore']),
+            'triglavian', 'triglavian_ore' => !empty($taxSelector['triglavian_ore']),
+            default => false,
+        };
+    }
+
+    private function reconcilePayments(): array
+    {
+        try {
+            $allocator = app(\MiningManager\Services\Tax\PaymentAllocationService::class);
+            $epoch = $allocator->getDedupEpoch();
+
+            if (!$epoch) {
+                return [
+                    'status' => 'warning',
+                    'message' => 'No verification cutover is recorded, so nothing can be reconciled.',
+                ];
+            }
+
+            // Invoices raised after the cutover only. One raised before it can
+            // carry a payment the old pipeline credited without a breakdown, and
+            // paying off the rest afterwards would leave that part looking
+            // unexplained for ever.
+            $taxes = \MiningManager\Models\MiningTax::where('created_at', '>=', $epoch)
+                ->whereIn('status', ['paid', 'partial'])
+                ->get(['id', 'character_id', 'amount_owed', 'amount_paid', 'status']);
+
+            if ($taxes->isEmpty()) {
+                return [
+                    'status' => 'pass',
+                    'cutover' => $epoch->toDateTimeString(),
+                    'checked' => 0,
+                    'message' => 'No invoice raised since the cutover has been paid yet.',
+                ];
+            }
+
+            $allocated = \MiningManager\Models\PaymentAllocation::whereIn('mining_tax_id', $taxes->pluck('id'))
+                ->selectRaw('mining_tax_id, SUM(amount) as total')
+                ->groupBy('mining_tax_id')
+                ->pluck('total', 'mining_tax_id');
+
+            $discrepancies = [];
+
+            foreach ($taxes as $tax) {
+                $expected = round((float) ($allocated[$tax->id] ?? 0), 2);
+                $actual = round((float) $tax->amount_paid, 2);
+
+                // A tolerance of 1 ISK matches the settled threshold used when
+                // applying payments, so decimal dust does not read as a fault.
+                if (abs($expected - $actual) < 1.0) {
+                    continue;
+                }
+
+                $discrepancies[] = [
+                    'tax_id' => (int) $tax->id,
+                    'character_id' => (int) $tax->character_id,
+                    'amount_paid' => $actual,
+                    'sum_of_allocations' => $expected,
+                    'difference' => round($actual - $expected, 2),
+                ];
+            }
+
+            $orphanClaims = \MiningManager\Models\ProcessedTransaction::where('matched_at', '>=', $epoch)
+                ->whereNotIn('transaction_id', function ($query) {
+                    $query->select('transaction_id')
+                        ->from('mining_manager_payment_allocations')
+                        ->whereNotNull('transaction_id');
+                })
+                ->count();
+
+            return [
+                'status' => empty($discrepancies) && $orphanClaims === 0 ? 'pass' : 'warning',
+                'cutover' => $epoch->toDateTimeString(),
+                'checked' => $taxes->count(),
+                'discrepancies' => array_slice($discrepancies, 0, 20),
+                'discrepancy_count' => count($discrepancies),
+                'claims_without_allocations' => $orphanClaims,
+            ];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'error' => $e->getMessage()];
         }
     }
 
@@ -2688,18 +2837,68 @@ class DiagnosticController extends Controller
                 ];
             }
 
-            // 4. Price cache entries with all-zero prices
-            $zeroPrices = MiningPriceCache::where('sell_price', '<=', 0)
-                ->where('buy_price', '<=', 0)
-                ->where('average_price', '<=', 0)
-                ->count();
+            // 4. Mined ore that ends up valued short for want of a price
+            //
+            // Which price matters depends on how ore is valued. By refined
+            // value, the default, an ore is worth what it reprocesses into, and
+            // its own raw price is never used: raw ore mostly has no market at
+            // all, since it is traded compressed or refined, so a raw ore with
+            // no price is the true state of the market rather than a fault.
+            // What undervalues a bill there is a refined material with no price.
+            // By ore price the raw price is what gets billed, so that is the one
+            // to watch.
+            //
+            // Either way only ore with reprocessing materials is considered.
+            // Something that reprocesses into nothing and has no market cannot
+            // be valued by any route, and saying so every day would be noise.
+            $valuationMethod = $this->settingsService->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price';
+            $since = Carbon::now()->subDays(30)->toDateString();
 
-            if ($zeroPrices > 0) {
+            // Same test OreValuationService makes: minerals, or else the ore.
+            if ($valuationMethod !== 'mineral_price') {
+                $unpricedCount = DB::table('mining_price_cache as pc')
+                    ->join('mining_ledger as ml', 'ml.type_id', '=', 'pc.type_id')
+                    ->where('pc.sell_price', '<=', 0)
+                    ->where('pc.buy_price', '<=', 0)
+                    ->where('pc.average_price', '<=', 0)
+                    ->where('ml.date', '>=', $since)
+                    ->whereNull('ml.deleted_at')
+                    ->whereExists(function ($query) {
+                        $query->select(DB::raw(1))
+                            ->from('invTypeMaterials')
+                            ->whereColumn('invTypeMaterials.typeID', 'pc.type_id');
+                    })
+                    ->distinct()
+                    ->count('pc.type_id');
+                $unpricedMessage = 'Ore types mined in the last 30 days that the price provider has no price for, so they are valued at nothing';
+            } else {
+                $unpricedCount = DB::table('invTypeMaterials as m')
+                    ->whereIn('m.typeID', function ($query) use ($since) {
+                        $query->select('type_id')
+                            ->from('mining_ledger')
+                            ->where('date', '>=', $since)
+                            ->whereNull('deleted_at');
+                    })
+                    ->leftJoin('mining_price_cache as pc', 'pc.type_id', '=', 'm.materialTypeID')
+                    ->where(function ($query) {
+                        $query->whereNull('pc.type_id')
+                            ->orWhere(function ($zero) {
+                                $zero->where('pc.sell_price', '<=', 0)
+                                    ->where('pc.buy_price', '<=', 0)
+                                    ->where('pc.average_price', '<=', 0);
+                            });
+                    })
+                    ->distinct()
+                    ->count('m.materialTypeID');
+                $unpricedMessage = 'Refined materials that ore mined in the last 30 days breaks down into have no price, so that ore is valued short';
+            }
+
+            if ($unpricedCount > 0) {
                 $issues[] = [
                     'category' => 'Zero Price Cache',
                     'severity' => 'warning',
-                    'count' => $zeroPrices,
-                    'message' => 'Price cache entries with all prices at zero',
+                    'count' => $unpricedCount,
+                    'message' => $unpricedMessage,
                 ];
             }
 
@@ -2747,10 +2946,18 @@ class DiagnosticController extends Controller
                 ];
             }
 
-            // 7. Duplicate mining entries (same character, date, type_id, solar_system)
+            // 7. Duplicate mining entries from the same source
+            //
+            // Two rows for one character, day, ore and system are normal: the
+            // character endpoint and the observer endpoint both report the same
+            // mining, and cross-source dedup keeps the personal row for the
+            // remainder rather than deleting it. They are told apart by
+            // observer_id, so that belongs in the grouping. The rows dedup did
+            // resolve are soft deleted, and are not duplicates of anything.
             $duplicates = DB::table('mining_ledger')
-                ->select('character_id', 'date', 'type_id', 'solar_system_id', DB::raw('COUNT(*) as dupe_count'))
-                ->groupBy('character_id', 'date', 'type_id', 'solar_system_id')
+                ->whereNull('deleted_at')
+                ->select('character_id', 'date', 'type_id', 'solar_system_id', 'observer_id', DB::raw('COUNT(*) as dupe_count'))
+                ->groupBy('character_id', 'date', 'type_id', 'solar_system_id', 'observer_id')
                 ->havingRaw('COUNT(*) > 1')
                 ->count();
 
@@ -2759,7 +2966,7 @@ class DiagnosticController extends Controller
                     'category' => 'Duplicate Entries',
                     'severity' => 'warning',
                     'count' => $duplicates,
-                    'message' => 'Potential duplicate mining ledger entries (same character+date+type+system)',
+                    'message' => 'Duplicate mining ledger entries from one source (same character+date+type+system+observer)',
                 ];
             }
 
@@ -2833,6 +3040,43 @@ class DiagnosticController extends Controller
                     'count' => $orphanCargoRows,
                     'message' => 'corporation_assets rows with location_flag=MoonMaterialBay but the parent structure is missing or not a Metenox (type 81826).',
                 ];
+            }
+
+            // 11. Account balances that cannot be right: less than nothing left,
+            // or more left than was ever banked.
+            if (\Schema::hasTable('mining_manager_payment_credits')) {
+                $impossibleBalances = DB::table('mining_manager_payment_credits')
+                    ->where(function ($q) {
+                        $q->where('remaining', '<', 0)
+                          ->orWhereColumn('remaining', '>', 'amount');
+                    })
+                    ->count();
+                if ($impossibleBalances > 0) {
+                    $issues[] = [
+                        'category' => 'Impossible Account Balances',
+                        'severity' => 'error',
+                        'count' => $impossibleBalances,
+                        'message' => 'Held balance rows with a remaining amount below zero or above what was banked.',
+                    ];
+                }
+            }
+
+            // 12. Refunds whose balance row is gone. The Balances tab lists
+            // refunds under their balance, so these would never be shown.
+            if (\Schema::hasTable('mining_manager_payment_refunds') && \Schema::hasTable('mining_manager_payment_credits')) {
+                $orphanRefunds = DB::table('mining_manager_payment_refunds as r')
+                    ->leftJoin('mining_manager_payment_credits as c', 'c.id', '=', 'r.credit_id')
+                    ->whereNotNull('r.credit_id')
+                    ->whereNull('c.id')
+                    ->count();
+                if ($orphanRefunds > 0) {
+                    $issues[] = [
+                        'category' => 'Orphan Refunds',
+                        'severity' => 'warning',
+                        'count' => $orphanRefunds,
+                        'message' => 'Refund rows whose account balance row no longer exists, so the Balances tab cannot show them.',
+                    ];
+                }
             }
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -3172,19 +3416,17 @@ class DiagnosticController extends Controller
     private function systemStatusPriceCache(): array
     {
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
-
-        $totalCached = MiningPriceCache::count();
-        $freshCount = MiningPriceCache::where('cached_at', '>=', now()->subMinutes($cacheDuration))->count();
-        $staleCount = $totalCached - $freshCount;
+        $health = $this->priceService->cacheHealth();
 
         $result = [
-            'total_cached' => $totalCached,
-            'fresh' => $freshCount,
-            'stale' => $staleCount,
-            'cache_duration_minutes' => $cacheDuration,
-            'status' => $staleCount === 0 && $totalCached > 0 ? 'healthy'
-                : ($totalCached === 0 ? 'critical' : 'warning'),
+            'total_cached' => $health['total'],
+            'fresh' => $health['fresh'],
+            'keeping_older' => $health['keeping_older'],
+            'no_market' => $health['no_market'],
+            'last_written' => $health['last_written'],
+            'cache_duration_minutes' => $health['cache_duration_minutes'],
+            'status' => $health['status'],
+            'reasons' => $health['reasons'],
             'provider' => $pricingSettings['price_provider'] ?? 'seat',
         ];
 
@@ -3291,6 +3533,27 @@ class DiagnosticController extends Controller
             ? DB::table('metenox_cargo_alert_state')->count()
             : 0;
 
+        // Payments and the moon planner, guarded the same way for installs
+        // part way through their migrations.
+        $paymentAllocations = \Schema::hasTable('mining_manager_payment_allocations')
+            ? DB::table('mining_manager_payment_allocations')->count()
+            : 0;
+        $balancesHeld = \Schema::hasTable('mining_manager_payment_credits')
+            ? DB::table('mining_manager_payment_credits')->where('remaining', '>', 0)->count()
+            : 0;
+        $refundsPending = \Schema::hasTable('mining_manager_payment_refunds')
+            ? DB::table('mining_manager_payment_refunds')->where('status', 'pending')->count()
+            : 0;
+        $plannedPulls = \Schema::hasTable('moon_extraction_plans')
+            ? DB::table('moon_extraction_plans')->whereIn('status', ['planned', 'confirmed'])->count()
+            : 0;
+        $moonClaims = \Schema::hasTable('mining_manager_moon_claims')
+            ? DB::table('mining_manager_moon_claims')->whereNull('cleared_at')->count()
+            : 0;
+        $watchedMoons = \Schema::hasTable('mining_manager_moon_watchlist')
+            ? DB::table('mining_manager_moon_watchlist')->count()
+            : 0;
+
         return [
             'mining_ledger' => DB::table('mining_ledger')->count(),
             'mining_taxes' => DB::table('mining_taxes')->count(),
@@ -3302,6 +3565,12 @@ class DiagnosticController extends Controller
             'metenox_structures'    => $metenoxStructures,
             'metenox_cargo_rows'    => $metenoxCargoRows,
             'metenox_alert_latches' => $metenoxAlertLatches,
+            'payment_allocations'   => $paymentAllocations,
+            'balances_held'         => $balancesHeld,
+            'refunds_pending'       => $refundsPending,
+            'planned_pulls'         => $plannedPulls,
+            'moon_claims'           => $moonClaims,
+            'watched_moons'         => $watchedMoons,
         ];
     }
 
@@ -3418,12 +3687,20 @@ class DiagnosticController extends Controller
             'event_created' => $ns->sendEventCreated($this->buildFakeMiningEvent($data)),
             'event_started' => $ns->sendEventStarted($this->buildFakeMiningEvent($data), []),
             'event_completed' => $ns->sendEventCompleted($this->buildFakeMiningEvent($data), []),
+            'price_provider' => $ns->sendPriceProviderStatus(array_merge([
+                'provider' => 'janice',
+                'failing' => true,
+                'error' => 'Janice refused the request with HTTP 429 (too many requests)',
+                'since' => now()->subHours(4)->format('Y-m-d H:i'),
+                'last_success' => now()->subHours(8)->format('Y-m-d H:i'),
+            ], $data)),
             'moon_ready' => $ns->sendMoonArrival($data),
             'jackpot_detected' => $ns->sendJackpotDetected($data),
             'moon_chunk_unstable' => $ns->sendMoonChunkUnstable($data),
             'extraction_started' => $ns->sendExtractionStarted(array_merge($data, [
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
                 'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'started_by' => $data['started_by'] ?? 'Diagnostic Pilot (main: Diagnostic Main)',
                 'chunk_arrival_time' => $data['chunk_arrival_time'] ?? now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => $data['time_until_arrival'] ?? '6 days',
                 'estimated_value' => (int) ($data['estimated_value'] ?? 1200000000),
@@ -3725,6 +4002,7 @@ class DiagnosticController extends Controller
             'event_created' => 'Mining Event Created',
             'event_started' => 'Mining Event Started',
             'event_completed' => 'Mining Event Completed',
+            'price_provider' => 'Price Provider Trouble',
             'moon_ready' => 'Moon Extraction Ready',
             'jackpot_detected' => 'Jackpot Detected',
             'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
@@ -4541,6 +4819,7 @@ class DiagnosticController extends Controller
             'extraction_started' => [
                 'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
                 'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'started_by' => 'Test Pilot (main: Test Main)',
                 'chunk_arrival_time' => now()->addDays(6)->format('Y-m-d H:i'),
                 'time_until_arrival' => '6 days',
                 'estimated_value' => 250000000,

@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,31 @@ class RestoreDataCommand extends Command
 
     protected $description = 'Restore Mining Manager plugin data from a JSON backup';
 
+        /**
+     * Acquire the run lock, then do the work.
+     *
+     * Two of these running at once would duplicate effort at best and interleave
+     * writes to the same rows at worst. Deliberately NOT named run(): Symfony's
+     * Command already has one, and shadowing it breaks every artisan call.
+     */
     public function handle()
+    {
+        $lock = Cache::lock('mining-manager:restore-data', 3600);
+
+        if (! $lock->get()) {
+            $this->warn('Another instance of this command is already running. Skipping.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            return $this->handleLocked();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function handleLocked()
     {
         $backupPath = $this->argument('path');
 
@@ -124,73 +149,78 @@ class RestoreDataCommand extends Command
             return Command::FAILURE;
         }
 
-        // Disable foreign key checks during restore
+        // Constraint checks come back on however this block ends. Leaving them
+        // off is a property of the connection, so an exception escaping here
+        // would hand the rest of the process a database that silently accepts
+        // rows it should reject.
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-        $restoredRows = 0;
-        $errors = [];
+        try {
 
-        $bar = $this->output->createProgressBar(count($tables));
-        $bar->start();
+            $restoredRows = 0;
+            $errors = [];
 
-        foreach ($tables as $table) {
-            $info = $manifest['tables'][$table] ?? [];
+            $bar = $this->output->createProgressBar(count($tables));
+            $bar->start();
 
-            if (($info['status'] ?? '') !== 'ok' || empty($info['file'])) {
-                $bar->advance();
-                continue;
-            }
+            foreach ($tables as $table) {
+                $info = $manifest['tables'][$table] ?? [];
 
-            $filePath = $backupPath . '/' . $info['file'];
-            if (!file_exists($filePath)) {
-                $errors[] = "{$table}: backup file not found ({$info['file']})";
-                $bar->advance();
-                continue;
-            }
-
-            try {
-                // Truncate existing data unless --no-truncate
-                if (!$this->option('no-truncate')) {
-                    DB::table($table)->truncate();
-                }
-
-                // Stream the JSON file and insert in batches
-                $jsonContent = file_get_contents($filePath);
-                $rows = json_decode($jsonContent, true);
-
-                if (!is_array($rows)) {
-                    $errors[] = "{$table}: invalid JSON data";
+                if (($info['status'] ?? '') !== 'ok' || empty($info['file'])) {
                     $bar->advance();
                     continue;
                 }
 
-                // Insert in chunks of 500 to avoid query size limits
-                $chunks = array_chunk($rows, 500);
-                foreach ($chunks as $chunk) {
-                    DB::table($table)->insert($chunk);
+                $filePath = $backupPath . '/' . $info['file'];
+                if (!file_exists($filePath)) {
+                    $errors[] = "{$table}: backup file not found ({$info['file']})";
+                    $bar->advance();
+                    continue;
                 }
 
-                $restoredRows += count($rows);
+                try {
+                    // Truncate existing data unless --no-truncate
+                    if (!$this->option('no-truncate')) {
+                        DB::table($table)->truncate();
+                    }
 
-                // Verify row count
-                $actualCount = DB::table($table)->count();
-                $expectedCount = $this->option('no-truncate') ? null : $info['rows'];
+                    // Stream the JSON file and insert in batches
+                    $jsonContent = file_get_contents($filePath);
+                    $rows = json_decode($jsonContent, true);
 
-                if ($expectedCount !== null && $actualCount !== $expectedCount) {
-                    $errors[] = "{$table}: row count mismatch (expected {$expectedCount}, got {$actualCount})";
+                    if (!is_array($rows)) {
+                        $errors[] = "{$table}: invalid JSON data";
+                        $bar->advance();
+                        continue;
+                    }
+
+                    // Insert in chunks of 500 to avoid query size limits
+                    $chunks = array_chunk($rows, 500);
+                    foreach ($chunks as $chunk) {
+                        DB::table($table)->insert($chunk);
+                    }
+
+                    $restoredRows += count($rows);
+
+                    // Verify row count
+                    $actualCount = DB::table($table)->count();
+                    $expectedCount = $this->option('no-truncate') ? null : $info['rows'];
+
+                    if ($expectedCount !== null && $actualCount !== $expectedCount) {
+                        $errors[] = "{$table}: row count mismatch (expected {$expectedCount}, got {$actualCount})";
+                    }
+
+                } catch (\Exception $e) {
+                    $errors[] = "{$table}: {$e->getMessage()}";
                 }
 
-            } catch (\Exception $e) {
-                $errors[] = "{$table}: {$e->getMessage()}";
+                $bar->advance();
             }
 
-            $bar->advance();
+            $bar->finish();
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
-
-        $bar->finish();
-
-        // Re-enable foreign key checks
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
 
         $this->info('');
         $this->info('');

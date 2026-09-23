@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.moon_extractions'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <script src="{{ asset('vendor/mining-manager/js/eve-time.js') }}?v=1" defer></script>
 <script src="{{ asset('vendor/mining-manager/js/eve-countdown.js') }}?v=1" defer></script>
 @endpush

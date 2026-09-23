@@ -4,10 +4,11 @@
 @section('page_header', trans('mining-manager::menu.reports'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 @endpush
 
 @section('full')
+@include('mining-manager::partials.toastr')
 <div class="mining-manager-wrapper mining-dashboard reports-scheduled-page">
 
 {{-- TAB NAVIGATION --}}

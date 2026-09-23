@@ -5,7 +5,7 @@ return [
         'name'          => 'Mining Manager',
         'label'         => 'mining-manager::menu.mining_manager',
         'plural'        => true,
-        'icon'          => 'fas fa-industry',
+        'icon'          => 'fas fa-gem',
         'route_segment' => 'mining-manager',
         'permission'    => 'mining-manager.member',
         'entries'       => [
@@ -56,14 +56,14 @@ return [
                 'label'      => 'mining-manager::menu.moon_planner',
                 'icon'       => 'fas fa-calendar-alt',
                 'route'      => 'mining-manager.moon.planner',
-                'permission' => 'mining-manager.moon_manager',
+                'permission' => ['mining-manager.moon_manager', 'mining-manager.director'],
             ],
             [
                 'name'       => 'Analytics',
                 'label'      => 'mining-manager::menu.analytics',
                 'icon'       => 'fas fa-chart-line',
                 'route'      => 'mining-manager.analytics.index',
-                'permission' => 'mining-manager.director',
+                'permission' => ['mining-manager.director', 'mining-manager.moon_manager'],
             ],
             [
                 'name'       => 'Reports',

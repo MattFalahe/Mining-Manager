@@ -236,6 +236,26 @@
 /* ============================================
    Badges & Labels
    ============================================ */
+
+/* Moon ore classes. SeAT's own extraction page colours the tiers green, blue,
+   cyan, yellow and red, so a moon reads the same in the plugin as it does in
+   SeAT. Set here rather than left to the generic badge classes, because a skin
+   can dull those into something hard to read, yellow worst of all. */
+.mining-dashboard .badge-r4,
+.mining-manager-wrapper .badge-r4 { background-color: #28a745; color: #fff !important; }
+
+.mining-dashboard .badge-r8,
+.mining-manager-wrapper .badge-r8 { background-color: #007bff; color: #fff !important; }
+
+.mining-dashboard .badge-r16,
+.mining-manager-wrapper .badge-r16 { background-color: #17a2b8; color: #fff !important; }
+
+.mining-dashboard .badge-r32,
+.mining-manager-wrapper .badge-r32 { background-color: #ffc107; color: #212529 !important; }
+
+.mining-dashboard .badge-r64,
+.mining-manager-wrapper .badge-r64 { background-color: #dc3545; color: #fff !important; }
+
 .mining-dashboard .badge-mm,
 .mining-manager-wrapper .badge-mm {
     padding: 4px 8px;
@@ -4044,3 +4064,62 @@ div.mining-manager-wrapper div[class*="col-"] div.card-body {
     color: #93f7b8;
 }
 
+/* "Recent changes" box under What's New on the Help Overview tab. Indigo
+   rather than green so the two read as separate blocks: What's New is the
+   whole major version, this one is what the latest update changed. Same
+   shape as Structure Manager's. */
+.recent-changes-box {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-left: 4px solid #667eea;
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin: 20px 0;
+    color: #d1d5db !important;
+}
+
+.recent-changes-box h4 {
+    color: #8b9cf7 !important;
+    margin-top: 0;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Section labels inside the box. Smaller and upper case rather than another
+   heading colour, so they separate the groups without competing with the box
+   title above them. */
+.recent-changes-box h5 {
+    color: #8b9cf7 !important;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 18px 0 6px;
+}
+
+.recent-changes-box h5:first-of-type {
+    margin-top: 6px;
+}
+
+.recent-changes-box ul {
+    margin-bottom: 0;
+    padding-left: 20px;
+}
+
+.recent-changes-box li {
+    color: #d1d5db !important;
+    margin-bottom: 8px;
+}
+
+.recent-changes-box li:last-child {
+    margin-bottom: 0;
+}
+
+.recent-changes-box strong {
+    color: #e2e8f0 !important;
+}
+
+.recent-changes-box a {
+    color: #a5b4fc !important;
+}

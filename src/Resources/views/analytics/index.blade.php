@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.analytics'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <style>
     .stat-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -106,12 +106,15 @@
                         <div class="form-group mr-3 mb-2">
                             <label class="mr-2"><i class="fas fa-building"></i> Corporation</label>
                             <select name="corporation_id" class="form-control">
-                                <option value="">All Corporations</option>
+                                {{-- Own corporation first: it is the default now, and the question
+                                     most people are actually asking. All Corporations stays as the
+                                     deliberate second choice. --}}
                                 @if(isset($userCorporationId) && $userCorporationId && isset($corporations[$userCorporationId]))
                                     <option value="{{ $userCorporationId }}" {{ ($corporationId ?? null) == $userCorporationId ? 'selected' : '' }}>
                                         {{ $corporations[$userCorporationId] }} (My Corp)
                                     </option>
                                 @endif
+                                <option value="" {{ empty($corporationId) ? 'selected' : '' }}>All Corporations</option>
                                 @foreach($corporations as $corpId => $corpName)
                                     @if(!isset($userCorporationId) || $corpId != $userCorporationId)
                                         <option value="{{ $corpId }}" {{ ($corporationId ?? null) == $corpId ? 'selected' : '' }}>

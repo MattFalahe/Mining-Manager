@@ -51,6 +51,15 @@ class PriceProviderService
     protected ?array $lastFallbackSummary = null;
 
     /**
+     * Requests that failed outright during the last fetch, and the last thing
+     * one of them said. Janice's staged retreat swallows those, so without
+     * this a provider that is down looks the same as ore with no market.
+     */
+    protected int $lastRequestErrors = 0;
+
+    protected ?string $lastRequestError = null;
+
+    /**
      * Price provider constants
      */
     const PROVIDER_SEAT = 'seat';
@@ -82,6 +91,26 @@ class PriceProviderService
      * API endpoints
      */
     const JANICE_PRICER_URL = 'https://janice.e-351.com/api/rest/v2/pricer';
+
+    /**
+     * How many ids go in one Janice request, and how long to wait between
+     * them. A whole refresh is a handful of requests at this size, which is
+     * the point: the owner blocks keys for excessive traffic.
+     */
+    const JANICE_BATCH_SIZE = 100;
+    const JANICE_BATCH_PAUSE_US = 2000000;
+    const JANICE_RETRY_PAUSE_US = 1000000;
+    const JANICE_MAX_SPLITS = 3;
+    const JANICE_TIMEOUT_SECONDS = 30;
+
+    /**
+     * Where the provider's state is kept, and how many types that already have
+     * a price an empty answer has to cover before it counts as the provider
+     * being down rather than ore nobody trades.
+     */
+    const PROVIDER_STATUS_KEY = 'pricing.provider_status';
+    const PROVIDER_DOWN_MIN_IDS = 5;
+    const FUZZWORK_BATCH_SIZE = 200;
     const JANICE_APPRAISAL_URL = 'https://janice.e-351.com/api/rest/v2/appraisal';
     const FUZZWORK_MARKET_URL = 'https://market.fuzzwork.co.uk/aggregates/';
 
@@ -104,6 +133,8 @@ class PriceProviderService
     public function getPrices(array $typeIds): array
     {
         $this->lastJitaFallbackTypeIds = [];
+        $this->lastRequestErrors = 0;
+        $this->lastRequestError = null;
 
         $provider = $this->getConfiguredProvider();
         
@@ -120,6 +151,24 @@ class PriceProviderService
                 default => $this->getPricesFromSeAT($typeIds),
             };
 
+            // An ask that comes back with nothing at all is either the provider
+            // being down or a list of types with no market. Both are normal
+            // asks: a type nothing came back for keeps its old timestamp, so it
+            // is due on every run, and a steady install ends up asking for
+            // those and nothing else. Only ids that already have a cached price
+            // say anything about the provider, so judge it on those alone.
+            $answered = count(array_filter($prices, function ($price) {
+                return $price > 0;
+            }));
+
+            if ($answered > 0) {
+                $this->recordProviderOutcome($provider, true);
+            } elseif ($this->lastRequestErrors > 0) {
+                $this->recordProviderOutcome($provider, false, $this->lastRequestError ?? 'The provider did not answer');
+            } elseif ($this->countPricedInCache($typeIds) >= self::PROVIDER_DOWN_MIN_IDS) {
+                $this->recordProviderOutcome($provider, false, 'The provider answered, but with no prices at all');
+            }
+
             // Fallback to Jita: if enabled and market is not Jita, retry zero-price items with Jita
             $prices = $this->applyJitaFallback($provider, $prices, $typeIds);
 
@@ -129,6 +178,8 @@ class PriceProviderService
                 'provider' => $provider,
                 'error' => $e->getMessage()
             ]);
+
+            $this->recordProviderOutcome($provider, false, $e->getMessage());
 
             // Fallback to SeAT database if configured provider fails
             if ($provider !== self::PROVIDER_SEAT) {
@@ -194,10 +245,15 @@ class PriceProviderService
     }
 
     /**
-     * Fetch prices from Janice API
+     * Fetch prices from Janice.
+     *
+     * One request per batch of ids, not one per id: Janice publishes no rate
+     * limit, but its owner blocks keys for excessive traffic, and a refresh
+     * used to be one request per price several hundred times over. The pricer
+     * endpoint takes a list and answers with the same prices.
      *
      * @param array $typeIds
-     * @return array
+     * @return array [type_id => price]
      */
     protected function getPricesFromJanice(array $typeIds): array
     {
@@ -210,91 +266,122 @@ class PriceProviderService
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
-        $prices = [];
-        $market = $pricingSettings['janice_market'] ?? 'jita';
-        $batchSize = $this->settingsService->getSetting('janice_batch_size', 50);
-        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000); // microseconds
-        $maxRetries = $this->settingsService->getSetting('janice_max_retries', 3);
+        $market = ($pricingSettings['janice_market'] ?? 'jita') === 'jita' ? '2' : '1';
+        $method = $pricingSettings['janice_price_method'] ?? 'buy';
+        $batchSize = max(1, min(500, (int) $this->settingsService->getSetting('janice_batch_size', self::JANICE_BATCH_SIZE)));
+        $pause = max(0, (int) $this->settingsService->getSetting('janice_rate_limit_delay', self::JANICE_BATCH_PAUSE_US));
 
-        // For large batches, use appraisal endpoint (more efficient)
-        if (count($typeIds) > $batchSize) {
-            return $this->getPricesFromJaniceAppraisal($typeIds, $apiKey, $market);
+        $wanted = array_values(array_unique(array_map('intval', $typeIds)));
+        $prices = [];
+
+        foreach (array_chunk($wanted, $batchSize) as $index => $batch) {
+            if ($index > 0 && $pause > 0) {
+                usleep($pause);
+            }
+
+            $prices += $this->fetchJaniceBatch($batch, $apiKey, $market, $method);
         }
 
-        // Use the pricer endpoint for smaller batches
-        foreach ($typeIds as $typeId) {
-            $attempts = 0;
-            $success = false;
+        // Ids Janice does not answer for keep no price here. Nothing writes a
+        // zero over a good price, so they simply keep whatever was cached.
+        return $prices;
+    }
 
-            while ($attempts < $maxRetries && !$success) {
-                try {
-                    $url = sprintf('%s/%d?market=%s',
-                        self::JANICE_PRICER_URL,
-                        $typeId,
-                        $market === 'jita' ? '2' : '1' // 2=Jita, 1=Amarr
-                    );
+    /**
+     * One batch, with a staged retreat when the request itself fails.
+     *
+     * A refused key (401, 403, 429) stops the whole refresh: asking again in
+     * smaller pieces is exactly the traffic that gets a key blocked. A server
+     * error, a timeout or a rejected request is worth retrying in halves, and
+     * a handful of leftovers one at a time, because those can be a single bad
+     * id or a blip rather than a closed door.
+     *
+     * @return array [type_id => price]
+     */
+    protected function fetchJaniceBatch(array $typeIds, string $apiKey, string $market, string $method, int $depth = 0): array
+    {
+        if (empty($typeIds)) {
+            return [];
+        }
 
-                    $response = Http::timeout(10)
-                        ->retry(2, 100)
-                        ->withHeaders([
-                            'X-ApiKey' => $apiKey,
-                            'accept' => 'application/json'
-                        ])->get($url);
+        try {
+            return $this->janicePricerRequest($typeIds, $apiKey, $market, $method);
+        } catch (JaniceRefusedException $e) {
+            // Nothing to salvage: the key is the problem, not the batch.
+            throw $e;
+        } catch (Exception $e) {
+            // Remembered because the retreat swallows this: a batch that fails
+            // and brings back nothing would otherwise look the same as one
+            // answered with no prices, which is normal for ore with no market.
+            $this->lastRequestErrors++;
+            $this->lastRequestError = $e->getMessage();
 
-                    if (!$response->successful()) {
-                        Log::warning('Janice API error for type', [
-                            'type_id' => $typeId,
-                            'status' => $response->status(),
-                            'attempt' => $attempts + 1
-                        ]);
-                        $attempts++;
+            Log::warning('Mining Manager: Janice batch failed', [
+                'ids' => count($typeIds),
+                'depth' => $depth,
+                'error' => $e->getMessage(),
+            ]);
 
-                        if ($attempts < $maxRetries) {
-                            usleep(1000000); // 1 second delay before retry
-                            continue;
-                        }
+            if (count($typeIds) === 1 || $depth >= self::JANICE_MAX_SPLITS) {
+                return [];
+            }
 
-                        $prices[$typeId] = 0;
-                        break;
-                    }
+            $half = (int) ceil(count($typeIds) / 2);
+            $prices = [];
+            foreach (array_chunk($typeIds, $half) as $piece) {
+                usleep(self::JANICE_RETRY_PAUSE_US);
+                $prices += $this->fetchJaniceBatch($piece, $apiKey, $market, $method, $depth + 1);
+            }
 
-                    $data = $response->json();
+            return $prices;
+        }
+    }
 
-                    // Get price based on configured method
-                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
+    /**
+     * The pricer call itself: ids as text, one per line.
+     *
+     * @return array [type_id => price]
+     * @throws JaniceRefusedException when Janice refuses the key
+     * @throws Exception when the request fails in a way worth retrying
+     */
+    protected function janicePricerRequest(array $typeIds, string $apiKey, string $market, string $method): array
+    {
+        $response = Http::timeout(self::JANICE_TIMEOUT_SECONDS)
+            ->withHeaders([
+                'X-ApiKey' => $apiKey,
+                'Content-Type' => 'text/plain',
+                'accept' => 'application/json',
+            ])
+            ->withBody(implode("
+", $typeIds), 'text/plain')
+            ->post(self::JANICE_PRICER_URL . '?market=' . $market);
 
-                    if (isset($data['immediatePrices'])) {
-                        $prices[$typeId] = match($priceMethod) {
-                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
-                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
-                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
-                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
-                        };
-                    } else {
-                        $prices[$typeId] = 0;
-                    }
+        if (in_array($response->status(), [401, 403, 429], true)) {
+            throw new JaniceRefusedException(
+                'Janice refused the request with HTTP ' . $response->status()
+                . ($response->status() === 429 ? ' (too many requests)' : ' (check the API key)')
+            );
+        }
 
-                    $success = true;
+        if (!$response->successful()) {
+            throw new Exception('Janice returned HTTP ' . $response->status());
+        }
 
-                    // Configurable rate limiting
-                    if ($rateLimitDelay > 0) {
-                        usleep($rateLimitDelay);
-                    }
+        $items = $response->json();
+        if (!is_array($items)) {
+            throw new Exception('Janice returned something other than a list of prices');
+        }
 
-                } catch (Exception $e) {
-                    $attempts++;
-                    Log::error('Failed to fetch Janice price', [
-                        'type_id' => $typeId,
-                        'error' => $e->getMessage(),
-                        'attempt' => $attempts
-                    ]);
+        $prices = [];
+        foreach ($items as $item) {
+            $typeId = (int) ($item['itemType']['eid'] ?? 0);
+            if ($typeId <= 0) {
+                continue;
+            }
 
-                    if ($attempts >= $maxRetries) {
-                        $prices[$typeId] = 0;
-                    } else {
-                        usleep(1000000); // 1 second delay before retry
-                    }
-                }
+            $price = $this->janicePrice($item['immediatePrices'] ?? [], $method);
+            if ($price > 0) {
+                $prices[$typeId] = $price;
             }
         }
 
@@ -302,82 +389,29 @@ class PriceProviderService
     }
 
     /**
-     * Fetch prices from Janice for large batches.
-     * Uses the individual pricer endpoint since the appraisal endpoint
-     * only returns totals, not per-item prices.
+     * The price Janice's answer gives for the configured method.
      *
-     * @param array $typeIds
-     * @param string $apiKey
-     * @param string $market
-     * @return array
+     * Moon ore often trades on one side only, and a split of a side with no
+     * orders is half of nothing, so split falls back to whichever side has a
+     * price rather than reporting a moon as worthless.
      */
-    protected function getPricesFromJaniceAppraisal(array $typeIds, string $apiKey, string $market): array
+    protected function janicePrice(array $immediate, string $method): float
     {
-        // The appraisal endpoint only returns totals, not per-item prices.
-        // Use the individual pricer endpoint directly for per-item pricing.
-        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
-    }
+        $buy = (float) ($immediate['buyPrice'] ?? 0);
+        $sell = (float) ($immediate['sellPrice'] ?? 0);
 
-    /**
-     * Fetch prices using individual pricer endpoint
-     *
-     * @param array $typeIds
-     * @param string $apiKey
-     * @param string $market
-     * @return array
-     */
-    protected function getPricesFromJanicePricer(array $typeIds, string $apiKey, string $market): array
-    {
-        $prices = [];
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        $rateLimitDelay = $this->settingsService->getSetting('janice_rate_limit_delay', 50000);
-
-        foreach ($typeIds as $typeId) {
-            try {
-                $url = sprintf('%s/%d?market=%s',
-                    self::JANICE_PRICER_URL,
-                    $typeId,
-                    $market === 'jita' ? '2' : '1'
-                );
-
-                $response = Http::timeout(10)
-                    ->withHeaders([
-                        'X-ApiKey' => $apiKey,
-                        'accept' => 'application/json'
-                    ])->get($url);
-
-                if ($response->successful()) {
-                    $data = $response->json();
-                    $priceMethod = $pricingSettings['janice_price_method'] ?? 'buy';
-
-                    if (isset($data['immediatePrices'])) {
-                        $prices[$typeId] = match($priceMethod) {
-                            'sell' => (float) ($data['immediatePrices']['sellPrice'] ?? 0),
-                            'buy' => (float) ($data['immediatePrices']['buyPrice'] ?? 0),
-                            'split' => (float) ($data['effectivePrices']['splitPrice'] ?? 0),
-                            default => (float) ($data['immediatePrices']['buyPrice'] ?? 0)
-                        };
-                    } else {
-                        $prices[$typeId] = 0;
-                    }
-                } else {
-                    $prices[$typeId] = 0;
+        switch ($method) {
+            case 'sell':
+                return $sell;
+            case 'split':
+                if ($buy > 0 && $sell > 0) {
+                    return (float) ($immediate['splitPrice'] ?? (($buy + $sell) / 2));
                 }
 
-                if ($rateLimitDelay > 0) {
-                    usleep($rateLimitDelay);
-                }
-
-            } catch (Exception $e) {
-                Log::error('Failed to fetch Janice price', [
-                    'type_id' => $typeId,
-                    'error' => $e->getMessage()
-                ]);
-                $prices[$typeId] = 0;
-            }
+                return $buy > 0 ? $buy : $sell;
+            default:
+                return $buy;
         }
-
-        return $prices;
     }
 
     /**
@@ -389,8 +423,20 @@ class PriceProviderService
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
         $generalSettings = $this->settingsService->getGeneralSettings();
-        $pricingSettings = $this->settingsService->getPricingSettings();
         $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
+
+        // Fuzzwork takes the ids in the query string, so a whole refresh in
+        // one call is a URL thousands of characters long. Chunk it.
+        if (count($typeIds) > self::FUZZWORK_BATCH_SIZE) {
+            $prices = [];
+            foreach (array_chunk(array_values($typeIds), self::FUZZWORK_BATCH_SIZE) as $batch) {
+                $prices += $this->getPricesFromFuzzwork($batch);
+            }
+
+            return $prices;
+        }
+
+        $pricingSettings = $this->settingsService->getPricingSettings();
         $typeIdsString = implode(',', $typeIds);
 
         $response = Http::timeout(10)->get(self::FUZZWORK_MARKET_URL, [
@@ -857,7 +903,14 @@ class PriceProviderService
             return [];
         }
 
-        return $this->getPricesFromJanicePricer($typeIds, $apiKey, $market);
+        // Only the prices that came back empty land here, so this is a small
+        // list and one request covers it.
+        return $this->fetchJaniceBatch(
+            array_values(array_unique(array_map('intval', $typeIds))),
+            $apiKey,
+            $market === 'jita' ? '2' : '1',
+            $pricingSettings['janice_price_method'] ?? 'buy'
+        );
     }
 
     /**
@@ -1327,6 +1380,22 @@ class PriceProviderService
     }
 
     /**
+     * Type IDs whose cached price was written at or after the given moment
+     *
+     * @param int $regionId
+     * @param Carbon $since
+     * @return int[]
+     */
+    public function typeIdsCachedSince(int $regionId, Carbon $since): array
+    {
+        return MiningPriceCache::where('region_id', $regionId)
+            ->where('cached_at', '>=', $since)
+            ->pluck('type_id')
+            ->map(fn ($typeId) => (int) $typeId)
+            ->all();
+    }
+
+    /**
      * Cache price data for a type ID
      *
      * @param int $typeId
@@ -1336,18 +1405,40 @@ class PriceProviderService
      */
     public function cachePriceData(int $typeId, int $regionId, array $priceData): bool
     {
+        $sell = max(0.0, (float) ($priceData['sell'] ?? 0));
+        $buy = max(0.0, (float) ($priceData['buy'] ?? 0));
+        $average = max(0.0, (float) ($priceData['average'] ?? 0));
+
+        // Nothing arrived. A zero used to be written here with a fresh
+        // timestamp, which threw away a good price and made the miss look
+        // like a current price of nothing. The row is left exactly as it is,
+        // stale timestamp and all, so the next refresh still counts it as due.
+        if ($sell <= 0 && $buy <= 0 && $average <= 0) {
+            return false;
+        }
+
         try {
+            $values = ['cached_at' => Carbon::now()];
+
+            // Each side only replaces what is cached when a real price for it
+            // turned up: a provider with orders on one side of the market
+            // must not wipe the other side.
+            if ($sell > 0) {
+                $values['sell_price'] = $sell;
+            }
+            if ($buy > 0) {
+                $values['buy_price'] = $buy;
+            }
+            if ($average > 0) {
+                $values['average_price'] = $average;
+            }
+
             MiningPriceCache::updateOrCreate(
                 [
                     'type_id' => $typeId,
                     'region_id' => $regionId,
                 ],
-                [
-                    'sell_price' => $priceData['sell'] ?? 0,
-                    'buy_price' => $priceData['buy'] ?? 0,
-                    'average_price' => $priceData['average'] ?? 0,
-                    'cached_at' => Carbon::now(),
-                ]
+                $values
             );
 
             return true;
@@ -1378,6 +1469,221 @@ class PriceProviderService
             ]);
 
             return 0;
+        }
+    }
+
+    /**
+     * What the price provider is doing: failing, and since when.
+     *
+     * @return array{failing: bool, provider: ?string, error: ?string, since: ?string, last_success: ?string}
+     */
+    public function providerStatus(): array
+    {
+        // Read it as a global setting whatever corporation the caller left
+        // active, so there is one status and one alert, not one per corp.
+        $status = $this->settingsService->getSettingForCorporation(self::PROVIDER_STATUS_KEY, null, []);
+        if (!is_array($status)) {
+            $status = [];
+        }
+
+        return [
+            'failing' => (bool) ($status['failing'] ?? false),
+            'provider' => $status['provider'] ?? null,
+            'error' => $status['error'] ?? null,
+            'since' => $status['since'] ?? null,
+            'last_success' => $status['last_success'] ?? null,
+        ];
+    }
+
+    /**
+     * How many of these types already have a cached price, which is what makes
+     * an empty answer suspicious rather than expected.
+     */
+    protected function countPricedInCache(array $typeIds): int
+    {
+        if (empty($typeIds)) {
+            return 0;
+        }
+
+        try {
+            return MiningPriceCache::whereIn('type_id', $typeIds)
+                ->where(self::cachedPriceColumn($this->settingsService->getPricingSettings()['price_type'] ?? 'sell'), '>', 0)
+                ->count();
+        } catch (\Throwable $e) {
+            // Never let a status note stop a price fetch. Counting nothing
+            // means the provider is left alone rather than blamed.
+            Log::warning('Mining Manager: could not count cached prices', ['error' => $e->getMessage()]);
+
+            return 0;
+        }
+    }
+
+    /**
+     * The cache column the configured price type is read from and written to.
+     */
+    public static function cachedPriceColumn(?string $priceType): string
+    {
+        return match ($priceType) {
+            'buy' => 'buy_price',
+            'average' => 'average_price',
+            default => 'sell_price',
+        };
+    }
+
+    /**
+     * How the price cache is doing, judged by how the refresh behaves.
+     *
+     * A type the provider has no price for is never written, and one that
+     * comes back empty keeps its last good price and its old timestamp. So an
+     * old row is not a fault, and a row without a price is a type with no
+     * market. What deserves a warning is the provider failing, or no price
+     * being written at all for longer than the refresh can explain.
+     *
+     * @return array{status: string, reasons: string[], provider_failing: bool, refresh_overdue: bool, total: int, priced: int, fresh: int, keeping_older: int, no_market: int, last_written: ?string, minutes_since_write: ?int, cache_duration_minutes: int, overdue_after_minutes: int, provider: array}
+     */
+    public function cacheHealth(): array
+    {
+        $pricing = $this->settingsService->getPricingSettings();
+        $cacheMinutes = max(1, (int) ($pricing['cache_duration'] ?? 240));
+
+        // The column valuation reads, so "has a price" means a price the
+        // plugin would actually use.
+        $column = self::cachedPriceColumn($pricing['price_type'] ?? 'sell');
+
+        $total = MiningPriceCache::count();
+        $priced = MiningPriceCache::where($column, '>', 0)->count();
+        $keepingOlder = MiningPriceCache::where($column, '>', 0)
+            ->where('cached_at', '<', Carbon::now()->subMinutes($cacheMinutes))
+            ->count();
+        $lastWritten = MiningPriceCache::max('cached_at');
+
+        return self::assessCacheHealth(
+            $total,
+            $priced,
+            $keepingOlder,
+            $lastWritten ? Carbon::parse($lastWritten) : null,
+            $this->providerStatus(),
+            $cacheMinutes,
+            Carbon::now()
+        );
+    }
+
+    /**
+     * The judgement behind cacheHealth(), kept apart from the queries.
+     */
+    public static function assessCacheHealth(
+        int $total,
+        int $priced,
+        int $keepingOlder,
+        ?Carbon $lastWritten,
+        array $provider,
+        int $cacheMinutes,
+        Carbon $now
+    ): array {
+        // Two cache durations, or eight hours if that is longer. A refresh
+        // skips prices written within half the duration, so with a long
+        // duration a run can rightly write nothing. This is long enough not to
+        // mistake that for a stopped refresh, and short enough to catch one.
+        $overdueAfter = max(480, 2 * $cacheMinutes);
+        $minutesSinceWrite = $lastWritten
+            ? intdiv(max(0, $now->getTimestamp() - $lastWritten->getTimestamp()), 60)
+            : null;
+
+        $providerFailing = !empty($provider['failing']);
+        $refreshOverdue = $total > 0 && $minutesSinceWrite !== null && $minutesSinceWrite > $overdueAfter;
+
+        $reasons = [];
+        if ($total === 0) {
+            $reasons[] = 'No prices are cached yet.';
+        }
+        if ($providerFailing) {
+            $reasons[] = 'Price refreshes have been failing since ' . ($provider['since'] ?? 'the last run')
+                . (!empty($provider['error']) ? ': ' . $provider['error'] : '.');
+        }
+        if ($refreshOverdue) {
+            $reasons[] = 'No price has been written for ' . intdiv($minutesSinceWrite, 60)
+                . ' hours, so the scheduled refresh may have stopped.';
+        }
+
+        if ($total === 0) {
+            $status = 'critical';
+        } else {
+            $status = ($providerFailing || $refreshOverdue) ? 'warning' : 'healthy';
+        }
+
+        return [
+            'status' => $status,
+            'reasons' => $reasons,
+            'provider_failing' => $providerFailing,
+            'refresh_overdue' => $refreshOverdue,
+            'total' => $total,
+            'priced' => $priced,
+            'fresh' => max(0, $priced - $keepingOlder),
+            'keeping_older' => $keepingOlder,
+            'no_market' => max(0, $total - $priced),
+            'last_written' => $lastWritten ? $lastWritten->format('Y-m-d H:i') : null,
+            'minutes_since_write' => $minutesSinceWrite,
+            'cache_duration_minutes' => $cacheMinutes,
+            'overdue_after_minutes' => $overdueAfter,
+            'provider' => $provider,
+        ];
+    }
+
+    /**
+     * Report how a fetch went from a path that does not go through
+     * getPrices(), such as the Manager Core sync in the cache command.
+     */
+    public function noteProviderOutcome(bool $ok, ?string $error = null): void
+    {
+        $this->recordProviderOutcome($this->getConfiguredProvider(), $ok, $error);
+    }
+
+    /**
+     * Remember how the last fetch went, and say so once when that changes.
+     *
+     * Only the change is worth an alert: a provider that is down stays down
+     * for hours and one message per refresh would be noise nobody reads. An
+     * ore without a price is not failure at all, so nothing here fires for it.
+     */
+    protected function recordProviderOutcome(string $provider, bool $ok, ?string $error = null): void
+    {
+        try {
+            $status = $this->providerStatus();
+            $now = Carbon::now()->format('Y-m-d H:i');
+            $changed = $status['failing'] === $ok;
+
+            $this->settingsService->updateGlobalSetting(self::PROVIDER_STATUS_KEY, [
+                'failing' => !$ok,
+                'provider' => $provider,
+                'error' => $ok ? null : $error,
+                'since' => $ok ? null : ($status['since'] ?? $now),
+                'last_success' => $ok ? $now : $status['last_success'],
+            ], 'json');
+
+            if (!$changed) {
+                return;
+            }
+
+            $this->announceProviderStatus([
+                'provider' => $provider,
+                'failing' => !$ok,
+                'error' => $ok ? null : $error,
+                'since' => $ok ? $status['since'] : $now,
+                'last_success' => $ok ? $now : $status['last_success'],
+            ]);
+        } catch (Exception $e) {
+            // Fetching prices must not fall over because a status note or an
+            // alert did.
+            Log::warning('Mining Manager: could not record the price provider status', ['error' => $e->getMessage()]);
+        }
+    }
+
+    protected function announceProviderStatus(array $data): void
+    {
+        try {
+            app(\MiningManager\Services\Notification\NotificationService::class)->sendPriceProviderStatus($data);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: price provider alert could not be sent', ['error' => $e->getMessage()]);
         }
     }
 }

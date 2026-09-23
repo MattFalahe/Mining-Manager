@@ -4,7 +4,7 @@
 @section('page_header', 'Moon Theft Detection')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=2">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <style>
 .theft-detection-wrapper {
     padding: 15px;
@@ -268,9 +268,11 @@
                                 <a href="{{ route('mining-manager.theft.index') }}" class="btn btn-secondary">
                                     <i class="fas fa-times"></i> Clear Filters
                                 </a>
+                                @if($features['allow_export_data'] ?? true)
                                 <a href="{{ route('mining-manager.theft.export', request()->all()) }}" class="btn btn-success float-right">
                                     <i class="fas fa-download"></i> Export CSV
                                 </a>
+                                @endif
                             </div>
                         </div>
                     </form>

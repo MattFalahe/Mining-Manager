@@ -178,7 +178,7 @@ return [
     'triggered_by_desc' => 'Every tax record logs who or what created it in the "Triggered By" field:',
     'triggered_by_scheduled' => 'Scheduled Task — Created automatically by the nightly calculate-taxes cron job.',
     'triggered_by_manual' => 'Manual: CharacterName — Created by an admin clicking Calculate or Recalculate in the UI.',
-    'triggered_by_regenerate' => 'Regenerate: CharacterName — Created by an admin clicking Regenerate Codes in the UI.',
+    'triggered_by_regenerate' => 'Regenerate: CharacterName. Made by the Regenerate Codes button in earlier versions, which did the same as Recalculate.',
 
     // Admin Tax Controls
     'admin_controls_title' => 'Admin Tax Management',
@@ -277,7 +277,7 @@ return [
     'wallet_method_title' => 'Wallet Transfer Method',
     'wallet_method_desc' => 'Members send ISK directly to the corporation wallet:',
     'wallet_step_1' => 'Go to your "My Taxes" page to see your tax code and amount owed',
-    'wallet_step_2' => 'In EVE, open the corporation wallet and click "Give Money"',
+    'wallet_step_2' => 'In EVE, right-click the corporation\'s name and choose "Give Money"',
     'wallet_step_3' => 'Enter the tax amount and paste your tax code into the "Reason" field',
     'wallet_step_4' => 'The system will automatically verify your payment within 6 hours when the verify-payments command runs',
     'tax_warning' => 'Always include your tax code in the reason field! Without it, payments cannot be automatically matched and must be manually processed by a director.',
@@ -286,15 +286,33 @@ return [
     'wallet_verification' => 'Wallet Verification',
     'wallet_verification_desc' => 'The Wallet Verification page shows corporation donations and their matching status. Access is permission-based:',
     'wallet_verification_member' => 'Members can only see their own wallet transfers and personal payment stats.',
-    'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, and manually record payments.',
+    'wallet_verification_director' => 'Directors and admins see all corporation donations, can verify payments, sync wallets, auto-match tax codes, assign payments to invoices by hand, and manually record payments.',
+
+    // Assigning a payment by hand
+    'assign_payment' => 'Assigning a Payment That Has No Tax Code',
+    'assign_payment_desc' => 'Automatic matching depends entirely on the member typing their tax code into the transfer reason field. When they forget, the transfer arrives, nothing can identify it, and it sits on the Wallet Verification page marked "No tax code". Neither Verify nor Auto-Match can help, because both work by reading the code that is not there.',
+    'assign_payment_how' => 'Use the Assign to invoice button on that row. It opens a panel showing who paid and how much, alongside the open invoices belonging to that player. Alts are included when the accept-alts setting is on. Pick the invoice the money was meant for and confirm.',
+    'assign_payment_what_happens' => 'What happens next:',
+    'assign_payment_effect_1' => 'The payment is credited to the invoice you picked, and the invoice becomes Partial or Paid depending on whether it covers the balance.',
+    'assign_payment_effect_2' => 'Any remainder rolls onto the next-oldest unpaid invoice for that player, then the one after that, until the money runs out. Turn off Roll leftover payment onto the next unpaid invoice in Settings if you would rather it stopped at the first one.',
+    'assign_payment_effect_3' => 'Whatever is still left once they have no open invoices is held as credit against that character and comes off their next invoice automatically. Held credit is listed on the Wallet Verification page.',
+    'assign_payment_effect_4' => 'The transfer is claimed, so it disappears from the pending list and can never be credited twice.',
+    'assign_payment_effect_5' => 'A payment record is written against every invoice it touched. The invoice detail page shows the full list under Payments received.',
+    'assign_payment_vs_mark_paid' => 'Assign to invoice versus Mark as Paid: Mark as Paid settles the invoice but has no connection to the ISK that arrived, so the transfer keeps sitting in the pending queue and you have to dismiss it separately. Assign to invoice ties the two together. Use Mark as Paid for payments that never went through the wallet at all, such as a contract or a waiver.',
+
+    // Verification cutover
+    'verification_cutover' => 'The Verification Cutover',
+    'verification_cutover_desc' => 'When the payment allocation ledger was added, a cutover timestamp was recorded. Automatic matching only considers wallet transfers dated after it. Everything before is left exactly as it was, and is never re-examined or corrected.',
+    'verification_cutover_why' => 'This exists because the old matching pipeline kept no record of which transfers had already been credited, only the most recent one per invoice. Re-running matching across that history would risk crediting old transfers a second time. The cutover draws a clean line: from that point on, every payment is claimed and reconcilable, and the past is left alone.',
+    'verification_cutover_manual' => 'A transfer from before the cutover can still be assigned to an invoice by hand. The guard only applies to automatic matching.',
 
     // Calculation Buttons
     'calculation_methods' => 'Calculate Taxes Page — Buttons',
-    'calculation_methods_desc' => 'The Calculate Taxes page provides three action buttons. All of them read from daily summaries as the single source of truth:',
-    'calc_calculate' => 'Calculate — Sums existing daily summaries to create tax records for all periods within the selected month. This is fast because it only reads stored data. Use this for routine tax finalization when you are happy with the current daily summaries. For biweekly/weekly, this creates a separate record for each period in the month.',
-    'calc_recalculate' => 'Recalculate — Regenerates ALL daily summaries for the selected month using current market prices and current tax rate settings, then creates tax records for all periods. Use this after changing tax rates, after running a manual price cache refresh, or if prices were stale when summaries were originally created. This is slower because it recalculates every character/date pair.',
-    'calc_assign_codes' => 'Assign Codes — Generates payment codes for any unpaid tax records that don\'t already have one. Does NOT recalculate taxes or regenerate daily summaries — it only assigns codes to existing tax records. Use this after running Calculate when you are ready to issue codes to members.',
-    'calc_regenerate_codes' => 'Regenerate Codes — Performs a full recalculation (same as Recalculate) and then generates or updates unique payment codes for each member for each period. Use this when you are ready to issue tax codes to members for payment. Members will see their codes on the "My Taxes" page.',
+    'calculation_methods_desc' => 'Taxes are calculated for you on schedule. This page is for doing it by hand, and none of its buttons changes an invoice that has gone out: once an invoice has a payment code, money against it, or reads as paid, its total stays as it is.',
+    'calc_calculate' => 'Calculate: creates tax records for each period in the selected month from the daily summaries, skipping any period that already has them. Each new record gets its payment code straight away. With biweekly periods it makes one record per period.',
+    'calc_recalculate' => 'Recalculate: first rebuilds the daily summaries for the month from the ledger, using your current tax rates for days that are not yet invoiced, then recalculates every invoice that has not gone out and creates any that are missing. Use it after changing tax rates. It does not re-price mining: ledger values come from the imports and the nightly price update.',
+    'calc_assign_codes' => 'Assign Codes: gives a payment code to any unpaid or overdue record for the month that has none. Records normally get their code when they are created, so this is a fallback for older records, or one whose code could not be made at the time.',
+    'calc_refresh_tracking' => 'Refresh Tracking: reloads the live tracking figures on the page. It changes nothing, and it also runs by itself every five minutes.',
 
     // Exemptions and Minimum Tax
     'exemptions_explained' => 'Exemptions and Minimum Tax',
@@ -363,7 +381,7 @@ return [
     'extraction_notifications' => 'Extraction Notifications',
     'extraction_notifications_desc' => 'A moon-arrival notification fires once, the moment a chunk actually becomes minable (within ~60s of arrival time). Enable / disable per channel and configure target webhooks under Settings → Notifications — the "moon_arrival" event type controls the master toggle, role ping, and per-webhook subscriptions.',
     'moon_value' => 'Moon Value Calculator',
-    'moon_value_desc' => 'The system estimates the ISK value of each extraction based on current market prices, ore compositions, and estimated chunk sizes.',
+    'moon_value_desc' => 'The Extraction Simulator tab estimates what a scanned moon yields over an extraction, as ore and as refined value, from the price cache. See Extraction Simulator and Find Moons below.',
 
     // Moon Extraction Lifecycle
     'moon_lifecycle' => 'Moon Extraction Lifecycle',
@@ -386,12 +404,12 @@ return [
     'moon_r8' => 'R8 - Contains common ores (Cobaltite, Euxenite, Scheelite, Titanite)',
     'moon_r4' => 'R4 - Contains basic ores (Bitumite, Coesite, Sylvite, Zeolites)',
     'moon_quality' => 'Moon Quality Rating',
-    'moon_quality_desc' => 'Moons are rated by their estimated 28-day extraction value:',
-    'moon_quality_exceptional' => 'Exceptional - Over 10 billion ISK',
-    'moon_quality_excellent' => 'Excellent - Over 8 billion ISK',
-    'moon_quality_good' => 'Good - Over 5 billion ISK',
-    'moon_quality_average' => 'Average - Over 2 billion ISK',
-    'moon_quality_poor' => 'Poor - Under 2 billion ISK',
+    'moon_quality_desc' => 'The Extraction Simulator and Find Moons rate a moon against every scanned moon of the same class (its rarest ore) by its value over 28 days, so a strong R4 moon can rate well. A class needs at least five scanned moons before its moons are rated.',
+    'moon_quality_exceptional' => 'Exceptional - the top 10% of its class',
+    'moon_quality_excellent' => 'Excellent - the top 25% of its class',
+    'moon_quality_good' => 'Good - the top half of its class',
+    'moon_quality_average' => 'Average - the top 75% of its class',
+    'moon_quality_poor' => 'Poor - the bottom quarter of its class',
 
     // Jackpot Detection
     'jackpot_title' => 'Jackpot Detection & Reporting',
@@ -421,7 +439,7 @@ return [
     'theft_commands' => 'Theft Detection Commands',
     'theft_detect_desc' => 'Full scan for unauthorized mining on all tracked moons. Runs automatically on the 1st and 15th of each month.',
     'theft_monitor_desc' => 'Monitors currently active theft incidents for ongoing unauthorized mining. Runs every 6 hours.',
-    'theft_dry_run' => 'Use the --dry-run flag to preview detection results without creating incident records.',
+    'theft_dry_run' => 'detect-theft has no dry run: every run records what it finds as incidents. To check a character without recording anything, use the Theft Detection tab on the Diagnostic page.',
     'theft_note' => 'Theft detection relies on ESI mining observer data. Only structures with active moon mining observers will be monitored.',
 
     // Analytics & Reports
@@ -524,7 +542,7 @@ return [
     'faq_q3' => 'What happens if someone doesn\'t pay their taxes?',
     'faq_a3' => 'The system tracks payment status and sends reminder notifications daily at 10:00 AM for taxes approaching their due date (configurable reminder window, default 3 days before) or already overdue. Directors can view all outstanding taxes on the Tax Overview page.',
     'faq_q4' => 'Where do I put my tax code when paying?',
-    'faq_a4' => 'When sending ISK to the corporation wallet in-game, enter your tax code in the "reason" field of the transfer dialog. This is how the system matches your payment.',
+    'faq_a4' => 'When you pay the corporation in game (right-click its name and choose "Give Money"), enter your tax code in the "reason" field of the transfer dialog. This is how the system matches your payment.',
     'faq_q5' => 'How are ore prices determined?',
     'faq_a5' => 'Ore prices are fetched from your configured price provider and cached. You can choose between sell, buy, or average prices from your selected market hub region.',
     'faq_q6' => 'Can members see other members\' mining data?',
@@ -664,13 +682,11 @@ return [
     'pay_step_3' => 'At the end of the tax period (monthly, biweekly, or weekly — depends on your corp settings), all your daily totals are added up into one tax bill.',
     'pay_step_4' => 'You receive a notification (Discord or Slack depending on corp setup) with your tax amount and a link to the Tax page.',
     'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see the amount owed, due date, and your unique tax code (e.g. TAX-A1B2C3).',
-    'pay_step_6' => 'Send ISK to your corporation wallet in-game with your tax code in the "reason" field. That is how the system matches your payment to your bill.',
+    'pay_step_6' => 'Pay your corporation in game (right-click its name and choose "Give Money") with your tax code in the "reason" field. That is how the system matches your payment to your bill.',
     'pay_step_7' => 'The system automatically scans wallet transactions every 6 hours. Once it finds your payment with the matching tax code, your status changes to "Paid". Done!',
 
     'pay_ingame_title' => 'How to Send Payment In-Game',
-    'pay_ingame_step_1' => 'Open your wallet in EVE Online.',
-    'pay_ingame_step_2' => 'Click "Give Money" or use the corporation\'s "Deposit" option.',
-    'pay_ingame_step_3' => 'Set the recipient to your corporation.',
+    'pay_ingame_step_1' => 'In EVE Online, right-click your corporation\'s name and choose "Give Money". "Give ISK" in your own wallet can\'t send to a corporation.',
     'pay_ingame_step_4' => 'Enter the exact amount shown on your tax bill (or a partial amount if paying in installments).',
     'pay_ingame_step_5' => 'In the "Reason" field, paste your tax code exactly as shown (e.g. TAX-A1B2C3). This is the most important step — without the code, the system cannot match your payment.',
 
@@ -756,13 +772,13 @@ return [
     'webhook_cat_theft' => 'Theft',
     'webhook_cat_theft_events' => 'Theft Detected, Critical Theft, Active Theft, Incident Resolved',
     'webhook_cat_moon' => 'Moon',
-    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected, Moon Chunk Unstable (capital-pilots safety warning fired ~2h before the chunk enters the unstable phase)',
+    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected, Moon Chunk Unstable (capital-pilots safety warning fired ~2h before the chunk enters the unstable phase), Extraction Started (a refinery started an extraction, naming who started it), Next Extraction Planned (the refinery\'s next planned pull, once a chunk is ready), Moon Scheduled Off-Plan (an extraction set in game away from the planned time)',
     'webhook_cat_structure_alerts' => 'Structure Alerts (cross-plugin)',
     'webhook_cat_structure_alerts_events' => 'Extraction At Risk (fuel critical or shield/armor/hull reinforced), Extraction Lost (refinery destroyed). Requires Manager Core + Structure Manager — toggles auto-disable when either plugin is missing. SM publishes the events; MM dispatches notifications with attacker info, system security, fuel/timer details, and a one-click Structure Board deeplink.',
     'webhook_cat_events' => 'Mining Events',
     'webhook_cat_events_list' => 'Event Created, Event Started, Event Completed',
     'webhook_cat_tax' => 'Tax',
-    'webhook_cat_tax_events' => 'Tax Generated (broadcast), Tax Announcement (broadcast — new invoices notification without ISK amounts), Tax Reminder (personal), Tax Invoice (personal), Tax Overdue (personal)',
+    'webhook_cat_tax_events' => 'Tax Generated (broadcast), Tax Announcement (broadcast: new invoices notification without ISK amounts), Tax Reminder (personal), Tax Invoice (personal), Tax Overdue (personal), Outstanding Mining Tax (weekly digest for directors of who still owes)',
     'webhook_cat_reports' => 'Reports',
     'webhook_cat_reports_events' => 'Report Generated (when a scheduled report completes)',
 
