@@ -79,6 +79,12 @@
                     <span class="badge badge-primary ml-1" style="font-size: 0.6em;">Moon Manager</span>
                 </a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('mining-manager.moon.blueprints') }}">
+                    <i class="fas fa-drafting-compass"></i> Blueprints
+                    <span class="badge badge-primary ml-1" style="font-size: 0.6em;">Moon Manager</span>
+                </a>
+            </li>
         </ul>
     </div>
     <div class="card-body">
@@ -117,6 +123,11 @@
                     <i class="fas fa-magic"></i> Auto-fill from History
                 </button>
             </form>
+            <a class="btn btn-sm btn-outline-primary ml-1"
+               href="{{ route('mining-manager.moon.blueprints') }}"
+               title="Lay a repeating pattern of pulls over the calendar from a date you choose">
+                <i class="fas fa-drafting-compass"></i> Plan from Blueprint
+            </a>
             <button type="button" class="btn btn-sm btn-outline-secondary ml-1" id="btn-history"
                     title="Who changed what on the planner">
                 <i class="fas fa-history"></i> History

@@ -612,6 +612,34 @@ Route::group([
             'uses' => 'MoonPlannerController@destroy',
         ]);
 
+        // Blueprints: the repeating patterns the planner can be filled from.
+        // Same gate as the planner, enforced in the controller, and the same
+        // reason for sitting above the `/{id}` catch-all.
+        Route::get('/blueprints', [
+            'as' => 'mining-manager.moon.blueprints',
+            'uses' => 'MoonBlueprintController@index',
+        ]);
+
+        Route::post('/blueprints', [
+            'as' => 'mining-manager.moon.blueprints.store',
+            'uses' => 'MoonBlueprintController@store',
+        ]);
+
+        Route::post('/blueprints/{id}/preview', [
+            'as' => 'mining-manager.moon.blueprints.preview',
+            'uses' => 'MoonBlueprintController@preview',
+        ]);
+
+        Route::post('/blueprints/{id}/apply', [
+            'as' => 'mining-manager.moon.blueprints.apply',
+            'uses' => 'MoonBlueprintController@apply',
+        ]);
+
+        Route::delete('/blueprints/{id}', [
+            'as' => 'mining-manager.moon.blueprints.destroy',
+            'uses' => 'MoonBlueprintController@destroy',
+        ]);
+
         Route::get('/{id}', [
             'as' => 'mining-manager.moon.show',
             'uses' => 'MoonController@show',
