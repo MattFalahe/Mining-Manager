@@ -2,6 +2,16 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [Unreleased]
+
+### Moon Planner
+
+- **Blueprints**, a new tab beside the planner. A blueprint is a repeating pattern of pulls: which refinery, which weekday, what EVE time, over one to eight weeks. Apply one to the planner from any date, for as many cycles as you ask for, and it writes ordinary planned pulls. The planner could only take one pull at a time before, or a guess from history, and neither matches running a set of moons on set days.
+- **Applying shows you everything first.** Every occurrence is listed with its date and refinery, and marked as it will be written, skipped (before the start date, already past, or that refinery is already planned within half an hour), or landing inside the minimum gap of another moon. Nothing is saved until you confirm, and changing the date or the number of cycles makes you look again.
+- **Editing a blueprint offers to carry the change to the calendar.** Pulls it already wrote follow the new pattern: slots that moved move, slots taken out are removed, slots added appear in every cycle still ahead. Anything already matched to a real extraction, and anything in the past, is left exactly as it was.
+- **Moving or removing a pull from a blueprint asks whether to carry it.** Taking the later ones with it moves them by the same amount, so the pattern keeps its spacing rather than collapsing onto one date.
+- The **Plan Pull** refinery dropdown is sorted by system, then by name. It was in the same order as the cards down the side, which is useful there and no use at all when you are looking for one rig in a list.
+
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 
 Wallet payments, rebuilt. A member who sends tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance that members can see and directors can give back. Around that: the personal mining import counts the whole day, the ore registry catches up with everything CCP has shipped, the Extraction Simulator gains a moon search, and price refreshes stop asking for one ore at a time.

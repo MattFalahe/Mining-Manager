@@ -635,6 +635,7 @@ document.addEventListener('DOMContentLoaded', function () {
     $(document).on('input change', '#plan-arrival', updateLocalConfirm);
 
     function openAddModal(structureId, projectedIso) {
+        editingPlan = null;
         $('#planModalTitle').text('Plan Pull');
         $('#plan-id').val('');
         $('#refinery-select-group').show();
@@ -647,7 +648,12 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#planModal').appendTo('body').modal('show');
     }
 
+    // The pull the modal is open on, kept so a save or a delete can offer to
+    // carry to the rest of its blueprint.
+    let editingPlan = null;
+
     function openEditModal(raw) {
+        editingPlan = raw;
         $('#planModalTitle').text('Edit Planned Pull');
         $('#plan-id').val(raw.id);
         $('#refinery-select-group').hide();
@@ -773,11 +779,28 @@ document.addEventListener('DOMContentLoaded', function () {
         const iso = inputToIso($('#plan-arrival').val());
         if (!iso) { $('#plan-error').show().text('Pick a planned arrival time.'); return; }
 
+        // A pull from a blueprint can take the rest of its moon's pulls with
+        // it. Only worth asking when the time actually moved and there is
+        // something later to move.
+        let cascade = 0;
+        // Compared as instants: the value built here and the one the calendar
+        // handed over are the same moment written two different ways.
+        const moved = editingPlan && new Date(iso).getTime() !== new Date(editingPlan.iso).getTime();
+        if (isUpdate && moved && editingPlan.rotation_id && editingPlan.later_in_series > 0) {
+            cascade = confirm(
+                'This pull comes from a blueprint and has ' + editingPlan.later_in_series +
+                ' later pull(s) for this moon.\n\n' +
+                'OK: move those by the same amount, keeping the pattern.\n' +
+                'Cancel: move only this one.'
+            ) ? 1 : 0;
+        }
+
         const payload = {
             structure_id: $('#plan-structure-id').val(),
             planned_arrival_time: iso,
             notes: $('#plan-notes').val(),
             confirmed: confirmed ? 1 : 0,
+            cascade: cascade,
         };
         pendingPayload = { payload, isUpdate, planId };
 
@@ -822,11 +845,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
     $('#btn-delete-plan').on('click', function () {
         const id = $(this).data('id');
-        if (!confirm('Remove this planned pull?')) return;
+        let cascade = 0;
+
+        if (editingPlan && editingPlan.rotation_id && editingPlan.later_in_series > 0) {
+            const answer = confirm(
+                'This pull comes from a blueprint and has ' + editingPlan.later_in_series +
+                ' later pull(s) for this moon.\n\n' +
+                'OK: remove this one and those.\n' +
+                'Cancel: remove only this one.'
+            );
+            cascade = answer ? 1 : 0;
+        } else if (!confirm('Remove this planned pull?')) {
+            return;
+        }
+
         $.ajax({
             url: routes.destroy + '/' + id,
             method: 'DELETE',
-            data: { _token: CSRF },
+            data: { _token: CSRF, cascade: cascade },
         }).done(() => window.location.reload()).fail(() => alert('Delete failed.'));
     });
 });

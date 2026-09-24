@@ -379,6 +379,7 @@ function loadBlueprint(bp) {
         name: bp.name,
         weeks: bp.weeks,
         slots: bp.slots.map(s => ({
+            id: s.id,
             week_number: s.week_number,
             day_of_week: s.day_of_week,
             time_of_day: s.time_of_day,
@@ -454,6 +455,7 @@ $('#btn-add-slot').on('click', function () {
     if (!structureId || !time || !pendingCell) { return; }
 
     current.slots.push({
+        id: null,
         week_number: pendingCell.week,
         day_of_week: pendingCell.day,
         time_of_day: time,
@@ -471,6 +473,20 @@ $('#btn-save-blueprint').on('click', function () {
         return;
     }
 
+    // Pulls this blueprint already put on the calendar follow it, if you say
+    // so. Anything already pulling, or already past, is left alone either way.
+    const saved = blueprints.find(b => b.id === current.id);
+    const ahead = saved ? saved.planned_ahead : 0;
+    let resync = false;
+    if (current.id && ahead > 0) {
+        resync = confirm(
+            'This blueprint has ' + ahead + ' pull(s) planned ahead.\n\n' +
+            'OK: update them to match the blueprint.\n' +
+            'Cancel: save the blueprint and leave them as they are.\n\n' +
+            'Pulls already matched to a real extraction never move.'
+        );
+    }
+
     $.ajax({
         url: BP_ROUTES.store,
         method: 'POST',
@@ -480,13 +496,23 @@ $('#btn-save-blueprint').on('click', function () {
             name: name,
             weeks: current.weeks,
             slots: current.slots,
+            resync: resync ? 1 : 0,
         },
     }).done(res => {
         blueprints = res.blueprints;
-        const saved = blueprints.find(b => b.id === res.blueprint_id);
-        if (saved) { loadBlueprint(saved); }
-        $('#bp-error').hide();
+        const justSaved = blueprints.find(b => b.id === res.blueprint_id);
+        if (justSaved) { loadBlueprint(justSaved); }
+        if (res.resync) {
+            const r = res.resync;
+            $('#bp-error').removeClass('mm-note-warn').show().text(
+                'Saved. On the planner: ' + r.moved + ' moved, ' + r.added + ' added, ' +
+                r.removed + ' removed, ' + r.kept + ' left as they were.'
+            );
+        } else {
+            $('#bp-error').hide();
+        }
     }).fail(xhr => {
+        $('#bp-error').addClass('mm-note-warn');
         const msg = (xhr.responseJSON && (xhr.responseJSON.error
             || Object.values(xhr.responseJSON.errors || {})[0])) || 'Save failed.';
         $('#bp-error').show().text(msg);

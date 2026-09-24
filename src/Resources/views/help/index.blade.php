@@ -3049,6 +3049,38 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         from your in-game notifications.
                     </p>
 
+                    <h4><i class="fas fa-drafting-compass"></i> Blueprints</h4>
+                    <p>
+                        Auto-fill guesses from history. A <strong>blueprint</strong> is the other way round: you say
+                        what the rotation should be, and the planner lays it down. It is a pattern of pulls over one
+                        to eight weeks &mdash; which refinery, which weekday, what EVE time &mdash; on the
+                        <strong>Blueprints</strong> tab next to the planner.
+                    </p>
+                    <p>
+                        Build it on the grid: a row per week, a column per weekday, and a <code>+</code> in any cell
+                        to drop a refinery and a time into it. Save it, then <strong>Apply to Planner</strong>: pick
+                        the date to start from and how many cycles to write, and you get the full list before
+                        anything is saved. Each line says whether it will be planned, skipped and why (before your
+                        start date, already in the past, or that refinery is already planned within half an hour),
+                        or planned but landing inside the minimum gap of another moon.
+                    </p>
+                    <p>
+                        The pattern keeps its weekdays. Starting a blueprint on a Friday runs whatever is left of
+                        that week first, then carries on from the Monday, so a moon you put on Monday stays on
+                        Monday.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-shield-alt"></i>
+                        <strong>A blueprint never touches what has already happened.</strong>
+                        Editing one offers to carry the change to the pulls it already wrote: slots that moved move,
+                        slots you removed are taken off the calendar, slots you added appear in every cycle still
+                        ahead. Pulls in the past, and pulls already matched to a real extraction, stay exactly as
+                        they are. The same goes for moving or deleting a single pull: the planner asks whether to
+                        carry it to that moon's later pulls in the rotation, and carrying a move shifts them by the
+                        same amount so the spacing survives.
+                    </div>
+
                     <h4><i class="fas fa-arrows-alt-h"></i> Moving pulls, and the gap warning</h4>
                     <p>
                         Move a pull to a different day and it stays there &mdash; later projections follow the new

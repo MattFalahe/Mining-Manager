@@ -90,6 +90,7 @@ class MoonBlueprintController extends Controller
             'name' => 'required|string|max:100',
             'weeks' => 'required|integer|min:1|max:' . self::MAX_WEEKS,
             'slots' => 'array',
+            'slots.*.id' => 'nullable|integer',
             'slots.*.week_number' => 'required|integer|min:1',
             'slots.*.day_of_week' => 'required|integer|min:1|max:7',
             'slots.*.time_of_day' => ['required', 'regex:/^\d{1,2}:\d{2}$/'],
@@ -120,6 +121,7 @@ class MoonBlueprintController extends Controller
             [$hour, $minute] = array_map('intval', explode(':', $slot['time_of_day']));
 
             $slots[] = [
+                'id' => isset($slot['id']) ? (int) $slot['id'] : null,
                 'week_number' => (int) $slot['week_number'],
                 'day_of_week' => (int) $slot['day_of_week'],
                 'time_of_day' => sprintf('%02d:%02d:00', min(23, max(0, $hour)), min(59, max(0, $minute))),
@@ -129,15 +131,20 @@ class MoonBlueprintController extends Controller
         }
 
         $blueprint = null;
+        // Kept from before the write: without the slots as they were, there is
+        // no way to work out where the pulls already on the calendar started.
+        $oldSlots = [];
+        $oldWeeks = $weeks;
 
-        DB::transaction(function () use ($validated, $corporationId, $weeks, $slots, &$blueprint) {
+        DB::transaction(function () use ($validated, $corporationId, $weeks, $slots, &$blueprint, &$oldSlots, &$oldWeeks) {
             if (!empty($validated['id'])) {
                 $blueprint = MoonRotation::forCorporation($corporationId)->find($validated['id']);
             }
 
             if ($blueprint) {
+                $oldWeeks = (int) $blueprint->weeks;
+                $oldSlots = MoonRotationSlot::where('rotation_id', $blueprint->id)->get()->keyBy('id')->all();
                 $blueprint->update(['name' => $validated['name'], 'weeks' => $weeks]);
-                MoonRotationSlot::where('rotation_id', $blueprint->id)->delete();
             } else {
                 $blueprint = MoonRotation::create([
                     'corporation_id' => $corporationId,
@@ -147,14 +154,37 @@ class MoonBlueprintController extends Controller
                 ]);
             }
 
+            // Slots are updated in place rather than replaced, so a pull on
+            // the calendar still knows which part of the pattern made it.
+            $kept = [];
             foreach ($slots as $slot) {
-                MoonRotationSlot::create($slot + ['rotation_id' => $blueprint->id]);
+                $slotId = $slot['id'];
+                unset($slot['id']);
+
+                if ($slotId && isset($oldSlots[$slotId])) {
+                    $oldSlots[$slotId]->newQuery()->whereKey($slotId)->update($slot);
+                    $kept[] = $slotId;
+                    continue;
+                }
+
+                $kept[] = (int) MoonRotationSlot::create($slot + ['rotation_id' => $blueprint->id])->id;
             }
+
+            MoonRotationSlot::where('rotation_id', $blueprint->id)
+                ->when(!empty($kept), fn ($query) => $query->whereNotIn('id', $kept))
+                ->delete();
         });
+
+        $resync = null;
+        if ($request->boolean('resync') && !empty($validated['id'])) {
+            [$actorId, $actorName] = $this->actor();
+            $resync = $this->rotations->resync($blueprint, $oldSlots, $oldWeeks, $actorId, $actorName);
+        }
 
         return response()->json([
             'success' => true,
             'blueprint_id' => $blueprint->id,
+            'resync' => $resync,
             'blueprints' => $this->blueprintPayload($corporationId),
         ]);
     }
@@ -274,6 +304,7 @@ class MoonBlueprintController extends Controller
                     'name' => $blueprint->name,
                     'weeks' => $blueprint->weeks,
                     'slots' => $blueprint->slots->map(fn (MoonRotationSlot $slot) => [
+                        'id' => $slot->id,
                         'week_number' => $slot->week_number,
                         'day_of_week' => $slot->day_of_week,
                         'time_of_day' => substr((string) $slot->time_of_day, 0, 5),

@@ -27,12 +27,17 @@ use Illuminate\Support\Facades\DB;
 class MoonPlannerController extends Controller
 {
     protected MoonPlannerService $planner;
+    protected \MiningManager\Services\Moon\MoonRotationService $rotations;
     protected SettingsManagerService $settings;
 
-    public function __construct(MoonPlannerService $planner, SettingsManagerService $settings)
-    {
+    public function __construct(
+        MoonPlannerService $planner,
+        SettingsManagerService $settings,
+        \MiningManager\Services\Moon\MoonRotationService $rotations
+    ) {
         $this->planner = $planner;
         $this->settings = $settings;
+        $this->rotations = $rotations;
 
         // moon_manager OR director (admin bypasses both via can()).
         $this->middleware(function ($request, $next) {
@@ -462,13 +467,27 @@ class MoonPlannerController extends Controller
             ]);
         }
 
-        return response()->json(['success' => true]);
+        // Carry the same move to this moon's later pulls in the rotation, when
+        // that is what was asked for. By the same amount, so the pattern keeps
+        // its spacing instead of collapsing onto one time.
+        $carried = 0;
+        if ($request->boolean('cascade') && $plan->rotation_id && $oldArrival->ne($plannedAt)) {
+            [$actorId, $actorName] = $this->actor();
+            $carried = $this->rotations->shiftLater(
+                $plan,
+                (int) round($oldArrival->diffInMinutes($plannedAt, false)),
+                $actorId,
+                $actorName
+            );
+        }
+
+        return response()->json(['success' => true, 'carried' => $carried]);
     }
 
     /**
      * Remove a planned pull.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $corporationId = $this->plannerCorporationId();
         $plan = MoonExtractionPlan::where('id', $id)
@@ -480,6 +499,13 @@ class MoonPlannerController extends Controller
         }
 
         [$actorId, $actorName] = $this->actor();
+
+        // Done before this one goes: finding the later pulls needs its time.
+        $carried = 0;
+        if ($request->boolean('cascade') && $plan->rotation_id) {
+            $carried = $this->rotations->deleteLater($plan, $actorId, $actorName);
+        }
+
         \MiningManager\Models\MoonExtractionPlanAudit::record([
             'corporation_id' => $corporationId,
             'plan_id' => $plan->id,
@@ -494,7 +520,7 @@ class MoonPlannerController extends Controller
 
         $plan->delete();
 
-        return response()->json(['success' => true]);
+        return response()->json(['success' => true, 'carried' => $carried]);
     }
 
     /**
@@ -636,6 +662,13 @@ class MoonPlannerController extends Controller
                 'status' => $plan->status,
                 'cadence_days' => $plan->cadence_days,
                 'notes' => $plan->notes,
+                // What an edit here could carry to: the same moon's later
+                // pulls in the same blueprint. The page only offers the choice
+                // when there is something to carry it to.
+                'rotation_id' => $plan->rotation_id,
+                'later_in_series' => $plan->rotation_id
+                    ? $this->rotations->laterInSeries($plan)->count()
+                    : 0,
             ];
         }
 
