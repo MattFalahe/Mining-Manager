@@ -682,11 +682,20 @@ class MoonPlannerController extends Controller
             return [];
         }
 
-        // Batch moon + structure names.
+        // Batch moon + structure names, and the system each refinery sits in
+        // so the Plan Pull dropdown can be read in system order. The cards
+        // themselves stay in attention order, uncovered and richest first.
         $structureIds = $refineries->pluck('structure_id')->all();
-        $names = DB::table('universe_structures')
+        $structureRows = DB::table('universe_structures')
             ->whereIn('structure_id', $structureIds)
-            ->pluck('name', 'structure_id');
+            ->get(['structure_id', 'name', 'solar_system_id']);
+        $names = $structureRows->pluck('name', 'structure_id');
+        $systemNames = DB::table('solar_systems')
+            ->whereIn('system_id', $structureRows->pluck('solar_system_id')->filter()->unique()->all())
+            ->pluck('name', 'system_id');
+        $systemOf = $structureRows->mapWithKeys(fn ($row) => [
+            (int) $row->structure_id => $systemNames[$row->solar_system_id] ?? null,
+        ]);
         $moonNames = DB::table('moons')
             ->whereIn('moon_id', $refineries->pluck('moon_id')->filter()->all())
             ->pluck('name', 'moon_id');
@@ -701,6 +710,7 @@ class MoonPlannerController extends Controller
                 'structure_id' => $sid,
                 'moon_id' => $refinery->moon_id,
                 'structure_name' => $names[$sid] ?? "Structure {$sid}",
+                'system_name' => $systemOf[$sid] ?? null,
                 'moon_name' => $refinery->moon_id ? ($moonNames[$refinery->moon_id] ?? "Moon {$refinery->moon_id}") : null,
                 'cadence_days' => $cadence['cadence_days'],
                 'arrival_count' => $cadence['arrival_count'],

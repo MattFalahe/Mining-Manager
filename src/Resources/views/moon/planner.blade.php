@@ -576,7 +576,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // ---- Modal helpers ----
     function fillRefinerySelect(selectedId) {
         const $sel = $('#plan-structure-id').empty();
-        refineries.forEach(r => {
+        // By system, then by name inside it. The cards down the side are in
+        // attention order, which is no use when you are hunting for one rig in
+        // a list. A refinery whose system we don't know sorts to the bottom.
+        const ordered = refineries.slice().sort((a, b) => {
+            const keyA = (a.system_name || '￿') + ' ' + (a.structure_name || '');
+            const keyB = (b.system_name || '￿') + ' ' + (b.structure_name || '');
+            return keyA.localeCompare(keyB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        ordered.forEach(r => {
             const label = r.structure_name + (r.moon_name ? ' — ' + r.moon_name : '');
             $sel.append($('<option>').val(r.structure_id).text(label));
         });
