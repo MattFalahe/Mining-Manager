@@ -32,6 +32,11 @@ class MoonExtractionPlanAudit extends Model
     public const ACTION_DELETED = 'deleted';
     public const ACTION_AUTOFILLED = 'autofilled';
 
+    // Written by applying a rotation. Apart from autofilled because one is a
+    // projection from what a refinery has done, the other a pattern somebody
+    // chose, and the history should not blur them.
+    public const ACTION_ROTATION = 'rotation';
+
     // Settling a pull that was fired off-plan. Kept apart from moved on
     // purpose: re-planning ahead and accepting what already happened in-game
     // are different decisions, and the history should say which it was.

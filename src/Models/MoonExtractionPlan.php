@@ -38,6 +38,9 @@ class MoonExtractionPlan extends Model
 
     public const SOURCE_MANUAL = 'manual';
     public const SOURCE_AUTO = 'auto';
+    // Written by applying a rotation. The rotation columns say which one and
+    // which repeat of it, so a later edit can offer to carry to the rest.
+    public const SOURCE_ROTATION = 'rotation';
 
     public const STATUS_PLANNED = 'planned';
     public const STATUS_CONFIRMED = 'confirmed';
@@ -54,6 +57,9 @@ class MoonExtractionPlan extends Model
         'planned_arrival_time',
         'cadence_days',
         'source',
+        'rotation_id',
+        'rotation_slot_id',
+        'rotation_cycle',
         'status',
         'linked_extraction_id',
         'variance_hours',
@@ -72,6 +78,9 @@ class MoonExtractionPlan extends Model
         'moon_id' => 'integer',
         'linked_extraction_id' => 'integer',
         'created_by' => 'integer',
+        'rotation_id' => 'integer',
+        'rotation_slot_id' => 'integer',
+        'rotation_cycle' => 'integer',
     ];
 
     /**
