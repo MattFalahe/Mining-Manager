@@ -123,11 +123,10 @@
                     <i class="fas fa-magic"></i> Auto-fill from History
                 </button>
             </form>
-            <a class="btn btn-sm btn-outline-primary ml-1"
-               href="{{ route('mining-manager.moon.blueprints') }}"
-               title="Lay a repeating pattern of pulls over the calendar from a date you choose">
+            <button type="button" class="btn btn-sm btn-outline-primary ml-1" id="btn-plan-blueprint"
+                    title="Lay a repeating pattern of pulls over the calendar from a date you choose">
                 <i class="fas fa-drafting-compass"></i> Plan from Blueprint
-            </a>
+            </button>
             <button type="button" class="btn btn-sm btn-outline-secondary ml-1" id="btn-history"
                     title="Who changed what on the planner">
                 <i class="fas fa-history"></i> History
@@ -443,6 +442,34 @@
         </div>
     </div>
 </div>
+@include('mining-manager::moon.partials._blueprint_apply', ['blueprints' => $blueprintList ?? []])
+
+<div class="modal fade" id="noBlueprintModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="fas fa-exclamation-triangle"></i> No blueprint yet</h5>
+                <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="mm-note mm-note-warn mb-0">
+                    <p class="mb-2">
+                        A blueprint is the repeating pattern you plan from: which refinery, which weekday,
+                        what EVE time, over one to eight weeks. There are none saved yet, so there is
+                        nothing to lay over the calendar.
+                    </p>
+                    <p class="mb-0">Build one on the <strong>Blueprints</strong> tab, then come back here.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Close</button>
+                <a class="btn btn-sm btn-success" href="{{ route('mining-manager.moon.blueprints') }}">
+                    <i class="fas fa-drafting-compass"></i> Create a blueprint
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('javascript')
@@ -704,6 +731,19 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     $('#btn-add-pull').on('click', () => openAddModal(null, null));
+
+    // Plan from a blueprint without leaving the calendar. With none saved, say
+    // so and offer the way to make one rather than opening an empty dialog.
+    $('#btn-plan-blueprint').on('click', function () {
+        if (BlueprintApply.count() === 0) {
+            $('#noBlueprintModal')
+                .appendTo('body')
+                .addClass('mining-manager-wrapper mining-dashboard moon-planner-page')
+                .modal('show');
+            return;
+        }
+        BlueprintApply.open(null);
+    });
     $('.btn-plan-refinery').on('click', function () {
         openAddModal($(this).data('structure-id'), $(this).data('projected') || null);
     });

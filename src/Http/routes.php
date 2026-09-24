@@ -635,6 +635,11 @@ Route::group([
             'uses' => 'MoonBlueprintController@apply',
         ]);
 
+        Route::post('/blueprints/prune', [
+            'as' => 'mining-manager.moon.blueprints.prune',
+            'uses' => 'MoonBlueprintController@prune',
+        ]);
+
         Route::delete('/blueprints/{id}', [
             'as' => 'mining-manager.moon.blueprints.destroy',
             'uses' => 'MoonBlueprintController@destroy',

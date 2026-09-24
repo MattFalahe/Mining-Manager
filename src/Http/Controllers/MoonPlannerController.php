@@ -88,6 +88,7 @@ class MoonPlannerController extends Controller
         $calendar = [];
         $warnings = [];
         $refinerySummaries = [];
+        $blueprintList = [];
         $minGapHours = $this->planner->getMinGapHours();
 
         if ($corporationId) {
@@ -99,6 +100,7 @@ class MoonPlannerController extends Controller
             $calendar = $built['calendar'];
             $warnings = $built['warnings'];
             $refinerySummaries = $this->buildRefinerySummaries($corporationId);
+            $blueprintList = $this->rotations->listForCorporation($corporationId);
         }
 
         return view('mining-manager::moon.planner', [
@@ -107,6 +109,7 @@ class MoonPlannerController extends Controller
             'calendar' => $calendar,
             'warnings' => $warnings,
             'refinerySummaries' => $refinerySummaries,
+            'blueprintList' => $blueprintList,
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
         ]);

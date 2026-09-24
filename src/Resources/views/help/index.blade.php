@@ -3058,9 +3058,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                     <p>
                         Build it on the grid: a row per week, a column per weekday, and a <code>+</code> in any cell
-                        to drop a refinery and a time into it. Save it, then <strong>Apply to Planner</strong>: pick
-                        the date to start from and how many cycles to write, and you get the full list before
-                        anything is saved. Each line says whether it will be planned, skipped and why (before your
+                        to drop a refinery and a time into it. Save it, then apply it, either from this tab or with
+                        <strong>Plan from Blueprint</strong> on the planner itself: pick the blueprint, the date to
+                        start from and how many cycles to write, and you get the full list before anything is saved. Each line says whether it will be planned, skipped and why (before your
                         start date, already in the past, or that refinery is already planned within half an hour),
                         or planned but landing inside the minimum gap of another moon.
                     </p>
@@ -3068,6 +3068,21 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         The pattern keeps its weekdays. Starting a blueprint on a Friday runs whatever is left of
                         that week first, then carries on from the Monday, so a moon you put on Monday stays on
                         Monday.
+                    </p>
+                    <p>
+                        <strong>A refinery belongs to a blueprint once.</strong> The picker only offers the ones
+                        the pattern does not already use, and the count above the grid says how many are placed
+                        and how many are still to go, so nothing gets scheduled twice or quietly left out. Each
+                        one is labelled with its moon's tier, R4 to R64, so the rich moons are easy to spot.
+                        Click any pull in the grid to change its refinery or time, or to remove it.
+                    </p>
+                    <p>
+                        <strong>A refinery that is unanchored, destroyed or handed to someone else</strong> is
+                        flagged in red wherever it appears, and applying never plans a pull on it. One button
+                        clears those out of every blueprint, along with the pulls they had planned ahead. That
+                        part is deliberately a button rather than something automatic: a structure can vanish from
+                        SeAT for a few minutes when ESI has a bad day, and a pattern is cheap to keep and
+                        annoying to rebuild.
                     </p>
 
                     <div class="info-box">

@@ -41,10 +41,24 @@
         font-size: 0.75rem;
         line-height: 1.25;
     }
+    .moon-blueprints-page .mm-bp-slot { cursor: pointer; }
+    .moon-blueprints-page .mm-bp-slot:hover { filter: brightness(1.15); }
     .moon-blueprints-page .mm-bp-slot .mm-bp-slot-remove {
         float: right;
         cursor: pointer;
-        opacity: 0.85;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 3px;
+        line-height: 1;
+        padding: 0 4px;
+        margin-left: 4px;
+    }
+    .moon-blueprints-page .mm-bp-slot .mm-bp-slot-remove:hover { background: #dc3545; }
+    /* Unanchored, destroyed or handed over: still in the pattern, but nothing
+       can pull from it. */
+    .moon-blueprints-page .mm-bp-slot-missing {
+        background: rgba(220, 53, 69, 0.85);
+        border: 1px dashed #fca5a5;
     }
     .moon-blueprints-page .mm-bp-slot small { color: #e9d5ff; }
     .moon-blueprints-page .mm-bp-add {
@@ -194,6 +208,13 @@
                         </div>
                     </div>
 
+                    <div id="bp-missing" class="mm-note mm-note-warn" style="display:none;">
+                        <span id="bp-missing-text"></span>
+                        <button type="button" class="btn btn-xs btn-outline-danger ml-2" id="btn-prune-missing">
+                            <i class="fas fa-broom"></i> Remove them
+                        </button>
+                    </div>
+
                     <div id="bp-error" class="mm-note mm-note-warn" style="display:none;"></div>
 
                     <div class="table-responsive">
@@ -221,7 +242,7 @@
     <div class="modal-dialog" role="document">
         <div class="modal-content bg-dark text-light">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-moon"></i> Add pull</h5>
+                <h5 class="modal-title"><i class="fas fa-moon"></i> <span id="slot-title">Add pull</span></h5>
                 <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
@@ -237,55 +258,17 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-danger mr-auto" id="btn-remove-slot" style="display:none;">
+                    <i class="fas fa-trash"></i> Remove
+                </button>
                 <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-sm btn-mm-primary" id="btn-add-slot">Add</button>
+                <button type="button" class="btn btn-sm btn-success" id="btn-add-slot">Add</button>
             </div>
         </div>
     </div>
 </div>
 
-{{-- Apply to the planner --}}
-<div class="modal fade" id="applyModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content bg-dark text-light">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-calendar-plus"></i> Apply <span id="apply-name"></span></h5>
-                <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-row mb-2">
-                    <div class="col-md-5">
-                        <label for="apply-start" class="small text-muted mb-1">Start from</label>
-                        <input type="date" class="form-control form-control-sm" id="apply-start">
-                    </div>
-                    <div class="col-md-4">
-                        <label for="apply-cycles" class="small text-muted mb-1">Cycles</label>
-                        <input type="number" class="form-control form-control-sm" id="apply-cycles" min="1" value="6">
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end">
-                        <button type="button" class="btn btn-sm btn-outline-primary btn-block" id="btn-preview">
-                            <i class="fas fa-eye"></i> Preview
-                        </button>
-                    </div>
-                </div>
-                <div class="mm-note" id="apply-summary" style="display:none;"></div>
-                <div id="apply-error" class="mm-note mm-note-warn" style="display:none;"></div>
-                <div class="table-responsive" style="max-height: 340px; overflow-y: auto;">
-                    <table class="table table-sm table-dark table-striped mb-0" id="apply-table" style="display:none;">
-                        <thead><tr><th>Cycle</th><th>When (EVE)</th><th>Refinery</th><th>Status</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-sm btn-success" id="btn-apply-confirm" disabled>
-                    <i class="fas fa-check"></i> Write these pulls
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
+@include('mining-manager::moon.partials._blueprint_apply', ['blueprints' => $blueprintList])
 
 </div>
 @endsection
@@ -297,6 +280,7 @@ const BP_ROUTES = {
     store: '{{ route('mining-manager.moon.blueprints.store') }}',
     base: '{{ route('mining-manager.moon.blueprints') }}',
     planner: '{{ route('mining-manager.moon.planner') }}',
+    prune: '{{ route('mining-manager.moon.blueprints.prune') }}',
 };
 const MAX_WEEKS = {{ $maxWeeks }};
 const REFINERIES = @json($refineries ?? []);
@@ -304,15 +288,23 @@ let blueprints = @json($blueprints ?? []);
 
 // The blueprint being edited. id null until it has been saved once.
 let current = { id: null, name: '', weeks: 2, slots: [] };
-let pendingCell = null;   // {week, day} while the slot modal is open
+// What the slot dialog is working on: a new pull in a cell, or one already
+// in the pattern.
+let slotEditor = null;   // {mode: 'add'|'edit', week, day, slot}
 let previewed = null;     // {start, cycles} the preview on screen was built from
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+function refinery(structureId) {
+    return REFINERIES.find(r => r.structure_id === structureId) || null;
+}
+
 function refineryName(structureId) {
-    const hit = REFINERIES.find(r => r.structure_id === structureId);
+    const hit = refinery(structureId);
     return hit ? hit.structure_name : ('Structure ' + structureId);
 }
+
+const RARITY_CLASS = { R4: 'badge-r4', R8: 'badge-r8', R16: 'badge-r16', R32: 'badge-r32', R64: 'badge-r64' };
 
 // ---- The saved list ----
 function renderList() {
@@ -348,14 +340,24 @@ function renderGrid() {
                 .filter(s => s.week_number === week && s.day_of_week === day)
                 .sort((a, b) => a.time_of_day.localeCompare(b.time_of_day))
                 .forEach(s => {
-                    $cell.append(
-                        $('<div class="mm-bp-slot">').append(
-                            $('<span class="mm-bp-slot-remove" title="Remove">&times;</span>')
-                                .data('slot', s),
-                            $('<div>').text(s.time_of_day),
-                            $('<small>').text(refineryName(s.structure_id))
-                        )
-                    );
+                    const rig = refinery(s.structure_id);
+                    const $chip = $('<div class="mm-bp-slot">')
+                        .attr('title', rig ? 'Click to edit this pull' : 'This refinery is no longer owned')
+                        .data('slot', s)
+                        .append(
+                            $('<span class="mm-bp-slot-remove" title="Remove">&times;</span>'),
+                            $('<div>').text(s.time_of_day)
+                        );
+                    if (!rig) { $chip.addClass('mm-bp-slot-missing'); }
+                    if (rig && rig.rarity) {
+                        $chip.append(
+                            $('<span class="badge mr-1">')
+                                .addClass(RARITY_CLASS[rig.rarity] || 'badge-secondary')
+                                .text(rig.rarity)
+                        );
+                    }
+                    $chip.append($('<small>').text(refineryName(s.structure_id)));
+                    $cell.append($chip);
                 });
             $cell.append(
                 $('<button type="button" class="mm-bp-add">+</button>')
@@ -367,7 +369,20 @@ function renderGrid() {
     }
 
     const count = current.slots.length;
-    $('#bp-slot-count').text(count ? count + ' pull(s) in this pattern' : 'No pulls yet');
+    const left = REFINERIES.length - count;
+    $('#bp-slot-count').text(
+        count
+            ? count + ' of ' + REFINERIES.length + ' refineries placed, ' + left + ' left'
+            : 'No pulls yet, ' + REFINERIES.length + ' refineries to place'
+    );
+    const gone = current.slots.filter(sl => !refinery(sl.structure_id)).length;
+    $('#bp-missing').toggle(gone > 0);
+    $('#bp-missing-text').text(
+        gone === 1
+            ? 'One refinery in this blueprint is no longer owned, so nothing can pull from it.'
+            : gone + ' refineries in this blueprint are no longer owned, so nothing can pull from them.'
+    );
+
     $('#btn-apply-blueprint').toggle(!!current.id && count > 0);
     $('#btn-delete-blueprint').toggle(!!current.id);
     $('#bp-editor-title').text(current.id ? current.name : 'New blueprint');
@@ -420,19 +435,65 @@ $('#bp-weeks').on('change', function () {
 $('#bp-name').on('input', function () { current.name = $(this).val(); });
 
 // ---- Slots ----
-$(document).on('click', '.mm-bp-add', function () {
-    pendingCell = { week: parseInt($(this).data('week'), 10), day: parseInt($(this).data('day'), 10) };
-    $('#slot-when').text('Week ' + pendingCell.week + ', ' + DAYS[pendingCell.day - 1]);
+function openSlotDialog(editor) {
+    slotEditor = editor;
+    const editing = editor.mode === 'edit';
+
+    $('#slot-title').text(editing ? 'Edit pull' : 'Add pull');
+    $('#btn-add-slot').text(editing ? 'Save' : 'Add');
+    $('#btn-remove-slot').toggle(editing);
+    $('#slot-when').text('Week ' + editor.week + ', ' + DAYS[editor.day - 1]);
+
+    // A refinery already in the pattern is not offered again: one moon, one
+    // pull per blueprint, so nothing is scheduled twice by accident. The one
+    // being edited stays in its own list, obviously.
+    const used = current.slots
+        .filter(sl => sl !== editor.slot)
+        .map(sl => sl.structure_id);
+    const free = REFINERIES.filter(r => used.indexOf(r.structure_id) === -1);
+
+    if (!free.length) {
+        $('#bp-error').addClass('mm-note-warn').show()
+            .text('Every refinery is already in this blueprint.');
+        return;
+    }
 
     const $sel = $('#slot-structure').empty();
-    REFINERIES.forEach(r => $sel.append($('<option>').val(r.structure_id).text(r.structure_name)));
+    free.forEach(r => $sel.append(
+        $('<option>').val(r.structure_id).text((r.rarity ? r.rarity + ' — ' : '') + r.structure_name)
+    ));
 
+    $('#slot-structure').val(editing ? editor.slot.structure_id : $sel.find('option').first().val());
+    $('#slot-time').val(editing ? editor.slot.time_of_day : '17:00');
     updateSlotLocal();
-    $('#slotModal').appendTo('body').modal('show');
+    // The modal is moved to <body>, outside the wrapper the plugin's styles are
+    // scoped to, so it takes the wrapper classes with it or it renders unstyled.
+    $('#slotModal')
+        .appendTo('body')
+        .addClass('mining-manager-wrapper mining-dashboard moon-blueprints-page')
+        .modal('show');
+}
+
+// An empty cell adds; a pull already in the pattern opens for editing.
+$(document).on('click', '.mm-bp-add', function () {
+    openSlotDialog({
+        mode: 'add',
+        week: parseInt($(this).data('week'), 10),
+        day: parseInt($(this).data('day'), 10),
+    });
 });
 
-$(document).on('click', '.mm-bp-slot-remove', function () {
+$(document).on('click', '.mm-bp-slot', function (event) {
+    if ($(event.target).hasClass('mm-bp-slot-remove')) { return; }
     const slot = $(this).data('slot');
+    if (slot) {
+        openSlotDialog({ mode: 'edit', week: slot.week_number, day: slot.day_of_week, slot: slot });
+    }
+});
+
+$(document).on('click', '.mm-bp-slot-remove', function (event) {
+    event.stopPropagation();
+    const slot = $(this).closest('.mm-bp-slot').data('slot');
     current.slots = current.slots.filter(s => s !== slot);
     renderGrid();
 });
@@ -452,15 +513,30 @@ $(document).on('input change', '#slot-time', updateSlotLocal);
 $('#btn-add-slot').on('click', function () {
     const structureId = parseInt($('#slot-structure').val(), 10);
     const time = $('#slot-time').val();
-    if (!structureId || !time || !pendingCell) { return; }
+    if (!structureId || !time || !slotEditor) { return; }
 
-    current.slots.push({
-        id: null,
-        week_number: pendingCell.week,
-        day_of_week: pendingCell.day,
-        time_of_day: time,
-        structure_id: structureId,
-    });
+    if (slotEditor.mode === 'edit') {
+        // Keeps its id, so the blueprint can still tell the server which pull
+        // this is and carry the change to the calendar.
+        slotEditor.slot.structure_id = structureId;
+        slotEditor.slot.time_of_day = time;
+    } else {
+        current.slots.push({
+            id: null,
+            week_number: slotEditor.week,
+            day_of_week: slotEditor.day,
+            time_of_day: time,
+            structure_id: structureId,
+        });
+    }
+
+    $('#slotModal').modal('hide');
+    renderGrid();
+});
+
+$('#btn-remove-slot').on('click', function () {
+    if (!slotEditor || slotEditor.mode !== 'edit') { return; }
+    current.slots = current.slots.filter(sl => sl !== slotEditor.slot);
     $('#slotModal').modal('hide');
     renderGrid();
 });
@@ -500,6 +576,10 @@ $('#btn-save-blueprint').on('click', function () {
         },
     }).done(res => {
         blueprints = res.blueprints;
+        BlueprintApply.replace(blueprints.map(b => ({
+            id: b.id, name: b.name, weeks: b.weeks,
+            slot_count: b.slots.length, planned_ahead: b.planned_ahead,
+        })));
         const justSaved = blueprints.find(b => b.id === res.blueprint_id);
         if (justSaved) { loadBlueprint(justSaved); }
         if (res.resync) {
@@ -529,95 +609,35 @@ $('#btn-delete-blueprint').on('click', function () {
         data: { _token: CSRF, _method: 'DELETE' },
     }).done(res => {
         blueprints = res.blueprints;
+        BlueprintApply.replace(blueprints.map(b => ({
+            id: b.id, name: b.name, weeks: b.weeks,
+            slot_count: b.slots.length, planned_ahead: b.planned_ahead,
+        })));
         newBlueprint();
     }).fail(() => $('#bp-error').show().text('Could not delete that blueprint.'));
 });
 
-// ---- Apply ----
-function nextMonday() {
-    const d = new Date();
-    d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
-    return d.toISOString().slice(0, 10);
-}
-
-$('#btn-apply-blueprint').on('click', function () {
-    if (!current.id) { return; }
-    $('#apply-name').text(current.name);
-    $('#apply-start').val(nextMonday());
-    $('#apply-summary').hide();
-    $('#apply-error').hide();
-    $('#apply-table').hide().find('tbody').empty();
-    $('#btn-apply-confirm').prop('disabled', true);
-    previewed = null;
-    $('#applyModal').appendTo('body').modal('show');
-});
-
-$('#btn-preview').on('click', function () {
-    const start = $('#apply-start').val();
-    const cycles = parseInt($('#apply-cycles').val(), 10);
-    if (!start || !cycles) {
-        $('#apply-error').show().text('Pick a start date and how many cycles.');
-        return;
-    }
+$('#btn-prune-missing').on('click', function () {
+    if (!confirm('Remove every refinery that is no longer owned from your blueprints, '
+        + 'along with the pulls they had planned ahead?')) { return; }
 
     $.ajax({
-        url: BP_ROUTES.base + '/' + current.id + '/preview',
+        url: BP_ROUTES.prune,
         method: 'POST',
-        data: { _token: CSRF, start_date: start, cycles: cycles },
+        data: { _token: CSRF },
     }).done(res => {
-        const $tbody = $('#apply-table').show().find('tbody').empty();
-        res.rows.forEach(row => {
-            let status = '<span class="text-success">will be planned</span>';
-            if (row.skip) {
-                status = '<span class="mm-preview-skip">skipped, ' + row.skip + '</span>';
-            } else if (row.clashes) {
-                status = '<span class="mm-preview-clash">planned, ' + row.clashes +
-                    ' within the gap of another moon</span>';
-            }
-            $tbody.append(
-                '<tr><td>' + row.cycle + '</td><td>' + row.arrival + '</td><td>' +
-                $('<div>').text(row.structure_name).html() + '</td><td>' + status + '</td></tr>'
-            );
-        });
-
-        $('#apply-summary').show().html(
-            '<strong>' + res.summary.plan + '</strong> pull(s) would be written, ' +
-            res.summary.skip + ' skipped' +
-            (res.summary.clash ? ', ' + res.summary.clash + ' land within the minimum gap of another moon' : '') +
-            '. Nothing is saved until you confirm.'
+        blueprints = res.blueprints;
+        const still = blueprints.find(b => b.id === current.id);
+        if (still) { loadBlueprint(still); } else { newBlueprint(); }
+        $('#bp-error').removeClass('mm-note-warn').show().text(
+            'Removed ' + res.removed.slots + ' refinery slot(s) and ' + res.removed.plans + ' planned pull(s).'
         );
-        $('#apply-error').hide();
-        previewed = { start: start, cycles: cycles };
-        $('#btn-apply-confirm').prop('disabled', res.summary.plan === 0);
-    }).fail(xhr => {
-        const msg = (xhr.responseJSON && (xhr.responseJSON.error
-            || Object.values(xhr.responseJSON.errors || {})[0])) || 'Could not work that out.';
-        $('#apply-error').show().text(msg);
-        $('#btn-apply-confirm').prop('disabled', true);
-    });
+    }).fail(() => $('#bp-error').addClass('mm-note-warn').show().text('Could not remove them.'));
 });
 
-// A changed date or count invalidates what is on screen, so it has to be
-// previewed again before it can be written.
-$(document).on('input change', '#apply-start, #apply-cycles', function () {
-    previewed = null;
-    $('#btn-apply-confirm').prop('disabled', true);
-});
-
-$('#btn-apply-confirm').on('click', function () {
-    if (!previewed) { return; }
-    $(this).prop('disabled', true);
-
-    $.ajax({
-        url: BP_ROUTES.base + '/' + current.id + '/apply',
-        method: 'POST',
-        data: { _token: CSRF, start_date: previewed.start, cycles: previewed.cycles },
-    }).done(() => {
-        window.location = BP_ROUTES.planner;
-    }).fail(xhr => {
-        const msg = (xhr.responseJSON && xhr.responseJSON.error) || 'Could not write those pulls.';
-        $('#apply-error').show().text(msg);
-    });
+// Applying is the same dialog the planner uses, opened on this blueprint.
+$('#btn-apply-blueprint').on('click', function () {
+    if (current.id) { BlueprintApply.open(current.id); }
 });
 
 $(document).ready(function () {

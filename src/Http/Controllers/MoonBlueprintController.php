@@ -58,16 +58,20 @@ class MoonBlueprintController extends Controller
         $corporationId = $this->corporationId();
 
         $blueprints = [];
+        $blueprintList = [];
         $refineries = [];
 
         if ($corporationId) {
             $blueprints = $this->blueprintPayload($corporationId);
+            $blueprintList = $this->rotations->listForCorporation($corporationId);
             $refineries = $this->refineryOptions($corporationId);
         }
 
         return view('mining-manager::moon.blueprints', [
             'corporationId' => $corporationId,
             'blueprints' => $blueprints,
+            // The same list the planner's apply dialog reads.
+            'blueprintList' => $blueprintList,
             'refineries' => $refineries,
             'maxWeeks' => self::MAX_WEEKS,
         ]);
@@ -101,6 +105,7 @@ class MoonBlueprintController extends Controller
         $known = $this->planner->refineriesForCorporation($corporationId)->keyBy('structure_id');
 
         $slots = [];
+        $seen = [];
         foreach ($validated['slots'] ?? [] as $slot) {
             $structureId = (int) $slot['structure_id'];
             $refinery = $known->get($structureId);
@@ -110,6 +115,14 @@ class MoonBlueprintController extends Controller
                     'error' => 'One of the slots is not a refinery belonging to this corporation.',
                 ], 422);
             }
+
+            if (isset($seen[$structureId])) {
+                return response()->json([
+                    'error' => 'Each refinery can only appear once in a blueprint. '
+                        . ($refinery->moon_id ? 'That moon is' : 'That refinery is') . ' already in this one.',
+                ], 422);
+            }
+            $seen[$structureId] = true;
 
             if ((int) $slot['week_number'] > $weeks) {
                 return response()->json([
@@ -185,6 +198,27 @@ class MoonBlueprintController extends Controller
             'success' => true,
             'blueprint_id' => $blueprint->id,
             'resync' => $resync,
+            'blueprints' => $this->blueprintPayload($corporationId),
+        ]);
+    }
+
+    /**
+     * Drop the refineries this corporation no longer owns from its blueprints,
+     * and the pulls they had planned ahead.
+     */
+    public function prune()
+    {
+        $corporationId = $this->corporationId();
+        if (!$corporationId) {
+            return response()->json(['error' => 'No Moon Owner Corporation configured.'], 422);
+        }
+
+        [$actorId, $actorName] = $this->actor();
+        $removed = $this->rotations->pruneMissingRefineries($corporationId, $actorId, $actorName);
+
+        return response()->json([
+            'success' => true,
+            'removed' => $removed,
             'blueprints' => $this->blueprintPayload($corporationId),
         ]);
     }
@@ -294,6 +328,11 @@ class MoonBlueprintController extends Controller
      */
     protected function blueprintPayload(int $corporationId): array
     {
+        $owned = $this->planner->refineriesForCorporation($corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         return MoonRotation::forCorporation($corporationId)
             ->with('slots')
             ->orderBy('name')
@@ -310,6 +349,9 @@ class MoonBlueprintController extends Controller
                         'time_of_day' => substr((string) $slot->time_of_day, 0, 5),
                         'structure_id' => $slot->structure_id,
                         'structure_name' => $this->structureName($slot->structure_id),
+                        // Unanchored, destroyed or handed over: nothing can pull
+                        // from it, so the page says so rather than planning it.
+                        'missing' => !in_array((int) $slot->structure_id, $owned, true),
                     ])->all(),
                     'planned_ahead' => \MiningManager\Models\MoonExtractionPlan::where('rotation_id', $blueprint->id)
                         ->active()
@@ -345,6 +387,9 @@ class MoonBlueprintController extends Controller
                 'structure_id' => (int) $refinery->structure_id,
                 'structure_name' => $row->name ?? ('Structure ' . $refinery->structure_id),
                 'system_name' => $row && $row->solar_system_id ? ($systemNames[$row->solar_system_id] ?? null) : null,
+                // Which tier the moon is, so a pattern can be read at a glance
+                // and the richest moons are not the ones left out by accident.
+                'rarity' => $this->planner->highestRarityForStructure((int) $refinery->structure_id),
             ];
         })->all();
 

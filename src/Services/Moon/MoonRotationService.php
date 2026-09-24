@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MoonExtractionPlan;
 use MiningManager\Models\MoonExtractionPlanAudit;
 use MiningManager\Models\MoonRotation;
+use MiningManager\Models\MoonRotationSlot;
 
 /**
  * Turns a rotation into planned pulls, and carries an edit across the ones
@@ -40,6 +41,32 @@ class MoonRotationService
     }
 
     /**
+     * The corporation's blueprints, shaped for anything that has to offer a
+     * choice of them: the planner's apply dialog and the blueprints page both
+     * read this, so they cannot describe the same blueprint differently.
+     */
+    public function listForCorporation(int $corporationId): array
+    {
+        return MoonRotation::forCorporation($corporationId)
+            ->withCount('slots')
+            ->orderBy('name')
+            ->get()
+            ->map(function (MoonRotation $rotation) {
+                return [
+                    'id' => (int) $rotation->id,
+                    'name' => $rotation->name,
+                    'weeks' => (int) $rotation->weeks,
+                    'slot_count' => (int) $rotation->slots_count,
+                    'planned_ahead' => MoonExtractionPlan::where('rotation_id', $rotation->id)
+                        ->active()
+                        ->where('planned_arrival_time', '>', Carbon::now())
+                        ->count(),
+                ];
+            })
+            ->all();
+    }
+
+    /**
      * How many cycles of this rotation fit inside the year-ahead cap.
      */
     public function maxCycles(MoonRotation $rotation): int
@@ -70,6 +97,13 @@ class MoonRotationService
         // of that week rather than shifting the whole pattern.
         $anchor = $startDate->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
 
+        // A refinery that has been unanchored or blown up is gone from the
+        // corporation's structures, and nothing can pull from it.
+        $owned = $this->planner->refineriesForCorporation((int) $rotation->corporation_id)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         $rows = [];
         $placed = [];  // structure_id => Carbon[] of times placed in this preview
 
@@ -87,7 +121,9 @@ class MoonRotationService
                 $structureId = (int) $slot->structure_id;
                 $skip = null;
 
-                if ($arrival->lt($startDate)) {
+                if (!in_array($structureId, $owned, true)) {
+                    $skip = 'that refinery is gone';
+                } elseif ($arrival->lt($startDate)) {
                     $skip = 'before the start date';
                 } elseif ($arrival->lt($now)) {
                     $skip = 'in the past';
@@ -319,6 +355,68 @@ class MoonRotationService
         });
 
         return $summary;
+    }
+
+    /**
+     * Take the refineries a corporation no longer owns out of its blueprints,
+     * along with the pulls they had planned ahead.
+     *
+     * Deliberately not automatic on every page load. A structure missing from
+     * SeAT for a moment during an ESI wobble would otherwise quietly delete a
+     * pattern somebody spent time building, and a blueprint is cheap to keep
+     * and expensive to rebuild. The page flags them and this runs when asked.
+     *
+     * @return array{slots:int,plans:int}
+     */
+    public function pruneMissingRefineries(int $corporationId, ?int $actorId = null, ?string $actorName = null): array
+    {
+        $owned = $this->planner->refineriesForCorporation($corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $rotationIds = MoonRotation::forCorporation($corporationId)->pluck('id')->all();
+        if (!$rotationIds) {
+            return ['slots' => 0, 'plans' => 0];
+        }
+
+        $gone = MoonRotationSlot::whereIn('rotation_id', $rotationIds)
+            ->when($owned, fn ($query) => $query->whereNotIn('structure_id', $owned))
+            ->get();
+
+        if ($gone->isEmpty()) {
+            return ['slots' => 0, 'plans' => 0];
+        }
+
+        $plans = 0;
+
+        DB::transaction(function () use ($gone, $actorId, $actorName, &$plans) {
+            foreach ($gone as $slot) {
+                $planned = MoonExtractionPlan::where('rotation_slot_id', $slot->id)
+                    ->active()
+                    ->where('planned_arrival_time', '>', Carbon::now())
+                    ->get();
+
+                foreach ($planned as $plan) {
+                    // A pull already matched to a real extraction is history,
+                    // whatever happened to the structure afterwards.
+                    if ($plan->status !== MoonExtractionPlan::STATUS_PLANNED || $plan->linked_extraction_id) {
+                        continue;
+                    }
+
+                    $this->audit($plan, MoonExtractionPlanAudit::ACTION_DELETED, $actorId, $actorName, [
+                        'old_arrival' => $plan->planned_arrival_time,
+                        'detail' => 'its refinery is no longer owned',
+                    ]);
+                    $plan->delete();
+                    $plans++;
+                }
+
+                $slot->delete();
+            }
+        });
+
+        return ['slots' => $gone->count(), 'plans' => $plans];
     }
 
     /**
