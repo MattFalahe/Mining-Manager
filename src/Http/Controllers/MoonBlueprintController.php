@@ -259,13 +259,24 @@ class MoonBlueprintController extends Controller
         $preview = $this->rotations->preview(
             $blueprint,
             Carbon::parse($request->input('start_date'))->startOfDay(),
-            (int) $request->input('cycles')
+            (int) $request->input('cycles'),
+            $request->boolean('take_over')
         );
 
         return response()->json([
             'success' => true,
             'summary' => $preview['summary'],
             'max_cycles' => $this->rotations->maxCycles($blueprint),
+            // What taking over the window would clear out of it, so the
+            // operator sees the cost before agreeing to it.
+            'removals' => array_map(function ($removal) {
+                return [
+                    'structure_name' => $this->structureName($removal['structure_id']),
+                    'arrival' => $removal['arrival']->format('D d M Y H:i'),
+                    'source' => $removal['source'],
+                    'from_this_blueprint' => $removal['from_this_blueprint'],
+                ];
+            }, $preview['removals']),
             'rows' => array_map(function ($row) {
                 return [
                     'cycle' => $row['cycle'],
@@ -293,7 +304,8 @@ class MoonBlueprintController extends Controller
             Carbon::parse($request->input('start_date'))->startOfDay(),
             (int) $request->input('cycles'),
             $actorId,
-            $actorName
+            $actorName,
+            $request->boolean('take_over')
         );
 
         return response()->json(['success' => true] + $result);

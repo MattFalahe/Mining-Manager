@@ -35,8 +35,29 @@
                     </div>
                 </div>
 
+                <div class="custom-control custom-checkbox mb-2">
+                    <input type="checkbox" class="custom-control-input" id="ba-takeover">
+                    <label class="custom-control-label small" for="ba-takeover">
+                        Make this blueprint the plan for these weeks
+                        <span class="text-muted d-block">
+                            Anything else planned in them is removed, including days the blueprint
+                            does not use. Pulls that are already running are left alone.
+                        </span>
+                    </label>
+                </div>
+
                 <div class="alert alert-info py-2 px-3 small mb-2" id="ba-summary" style="display:none;"></div>
                 <div class="alert alert-warning py-2 px-3 small mb-2" id="ba-error" style="display:none;"></div>
+
+                <div id="ba-removals" style="display:none;">
+                    <div class="alert alert-danger py-2 px-3 small mb-2" id="ba-removals-note"></div>
+                    <div class="table-responsive mb-3" style="max-height: 200px; overflow-y: auto;">
+                        <table class="table table-sm table-dark table-striped mb-0">
+                            <thead><tr><th>When (EVE)</th><th>Refinery</th><th>Planned by</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
 
                 <div class="table-responsive" style="max-height: 340px; overflow-y: auto;">
                     <table class="table table-sm table-dark table-striped mb-0" id="ba-table" style="display:none;">
@@ -64,6 +85,13 @@ window.BlueprintApply = (function () {
     let list = @json($blueprints ?? []);
     let previewed = null;   // the start and cycles the table on screen came from
 
+    // How a pull that is about to be removed got onto the calendar.
+    const SOURCES = {
+        manual: 'hand',
+        auto: 'auto-fill',
+        rotation: 'another blueprint',
+    };
+
     function selected() {
         return parseInt($('#ba-blueprint').val(), 10) || null;
     }
@@ -77,6 +105,7 @@ window.BlueprintApply = (function () {
     function invalidate() {
         previewed = null;
         $('#ba-confirm').prop('disabled', true);
+        $('#ba-removals').hide().find('tbody').empty();
     }
 
     function open(blueprintId) {
@@ -89,6 +118,7 @@ window.BlueprintApply = (function () {
         if (blueprintId) { $sel.val(blueprintId); }
 
         $('#ba-start').val(nextMonday());
+        $('#ba-takeover').prop('checked', false);
         $('#ba-summary').hide();
         $('#ba-error').hide();
         $('#ba-table').hide().find('tbody').empty();
@@ -107,12 +137,13 @@ window.BlueprintApply = (function () {
             || Object.values(xhr.responseJSON.errors || {})[0])) || fallback;
     }
 
-    $(document).on('input change', '#ba-blueprint, #ba-start, #ba-cycles', invalidate);
+    $(document).on('input change', '#ba-blueprint, #ba-start, #ba-cycles, #ba-takeover', invalidate);
 
     $(document).on('click', '#ba-preview', function () {
         const id = selected();
         const start = $('#ba-start').val();
         const cycles = parseInt($('#ba-cycles').val(), 10);
+        const takeOver = $('#ba-takeover').is(':checked') ? 1 : 0;
 
         if (!id || !start || !cycles) {
             $('#ba-error').show().text('Pick a blueprint, a start date and how many cycles.');
@@ -122,7 +153,7 @@ window.BlueprintApply = (function () {
         $.ajax({
             url: BASE + '/' + id + '/preview',
             method: 'POST',
-            data: { _token: CSRF, start_date: start, cycles: cycles },
+            data: { _token: CSRF, start_date: start, cycles: cycles, take_over: takeOver },
         }).done(res => {
             const $tbody = $('#ba-table').show().find('tbody').empty();
             res.rows.forEach(row => {
@@ -139,6 +170,21 @@ window.BlueprintApply = (function () {
                 );
             });
 
+            const removals = res.removals || [];
+            const $removed = $('#ba-removals').toggle(removals.length > 0).find('tbody').empty();
+            removals.forEach(row => {
+                $removed.append(
+                    '<tr><td>' + row.arrival + '</td><td>' +
+                    $('<div>').text(row.structure_name).html() + '</td><td>' +
+                    (row.from_this_blueprint ? 'this blueprint' : SOURCES[row.source] || row.source) +
+                    '</td></tr>'
+                );
+            });
+            $('#ba-removals-note').html(
+                '<i class="fas fa-exclamation-triangle"></i> <strong>' + removals.length +
+                '</strong> planned pull(s) in these weeks will be removed first.'
+            );
+
             $('#ba-summary').show().html(
                 '<strong>' + res.summary.plan + '</strong> pull(s) would be written, ' +
                 res.summary.skip + ' skipped' +
@@ -146,8 +192,8 @@ window.BlueprintApply = (function () {
                 '. Nothing is saved until you confirm.'
             );
             $('#ba-error').hide();
-            previewed = { id: id, start: start, cycles: cycles };
-            $('#ba-confirm').prop('disabled', res.summary.plan === 0);
+            previewed = { id: id, start: start, cycles: cycles, takeOver: takeOver };
+            $('#ba-confirm').prop('disabled', res.summary.plan === 0 && removals.length === 0);
         }).fail(xhr => {
             $('#ba-error').show().text(failure(xhr, 'Could not work that out.'));
             invalidate();
@@ -156,12 +202,24 @@ window.BlueprintApply = (function () {
 
     $(document).on('click', '#ba-confirm', function () {
         if (!previewed) { return; }
+
+        const removing = $('#ba-removals').find('tbody tr').length;
+        if (removing && !confirm('This removes ' + removing + ' planned pull(s) from those weeks '
+            + 'and replaces them with the blueprint. Go ahead?')) {
+            return;
+        }
+
         $(this).prop('disabled', true);
 
         $.ajax({
             url: BASE + '/' + previewed.id + '/apply',
             method: 'POST',
-            data: { _token: CSRF, start_date: previewed.start, cycles: previewed.cycles },
+            data: {
+                _token: CSRF,
+                start_date: previewed.start,
+                cycles: previewed.cycles,
+                take_over: previewed.takeOver,
+            },
         }).done(() => {
             window.location = PLANNER;
         }).fail(xhr => {

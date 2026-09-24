@@ -3065,6 +3065,17 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         or planned but landing inside the minimum gap of another moon.
                     </p>
                     <p>
+                        <strong>Make this blueprint the plan for these weeks</strong> is the tick box on that
+                        dialog. Left alone, a day that already has a pull on it is skipped and kept. Ticked, the
+                        blueprint takes the weeks over: everything else planned in them is removed first,
+                        including the days the pattern does not use at all. Swapping a Monday to Friday rotation
+                        for a Monday, Wednesday, Friday one takes the Tuesday and Thursday pulls with it, instead
+                        of leaving both patterns on the calendar at once. You get the full list of what would go,
+                        and where each one came from, before you confirm. A pull that is already running, one
+                        already matched to an extraction, and anything outside the weeks you are applying are
+                        never touched.
+                    </p>
+                    <p>
                         The pattern keeps its weekdays. Starting a blueprint on a Friday runs whatever is left of
                         that week first, then carries on from the Monday, so a moon you put on Monday stays on
                         Monday.

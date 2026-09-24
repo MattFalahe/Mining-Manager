@@ -84,9 +84,14 @@ class MoonRotationService
      * land, which are already planned, and which sit within the minimum gap of
      * another moon.
      *
-     * @return array{rows: array<int, array>, summary: array{plan:int,skip:int,clash:int}}
+     * Taking over the window means the blueprint becomes the plan for it:
+     * everything else planned in those weeks is listed for removal, including
+     * days the pattern does not use at all. What is already pulling, or
+     * already matched to a real extraction, is never touched.
+     *
+     * @return array{rows: array<int, array>, removals: array<int, array>, summary: array}
      */
-    public function preview(MoonRotation $rotation, Carbon $startDate, int $cycles): array
+    public function preview(MoonRotation $rotation, Carbon $startDate, int $cycles, bool $takeOver = false): array
     {
         $cycles = max(1, min($cycles, $this->maxCycles($rotation)));
         $slots = $rotation->slots()->get();
@@ -127,8 +132,10 @@ class MoonRotationService
                     $skip = 'before the start date';
                 } elseif ($arrival->lt($now)) {
                     $skip = 'in the past';
-                } elseif ($this->alreadyPlanned($structureId, $arrival, $placed[$structureId] ?? [])) {
-                    $skip = 'already planned';
+                } elseif ($this->alreadyPlanned($structureId, $arrival, $placed[$structureId] ?? [], $takeOver)) {
+                    // Taking over the window only leaves room for what is
+                    // already pulling, since everything else there is going.
+                    $skip = $takeOver ? 'already pulling' : 'already planned';
                 }
 
                 $clashes = $skip ? [] : $this->planner->detectConflicts(
@@ -156,14 +163,85 @@ class MoonRotationService
 
         usort($rows, fn ($a, $b) => $a['arrival'] <=> $b['arrival']);
 
+        $removals = $takeOver
+            ? $this->plansInWindow($rotation, $anchor, $cycles, $startDate, $now, $rows !== [])
+            : [];
+
         return [
             'rows' => $rows,
+            'removals' => $removals,
             'summary' => [
                 'plan' => count(array_filter($rows, fn ($r) => $r['skip'] === null)),
                 'skip' => count(array_filter($rows, fn ($r) => $r['skip'] !== null)),
                 'clash' => count(array_filter($rows, fn ($r) => $r['skip'] === null && $r['clashes'] > 0)),
+                'remove' => count($removals),
             ],
         ];
+    }
+
+    /**
+     * The planned pulls a take-over would clear out of the window.
+     *
+     * Everything still to come in the weeks the blueprint covers, whichever
+     * refinery it belongs to: a rotation of Monday, Wednesday and Friday
+     * replacing one that also ran on Tuesday and Thursday has to take those
+     * days with it, or the calendar ends up holding both patterns at once.
+     *
+     * The window runs to the end of the last week rather than to the last pull,
+     * so a pattern that only uses Mondays still owns the rest of its weeks.
+     * Otherwise the same Tuesday is cleared in every cycle but the last.
+     *
+     * Never included: a pull already matched to a real extraction, and anything
+     * in the past. Those are records of what happened.
+     *
+     * @return array<int, array>
+     */
+    protected function plansInWindow(
+        MoonRotation $rotation,
+        Carbon $anchor,
+        int $cycles,
+        Carbon $startDate,
+        Carbon $now,
+        bool $hasSlots
+    ): array {
+        if (!$hasSlots) {
+            return [];
+        }
+
+        $from = $startDate->copy();
+        if ($from->lt($now)) {
+            $from = $now->copy();
+        }
+
+        // The Sunday that closes the last cycle.
+        $to = $anchor->copy()
+            ->addWeeks($cycles * max(1, (int) $rotation->weeks))
+            ->subDays(1)
+            ->endOfDay();
+
+        if ($to->lt($from)) {
+            return [];
+        }
+
+        $existing = MoonExtractionPlan::forCorporation((int) $rotation->corporation_id)
+            ->where('status', MoonExtractionPlan::STATUS_PLANNED)
+            ->whereNull('linked_extraction_id')
+            ->whereBetween('planned_arrival_time', [$from, $to])
+            ->orderBy('planned_arrival_time')
+            ->get();
+
+        $removals = [];
+        foreach ($existing as $plan) {
+            $removals[] = [
+                'id' => (int) $plan->id,
+                'structure_id' => (int) $plan->structure_id,
+                'arrival' => $plan->planned_arrival_time->copy(),
+                'source' => $plan->source,
+                'from_this_blueprint' => (int) $plan->rotation_id === (int) $rotation->id,
+            ];
+        }
+
+        return $removals;
     }
 
     /**
@@ -171,12 +249,35 @@ class MoonRotationService
      * that clashes with another moon is still written, because the gap is a
      * warning the operator has already seen, not a rule.
      *
-     * @return array{created:int,skipped:int}
+     * @return array{created:int,skipped:int,removed:int}
      */
-    public function apply(MoonRotation $rotation, Carbon $startDate, int $cycles, ?int $createdBy = null, ?string $actorName = null): array
-    {
-        $preview = $this->preview($rotation, $startDate, $cycles);
+    public function apply(
+        MoonRotation $rotation,
+        Carbon $startDate,
+        int $cycles,
+        ?int $createdBy = null,
+        ?string $actorName = null,
+        bool $takeOver = false
+    ): array {
+        $preview = $this->preview($rotation, $startDate, $cycles, $takeOver);
         $created = 0;
+        $removed = 0;
+
+        // Clear the window first, so what the blueprint writes is not treated
+        // as clashing with what it is replacing.
+        foreach ($preview['removals'] as $removal) {
+            $plan = MoonExtractionPlan::find($removal['id']);
+            if (!$plan) {
+                continue;
+            }
+
+            $this->audit($plan, MoonExtractionPlanAudit::ACTION_DELETED, $createdBy, $actorName, [
+                'old_arrival' => $plan->planned_arrival_time,
+                'detail' => 'replaced by the blueprint ' . $rotation->name,
+            ]);
+            $plan->delete();
+            $removed++;
+        }
 
         foreach ($preview['rows'] as $row) {
             if ($row['skip'] !== null) {
@@ -216,6 +317,7 @@ class MoonRotationService
         return [
             'created' => $created,
             'skipped' => $preview['summary']['skip'],
+            'removed' => $removed,
         ];
     }
 
@@ -591,7 +693,7 @@ class MoonRotationService
      *
      * @param  Carbon[] $pending times placed in this preview
      */
-    protected function alreadyPlanned(int $structureId, Carbon $arrival, array $pending): bool
+    protected function alreadyPlanned(int $structureId, Carbon $arrival, array $pending, bool $takeOver = false): bool
     {
         foreach ($pending as $time) {
             if (abs($time->diffInMinutes($arrival)) <= self::DUPLICATE_TOLERANCE_MINUTES) {
@@ -599,13 +701,20 @@ class MoonRotationService
             }
         }
 
-        return MoonExtractionPlan::where('structure_id', $structureId)
+        $query = MoonExtractionPlan::where('structure_id', $structureId)
             ->active()
             ->whereBetween('planned_arrival_time', [
                 $arrival->copy()->subMinutes(self::DUPLICATE_TOLERANCE_MINUTES),
                 $arrival->copy()->addMinutes(self::DUPLICATE_TOLERANCE_MINUTES),
-            ])
-            ->exists();
+            ]);
+
+        // Taking over the window removes the merely planned ones, so only a
+        // pull that is actually happening still blocks the slot.
+        if ($takeOver) {
+            $query->whereNotNull('linked_extraction_id');
+        }
+
+        return $query->exists();
     }
 
     /**
