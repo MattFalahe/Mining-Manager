@@ -337,7 +337,7 @@ class MoonBlueprintController extends Controller
             ->with('slots')
             ->orderBy('name')
             ->get()
-            ->map(function (MoonRotation $blueprint) {
+            ->map(function (MoonRotation $blueprint) use ($owned) {
                 return [
                     'id' => $blueprint->id,
                     'name' => $blueprint->name,
