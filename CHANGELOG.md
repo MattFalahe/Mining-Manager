@@ -16,6 +16,7 @@ All notable changes to Mining Manager will be documented in this file.
 - **A refinery that has been unanchored, destroyed or handed over is flagged** in any blueprint holding it, and applying never plans a pull on one. One button clears them out of every blueprint along with the pulls they had planned ahead. It is not automatic: a structure missing from SeAT for a moment during an ESI wobble would otherwise delete a pattern somebody spent time building.
 - **Plan from Blueprint happens on the planner**, in a dialog, rather than sending you to another tab. With no blueprints saved it says so and offers to open the tab that makes one.
 - **Moving or removing a pull from a blueprint asks whether to carry it.** Taking the later ones with it moves them by the same amount, so the pattern keeps its spacing rather than collapsing onto one date.
+- **The planner calendar shows each moon's tier**, R4 to R64, on every pull, the same badge the Blueprints grid and the refinery cards use. Hovering a pull gives the full refinery name and its moon, which the calendar cells are too narrow to show.
 - The **Plan Pull** refinery dropdown is sorted by system, then by name. It was in the same order as the cards down the side, which is useful there and no use at all when you are looking for one rig in a list.
 
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances

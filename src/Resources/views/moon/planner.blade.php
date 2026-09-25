@@ -27,6 +27,13 @@
     .mm-planner-month .fc-event { border-radius:4px; padding:1px 4px; font-size:0.72rem; margin:1px 2px; box-shadow:0 1px 2px rgba(0,0,0,0.25); }
     .mm-planner-month .fc-event:hover { filter:brightness(1.12); }
     .mm-planner-month .fc-daygrid-event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* One event reads left to right as time, moon tier, refinery. The badge is
+       the same family as the Blueprints grid and the sidebar cards, so a rich
+       moon looks the same everywhere it appears. */
+    .mm-planner-month .mm-cal-event { display:flex; align-items:center; gap:4px; min-width:0; }
+    .mm-planner-month .mm-cal-time { flex:none; font-weight:600; }
+    .mm-planner-month .mm-cal-tier { flex:none; font-size:0.62rem; padding:1px 4px; line-height:1.25; }
+    .mm-planner-month .mm-cal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .mm-month-heading { display:flex; align-items:center; gap:8px; font-weight:600; color:#cfd6df; }
     .mm-month-heading .mm-month-pill { font-size:0.65rem; background:rgba(255,255,255,0.06); color:#9aa4b2; padding:1px 8px; border-radius:10px; }
 
@@ -545,6 +552,14 @@ document.addEventListener('DOMContentLoaded', function () {
           });
     });
 
+    const RARITY_CLASS = { R4: 'badge-r4', R8: 'badge-r8', R16: 'badge-r16', R32: 'badge-r32', R64: 'badge-r64' };
+
+    // The tier of each refinery's moon is already on the page for the sidebar
+    // cards, so the calendar costs nothing extra to label. A refinery the corp
+    // no longer owns is not in that list and simply goes unbadged.
+    const rarityByStructure = {};
+    refineries.forEach(r => { if (r.rarity) { rarityByStructure[r.structure_id] = r.rarity; } });
+
     // ---- Build FullCalendar events from the day-grouped payload ----
     const events = [];
     for (const [day, entries] of Object.entries(calendarData)) {
@@ -578,6 +593,35 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function renderEvent(arg) {
+        const raw = arg.event.extendedProps.raw || {};
+        const wrap = document.createElement('div');
+        wrap.className = 'mm-cal-event';
+        wrap.title = raw.structure_name + (raw.moon_name ? ' (' + raw.moon_name + ')' : '');
+
+        if (arg.timeText) {
+            const time = document.createElement('span');
+            time.className = 'mm-cal-time';
+            time.textContent = arg.timeText;
+            wrap.appendChild(time);
+        }
+
+        const tier = rarityByStructure[raw.structure_id];
+        if (tier) {
+            const badge = document.createElement('span');
+            badge.className = 'badge mm-cal-tier ' + (RARITY_CLASS[tier] || 'badge-secondary');
+            badge.textContent = tier;
+            wrap.appendChild(badge);
+        }
+
+        const title = document.createElement('span');
+        title.className = 'mm-cal-title';
+        title.textContent = arg.event.title;
+        wrap.appendChild(title);
+
+        return { domNodes: [wrap] };
+    }
+
     function onEventClick(info) {
         info.jsEvent.preventDefault();
         const p = info.event.extendedProps;
@@ -606,6 +650,7 @@ document.addEventListener('DOMContentLoaded', function () {
             height: 'auto',
             eventDisplay: 'block',
             dayMaxEvents: 4,
+            eventContent: renderEvent,
             eventClick: onEventClick,
         });
         cal.render();
