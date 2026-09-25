@@ -20,18 +20,13 @@
                         <label for="ba-blueprint" class="small text-muted mb-1">Blueprint</label>
                         <select class="form-control form-control-sm" id="ba-blueprint"></select>
                     </div>
-                    <div class="col-md-5">
+                    <div class="col-md-6">
                         <label for="ba-start" class="small text-muted mb-1">Start from</label>
                         <input type="date" class="form-control form-control-sm" id="ba-start">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <label for="ba-cycles" class="small text-muted mb-1">Cycles</label>
                         <input type="number" class="form-control form-control-sm" id="ba-cycles" min="1" value="6">
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end">
-                        <button type="button" class="btn btn-sm btn-outline-primary btn-block" id="ba-preview">
-                            <i class="fas fa-eye"></i> Preview
-                        </button>
                     </div>
                 </div>
 
@@ -46,6 +41,9 @@
                     </label>
                 </div>
 
+                <div class="small text-muted mb-2" id="ba-working" style="display:none;">
+                    <i class="fas fa-circle-notch fa-spin"></i> Working out what this would do...
+                </div>
                 <div class="alert alert-info py-2 px-3 small mb-2" id="ba-summary" style="display:none;"></div>
                 <div class="alert alert-warning py-2 px-3 small mb-2" id="ba-error" style="display:none;"></div>
 
@@ -69,7 +67,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-sm btn-success" id="ba-confirm" disabled>
-                    <i class="fas fa-check"></i> Write these pulls
+                    <i class="fas fa-check"></i> <span class="ba-confirm-text">Write these pulls</span>
                 </button>
             </div>
         </div>
@@ -84,6 +82,8 @@ window.BlueprintApply = (function () {
     const PLANNER = '{{ route('mining-manager.moon.planner') }}';
     let list = @json($blueprints ?? []);
     let previewed = null;   // the start and cycles the table on screen came from
+    let previewTimer = null;
+    let inFlight = 0;       // only the newest answer is allowed to draw
 
     // How a pull that is about to be removed got onto the calendar.
     const SOURCES = {
@@ -106,6 +106,15 @@ window.BlueprintApply = (function () {
         previewed = null;
         $('#ba-confirm').prop('disabled', true);
         $('#ba-removals').hide().find('tbody').empty();
+        $('#ba-table').hide().find('tbody').empty();
+        $('#ba-summary').hide();
+    }
+
+    // The dialog is no use without the list, so it fetches it rather than
+    // waiting to be asked. Typing a cycle count fires one request, not six.
+    function schedulePreview(delay) {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(runPreview, delay === undefined ? 350 : delay);
     }
 
     function open(blueprintId) {
@@ -119,10 +128,9 @@ window.BlueprintApply = (function () {
 
         $('#ba-start').val(nextMonday());
         $('#ba-takeover').prop('checked', false);
-        $('#ba-summary').hide();
         $('#ba-error').hide();
-        $('#ba-table').hide().find('tbody').empty();
         invalidate();
+        schedulePreview(0);
 
         // The dialog lives on <body>, outside the page wrapper the plugin's
         // styles are scoped to, so it carries the wrapper classes with it.
@@ -137,9 +145,12 @@ window.BlueprintApply = (function () {
             || Object.values(xhr.responseJSON.errors || {})[0])) || fallback;
     }
 
-    $(document).on('input change', '#ba-blueprint, #ba-start, #ba-cycles, #ba-takeover', invalidate);
+    $(document).on('input change', '#ba-blueprint, #ba-start, #ba-cycles, #ba-takeover', function () {
+        invalidate();
+        schedulePreview();
+    });
 
-    $(document).on('click', '#ba-preview', function () {
+    function runPreview() {
         const id = selected();
         const start = $('#ba-start').val();
         const cycles = parseInt($('#ba-cycles').val(), 10);
@@ -150,11 +161,18 @@ window.BlueprintApply = (function () {
             return;
         }
 
+        const token = ++inFlight;
+        $('#ba-working').show();
+        $('#ba-error').hide();
+
         $.ajax({
             url: BASE + '/' + id + '/preview',
             method: 'POST',
             data: { _token: CSRF, start_date: start, cycles: cycles, take_over: takeOver },
         }).done(res => {
+            if (token !== inFlight) { return; }
+            $('#ba-working').hide();
+
             const $tbody = $('#ba-table').show().find('tbody').empty();
             res.rows.forEach(row => {
                 let status = '<span class="text-success">will be planned</span>';
@@ -191,14 +209,27 @@ window.BlueprintApply = (function () {
                 (res.summary.clash ? ', ' + res.summary.clash + ' land within the minimum gap of another moon' : '') +
                 '. Nothing is saved until you confirm.'
             );
-            $('#ba-error').hide();
+
+            // A dead button with nothing explaining it is the worst outcome
+            // here, so say what would have to change.
+            if (res.summary.plan === 0 && removals.length === 0) {
+                $('#ba-error').show().text(takeOver
+                    ? 'Nothing to do: every pull in those weeks is already running, or the dates are all in the past.'
+                    : 'Nothing to write: those days are already planned. Tick the box above to replace what is there.');
+            }
+
             previewed = { id: id, start: start, cycles: cycles, takeOver: takeOver };
-            $('#ba-confirm').prop('disabled', res.summary.plan === 0 && removals.length === 0);
+            $('#ba-confirm')
+                .prop('disabled', res.summary.plan === 0 && removals.length === 0)
+                .find('.ba-confirm-text')
+                .text(removals.length ? 'Replace and write these pulls' : 'Write these pulls');
         }).fail(xhr => {
+            if (token !== inFlight) { return; }
+            $('#ba-working').hide();
             $('#ba-error').show().text(failure(xhr, 'Could not work that out.'));
             invalidate();
         });
-    });
+    }
 
     $(document).on('click', '#ba-confirm', function () {
         if (!previewed) { return; }
