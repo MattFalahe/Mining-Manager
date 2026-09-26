@@ -444,6 +444,27 @@ class DashboardController extends Controller
                 ->pluck('character_id')
                 ->toArray();
 
+            // Miners without an affiliation row are not returned by the query
+            // above. Resolve their current corporation and treat anyone outside
+            // the home corporations as a guest too.
+            $affiliatedIds = DB::table('character_affiliations')
+                ->whereIn('character_id', $allMinerIds)
+                ->pluck('character_id')
+                ->toArray();
+
+            $unresolvedIds = array_values(array_diff($allMinerIds, $affiliatedIds));
+
+            if (!empty($unresolvedIds)) {
+                $info = $this->characterInfoService->getBatchCharacterInfo($unresolvedIds);
+
+                foreach ($info as $charId => $data) {
+                    $corpId = $data['corporation_id'] ?? null;
+                    if ($corpId && !in_array((int) $corpId, $homeCorporationIds, true)) {
+                        $guestIds[] = $charId;
+                    }
+                }
+            }
+
             return array_values(array_unique($guestIds));
         } catch (\Exception $e) {
             return [];
@@ -1935,6 +1956,27 @@ class DashboardController extends Controller
                     ->whereNotIn('corporation_id', $homeCorporationIds)
                     ->pluck('character_id')
                     ->toArray();
+
+                // Characters with no affiliation row are kept by default. If
+                // they resolve to a corporation outside the home set they are
+                // guests, not members, so exclude them too.
+                $affiliatedIds = DB::table('character_affiliations')
+                    ->whereIn('character_id', $uniqueIds)
+                    ->pluck('character_id')
+                    ->toArray();
+
+                $unresolvedIds = array_values(array_diff($uniqueIds, $affiliatedIds));
+
+                if (!empty($unresolvedIds)) {
+                    $info = $this->characterInfoService->getBatchCharacterInfo($unresolvedIds);
+
+                    foreach ($info as $charId => $data) {
+                        $corpId = $data['corporation_id'] ?? null;
+                        if ($corpId && !in_array((int) $corpId, $homeCorporationIds, true)) {
+                            $nonCorpIds[] = $charId;
+                        }
+                    }
+                }
 
                 if (!empty($nonCorpIds)) {
                     $uniqueIds = array_values(array_diff($uniqueIds, $nonCorpIds));
