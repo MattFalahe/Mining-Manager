@@ -9,6 +9,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonFinderService;
 use MiningManager\Services\Moon\MoonValuation;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\MoonOreHelper;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Services\Moon\MetenoxCargoService;
 use MiningManager\Services\Pricing\PriceProviderService;
@@ -310,10 +311,17 @@ class MoonController extends Controller
         // Mark expired using fractured_at when available, legacy estimate otherwise
         MoonExtraction::expiredByTime()->update(['status' => 'expired']);
 
-        // Get extractions for the month (including expired/past)
+        // The month you are on, plus the two after it. A fortnightly moon has
+        // its next two pulls outside the current month for half of every month,
+        // and the Next 7 Days panel used to go blank at a month boundary for
+        // the same reason.
+        $windowStart = $month->copy()->startOfMonth();
+        $windowEnd = $month->copy()->startOfMonth()->addMonths(2)->endOfMonth();
+
+        // Get extractions for the window (including expired/past)
         $extractions = MoonExtraction::whereBetween('chunk_arrival_time', [
-            $month->copy()->startOfMonth(),
-            $month->copy()->endOfMonth()
+            $windowStart,
+            $windowEnd
         ])->with(['structure', 'corporation'])
             ->orderBy('chunk_arrival_time')
             ->get();
@@ -326,12 +334,15 @@ class MoonController extends Controller
             if ($extraction->ore_composition) {
                 $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
+            // The tier badge on the grid, worked out from this extraction's own
+            // ore rather than the refinery's last known composition.
+            $extraction->rarity = MoonOreHelper::highestRarity($extraction->ore_composition);
         }
 
         // Also get archived history extractions for past months
         $historyExtractions = MoonExtractionHistory::whereBetween('chunk_arrival_time', [
-            $month->copy()->startOfMonth(),
-            $month->copy()->endOfMonth()
+            $windowStart,
+            $windowEnd
         ])->orderBy('chunk_arrival_time')
             ->get();
 
@@ -365,6 +376,7 @@ class MoonController extends Controller
             $historyExtraction->fractured_at = $history->fractured_at ?? null;
             $historyExtraction->fractured_by = $history->fractured_by ?? null;
             $historyExtraction->is_archived = true;
+            $historyExtraction->rarity = MoonOreHelper::highestRarity($history->ore_composition);
             $pseudoExtractions->push($historyExtraction);
         }
 
@@ -380,7 +392,15 @@ class MoonController extends Controller
             $calendar[$day][] = $historyExtraction;
         }
 
-        return view('mining-manager::moon.calendar', compact('calendar', 'month'));
+        // Open on today when today is in view, so the week and list views land
+        // on the current week rather than whatever week the 1st falls in.
+        $initialDate = Carbon::now()->between($windowStart, $windowEnd)
+            ? Carbon::now()->toDateString()
+            : $windowStart->toDateString();
+
+        return view('mining-manager::moon.calendar', compact(
+            'calendar', 'month', 'windowStart', 'windowEnd', 'initialDate'
+        ));
     }
 
     /**

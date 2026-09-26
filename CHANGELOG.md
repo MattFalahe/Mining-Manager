@@ -17,7 +17,15 @@ All notable changes to Mining Manager will be documented in this file.
 - **Plan from Blueprint happens on the planner**, in a dialog, rather than sending you to another tab. With no blueprints saved it says so and offers to open the tab that makes one.
 - **Moving or removing a pull from a blueprint asks whether to carry it.** Taking the later ones with it moves them by the same amount, so the pattern keeps its spacing rather than collapsing onto one date.
 - **The planner calendar shows each moon's tier**, R4 to R64, on every pull, the same badge the Blueprints grid and the refinery cards use. Hovering a pull gives the full refinery name and its moon, which the calendar cells are too narrow to show.
+- **Today is the same amber on the planner calendar as it is on the extraction calendar.** A ten percent blue tint on a blue-grey grid was invisible, and today is the cell you look for first.
 - The **Plan Pull** refinery dropdown is sorted by system, then by name. It was in the same order as the cards down the side, which is useful there and no use at all when you are looking for one rig in a list.
+
+### Extraction Calendar
+
+- **Three months at a time.** The calendar opens on the month you are in plus the two after it, as a 3 months button beside the month, week and list views. A fortnightly moon has its next two chunks outside the current month for half of every month, and finding them meant clicking forward and losing where you were.
+- **Every chunk carries its moon's tier**, R4 to R64, worked out from that extraction's own ore rather than the refinery's last known composition. Hovering one gives the full refinery name and its moon, which the cells are too narrow to show.
+- **The grid is in EVE time.** It was placing chunks in whatever timezone the browser is in while every time printed on the page is labelled EVE, so a late-night chunk sat on the wrong day for anyone not on UTC.
+- Fixed: **Next 7 Days emptied out at the end of a month**, because the page only ever loaded the month you were looking at.
 
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 

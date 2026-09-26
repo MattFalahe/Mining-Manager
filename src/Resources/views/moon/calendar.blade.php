@@ -6,6 +6,17 @@
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/vendor/fullcalendar.min.css') }}">
+<style>
+    /* One pull reads left to right as time, moon tier, refinery. Same badge
+       family as the planner, the Blueprints grid and the refinery cards. */
+    .moon-calendar-page .mm-cal-event { display:flex; align-items:center; gap:4px; min-width:0; }
+    .moon-calendar-page .mm-cal-time { flex:none; font-weight:600; }
+    .moon-calendar-page .mm-cal-tier { flex:none; font-size:0.62rem; padding:1px 4px; line-height:1.25; }
+    .moon-calendar-page .mm-cal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .moon-calendar-page .fc-daygrid-event { overflow:hidden; }
+    /* Three months run as one grid, so the first of a month says which one. */
+    .moon-calendar-page .mm-month-mark { font-weight:700; color:#f39c12; margin-left:4px; }
+</style>
 @endpush
 
 @section('full')
@@ -437,6 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 className: 'mm-status-' + effectiveStatus,
                 extendedProps: {
                     status: effectiveStatus,
+                    rarity: extraction.rarity || null,
                     moon: extraction.moon_name || 'Unknown',
                     structure: extraction.structure_name || 'Unknown',
                     estimatedValue: extraction.calculated_value || extraction.estimated_value || 0,
@@ -447,32 +459,116 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    const RARITY_CLASS = { R4: 'badge-r4', R8: 'badge-r8', R16: 'badge-r16', R32: 'badge-r32', R64: 'badge-r64' };
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    // What the page actually loaded. Navigating inside it is free; leaving it
+    // is what needs a trip to the server.
+    const WINDOW_START = new Date('{{ $windowStart->toDateString() }}T00:00:00Z');
+    const WINDOW_END = new Date('{{ $windowEnd->copy()->addDay()->toDateString() }}T00:00:00Z');
+
+    function renderEvent(arg) {
+        const props = arg.event.extendedProps;
+        const wrap = document.createElement('div');
+        wrap.className = 'mm-cal-event';
+        wrap.title = props.structure + (props.moon ? ' (' + props.moon + ')' : '');
+
+        if (arg.timeText) {
+            const time = document.createElement('span');
+            time.className = 'mm-cal-time';
+            time.textContent = arg.timeText;
+            wrap.appendChild(time);
+        }
+
+        if (props.rarity) {
+            const badge = document.createElement('span');
+            badge.className = 'badge mm-cal-tier ' + (RARITY_CLASS[props.rarity] || 'badge-secondary');
+            badge.textContent = props.rarity;
+            wrap.appendChild(badge);
+        }
+
+        const title = document.createElement('span');
+        title.className = 'mm-cal-title';
+        title.textContent = arg.event.title;
+        wrap.appendChild(title);
+
+        return { domNodes: [wrap] };
+    }
+
+    // Three months as one continuous grid: the day numbers alone would not say
+    // which month a row belongs to, so the first of each says it. Added to the
+    // number FullCalendar already drew rather than replacing it, which would
+    // leave the real one empty and unstyled.
+    function markMonthStart(arg) {
+        if (arg.date.getUTCDate() !== 1) {
+            return;
+        }
+
+        const number = arg.el.querySelector('.fc-daygrid-day-number');
+        if (!number) {
+            return;
+        }
+
+        const mark = document.createElement('span');
+        mark.className = 'mm-month-mark';
+        mark.textContent = MONTH_NAMES[arg.date.getUTCMonth()];
+        number.appendChild(mark);
+    }
+
+    // The week and list views are fixed height with their own scroller; three
+    // months of day grid has to grow instead.
+    let appliedHeight = null;
+    function fitHeight(viewType) {
+        const wanted = viewType === 'threeMonths' ? 'auto' : 700;
+        if (wanted !== appliedHeight) {
+            appliedHeight = wanted;
+            calendar.setOption('height', wanted);
+        }
+    }
+
     const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        initialDate: '{{ $month->format("Y-m-d") }}',
+        initialView: 'threeMonths',
+        initialDate: '{{ $initialDate }}',
+        // Extraction times are EVE time, which is what every other time on this
+        // page is labelled as. Without this the grid places them in the
+        // browser's zone and a late-night chunk lands on the wrong day.
+        timeZone: 'UTC',
+        views: {
+            threeMonths: {
+                type: 'dayGrid',
+                duration: { months: 3 },
+                dateIncrement: { months: 1 },
+                buttonText: '3 months',
+            },
+        },
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,listWeek'
+            right: 'threeMonths,dayGridMonth,timeGridWeek,listWeek'
         },
         events: events,
+        eventContent: renderEvent,
+        dayCellDidMount: markMonthStart,
+        viewDidMount: function (arg) { fitHeight(arg.view.type); },
         eventClick: function(info) {
             info.jsEvent.preventDefault();
             showExtractionDetails(info.event);
         },
         datesSet: function(dateInfo) {
-            // FullCalendar's dateInfo.start is the grid start (may be in the previous month)
-            // Use the view's currentStart which is the actual first day of the displayed month
-            var viewDate = dateInfo.view.currentStart;
-            var viewMonth = viewDate.getFullYear() + '-' + String(viewDate.getMonth() + 1).padStart(2, '0');
-            var currentMonth = '{{ $month->format("Y-m") }}';
-            if (viewMonth !== currentMonth) {
-                var newMonth = viewMonth + '-01';
-                window.location.href = '{{ route("mining-manager.moon.calendar") }}?month=' + newMonth;
+            // currentStart/currentEnd are the logical range, not the grid,
+            // which spills into the neighbouring months and would send the page
+            // straight back to the server on every render.
+            var from = dateInfo.view.currentStart;
+            var to = dateInfo.view.currentEnd;
+            if (from >= WINDOW_START && to <= WINDOW_END) {
+                return;
             }
+
+            var newMonth = from.getUTCFullYear() + '-'
+                + String(from.getUTCMonth() + 1).padStart(2, '0') + '-01';
+            window.location.href = '{{ route("mining-manager.moon.calendar") }}?month=' + newMonth;
         },
         height: 700,
-        contentHeight: 650,
         firstDay: 1,
         nowIndicator: true,
         eventDisplay: 'block',

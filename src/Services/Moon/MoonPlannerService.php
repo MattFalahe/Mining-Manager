@@ -832,25 +832,8 @@ class MoonPlannerService
                 ->value('ore_composition');
         }
 
-        if (!is_array($composition) || empty($composition)) {
-            return null;
-        }
-
-        $rank = ['R4' => 1, 'R8' => 2, 'R16' => 3, 'R32' => 4, 'R64' => 5];
-        $best = null;
-        $bestRank = 0;
-        foreach ($composition as $ore) {
-            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : null;
-            if (!$typeId) {
-                continue;
-            }
-            $rarity = \MiningManager\Services\Moon\MoonOreHelper::getRarity((int) $typeId);
-            if ($rarity && ($rank[$rarity] ?? 0) > $bestRank) {
-                $bestRank = $rank[$rarity];
-                $best = $rarity;
-            }
-        }
-
-        return $best;
+        return \MiningManager\Services\Moon\MoonOreHelper::highestRarity(
+            is_array($composition) ? $composition : null
+        );
     }
 }

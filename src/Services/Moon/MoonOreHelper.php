@@ -78,6 +78,38 @@ class MoonOreHelper
      * @param int $typeId
      * @return string (base, improved, or excellent)
      */
+    /**
+     * The best tier in an ore composition, R4 through R64.
+     *
+     * This is what an operator means by "an R64 moon": the richest thing in
+     * it. A moon with one R64 ore and four R4s is an R64 moon.
+     */
+    public static function highestRarity(?array $composition): ?string
+    {
+        if (empty($composition)) {
+            return null;
+        }
+
+        $rank = ['R4' => 1, 'R8' => 2, 'R16' => 3, 'R32' => 4, 'R64' => 5];
+        $best = null;
+        $bestRank = 0;
+
+        foreach ($composition as $ore) {
+            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : null;
+            if (!$typeId) {
+                continue;
+            }
+
+            $rarity = self::getRarity((int) $typeId);
+            if ($rarity && ($rank[$rarity] ?? 0) > $bestRank) {
+                $bestRank = $rank[$rarity];
+                $best = $rarity;
+            }
+        }
+
+        return $best;
+    }
+
     public static function getQuality(int $typeId): string
     {
         // Check if it's a jackpot ore (+100%)

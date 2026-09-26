@@ -23,7 +23,10 @@
     .mm-planner-month .fc-col-header-cell { background: rgba(255,255,255,0.04); }
     .mm-planner-month .fc-col-header-cell-cushion { text-transform:uppercase; font-size:0.7rem; letter-spacing:0.04em; color:#9aa4b2; padding:6px 4px; }
     .mm-planner-month .fc-daygrid-day-number { font-size:0.75rem; color:#8a94a3; padding:4px 6px; }
-    .mm-planner-month .fc-day-today { background: rgba(52,152,219,0.10) !important; }
+    /* The same amber the extraction calendar uses. A 10% blue tint on a blue-grey
+       grid was invisible, and today is the one cell you look for first. */
+    .mm-planner-month .fc-day-today { background: rgba(243,156,18,0.15) !important; }
+    .mm-planner-month .fc-day-today .fc-daygrid-day-number { color:#f39c12; font-weight:700; }
     .mm-planner-month .fc-event { border-radius:4px; padding:1px 4px; font-size:0.72rem; margin:1px 2px; box-shadow:0 1px 2px rgba(0,0,0,0.25); }
     .mm-planner-month .fc-event:hover { filter:brightness(1.12); }
     .mm-planner-month .fc-daygrid-event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
