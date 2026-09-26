@@ -22,7 +22,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 ### Extraction Calendar
 
-- **Three months at a time.** The calendar opens on the month you are in plus the two after it, as a 3 months button beside the month, week and list views. A fortnightly moon has its next two chunks outside the current month for half of every month, and finding them meant clicking forward and losing where you were.
+- **Three months at a time**, a grid per month with its own heading, the same shape as the Moon Planner. The calendar opens on the month you are in plus the two after it, and Week and List are still a click away. A fortnightly moon has its next two chunks outside the current month for half of every month, and finding them meant clicking forward and losing where you were. The single month view is gone, since the first of the three is that month.
 - **Every chunk carries its moon's tier**, R4 to R64, worked out from that extraction's own ore rather than the refinery's last known composition. Hovering one gives the full refinery name and its moon, which the cells are too narrow to show.
 - **The grid is in EVE time.** It was placing chunks in whatever timezone the browser is in while every time printed on the page is labelled EVE, so a late-night chunk sat on the wrong day for anyone not on UTC.
 - Fixed: **Next 7 Days emptied out at the end of a month**, because the page only ever loaded the month you were looking at.

@@ -398,8 +398,14 @@ class MoonController extends Controller
             ? Carbon::now()->toDateString()
             : $windowStart->toDateString();
 
+        $months = [
+            $windowStart->copy(),
+            $windowStart->copy()->addMonth(),
+            $windowStart->copy()->addMonths(2),
+        ];
+
         return view('mining-manager::moon.calendar', compact(
-            'calendar', 'month', 'windowStart', 'windowEnd', 'initialDate'
+            'calendar', 'month', 'months', 'windowStart', 'windowEnd', 'initialDate'
         ));
     }
 
