@@ -2722,6 +2722,21 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h4>{{ trans('mining-manager::help.moon_tracking') }}</h4>
                     <p>{{ trans('mining-manager::help.moon_tracking_desc') }}</p>
 
+                    <h4><i class="fas fa-calendar-alt"></i> The extraction calendar</h4>
+                    <p>
+                        <strong>Extraction Calendar</strong> shows three months at a time, the one you are on and
+                        the two after it, each as its own grid. Prev and next move that window a month at a time and
+                        <strong>Today</strong> brings it back. <strong>Week</strong> and <strong>List</strong> swap
+                        in when you want a closer look at one week.
+                    </p>
+                    <p>
+                        Every chunk carries the tier of its moon, R4 to R64, worked out from that extraction's own
+                        ore rather than whatever the refinery pulled last, so an unusual chunk is labelled for what
+                        it actually is. Hovering gives the full refinery name and its moon, which the cells are too
+                        narrow to show. The colour is the chunk's state, as the legend above the grid says, and the
+                        grid runs on EVE time (UTC) like everything else here.
+                    </p>
+
                     <h4>{{ trans('mining-manager::help.moon_compositions') }}</h4>
                     <p>{{ trans('mining-manager::help.moon_compositions_desc') }}</p>
 
@@ -3003,6 +3018,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         A calendar for deciding <em>when</em> each refinery should pull, so arrivals are spread out
                         instead of landing on top of each other. Chunks that aren't mined promptly are wasted, so for
                         a smaller crew the spacing matters as much as the schedule itself.
+                    </p>
+
+                    <p>
+                        Each pull on the calendar carries the tier of its moon, R4 to R64, the same badge the
+                        Blueprints grid and the refinery cards use, and hovering one gives the full refinery name
+                        and its moon. Today is picked out in amber.
                     </p>
 
                     <div class="info-box">
