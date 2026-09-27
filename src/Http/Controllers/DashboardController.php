@@ -782,6 +782,9 @@ class DashboardController extends Controller
      * Apply the dashboard "Leaderboard Corporations" setting. When the operator
      * has limited the leaderboard to specific corporations, keep only the
      * characters affiliated with them.
+     *
+     * The setting is an install-wide one rather than per corporation, so it is
+     * read from the global rows.
      */
     private function filterLeaderboardCharacterIds(array $characterIds): array
     {
@@ -789,24 +792,32 @@ class DashboardController extends Controller
             return $characterIds;
         }
 
-        $filter = $this->settingsService->getSetting('dashboard_leaderboard_corporation_filter', 'all');
+        $filter = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_filter', null, 'all');
 
         if ($filter !== 'specific') {
             return $characterIds;
         }
 
-        $configured = $this->settingsService->getSetting('dashboard_leaderboard_corporation_ids', '[]');
+        $configured = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_ids', null, '[]');
         $corporationIds = is_array($configured) ? $configured : (json_decode((string) $configured, true) ?: []);
 
         if (empty($corporationIds)) {
             return $characterIds;
         }
 
-        $allowed = DB::table('character_affiliations')
-            ->whereIn('character_id', $characterIds)
-            ->whereIn('corporation_id', array_map('intval', $corporationIds))
-            ->pluck('character_id')
-            ->toArray();
+        try {
+            $allowed = DB::table('character_affiliations')
+                ->whereIn('character_id', $characterIds)
+                ->whereIn('corporation_id', array_map('intval', $corporationIds))
+                ->pluck('character_id')
+                ->toArray();
+        } catch (\Exception $e) {
+            \Log::warning('DashboardController: leaderboard corporation filter failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $characterIds;
+        }
 
         return array_values(array_intersect($characterIds, $allowed));
     }
@@ -993,7 +1004,9 @@ class DashboardController extends Controller
         }
 
         // Restrict to corporation members only
-        $corpMemberIds = $this->getCorporationCharacterIds($corporationId);
+        $corpMemberIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($corpMemberIds)) {
             return [];
