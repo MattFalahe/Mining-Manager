@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
-@section('title', trans('mining-manager::ledger.mining_summary'))
-@section('page_header', trans('mining-manager::ledger.mining_summary'))
+@section('title', ($moonMode ?? false) ? trans('mining-manager::ledger.moon_mining_summary') : trans('mining-manager::ledger.mining_summary'))
+@section('page_header', ($moonMode ?? false) ? trans('mining-manager::ledger.moon_mining_summary') : trans('mining-manager::ledger.mining_summary'))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
@@ -102,6 +102,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/ledger/moon-summary') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.moon-summary') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::ledger.moon_mining_summary') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/ledger/reprocessing') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.reprocessing') }}">
                     <i class="fas fa-recycle"></i> {{ trans('mining-manager::ledger.reprocessing_calculator') }}
                 </a>
@@ -121,7 +126,7 @@
                     </h3>
                 </div>
                 <div class="card-body">
-                    <form method="GET" action="{{ route('mining-manager.ledger.summary') }}" id="filterForm">
+                    <form method="GET" action="{{ ($moonMode ?? false) ? route('mining-manager.ledger.moon-summary') : route('mining-manager.ledger.summary') }}" id="filterForm">
                         <div class="row">
                             {{-- Month Selector --}}
                             <div class="col-md-3">
@@ -180,7 +185,7 @@
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-chart-bar"></i>
-                        {{ trans('mining-manager::ledger.summary_statistics') }} - {{ $monthDate->format('F Y') }}
+                        {{ ($moonMode ?? false) ? trans('mining-manager::ledger.moon_mining_summary') : trans('mining-manager::ledger.summary_statistics') }} - {{ $monthDate->format('F Y') }}
                         @if(!$isCurrentMonth)
                             <span class="badge badge-success ml-2">
                                 <i class="fas fa-check-circle"></i> {{ trans('mining-manager::ledger.finalized') }}

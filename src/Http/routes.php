@@ -60,6 +60,12 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        Route::get('/moon-summary', [
+            'as' => 'mining-manager.ledger.moon-summary',
+            'uses' => 'LedgerController@moonSummaryIndex',
+            'middleware' => 'can:mining-manager.member',
+        ]);
+
         Route::get('/character/{characterId}', [
             'as' => 'mining-manager.ledger.character-details',
             'uses' => 'LedgerController@showCharacterDetails',

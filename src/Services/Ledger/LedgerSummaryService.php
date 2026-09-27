@@ -770,14 +770,22 @@ class LedgerSummaryService
      * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
      */
-    public function getMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getMonthlySummaries(string $month, ?int $corporationId = null, string $corpFilterMode = 'character', bool $moonOnly = false)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
         $isCurrentMonth = $monthDate->isSameMonth(now());
 
         // If it's the current month, always calculate live
         if ($isCurrentMonth) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+            return $this->calculateLiveMonthlySummaries($month, $corporationId, $corpFilterMode, $moonOnly);
+        }
+
+        // Finalized monthly summaries are keyed by the structure-owner
+        // corporation, so they only match an owner-scoped, all-ore view.
+        // Miner-affiliation scope or a moon-only restriction has to be
+        // aggregated live from the ledger.
+        if ($moonOnly || $corpFilterMode !== 'owner') {
+            return $this->calculateLiveMonthlySummaries($month, $corporationId, $corpFilterMode, $moonOnly);
         }
 
         // For past months, try to get finalized summaries first
@@ -789,7 +797,7 @@ class LedgerSummaryService
 
         // If no finalized summaries exist, calculate live
         if ($summaries->isEmpty()) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+            return $this->calculateLiveMonthlySummaries($month, $corporationId, $corpFilterMode, $moonOnly);
         }
 
         return $summaries;
@@ -802,16 +810,14 @@ class LedgerSummaryService
      * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
      */
-    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null)
+    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null, string $corpFilterMode = 'character', bool $moonOnly = false)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
         $query = MiningLedger::whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month);
 
-        if ($corporationId) {
-            $query->where('corporation_id', $corporationId);
-        }
+        $this->applyLedgerScopeFilter($query, $corporationId, $corpFilterMode, $moonOnly);
 
         // Group by character_id only — a character's total should be aggregated
         // across all corporations they mined at. Use MAX(corporation_id) to pick
@@ -846,6 +852,40 @@ class LedgerSummaryService
         });
 
         return $summaries;
+    }
+
+    /**
+     * Apply the corporation scope and optional moon-only restriction to a
+     * mining_ledger query.
+     *
+     * Two different questions are deliberately kept apart:
+     *  - 'character': the mining is attributed to the corporation its miner
+     *    currently belongs to (character_affiliations), wherever it happened.
+     *  - 'owner': the mining is attributed to the corporation that owns the
+     *    structure/observer it came from (mining_ledger.corporation_id).
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|null $corporationId
+     * @param string   $corpFilterMode 'character' | 'owner'
+     * @param bool     $moonOnly
+     */
+    protected function applyLedgerScopeFilter($query, ?int $corporationId, string $corpFilterMode, bool $moonOnly): void
+    {
+        if ($corporationId) {
+            if ($corpFilterMode === 'owner') {
+                $query->where('mining_ledger.corporation_id', $corporationId);
+            } else {
+                $query->whereIn('mining_ledger.character_id', function ($sub) use ($corporationId) {
+                    $sub->select('character_id')
+                        ->from('character_affiliations')
+                        ->where('corporation_id', $corporationId);
+                });
+            }
+        }
+
+        if ($moonOnly) {
+            $query->where('mining_ledger.is_moon_ore', true);
+        }
     }
 
     /**
@@ -950,12 +990,12 @@ class LedgerSummaryService
      * @param int|null $corporationId
      * @return \Illuminate\Support\Collection
      */
-    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null, string $corpFilterMode = 'character', bool $moonOnly = false)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
         // Get base summaries
-        $summaries = $this->getMonthlySummaries($month, $corporationId);
+        $summaries = $this->getMonthlySummaries($month, $corporationId, $corpFilterMode, $moonOnly);
 
         if ($summaries->isEmpty()) {
             return $summaries;
@@ -964,10 +1004,18 @@ class LedgerSummaryService
         // Collect all character IDs once
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
+        // The ore types / volumes / systems below have to be scoped the same
+        // way the summaries were. Otherwise a filtered character would show
+        // ore mined outside the chosen corporation or outside moon pops.
+        $scoped = function () use ($monthDate, $corporationId, $corpFilterMode, $moonOnly) {
+            $query = MiningLedger::whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month);
+            $this->applyLedgerScopeFilter($query, $corporationId, $corpFilterMode, $moonOnly);
+            return $query;
+        };
+
         // --- BATCH QUERY 1: Get all ore type_ids for all characters in one query ---
-        $allOreTypes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allOreTypes = $scoped()->whereIn('character_id', $characterIds)
             ->select('character_id', 'type_id')
             ->distinct()
             ->get()
@@ -975,18 +1023,14 @@ class LedgerSummaryService
             ->map(fn($group) => $group->pluck('type_id')->toArray());
 
         // --- BATCH QUERY 2: Get total volume (m³) for all characters in one query ---
-        $allVolumes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allVolumes = $scoped()->whereIn('character_id', $characterIds)
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->selectRaw('character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
             ->groupBy('character_id')
             ->pluck('total_volume_m3', 'character_id');
 
         // --- BATCH QUERY 3: Get all system data for all characters in one query ---
-        $allSystemData = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allSystemData = $scoped()->whereIn('character_id', $characterIds)
             ->select('character_id', 'solar_system_id', DB::raw('SUM(total_value) as system_value'))
             ->groupBy('character_id', 'solar_system_id')
             ->get()
@@ -1060,9 +1104,11 @@ class LedgerSummaryService
      * Uses SeAT v5 structure (refresh_tokens table for character-user mapping)
      *
      * @param \Illuminate\Support\Collection $summaries
+     * @param int|null $corporationId
+     * @param string   $corpFilterMode 'character' | 'owner'
      * @return \Illuminate\Support\Collection
      */
-    public function groupByMainCharacter($summaries, ?int $corporationId = null)
+    public function groupByMainCharacter($summaries, ?int $corporationId = null, string $corpFilterMode = 'character')
     {
         // Get all character IDs from mining data
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
@@ -1074,11 +1120,16 @@ class LedgerSummaryService
             ->get()
             ->pluck('user_id', 'character_id');
 
-        // Also fetch ALL registered users for the corporation(s) so main accounts
-        // with zero mining still appear in the summary
-        $corpIds = $corporationId
-            ? [$corporationId]
-            : $summaries->pluck('corporation_id')->filter()->unique()->toArray();
+        // Also fetch ALL registered users for the corporation(s) so main
+        // accounts with zero mining still appear in the summary. Only for the
+        // character scope — in the structure-owner (moon) scope the
+        // corporation is the moon owner, not the miners' corporation, so
+        // expanding to all of its members would add unrelated accounts.
+        $corpIds = $corpFilterMode === 'character'
+            ? ($corporationId
+                ? [$corporationId]
+                : $summaries->pluck('corporation_id')->filter()->unique()->toArray())
+            : [];
 
         if (!empty($corpIds)) {
             // Find all character_ids affiliated with these corporations
