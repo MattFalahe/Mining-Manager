@@ -1052,6 +1052,31 @@ class LedgerController extends Controller
      */
     public function summaryIndex(Request $request)
     {
+        return $this->renderSummary($request, false);
+    }
+
+    /**
+     * Moon Mining Summary — the complement of the Mining Summary.
+     *
+     * The Mining Summary answers "what did the members of a corporation
+     * mine" (miner's affiliation). This one answers "what came out of a
+     * corporation's moons" (structure owner) and is restricted to moon ore,
+     * so belt/ice/gas mining is not mixed into a moon-focused view.
+     */
+    public function moonSummaryIndex(Request $request)
+    {
+        return $this->renderSummary($request, true);
+    }
+
+    /**
+     * Shared renderer for the two ledger summary views. They differ only in
+     * how the corporation filter is interpreted and whether the mining is
+     * restricted to moon ore.
+     *
+     * @param bool $moonMode Structure-owner scope + moon ore only when true.
+     */
+    protected function renderSummary(Request $request, bool $moonMode)
+    {
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
         $corporationId = $request->get('corporation_id');
@@ -1067,12 +1092,22 @@ class LedgerController extends Controller
             $month = $monthDate->format('Y-m');
         }
 
+        // 'character' = attributed to the corporation the miner belongs to.
+        // 'owner' = attributed to the corporation that owns the structure the
+        // mining happened at (only meaningful for moon ore).
+        $corpFilterMode = $moonMode ? 'owner' : 'character';
+
         // Get enhanced monthly summaries (includes ore types and systems)
-        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId);
+        $summaries = $this->summaryService->getEnhancedMonthlySummaries(
+            $month,
+            $corporationId,
+            $corpFilterMode,
+            $moonMode
+        );
 
         // Group by main character if requested
         if ($groupByMain) {
-            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId);
+            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId, $corpFilterMode);
         }
 
         // Filter to user's own characters for non-directors (members see only their own)
@@ -1112,18 +1147,7 @@ class LedgerController extends Controller
         ];
 
         // Get corporations for filter dropdown
-        $corporations = DB::table('corporation_infos')
-            ->whereIn('corporation_id', function($query) use ($monthDate) {
-                $query->select('corporation_id')
-                    ->from('mining_ledger')
-                    ->whereYear('date', $monthDate->year)
-                    ->whereMonth('date', $monthDate->month)
-                    ->whereNotNull('corporation_id')
-                    ->distinct();
-            })
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
+        $corporations = $this->corporationsForLedgerFilter($monthDate, $corpFilterMode);
 
         return view('mining-manager::ledger.summary', [
             'summaries' => $summaries,
@@ -1137,7 +1161,47 @@ class LedgerController extends Controller
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'isDirector' => $isDirector,
+            'moonMode' => $moonMode,
         ]);
+    }
+
+    /**
+     * Corporations offered in the summary filter dropdown.
+     *
+     * The two scopes list different things on purpose:
+     *  - 'character' → the corporations the miners currently belong to, so
+     *    selecting one shows everything its members mined.
+     *  - 'owner' → the corporations whose moons were mined (moon ore only),
+     *    so selecting one shows that corp's moon production.
+     *
+     * @param Carbon $monthDate
+     * @param string $corpFilterMode 'character' | 'owner'
+     * @return \Illuminate\Support\Collection
+     */
+    protected function corporationsForLedgerFilter(Carbon $monthDate, string $corpFilterMode)
+    {
+        if ($corpFilterMode === 'owner') {
+            $corporationIds = DB::table('mining_ledger')
+                ->whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
+                ->where('is_moon_ore', true)
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id');
+        } else {
+            $corporationIds = DB::table('character_affiliations as ca')
+                ->join('mining_ledger as l', 'l.character_id', '=', 'ca.character_id')
+                ->whereYear('l.date', $monthDate->year)
+                ->whereMonth('l.date', $monthDate->month)
+                ->distinct()
+                ->pluck('ca.corporation_id');
+        }
+
+        return DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corporationIds)
+            ->select('corporation_id', 'name', 'ticker')
+            ->orderBy('name')
+            ->get();
     }
 
     /**

@@ -227,6 +227,7 @@ return [
 
     // Hierarchical Summary View
     'mining_summary' => 'Mining Summary',
+    'moon_mining_summary' => 'Moon Mining Summary',
     'summary_view' => 'Summary View',
     'detailed_view' => 'Detailed View',
     'character_summaries' => 'Character Summaries',
