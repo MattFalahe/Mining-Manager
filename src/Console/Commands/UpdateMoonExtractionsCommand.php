@@ -199,6 +199,20 @@ class UpdateMoonExtractionsCommand extends Command
             $this->error("Planner reconciliation failed: {$e->getMessage()}");
         }
 
+        // A blueprint slot pointing at a refinery we no longer own cannot
+        // pull, so its planned pulls come off the calendar. The slot itself
+        // stays: a pattern is built by hand and a structure can drop out of
+        // SeAT for an afternoon, so removing it waits for a person.
+        try {
+            $rotations = app(\MiningManager\Services\Moon\MoonRotationService::class);
+            $dropped = $rotations->sweepMissingRefineries();
+            if ($dropped > 0) {
+                $this->warn("Removed {$dropped} planned pull(s) on refineries that are gone.");
+            }
+        } catch (\Exception $e) {
+            $this->error("Blueprint refinery sweep failed: {$e->getMessage()}");
+        }
+
         // A moon marked as somebody else's, or one somebody was waiting for,
         // is ours once one of our refineries drills it. Tidy both up here,
         // where the extraction that proves it has just been imported.

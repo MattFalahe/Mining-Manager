@@ -1360,11 +1360,13 @@
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
                                                 <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
                                                 <option value="extraction_started">⛏️ Extraction Started (drill lit)</option>
-                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
-                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
                                                 <option value="metenox_cargo_full">📦 Metenox Cargo Bay Full (v2.0.1, yield-stopping)</option>
                                                 <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
                                                 <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
+                                            </optgroup>
+                                            <optgroup label="Moon Planner Notifications">
+                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
+                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
                                             </optgroup>
                                             <optgroup label="Theft Detection">
                                                 <option value="theft_detected">⚠️ Theft Detected</option>
