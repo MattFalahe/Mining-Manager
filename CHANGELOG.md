@@ -37,6 +37,9 @@ All notable changes to Mining Manager will be documented in this file.
 
 - Fixed: **`update-ledger-prices` stopped part way through and reported success.** It paged the ledger with offsets while the loop wrote to `total_value`, which is one of the columns the query selects on, so priced rows dropped out of the result set and the paging walked straight past the ones that shuffled back. `--all-unpriced` was the worst of it: the run could finish after a single batch of 500 with thousands still unpriced. It pages by id now, so every row that matches is visited once.
 
+- **Claiming or watching a moon checks the moon exists first.** Both accepted any positive number, so a mistyped id wrote a perfectly good row for a moon nobody has scanned. It rendered nowhere, since the badges are painted onto search results, and it could not be cleared either, because clearing is a button on a result row. It just sat in the table.
+- Claiming a moon is now one write rather than two. Closing the previous claim and opening the new one were separate statements, so two people reporting the same moon at the same moment could both close and both insert, leaving the moon with two open claims.
+
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 
 Wallet payments, rebuilt. A member who sends tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance that members can see and directors can give back. Around that: the personal mining import counts the whole day, the ore registry catches up with everything CCP has shipped, the Extraction Simulator gains a moon search, and price refreshes stop asking for one ore at a time.

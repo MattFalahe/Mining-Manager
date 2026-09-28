@@ -948,7 +948,7 @@ class MoonController extends Controller
         $this->authorizeMoonFinder();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
-        if ($moonId === null) {
+        if ($moonId === null || !$this->isKnownMoon($moonId)) {
             return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
         }
 
@@ -959,17 +959,29 @@ class MoonController extends Controller
 
         [$characterId, $characterName] = $this->actor();
 
-        // A second report replaces the first rather than sitting beside it,
-        // and the old row stays closed for the history.
-        $this->closeClaims($moonId, $characterId, $characterName);
+        // Closing the old claim and opening the new one is one act. Apart,
+        // two people reporting the same moon at the same moment can both
+        // close and both insert, and the moon ends up with two open claims.
+        // The lock takes the (moon_id, cleared_at) range, so the second one
+        // waits rather than reading a row that is about to change.
+        $claim = DB::transaction(function () use ($request, $moonId, $characterId, $characterName) {
+            MoonClaim::where('moon_id', $moonId)
+                ->whereNull('cleared_at')
+                ->lockForUpdate()
+                ->get();
 
-        $claim = MoonClaim::create([
-            'moon_id' => $moonId,
-            'claimed_by' => $this->trimmedOrNull($request->input('claimed_by')),
-            'note' => $this->trimmedOrNull($request->input('note')),
-            'character_id' => $characterId,
-            'character_name' => $characterName,
-        ]);
+            // A second report replaces the first rather than sitting beside
+            // it, and the old row stays closed for the history.
+            $this->closeClaims($moonId, $characterId, $characterName);
+
+            return MoonClaim::create([
+                'moon_id' => $moonId,
+                'claimed_by' => $this->trimmedOrNull($request->input('claimed_by')),
+                'note' => $this->trimmedOrNull($request->input('note')),
+                'character_id' => $characterId,
+                'character_name' => $characterName,
+            ]);
+        });
 
         return response()->json([
             'claim' => [
@@ -1007,7 +1019,7 @@ class MoonController extends Controller
         $this->authorizeMoonFinder();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
-        if ($moonId === null) {
+        if ($moonId === null || !$this->isKnownMoon($moonId)) {
             return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
         }
 
@@ -1108,6 +1120,21 @@ class MoonController extends Controller
     private function positiveInt($value): ?int
     {
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /**
+     * A moon somebody has scanned, which is the only kind any page here can
+     * show.
+     *
+     * Without this a mistyped id writes a perfectly good claim row that
+     * renders nowhere, and cannot be cleared either, because clearing is a
+     * button on a search result. It just sits in the table.
+     */
+    private function isKnownMoon(int $moonId): bool
+    {
+        return DB::table('universe_moon_contents')
+            ->where('moon_id', $moonId)
+            ->exists();
     }
 
     /**
