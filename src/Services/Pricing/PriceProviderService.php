@@ -97,6 +97,16 @@ class PriceProviderService
      * them. A whole refresh is a handful of requests at this size, which is
      * the point: the owner blocks keys for excessive traffic.
      */
+    /**
+     * Set by a caller that is working to a deadline. Null means no limit, which
+     * is what every on-demand lookup wants: only the scheduled refresh has a
+     * budget to keep to.
+     */
+    protected ?int $fetchDeadline = null;
+
+    /** Ids a refresh never got round to asking about, because time ran out. */
+    protected int $lastFetchUnasked = 0;
+
     const JANICE_BATCH_SIZE = 100;
     const JANICE_BATCH_PAUSE_US = 2000000;
     const JANICE_RETRY_PAUSE_US = 1000000;
@@ -273,8 +283,16 @@ class PriceProviderService
 
         $wanted = array_values(array_unique(array_map('intval', $typeIds)));
         $prices = [];
+        $this->lastFetchUnasked = 0;
 
         foreach (array_chunk($wanted, $batchSize) as $index => $batch) {
+            // Out of time: leave the rest for the next run rather than pushing
+            // past the lock that is holding other callers off.
+            if ($this->outOfFetchTime()) {
+                $this->lastFetchUnasked += count($batch);
+                continue;
+            }
+
             if ($index > 0 && $pause > 0) {
                 usleep($pause);
             }
@@ -282,9 +300,38 @@ class PriceProviderService
             $prices += $this->fetchJaniceBatch($batch, $apiKey, $market, $method);
         }
 
+        if ($this->lastFetchUnasked > 0) {
+            Log::warning('Mining Manager: price refresh ran out of time', [
+                'ids_not_asked_for' => $this->lastFetchUnasked,
+            ]);
+        }
+
         // Ids Janice does not answer for keep no price here. Nothing writes a
         // zero over a good price, so they simply keep whatever was cached.
         return $prices;
+    }
+
+    /**
+     * Stop asking the provider for anything new after this moment.
+     *
+     * @param int|null $timestamp unix time, or null to lift the limit
+     */
+    public function stopFetchingAfter(?int $timestamp): void
+    {
+        $this->fetchDeadline = $timestamp;
+    }
+
+    /**
+     * How many ids a refresh gave up on. Zero when it finished the list.
+     */
+    public function lastFetchUnasked(): int
+    {
+        return $this->lastFetchUnasked;
+    }
+
+    protected function outOfFetchTime(): bool
+    {
+        return $this->fetchDeadline !== null && time() >= $this->fetchDeadline;
     }
 
     /**
@@ -322,7 +369,10 @@ class PriceProviderService
                 'error' => $e->getMessage(),
             ]);
 
-            if (count($typeIds) === 1 || $depth >= self::JANICE_MAX_SPLITS) {
+            // The retreat is what makes a bad run long: fifteen requests for
+            // one batch of a hundred, each on its own timeout. Once the budget
+            // is gone, stop splitting and let the next run try again.
+            if (count($typeIds) === 1 || $depth >= self::JANICE_MAX_SPLITS || $this->outOfFetchTime()) {
                 return [];
             }
 

@@ -4,6 +4,7 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use MiningManager\Console\Commands\Concerns\RunsWithinABudget;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\MarketDataService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -14,6 +15,19 @@ use Carbon\Carbon;
 
 class CachePriceDataCommand extends Command
 {
+    use RunsWithinABudget;
+
+    /**
+     * How long a refresh may spend asking the provider for prices.
+     *
+     * The staged retreat turns one bad batch of a hundred into fifteen
+     * requests, each on its own thirty second timeout, so a provider that
+     * hangs rather than refuses can keep a full refresh going for the better
+     * part of an hour. Stopping early costs nothing: ids we did not reach keep
+     * the price they already had, and the next run is four hours away.
+     */
+    public const FETCH_BUDGET_SECONDS = 480;
+
     /**
      * The name and signature of the console command.
      *
@@ -74,8 +88,8 @@ class CachePriceDataCommand extends Command
      */
     public function handle()
     {
-        $lock = Cache::lock('mining-manager:cache-prices', 600);
-        if (!$lock->get()) {
+        $lock = $this->lockForBudget('mining-manager:cache-prices', self::FETCH_BUDGET_SECONDS);
+        if (!$lock) {
             $this->warn('Another instance of this command is already running. Skipping.');
             return Command::SUCCESS;
         }
@@ -105,9 +119,16 @@ class CachePriceDataCommand extends Command
             $provider = $pricingSettings['price_provider'] ?? 'seat';
 
             if ($provider === 'manager-core' && PriceProviderService::isManagerCoreInstalled()) {
+                // A table to table copy. Nothing to pace and nothing to wait on.
                 $this->syncFromManagerCore($typeIds, $regionId);
             } else {
-                $this->fetchFromProvider($typeIds, $regionId, $force);
+                $this->priceService->stopFetchingAfter($this->budgetEndsAt());
+
+                try {
+                    $this->fetchFromProvider($typeIds, $regionId, $force);
+                } finally {
+                    $this->priceService->stopFetchingAfter(null);
+                }
             }
 
             // Clean up old cache entries
