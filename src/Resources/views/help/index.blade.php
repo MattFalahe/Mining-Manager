@@ -2125,8 +2125,16 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         worth nothing.
                     </p>
                     <p>
-                        Both are skipped when mining is imported and when mining events are tallied, so nothing further
-                        along ever sees them. Rows of any of these already in your ledger are left as they were.
+                        <strong>Zuthrine</strong> (<code>28626</code>) is left out as well. EVE gives it full flavour
+                        text, a Mercoxit-family rock full of Morphite that needs deep core mining, but it has no
+                        market group, so it cannot be sold, and no reprocessing output, so it cannot be refined.
+                        There is no route to a value for it and there never will be. It appears to be objective ore
+                        that something asks you to mine and hand in.
+                    </p>
+                    <p>
+                        All three are skipped when mining is imported and when mining events are tallied, so nothing
+                        further along ever sees them. Rows of any of these already in your ledger are left as they
+                        were.
                     </p>
                 </div>
 

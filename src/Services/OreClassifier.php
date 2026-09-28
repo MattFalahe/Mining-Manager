@@ -53,7 +53,11 @@ final class OreClassifier
      */
     public static function ignoredTypeIds(): array
     {
-        return array_merge(TypeIdRegistry::EVENT_ORES, TypeIdRegistry::MUTANITE_ORES);
+        return array_merge(
+            TypeIdRegistry::EVENT_ORES,
+            TypeIdRegistry::MUTANITE_ORES,
+            TypeIdRegistry::OBJECTIVE_ORES
+        );
     }
 
     /**

@@ -42,6 +42,10 @@ All notable changes to Mining Manager will be documented in this file.
 - **Claiming or watching a moon checks the moon exists first.** Both accepted any positive number, so a mistyped id wrote a perfectly good row for a moon nobody has scanned. It rendered nowhere, since the badges are painted onto search results, and it could not be cleared either, because clearing is a button on a result row. It just sat in the table.
 - Claiming a moon is now one write rather than two. Closing the previous claim and opening the new one were separate statements, so two people reporting the same moon at the same moment could both close and both insert, leaving the moon with two open claims.
 
+### Ore Classification
+
+- **Zuthrine is no longer imported.** EVE publishes it with full flavour text, a Mercoxit-family rock full of Morphite needing deep core mining, but it carries no market group so it cannot be sold and no reprocessing output so it cannot be refined. There is no route to a value for it and there never will be, which makes it objective ore that something asks you to mine and hand in. It joins event ore and Mutanite in being skipped at import, so it is never taxed, valued, charted or counted towards an event. Rows already in your ledger stay exactly as they are.
+
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 
 Wallet payments, rebuilt. A member who sends tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance that members can see and directors can give back. Around that: the personal mining import counts the whole day, the ore registry catches up with everything CCP has shipped, the Extraction Simulator gains a moon search, and price refreshes stop asking for one ore at a time.

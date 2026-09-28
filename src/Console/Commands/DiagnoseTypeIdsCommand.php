@@ -184,6 +184,11 @@ class DiagnoseTypeIdsCommand extends Command
                 'count' => count(TypeIdRegistry::MUTANITE_ORES),
                 'ids' => TypeIdRegistry::MUTANITE_ORES,
             ],
+            'objective' => [
+                'name' => 'Objective ore (left out of the ledger)',
+                'count' => count(TypeIdRegistry::OBJECTIVE_ORES),
+                'ids' => TypeIdRegistry::OBJECTIVE_ORES,
+            ],
         ];
     }
 
