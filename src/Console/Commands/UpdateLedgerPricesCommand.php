@@ -147,7 +147,11 @@ class UpdateLedgerPricesCommand extends Command
         $ranOutOfTime = false;
         $affectedPairs = collect(); // Track character_id + date pairs for daily summary regeneration
 
-        $query->chunk(500, function ($entries) use (
+        // Keyed paging, not offsets. The loop writes total_value, which is part
+        // of what the query selects on, so with offsets the result set shrinks
+        // underneath the paging and the run stops with most of the work still
+        // to do, having reported success.
+        $query->chunkById(500, function ($entries) use (
             $valuationService, $taxService, $settingsService, $force,
             &$updated, &$errors, &$skipped, &$affectedPairs, &$ranOutOfTime, $bar
         ) {
