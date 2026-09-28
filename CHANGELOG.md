@@ -27,6 +27,10 @@ All notable changes to Mining Manager will be documented in this file.
 - **The grid is in EVE time.** It was placing chunks in whatever timezone the browser is in while every time printed on the page is labelled EVE, so a late-night chunk sat on the wrong day for anyone not on UTC.
 - Fixed: **Next 7 Days emptied out at the end of a month**, because the page only ever loaded the month you were looking at.
 
+### Tax Settings
+
+- **The two ore categories now say what they hold.** Abyssal Ore and Triglavian Ore are easy to mix up, and the confusion runs the wrong way round: the ore from nullsec and wormhole escalations, Bezdnacine, Rakovene and Talassonite, is billed under **Abyssal**. Both rate fields and both Tax Selector toggles now name the ores they cover, and Help has a section explaining which is which, why the Triglavian rate never charges anything (its nine ores are mission and site objective items with no market price and no reprocessing output, so their value is always zero and no price refresh will change that), and where the Abyssal name came from. Nothing about the rates, the categories or the classification changed.
+
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 
 Wallet payments, rebuilt. A member who sends tax ISK without pasting the tax code used to leave a transfer that nothing could match and no button could resolve. It can now be assigned to the invoice it was meant for, whatever a payment does not settle rolls onto the next unpaid invoice, and anything left over is held as account balance that members can see and directors can give back. Around that: the personal mining import counts the whole day, the ore registry catches up with everything CCP has shipped, the Extraction Simulator gains a moon search, and price refreshes stop asking for one ore at a time.

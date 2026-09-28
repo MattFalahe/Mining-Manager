@@ -264,7 +264,9 @@
                                 <span class="input-group-text">%</span>
                             </div>
                         </div>
-                        <small class="form-text text-muted">Rare ores from Abyssal Deadspace</small>
+                        <small class="form-text text-muted">
+                            Bezdnacine, Rakovene and Talassonite, all grades and compressed.
+                        </small>
                     </div>
                 </div>
 
@@ -287,7 +289,9 @@
                                 <span class="input-group-text">%</span>
                             </div>
                         </div>
-                        <small class="form-text text-muted">Pochven/Triglavian space ores</small>
+                        <small class="form-text text-muted">
+                            Mission and site objective ore. It has no market price, so this rate never charges.
+                        </small>
                     </div>
                 </div>
             </div>
@@ -540,6 +544,11 @@
                         <label class="custom-control-label" for="tax_abyssal_ore">
                             <i class="fas fa-skull"></i> Tax Abyssal Ore
                         </label>
+                        <small class="form-text text-muted">
+                            Bezdnacine, Rakovene and Talassonite, every grade and compressed form. This is where
+                            ore from nullsec and wormhole escalations is billed, and it prices and reprocesses
+                            normally.
+                        </small>
                     </div>
                     <div class="custom-control custom-switch mb-2">
                         <input type="checkbox"
@@ -551,6 +560,11 @@
                         <label class="custom-control-label" for="tax_triglavian_ore">
                             <i class="fas fa-radiation"></i> Tax Triglavian Ore
                         </label>
+                        <small class="form-text text-muted">
+                            Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite and
+                            Polygypsum: objective ore that missions and sites ask you to mine and hand in. None
+                            of it can be sold or reprocessed, so leaving this on charges nothing either way.
+                        </small>
                     </div>
                 </div>
             </div>

@@ -246,8 +246,8 @@ return [
     'tax_rate_regular_ore' => 'Regular Ore — A single rate applied to all non-moon, non-ice, non-gas ores (Veldspar, Scordite, Plagioclase, etc.).',
     'tax_rate_ice' => 'Ice — Applied to all ice mining products.',
     'tax_rate_gas' => 'Gas — Applied to all gas cloud harvesting.',
-    'tax_rate_abyssal' => 'Abyssal Ore — Applied to rare ores from Abyssal Deadspace (Bezdnacine, Rakovene, Talassonite). Disabled by default in the Tax Selector.',
-    'tax_rate_triglavian' => 'Triglavian Ore — Applied to ores from Pochven/Triglavian space (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). Disabled by default in the Tax Selector.',
+    'tax_rate_abyssal' => 'Abyssal Ore: Bezdnacine, Rakovene and Talassonite, every grade and compressed form. Nullsec and wormhole border ore, including Ore Prospecting Array escalations. Disabled by default in the Tax Selector.',
+    'tax_rate_triglavian' => 'Triglavian Ore: mission and site objective ore (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). None of it can be sold or reprocessed, so this rate never charges anything. Disabled by default in the Tax Selector.',
 
     // Tax Selector
     'tax_selector_explained' => 'Tax Selector (What Gets Taxed)',

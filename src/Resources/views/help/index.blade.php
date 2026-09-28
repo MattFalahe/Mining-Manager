@@ -1536,6 +1536,63 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li><strong>{{ trans('mining-manager::help.tax_selector_no_moon') }}</strong></li>
                     </ul>
                     <p>{{ trans('mining-manager::help.tax_selector_toggles') }}</p>
+
+                    <h4><i class="fas fa-skull"></i> Abyssal Ore and Triglavian Ore, which is which</h4>
+                    <p>
+                        These two names cause more confusion than any other pair of settings here, and the
+                        confusion runs the wrong way round: the valuable ore is under <strong>Abyssal</strong>,
+                        not under Triglavian.
+                    </p>
+                    <div class="table-responsive">
+                    <table class="table table-sm" style="color: #d1d5db;">
+                        <thead>
+                            <tr><th>Category</th><th>What is in it</th><th>Worth anything?</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Abyssal Ore</strong></td>
+                                <td>
+                                    Bezdnacine, Rakovene and Talassonite. Every grade, plus the compressed
+                                    forms and Nesosilicate Rakovene. This is the border ore from nullsec and
+                                    wormhole space, including Ore Prospecting Array escalations.
+                                </td>
+                                <td>Yes. It has a market price and it reprocesses.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Triglavian Ore</strong></td>
+                                <td>
+                                    Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl,
+                                    Geodite and Polygypsum. Objective ore that missions and sites ask you to
+                                    mine and hand in.
+                                </td>
+                                <td>No, and it never will be.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    </div>
+                    <p>
+                        Nothing belongs to both, and if you mine ore from an escalation it is billed at your
+                        <strong>Abyssal Ore</strong> rate.
+                    </p>
+
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Why the objective ore is always worth zero.</strong>
+                        Those nine have no market group in EVE, so they cannot be listed or sold and no price
+                        exists to look up, from any provider. They also have no reprocessing output, so there is
+                        no refined value to fall back on. Both routes to a value are closed by the game itself.
+                        They still count towards mined volume, so a member's m&sup3; can include them, but they
+                        never add ISK and they are never taxed whatever you set that rate to.
+                    </div>
+
+                    <p>
+                        <strong>Where the Abyssal name came from.</strong> The three grades used to be called
+                        Bezdnacine, <em>Abyssal</em> Bezdnacine and <em>Hadal</em> Bezdnacine, and the same for
+                        the other two. CCP later dropped those adjectives across the whole game in favour of
+                        II-Grade and III-Grade, which is why the SDE now says Rakovene II-Grade where the old
+                        name was Abyssal Rakovene. The category kept the old adjective. It is not a reference to
+                        Abyssal Deadspace, whatever the name suggests.
+                    </p>
                 </div>
 
                 {{-- Guest Mining --}}
