@@ -4,6 +4,7 @@ namespace MiningManager;
 
 use Seat\Services\AbstractSeatPlugin;
 use MiningManager\Console\Commands\ProcessMiningLedgerCommand;
+use MiningManager\Console\Commands\ReconcilePersonalMiningCommand;
 use MiningManager\Console\Commands\BackfillOreTypeFlagsCommand;
 use MiningManager\Console\Commands\CalculateMonthlyTaxesCommand;
 use MiningManager\Console\Commands\CalculateMonthlyStatisticsCommand;
@@ -132,6 +133,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         if ($this->app->runningInConsole()) {
             $this->commands([
                 ProcessMiningLedgerCommand::class,
+                ReconcilePersonalMiningCommand::class,
                 BackfillOreTypeFlagsCommand::class,
                 CalculateMonthlyTaxesCommand::class,
                 CalculateMonthlyStatisticsCommand::class,
