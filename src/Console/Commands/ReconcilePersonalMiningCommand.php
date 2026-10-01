@@ -8,7 +8,7 @@ use MiningManager\Services\Ledger\PersonalMiningReconciler;
 class ReconcilePersonalMiningCommand extends Command
 {
     protected $signature = 'mining-manager:reconcile-personal-mining
-                            {--days= : How many days back to look (default 14)}
+                            {--days= : How many days back to look (default 4)}
                             {--dry-run : Report what would go and write nothing}';
 
     protected $description = 'Remove personal mining rows a corporation observer has already accounted for';
@@ -24,6 +24,12 @@ class ReconcilePersonalMiningCommand extends Command
         $this->line('');
 
         $result = $reconciler->reconcile($days, $dryRun);
+
+        if ($result['moon_owner'] === null) {
+            $this->error('No Moon Owner Corporation is set, so there is nothing to match our own refineries against.');
+
+            return self::FAILURE;
+        }
 
         if (!empty($result['rows'])) {
             $this->table(
@@ -53,6 +59,7 @@ class ReconcilePersonalMiningCommand extends Command
                 ['Left alone, an issued invoice covers the day', number_format($result['billed_skipped'])],
                 ['Duplicated quantity', number_format($result['quantity'])],
                 ['Duplicated value (ISK)', number_format($result['value'], 0)],
+                ['Daily summaries rebuilt', number_format($result['summaries'])],
             ]
         );
 
