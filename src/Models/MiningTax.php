@@ -5,6 +5,7 @@ namespace MiningManager\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use MiningManager\Services\Tax\PartPaymentEpoch;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Character\CharacterAffiliation;
@@ -163,6 +164,31 @@ class MiningTax extends Model
     public function scopeOutstanding($query)
     {
         return $query->whereIn('status', self::OUTSTANDING_STATUSES);
+    }
+
+    /**
+     * Scope a query to the bills theft detection treats as unpaid.
+     *
+     * Unpaid and overdue, always. A part-paid bill joins them only if it was
+     * raised after the part-payment cutover: before it, any payment at all took
+     * a bill off this list, and bills raised then keep that rule so upgrading
+     * does not open incidents over debts nobody was chasing. A bill with no
+     * created_at counts as raised before.
+     */
+    public function scopeUnpaidForTheft($query)
+    {
+        $epoch = PartPaymentEpoch::get();
+
+        return $query->where(function ($q) use ($epoch) {
+            $q->whereIn('status', ['unpaid', 'overdue']);
+
+            if ($epoch !== null) {
+                $q->orWhere(function ($partPaid) use ($epoch) {
+                    $partPaid->where('status', 'partial')
+                        ->where('created_at', '>=', $epoch);
+                });
+            }
+        });
     }
 
     /**

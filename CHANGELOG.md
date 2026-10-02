@@ -43,6 +43,7 @@ All notable changes to Mining Manager will be documented in this file.
 - **Left to Pay** column on Tax Overview, the grouped view and My Taxes history, so nobody has to subtract one column from another, with the Copy button next to it handing over that figure. Bill details show it as well.
 - Fixed: **Mark as Paid on a part-paid bill suggested the full bill.** The form adds what you enter to whatever has already been paid, so accepting the suggestion recorded an overpayment. It now suggests what is left.
 - Fixed: My Taxes' Total Paid card counted settled bills only, so it fell short of the Totals row beneath it by exactly what had been part paid. A payment small enough to round to 0.0% of its bill now reads <0.1% rather than looking like nothing was paid.
+- Fixed: **a token payment closed a guest's theft incident.** Theft detection only treated unpaid and overdue bills as unpaid, and a part-paid bill keeps status Partial however late it gets, so a guest could pay a few ISK on a bill and have their incident closed as all taxes paid. It never opened one over a part-paid bill either. A part-paid bill now counts as unpaid for theft detection, starting with bills raised after this update: older ones keep the old rule, so upgrading does not open a batch of incidents over debts nobody was chasing.
 
 ### Scheduled Commands
 
@@ -66,6 +67,13 @@ All notable changes to Mining Manager will be documented in this file.
 ### Ore Classification
 
 - **Zuthrine is no longer imported.** EVE publishes it with full flavour text, a Mercoxit-family rock full of Morphite needing deep core mining, but it carries no market group so it cannot be sold and no reprocessing output so it cannot be refined. There is no route to a value for it and there never will be, which makes it objective ore that something asks you to mine and hand in. It joins event ore and Mutanite in being skipped at import, so it is never taxed, valued, charted or counted towards an event. Rows already in your ledger stay exactly as they are.
+
+### Schema
+
+- `000031` adds `mining_manager_moon_rotations` and `mining_manager_moon_rotation_slots` for blueprints, and three nullable columns on `moon_extraction_plans` recording which blueprint, slot and cycle wrote a pull.
+- `000032` stamps the part-payment cutover for theft detection. It writes one settings row and changes nothing else.
+
+No existing column is altered or dropped, and neither migration touches a row that already exists.
 
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 

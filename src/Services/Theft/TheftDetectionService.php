@@ -157,9 +157,10 @@ class TheftDetectionService
             return ['incident_created' => false, 'incident_updated' => false, 'incident' => null];
         }
 
-        // Check for unpaid/overdue taxes
+        // Check for unpaid/overdue taxes, and part-paid ones raised since the
+        // part-payment cutover
         $unpaidTaxes = MiningTax::where('character_id', $characterId)
-            ->whereIn('status', ['unpaid', 'overdue'])
+            ->unpaidForTheft()
             ->where(function($query) use ($startDate, $endDate) {
                 $query->whereBetween('month', [$startDate->copy()->startOfMonth(), $endDate->copy()->endOfMonth()])
                       ->orWhere('month', '<', $startDate->copy()->startOfMonth());
@@ -577,11 +578,13 @@ class TheftDetectionService
         $activeIncidents = TheftIncident::onTheftList()->get();
 
         foreach ($activeIncidents as $incident) {
-            // Check if character has paid taxes for the relevant period
+            // Check if character has paid taxes for the relevant period. A bill
+            // with a token payment on it is not paid, so a part-paid one keeps
+            // the incident open (for bills raised since the cutover).
             $unpaidTaxes = MiningTax::where('character_id', $incident->character_id)
                 ->where('month', '>=', $incident->mining_date_from)
                 ->where('month', '<=', $incident->mining_date_to)
-                ->whereIn('status', ['unpaid', 'overdue'])
+                ->unpaidForTheft()
                 ->exists();
 
             if (!$unpaidTaxes) {
