@@ -930,11 +930,11 @@ class TaxCalculationService
      *
      * @param int $characterId
      * @param int $typeId
-     * @param int $solarSystemId
+     * @param int|null $solarSystemId Null on ledger rows ESI left without a system
      * @param string $date Date in 'Y-m-d' format
      * @return string
      */
-    private function getCorpMoonCacheKey(int $characterId, int $typeId, int $solarSystemId, string $date): string
+    private function getCorpMoonCacheKey(int $characterId, int $typeId, ?int $solarSystemId, string $date): string
     {
         return "{$characterId}_{$typeId}_{$solarSystemId}_{$date}";
     }
@@ -948,12 +948,19 @@ class TaxCalculationService
      *
      * @param int $characterId
      * @param int $typeId
-     * @param int $solarSystemId
+     * @param int|null $solarSystemId Null on ledger rows ESI left without a system
      * @param string $date Date in 'Y-m-d' format
      * @return bool True if mined from corp moon, false otherwise
      */
-    private function checkIfCorpMoon(int $characterId, int $typeId, int $solarSystemId, string $date): bool
+    private function checkIfCorpMoon(int $characterId, int $typeId, ?int $solarSystemId, string $date): bool
     {
+        // Without a system there is nothing to match against the observer
+        // table, so this can't be confirmed as a corp moon. Treat it the
+        // same as a miss (don't tax), matching the catch-all below.
+        if ($solarSystemId === null) {
+            return false;
+        }
+
         try {
             // Query the corporation mining observer data
             // This table is populated by SeAT from ESI API and ONLY contains
