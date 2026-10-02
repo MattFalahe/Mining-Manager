@@ -681,22 +681,22 @@ return [
     'pay_step_2' => 'Every day, the system calculates the value of what you mined and how much tax you owe based on the ore type and corporation tax rates. This is stored as a daily summary.',
     'pay_step_3' => 'At the end of the tax period (monthly, biweekly, or weekly — depends on your corp settings), all your daily totals are added up into one tax bill.',
     'pay_step_4' => 'You receive a notification (Discord or Slack depending on corp setup) with your tax amount and a link to the Tax page.',
-    'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see the amount owed, due date, and your unique tax code (e.g. TAX-A1B2C3).',
+    'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see what is left to pay, the due date and how many days you have, and your unique tax code (e.g. TAX-A1B2C3). While you owe anything, a banner at the top of the Mining Dashboard says how much and when it is due.',
     'pay_step_6' => 'Pay your corporation in game (right-click its name and choose "Give Money") with your tax code in the "reason" field. That is how the system matches your payment to your bill.',
     'pay_step_7' => 'The system automatically scans wallet transactions every 6 hours. Once it finds your payment with the matching tax code, your status changes to "Paid". Done!',
 
     'pay_ingame_title' => 'How to Send Payment In-Game',
     'pay_ingame_step_1' => 'In EVE Online, right-click your corporation\'s name and choose "Give Money". "Give ISK" in your own wallet can\'t send to a corporation.',
-    'pay_ingame_step_4' => 'Enter the exact amount shown on your tax bill (or a partial amount if paying in installments).',
+    'pay_ingame_step_4' => 'Enter the amount shown in the payment steps on My Taxes, or part of it if you are paying in instalments. After a part payment it shows only what is left.',
     'pay_ingame_step_5' => 'In the "Reason" field, paste your tax code exactly as shown (e.g. TAX-A1B2C3). This is the most important step — without the code, the system cannot match your payment.',
 
     'pay_reason_warning' => 'The tax code MUST be in the "Reason" field of the wallet transfer, not the description or anywhere else. If you forget the code or type it wrong, your payment will not be automatically matched and a director will need to manually verify it.',
 
     'pay_partial_title' => 'Can I Pay in Installments?',
-    'pay_partial_desc' => 'Yes. You can split your payment into multiple transfers using the same tax code each time. For example, if you owe 100M ISK, you can send 50M now and 50M later — both with the same tax code. The system tracks partial payments and updates your status accordingly (Partial → Paid once the full amount is received).',
+    'pay_partial_desc' => 'Yes. You can split your payment into several transfers using the same tax code each time. For example, if you owe 100M ISK, you can send 50M now and 50M later, both with the same tax code. Your status shows Partial until the full amount is in, then Paid. My Taxes keeps the payment steps and your tax code on screen until then, and asks only for what is left.',
 
     'pay_verification_title' => 'How Do I Know My Payment Went Through?',
-    'pay_verification_desc' => 'Go to Mining Manager > My Taxes. Your tax status will update automatically: "Unpaid" means no payment detected yet, "Partial" means some amount received but not the full bill, "Paid" means you are all clear. The Wallet Verification page also shows your payment history. Payments are scanned every 6 hours, so it may take up to 6 hours for your status to update.',
+    'pay_verification_desc' => 'Go to Mining Manager > My Taxes. Your tax status will update automatically: "Unpaid" means no payment detected yet, "Partial" means some amount received but not the full bill, "Paid" means you are all clear. The banner on the Mining Dashboard goes once the bill is paid in full. The Wallet Verification page also shows your payment history. Payments are scanned every 6 hours, so it may take up to 6 hours for your status to update.',
 
     'pay_tip' => 'If you have alt characters linked to your SeAT account, all their mining is combined into one tax bill under your main character. You only need to pay once for all your alts.',
 
