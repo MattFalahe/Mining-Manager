@@ -199,18 +199,33 @@ class UpdateMoonExtractionsCommand extends Command
             $this->error("Planner reconciliation failed: {$e->getMessage()}");
         }
 
-        // A blueprint slot pointing at a refinery we no longer own cannot
-        // pull, so its planned pulls come off the calendar. The slot itself
-        // stays: a pattern is built by hand and a structure can drop out of
-        // SeAT for an afternoon, so removing it waits for a person.
+        // Pulls planned on a refinery we no longer own cannot happen, so they
+        // come off the calendar, but only once it has been missing on three
+        // sightings twelve hours apart. A structure can drop out of SeAT for an
+        // afternoon. Blueprint slots stay until a person clears them.
         try {
-            $rotations = app(\MiningManager\Services\Moon\MoonRotationService::class);
-            $dropped = $rotations->sweepMissingRefineries();
-            if ($dropped > 0) {
-                $this->warn("Removed {$dropped} planned pull(s) on refineries that are gone.");
+            $gone = app(\MiningManager\Services\Moon\MissingRefineryWatch::class)->run();
+
+            if ($gone) {
+                $notifications = app(\MiningManager\Services\Notification\NotificationService::class);
+                $plannerUrl = rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner';
+
+                // One message per refinery, never grouped: losing a lot of them
+                // at once is exactly when a combined message would be too big
+                // for Discord and never arrive.
+                foreach ($gone as $refinery) {
+                    try {
+                        $notifications->sendRefineryGone($refinery + ['planner_url' => $plannerUrl]);
+                    } catch (\Throwable $e) {
+                        $this->error("Refinery Gone notification failed for structure {$refinery['structure_id']}: {$e->getMessage()}");
+                    }
+                }
+
+                $pulls = array_sum(array_column($gone, 'pulls_removed'));
+                $this->warn("Removed {$pulls} planned pull(s) on " . count($gone) . " refinery(ies) that are gone.");
             }
         } catch (\Exception $e) {
-            $this->error("Blueprint refinery sweep failed: {$e->getMessage()}");
+            $this->error("Missing refinery watch failed: {$e->getMessage()}");
         }
 
         // A moon marked as somebody else's, or one somebody was waiting for,

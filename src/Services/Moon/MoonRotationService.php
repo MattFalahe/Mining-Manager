@@ -491,59 +491,6 @@ class MoonRotationService
     }
 
     /**
-     * Take the pulls off the calendar for refineries that are gone, and leave
-     * the pattern alone.
-     *
-     * A pull on a refinery the corporation no longer owns cannot happen, so
-     * carrying it costs nothing to remove and re-applying the blueprint brings
-     * it back if the structure reappears. The slot is a different matter: it
-     * was built by hand, there is no undo for it, and a structure can drop out
-     * of SeAT for an afternoon when ESI has a bad day. So the slot waits for a
-     * person to press the button.
-     *
-     * @return int pulls removed
-     */
-    public function removePlansForMissingRefineries(int $corporationId, ?int $actorId = null, ?string $actorName = null): int
-    {
-        $gone = $this->slotsWithMissingRefineries($corporationId);
-
-        if ($gone->isEmpty()) {
-            return 0;
-        }
-
-        $plans = 0;
-
-        DB::transaction(function () use ($gone, $actorId, $actorName, &$plans) {
-            foreach ($gone as $slot) {
-                $plans += $this->dropPlansForSlot($slot, $actorId, $actorName);
-            }
-        });
-
-        return $plans;
-    }
-
-    /**
-     * The same sweep across every corporation that has a blueprint, for the
-     * scheduled run.
-     *
-     * @return int pulls removed
-     */
-    public function sweepMissingRefineries(): int
-    {
-        $removed = 0;
-
-        foreach (MoonRotation::query()->distinct()->pluck('corporation_id') as $corporationId) {
-            if (!$corporationId) {
-                continue;
-            }
-
-            $removed += $this->removePlansForMissingRefineries((int) $corporationId);
-        }
-
-        return $removed;
-    }
-
-    /**
      * Blueprint slots pointing at a refinery this corporation no longer owns,
      * whether it was unanchored, destroyed or handed over.
      *
