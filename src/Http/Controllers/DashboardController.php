@@ -782,6 +782,50 @@ class DashboardController extends Controller
     }
 
     /**
+     * Apply the dashboard "Leaderboard Corporations" setting. When the operator
+     * has limited the leaderboard to specific corporations, keep only the
+     * characters affiliated with them.
+     *
+     * The setting is an install-wide one rather than per corporation, so it is
+     * read from the global rows.
+     */
+    private function filterLeaderboardCharacterIds(array $characterIds): array
+    {
+        if (empty($characterIds)) {
+            return $characterIds;
+        }
+
+        $filter = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_filter', null, 'all');
+
+        if ($filter !== 'specific') {
+            return $characterIds;
+        }
+
+        $configured = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_ids', null, '[]');
+        $corporationIds = is_array($configured) ? $configured : (json_decode((string) $configured, true) ?: []);
+
+        if (empty($corporationIds)) {
+            return $characterIds;
+        }
+
+        try {
+            $allowed = DB::table('character_affiliations')
+                ->whereIn('character_id', $characterIds)
+                ->whereIn('corporation_id', array_map('intval', $corporationIds))
+                ->pluck('character_id')
+                ->toArray();
+        } catch (\Exception $e) {
+            \Log::warning('DashboardController: leaderboard corporation filter failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $characterIds;
+        }
+
+        return array_values(array_intersect($characterIds, $allowed));
+    }
+
+    /**
      * Get top miners ranking by account (not individual characters)
      * UPDATED: Uses CharacterInfoService for proper character/corp names and unregistered character support
      * UPDATED: Now supports corporation filtering based on dashboard settings
@@ -796,7 +840,9 @@ class DashboardController extends Controller
         }
 
         // Always filter to viewing user's corporation members
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -858,7 +904,9 @@ class DashboardController extends Controller
             return $this->getTopMoonMinersFromLedger($corporationId, null, null, $limit);
         }
 
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -885,7 +933,9 @@ class DashboardController extends Controller
             return $this->getTopMoonMinersFromLedger($corporationId, $startDate, $endDate, $limit);
         }
 
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -957,7 +1007,9 @@ class DashboardController extends Controller
         }
 
         // Restrict to corporation members only
-        $corpMemberIds = $this->getCorporationCharacterIds($corporationId);
+        $corpMemberIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($corpMemberIds)) {
             return [];
