@@ -479,4 +479,12 @@ return [
     'refund_failed_refund_matched_to_transfer' => 'That refund was matched to a real transfer, so there is nothing to undo.',
     'refund_failed_error' => 'Something went wrong. Nothing was changed, so it is safe to try again.',
     'refund_failed_unknown' => 'Could not record that refund.',
+
+    // What is left on a bill, and how long there is to pay it
+    'left_to_pay' => 'Left to Pay',
+    'left_of_billed' => 'ISK left of :owed for :period',
+    'part_paid_received' => ':paid ISK of this :owed ISK bill has already been received, so only the rest is asked for below.',
+    'due_in_days' => '{1} 1 day left to pay|[2,*] :count days left to pay',
+    'due_today' => 'Due today',
+    'days_late' => '{1} 1 day late|[2,*] :count days late',
 ];

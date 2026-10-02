@@ -1809,31 +1809,26 @@ class TaxController extends Controller
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
-        // Pull the tax row that matches the current active period (may not
-        // exist yet — taxes are calculated after the period ends). Fall back
-        // to the most-recent UNPAID tax so the user sees a meaningful balance
-        // card when the current period hasn't been invoiced yet.
-        $currentTax = MiningTax::with(['character', 'taxCodes'])
-            ->whereIn('character_id', $taxCharacterIds)
-            ->where('period_start', $currentPeriodStart->toDateString())
-            ->first();
-
-        if (!$currentTax) {
-            $currentTax = MiningTax::with(['character', 'taxCodes'])
-                ->whereIn('character_id', $taxCharacterIds)
-                ->whereIn('status', ['unpaid', 'overdue'])
-                ->orderBy('due_date', 'asc')
-                ->first();
-        }
-
-        // All unpaid/overdue taxes — used by the view to stack multiple
-        // period rows (bi-weekly with both halves unpaid, weekly with
-        // multiple open weeks, etc.) rather than silently showing only one.
+        // Every bill with money still owing, oldest period first, which is the
+        // order payments are applied in. A part-paid bill belongs here however
+        // much has been paid on it: leaving it out sent the page to the current
+        // period instead, and a member who had paid anything at all lost the
+        // instructions for paying the rest.
         $unpaidTaxes = MiningTax::with(['character', 'taxCodes'])
             ->whereIn('character_id', $taxCharacterIds)
-            ->whereIn('status', ['unpaid', 'overdue'])
-            ->orderBy('due_date', 'asc')
+            ->outstanding()
+            ->orderByRaw('COALESCE(period_start, month) asc')
+            ->orderBy('id')
             ->get();
+
+        // The status card shows what needs paying first. With nothing owing it
+        // shows the current period's bill, which usually does not exist yet
+        // because taxes are calculated after a period ends.
+        $currentTax = $unpaidTaxes->first()
+            ?? MiningTax::with(['character', 'taxCodes'])
+                ->whereIn('character_id', $taxCharacterIds)
+                ->where('period_start', $currentPeriodStart->toDateString())
+                ->first();
 
         // Mining breakdown scoped to the current active period, so the
         // "Mining Breakdown - {period}" section matches the tax row it's
