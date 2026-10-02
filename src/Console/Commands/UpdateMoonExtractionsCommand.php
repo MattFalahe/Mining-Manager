@@ -193,6 +193,23 @@ class UpdateMoonExtractionsCommand extends Command
                 if ($mismatches > 0) {
                     $this->warn("Fired {$mismatches} schedule-mismatch notification(s).");
                 }
+
+                $reminders = app(\MiningManager\Services\Moon\PlannerReminders::class);
+                $notifications = app(\MiningManager\Services\Notification\NotificationService::class);
+                $plannerUrl = rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner';
+
+                // One message per idle refinery: each is its own job for somebody.
+                $idle = $reminders->notRescheduled($moonOwnerCorpId);
+                foreach ($idle as $refinery) {
+                    try {
+                        $notifications->sendMoonNotRescheduled($refinery + ['planner_url' => $plannerUrl]);
+                    } catch (\Throwable $e) {
+                        $this->error("Moon Not Rescheduled failed for structure {$refinery['structure_id']}: {$e->getMessage()}");
+                    }
+                }
+                if ($idle) {
+                    $this->warn('Sent ' . count($idle) . ' Moon Not Rescheduled reminder(s).');
+                }
             }
         } catch (\Exception $e) {
             // Planner reconciliation must never break the extraction import.

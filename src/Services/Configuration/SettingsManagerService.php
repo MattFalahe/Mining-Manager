@@ -1258,6 +1258,11 @@ class SettingsManagerService
             // arrivals before the planner warns about clustering.
             'min_extraction_gap_hours' => (int) $this->getSetting('notifications.min_extraction_gap_hours', 24),
 
+            // Moon Not Rescheduled: idle hours before the reminder, and whether
+            // it repeats every that many hours until an extraction starts.
+            'moon_not_rescheduled_hours' => (int) $this->getSetting('notifications.moon_not_rescheduled_hours', 48),
+            'moon_not_rescheduled_repeat' => (bool) $this->getSetting('notifications.moon_not_rescheduled_repeat', true),
+
             // extraction_started detection mode. 'auto' uses Manager Core's
             // ESI fast-poll when present (~2 min detection); 'seat_native'
             // forces the slower endpoint-driven cron pass even with MC.

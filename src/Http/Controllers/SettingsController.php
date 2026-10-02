@@ -563,6 +563,19 @@ class SettingsController extends Controller
                 'min:1',
                 'max:168',
             ],
+            // Moon Not Rescheduled: hours a drill sits idle after its chunk
+            // arrives before the reminder goes, and between repeats. Up to two
+            // weeks; past that the reminder has stopped being one.
+            'moon_not_rescheduled_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+            'moon_not_rescheduled_repeat' => [
+                'nullable',
+                'boolean',
+            ],
             'moon_extraction_fastpoll_mode' => [
                 'nullable',
                 'in:auto,seat_native',
@@ -640,6 +653,14 @@ class SettingsController extends Controller
             $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
                 ? (int) $gapInput
                 : 24;
+
+            // Moon Not Rescheduled reminder. The whole tab is one form, so an
+            // unticked repeat box is simply absent and reads as off.
+            $idleInput = $request->input('moon_not_rescheduled_hours');
+            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
+                ? (int) $idleInput
+                : 48;
+            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
 
             // extraction_started detection mode (auto = Manager Core fast-poll
             // when present; seat_native = endpoint-driven cron pass).

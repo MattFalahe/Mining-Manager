@@ -799,6 +799,65 @@
     </div>
 
     {{-- ═══════════════════════════════════════════════════════════════ --}}
+    {{-- MOON PLANNER — REMINDERS                                          --}}
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-hourglass-half text-warning"></i>
+                Moon Planner Reminders
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                <strong>Moon Not Rescheduled</strong> goes out when a refinery's chunk arrived this long ago and no
+                new extraction has been started on it since. It stops when an extraction starts, the refinery leaves
+                the corporation, or its drill goes offline. Bind it to a webhook under Webhooks to receive it.
+            </small>
+            <div class="form-group row align-items-center">
+                <label for="moon_not_rescheduled_hours" class="col-md-4 col-form-label">
+                    Remind after the drill has been idle for
+                </label>
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <input type="number"
+                               class="form-control"
+                               id="moon_not_rescheduled_hours"
+                               name="moon_not_rescheduled_hours"
+                               min="1" max="336" step="1"
+                               value="{{ old('moon_not_rescheduled_hours', $notificationSettings['moon_not_rescheduled_hours'] ?? 48) }}">
+                        <div class="input-group-append">
+                            <span class="input-group-text">hours</span>
+                        </div>
+                    </div>
+                    @error('moon_not_rescheduled_hours')
+                        <small class="invalid-feedback d-block">{{ $message }}</small>
+                    @enderror
+                </div>
+                <div class="col-md-5">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i>
+                        Counted from the chunk's arrival. Default 48 hours.
+                    </small>
+                </div>
+            </div>
+            <div class="form-group row align-items-center mb-0">
+                <div class="col-md-4 col-form-label">Repeat</div>
+                <div class="col-md-8">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input"
+                               id="moon_not_rescheduled_repeat" name="moon_not_rescheduled_repeat" value="1"
+                               {{ old('moon_not_rescheduled_repeat', $notificationSettings['moon_not_rescheduled_repeat'] ?? true) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="moon_not_rescheduled_repeat">
+                            Remind again every that many hours until an extraction starts
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
     {{-- EXTRACTION STARTED — DETECTION SPEED (MANAGER CORE FAST-POLL)    --}}
     {{-- ═══════════════════════════════════════════════════════════════ --}}
     @php $mmFastPollAvailable = class_exists('\ManagerCore\Services\ESI\EsiNotificationRegistry'); @endphp
