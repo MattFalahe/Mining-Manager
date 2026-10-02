@@ -85,7 +85,7 @@ class SendOutstandingDigestCommand extends Command
             // Everything with money still on it. 'partial' matters most here:
             // it is the state a token payment produces, and the one that used to
             // be invisible to every other notification.
-            $taxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
+            $taxes = MiningTax::outstanding()
                 ->where('amount_owed', '>', 0)
                 ->get();
 
@@ -94,7 +94,7 @@ class SendOutstandingDigestCommand extends Command
             foreach ($taxes as $tax) {
                 $owed = (float) $tax->amount_owed;
                 $paid = (float) ($tax->amount_paid ?? 0);
-                $outstanding = round($owed - $paid, 2);
+                $outstanding = $tax->getRemainingBalance();
 
                 if ($outstanding <= 0) {
                     continue;

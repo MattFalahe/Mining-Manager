@@ -21,6 +21,15 @@ class MiningTax extends Model
     protected $table = 'mining_taxes';
 
     /**
+     * Statuses that still have money owing on them.
+     *
+     * A part-paid bill is one of them however late it gets. Its status records
+     * how much is covered, not whether it is settled; lateness is worked out from
+     * the due date instead (see isOverdue()).
+     */
+    public const OUTSTANDING_STATUSES = ['unpaid', 'partial', 'overdue'];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
@@ -149,6 +158,14 @@ class MiningTax extends Model
     }
 
     /**
+     * Scope a query to bills with money still owing on them, part-paid included.
+     */
+    public function scopeOutstanding($query)
+    {
+        return $query->whereIn('status', self::OUTSTANDING_STATUSES);
+    }
+
+    /**
      * Scope a query to only include unpaid taxes.
      */
     public function scopeUnpaid($query)
@@ -206,27 +223,53 @@ class MiningTax extends Model
             return false;
         }
 
-        // Use explicit due_date if set
+        return now()->greaterThan($this->effectiveDueDate());
+    }
+
+    /**
+     * The date payment is due by. Records made before due dates were stored
+     * fall back to the end of their period plus the grace period.
+     */
+    public function effectiveDueDate(): Carbon
+    {
         if ($this->due_date) {
-            return now()->greaterThan($this->due_date);
+            return Carbon::parse($this->due_date);
         }
 
-        // Fallback: calculate from period_end or month
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
         $gracePeriod = (int) $settingsService->getSetting('exemptions.grace_period_days',
             config('mining-manager.tax_payment.grace_period_days', 7));
         $periodEnd = $this->period_end ?? $this->month->copy()->endOfMonth();
-        $dueDate = Carbon::parse($periodEnd)->addDays($gracePeriod);
 
-        return now()->greaterThan($dueDate);
+        return Carbon::parse($periodEnd)->addDays($gracePeriod);
     }
 
     /**
-     * Get remaining balance.
+     * Whole days from today to the due date: positive while there is time left,
+     * 0 on the day itself, negative once it has passed.
+     *
+     * Counted in calendar days rather than hours, so "2 days left" does not
+     * become "1 day left" halfway through the afternoon.
      */
-    public function getRemainingBalance()
+    public function daysUntilDue(): int
     {
-        return $this->amount_owed - $this->amount_paid;
+        $today = now()->startOfDay();
+        $due = $this->effectiveDueDate()->copy()->startOfDay();
+
+        // Rounded rather than floored so a clock change in a non-UTC install
+        // cannot turn a 23 hour day into zero days.
+        return (int) round(($due->getTimestamp() - $today->getTimestamp()) / 86400);
+    }
+
+    /**
+     * What is still to pay: the bill less everything paid against it.
+     *
+     * Never negative. Anything paid beyond the bill is held as account credit,
+     * not owed back on the bill.
+     */
+    public function getRemainingBalance(): float
+    {
+        return max(0.0, round((float) $this->amount_owed - (float) ($this->amount_paid ?? 0), 2));
     }
 
     /**

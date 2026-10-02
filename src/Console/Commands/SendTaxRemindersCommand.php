@@ -131,7 +131,7 @@ class SendTaxRemindersCommand extends Command
         // went quiet. Harmless when partial payments barely worked; now that
         // instalments, cascades and account balance all produce them, a partly
         // paid invoice is a normal state rather than an oddity.
-        $query = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
+        $query = MiningTax::outstanding()
             ->where('amount_owed', '>', 0);
 
         if ($overdueOnly) {
@@ -189,9 +189,7 @@ class SendTaxRemindersCommand extends Command
                 // What is still owed, not what was originally charged. Summing
                 // amount_owed chases a member for money they have already paid
                 // on a partly settled invoice.
-                $totalOwed = round($taxes->sum(
-                    fn ($t) => max(0, (float) $t->amount_owed - (float) ($t->amount_paid ?? 0))
-                ), 2);
+                $totalOwed = round($taxes->sum(fn ($t) => $t->getRemainingBalance()), 2);
                 $taxCount = $taxes->count();
 
                 // Nothing left to ask for; the statuses just have not caught up.
