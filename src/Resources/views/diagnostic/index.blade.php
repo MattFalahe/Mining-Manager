@@ -1367,6 +1367,10 @@
                                             <optgroup label="Moon Planner Notifications">
                                                 <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
                                                 <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
+                                                <option value="refinery_gone">🏚️ Refinery Gone (planned pulls removed)</option>
+                                                <option value="extraction_cancelled">🛑 Moon Extraction Cancelled</option>
+                                                <option value="moon_not_rescheduled">⏰ Moon Not Rescheduled (reminder)</option>
+                                                <option value="schedule_needs_filling">🗓️ Moons Need Planning (one list)</option>
                                             </optgroup>
                                             <optgroup label="Theft Detection">
                                                 <option value="theft_detected">⚠️ Theft Detected</option>
@@ -3544,6 +3548,10 @@ function runFireAllNotifications() {
         { type: 'extraction_started',  label: '⛏️ Extraction Started' },
         { type: 'next_extraction_planned', label: '🗓️ Next Extraction Planned' },
         { type: 'schedule_mismatch',   label: '⚠️ Moon Scheduled Off-Plan' },
+        { type: 'refinery_gone', label: '🏚️ Refinery Gone' },
+        { type: 'extraction_cancelled', label: '🛑 Moon Extraction Cancelled' },
+        { type: 'moon_not_rescheduled', label: '⏰ Moon Not Rescheduled' },
+        { type: 'schedule_needs_filling', label: '🗓️ Moons Need Planning' },
         { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
         { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
         { type: 'report_generated',    label: '📊 Report Generated' },

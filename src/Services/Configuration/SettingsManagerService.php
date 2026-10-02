@@ -1199,6 +1199,7 @@ class SettingsManagerService
         'moon_ready', 'jackpot_detected',
         // Planner — extraction lifecycle coordination
         'extraction_started', 'next_extraction_planned', 'schedule_mismatch',
+        'refinery_gone', 'extraction_cancelled', 'moon_not_rescheduled', 'schedule_needs_filling',
         // Metenox (v2.0.1) — bay-full warning, standalone (no cross-plugin deps)
         'metenox_cargo_full',
         // Theft

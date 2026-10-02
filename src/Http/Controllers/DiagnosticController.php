@@ -215,6 +215,22 @@ class DiagnosticController extends Controller
                 : 'Column(s) missing — run migrations. The "moon scheduled off-plan" alert cannot latch or be subscribed to.',
         ];
 
+        // 4b. Planner alert schema (refinery gone, cancelled, not rescheduled, needs planning)
+        $hasAlertTable = \Schema::hasTable('mining_manager_refinery_alerts');
+        $missingAlertCols = array_values(array_filter([
+            'notify_refinery_gone', 'notify_extraction_cancelled',
+            'notify_moon_not_rescheduled', 'notify_schedule_needs_filling',
+        ], fn ($column) => !\Schema::hasColumn('webhook_configurations', $column)));
+        $alertsOk = $hasAlertTable && !$missingAlertCols;
+        $checks[] = [
+            'label'   => 'Migration 000033: planner alerts table + four webhook opt-ins',
+            'status'  => $alertsOk ? 'ok' : 'fail',
+            'message' => $alertsOk
+                ? 'mining_manager_refinery_alerts and all four notify columns present.'
+                : 'Missing: ' . implode(', ', array_merge($hasAlertTable ? [] : ['mining_manager_refinery_alerts'], $missingAlertCols))
+                    . '. Run migrations. Refinery Gone, Extraction Cancelled, Moon Not Rescheduled and Moons Need Planning cannot be sent or subscribed to.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [
@@ -3713,6 +3729,38 @@ class DiagnosticController extends Controller
                 'offset_hours' => $data['offset_hours'] ?? 3.0,
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
             ])),
+            'refinery_gone' => $ns->sendRefineryGone(array_merge($data, [
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'system_name' => $data['system_name'] ?? 'Perimeter',
+                'reason' => $data['reason'] ?? 'Unanchored, as reported by the game',
+                'missing_since' => $data['missing_since'] ?? now()->subHours(26)->format('Y-m-d H:i'),
+                'pulls_removed' => (int) ($data['pulls_removed'] ?? 6),
+                'blueprints' => $data['blueprints'] ?? 'Standard fortnight, Mon Wed Fri',
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'extraction_cancelled' => $ns->sendExtractionCancelled(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'cancelled_by' => $data['cancelled_by'] ?? 'Diagnostic Director',
+                'chunk_arrival_time' => $data['chunk_arrival_time'] ?? now()->addDays(4)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'moon_not_rescheduled' => $ns->sendMoonNotRescheduled(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'arrived_at' => $data['arrived_at'] ?? now()->subHours(50)->format('Y-m-d H:i'),
+                'hours_since' => (int) ($data['hours_since'] ?? 50),
+                'next_planned' => $data['next_planned'] ?? now()->addHours(10)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'schedule_needs_filling' => $ns->sendScheduleNeedsFilling(array_merge($data, [
+                'refineries' => $data['refineries'] ?? ['Perimeter: Diagnostic Athanor (R32), nothing planned', 'Jita: Diagnostic Tatara (R16), 1 of 2 planned'],
+                'more_count' => (int) ($data['more_count'] ?? 0),
+                'total' => (int) ($data['total'] ?? 2),
+                'target' => (int) ($data['target'] ?? 1),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
             'next_extraction_planned' => $ns->sendNextExtractionPlanned(array_merge($data, [
                 'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
                 'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
@@ -4009,6 +4057,10 @@ class DiagnosticController extends Controller
             'extraction_started' => 'Extraction Started (new chunk)',
             'next_extraction_planned' => 'Next Extraction Planned (planner nudge)',
             'schedule_mismatch' => 'Moon Scheduled Off-Plan (planner mismatch)',
+            'refinery_gone' => 'Refinery Gone (planned pulls removed)',
+            'extraction_cancelled' => 'Moon Extraction Cancelled',
+            'moon_not_rescheduled' => 'Moon Not Rescheduled (reminder)',
+            'schedule_needs_filling' => 'Moons Need Planning (one list)',
             'metenox_cargo_full' => 'Metenox Cargo Bay Full (yield-stopping)',
             'extraction_at_risk' => 'Extraction at Risk (fuel / attack / reinforced)',
             'extraction_lost' => 'Extraction Lost (structure destroyed)',
@@ -4180,6 +4232,10 @@ class DiagnosticController extends Controller
             'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
             'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
             'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+            'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+            'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+            'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+            'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
             'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
             default => NotificationService::TYPE_CUSTOM,
         };
@@ -4388,6 +4444,10 @@ class DiagnosticController extends Controller
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
                 'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+                'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+                'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+                'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+                'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -4665,6 +4725,10 @@ class DiagnosticController extends Controller
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
                 'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+                'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+                'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+                'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+                'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -4842,6 +4906,42 @@ class DiagnosticController extends Controller
                 'planned_arrival_time' => now()->addDays(7)->format('Y-m-d H:i') . ' EVE',
                 'actual_arrival_time' => now()->addDays(7)->subHours(3)->format('Y-m-d H:i') . ' EVE',
                 'offset_hours' => 3.0,
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'refinery_gone' => [
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'system_name' => 'Perimeter',
+                'reason' => 'Unanchored, as reported by the game',
+                'missing_since' => now()->subHours(26)->format('Y-m-d H:i'),
+                'pulls_removed' => 6,
+                'blueprints' => 'Standard fortnight, Mon Wed Fri',
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'extraction_cancelled' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'cancelled_by' => 'Diagnostic Director',
+                'chunk_arrival_time' => now()->addDays(4)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'moon_not_rescheduled' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'arrived_at' => now()->subHours(50)->format('Y-m-d H:i'),
+                'hours_since' => 50,
+                'next_planned' => now()->addHours(10)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'schedule_needs_filling' => [
+                'refineries' => ['Perimeter: Athanor - Test Moon (R32), nothing planned', 'Jita: Tatara - Test Moon (R16), 1 of 2 planned'],
+                'more_count' => 0,
+                'total' => 2,
+                'target' => 1,
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
                 'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             ],

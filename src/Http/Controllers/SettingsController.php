@@ -1357,6 +1357,10 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_refinery_gone'] = $request->boolean('notify_refinery_gone');
+            $data['notify_extraction_cancelled'] = $request->boolean('notify_extraction_cancelled');
+            $data['notify_moon_not_rescheduled'] = $request->boolean('notify_moon_not_rescheduled');
+            $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
@@ -1430,6 +1434,10 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_refinery_gone'] = $request->boolean('notify_refinery_gone');
+            $data['notify_extraction_cancelled'] = $request->boolean('notify_extraction_cancelled');
+            $data['notify_moon_not_rescheduled'] = $request->boolean('notify_moon_not_rescheduled');
+            $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
@@ -1608,6 +1616,10 @@ class SettingsController extends Controller
             'notify_extraction_started' => 'nullable|boolean',
             'notify_next_extraction_planned' => 'nullable|boolean',
             'notify_schedule_mismatch' => 'nullable|boolean',
+            'notify_refinery_gone' => 'nullable|boolean',
+            'notify_extraction_cancelled' => 'nullable|boolean',
+            'notify_moon_not_rescheduled' => 'nullable|boolean',
+            'notify_schedule_needs_filling' => 'nullable|boolean',
             'notify_tax_outstanding_digest' => 'nullable|boolean',
             'notify_price_provider' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],

@@ -233,6 +233,26 @@
                                                     <i class="fas fa-exclamation-triangle"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_refinery_gone ?? false)
+                                                <span class="badge badge-danger" title="Refinery Gone (planned pulls removed)">
+                                                    <i class="fas fa-house-damage"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_extraction_cancelled ?? false)
+                                                <span class="badge badge-danger" title="Moon Extraction Cancelled">
+                                                    <i class="fas fa-ban"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_moon_not_rescheduled ?? false)
+                                                <span class="badge badge-warning" title="Moon Not Rescheduled (reminder)">
+                                                    <i class="fas fa-hourglass-half"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_schedule_needs_filling ?? false)
+                                                <span class="badge badge-primary" title="Moons Need Planning (one list)">
+                                                    <i class="fas fa-calendar-plus"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_tax_outstanding_digest ?? false)
                                                 <span class="badge badge-warning" title="Outstanding Mining Tax (weekly director digest)">
                                                     <i class="fas fa-clipboard-list"></i>
@@ -464,6 +484,34 @@
                             <label class="custom-control-label" for="notify-schedule-mismatch">
                                 <i class="fas fa-exclamation-triangle text-danger"></i>
                                 Moon Scheduled Off-Plan
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-refinery-gone" name="notify_refinery_gone" value="1">
+                            <label class="custom-control-label" for="notify-refinery-gone">
+                                <i class="fas fa-house-damage text-danger"></i>
+                                Refinery Gone (planned pulls removed)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-extraction-cancelled" name="notify_extraction_cancelled" value="1">
+                            <label class="custom-control-label" for="notify-extraction-cancelled">
+                                <i class="fas fa-ban text-danger"></i>
+                                Moon Extraction Cancelled
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-not-rescheduled" name="notify_moon_not_rescheduled" value="1">
+                            <label class="custom-control-label" for="notify-moon-not-rescheduled">
+                                <i class="fas fa-hourglass-half text-warning"></i>
+                                Moon Not Rescheduled (reminder)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-schedule-needs-filling" name="notify_schedule_needs_filling" value="1">
+                            <label class="custom-control-label" for="notify-schedule-needs-filling">
+                                <i class="fas fa-calendar-plus text-primary"></i>
+                                Moons Need Planning (one list)
                             </label>
                         </div>
                         <div class="custom-control custom-checkbox">

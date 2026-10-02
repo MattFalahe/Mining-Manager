@@ -78,8 +78,9 @@ All notable changes to Mining Manager will be documented in this file.
 
 - `000031` adds `mining_manager_moon_rotations` and `mining_manager_moon_rotation_slots` for blueprints, and three nullable columns on `moon_extraction_plans` recording which blueprint, slot and cycle wrote a pull.
 - `000032` stamps the part-payment cutover for theft detection. It writes one settings row and changes nothing else.
+- `000033` adds the webhook opt-ins for Refinery Gone, Moon Extraction Cancelled, Moon Not Rescheduled and Moons Need Planning, all off by default, and `mining_manager_refinery_alerts`, where the planner keeps what it knows about a refinery between runs.
 
-No existing column is altered or dropped, and neither migration touches a row that already exists.
+No existing column is altered or dropped, and none of these migrations touches a row that already exists.
 
 ## [2.0.4] — 2026-09-23 — The Ecosystem Era: Payments and Balances
 
