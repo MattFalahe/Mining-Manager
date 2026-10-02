@@ -744,10 +744,50 @@ class MoonExtractionService
                 Log::info("Mining Manager: Extraction {$extraction->id} marked cancelled" .
                     ($cancelledBy ? " (cancelled by {$cancelledBy})" : '') .
                     " based on MoonminingExtractionCancelled notification at {$cancelNotification->timestamp}");
+
+                // The status only ever moves to cancelled once, so this fires once.
+                $this->sendExtractionCancelledNotification($extraction, $cancelledBy);
             }
         }
 
         return $cancelled;
+    }
+
+    /**
+     * Tell the corporation an extraction was stopped before its chunk arrived.
+     *
+     * Same scope as Extraction Started: the Moon Owner Corporation's refineries
+     * only, when one is set. A failure is logged and left there; the
+     * cancellation itself is already recorded.
+     */
+    public function sendExtractionCancelledNotification(MoonExtraction $extraction, ?string $cancelledBy): string
+    {
+        $moonOwner = $this->settingsService->getTaxProgramCorporationId();
+        if ($moonOwner !== null && (int) $extraction->corporation_id !== (int) $moonOwner) {
+            return 'skipped';
+        }
+
+        try {
+            $structureName = DB::table('universe_structures')
+                ->where('structure_id', $extraction->structure_id)
+                ->value('name') ?? "Structure {$extraction->structure_id}";
+
+            app(\MiningManager\Services\Notification\NotificationService::class)->sendExtractionCancelled(array_filter([
+                'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                'structure_name' => $structureName,
+                'cancelled_by' => $cancelledBy,
+                'chunk_arrival_time' => $extraction->chunk_arrival_time ? $extraction->chunk_arrival_time->format('Y-m-d H:i') : null,
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ], fn ($value) => $value !== null));
+
+            Log::info("Mining Manager: fired extraction_cancelled for extraction {$extraction->id}");
+
+            return 'sent';
+        } catch (\Throwable $e) {
+            Log::error("Mining Manager: failed to send extraction_cancelled for extraction {$extraction->id}: " . $e->getMessage());
+
+            return 'failed';
+        }
     }
 
     /**
