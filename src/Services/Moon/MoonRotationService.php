@@ -556,13 +556,21 @@ class MoonRotationService
             ->map(fn ($id) => (int) $id)
             ->all();
 
+        // No refineries at all is far more likely to mean SeAT has nothing on
+        // file for the corporation right now than that every one of them went
+        // at once, and reading it the other way would strip every blueprint in
+        // a single run. With nothing to compare against, nothing is missing.
+        if (!$owned) {
+            return collect();
+        }
+
         $rotationIds = MoonRotation::forCorporation($corporationId)->pluck('id')->all();
         if (!$rotationIds) {
             return collect();
         }
 
         return MoonRotationSlot::whereIn('rotation_id', $rotationIds)
-            ->when($owned, fn ($query) => $query->whereNotIn('structure_id', $owned))
+            ->whereNotIn('structure_id', $owned)
             ->get();
     }
 
