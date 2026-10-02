@@ -3175,11 +3175,18 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                     <p>
                         <strong>A refinery that is unanchored, destroyed or handed to someone else</strong> is
-                        flagged in red wherever it appears, and applying never plans a pull on it. One button
-                        clears those out of every blueprint, along with the pulls they had planned ahead. That
-                        part is deliberately a button rather than something automatic: a structure can vanish from
-                        SeAT for a few minutes when ESI has a bad day, and a pattern is cheap to keep and
-                        annoying to rebuild.
+                        flagged in red wherever it appears, and applying never plans a pull on it. The pulls planned
+                        on it come off the calendar by themselves, whether a blueprint wrote them or somebody planned
+                        them by hand, but only once it has been missing on three sightings at least twelve hours
+                        apart. A structure can vanish from SeAT for an afternoon when ESI or the server has a bad
+                        day, and being seen again in between starts the count over. Each refinery that goes sends its
+                        own <strong>Refinery Gone</strong> notification, saying which blueprints still hold it, how
+                        many pulls went, and why, if the game reported it.
+                    </p>
+                    <p>
+                        The blueprint slots themselves stay until you press the button that clears them out of every
+                        blueprint. That part is deliberately yours: a pattern is cheap to keep and annoying to
+                        rebuild.
                     </p>
 
                     <div class="info-box">
@@ -3226,6 +3233,30 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         that the pull went ahead off-plan. Both clear the warning, both ask for a reason, and both are
                         saved to the planner history with your name. Neither moves later planned pulls for that
                         refinery, and the in-game extraction isn't touched.
+                    </p>
+
+                    <h4><i class="fas fa-bell"></i> Planner reminders</h4>
+                    <p>Three notifications cover what nobody has done yet. Each is off until you tick it on a webhook.</p>
+                    <ul>
+                        <li>
+                            <strong>Moon Extraction Cancelled</strong> says when somebody stops an extraction in game
+                            before its chunk arrives, with who did it and when the chunk was due.
+                        </li>
+                        <li>
+                            <strong>Moon Not Rescheduled</strong> goes out when a chunk arrived a while ago and no new
+                            extraction has been started on that refinery since: 48 hours by default, then again every 48
+                            hours until one starts. It stops if the refinery leaves the corporation or its drill goes
+                            offline.
+                        </li>
+                        <li>
+                            <strong>Moons Need Planning</strong> is one message listing every refinery with fewer pulls
+                            planned ahead than you ask for, counted like the <code>Not planned</code> badge below, with
+                            the total at the end. A long list stops at 25 and counts the rest, so it always arrives.
+                        </li>
+                    </ul>
+                    <p>
+                        The hours, the repeat, how many pulls to plan ahead and how often the list goes are all under
+                        <strong>Settings, Notifications, Moon Planner Reminders</strong>.
                     </p>
 
                     <h4><i class="fas fa-industry"></i> The refinery panel</h4>
