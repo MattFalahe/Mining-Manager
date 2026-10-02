@@ -33,6 +33,10 @@ All notable changes to Mining Manager will be documented in this file.
 
 - **The two ore categories now say what they hold.** Abyssal Ore and Triglavian Ore are easy to mix up, and the confusion runs the wrong way round: the ore from nullsec and wormhole escalations, Bezdnacine, Rakovene and Talassonite, is billed under **Abyssal**. Both rate fields and both Tax Selector toggles now name the ores they cover, and Help has a section explaining which is which, why the Triglavian rate never charges anything (its nine ores are mission and site objective items with no market price and no reprocessing output, so their value is always zero and no price refresh will change that), and where the Abyssal name came from. Nothing about the rates, the categories or the classification changed.
 
+### Dashboard
+
+- Fixed: **the leaderboard's Show Specific Corporations Only setting did nothing.** Settings saved it and the Dashboard tab showed it, but no leaderboard ever read it. Every top miners board now keeps to the corporations you pick, the Corporation Moon Ore board included, and if the lookup behind it fails the board shows everyone rather than an error.
+
 ### Paying Tax
 
 - **A banner at the top of the Mining Dashboard when you owe mining tax**, for members and directors alike: what is left to pay, which period it is for, its due date and the countdown, with a Pay now button that opens My Taxes. Yellow while there is still time, red from the due date on, and a part-paid bill says how much has already been received. There is no dismiss button: it goes when the bill is paid, as soon as the payment is matched rather than whenever the dashboard's cache next refreshes. Nothing shows when tax tracking is switched off.
