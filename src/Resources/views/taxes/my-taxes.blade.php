@@ -554,6 +554,7 @@
                                     @endif
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_owed') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.left_to_pay') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.payment_date') }}</th>
                                     <th>{{ trans('mining-manager::taxes.tax_code') }}</th>
@@ -575,20 +576,28 @@
                                     @endif
                                     <td class="text-right">
                                         {{ number_format($tax->amount_owed, 0) }} ISK
-                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
-                                        <button type="button"
-                                                class="btn btn-xs btn-link"
-                                                onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')"
-                                                data-toggle="tooltip"
-                                                title="{{ trans('mining-manager::taxes.copy') }} ISK">
-                                            <i class="fas fa-copy"></i>
-                                        </button>
-                                        @endif
                                     </td>
                                     <td class="text-right">
                                         {{ number_format($tax->amount_paid, 0) }} ISK
                                         @if($tax->amount_paid > 0 && $tax->amount_paid < $tax->amount_owed)
-                                            <br><small class="text-warning">({{ number_format(($tax->amount_paid / $tax->amount_owed) * 100, 1) }}%)</small>
+                                            @php $paidShare = ($tax->amount_paid / $tax->amount_owed) * 100; @endphp
+                                            {{-- A token payment rounds to 0.0%, which reads as nothing paid. --}}
+                                            <br><small class="text-warning">({{ $paidShare < 0.1 ? '<0.1' : number_format($paidShare, 1) }}%)</small>
+                                        @endif
+                                    </td>
+                                    @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
+                                    <td class="text-right">
+                                        @if($leftToPay > 0)
+                                        {{ number_format($leftToPay, 0) }} ISK
+                                        <button type="button"
+                                                class="btn btn-xs btn-link"
+                                                onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')"
+                                                data-toggle="tooltip"
+                                                title="{{ trans('mining-manager::taxes.copy') }} ISK">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @else
+                                        <span class="text-muted">-</span>
                                         @endif
                                     </td>
                                     <td>
@@ -663,7 +672,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ $taxMethod === 'character' ? 8 : 7 }}" class="text-center text-muted">
+                                    <td colspan="{{ $taxMethod === 'character' ? 9 : 8 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_history') }}</p>
                                     </td>
@@ -679,6 +688,7 @@
                                     @endif
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_owed'), 0) }} ISK</strong></td>
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_paid'), 0) }} ISK</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($taxHistory->sum(fn ($t) => in_array($t->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $t->getRemainingBalance() : 0), 0) }} ISK</strong></td>
                                     <td colspan="{{ $taxMethod === 'character' ? 4 : 4 }}"></td>
                                 </tr>
                             </tfoot>

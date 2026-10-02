@@ -151,15 +151,19 @@
                                 <span class="info-box-icon"><i class="fas fa-receipt"></i></span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.amount_owed') }}</span>
+                                    @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
                                     <span class="info-box-number">
                                         {{ number_format($tax->amount_owed, 0) }}
-                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
-                                        <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                        @if($leftToPay > 0)
+                                        <button type="button" class="btn btn-xs btn-link text-white p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
                                             <i class="fas fa-copy"></i>
                                         </button>
                                         @endif
                                     </span>
                                     <small>ISK</small>
+                                    @if($leftToPay > 0 && (float) $tax->amount_paid > 0)
+                                        <small class="d-block">{{ trans('mining-manager::taxes.left_to_pay_amount', ['amount' => number_format($leftToPay, 0)]) }}</small>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -383,7 +387,7 @@ $(document).ready(function() {
             <div class="modal-body">
                 <div class="form-group">
                     <label>Amount Paid (ISK)</label>
-                    <input type="number" class="form-control" id="detailAmountPaid" value="{{ $tax->amount_owed }}">
+                    <input type="number" class="form-control" id="detailAmountPaid" value="{{ round($tax->getRemainingBalance()) }}">
                 </div>
                 <div class="form-group">
                     <label>Payment Date</label>

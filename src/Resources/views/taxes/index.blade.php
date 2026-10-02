@@ -344,6 +344,7 @@
                                     <th>Period</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_owed') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.left_to_pay') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.due_date') }}</th>
                                     <th>Payment Date</th>
@@ -359,6 +360,7 @@
                                     data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
                                     data-amount-owed="{{ $tax->amount_owed }}"
                                     data-amount-paid="{{ $tax->amount_paid }}"
+                                    data-amount-remaining="{{ in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0 }}"
                                     data-status="{{ $tax->status }}"
                                     class="tax-row">
                                     @if($isAdmin ?? false)
@@ -404,15 +406,24 @@
                                     <td class="text-right" data-order="{{ (float) $tax->amount_owed }}">
                                         <strong>{{ number_format($tax->amount_owed, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
-                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
-                                        <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
-                                            <i class="fas fa-copy"></i>
-                                        </button>
-                                        @endif
                                     </td>
                                     <td class="text-right" data-order="{{ (float) $tax->amount_paid }}">
                                         <strong>{{ number_format($tax->amount_paid, 0) }}</strong>
                                         <small class="text-muted">ISK</small>
+                                    </td>
+                                    {{-- What still has to be paid, so nobody has to subtract the two
+                                         columns before it, and the figure the Copy button hands over. --}}
+                                    @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
+                                    <td class="text-right" data-order="{{ $leftToPay }}">
+                                        @if($leftToPay > 0)
+                                        <strong>{{ number_format($leftToPay, 0) }}</strong>
+                                        <small class="text-muted">ISK</small>
+                                        <button type="button" class="btn btn-xs btn-link p-0 ml-1" onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')" data-toggle="tooltip" title="Copy ISK amount">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @else
+                                        <span class="text-muted">-</span>
+                                        @endif
                                     </td>
                                     @php
                                         // Sort key for the status column. Ordered by what a director
@@ -558,7 +569,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ ($isAdmin ?? false) ? 11 : 10 }}" class="text-center text-muted">
+                                    <td colspan="{{ ($isAdmin ?? false) ? 13 : 12 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_taxes_found') }}</p>
                                     </td>
@@ -668,7 +679,7 @@ $(document).ready(function() {
             // Was amount owed descending, which answered a question nobody
             // opens this page to ask.
             order: [
-                [{{ ($isAdmin ?? false) ? 6 : 5 }}, 'asc'],
+                [{{ ($isAdmin ?? false) ? 7 : 6 }}, 'asc'],
                 [{{ ($isAdmin ?? false) ? 3 : 2 }}, 'desc']
             ],
             language: {
@@ -681,9 +692,9 @@ $(document).ready(function() {
             },
             columnDefs: [
                 @if($isAdmin ?? false)
-                { orderable: false, targets: [0, 9] },
+                { orderable: false, targets: [0, 10] },
                 @else
-                { orderable: false, targets: [8] },
+                { orderable: false, targets: [9] },
                 @endif
             ]
         });
@@ -734,10 +745,13 @@ $(document).ready(function() {
     $('.mark-paid').on('click', function() {
         const taxId = $(this).data('tax-id');
         const row = $('tr[data-tax-id="' + taxId + '"]');
-        const amountOwed = row.find('td:eq(4)').text().replace(/[^\d]/g, '');
+        // What is left, not the bill: markPaid adds this to whatever has
+        // already been paid, so the full bill on a part-paid row would be
+        // recorded as an overpayment.
+        const leftToPay = Math.round(parseFloat(row.data('amount-remaining')) || 0);
         
         $('#taxIdInput').val(taxId);
-        $('#amountPaidInput').val(amountOwed);
+        $('#amountPaidInput').val(leftToPay);
         // Append to body before show: SeAT's AdminLTE wrapper creates a CSS
         // stacking context (transform/filter) that pins child z-indexes to
         // the local context. Bootstrap inserts .modal-backdrop at body level
@@ -995,12 +1009,14 @@ $(document).ready(function() {
                     name: $(this).data('character-name'),
                     totalOwed: 0,
                     totalPaid: 0,
+                    totalLeft: 0,
                     rows: [],
                     statuses: {}
                 };
             }
             groups[charId].totalOwed += parseFloat($(this).data('amount-owed')) || 0;
             groups[charId].totalPaid += parseFloat($(this).data('amount-paid')) || 0;
+            groups[charId].totalLeft += parseFloat($(this).data('amount-remaining')) || 0;
             groups[charId].rows.push($(this));
             var st = $(this).data('status');
             groups[charId].statuses[st] = (groups[charId].statuses[st] || 0) + 1;
@@ -1011,7 +1027,7 @@ $(document).ready(function() {
         $('.grouped-header-row').remove();
 
         var tbody = $('#taxTable tbody');
-        var colSpan = {{ ($isAdmin ?? false) ? 11 : 10 }};
+        var colSpan = {{ ($isAdmin ?? false) ? 13 : 12 }};
 
         // Sort groups by totalOwed descending
         var sortedKeys = Object.keys(groups).sort(function(a, b) {
@@ -1037,6 +1053,7 @@ $(document).ready(function() {
                 '<div class="text-right">' +
                 '<span class="mr-3"><strong>' + Number(g.totalOwed).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.owed") }}</small></span>' +
                 '<span class="mr-3"><strong>' + Number(g.totalPaid).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.paid") }}</small></span>' +
+                (g.totalLeft > 0 ? '<span class="mr-3"><strong>' + Math.round(g.totalLeft).toLocaleString() + '</strong> <small class="text-muted">ISK {{ trans("mining-manager::taxes.left_to_pay_short") }}</small></span>' : '') +
                 statusBadge +
                 '<i class="fas fa-chevron-down ml-2"></i>' +
                 '</div>' +

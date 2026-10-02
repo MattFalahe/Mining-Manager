@@ -8,6 +8,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Tax\PaymentAllocationService;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Tax\TaxPeriodHelper;
+use MiningManager\Services\Tax\TaxTotals;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -311,14 +312,18 @@ class TaxController extends Controller
             });
         }
 
-        $totalOwed = $scopeSummary(MiningTax::where('status', 'unpaid'))->sum('amount_owed');
-        $totalOverdue = $scopeSummary(MiningTax::where('status', 'overdue'))->sum('amount_owed');
-        $collectedThisMonth = $scopeSummary(MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month))->sum('amount_paid');
-        $unpaidCount = $scopeSummary(MiningTax::where('status', 'unpaid'))->count();
-        $overdueCount = $scopeSummary(MiningTax::where('status', 'overdue'))->count();
-        $paidCount = $scopeSummary(MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month))->count();
+        // What is left to pay, part-paid bills included, and what actually
+        // arrived this month. See TaxTotals for why the cards no longer ask by
+        // status alone.
+        $outstanding = TaxTotals::outstanding($scopeSummary(MiningTax::query()));
+        $collected = TaxTotals::collectedThisMonth($scopeSummary(MiningTax::query()));
+
+        $totalOwed = $outstanding['owed'];
+        $totalOverdue = $outstanding['overdue'];
+        $collectedThisMonth = $collected['amount'];
+        $unpaidCount = $outstanding['owed_count'];
+        $overdueCount = $outstanding['overdue_count'];
+        $paidCount = $collected['bills'];
 
         // Calculate collection rate
         $totalExpected = $totalOwed + $totalOverdue + $collectedThisMonth;
@@ -335,21 +340,19 @@ class TaxController extends Controller
         ];
 
         // Add corp vs guest breakdown if moon owner is configured
+        // Owed covers everything still to pay, late or not. It used to be the
+        // unpaid bills alone while the count beside it took in overdue ones too,
+        // so the two figures were describing different sets of bills.
         if ($moonOwnerCorpId && $corpSummaryQuery && $guestSummaryQuery) {
-            $summary['corp_members'] = [
-                'owed' => (clone $corpSummaryQuery)->where('status', 'unpaid')->sum('amount_owed'),
-                'count' => (clone $corpSummaryQuery)->whereIn('status', ['unpaid', 'overdue'])->count(),
-                'collected' => (clone $corpSummaryQuery)->where('status', 'paid')
-                    ->whereMonth('paid_at', Carbon::now()->month)
-                    ->sum('amount_paid'),
-            ];
-            $summary['guest_miners'] = [
-                'owed' => (clone $guestSummaryQuery)->where('status', 'unpaid')->sum('amount_owed'),
-                'count' => (clone $guestSummaryQuery)->whereIn('status', ['unpaid', 'overdue'])->count(),
-                'collected' => (clone $guestSummaryQuery)->where('status', 'paid')
-                    ->whereMonth('paid_at', Carbon::now()->month)
-                    ->sum('amount_paid'),
-            ];
+            foreach (['corp_members' => $corpSummaryQuery, 'guest_miners' => $guestSummaryQuery] as $group => $groupQuery) {
+                $groupOutstanding = TaxTotals::outstanding($groupQuery);
+
+                $summary[$group] = [
+                    'owed' => round($groupOutstanding['owed'] + $groupOutstanding['overdue'], 2),
+                    'count' => $groupOutstanding['owed_count'] + $groupOutstanding['overdue_count'],
+                    'collected' => TaxTotals::collectedThisMonth($groupQuery)['amount'],
+                ];
+            }
         }
 
         // Get payment method from settings
@@ -388,9 +391,10 @@ class TaxController extends Controller
         // calendar month.
         $collectedThisPeriod = null;
         if ($periodType !== 'monthly') {
+            // Whatever has been paid on this period's bills, part payments
+            // included; a bill with nothing paid adds nothing.
             $collectedThisPeriod = $scopeSummary(
-                MiningTax::where('status', 'paid')
-                    ->where('period_start', $currentPeriodStart->toDateString())
+                MiningTax::where('period_start', $currentPeriodStart->toDateString())
             )->sum('amount_paid');
         }
 
@@ -1767,34 +1771,15 @@ class TaxController extends Controller
             ->orderBy('character_id')
             ->paginate(25);
 
-        // Personal summary statistics (query all user characters for mining data)
-        $totalOwed = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'unpaid')
-            ->sum('amount_owed');
-
-        $totalOverdue = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'overdue')
-            ->sum('amount_owed');
-
-        $paidThisMonth = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month)
-            ->sum('amount_paid');
-
-        $unpaidCount = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'unpaid')
-            ->count();
-
-        $overdueCount = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'overdue')
-            ->count();
+        // Personal summary, worked out the same way as Tax Overview's cards.
+        $outstanding = TaxTotals::outstanding(MiningTax::whereIn('character_id', $taxCharacterIds));
 
         $summary = [
-            'total_owed' => $totalOwed,
-            'overdue_amount' => $totalOverdue,
-            'paid_this_month' => $paidThisMonth,
-            'unpaid_count' => $unpaidCount,
-            'overdue_count' => $overdueCount,
+            'total_owed' => $outstanding['owed'],
+            'overdue_amount' => $outstanding['overdue'],
+            'paid_this_month' => TaxTotals::collectedThisMonth(MiningTax::whereIn('character_id', $taxCharacterIds))['amount'],
+            'unpaid_count' => $outstanding['owed_count'],
+            'overdue_count' => $outstanding['overdue_count'],
         ];
 
         // Resolve the configured tax period (monthly / biweekly / weekly)
@@ -1841,8 +1826,10 @@ class TaxController extends Controller
         );
 
         // Get payment statistics (all time)
+        // Everything paid, instalments on unsettled bills included. Counting
+        // settled bills alone left this card short of the Totals row beneath it
+        // by exactly whatever had been part paid.
         $totalTaxPaid = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'paid')
             ->sum('amount_paid');
 
         $onTimePayments = MiningTax::whereIn('character_id', $taxCharacterIds)
