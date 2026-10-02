@@ -576,6 +576,20 @@ class SettingsController extends Controller
                 'nullable',
                 'boolean',
             ],
+            // Moons Need Planning: how many pulls each refinery should have
+            // planned ahead, and how often the list goes out.
+            'planned_ahead_target' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:10',
+            ],
+            'schedule_needs_filling_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
             'moon_extraction_fastpoll_mode' => [
                 'nullable',
                 'in:auto,seat_native',
@@ -661,6 +675,16 @@ class SettingsController extends Controller
                 ? (int) $idleInput
                 : 48;
             $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
+
+            // Moons Need Planning.
+            $targetInput = $request->input('planned_ahead_target');
+            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
+                ? (int) $targetInput
+                : 1;
+            $everyInput = $request->input('schedule_needs_filling_hours');
+            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
+                ? (int) $everyInput
+                : 24;
 
             // extraction_started detection mode (auto = Manager Core fast-poll
             // when present; seat_native = endpoint-driven cron pass).

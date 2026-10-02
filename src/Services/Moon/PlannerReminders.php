@@ -23,6 +23,17 @@ class PlannerReminders
     /** SeAT's name for the service a refinery needs to start an extraction. */
     protected const DRILL_SERVICE = 'Moon Drilling';
 
+    /**
+     * Refineries one Moons Need Planning message lists before it says how many
+     * more there are. Keeps the message inside what Discord and Slack accept.
+     */
+    public const LIST_LIMIT = 25;
+
+    /** When Moons Need Planning last went out, so it keeps to its cadence. */
+    public const NEEDS_PLANNING_LAST_SENT = 'notifications.schedule_needs_filling_last_sent';
+
+    protected const RARITY_RANK = ['R64' => 5, 'R32' => 4, 'R16' => 3, 'R8' => 2, 'R4' => 1];
+
     protected MoonPlannerService $planner;
     protected SettingsManagerService $settings;
 
@@ -132,6 +143,85 @@ class PlannerReminders
         }
 
         return $reminders;
+    }
+
+    /**
+     * Every refinery with fewer pulls planned ahead than the corporation asks
+     * for, as one message, or null when nothing needs planning or the last one
+     * went out too recently.
+     *
+     * Counted the way the planner's "Not planned" badge counts, so the message
+     * and the page agree. Fewest planned first, then the richest moons. A
+     * refinery whose drill is offline is still listed, and says so.
+     */
+    public function needsPlanning(int $corporationId, ?Carbon $now = null): ?array
+    {
+        $now = $now ?? Carbon::now();
+        $target = max(1, (int) $this->setting('planned_ahead_target', 1));
+        $everyHours = max(1, (int) $this->setting('schedule_needs_filling_hours', 24));
+
+        $lastSent = $this->settings->getSettingForCorporation(self::NEEDS_PLANNING_LAST_SENT, null, null);
+        if ($lastSent && ($now->getTimestamp() - Carbon::parse($lastSent)->getTimestamp()) / 3600 < $everyHours) {
+            return null;
+        }
+
+        $owned = $this->planner->refineriesForCorporation($corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (!$owned) {
+            return null;
+        }
+
+        $drillDown = $this->drillsKnownOffline($owned);
+        $short = [];
+
+        foreach ($owned as $structureId) {
+            $planned = $this->planner->futurePlanCount($structureId);
+            if ($planned >= $target) {
+                continue;
+            }
+
+            $short[] = $this->names($structureId) + [
+                'planned' => $planned,
+                'rarity' => $this->planner->highestRarityForStructure($structureId),
+                'drill_down' => in_array($structureId, $drillDown, true),
+            ];
+        }
+
+        if (!$short) {
+            return null;
+        }
+
+        usort($short, function ($a, $b) {
+            return [$a['planned'], -(self::RARITY_RANK[$a['rarity']] ?? 0), $a['structure_name']]
+                <=> [$b['planned'], -(self::RARITY_RANK[$b['rarity']] ?? 0), $b['structure_name']];
+        });
+
+        $lines = array_map(function ($refinery) use ($target) {
+            $where = isset($refinery['system_name']) ? $refinery['system_name'] . ': ' : '';
+            $tier = $refinery['rarity'] ? ' (' . $refinery['rarity'] . ')' : '';
+            $state = $refinery['planned'] === 0 ? 'nothing planned' : sprintf('%d of %d planned', $refinery['planned'], $target);
+
+            return $where . $refinery['structure_name'] . $tier . ', ' . $state . ($refinery['drill_down'] ? ', drill offline' : '');
+        }, array_slice($short, 0, self::LIST_LIMIT));
+
+        return [
+            'refineries' => $lines,
+            'more_count' => max(0, count($short) - self::LIST_LIMIT),
+            'total' => count($short),
+            'target' => $target,
+        ];
+    }
+
+    /**
+     * Record that Moons Need Planning went out, install wide, so the cadence
+     * holds whichever corporation the run touched last.
+     */
+    public function markNeedsPlanningSent(?Carbon $now = null): void
+    {
+        $this->settings->updateGlobalSetting(self::NEEDS_PLANNING_LAST_SENT, ($now ?? Carbon::now())->toDateTimeString());
     }
 
     /**

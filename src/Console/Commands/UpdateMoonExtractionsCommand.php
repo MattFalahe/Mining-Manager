@@ -210,6 +210,20 @@ class UpdateMoonExtractionsCommand extends Command
                 if ($idle) {
                     $this->warn('Sent ' . count($idle) . ' Moon Not Rescheduled reminder(s).');
                 }
+
+                // One message for every refinery short of planned pulls. Only
+                // marked as sent when the send went through, so a failure is
+                // tried again on the next run rather than a day later.
+                $planning = $reminders->needsPlanning($moonOwnerCorpId);
+                if ($planning) {
+                    try {
+                        $notifications->sendScheduleNeedsFilling($planning + ['planner_url' => $plannerUrl]);
+                        $reminders->markNeedsPlanningSent();
+                        $this->warn("Sent Moons Need Planning for {$planning['total']} refinery(ies).");
+                    } catch (\Throwable $e) {
+                        $this->error("Moons Need Planning failed: {$e->getMessage()}");
+                    }
+                }
             }
         } catch (\Exception $e) {
             // Planner reconciliation must never break the extraction import.

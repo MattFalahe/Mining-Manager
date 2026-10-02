@@ -854,6 +854,64 @@
                     </div>
                 </div>
             </div>
+
+            <hr class="my-3">
+
+            <small class="form-text text-muted mb-3 d-block">
+                <strong>Moons Need Planning</strong> is one message listing every refinery with fewer pulls planned
+                ahead than the number below, counted the same way as the planner's "Not planned" badge, fewest planned
+                and richest moons first. A long list is cut short with a count of the rest, and always ends with the
+                total. It is only sent while something falls short.
+            </small>
+            <div class="form-group row align-items-center">
+                <label for="planned_ahead_target" class="col-md-4 col-form-label">
+                    Pulls each refinery should have planned
+                </label>
+                <div class="col-md-3">
+                    <input type="number"
+                           class="form-control"
+                           id="planned_ahead_target"
+                           name="planned_ahead_target"
+                           min="1" max="10" step="1"
+                           value="{{ old('planned_ahead_target', $notificationSettings['planned_ahead_target'] ?? 1) }}">
+                    @error('planned_ahead_target')
+                        <small class="invalid-feedback d-block">{{ $message }}</small>
+                    @enderror
+                </div>
+                <div class="col-md-5">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i>
+                        Default 1: every refinery has its next pull planned.
+                    </small>
+                </div>
+            </div>
+            <div class="form-group row align-items-center mb-0">
+                <label for="schedule_needs_filling_hours" class="col-md-4 col-form-label">
+                    Send the list at most every
+                </label>
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <input type="number"
+                               class="form-control"
+                               id="schedule_needs_filling_hours"
+                               name="schedule_needs_filling_hours"
+                               min="1" max="336" step="1"
+                               value="{{ old('schedule_needs_filling_hours', $notificationSettings['schedule_needs_filling_hours'] ?? 24) }}">
+                        <div class="input-group-append">
+                            <span class="input-group-text">hours</span>
+                        </div>
+                    </div>
+                    @error('schedule_needs_filling_hours')
+                        <small class="invalid-feedback d-block">{{ $message }}</small>
+                    @enderror
+                </div>
+                <div class="col-md-5">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i>
+                        Default 24 hours. Checked with every extraction import.
+                    </small>
+                </div>
+            </div>
         </div>
     </div>
 
