@@ -49,6 +49,7 @@
 @section('full')
 @include('mining-manager::partials.toastr')
 <div class="mining-dashboard member-dashboard">
+    @include('mining-manager::dashboard.partials._tax_banner')
     
     {{-- CURRENT MONTH STATISTICS --}}
     <div class="row">

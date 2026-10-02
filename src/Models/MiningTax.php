@@ -288,6 +288,24 @@ class MiningTax extends Model
     }
 
     /**
+     * The countdown in words: days left to pay, due today, or days late.
+     */
+    public function dueCountdown(): string
+    {
+        $days = $this->daysUntilDue();
+
+        if ($days > 0) {
+            return trans_choice('mining-manager::taxes.due_in_days', $days, ['count' => $days]);
+        }
+
+        if ($days === 0) {
+            return trans('mining-manager::taxes.due_today');
+        }
+
+        return trans_choice('mining-manager::taxes.days_late', -$days, ['count' => -$days]);
+    }
+
+    /**
      * What is still to pay: the bill less everything paid against it.
      *
      * Never negative. Anything paid beyond the bill is held as account credit,

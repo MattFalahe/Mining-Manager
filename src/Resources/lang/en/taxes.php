@@ -489,4 +489,11 @@ return [
     'due_in_days' => '{1} 1 day left to pay|[2,*] :count days left to pay',
     'due_today' => 'Due today',
     'days_late' => '{1} 1 day late|[2,*] :count days late',
+
+    // Dashboard banner
+    'banner_title' => 'Mining tax: :countdown',
+    'banner_one_bill' => ':amount ISK to pay for :period, due :due.',
+    'banner_many_bills' => ':amount ISK to pay across :count bills. The oldest is for :period, due :due.',
+    'banner_part_paid' => 'Part paid: :paid ISK of the :owed ISK billed has already been received.',
+    'banner_pay_now' => 'Pay now',
 ];

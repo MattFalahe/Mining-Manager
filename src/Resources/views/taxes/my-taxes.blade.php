@@ -154,7 +154,7 @@
                                     </span>
                                     <small>
                                         @if($currentTax && $currentTax->due_date && $currentTax->status !== 'paid')
-                                            @include('mining-manager::taxes.partials._due_countdown', ['tax' => $currentTax])
+                                            {{ $currentTax->dueCountdown() }}
                                         @elseif($currentTax && $currentTax->due_date)
                                             {{ \Carbon\Carbon::parse($currentTax->due_date)->diffForHumans() }}
                                         @else
@@ -296,7 +296,7 @@
                                                 <td>
                                                     @if($unpaidTax->due_date)
                                                         {{ \Carbon\Carbon::parse($unpaidTax->due_date)->format('M d') }}
-                                                        <br><small class="text-muted">@include('mining-manager::taxes.partials._due_countdown', ['tax' => $unpaidTax])</small>
+                                                        <br><small class="text-muted">{{ $unpaidTax->dueCountdown() }}</small>
                                                     @else
                                                         &mdash;
                                                     @endif
