@@ -364,6 +364,8 @@ class MoonController extends Controller
             $historyExtraction->auto_fractured = $history->auto_fractured ?? false;
             $historyExtraction->fractured_at = $history->fractured_at ?? null;
             $historyExtraction->fractured_by = $history->fractured_by ?? null;
+            $historyExtraction->chunk_lifetime_hours = $history->chunk_lifetime_hours ?? 48;
+            $historyExtraction->auto_fracture_delay_minutes = $history->auto_fracture_delay_minutes ?? 180;
             $historyExtraction->is_archived = true;
             $pseudoExtractions->push($historyExtraction);
         }
@@ -757,18 +759,43 @@ class MoonController extends Controller
         // Validate extraction days (6-56 days per EVE mechanics)
         $extractionDays = max(6, min(56, (int) $extractionDays));
 
-        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays);
+        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+
+        // Resolve the moon's rig context first: if one of our refineries is
+        // drilling it, that refinery's Moon Drilling Efficiency rig shapes the
+        // yield we report. Assessment failures must not stop the simulation.
+        $assessed = null;
+        try {
+            $assessed = $finder->assess($moonId, $basis);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: moon assessment failed', [
+                'moon_id' => $moonId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $structureId = $assessed['station']['structure_id'] ?? null;
+
+        // Rig simulation: 'auto' uses the refinery on the moon, otherwise an
+        // explicit tier (none / I / II) overrides it for the run.
+        $efficiencyTier = $this->rigTier($request->input('efficiency_rig', 'auto'));
+        $stabilityTier = $this->rigTier($request->input('stability_rig', 'auto'));
+
+        $result = $this->extractionService->simulateExtraction(
+            $moonId,
+            $extractionDays,
+            $structureId,
+            $efficiencyTier,
+            $stabilityTier
+        );
 
         if (!$result) {
             return response()->json(['error' => 'Moon not found or not scanned'], 404);
         }
 
-        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
-
         // Quality and suggestions come on top of the simulation. If either
         // fails, the simulation still comes back.
         try {
-            $assessed = $finder->assess($moonId, $basis);
             $result['quality'] = $assessed['quality'] ?? null;
             $result['station'] = $assessed['station'] ?? null;
 
@@ -1082,6 +1109,21 @@ class MoonController extends Controller
     private function positiveInt($value): ?int
     {
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /**
+     * Parse a simulator rig toggle: 'auto' (or absent) keeps the fitted rig;
+     * 'none' / '0' disables it; '1' / '2' select Tech I / Tech II.
+     */
+    private function rigTier($value): ?int
+    {
+        if ($value === null || $value === '' || $value === 'auto') {
+            return null;
+        }
+
+        $tier = (int) $value;
+
+        return in_array($tier, [1, 2], true) ? $tier : 0;
     }
 
     /**

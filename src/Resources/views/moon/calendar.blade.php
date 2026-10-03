@@ -402,17 +402,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     fractureTime = new Date(fracturedStr);
                 } else if (autoFractured) {
-                    // No fractured_at recorded, estimate as arrival + 3h
-                    fractureTime = new Date(arrivalTime.getTime() + 3 * 60 * 60 * 1000);
+                    // No fractured_at recorded, estimate from the rig-aware
+                    // auto-fracture delay (minutes), defaulting to 3h.
+                    const delayMinutes = extraction.auto_fracture_delay_minutes || 180;
+                    fractureTime = new Date(arrivalTime.getTime() + delayMinutes * 60 * 1000);
                 }
 
                 const hoursSinceFracture = (now - fractureTime) / (1000 * 60 * 60);
 
+                // Rig-aware belt lifetime (48h base, up to 96h with a T2
+                // stability rig). The trailing 2h is the plugin's unstable
+                // warning, carved off the end rather than added on.
+                const lifetimeHours = extraction.chunk_lifetime_hours || 48;
+                const unstableStartHours = Math.max(1, lifetimeHours - 2);
+
                 if (arrivalTime > now) {
                     effectiveStatus = 'extracting';
-                } else if (hoursSinceFracture < 48) {
+                } else if (hoursSinceFracture < unstableStartHours) {
                     effectiveStatus = 'ready';
-                } else if (hoursSinceFracture < 50) {
+                } else if (hoursSinceFracture < lifetimeHours) {
                     effectiveStatus = 'unstable';
                 } else {
                     effectiveStatus = 'expired';

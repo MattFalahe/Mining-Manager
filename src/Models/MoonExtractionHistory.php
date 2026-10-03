@@ -70,6 +70,8 @@ class MoonExtractionHistory extends Model
         'auto_fractured',
         'fractured_at',
         'fractured_by',
+        'chunk_lifetime_hours',
+        'auto_fracture_delay_minutes',
         'notes',
     ];
 
@@ -94,6 +96,8 @@ class MoonExtractionHistory extends Model
         'estimated_value_at_arrival' => 'integer',
         'final_estimated_value' => 'integer',
         'actual_mined_value' => 'integer',
+        'chunk_lifetime_hours' => 'integer',
+        'auto_fracture_delay_minutes' => 'integer',
     ];
 
     /**

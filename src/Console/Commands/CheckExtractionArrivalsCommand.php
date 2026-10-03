@@ -201,12 +201,10 @@ class CheckExtractionArrivalsCommand extends Command
                 // Broad bound: anything that COULD have its unstable phase
                 // within the next warningHours hours. Pre-fracture rows use
                 // chunk_arrival as the fallback base in getFractureTime();
-                // post-fracture rows use fractured_at. Either way, the
-                // unstable_start is at most ~55 hours after chunk_arrival
-                // (chunk_arrival + 3h auto-fracture + 48h ready + 2h unstable
-                // window = 53h; +2h warning lead = 55h).
+                // post-fracture rows use fractured_at. A T2 stability rig
+                // stretches this to ~99h after arrival, so allow 120h.
                 ->where('chunk_arrival_time', '<=', $now)
-                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(55))
+                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(120))
                 ->where('unstable_warning_sent', false)
                 ->whereNotIn('status', ['cancelled', 'expired']);
 
@@ -238,7 +236,7 @@ class CheckExtractionArrivalsCommand extends Command
                 ->values();
 
             if ($unstableCandidates->isEmpty()) {
-                $this->info("No chunks approaching unstable state (within next {$warningHours}h of fractured_at + 48h).");
+                $this->info("No chunks approaching unstable state (within next {$warningHours}h of the belt's unstable window).");
             } else {
                 $this->info("Found {$unstableCandidates->count()} chunk(s) approaching unstable state:");
 

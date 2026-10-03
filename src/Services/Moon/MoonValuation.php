@@ -144,14 +144,16 @@ class MoonValuation
      *
      * @param array<int, float> $ores ore type => share of the moon, 0.46 for 46%
      * @param int $days extraction length
+     * @param float $yieldMultiplier Moon Drilling Efficiency bonus from the
+     *                               drilling refinery's rig; 1.0 when none.
      * @return array{share: float, rate: int, volume: int, raw: float, refined: float, ores: array, unpriced: string[], unpriced_materials: string[]}
      */
-    public function value(array $ores, int $days): array
+    public function value(array $ores, int $days, float $yieldMultiplier = 1.0): array
     {
         $this->prepare(array_keys($ores));
 
         $share = (float) array_sum($ores);
-        $volume = MoonChunkModel::volume($share, $days);
+        $volume = MoonChunkModel::volume($share, $days, $yieldMultiplier);
 
         $lines = [];
         $raw = 0.0;
@@ -199,7 +201,7 @@ class MoonValuation
 
         return [
             'share' => $share,
-            'rate' => MoonChunkModel::ratePerHour($share),
+            'rate' => MoonChunkModel::ratePerHour($share, $yieldMultiplier),
             'volume' => $volume,
             'raw' => $raw,
             'refined' => $refined,

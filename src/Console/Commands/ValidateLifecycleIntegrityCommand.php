@@ -193,12 +193,13 @@ class ValidateLifecycleIntegrityCommand extends Command
      * counts these as "skipped" rather than divergent).
      *
      *   - extracting: now < chunk_arrival_time
-     *   - ready:      chunk_arrival_time <= now < fractureTime + 50h
-     *   - expired:    now >= fractureTime + 50h
+     *   - ready:      chunk_arrival_time <= now < fractureTime + lifetime
+     *   - expired:    now >= fractureTime + lifetime
      *
-     * Where fractureTime is fractured_at (if populated) or
-     * natural_decay_time (as a conservative auto-fracture estimate when
-     * fracture detection hasn't yet populated the explicit timestamp).
+     * Where fractureTime is fractured_at (if populated), else ESI's
+     * natural_decay_time as the auto-fracture estimate, else arrival plus the
+     * row's rig-aware auto-fracture delay. Lifetime is the row's rig-aware
+     * belt lifetime (48 h base, up to 96 h with a T2 stability rig).
      */
     private function computeExpectedStatus(MoonExtraction $extraction, Carbon $now): ?string
     {
@@ -214,16 +215,18 @@ class ValidateLifecycleIntegrityCommand extends Command
             ?? $extraction->natural_decay_time;
 
         if (!$fractureTime) {
-            // Past chunk_arrival but no fracture info either — undecidable.
-            // ESI sometimes lags on natural_decay_time for very fresh rows.
-            return null;
+            // Past chunk_arrival but no fracture info at all yet: estimate from
+            // the rig-aware auto-fracture delay rather than call it undecidable.
+            $fractureTime = $extraction->auto_fractured
+                ? $extraction->chunk_arrival_time->copy()->addMinutes($extraction->getAutoFractureDelayMinutes())
+                : $extraction->chunk_arrival_time->copy();
         }
 
         $fractureTime = $fractureTime instanceof Carbon
             ? $fractureTime
             : Carbon::parse($fractureTime);
 
-        $expiry = $fractureTime->copy()->addHours(50);
+        $expiry = $fractureTime->copy()->addHours($extraction->getChunkLifetimeHours());
 
         return $now->lt($expiry) ? 'ready' : 'expired';
     }

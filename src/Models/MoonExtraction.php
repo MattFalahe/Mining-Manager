@@ -52,7 +52,17 @@ class MoonExtraction extends Model
         'auto_fractured',
         'fractured_at',
         'fractured_by',
+        'chunk_lifetime_hours',
+        'auto_fracture_delay_minutes',
     ];
+
+    /**
+     * The plugin's own last-call "unstable" warning, taken off the end of the
+     * belt's lifetime rather than added after it. In game the belt simply
+     * despawns at fracture + lifetime; this window is what Mining Manager
+     * flags as unstable so capital pilots get a warning before it goes.
+     */
+    public const UNSTABLE_TAIL_HOURS = 2;
 
     /**
      * The attributes that should be cast.
@@ -94,6 +104,8 @@ class MoonExtraction extends Model
         'has_notification_data' => 'boolean',
         'auto_fractured' => 'boolean',
         'fractured_at' => 'datetime',
+        'chunk_lifetime_hours' => 'integer',
+        'auto_fracture_delay_minutes' => 'integer',
     ];
 
     /**
@@ -313,10 +325,12 @@ class MoonExtraction extends Model
             return $this->fractured_at;
         }
 
-        // Legacy fallback: estimate based on auto_fractured flag
+        // No explicit fracture timestamp yet: estimate from the rig-aware
+        // auto-fracture delay when EVE auto-fractured the chunk, otherwise
+        // treat arrival itself as the fracture point.
         if ($this->chunk_arrival_time) {
             return $this->auto_fractured
-                ? $this->chunk_arrival_time->copy()->addHours(3)
+                ? $this->chunk_arrival_time->copy()->addMinutes($this->getAutoFractureDelayMinutes())
                 : $this->chunk_arrival_time->copy();
         }
 
@@ -324,12 +338,35 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Get the ready window duration in hours.
-     * Always 48 hours from fracture time.
+     * Belt lifetime after fracture, in hours. Comes from the structure's
+     * fitted Moon Drilling Stability / Proficiency rig (48 / 72 / 96 h), and
+     * falls back to the game's 48 h base when the rig could not be resolved.
+     */
+    public function getChunkLifetimeHours(): int
+    {
+        $hours = (int) ($this->chunk_lifetime_hours ?? 0);
+
+        return $hours > 0 ? $hours : 48;
+    }
+
+    /**
+     * How long EVE waits after chunk arrival before fracturing on its own, in
+     * minutes. 180 base, extended by the rig's Chunk Stability Bonus.
+     */
+    public function getAutoFractureDelayMinutes(): int
+    {
+        $minutes = (int) ($this->auto_fracture_delay_minutes ?? 0);
+
+        return $minutes > 0 ? $minutes : 180;
+    }
+
+    /**
+     * Get the stable (ready) window duration in hours: the belt lifetime less
+     * the trailing unstable warning.
      */
     public function getReadyDurationHours(): int
     {
-        return 48;
+        return max(1, $this->getChunkLifetimeHours() - self::UNSTABLE_TAIL_HOURS);
     }
 
     /**
@@ -338,16 +375,16 @@ class MoonExtraction extends Model
     public function getUnstableStartTime(): ?Carbon
     {
         $fractureTime = $this->getFractureTime();
-        return $fractureTime ? $fractureTime->copy()->addHours(48) : null;
+        return $fractureTime ? $fractureTime->copy()->addHours($this->getReadyDurationHours()) : null;
     }
 
     /**
-     * Get the time when the extraction expires (end of unstable window).
+     * Get the time when the extraction expires (the belt's in-game despawn).
      */
     public function getExpiryTime(): ?Carbon
     {
         $fractureTime = $this->getFractureTime();
-        return $fractureTime ? $fractureTime->copy()->addHours(50) : null;
+        return $fractureTime ? $fractureTime->copy()->addHours($this->getChunkLifetimeHours()) : null;
     }
 
     /**
@@ -493,19 +530,25 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Scope: extractions that have expired based on fractured_at or legacy estimate.
-     * Uses SQL-level checks so it can be used in bulk updates.
+     * Scope: extractions that have expired, using each row's rig-aware belt
+     * lifetime. Expiry is fracture + chunk_lifetime_hours, where the fracture
+     * point is `fractured_at` when known (else an estimate from arrival plus
+     * the row's auto-fracture delay when EVE auto-fractured it).
      *
-     * Expiry = fractured_at + 50h (if fractured_at is set)
-     * Legacy: chunk_arrival + 50h (manual) or chunk_arrival + 53h (auto-fractured)
+     * Uses SQL-level checks so it can be used in bulk updates.
      */
     public function scopeExpiredByTime($query)
     {
         $now = Carbon::now();
 
-        return $query->where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
+        $query->where('status', '!=', 'expired')
+            ->where('status', '!=', 'fractured');
+
+        // Before migration 2026_01_01_000032 lands there is no per-row
+        // lifetime; keep the old fixed window so the scope never dies on a
+        // missing column.
+        if (!self::hasChunkLifetimeColumn()) {
+            return $query->where(function ($q) use ($now) {
                 // Has actual fractured_at: expiry = fractured_at + 50h
                 $q->where(function ($q2) use ($now) {
                     $q2->whereNotNull('fractured_at')
@@ -525,6 +568,40 @@ class MoonExtraction extends Model
                        });
                 });
             });
+        }
+
+        // Expiry = (fractured_at, or a rig-aware estimate from arrival) + the
+        // row's own belt lifetime. One portable MySQL / MariaDB expression so
+        // the bulk update and the model helpers agree.
+        $expiryExpression =
+            'DATE_ADD(' .
+            'IF(fractured_at IS NOT NULL, fractured_at, ' .
+            'IF(auto_fractured = 1, DATE_ADD(chunk_arrival_time, INTERVAL auto_fracture_delay_minutes MINUTE), chunk_arrival_time))' .
+            ', INTERVAL chunk_lifetime_hours HOUR)';
+
+        return $query
+            ->where(function ($q) {
+                $q->whereNotNull('fractured_at')->orWhereNotNull('chunk_arrival_time');
+            })
+            ->whereRaw($expiryExpression . ' < ?', [$now->toDateTimeString()]);
+    }
+
+    /**
+     * Whether the rig-aware lifetime columns exist yet (cached per request).
+     */
+    private static ?bool $hasChunkLifetimeColumn = null;
+
+    private static function hasChunkLifetimeColumn(): bool
+    {
+        if (self::$hasChunkLifetimeColumn === null) {
+            try {
+                self::$hasChunkLifetimeColumn = \Illuminate\Support\Facades\Schema::hasColumn('moon_extractions', 'chunk_lifetime_hours');
+            } catch (\Throwable $e) {
+                self::$hasChunkLifetimeColumn = false;
+            }
+        }
+
+        return self::$hasChunkLifetimeColumn;
     }
 
     /**

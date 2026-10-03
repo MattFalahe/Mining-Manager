@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\StructureMoonRigs;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Carbon\Carbon;
 
@@ -114,6 +115,10 @@ class UpdateMoonExtractionsCommand extends Command
             try {
                 $this->line("Processing structure: {$structure->name}");
 
+                // The structure's moon-rig bonuses apply to every extraction
+                // it pulls up: belt lifetime and auto-fracture delay.
+                $rigs = StructureMoonRigs::forStructure((int) $structure->structure_id);
+
                 // Fetch extraction data from ESI via service
                 $extractionData = $this->extractionService->fetchExtractionData($structure->structure_id);
 
@@ -123,6 +128,11 @@ class UpdateMoonExtractionsCommand extends Command
                 }
 
                 foreach ($extractionData as $extraction) {
+                    // Stamp the rig-aware window so the status decision and the
+                    // persisted row agree with the rest of the plugin.
+                    $extraction['chunk_lifetime_hours'] = $rigs['lifetime_hours'];
+                    $extraction['auto_fracture_delay_minutes'] = $rigs['auto_fracture_minutes'];
+
                     // Check if extraction already exists
                     $existing = MoonExtraction::where('structure_id', $structure->structure_id)
                         ->where('extraction_start_time', $extraction['extraction_start_time'])
@@ -130,14 +140,23 @@ class UpdateMoonExtractionsCommand extends Command
 
                     if ($existing) {
                         // Update existing record
-                        $existing->update([
+                        $updates = [
                             'chunk_arrival_time' => $extraction['chunk_arrival_time'],
                             'natural_decay_time' => $extraction['natural_decay_time'],
-                            'status' => $this->determineStatus($extraction),
+                            'status' => $this->extractionService->determineStatus($extraction, $existing),
                             'moon_id' => $extraction['moon_id'] ?? null,
                             'ore_composition' => $extraction['ore_composition'] ?? null,
                             'updated_at' => Carbon::now(),
-                        ]);
+                        ];
+
+                        // The in-game decay timer is fixed at fracture, so only
+                        // refresh the window while the chunk is still intact.
+                        if (!$existing->fractured_at) {
+                            $updates['chunk_lifetime_hours'] = $rigs['lifetime_hours'];
+                            $updates['auto_fracture_delay_minutes'] = $rigs['auto_fracture_minutes'];
+                        }
+
+                        $existing->update($updates);
                         $this->line("  Updated extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
                         $updated++;
                     } else {
@@ -151,8 +170,10 @@ class UpdateMoonExtractionsCommand extends Command
                                 'extraction_start_time' => $extraction['extraction_start_time'],
                                 'chunk_arrival_time' => $extraction['chunk_arrival_time'],
                                 'natural_decay_time' => $extraction['natural_decay_time'],
-                                'status' => $this->determineStatus($extraction),
+                                'status' => $this->extractionService->determineStatus($extraction),
                                 'ore_composition' => $extraction['ore_composition'] ?? null,
+                                'chunk_lifetime_hours' => $rigs['lifetime_hours'],
+                                'auto_fracture_delay_minutes' => $rigs['auto_fracture_minutes'],
                             ]);
                             $this->line("  Created new extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
                             $created++;
@@ -227,26 +248,4 @@ class UpdateMoonExtractionsCommand extends Command
 
         return Command::SUCCESS;
     }
-
-    /**
-     * Determine extraction status based on times
-     *
-     * @param array $extraction
-     * @return string
-     */
-    private function determineStatus(array $extraction): string
-    {
-        $now = Carbon::now();
-        $chunkArrival = Carbon::parse($extraction['chunk_arrival_time']);
-        $naturalDecay = Carbon::parse($extraction['natural_decay_time']);
-
-        if ($now < $chunkArrival) {
-            return 'extracting';
-        } elseif ($now >= $chunkArrival && $now < $naturalDecay) {
-            return 'ready';
-        } else {
-            return 'expired';
-        }
-    }
-
 }

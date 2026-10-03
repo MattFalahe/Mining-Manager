@@ -396,7 +396,7 @@ class MoonExtractionService
                 'moon_id' => $matchingData['moon_id'],
                 'chunk_arrival_time' => $matchingData['chunk_arrival_time'],
                 'natural_decay_time' => $matchingData['natural_decay_time'],
-                'status' => $this->determineStatus($matchingData),
+                'status' => $this->determineStatus($matchingData, $extraction),
                 'updated_at' => Carbon::now(),
             ]);
 
@@ -503,14 +503,23 @@ class MoonExtractionService
         $updated = 0;
         $created = 0;
 
-        DB::transaction(function () use ($structure, $extractionData, &$updated, &$created) {
+        // Resolve the structure's moon-rig bonuses once: the belt lifetime and
+        // auto-fracture delay it gives every chunk the refinery pulls up.
+        $rigs = StructureMoonRigs::forStructure((int) $structure->structure_id);
+
+        DB::transaction(function () use ($structure, $extractionData, $rigs, &$updated, &$created) {
             foreach ($extractionData as $data) {
+                // Stamp the rig-aware window onto the payload so determineStatus()
+                // and the persisted row use the same lifetime.
+                $data['chunk_lifetime_hours'] = $rigs['lifetime_hours'];
+                $data['auto_fracture_delay_minutes'] = $rigs['auto_fracture_minutes'];
+
                 $existing = MoonExtraction::where('structure_id', $structure->structure_id)
                     ->where('extraction_start_time', $data['extraction_start_time'])
                     ->first();
 
                 if ($existing) {
-                    $existing->update([
+                    $updates = [
                         'chunk_arrival_time' => $data['chunk_arrival_time'],
                         'natural_decay_time' => $data['natural_decay_time'],
                         // Pass $existing so determineStatus() can read
@@ -523,7 +532,16 @@ class MoonExtractionService
                         'status' => $this->determineStatus($data, $existing),
                         'moon_id' => $data['moon_id'] ?? null,
                         'ore_composition' => $data['ore_composition'] ?? null,
-                    ]);
+                    ];
+
+                    // The in-game decay timer is fixed at fracture, so only
+                    // refresh the window while the chunk is still intact.
+                    if (!$existing->fractured_at) {
+                        $updates['chunk_lifetime_hours'] = $rigs['lifetime_hours'];
+                        $updates['auto_fracture_delay_minutes'] = $rigs['auto_fracture_minutes'];
+                    }
+
+                    $existing->update($updates);
 
                     if (isset($data['ore_composition'])) {
                         $existing->update([
@@ -542,6 +560,8 @@ class MoonExtractionService
                         'natural_decay_time' => $data['natural_decay_time'],
                         'status' => $this->determineStatus($data),
                         'ore_composition' => $data['ore_composition'] ?? null,
+                        'chunk_lifetime_hours' => $rigs['lifetime_hours'],
+                        'auto_fracture_delay_minutes' => $rigs['auto_fracture_minutes'],
                     ]);
 
                     if (isset($data['ore_composition'])) {
@@ -562,15 +582,17 @@ class MoonExtractionService
      * Determine the persisted `status` value for a moon_extractions row,
      * based on the chunk's lifecycle position.
      *
-     * IMPORTANT LIFECYCLE NOTE (fixed 2026-05-31):
+     * IMPORTANT LIFECYCLE NOTE:
      *   `natural_decay_time` is the **auto-fracture mark** (~3h after
-     *   chunk_arrival_time), NOT the end of the chunk's life.
-     *   The actual mineable window is:
+     *   chunk_arrival_time, extended by the rig), NOT the end of the chunk's
+     *   life. The actual mineable window is:
      *     chunk_arrival_time → fractured_at (manual or auto)
-     *     fractured_at → fractured_at + 48h  (ready window)
-     *     fractured_at + 48h → fractured_at + 50h  (unstable window)
-     *     fractured_at + 50h → expired
-     *   So the chunk has ~50 hours of life from fracture, not from arrival.
+     *     fractured_at → fractured_at + lifetime - 2h  (ready window)
+     *     fractured_at + lifetime - 2h → fractured_at + lifetime  (unstable)
+     *     fractured_at + lifetime → expired
+     *   where lifetime is the structure's rig-aware belt lifetime (48 h base,
+     *   72 h with a Stability/Proficiency I rig, 96 h with a II). So the chunk
+     *   has 48-96 hours of life from fracture, not from arrival.
      *
      * The previous implementation treated `natural_decay_time` itself as
      * the expiry point, which flipped every chunk to `status='expired'`
@@ -586,7 +608,8 @@ class MoonExtractionService
      * `MoonminingLaserFired` / `MoonminingAutomaticFracture` ESI
      * notifications), and falls back to `natural_decay_time` as a
      * conservative auto-fracture estimate when fractured_at isn't yet
-     * known. Either way the +50h offset is the canonical end of life.
+     * known. Either way the fracture + the row's belt lifetime is the
+     * canonical end of life.
      *
      * @param array $data       Fresh ESI payload (chunk_arrival_time,
      *                          natural_decay_time, etc.)
@@ -595,7 +618,7 @@ class MoonExtractionService
      *                          (which lives on the model, not in ESI data).
      * @return string
      */
-    private function determineStatus(array $data, ?MoonExtraction $existing = null): string
+    public function determineStatus(array $data, ?MoonExtraction $existing = null): string
     {
         $now = Carbon::now();
         $chunkArrival = Carbon::parse($data['chunk_arrival_time']);
@@ -613,8 +636,15 @@ class MoonExtractionService
             ? $existing->fractured_at
             : Carbon::parse($data['natural_decay_time']);
 
-        // Total mineable lifetime after fracture: 48h ready + 2h unstable.
-        $expiryTime = $fractureTime->copy()->addHours(50);
+        // Total belt lifetime after fracture comes from the structure's fitted
+        // moon drilling rig (48 h base, up to 96 h with a T2 stability rig).
+        // Prefer the fresh payload value, then the persisted row, then base.
+        $lifetimeHours = (int) ($data['chunk_lifetime_hours'] ?? $existing?->chunk_lifetime_hours ?? 48);
+        if ($lifetimeHours <= 0) {
+            $lifetimeHours = 48;
+        }
+
+        $expiryTime = $fractureTime->copy()->addHours($lifetimeHours);
 
         return $now < $expiryTime ? 'ready' : 'expired';
     }
@@ -991,10 +1021,18 @@ class MoonExtractionService
             // format is reused by jackpot_detected notifications too.
             $oreSummary = $extraction->buildOreSummary();
 
-            // Auto fracture = chunk arrival + 3 hours
-            $autoFractureTime = $extraction->chunk_arrival_time
-                ? $extraction->chunk_arrival_time->copy()->addHours(3)->format('Y-m-d H:i')
-                : 'Unknown';
+            // Auto-fracture mark. ESI's natural_decay_time is authoritative and
+            // already accounts for the rig's Chunk Stability Bonus; fall back
+            // to the stored delay when it is missing.
+            if ($extraction->natural_decay_time) {
+                $autoFractureTime = $extraction->natural_decay_time->format('Y-m-d H:i');
+            } elseif ($extraction->chunk_arrival_time) {
+                $autoFractureTime = $extraction->chunk_arrival_time->copy()
+                    ->addMinutes($extraction->getAutoFractureDelayMinutes())
+                    ->format('Y-m-d H:i');
+            } else {
+                $autoFractureTime = 'Unknown';
+            }
 
             $baseUrl = rtrim(config('app.url', ''), '/');
 
@@ -1570,10 +1608,21 @@ class MoonExtractionService
      *
      * @param int $moonId
      * @param int $extractionDays Number of days for extraction (6-56)
+     * @param int|null $structureId The drilling refinery, so its fitted rigs
+     *                              are used when the simulator is on "auto".
+     * @param int|null $efficiencyTier Override the yield rig: 0 none, 1 Tech I,
+     *                                  2 Tech II. Null = use the fitted rig.
+     * @param int|null $stabilityTier  Override the belt-life rig: 0 none,
+     *                                  1 Tech I, 2 Tech II. Null = fitted.
      * @return array|null
      */
-    public function simulateExtraction(int $moonId, int $extractionDays = 14): ?array
-    {
+    public function simulateExtraction(
+        int $moonId,
+        int $extractionDays = 14,
+        ?int $structureId = null,
+        ?int $efficiencyTier = null,
+        ?int $stabilityTier = null
+    ): ?array {
         if (!Schema::hasTable('universe_moon_contents')) {
             return null;
         }
@@ -1590,8 +1639,31 @@ class MoonExtractionService
             return null;
         }
 
+        // Rig effects. A null tier means "auto": use the refinery on the moon.
+        // An explicit tier simulates a chosen rig instead. Efficiency drives
+        // the yield; stability drives the belt lifetime and auto-fracture.
+        $fitted = $structureId ? StructureMoonRigs::forStructure($structureId) : StructureMoonRigs::base();
+
+        $decayBonus = $stabilityTier === null
+            ? $fitted['decay_bonus']
+            : (StructureMoonRigs::DECAY_BONUS[$stabilityTier] ?? 0.0);
+        $stabilityBonus = $stabilityTier === null
+            ? $fitted['stability_bonus']
+            : (StructureMoonRigs::STABILITY_BONUS[$stabilityTier] ?? 0.0);
+        $yieldBonus = $efficiencyTier === null
+            ? $fitted['yield_bonus']
+            : (StructureMoonRigs::EFFICIENCY_BONUS[$efficiencyTier] ?? 0.0);
+
+        $rigs = StructureMoonRigs::compose(
+            $decayBonus,
+            $stabilityBonus,
+            $yieldBonus,
+            $fitted['rig_name'] ?? null,
+            ($efficiencyTier === null && $stabilityTier === null) ? 'fitted' : 'manual'
+        );
+
         $valuation = app(MoonValuation::class);
-        $valued = $valuation->value($ores, $extractionDays);
+        $valued = $valuation->value($ores, $extractionDays, $rigs['yield_multiplier']);
 
         $moonOreShare = 0.0;
         foreach ($ores as $typeId => $oreShare) {
@@ -1642,6 +1714,17 @@ class MoonExtractionService
             'prices_updated_at' => $valuation->pricesUpdatedAt(),
             'composition' => $composition,
             'moon_classification' => $this->determineMoonClassification($composition),
+            // The rigs the simulation ran with, so the page can explain the
+            // figures and the belt window rather than just assert them.
+            'rig' => [
+                'source' => $rigs['source'],
+                'efficiency_bonus' => round($rigs['yield_bonus'], 2),
+                'decay_bonus' => round($rigs['decay_bonus'], 2),
+                'stability_bonus' => round($rigs['stability_bonus'], 2),
+                'yield_multiplier' => round($rigs['yield_multiplier'], 4),
+                'belt_lifetime_hours' => $rigs['lifetime_hours'],
+                'auto_fracture_minutes' => $rigs['auto_fracture_minutes'],
+            ],
         ];
     }
 
