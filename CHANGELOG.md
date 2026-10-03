@@ -38,7 +38,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 ### Dashboard
 
-- Fixed: **the leaderboard's Show Specific Corporations Only setting did nothing.** Settings saved it and the Dashboard tab showed it, but no leaderboard ever read it. Every top miners board now keeps to the corporations you pick, the Corporation Moon Ore board included, and if the lookup behind it fails the board shows everyone rather than an error.
+- Fixed: **the leaderboard's Show Specific Corporations Only setting did nothing.** Settings saved it and the Dashboard tab showed it, but no leaderboard ever read it. Every top miners board now keeps to the corporations you pick, the Corporation Moon Ore board included, and if the lookup behind it fails the board shows everyone rather than an error. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#5](https://github.com/MattFalahe/Mining-Manager/pull/5).
 
 ### Paying Tax
 
@@ -55,7 +55,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 ### Scheduled Commands
 
-- Fixed: **`update-ledger-prices` could stop dead on a mining row with no solar system.** Observer mining from a structure SeAT has never resolved is stored without a system, and the corp-moon check behind the only-corp-moon-ore rule would not accept one, so the nightly run died at the first such row and every row after it went unpriced. A row with no system now counts as not confirmed to be your moon, which is what the check already concluded whenever it could not find one, so no tax changes.
+- Fixed: **`update-ledger-prices` could stop dead on a mining row with no solar system.** Observer mining from a structure SeAT has never resolved is stored without a system, and the corp-moon check behind the only-corp-moon-ore rule would not accept one, so the nightly run died at the first such row and every row after it went unpriced. A row with no system now counts as not confirmed to be your moon, which is what the check already concluded whenever it could not find one, so no tax changes. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#6](https://github.com/MattFalahe/Mining-Manager/pull/6).
 - **A price refresh can no longer outlive its own lock.** `cache-prices` held a ten minute lock, but a provider that hangs rather than refuses turns one failed batch of a hundred ids into fifteen requests on a thirty second timeout, so a bad run could keep going for the better part of an hour. The lock expired underneath it, and anything started by hand in that window began a second refresh on top, doubling the traffic at exactly the moment the provider was already struggling, which is how a Janice key gets blocked. Both `cache-prices` and `update-ledger-prices` now work to a time budget, stop starting new work when it runs out, say how much was left undone, and take a lock sized to that budget instead of a number chosen separately. Stopping early costs nothing: prices it did not reach keep what they had, and ledger rows it did not reach stay exactly as they were.
 
 - Fixed: **`update-ledger-prices` stopped part way through and reported success.** It paged the ledger with offsets while the loop wrote to `total_value`, which is one of the columns the query selects on, so priced rows dropped out of the result set and the paging walked straight past the ones that shuffled back. `--all-unpriced` was the worst of it: the run could finish after a single batch of 500 with thousands still unpriced. It pages by id now, so every row that matches is visited once.
