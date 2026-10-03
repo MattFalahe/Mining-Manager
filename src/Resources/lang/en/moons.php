@@ -201,6 +201,23 @@ return [
     'days_28' => '28 Days',
     'days_56' => '56 Days (Max)',
     'custom_days' => 'Custom',
+
+    // Rig simulation (moon drilling rig toggles)
+    'rig_simulation' => 'Moon Drilling Rigs',
+    'rig_simulation_help' => 'Auto uses the refinery on this moon. Pick a tier to simulate a different fit: Efficiency scales the yield, Stability the belt lifetime and auto-fracture.',
+    'rig_efficiency' => 'Efficiency (yield)',
+    'rig_stability' => 'Stability (belt life)',
+    'rig_auto' => 'Auto (fitted)',
+    'rig_none' => 'None',
+    'rig_none_short' => 'none',
+    'rig_tech_i' => 'Tech I',
+    'rig_tech_ii' => 'Tech II',
+    'rig_simulated' => 'Simulated rig',
+    'rig_auto_applied' => 'Fitted rig',
+    'rig_summary_efficiency' => 'Efficiency :value',
+    'rig_summary_lifetime' => 'belt :hours h (:days days)',
+    'rig_summary_auto_fracture' => 'auto-fracture :time',
+
     'scanned_moons_available' => 'Scanned Moons Available',
     'price_source' => 'Price Source',
     'configured_provider' => 'Using configured price provider',

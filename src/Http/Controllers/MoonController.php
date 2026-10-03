@@ -776,7 +776,18 @@ class MoonController extends Controller
 
         $structureId = $assessed['station']['structure_id'] ?? null;
 
-        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays, $structureId);
+        // Rig simulation: 'auto' uses the refinery on the moon, otherwise an
+        // explicit tier (none / I / II) overrides it for the run.
+        $efficiencyTier = $this->rigTier($request->input('efficiency_rig', 'auto'));
+        $stabilityTier = $this->rigTier($request->input('stability_rig', 'auto'));
+
+        $result = $this->extractionService->simulateExtraction(
+            $moonId,
+            $extractionDays,
+            $structureId,
+            $efficiencyTier,
+            $stabilityTier
+        );
 
         if (!$result) {
             return response()->json(['error' => 'Moon not found or not scanned'], 404);
@@ -1098,6 +1109,21 @@ class MoonController extends Controller
     private function positiveInt($value): ?int
     {
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /**
+     * Parse a simulator rig toggle: 'auto' (or absent) keeps the fitted rig;
+     * 'none' / '0' disables it; '1' / '2' select Tech I / Tech II.
+     */
+    private function rigTier($value): ?int
+    {
+        if ($value === null || $value === '' || $value === 'auto') {
+            return null;
+        }
+
+        $tier = (int) $value;
+
+        return in_array($tier, [1, 2], true) ? $tier : 0;
     }
 
     /**

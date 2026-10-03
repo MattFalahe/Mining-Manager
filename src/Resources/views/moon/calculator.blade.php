@@ -606,6 +606,32 @@
                         </div>
                     </div>
 
+                    {{-- Rig simulation --}}
+                    <div class="form-group">
+                        <label><i class="fas fa-microchip"></i> {{ trans('mining-manager::moons.rig_simulation') }}</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <label class="small text-muted mb-1">{{ trans('mining-manager::moons.rig_efficiency') }}</label>
+                                <select class="form-control form-control-sm" id="efficiencyRig">
+                                    <option value="auto" selected>{{ trans('mining-manager::moons.rig_auto') }}</option>
+                                    <option value="none">{{ trans('mining-manager::moons.rig_none') }}</option>
+                                    <option value="1">{{ trans('mining-manager::moons.rig_tech_i') }}</option>
+                                    <option value="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="small text-muted mb-1">{{ trans('mining-manager::moons.rig_stability') }}</label>
+                                <select class="form-control form-control-sm" id="stabilityRig">
+                                    <option value="auto" selected>{{ trans('mining-manager::moons.rig_auto') }}</option>
+                                    <option value="none">{{ trans('mining-manager::moons.rig_none') }}</option>
+                                    <option value="1">{{ trans('mining-manager::moons.rig_tech_i') }}</option>
+                                    <option value="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <small class="text-muted">{{ trans('mining-manager::moons.rig_simulation_help') }}</small>
+                    </div>
+
                     <div class="mt-4">
                         <button type="button" class="btn btn-primary btn-lg btn-block" id="simulateButton">
                             <i class="fas fa-flask"></i> {{ trans('mining-manager::moons.simulate') }}
@@ -713,6 +739,7 @@
                                 <span id="resultComposition" class="badge badge-success" title="{{ trans('mining-manager::moons.moon_ore_richness') }}"></span>
                                 <span id="resultRate" class="badge badge-warning ml-1"></span>
                             </p>
+                            <p class="mb-0 mt-1 small" id="rigEffectSummary" style="display: none;"></p>
                         </div>
 
                         <div class="mm-notice mm-notice-warn" id="basisNotice" style="display: none;"></div>
@@ -913,6 +940,12 @@
         'finder_col_value_ore' => trans('mining-manager::moons.finder_col_value_ore'),
         'finder_col_value_refined' => trans('mining-manager::moons.finder_col_value_refined'),
         'finder_page_of' => trans('mining-manager::moons.finder_page_of'),
+        'rig_summary_efficiency' => trans('mining-manager::moons.rig_summary_efficiency'),
+        'rig_summary_lifetime' => trans('mining-manager::moons.rig_summary_lifetime'),
+        'rig_summary_auto_fracture' => trans('mining-manager::moons.rig_summary_auto_fracture'),
+        'rig_simulated' => trans('mining-manager::moons.rig_simulated'),
+        'rig_auto_applied' => trans('mining-manager::moons.rig_auto_applied'),
+        'rig_none_short' => trans('mining-manager::moons.rig_none_short'),
     ];
     $qualityLabels = [];
     foreach (\MiningManager\Services\Moon\MoonFinderService::QUALITY_ORDER as $qualityKey) {
@@ -1051,7 +1084,9 @@ function runSimulation() {
             _token: CSRF_TOKEN,
             moon_id: moonId,
             extraction_days: extractionDays,
-            basis: simulationBasis
+            basis: simulationBasis,
+            efficiency_rig: $('#efficiencyRig').val() || 'auto',
+            stability_rig: $('#stabilityRig').val() || 'auto'
         }, simulationScope),
         success: function(response) {
             simulationResults = response;
@@ -1109,6 +1144,8 @@ function displayResults(data) {
     // Update composition and rate badges
     $('#resultComposition').text(data.composition_percent + '% moon ore');
     $('#resultRate').text(formatNumber(data.extraction_rate_m3h) + ' m³/h');
+
+    renderRigSummary(data);
 
     renderSimulationNotices(data);
 
@@ -1177,6 +1214,48 @@ function displayResults(data) {
     renderSuggestions(data.suggestions);
 
     toastr.success(MOON_LANG.simulation_complete);
+}
+
+/**
+ * Format a minutes count as "3h 36m".
+ */
+function formatDurationMinutes(minutes) {
+    const total = Math.max(0, Math.round(minutes));
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+/**
+ * Explain the rig the simulation ran with: the efficiency bonus that scaled
+ * the volume, plus the belt lifetime and auto-fracture window the stability
+ * rig gives. "Auto" means the refinery on the moon; anything else was chosen
+ * in the rig toggles.
+ */
+function renderRigSummary(data) {
+    const $el = $('#rigEffectSummary');
+    const rig = data.rig;
+
+    if (!rig || $el.length === 0) {
+        $el.hide().empty();
+        return;
+    }
+
+    const eff = parseFloat(rig.efficiency_bonus) || 0;
+    const lifetime = parseInt(rig.belt_lifetime_hours, 10) || 48;
+    const autoFracture = parseInt(rig.auto_fracture_minutes, 10) || 180;
+
+    const prefix = rig.source === 'manual' ? MOON_LANG.rig_simulated : MOON_LANG.rig_auto_applied;
+
+    const parts = [
+        MOON_LANG.rig_summary_efficiency.replace(':value', eff > 0 ? '+' + eff + '%' : MOON_LANG.rig_none_short),
+        MOON_LANG.rig_summary_lifetime
+            .replace(':hours', lifetime)
+            .replace(':days', (lifetime / 24).toFixed(1)),
+        MOON_LANG.rig_summary_auto_fracture.replace(':time', formatDurationMinutes(autoFracture))
+    ];
+
+    $el.html('<i class="fas fa-microchip"></i> ' + escapeHtml(prefix) + ' ' + parts.join(' &middot; ')).show();
 }
 
 /**

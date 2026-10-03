@@ -41,6 +41,15 @@ final class StructureMoonRigs
     public const BASE_AUTO_FRACTURE_MINUTES = 180;
 
     /**
+     * Bonus percent by tier: 1 = Tech I, 2 = Tech II. Mirrors the dogma values
+     * (2710 yield, 2708 decay, 2707 stability) so the simulator's manual rig
+     * toggles share the resolver's maths.
+     */
+    public const EFFICIENCY_BONUS = [1 => 2.0, 2 => 2.4];
+    public const DECAY_BONUS = [1 => 50.0, 2 => 100.0];
+    public const STABILITY_BONUS = [1 => 20.0, 2 => 24.0];
+
+    /**
      * Resolved values by structure id, for the lifetime of the request.
      *
      * @var array<int, array>
@@ -51,7 +60,7 @@ final class StructureMoonRigs
      * Bonuses for one structure. Always returns a usable array — a structure
      * with no detectable rig resolves to the in-game base values.
      *
-     * @return array{lifetime_hours: int, auto_fracture_minutes: int, yield_multiplier: float, decay_bonus: float, stability_bonus: float, yield_bonus: float, rig_name: ?string}
+     * @return array{lifetime_hours: int, auto_fracture_minutes: int, yield_multiplier: float, decay_bonus: float, stability_bonus: float, yield_bonus: float, rig_name: ?string, source: string}
      */
     public static function forStructure(?int $structureId): array
     {
@@ -78,17 +87,52 @@ final class StructureMoonRigs
     /**
      * @return array
      */
-    private static function base(): array
+    public static function base(): array
+    {
+        return self::compose(0.0, 0.0, 0.0);
+    }
+
+    /**
+     * Build a result from explicit bonus percents. Used by the simulator's
+     * manual rig toggles, and as the shared shape for the fitted resolver.
+     *
+     * @return array{lifetime_hours: int, auto_fracture_minutes: int, yield_multiplier: float, decay_bonus: float, stability_bonus: float, yield_bonus: float, rig_name: ?string, source: string}
+     */
+    public static function compose(float $decayBonus, float $stabilityBonus, float $yieldBonus, ?string $rigName = null, string $source = 'fitted'): array
     {
         return [
-            'lifetime_hours' => self::BASE_LIFETIME_HOURS,
-            'auto_fracture_minutes' => self::BASE_AUTO_FRACTURE_MINUTES,
-            'yield_multiplier' => 1.0,
-            'decay_bonus' => 0.0,
-            'stability_bonus' => 0.0,
-            'yield_bonus' => 0.0,
-            'rig_name' => null,
+            'lifetime_hours' => (int) round(self::BASE_LIFETIME_HOURS * (1 + $decayBonus / 100)),
+            'auto_fracture_minutes' => (int) round(self::BASE_AUTO_FRACTURE_MINUTES * (1 + $stabilityBonus / 100)),
+            'yield_multiplier' => 1 + $yieldBonus / 100,
+            'decay_bonus' => $decayBonus,
+            'stability_bonus' => $stabilityBonus,
+            'yield_bonus' => $yieldBonus,
+            'rig_name' => $rigName,
+            'source' => $source,
         ];
+    }
+
+    /**
+     * The bonuses a chosen rig tier would give: 0 none, 1 Tech I, 2 Tech II.
+     * A null tier counts as none. Used when the simulator overrides the fit.
+     */
+    public static function fromTiers(?int $efficiencyTier, ?int $stabilityTier): array
+    {
+        $efficiencyTier = self::tier($efficiencyTier);
+        $stabilityTier = self::tier($stabilityTier);
+
+        return self::compose(
+            self::DECAY_BONUS[$stabilityTier] ?? 0.0,
+            self::STABILITY_BONUS[$stabilityTier] ?? 0.0,
+            self::EFFICIENCY_BONUS[$efficiencyTier] ?? 0.0,
+            null,
+            'manual'
+        );
+    }
+
+    private static function tier(?int $tier): int
+    {
+        return in_array((int) $tier, [1, 2], true) ? (int) $tier : 0;
     }
 
     private static function resolve(int $structureId): array
@@ -133,15 +177,7 @@ final class StructureMoonRigs
                 return self::base();
             }
 
-            return [
-                'lifetime_hours' => (int) round(self::BASE_LIFETIME_HOURS * (1 + $decay / 100)),
-                'auto_fracture_minutes' => (int) round(self::BASE_AUTO_FRACTURE_MINUTES * (1 + $stability / 100)),
-                'yield_multiplier' => 1 + $yield / 100,
-                'decay_bonus' => $decay,
-                'stability_bonus' => $stability,
-                'yield_bonus' => $yield,
-                'rig_name' => $rigName,
-            ];
+            return self::compose($decay, $stability, $yield, $rigName, 'fitted');
         } catch (\Throwable $e) {
             // A broken asset mirror or a missing SDE table must never take the
             // moon pages down; fall back to the base values and carry on.

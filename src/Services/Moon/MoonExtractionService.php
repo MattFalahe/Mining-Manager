@@ -1608,12 +1608,21 @@ class MoonExtractionService
      *
      * @param int $moonId
      * @param int $extractionDays Number of days for extraction (6-56)
-     * @param int|null $structureId The drilling refinery, so its Moon Drilling
-     *                              Efficiency rig is applied to the yield.
+     * @param int|null $structureId The drilling refinery, so its fitted rigs
+     *                              are used when the simulator is on "auto".
+     * @param int|null $efficiencyTier Override the yield rig: 0 none, 1 Tech I,
+     *                                  2 Tech II. Null = use the fitted rig.
+     * @param int|null $stabilityTier  Override the belt-life rig: 0 none,
+     *                                  1 Tech I, 2 Tech II. Null = fitted.
      * @return array|null
      */
-    public function simulateExtraction(int $moonId, int $extractionDays = 14, ?int $structureId = null): ?array
-    {
+    public function simulateExtraction(
+        int $moonId,
+        int $extractionDays = 14,
+        ?int $structureId = null,
+        ?int $efficiencyTier = null,
+        ?int $stabilityTier = null
+    ): ?array {
         if (!Schema::hasTable('universe_moon_contents')) {
             return null;
         }
@@ -1630,14 +1639,31 @@ class MoonExtractionService
             return null;
         }
 
-        // The efficiency rig belongs to the refinery, not the moon, so it only
-        // applies when the caller names the structure that will drill it.
-        $yieldMultiplier = $structureId
-            ? StructureMoonRigs::forStructure($structureId)['yield_multiplier']
-            : 1.0;
+        // Rig effects. A null tier means "auto": use the refinery on the moon.
+        // An explicit tier simulates a chosen rig instead. Efficiency drives
+        // the yield; stability drives the belt lifetime and auto-fracture.
+        $fitted = $structureId ? StructureMoonRigs::forStructure($structureId) : StructureMoonRigs::base();
+
+        $decayBonus = $stabilityTier === null
+            ? $fitted['decay_bonus']
+            : (StructureMoonRigs::DECAY_BONUS[$stabilityTier] ?? 0.0);
+        $stabilityBonus = $stabilityTier === null
+            ? $fitted['stability_bonus']
+            : (StructureMoonRigs::STABILITY_BONUS[$stabilityTier] ?? 0.0);
+        $yieldBonus = $efficiencyTier === null
+            ? $fitted['yield_bonus']
+            : (StructureMoonRigs::EFFICIENCY_BONUS[$efficiencyTier] ?? 0.0);
+
+        $rigs = StructureMoonRigs::compose(
+            $decayBonus,
+            $stabilityBonus,
+            $yieldBonus,
+            $fitted['rig_name'] ?? null,
+            ($efficiencyTier === null && $stabilityTier === null) ? 'fitted' : 'manual'
+        );
 
         $valuation = app(MoonValuation::class);
-        $valued = $valuation->value($ores, $extractionDays, $yieldMultiplier);
+        $valued = $valuation->value($ores, $extractionDays, $rigs['yield_multiplier']);
 
         $moonOreShare = 0.0;
         foreach ($ores as $typeId => $oreShare) {
@@ -1688,6 +1714,17 @@ class MoonExtractionService
             'prices_updated_at' => $valuation->pricesUpdatedAt(),
             'composition' => $composition,
             'moon_classification' => $this->determineMoonClassification($composition),
+            // The rigs the simulation ran with, so the page can explain the
+            // figures and the belt window rather than just assert them.
+            'rig' => [
+                'source' => $rigs['source'],
+                'efficiency_bonus' => round($rigs['yield_bonus'], 2),
+                'decay_bonus' => round($rigs['decay_bonus'], 2),
+                'stability_bonus' => round($rigs['stability_bonus'], 2),
+                'yield_multiplier' => round($rigs['yield_multiplier'], 4),
+                'belt_lifetime_hours' => $rigs['lifetime_hours'],
+                'auto_fracture_minutes' => $rigs['auto_fracture_minutes'],
+            ],
         ];
     }
 
