@@ -280,13 +280,26 @@ class MoonController extends Controller
                 ->diffInDays(Carbon::parse($record->chunk_arrival_time));
         }
 
+        // What the moon rigs did for this chunk, and which of the game's notices
+        // its ore figures came from.
+        $chunkM3 = 0.0;
+        foreach ((is_array($extraction->ore_composition) ? $extraction->ore_composition : []) as $ore) {
+            $chunkM3 += (float) ($ore['volume_m3'] ?? 0);
+        }
+        $hull = app(\MiningManager\Services\Moon\RefineryService::class)
+            ->hullTypes([(int) $extraction->structure_id])[(int) $extraction->structure_id] ?? null;
+        $chunkBonuses = \MiningManager\Services\Moon\ChunkBonuses::describe($extraction, $hull, $chunkM3, (float) ($estimatedValue ?? 0));
+        $volumeChecks = $extractionService->volumeChecks($extraction);
+
         return view('mining-manager::moon.show', compact(
             'extraction',
             'estimatedValue',
             'timeUntilArrival',
             'timeUntilDecay',
             'timeUntilUnstable',
-            'history'
+            'history',
+            'chunkBonuses',
+            'volumeChecks'
         ));
     }
 

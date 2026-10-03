@@ -134,7 +134,9 @@ class MoonExtractionService
                 $oreComposition = $this->getMoonComposition(
                     $extraction->moon_id,
                     $extraction->structure_id,
-                    $extraction->extraction_start_time
+                    $extraction->extraction_start_time,
+                    $extraction->chunk_arrival_time,
+                    $extraction->natural_decay_time
                 );
 
                 $extractionData[] = [
@@ -160,17 +162,24 @@ class MoonExtractionService
     }
 
     /**
-     * Get actual ore volumes from MoonminingExtractionStarted notification.
+     * Get actual ore volumes from the game's own notices.
      * This provides the REAL chunk volumes, not estimated from percentages.
+     *
+     * Four notices carry them: Extraction Started when the drill is lit,
+     * Extraction Finished when the chunk arrives, and Laser Fired or Automatic
+     * Fracture when it breaks. The newest one wins. Whatever happened to the
+     * refinery in between, a yield rig fitted or taken off included, the latest
+     * notice is the game's own count of what is in the chunk, so the values and
+     * Analytics follow it rather than the figure from when it was started.
      *
      * @param int $structureId
      * @param string $extractionStartTime
      * @return array|null Array of [type_id => volume_in_m3]
      */
-    private function getActualOreVolumesFromNotification(int $structureId, string $extractionStartTime): ?array
+    private function getActualOreVolumesFromNotification(int $structureId, string $extractionStartTime, $chunkArrivalTime = null, $naturalDecayTime = null): ?array
     {
         try {
-            $notification = $this->findExtractionStartedNotification($structureId, $extractionStartTime);
+            $notification = $this->latestVolumeNotice($structureId, $extractionStartTime, $chunkArrivalTime, $naturalDecayTime);
 
             if (!$notification) {
                 Log::debug("Mining Manager: No notification found for structure {$structureId} at {$extractionStartTime}");
@@ -208,6 +217,130 @@ class MoonExtractionService
             Log::error("Mining Manager: Error fetching notification data for structure {$structureId}: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Notices after Extraction Started that carry the chunk's ore volumes.
+     */
+    private const LATER_VOLUME_NOTICES = [
+        'MoonminingExtractionFinished',
+        'MoonminingLaserFired',
+        'MoonminingAutomaticFracture',
+    ];
+
+    /**
+     * What each volume notice is called on the extraction page.
+     */
+    public const VOLUME_NOTICE_LABELS = [
+        'MoonminingExtractionStarted' => 'Extraction started',
+        'MoonminingExtractionFinished' => 'Chunk arrived',
+        'MoonminingLaserFired' => 'Laser fired',
+        'MoonminingAutomaticFracture' => 'Fractured on its own',
+    ];
+
+    /**
+     * The newest notice carrying this extraction's ore volumes: one from the
+     * chunk's arrival or fracture once it has arrived, otherwise the one from
+     * when it was started.
+     */
+    private function latestVolumeNotice(int $structureId, $extractionStartTime, $chunkArrivalTime = null, $naturalDecayTime = null): ?object
+    {
+        $later = $this->laterVolumeNotices($structureId, $chunkArrivalTime, $naturalDecayTime);
+
+        return $later ? end($later) : $this->findExtractionStartedNotification($structureId, $extractionStartTime);
+    }
+
+    /**
+     * Finished, Laser Fired and Automatic Fracture notices for one chunk,
+     * oldest first: from a few minutes before it arrived to an hour after it
+     * would fracture on its own. Only ones that carry ore volumes, each kind
+     * once, as every character with the role gets their own copy.
+     *
+     * @return array<int, object>
+     */
+    private function laterVolumeNotices(int $structureId, $chunkArrivalTime = null, $naturalDecayTime = null): array
+    {
+        if (!$chunkArrivalTime || Carbon::parse($chunkArrivalTime)->isFuture()) {
+            return [];
+        }
+
+        $arrival = Carbon::parse($chunkArrivalTime);
+        $autoFracture = $naturalDecayTime
+            ? Carbon::parse($naturalDecayTime)
+            : $arrival->copy()->addMinutes(MoonDrillingRigs::autoFractureMinutes(2));
+
+        $rows = DB::table('character_notifications')
+            ->whereIn('type', self::LATER_VOLUME_NOTICES)
+            ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
+            ->where('timestamp', '>=', $arrival->copy()->subMinutes(5))
+            ->where('timestamp', '<=', $autoFracture->copy()->addHour())
+            ->orderBy('timestamp')
+            ->get(['type', 'text', 'timestamp']);
+
+        $notices = [];
+
+        foreach ($rows as $row) {
+            if (isset($notices[$row->type])
+                || !str_contains((string) $row->text, 'oreVolumeByType')
+                || !StructureNotificationText::mentions((string) $row->text, $structureId)) {
+                continue;
+            }
+
+            $notices[$row->type] = $row;
+        }
+
+        usort($notices, fn ($a, $b) => strcmp((string) $a->timestamp, (string) $b->timestamp));
+
+        return $notices;
+    }
+
+    /**
+     * Every notice that reported this extraction's ore volumes, oldest first,
+     * with its total, so the extraction page can show where the figures came
+     * from and whether the game's count changed along the way.
+     *
+     * @param \MiningManager\Models\MoonExtraction|\MiningManager\Models\MoonExtractionHistory $extraction
+     * @return array<int, array{type: string, label: string, at: Carbon, total_m3: float}>
+     */
+    public function volumeChecks($extraction): array
+    {
+        if (!$extraction->structure_id || !$extraction->extraction_start_time) {
+            return [];
+        }
+
+        try {
+            $notices = array_filter(array_merge(
+                [$this->findExtractionStartedNotification((int) $extraction->structure_id, $extraction->extraction_start_time)],
+                $this->laterVolumeNotices((int) $extraction->structure_id, $extraction->chunk_arrival_time, $extraction->natural_decay_time)
+            ));
+        } catch (\Throwable $e) {
+            Log::debug("Mining Manager: could not read volume notices for extraction {$extraction->id}: " . $e->getMessage());
+
+            return [];
+        }
+
+        $checks = [];
+
+        foreach ($notices as $notice) {
+            try {
+                $volumes = Yaml::parse((string) $notice->text)['oreVolumeByType'] ?? null;
+            } catch (\Throwable $e) {
+                $volumes = null;
+            }
+
+            if (!is_array($volumes)) {
+                continue;
+            }
+
+            $checks[] = [
+                'type' => $notice->type,
+                'label' => self::VOLUME_NOTICE_LABELS[$notice->type] ?? $notice->type,
+                'at' => Carbon::parse($notice->timestamp),
+                'total_m3' => (float) array_sum(array_map('floatval', $volumes)),
+            ];
+        }
+
+        return $checks;
     }
 
     /**
@@ -287,13 +420,13 @@ class MoonExtractionService
      * @param string|null $extractionStartTime Optional extraction start time to find notification
      * @return array|null
      */
-    private function getMoonComposition(int $moonId, ?int $structureId = null, ?string $extractionStartTime = null): ?array
+    private function getMoonComposition(int $moonId, ?int $structureId = null, ?string $extractionStartTime = null, $chunkArrivalTime = null, $naturalDecayTime = null): ?array
     {
         try {
             // Try to get actual volumes from notification first (most accurate)
             $actualVolumes = null;
             if ($structureId && $extractionStartTime) {
-                $actualVolumes = $this->getActualOreVolumesFromNotification($structureId, $extractionStartTime);
+                $actualVolumes = $this->getActualOreVolumesFromNotification($structureId, $extractionStartTime, $chunkArrivalTime, $naturalDecayTime);
             }
 
             // Check if universe_moon_contents table exists

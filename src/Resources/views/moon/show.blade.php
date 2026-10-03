@@ -179,6 +179,30 @@
                                     {{ trans('mining-manager::moons.' . $effectiveStatus) }}
                                 </span>
                             </p>
+
+                            @if(!empty($chunkBonuses))
+                            <p><strong>{{ trans('mining-manager::moons.moon_rigs') }}:</strong></p>
+                            <p class="ml-3 mb-3">
+                                @if($chunkBonuses['timer_rig'])
+                                    <i class="fas fa-cog text-info"></i> {{ $chunkBonuses['timer_rig'] }}<br>
+                                    <small class="text-muted">{{ trans('mining-manager::moons.rig_window', ['hours' => $chunkBonuses['window_hours']]) }}</small><br>
+                                @else
+                                    <span class="text-muted">{{ trans('mining-manager::moons.rig_no_timer', ['hours' => $chunkBonuses['window_hours']]) }}</span><br>
+                                @endif
+                                @if($chunkBonuses['yield'] === null)
+                                    <small class="text-muted">{{ trans('mining-manager::moons.rig_yield_unknown') }}</small>
+                                @elseif($chunkBonuses['yield'] > 0)
+                                    <i class="fas fa-plus-circle text-success"></i> {{ $chunkBonuses['yield_rig'] }}<br>
+                                    <small class="text-muted">{{ trans('mining-manager::moons.rig_yield_extra', [
+                                        'bonus' => rtrim(rtrim(number_format($chunkBonuses['yield'], 1), '0'), '.'),
+                                        'm3' => number_format($chunkBonuses['extra_m3'] ?? 0, 0),
+                                        'isk' => number_format($chunkBonuses['extra_value'] ?? 0, 0),
+                                    ]) }}</small>
+                                @else
+                                    <small class="text-muted">{{ trans('mining-manager::moons.rig_no_yield') }}</small>
+                                @endif
+                            </p>
+                            @endif
                         </div>
 
                         <div class="col-md-6">
@@ -497,6 +521,32 @@
                             </tfoot>
                         </table>
                     </div>
+
+                    @if(!empty($volumeChecks))
+                    <div class="mt-3">
+                        <h6>{{ trans('mining-manager::moons.volume_checks') }}</h6>
+                        @php $firstTotal = $volumeChecks[0]['total_m3']; @endphp
+                        <ul class="list-unstyled small mb-1">
+                            @foreach($volumeChecks as $check)
+                                @php
+                                    $change = $firstTotal > 0 ? ($check['total_m3'] - $firstTotal) / $firstTotal * 100 : 0;
+                                    $changeText = abs($change) < 0.005
+                                        ? trans('mining-manager::moons.volume_check_same')
+                                        : trans('mining-manager::moons.volume_check_changed', ['change' => sprintf('%+.2f%%', $change)]);
+                                @endphp
+                                <li>
+                                    <strong>{{ $check['label'] }}</strong>,
+                                    <span class="eve-time" data-eve-time="{{ $check['at']->toIso8601String() }}">{{ $check['at']->format('M d, H:i') }} EVE</span>:
+                                    {{ number_format($check['total_m3'], 0) }} m³
+                                    @if(!$loop->first)
+                                        <span class="text-muted">({{ $changeText }})</span>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                        <small class="text-muted">{{ trans('mining-manager::moons.volume_checks_help') }}</small>
+                    </div>
+                    @endif
 
                     {{-- Composition Visualization --}}
                     <div class="mt-4">
