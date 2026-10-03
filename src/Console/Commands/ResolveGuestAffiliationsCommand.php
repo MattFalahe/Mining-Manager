@@ -91,21 +91,29 @@ class ResolveGuestAffiliationsCommand extends Command
         $failed = 0;
 
         foreach (array_chunk($unresolvedIds, $batchSize) as $batchIndex => $chunk) {
-            $this->task(
+            $this->info(
                 "Resolving batch " . ($batchIndex + 1) . "/" . ceil(count($unresolvedIds) / $batchSize) .
-                " (" . count($chunk) . " characters)",
-                function () use ($chunk, $resolver, &$resolved, &$failed) {
-                    $results = $resolver->resolveBatch($chunk);
+                " (" . count($chunk) . " characters)"
+            );
 
-                    foreach ($results as $charId => $result) {
-                        if ($result['resolved'] && $result['corporation_id']) {
-                            $resolved++;
-                        } else {
-                            $failed++;
-                        }
+            try {
+                $results = $resolver->resolveBatch($chunk);
+
+                foreach ($results as $charId => $result) {
+                    if ($result['resolved'] && $result['corporation_id']) {
+                        $resolved++;
+                    } else {
+                        $failed++;
                     }
                 }
-            );
+            } catch (\Throwable $e) {
+                $this->error("Batch failed: " . $e->getMessage());
+                Log::warning('[MM] Affiliation resolution batch failed', [
+                    'error' => $e->getMessage(),
+                    'character_ids' => $chunk,
+                ]);
+                $failed += count($chunk);
+            }
 
             // Small delay between batches
             if ($batchIndex + 1 < count(array_chunk($unresolvedIds, $batchSize))) {
