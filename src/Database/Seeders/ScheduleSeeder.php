@@ -40,6 +40,17 @@ class ScheduleSeeder extends AbstractScheduleSeeder
     public function getSchedules(): array
     {
         return [
+            // Resolve guest miner affiliations in the background. Runs every
+            // 10 minutes so the dashboard can classify miners from cache
+            // instead of firing live ESI calls on each request.
+            [
+                'command' => 'mining-manager:resolve-guest-affiliations',
+                'expression' => '*/10 * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
             // Process corporation observer mining - runs every 30 minutes at :15 and :45
             [
                 'command' => 'mining-manager:process-ledger',
