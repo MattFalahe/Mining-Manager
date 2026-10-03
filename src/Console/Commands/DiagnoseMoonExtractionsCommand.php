@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Moon\MoonPlannerService;
 
 class DiagnoseMoonExtractionsCommand extends Command
 {
@@ -149,7 +150,12 @@ class DiagnoseMoonExtractionsCommand extends Command
 
         $refineries = CorporationStructure::whereIn('type_id', [35835, 35836])->get();
         
-        $this->line("  Found {$refineries->count()} refineries (Athanor: 35835, Tatara: 35836)");
+        $drills = DB::table('corporation_structure_services')
+            ->whereIn('structure_id', $refineries->pluck('structure_id')->all())
+            ->where('name', MoonPlannerService::MOON_DRILL_SERVICE)
+            ->pluck('state', 'structure_id');
+
+        $this->line("  Found {$refineries->count()} refineries (Athanor: 35835, Tatara: 35836), {$drills->count()} with a moon drill fitted");
 
         if ($refineries->count() > 0) {
             foreach ($refineries as $refinery) {
@@ -158,6 +164,16 @@ class DiagnoseMoonExtractionsCommand extends Command
                 $this->line("      Structure ID: {$refinery->structure_id}");
                 $this->line("      Corporation ID: {$refinery->corporation_id}");
                 $this->line("      Type ID: {$refinery->type_id}");
+
+                // The Moon Planner and its reminders leave out a refinery with
+                // no drill fitted, so this is the first thing to check when one
+                // is missing from them.
+                $drill = $drills->get($refinery->structure_id);
+                if ($drill === null) {
+                    $this->warn('      ⚠ No moon drill fitted, so the Moon Planner leaves it out');
+                } else {
+                    $this->info("      ✓ Moon drill fitted ({$drill})");
+                }
                 
                 // Check if we have extraction data for this structure
                 $extractionCount = MoonExtraction::where('structure_id', $refinery->structure_id)->count();

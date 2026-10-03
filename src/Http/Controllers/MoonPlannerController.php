@@ -89,6 +89,7 @@ class MoonPlannerController extends Controller
         $warnings = [];
         $refinerySummaries = [];
         $blueprintList = [];
+        $refineryFlags = [];
         $minGapHours = $this->planner->getMinGapHours();
 
         if ($corporationId) {
@@ -101,6 +102,15 @@ class MoonPlannerController extends Controller
             $warnings = $built['warnings'];
             $refinerySummaries = $this->buildRefinerySummaries($corporationId);
             $blueprintList = $this->rotations->listForCorporation($corporationId);
+
+            // Gone, being unanchored, or no drill: marked on the cards and the
+            // pulls rather than hidden. Only a gone refinery's pulls are ever
+            // taken off, and only once the Refinery Gone check is sure.
+            $onPage = array_column($refinerySummaries, 'structure_id');
+            foreach ($calendar as $entries) {
+                $onPage = array_merge($onPage, array_column($entries, 'structure_id'));
+            }
+            $refineryFlags = $this->planner->refineryFlags($corporationId, $onPage);
         }
 
         return view('mining-manager::moon.planner', [
@@ -110,6 +120,7 @@ class MoonPlannerController extends Controller
             'warnings' => $warnings,
             'refinerySummaries' => $refinerySummaries,
             'blueprintList' => $blueprintList,
+            'refineryFlags' => $refineryFlags,
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
         ]);

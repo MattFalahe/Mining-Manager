@@ -809,10 +809,20 @@
             </h5>
         </div>
         <div class="card-body">
+            <div class="small text-muted mb-3">
+                Both reminders skip a refinery that cannot pull a chunk:
+                <ul class="mb-1 pl-3">
+                    <li>no moon drill fitted, or the drill has been unfitted</li>
+                    <li>unanchored, destroyed or handed over, so it is gone from your corporation's structures</li>
+                    <li>reported destroyed by the game, even before SeAT's structure list catches up</li>
+                    <li>unanchoring with no extraction running. While one is still running, it is treated as usual.</li>
+                </ul>
+                The full rules are in Help &amp; Documentation, under Moon Planner.
+            </div>
             <small class="form-text text-muted mb-3 d-block">
                 <strong>Moon Not Rescheduled</strong> goes out when a refinery's chunk arrived this long ago and no
-                new extraction has been started on it since. It stops when an extraction starts, the refinery leaves
-                the corporation, or its drill goes offline. Bind it to a webhook under Webhooks to receive it.
+                new extraction has been started on it since. It stops when an extraction starts, and waits while the
+                drill is offline. Bind it to a webhook under Webhooks to receive it.
             </small>
             <div class="form-group row align-items-center">
                 <label for="moon_not_rescheduled_hours" class="col-md-4 col-form-label">
@@ -861,7 +871,8 @@
                 <strong>Moons Need Planning</strong> is one message listing every refinery with fewer pulls planned
                 ahead than the number below, counted the same way as the planner's "Not planned" badge, fewest planned
                 and richest moons first. A long list is cut short with a count of the rest, and always ends with the
-                total. It is only sent while something falls short.
+                total. It is only sent while something falls short. A refinery whose drill is offline stays on the
+                list, marked as such.
             </small>
             <div class="form-group row align-items-center">
                 <label for="planned_ahead_target" class="col-md-4 col-form-label">

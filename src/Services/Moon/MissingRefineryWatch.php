@@ -16,11 +16,15 @@ use MiningManager\Models\RefineryAlert;
  * longer owns, but only once it is sure they are gone.
  *
  * A pull on a refinery you do not own cannot happen, so leaving it planned only
- * misleads. But a structure can drop out of SeAT's list for an afternoon when
- * ESI or the server has a bad day, and a month of planning should not vanish
- * because of one bad sync. So a refinery has to be missing on three sightings at
- * least twelve hours apart, a day at the very least, and seen back in between
- * starts the count again.
+ * misleads. A refinery that is still there is never touched, even with its moon
+ * drill unfitted or an unanchor running: both can change back, and the planner
+ * marks them instead.
+ *
+ * A structure can also drop out of SeAT's list for an afternoon when ESI or the
+ * server has a bad day, and a month of planning should not vanish because of
+ * one bad sync. So a refinery has to be missing on three sightings at least
+ * twelve hours apart, a day at the very least, and seen back in between starts
+ * the count again.
  *
  * Covers every pull still ahead, blueprint or planned by hand. Blueprint slots
  * are left where they are: a pattern is built by hand, and clearing it is the
@@ -80,10 +84,7 @@ class MissingRefineryWatch
     {
         $now = $now ?? Carbon::now();
 
-        $owned = $this->planner->refineriesForCorporation($corporationId)
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+        $owned = $this->planner->presentRefineryIds($corporationId);
 
         // No refineries at all is a gap in what SeAT has on file, not every rig
         // going at once. Nothing is counted either way, so an empty list can
@@ -250,16 +251,15 @@ class MissingRefineryWatch
         try {
             // Unanchoring runs for days before the structure is gone, so its
             // notice can be well before the first sighting.
-            $rows = DB::table('character_notifications')
+            $query = DB::table('character_notifications')
                 ->whereIn('type', array_keys(self::REASONS))
-                ->where('text', 'LIKE', '%structureID: ' . $structureId . '%')
                 ->where('timestamp', '>=', $firstMissing->copy()->subDays(14))
-                ->orderByDesc('timestamp')
-                ->get(['type', 'text']);
+                ->orderByDesc('timestamp');
+
+            $rows = StructureNotificationText::whereMayMention($query, [$structureId])->get(['type', 'text']);
 
             foreach ($rows as $row) {
-                // LIKE also matches a longer id that starts with this one.
-                if (preg_match('/structureID:\s*' . $structureId . '\b/', (string) $row->text)) {
+                if (StructureNotificationText::mentions((string) $row->text, $structureId)) {
                     return self::REASONS[$row->type] ?? null;
                 }
             }

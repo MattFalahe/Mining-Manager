@@ -14,15 +14,21 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  * The Moon Planner's reminders: things nobody has done yet that somebody
  * should.
  *
+ * Neither reminder speaks about a refinery that cannot pull:
+ *   - one the corporation no longer has, or with no moon drill fitted, both
+ *     already left out by MoonPlannerService::refineriesForCorporation()
+ *   - one the game has reported destroyed, before SeAT's list catches up
+ *   - one being unanchored with no extraction running. Unanchoring takes
+ *     seven days, too short for a new pull to arrive and be mined before the
+ *     structure goes. While an extraction is still running, it is treated
+ *     like any other refinery.
+ *
  * Settings are read without a corporation context. These run from scheduled
  * commands, where the settings service can be left pointing at whichever
  * corporation the run touched last.
  */
 class PlannerReminders
 {
-    /** SeAT's name for the service a refinery needs to start an extraction. */
-    protected const DRILL_SERVICE = 'Moon Drilling';
-
     /**
      * Refineries one Moons Need Planning message lists before it says how many
      * more there are. Keeps the message inside what Discord and Slack accept.
@@ -48,9 +54,13 @@ class PlannerReminders
      *
      * Once the drill has been idle for the configured hours a reminder goes;
      * with repeats on, again every that many hours, until an extraction is
-     * started, the refinery leaves the corporation, or its drill goes offline.
-     * A refinery SeAT has no service data for keeps being reminded about: not
-     * knowing is not a reason to go quiet.
+     * started.
+     *
+     * A refinery that drops out of SeAT's list for a sync, has its drill go
+     * offline, is reported destroyed or is being unanchored is skipped without
+     * losing its count, so coming back does not start it again at reminder one.
+     * The count is cleared when an extraction starts, or once the refinery is
+     * certainly gone.
      *
      * @return array<int, array> one entry per reminder to send on this pass
      */
@@ -60,8 +70,8 @@ class PlannerReminders
         $idleHours = max(1, (int) $this->setting('moon_not_rescheduled_hours', 48));
         $repeat = (bool) $this->setting('moon_not_rescheduled_repeat', true);
 
-        $owned = $this->planner->refineriesForCorporation($corporationId)
-            ->pluck('structure_id')
+        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $owned = $refineries->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
 
@@ -69,20 +79,13 @@ class PlannerReminders
             return [];
         }
 
-        // Gone from the corporation: stop, and forget what was counted.
-        RefineryAlert::where('corporation_id', $corporationId)
-            ->where('kind', RefineryAlert::KIND_NOT_RESCHEDULED)
-            ->whereNotIn('structure_id', $owned)
-            ->delete();
+        $this->forgetGone($corporationId, $owned);
 
-        $running = MoonExtraction::whereIn('structure_id', $owned)
-            ->where('status', 'extracting')
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
+        $running = $this->running($owned);
         $lastArrival = $this->lastArrivals($owned, $now);
-        $drillDown = $this->drillsKnownOffline($owned);
+        $drillDown = $this->drillsOffline($owned);
+        $destroyed = $this->reportedDestroyed($owned);
+        $unanchoring = $this->unanchoringIdle($refineries, $running);
 
         $reminders = [];
 
@@ -95,12 +98,20 @@ class PlannerReminders
 
             $arrival = $lastArrival[$structureId] ?? null;
 
-            // Started again, never pulled, or the drill cannot run: nothing to
-            // say, and a later idle spell starts its count from scratch.
-            if (in_array($structureId, $running, true) || !$arrival || in_array($structureId, $drillDown, true)) {
+            // Started again, or never pulled: nothing to remind about, and a
+            // later idle spell starts its count from scratch.
+            if (in_array($structureId, $running, true) || !$arrival) {
                 if ($alert->exists) {
                     $alert->delete();
                 }
+                continue;
+            }
+
+            // Cannot be acted on right now, but nothing has been resolved
+            // either, so the count is kept for when it can.
+            if (in_array($structureId, $drillDown, true)
+                || in_array($structureId, $destroyed, true)
+                || in_array($structureId, $unanchoring, true)) {
                 continue;
             }
 
@@ -151,8 +162,11 @@ class PlannerReminders
      * went out too recently.
      *
      * Counted the way the planner's "Not planned" badge counts, so the message
-     * and the page agree. Fewest planned first, then the richest moons. A
-     * refinery whose drill is offline is still listed, and says so.
+     * and the page agree. Fewest planned first, then the richest moons. Built
+     * from the refineries as they are at the moment of sending, so one that
+     * has gone since the last message is simply not in it. A refinery whose
+     * drill is offline is still listed, and says so: it is still fitted, and
+     * pulls can be planned for when the fuel is back.
      */
     public function needsPlanning(int $corporationId, ?Carbon $now = null): ?array
     {
@@ -165,8 +179,8 @@ class PlannerReminders
             return null;
         }
 
-        $owned = $this->planner->refineriesForCorporation($corporationId)
-            ->pluck('structure_id')
+        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $owned = $refineries->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
 
@@ -174,10 +188,16 @@ class PlannerReminders
             return null;
         }
 
-        $drillDown = $this->drillsKnownOffline($owned);
+        $drillDown = $this->drillsOffline($owned);
+        $destroyed = $this->reportedDestroyed($owned);
+        $unanchoring = $this->unanchoringIdle($refineries, $this->running($owned));
         $short = [];
 
         foreach ($owned as $structureId) {
+            if (in_array($structureId, $destroyed, true) || in_array($structureId, $unanchoring, true)) {
+                continue;
+            }
+
             $planned = $this->planner->futurePlanCount($structureId);
             if ($planned >= $target) {
                 continue;
@@ -225,6 +245,77 @@ class PlannerReminders
     }
 
     /**
+     * Forget the reminder count of a refinery that is certainly gone: the
+     * Refinery Gone watch has confirmed it, or the game has reported it
+     * destroyed. Missing from one sync is not the same thing, and keeps its
+     * count.
+     */
+    protected function forgetGone(int $corporationId, array $owned): void
+    {
+        $absent = RefineryAlert::where('corporation_id', $corporationId)
+            ->where('kind', RefineryAlert::KIND_NOT_RESCHEDULED)
+            ->whereNotIn('structure_id', $owned)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (!$absent) {
+            return;
+        }
+
+        $confirmed = RefineryAlert::where('corporation_id', $corporationId)
+            ->where('kind', RefineryAlert::KIND_MISSING)
+            ->whereNotNull('acted_at')
+            ->whereIn('structure_id', $absent)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $gone = array_values(array_unique(array_merge($confirmed, $this->reportedDestroyed($absent))));
+
+        if ($gone) {
+            RefineryAlert::where('corporation_id', $corporationId)
+                ->where('kind', RefineryAlert::KIND_NOT_RESCHEDULED)
+                ->whereIn('structure_id', $gone)
+                ->delete();
+        }
+    }
+
+    /**
+     * Refineries with an extraction running right now.
+     *
+     * @return array<int, int>
+     */
+    protected function running(array $structureIds): array
+    {
+        return MoonExtraction::whereIn('structure_id', $structureIds)
+            ->where('status', 'extracting')
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Refineries being unanchored with no extraction running.
+     *
+     * SeAT has no unanchoring state. ESI gives an unanchors_at date while the
+     * timer runs, and SeAT clears it on the next structure sync when the
+     * unanchor is cancelled, so the refinery comes back by itself.
+     *
+     * @return array<int, int>
+     */
+    protected function unanchoringIdle($refineries, array $running): array
+    {
+        return $refineries
+            ->filter(fn ($refinery) => !empty($refinery->unanchors_at))
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => !in_array($id, $running, true))
+            ->values()
+            ->all();
+    }
+
+    /**
      * The latest chunk that has actually arrived on each refinery, live or
      * archived. A cancelled extraction never arrived, so it does not count.
      *
@@ -256,30 +347,60 @@ class PlannerReminders
     }
 
     /**
-     * Refineries SeAT knows the services of and whose drill is not online.
-     * One SeAT has no service rows for is not in this list.
+     * Refineries whose moon drill is fitted but not online, most often for want
+     * of fuel. Every refinery handed to these reminders has one fitted; see
+     * MoonPlannerService::refineriesForCorporation().
      *
      * @return array<int, int>
      */
-    protected function drillsKnownOffline(array $structureIds): array
+    protected function drillsOffline(array $structureIds): array
     {
-        $services = DB::table('corporation_structure_services')
+        return DB::table('corporation_structure_services')
             ->whereIn('structure_id', $structureIds)
-            ->get(['structure_id', 'name', 'state']);
+            ->where('name', MoonPlannerService::MOON_DRILL_SERVICE)
+            ->where('state', '!=', 'online')
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
 
-        $known = [];
-        $online = [];
+    /**
+     * Refineries the game has reported destroyed.
+     *
+     * SeAT drops a destroyed structure from the corporation's list on its next
+     * structure sync. If that sync is not running, the list goes stale and a
+     * dead refinery would keep being reminded about, so this is checked before
+     * anything is sent. A destroyed structure's id is never used again, which
+     * is why any report at all is enough.
+     *
+     * @return array<int, int>
+     */
+    protected function reportedDestroyed(array $structureIds): array
+    {
+        if (!$structureIds) {
+            return [];
+        }
 
-        foreach ($services as $service) {
-            $id = (int) $service->structure_id;
-            $known[$id] = true;
+        try {
+            $query = DB::table('character_notifications')->where('type', 'StructureDestroyed');
+            $reports = StructureNotificationText::whereMayMention($query, $structureIds)->get(['text']);
+        } catch (\Throwable $e) {
+            return [];
+        }
 
-            if ($service->name === self::DRILL_SERVICE && $service->state === 'online') {
-                $online[$id] = true;
+        $destroyed = [];
+
+        foreach ($reports as $report) {
+            foreach ($structureIds as $structureId) {
+                if (StructureNotificationText::mentions((string) $report->text, $structureId)) {
+                    $destroyed[$structureId] = true;
+                }
             }
         }
 
-        return array_values(array_map('intval', array_keys(array_diff_key($known, $online))));
+        return array_keys($destroyed);
     }
 
     /**

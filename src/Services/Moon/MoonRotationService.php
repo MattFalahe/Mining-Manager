@@ -103,8 +103,10 @@ class MoonRotationService
         $anchor = $startDate->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
 
         // A refinery that has been unanchored or blown up is gone from the
-        // corporation's structures, and nothing can pull from it.
-        $owned = $this->planner->refineriesForCorporation((int) $rotation->corporation_id)
+        // corporation's structures. One still there with its moon drill
+        // unfitted is not in the refinery list. Nothing can pull from either.
+        $present = $this->planner->presentRefineryIds((int) $rotation->corporation_id);
+        $drilled = $this->planner->refineriesForCorporation((int) $rotation->corporation_id)
             ->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -126,8 +128,10 @@ class MoonRotationService
                 $structureId = (int) $slot->structure_id;
                 $skip = null;
 
-                if (!in_array($structureId, $owned, true)) {
+                if (!in_array($structureId, $present, true)) {
                     $skip = 'that refinery is gone';
+                } elseif (!in_array($structureId, $drilled, true)) {
+                    $skip = 'that refinery has no moon drill';
                 } elseif ($arrival->lt($startDate)) {
                     $skip = 'before the start date';
                 } elseif ($arrival->lt($now)) {
@@ -492,16 +496,15 @@ class MoonRotationService
 
     /**
      * Blueprint slots pointing at a refinery this corporation no longer owns,
-     * whether it was unanchored, destroyed or handed over.
+     * whether it was unanchored, destroyed or handed over. One that is still
+     * there with its moon drill unfitted, or being unanchored, keeps its slots:
+     * either can change back.
      *
      * @return \Illuminate\Support\Collection
      */
     protected function slotsWithMissingRefineries(int $corporationId)
     {
-        $owned = $this->planner->refineriesForCorporation($corporationId)
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+        $owned = $this->planner->presentRefineryIds($corporationId);
 
         // No refineries at all is far more likely to mean SeAT has nothing on
         // file for the corporation right now than that every one of them went

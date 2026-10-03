@@ -39,6 +39,24 @@ class MoonPlannerService
     /** Athanor + Tatara — the only structures that run plannable chunk extractions. */
     public const REFINERY_TYPE_IDS = [35835, 35836];
 
+    /** SeAT's name for the service module that pulls moon chunks on a refinery. */
+    public const MOON_DRILL_SERVICE = 'Moon Drilling';
+
+    /**
+     * Why a refinery on the planner or in a blueprint cannot pull, with the
+     * words shown when you hover its warning mark. Gone is red; the other two
+     * are yellow, because the structure is still there and both can change.
+     */
+    public const FLAG_GONE = 'gone';
+    public const FLAG_UNANCHORING = 'unanchoring';
+    public const FLAG_NO_DRILL = 'no_drill';
+
+    public const FLAG_LABELS = [
+        self::FLAG_GONE => 'Structure gone, not cleared yet',
+        self::FLAG_UNANCHORING => 'Unanchoring in progress',
+        self::FLAG_NO_DRILL => 'No moon drill fitted',
+    ];
+
     /**
      * A plan and a real extraction for the same refinery within this many
      * minutes are the SAME pull — deduped silently. Beyond it (but within the
@@ -82,7 +100,16 @@ class MoonPlannerService
     protected array $moonIdCache = [];
 
     /**
-     * Every refinery (Athanor/Tatara) belonging to a corporation.
+     * Every refinery (Athanor/Tatara) belonging to a corporation that has a
+     * Moon Drilling service fitted.
+     *
+     * An Athanor or Tatara without one is a reprocessing or reaction station,
+     * not a moon refinery: it cannot pull a chunk, so nothing should plan pulls
+     * on it, remind anyone about it or count it as unplanned. SeAT stores a
+     * structure's services from the same answer as the structure itself, and
+     * removes them when the module comes off, so a refinery with no Moon
+     * Drilling row really has no drill. Its state does not matter here: an
+     * offline drill is still fitted and comes back when the power does.
      *
      * Each structure comes back with a resolved `moon_id`. SeAT's
      * corporation_structures table has no such column, so callers reading
@@ -91,6 +118,8 @@ class MoonPlannerService
      * than complaining). Resolving it here means every consumer of this method
      * gets a real moon without having to know where moons actually live.
      *
+     * For what is physically still there, drill or not, see presentRefineryIds().
+     *
      * @return \Illuminate\Support\Collection<int,CorporationStructure>
      */
     public function refineriesForCorporation(int $corporationId): Collection
@@ -98,6 +127,21 @@ class MoonPlannerService
         $refineries = CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
             ->where('corporation_id', $corporationId)
             ->get();
+
+        if ($refineries->isEmpty()) {
+            return $refineries;
+        }
+
+        $drilled = DB::table('corporation_structure_services')
+            ->whereIn('structure_id', $refineries->pluck('structure_id')->all())
+            ->where('name', self::MOON_DRILL_SERVICE)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $refineries = $refineries
+            ->filter(fn ($refinery) => in_array((int) $refinery->structure_id, $drilled, true))
+            ->values();
 
         if ($refineries->isEmpty()) {
             return $refineries;
@@ -112,6 +156,77 @@ class MoonPlannerService
         }
 
         return $refineries;
+    }
+
+    /**
+     * Every Athanor and Tatara the corporation still has in SeAT's structure
+     * list, with a moon drill or without.
+     *
+     * Only a refinery missing from this list is gone, and only then may the
+     * pulls planned on it or its blueprint slots be taken away. One with its
+     * drill unfitted, or being unanchored, is still there and can change back.
+     *
+     * @return array<int,int>
+     */
+    public function presentRefineryIds(int $corporationId): array
+    {
+        return CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
+            ->where('corporation_id', $corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * What stops each of these refineries pulling, for the warning marks on
+     * the planner and the blueprints. Refineries with nothing wrong are left
+     * out.
+     *
+     * With no refineries on file at all, nothing is marked gone: that is a gap
+     * in what SeAT has for the corporation, not every structure going at once.
+     *
+     * @param  array<int,int>  $structureIds
+     * @return array<int,string> structure_id => one of the FLAG_ constants
+     */
+    public function refineryFlags(int $corporationId, array $structureIds): array
+    {
+        $wanted = array_values(array_unique(array_filter(array_map('intval', $structureIds))));
+
+        if (empty($wanted)) {
+            return [];
+        }
+
+        $present = CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
+            ->where('corporation_id', $corporationId)
+            ->get(['structure_id', 'unanchors_at'])
+            ->keyBy(fn ($structure) => (int) $structure->structure_id);
+
+        $drilled = DB::table('corporation_structure_services')
+            ->whereIn('structure_id', $wanted)
+            ->where('name', self::MOON_DRILL_SERVICE)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $flags = [];
+
+        foreach ($wanted as $id) {
+            $structure = $present->get($id);
+
+            if (!$structure) {
+                if ($present->isNotEmpty()) {
+                    $flags[$id] = self::FLAG_GONE;
+                }
+            } elseif (!empty($structure->unanchors_at)) {
+                // SeAT has no unanchoring state: ESI gives the date the timer
+                // runs out, and SeAT clears it when the unanchor is cancelled.
+                $flags[$id] = self::FLAG_UNANCHORING;
+            } elseif (!in_array($id, $drilled, true)) {
+                $flags[$id] = self::FLAG_NO_DRILL;
+            }
+        }
+
+        return $flags;
     }
 
     /**

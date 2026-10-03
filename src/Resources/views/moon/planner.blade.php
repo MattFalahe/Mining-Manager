@@ -37,6 +37,11 @@
     .mm-planner-month .mm-cal-time { flex:none; font-weight:600; }
     .mm-planner-month .mm-cal-tier { flex:none; font-size:0.62rem; padding:1px 4px; line-height:1.25; }
     .mm-planner-month .mm-cal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* Why a refinery cannot pull, on hover: yellow while it is still there and
+       could change back, red once it is gone. Same mark as the Blueprints grid. */
+    .moon-planner-page .mm-flag { display:inline-block; flex:none; width:1.1em; height:1.1em; line-height:1.1em; border-radius:50%; text-align:center; font-weight:700; cursor:help; }
+    .moon-planner-page .mm-flag-warn { background:#ffc107; color:#212529; }
+    .moon-planner-page .mm-flag-gone { background:#dc3545; color:#fff; box-shadow:0 0 0 1px #fff; }
     .mm-month-heading { display:flex; align-items:center; gap:8px; font-weight:600; color:#cfd6df; }
     .mm-month-heading .mm-month-pill { font-size:0.65rem; background:rgba(255,255,255,0.06); color:#9aa4b2; padding:1px 8px; border-radius:10px; }
 
@@ -256,7 +261,14 @@
                     @forelse($refinerySummaries as $r)
                         <div class="mm-sidebar-item mm-refinery-card mb-2">
                             <div class="mm-structure-name d-flex justify-content-between align-items-start">
-                                <span><i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}</span>
+                                <span>
+                                    <i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}
+                                    @if(!empty($refineryFlags[$r['structure_id']]))
+                                        @php $flag = $refineryFlags[$r['structure_id']]; @endphp
+                                        <span class="mm-flag {{ $flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn' }}"
+                                              title="{{ \MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS[$flag] ?? '' }}">!</span>
+                                    @endif
+                                </span>
                                 @if(!empty($r['rarity']))
                                     <span class="badge ml-1 {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($r['rarity']) }}"
                                           title="Highest ore tier on this moon">{{ $r['rarity'] }}</span>
@@ -310,7 +322,7 @@
                     @empty
                         <div class="text-center text-muted py-3">
                             <i class="fas fa-industry fa-2x mb-2"></i>
-                            <p class="mb-0">No Athanor/Tatara refineries found for this corporation.</p>
+                            <p class="mb-0">No Athanor or Tatara with a moon drill fitted found for this corporation.</p>
                         </div>
                     @endforelse
                 </div>
@@ -489,6 +501,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const CSRF = $('meta[name="csrf-token"]').attr('content');
     const calendarData = @json($calendar ?? []);
     const refineries = @json($refinerySummaries ?? []);
+    const refineryFlags = @json((object) ($refineryFlags ?? []));
+    const FLAG_LABELS = @json(\MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS);
     const minGap = {{ $minGapHours }};
     const routes = {
         store: '{{ route('mining-manager.moon.planner.store') }}',
@@ -601,6 +615,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const wrap = document.createElement('div');
         wrap.className = 'mm-cal-event';
         wrap.title = raw.structure_name + (raw.moon_name ? ' (' + raw.moon_name + ')' : '');
+
+        // Marked on every plan, and on a real pull still to come. A pull
+        // already done is history, whatever became of the refinery since.
+        const flag = refineryFlags[raw.structure_id];
+        const upcoming = arg.event.start && arg.event.start.getTime() > Date.now();
+        if (flag && (arg.event.extendedProps.type === 'plan' || (!raw.archived && upcoming))) {
+            const mark = document.createElement('span');
+            mark.className = 'mm-flag ' + (flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn');
+            mark.title = FLAG_LABELS[flag] || '';
+            mark.textContent = '!';
+            wrap.appendChild(mark);
+        }
 
         if (arg.timeText) {
             const time = document.createElement('span');

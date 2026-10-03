@@ -3091,6 +3091,35 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         and its moon. Today is picked out in amber.
                     </p>
 
+                    <p>
+                        <strong>Only refineries with a moon drill count.</strong> An Athanor or Tatara with no Moon
+                        Drilling service fitted is a reprocessing or reaction station, so it is left out of the
+                        refinery list, Auto-fill, the blueprint picker, the reminders and the counts. A drill that is
+                        offline, out of fuel for example, is still fitted, and its refinery stays.
+                        <code>mining-manager:diagnose-extractions</code> shows which of your refineries have one.
+                    </p>
+
+                    <p>
+                        <strong>Nothing is taken away while the structure is still there.</strong> Planned pulls and
+                        blueprint slots only go once a refinery has left your corporation: unanchored, destroyed or
+                        handed over. Until then the planner and the Blueprints grid put a <strong>!</strong> on it.
+                        Hover it for the reason:
+                    </p>
+                    <ul>
+                        <li>
+                            <strong>Yellow, Unanchoring in progress.</strong> The unanchor timer is running. Cancel it
+                            and the mark goes after the next structure sync.
+                        </li>
+                        <li>
+                            <strong>Yellow, No moon drill fitted.</strong> The drill has been unfitted. Its pulls and
+                            slots stay in case it goes back on, but nothing new is planned on it.
+                        </li>
+                        <li>
+                            <strong>Red, Structure gone, not cleared yet.</strong> It has left your corporation. Its
+                            pulls come off once that is certain, as described under Blueprints below.
+                        </li>
+                    </ul>
+
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
                         <strong>The planner does not control your structures.</strong>
@@ -3174,14 +3203,19 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Click any pull in the grid to change its refinery or time, or to remove it.
                     </p>
                     <p>
-                        <strong>A refinery that is unanchored, destroyed or handed to someone else</strong> is
-                        flagged in red wherever it appears, and applying never plans a pull on it. The pulls planned
-                        on it come off the calendar by themselves, whether a blueprint wrote them or somebody planned
-                        them by hand, but only once it has been missing on three sightings at least twelve hours
-                        apart. A structure can vanish from SeAT for an afternoon when ESI or the server has a bad
-                        day, and being seen again in between starts the count over. Each refinery that goes sends its
-                        own <strong>Refinery Gone</strong> notification, saying which blueprints still hold it, how
-                        many pulls went, and why, if the game reported it.
+                        <strong>A refinery that is unanchored, destroyed or handed to someone else</strong> is flagged
+                        in red wherever it appears, and applying never plans a pull on it. The pulls planned on it
+                        come off the calendar by themselves, whether a blueprint wrote them or somebody planned them
+                        by hand, but only once it has been missing on three sightings at least twelve hours apart. A
+                        structure can vanish from SeAT for an afternoon when ESI or the server has a bad day, and
+                        being seen again in between starts the count over. Each refinery that goes sends its own
+                        <strong>Refinery Gone</strong> notification, saying which blueprints still hold it, how many
+                        pulls went, and why, if the game reported it.
+                    </p>
+                    <p>
+                        A refinery that is still there keeps its slots and its pulls. With its drill unfitted it is
+                        marked in yellow and applying skips it until the drill is back. Being unanchored, it is
+                        marked in yellow and planned as usual, since the unanchor can still be cancelled.
                     </p>
                     <p>
                         The blueprint slots themselves stay until you press the button that clears them out of every
@@ -3245,15 +3279,52 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>
                             <strong>Moon Not Rescheduled</strong> goes out when a chunk arrived a while ago and no new
                             extraction has been started on that refinery since: 48 hours by default, then again every 48
-                            hours until one starts. It stops if the refinery leaves the corporation or its drill goes
-                            offline.
+                            hours until one starts. It waits while the drill is offline, since there is nothing you
+                            could start.
                         </li>
                         <li>
                             <strong>Moons Need Planning</strong> is one message listing every refinery with fewer pulls
                             planned ahead than you ask for, counted like the <code>Not planned</code> badge below, with
                             the total at the end. A long list stops at 25 and counts the rest, so it always arrives.
+                            A refinery whose drill is offline stays on the list, marked <code>drill offline</code>:
+                            the drill is still fitted, and pulls can be planned for when the fuel is back.
                         </li>
                     </ul>
+                    <p>
+                        <strong>Which refineries they leave out.</strong> Moon Not Rescheduled and Moons Need Planning
+                        only speak about refineries that can pull a chunk. Every refinery is checked again before each
+                        message, and one is left out when:
+                    </p>
+                    <ul>
+                        <li>
+                            <strong>It has no moon drill.</strong> An Athanor or Tatara with no Moon Drilling service is
+                            a reprocessing or reaction station. Unfitting the drill to give a refinery another job takes
+                            it out of both reminders at the next structure sync. Pulls already planned on it stay,
+                            marked in yellow.
+                        </li>
+                        <li>
+                            <strong>It is no longer yours.</strong> Unanchored, destroyed or handed to another
+                            corporation, it drops out of your corporation's structures when SeAT next syncs them.
+                        </li>
+                        <li>
+                            <strong>The game has reported it destroyed.</strong> The Structure Destroyed notification
+                            counts straight away, even before SeAT's structure list has caught up.
+                        </li>
+                        <li>
+                            <strong>It is unanchoring with no extraction running.</strong> Unanchoring takes seven
+                            days, too short for a new pull to arrive and be mined before the structure goes, so there
+                            is nothing to plan. A refinery that is still extracting while it unanchors is treated as
+                            usual until that extraction ends. Cancel the unanchor and the reminders pick it up again
+                            after the next structure sync.
+                        </li>
+                    </ul>
+                    <p>
+                        Leaving a refinery out never resets its reminders. If it drops out of SeAT for a sync, or its
+                        drill comes back online, or an unanchor is cancelled, Moon Not Rescheduled carries on with the
+                        next reminder instead of starting again at the first, so a bad day for ESI cannot turn into a
+                        repeat. The count is only forgotten when an extraction starts, or once the refinery is
+                        certainly gone: confirmed by the Refinery Gone check, or reported destroyed.
+                    </p>
                     <p>
                         The hours, the repeat, how many pulls to plan ahead and how often the list goes are all under
                         <strong>Settings, Notifications, Moon Planner Reminders</strong>.

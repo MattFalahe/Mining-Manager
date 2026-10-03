@@ -60,6 +60,21 @@
         background: rgba(220, 53, 69, 0.85);
         border: 1px dashed #fca5a5;
     }
+    /* Why a refinery cannot pull, on hover: yellow while it is still there and
+       could change back, red once it is gone. */
+    .moon-blueprints-page .mm-flag {
+        display: inline-block;
+        width: 1.1em;
+        height: 1.1em;
+        line-height: 1.1em;
+        border-radius: 50%;
+        text-align: center;
+        font-weight: 700;
+        margin-right: 3px;
+        cursor: help;
+    }
+    .moon-blueprints-page .mm-flag-warn { background: #ffc107; color: #212529; }
+    .moon-blueprints-page .mm-flag-gone { background: #dc3545; color: #fff; box-shadow: 0 0 0 1px #fff; }
     .moon-blueprints-page .mm-bp-slot small { color: #e9d5ff; }
     .moon-blueprints-page .mm-bp-add {
         width: 100%;
@@ -284,6 +299,7 @@ const BP_ROUTES = {
 };
 const MAX_WEEKS = {{ $maxWeeks }};
 const REFINERIES = @json($refineries ?? []);
+const FLAG_LABELS = @json(\MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS);
 let blueprints = @json($blueprints ?? []);
 
 // The blueprint being edited. id null until it has been saved once.
@@ -299,9 +315,25 @@ function refinery(structureId) {
     return REFINERIES.find(r => r.structure_id === structureId) || null;
 }
 
-function refineryName(structureId) {
+function refineryName(structureId, slot) {
     const hit = refinery(structureId);
-    return hit ? hit.structure_name : ('Structure ' + structureId);
+    if (hit) { return hit.structure_name; }
+    return (slot && slot.structure_name) || ('Structure ' + structureId);
+}
+
+// Why a slot's refinery cannot pull. The picker list knows about an unanchor;
+// a refinery that is gone or has no drill is not in it, and the saved
+// blueprint says which.
+function slotFlag(slot) {
+    const rig = refinery(slot.structure_id);
+    return rig ? (rig.flag || null) : (slot.flag || null);
+}
+
+function flagMark(flag) {
+    return $('<span class="mm-flag">')
+        .addClass(flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn')
+        .attr('title', FLAG_LABELS[flag] || '')
+        .text('!');
 }
 
 const RARITY_CLASS = { R4: 'badge-r4', R8: 'badge-r8', R16: 'badge-r16', R32: 'badge-r32', R64: 'badge-r64' };
@@ -341,14 +373,17 @@ function renderGrid() {
                 .sort((a, b) => a.time_of_day.localeCompare(b.time_of_day))
                 .forEach(s => {
                     const rig = refinery(s.structure_id);
+                    const flag = slotFlag(s);
+                    const $time = $('<div>').text(s.time_of_day);
+                    if (flag) { $time.prepend(flagMark(flag)); }
                     const $chip = $('<div class="mm-bp-slot">')
-                        .attr('title', rig ? 'Click to edit this pull' : 'This refinery is no longer owned')
+                        .attr('title', 'Click to edit this pull')
                         .data('slot', s)
                         .append(
                             $('<span class="mm-bp-slot-remove" title="Remove">&times;</span>'),
-                            $('<div>').text(s.time_of_day)
+                            $time
                         );
-                    if (!rig) { $chip.addClass('mm-bp-slot-missing'); }
+                    if (flag === 'gone') { $chip.addClass('mm-bp-slot-missing'); }
                     if (rig && rig.rarity) {
                         $chip.append(
                             $('<span class="badge mr-1">')
@@ -356,7 +391,7 @@ function renderGrid() {
                                 .text(rig.rarity)
                         );
                     }
-                    $chip.append($('<small>').text(refineryName(s.structure_id)));
+                    $chip.append($('<small>').text(refineryName(s.structure_id, s)));
                     $cell.append($chip);
                 });
             $cell.append(
@@ -369,13 +404,16 @@ function renderGrid() {
     }
 
     const count = current.slots.length;
-    const left = REFINERIES.length - count;
+    // Only refineries the picker offers count towards placed: a slot on one
+    // that is gone or has no drill would otherwise leave a negative "left".
+    const placed = current.slots.filter(sl => refinery(sl.structure_id)).length;
+    const left = REFINERIES.length - placed;
     $('#bp-slot-count').text(
         count
-            ? count + ' of ' + REFINERIES.length + ' refineries placed, ' + left + ' left'
+            ? placed + ' of ' + REFINERIES.length + ' refineries placed, ' + left + ' left'
             : 'No pulls yet, ' + REFINERIES.length + ' refineries to place'
     );
-    const gone = current.slots.filter(sl => !refinery(sl.structure_id)).length;
+    const gone = current.slots.filter(sl => slotFlag(sl) === 'gone').length;
     $('#bp-missing').toggle(gone > 0);
     $('#bp-missing-text').text(
         gone === 1
@@ -399,6 +437,8 @@ function loadBlueprint(bp) {
             day_of_week: s.day_of_week,
             time_of_day: s.time_of_day,
             structure_id: s.structure_id,
+            structure_name: s.structure_name,
+            flag: s.flag,
         })),
     };
     $('#bp-name').val(bp.name);
@@ -451,8 +491,9 @@ function openSlotDialog(editor) {
         .filter(sl => sl !== editor.slot)
         .map(sl => sl.structure_id);
     const free = REFINERIES.filter(r => used.indexOf(r.structure_id) === -1);
+    const keepsOwn = editing && !refinery(editor.slot.structure_id);
 
-    if (!free.length) {
+    if (!free.length && !keepsOwn) {
         $('#bp-error').addClass('mm-note-warn').show()
             .text('Every refinery is already in this blueprint.');
         return;
@@ -460,8 +501,18 @@ function openSlotDialog(editor) {
 
     const $sel = $('#slot-structure').empty();
     free.forEach(r => $sel.append(
-        $('<option>').val(r.structure_id).text((r.rarity ? r.rarity + ' — ' : '') + r.structure_name)
+        $('<option>').val(r.structure_id).text(
+            (r.rarity ? r.rarity + ' — ' : '') + r.structure_name + (r.flag ? ' (' + FLAG_LABELS[r.flag] + ')' : '')
+        )
     ));
+    // A slot whose refinery has no drill, or is gone, is not on offer, but
+    // editing its time must not quietly move it to another refinery.
+    if (keepsOwn) {
+        const flag = slotFlag(editor.slot);
+        $sel.prepend($('<option>').val(editor.slot.structure_id).text(
+            refineryName(editor.slot.structure_id, editor.slot) + (flag ? ' (' + FLAG_LABELS[flag] + ')' : '')
+        ));
+    }
 
     $('#slot-structure').val(editing ? editor.slot.structure_id : $sel.find('option').first().val());
     $('#slot-time').val(editing ? editor.slot.time_of_day : '17:00');

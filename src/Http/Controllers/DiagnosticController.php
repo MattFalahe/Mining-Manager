@@ -292,7 +292,7 @@ class DiagnosticController extends Controller
                     'label'   => 'Planner coverage: refineries with an upcoming planned pull',
                     'status'  => $total === 0 ? 'warn' : ($uncovered === 0 ? 'ok' : 'warn'),
                     'message' => $total === 0
-                        ? 'No Athanor/Tatara refineries found for the Moon Owner Corporation.'
+                        ? 'No Athanor or Tatara with a moon drill fitted found for the Moon Owner Corporation. The planner only counts refineries with a drill in a service slot.'
                         : ($uncovered === 0
                             ? "All {$total} refineries have at least one upcoming planned pull."
                             : "{$uncovered} of {$total} refineries have no upcoming planned pull (skipped moons). Use Auto-fill from History on the planner."),
