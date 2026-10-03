@@ -133,7 +133,7 @@ class UpdateMoonExtractionsCommand extends Command
                         $existing->update([
                             'chunk_arrival_time' => $extraction['chunk_arrival_time'],
                             'natural_decay_time' => $extraction['natural_decay_time'],
-                            'status' => $this->determineStatus($extraction),
+                            'status' => $this->extractionService->determineStatus($extraction, $existing),
                             'moon_id' => $extraction['moon_id'] ?? null,
                             'ore_composition' => $extraction['ore_composition'] ?? null,
                             'updated_at' => Carbon::now(),
@@ -151,7 +151,7 @@ class UpdateMoonExtractionsCommand extends Command
                                 'extraction_start_time' => $extraction['extraction_start_time'],
                                 'chunk_arrival_time' => $extraction['chunk_arrival_time'],
                                 'natural_decay_time' => $extraction['natural_decay_time'],
-                                'status' => $this->determineStatus($extraction),
+                                'status' => $this->extractionService->determineStatus($extraction),
                                 'ore_composition' => $extraction['ore_composition'] ?? null,
                             ]);
                             $this->line("  Created new extraction (chunk arrival: {$extraction['chunk_arrival_time']})");
@@ -288,25 +288,5 @@ class UpdateMoonExtractionsCommand extends Command
         return Command::SUCCESS;
     }
 
-    /**
-     * Determine extraction status based on times
-     *
-     * @param array $extraction
-     * @return string
-     */
-    private function determineStatus(array $extraction): string
-    {
-        $now = Carbon::now();
-        $chunkArrival = Carbon::parse($extraction['chunk_arrival_time']);
-        $naturalDecay = Carbon::parse($extraction['natural_decay_time']);
-
-        if ($now < $chunkArrival) {
-            return 'extracting';
-        } elseif ($now >= $chunkArrival && $now < $naturalDecay) {
-            return 'ready';
-        } else {
-            return 'expired';
-        }
-    }
 
 }

@@ -595,8 +595,15 @@ class MoonExtractionService
      *                          (which lives on the model, not in ESI data).
      * @return string
      */
-    private function determineStatus(array $data, ?MoonExtraction $existing = null): string
+    public function determineStatus(array $data, ?MoonExtraction $existing = null): string
     {
+        // Cancelled is final. SeAT keeps the extraction row after the game
+        // drops it, so a re-import must not bring it back to life and set off
+        // the cancellation notification all over again.
+        if ($existing && $existing->status === 'cancelled') {
+            return 'cancelled';
+        }
+
         $now = Carbon::now();
         $chunkArrival = Carbon::parse($data['chunk_arrival_time']);
 
