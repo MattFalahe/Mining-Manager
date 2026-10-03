@@ -48,11 +48,11 @@ class MissingRefineryWatch
         'OwnershipTransferred' => 'Handed over to another corporation',
     ];
 
-    protected MoonPlannerService $planner;
+    protected RefineryService $refineries;
 
-    public function __construct(MoonPlannerService $planner)
+    public function __construct(RefineryService $refineries)
     {
-        $this->planner = $planner;
+        $this->refineries = $refineries;
     }
 
     /**
@@ -84,7 +84,7 @@ class MissingRefineryWatch
     {
         $now = $now ?? Carbon::now();
 
-        $owned = $this->planner->presentRefineryIds($corporationId);
+        $owned = $this->refineries->presentRefineryIds($corporationId);
 
         // No refineries at all is a gap in what SeAT has on file, not every rig
         // going at once. Nothing is counted either way, so an empty list can
@@ -233,7 +233,7 @@ class MissingRefineryWatch
 
         $reason = $this->reasonFor($structureId, $alert->started_at);
 
-        return $this->describe($structureId) + [
+        return $this->refineries->names($structureId) + [
             'corporation_id' => $corporationId,
             'structure_id' => $structureId,
             'reason' => $reason ?? 'Missing from your corporation\'s structures; the game has not said why',
@@ -268,30 +268,6 @@ class MissingRefineryWatch
         }
 
         return null;
-    }
-
-    /**
-     * Names for the message. SeAT keeps a structure in universe_structures
-     * after it leaves the corporation's list, which is why it is read there.
-     */
-    protected function describe(int $structureId): array
-    {
-        $row = DB::table('universe_structures')
-            ->where('structure_id', $structureId)
-            ->first(['name', 'solar_system_id']);
-
-        $system = $row && $row->solar_system_id
-            ? DB::table('solar_systems')->where('system_id', $row->solar_system_id)->value('name')
-            : null;
-
-        $moonId = $this->planner->resolveMoonId($structureId);
-        $moon = $moonId ? DB::table('moons')->where('moon_id', $moonId)->value('name') : null;
-
-        return array_filter([
-            'structure_name' => $row->name ?? "Structure {$structureId}",
-            'system_name' => $system,
-            'moon_name' => $moon ?? ($moonId ? "Moon {$moonId}" : null),
-        ], fn ($value) => $value !== null);
     }
 
     /**

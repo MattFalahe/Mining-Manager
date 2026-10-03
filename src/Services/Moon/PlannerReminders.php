@@ -3,7 +3,6 @@
 namespace MiningManager\Services\Moon;
 
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MoonExtractionPlan;
@@ -16,7 +15,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  *
  * Neither reminder speaks about a refinery that cannot pull:
  *   - one the corporation no longer has, or with no moon drill fitted, both
- *     already left out by MoonPlannerService::refineriesForCorporation()
+ *     already left out by RefineryService::refineriesForCorporation()
  *   - one the game has reported destroyed, before SeAT's list catches up
  *   - one being unanchored with no extraction running. Unanchoring takes
  *     seven days, too short for a new pull to arrive and be mined before the
@@ -42,11 +41,13 @@ class PlannerReminders
 
     protected MoonPlannerService $planner;
     protected SettingsManagerService $settings;
+    protected RefineryService $refineries;
 
-    public function __construct(MoonPlannerService $planner, SettingsManagerService $settings)
+    public function __construct(MoonPlannerService $planner, SettingsManagerService $settings, RefineryService $refineries)
     {
         $this->planner = $planner;
         $this->settings = $settings;
+        $this->refineries = $refineries;
     }
 
     /**
@@ -70,7 +71,7 @@ class PlannerReminders
         $idleHours = max(1, (int) $this->setting('moon_not_rescheduled_hours', 48));
         $repeat = (bool) $this->setting('moon_not_rescheduled_repeat', true);
 
-        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         $owned = $refineries->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -81,11 +82,11 @@ class PlannerReminders
 
         $this->forgetGone($corporationId, $owned);
 
-        $running = $this->running($owned);
+        $running = $this->refineries->running($owned);
         $lastArrival = $this->lastArrivals($owned, $now);
-        $drillDown = $this->drillsOffline($owned);
-        $destroyed = $this->reportedDestroyed($owned);
-        $unanchoring = $this->unanchoringIdle($refineries, $running);
+        $drillDown = $this->refineries->drillsOffline($owned);
+        $destroyed = $this->refineries->reportedDestroyed($owned);
+        $unanchoring = $this->refineries->unanchoringIdle($refineries, $running);
 
         $reminders = [];
 
@@ -144,7 +145,7 @@ class PlannerReminders
                 ->orderBy('planned_arrival_time')
                 ->value('planned_arrival_time');
 
-            $reminders[] = $this->names($structureId) + array_filter([
+            $reminders[] = $this->refineries->names($structureId) + array_filter([
                 'structure_id' => $structureId,
                 'arrived_at' => $arrival->format('Y-m-d H:i'),
                 'hours_since' => (int) floor($idleFor),
@@ -179,7 +180,7 @@ class PlannerReminders
             return null;
         }
 
-        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         $owned = $refineries->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -188,9 +189,9 @@ class PlannerReminders
             return null;
         }
 
-        $drillDown = $this->drillsOffline($owned);
-        $destroyed = $this->reportedDestroyed($owned);
-        $unanchoring = $this->unanchoringIdle($refineries, $this->running($owned));
+        $drillDown = $this->refineries->drillsOffline($owned);
+        $destroyed = $this->refineries->reportedDestroyed($owned);
+        $unanchoring = $this->refineries->unanchoringIdle($refineries, $this->refineries->running($owned));
         $short = [];
 
         foreach ($owned as $structureId) {
@@ -203,7 +204,7 @@ class PlannerReminders
                 continue;
             }
 
-            $short[] = $this->names($structureId) + [
+            $short[] = $this->refineries->names($structureId) + [
                 'planned' => $planned,
                 'rarity' => $this->planner->highestRarityForStructure($structureId),
                 'drill_down' => in_array($structureId, $drillDown, true),
@@ -271,7 +272,7 @@ class PlannerReminders
             ->map(fn ($id) => (int) $id)
             ->all();
 
-        $gone = array_values(array_unique(array_merge($confirmed, $this->reportedDestroyed($absent))));
+        $gone = array_values(array_unique(array_merge($confirmed, $this->refineries->reportedDestroyed($absent))));
 
         if ($gone) {
             RefineryAlert::where('corporation_id', $corporationId)
@@ -279,40 +280,6 @@ class PlannerReminders
                 ->whereIn('structure_id', $gone)
                 ->delete();
         }
-    }
-
-    /**
-     * Refineries with an extraction running right now.
-     *
-     * @return array<int, int>
-     */
-    protected function running(array $structureIds): array
-    {
-        return MoonExtraction::whereIn('structure_id', $structureIds)
-            ->where('status', 'extracting')
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-    }
-
-    /**
-     * Refineries being unanchored with no extraction running.
-     *
-     * SeAT has no unanchoring state. ESI gives an unanchors_at date while the
-     * timer runs, and SeAT clears it on the next structure sync when the
-     * unanchor is cancelled, so the refinery comes back by itself.
-     *
-     * @return array<int, int>
-     */
-    protected function unanchoringIdle($refineries, array $running): array
-    {
-        return $refineries
-            ->filter(fn ($refinery) => !empty($refinery->unanchors_at))
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => !in_array($id, $running, true))
-            ->values()
-            ->all();
     }
 
     /**
@@ -344,86 +311,6 @@ class PlannerReminders
         }
 
         return $latest;
-    }
-
-    /**
-     * Refineries whose moon drill is fitted but not online, most often for want
-     * of fuel. Every refinery handed to these reminders has one fitted; see
-     * MoonPlannerService::refineriesForCorporation().
-     *
-     * @return array<int, int>
-     */
-    protected function drillsOffline(array $structureIds): array
-    {
-        return DB::table('corporation_structure_services')
-            ->whereIn('structure_id', $structureIds)
-            ->where('name', MoonPlannerService::MOON_DRILL_SERVICE)
-            ->where('state', '!=', 'online')
-            ->pluck('structure_id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * Refineries the game has reported destroyed.
-     *
-     * SeAT drops a destroyed structure from the corporation's list on its next
-     * structure sync. If that sync is not running, the list goes stale and a
-     * dead refinery would keep being reminded about, so this is checked before
-     * anything is sent. A destroyed structure's id is never used again, which
-     * is why any report at all is enough.
-     *
-     * @return array<int, int>
-     */
-    protected function reportedDestroyed(array $structureIds): array
-    {
-        if (!$structureIds) {
-            return [];
-        }
-
-        try {
-            $query = DB::table('character_notifications')->where('type', 'StructureDestroyed');
-            $reports = StructureNotificationText::whereMayMention($query, $structureIds)->get(['text']);
-        } catch (\Throwable $e) {
-            return [];
-        }
-
-        $destroyed = [];
-
-        foreach ($reports as $report) {
-            foreach ($structureIds as $structureId) {
-                if (StructureNotificationText::mentions((string) $report->text, $structureId)) {
-                    $destroyed[$structureId] = true;
-                }
-            }
-        }
-
-        return array_keys($destroyed);
-    }
-
-    /**
-     * Refinery, system and moon names for a message.
-     */
-    protected function names(int $structureId): array
-    {
-        $row = DB::table('universe_structures')
-            ->where('structure_id', $structureId)
-            ->first(['name', 'solar_system_id']);
-
-        $system = $row && $row->solar_system_id
-            ? DB::table('solar_systems')->where('system_id', $row->solar_system_id)->value('name')
-            : null;
-
-        $moonId = $this->planner->resolveMoonId($structureId);
-        $moon = $moonId ? DB::table('moons')->where('moon_id', $moonId)->value('name') : null;
-
-        return array_filter([
-            'structure_name' => $row->name ?? "Structure {$structureId}",
-            'system_name' => $system,
-            'moon_name' => $moon ?? ($moonId ? "Moon {$moonId}" : null),
-        ], fn ($value) => $value !== null);
     }
 
     protected function setting(string $key, $default)

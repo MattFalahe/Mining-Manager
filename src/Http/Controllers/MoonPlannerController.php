@@ -7,6 +7,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionPlan;
 use MiningManager\Services\Moon\MoonPlannerService;
+use MiningManager\Services\Moon\RefineryService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,15 +30,18 @@ class MoonPlannerController extends Controller
     protected MoonPlannerService $planner;
     protected \MiningManager\Services\Moon\MoonRotationService $rotations;
     protected SettingsManagerService $settings;
+    protected RefineryService $refineries;
 
     public function __construct(
         MoonPlannerService $planner,
         SettingsManagerService $settings,
-        \MiningManager\Services\Moon\MoonRotationService $rotations
+        \MiningManager\Services\Moon\MoonRotationService $rotations,
+        RefineryService $refineries
     ) {
         $this->planner = $planner;
         $this->settings = $settings;
         $this->rotations = $rotations;
+        $this->refineries = $refineries;
 
         // moon_manager OR director (admin bypasses both via can()).
         $this->middleware(function ($request, $next) {
@@ -110,7 +114,7 @@ class MoonPlannerController extends Controller
             foreach ($calendar as $entries) {
                 $onPage = array_merge($onPage, array_column($entries, 'structure_id'));
             }
-            $refineryFlags = $this->planner->refineryFlags($corporationId, $onPage);
+            $refineryFlags = $this->refineries->refineryFlags($corporationId, $onPage);
         }
 
         return view('mining-manager::moon.planner', [
@@ -347,7 +351,7 @@ class MoonPlannerController extends Controller
         // plan for a structure this corp does not own that renders as
         // "Structure 12345" on the calendar forever. Checking it against the
         // corp's refineries also hands us the resolved moon.
-        $refinery = $this->planner->refineriesForCorporation($corporationId)
+        $refinery = $this->refineries->refineriesForCorporation($corporationId)
             ->firstWhere('structure_id', $structureId);
 
         if (!$refinery) {
@@ -461,7 +465,7 @@ class MoonPlannerController extends Controller
             'source' => MoonExtractionPlan::SOURCE_MANUAL,
             // Self-heal: a plan made for a refinery with no extraction history
             // has no moon yet. Once one turns up, take it.
-            'moon_id' => $plan->moon_id ?? $this->planner->resolveMoonId((int) $plan->structure_id),
+            'moon_id' => $plan->moon_id ?? $this->refineries->resolveMoonId((int) $plan->structure_id),
         ]);
 
         // Only log an actual time change as a "move".
@@ -724,7 +728,7 @@ class MoonPlannerController extends Controller
      */
     protected function buildRefinerySummaries(int $corporationId): array
     {
-        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         if ($refineries->isEmpty()) {
             return [];
         }

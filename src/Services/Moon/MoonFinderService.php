@@ -679,7 +679,7 @@ class MoonFinderService
                 ->leftJoin('universe_structures as us', 'us.structure_id', '=', 'cs.structure_id')
                 ->leftJoin('corporation_infos as ci', 'ci.corporation_id', '=', 'cs.corporation_id')
                 ->whereIn('cs.structure_id', $chunk)
-                ->whereIn('cs.type_id', MoonPlannerService::REFINERY_TYPE_IDS)
+                ->whereIn('cs.type_id', RefineryService::REFINERY_TYPE_IDS)
                 ->get(['cs.structure_id', 'cs.corporation_id', 'us.name as structure_name', 'ci.name as corporation_name']);
 
             foreach ($rows as $row) {

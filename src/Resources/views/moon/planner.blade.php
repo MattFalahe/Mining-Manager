@@ -266,7 +266,7 @@
                                     @if(!empty($refineryFlags[$r['structure_id']]))
                                         @php $flag = $refineryFlags[$r['structure_id']]; @endphp
                                         <span class="mm-flag {{ $flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn' }}"
-                                              title="{{ \MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS[$flag] ?? '' }}">!</span>
+                                              title="{{ \MiningManager\Services\Moon\RefineryService::FLAG_LABELS[$flag] ?? '' }}">!</span>
                                     @endif
                                 </span>
                                 @if(!empty($r['rarity']))
@@ -502,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const calendarData = @json($calendar ?? []);
     const refineries = @json($refinerySummaries ?? []);
     const refineryFlags = @json((object) ($refineryFlags ?? []));
-    const FLAG_LABELS = @json(\MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS);
+    const FLAG_LABELS = @json(\MiningManager\Services\Moon\RefineryService::FLAG_LABELS);
     const minGap = {{ $minGapHours }};
     const routes = {
         store: '{{ route('mining-manager.moon.planner.store') }}',

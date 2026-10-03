@@ -10,6 +10,7 @@ use MiningManager\Models\MoonRotationSlot;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonPlannerService;
 use MiningManager\Services\Moon\MoonRotationService;
+use MiningManager\Services\Moon\RefineryService;
 use Seat\Web\Http\Controllers\Controller;
 
 /**
@@ -32,15 +33,18 @@ class MoonBlueprintController extends Controller
     protected MoonPlannerService $planner;
     protected MoonRotationService $rotations;
     protected SettingsManagerService $settings;
+    protected RefineryService $refineries;
 
     public function __construct(
         MoonPlannerService $planner,
         MoonRotationService $rotations,
-        SettingsManagerService $settings
+        SettingsManagerService $settings,
+        RefineryService $refineries
     ) {
         $this->planner = $planner;
         $this->rotations = $rotations;
         $this->settings = $settings;
+        $this->refineries = $refineries;
 
         // Same gate as the planner: moon_manager OR director.
         $this->middleware(function ($request, $next) {
@@ -102,11 +106,11 @@ class MoonBlueprintController extends Controller
         ]);
 
         $weeks = (int) $validated['weeks'];
-        $known = $this->planner->refineriesForCorporation($corporationId)->keyBy('structure_id');
+        $known = $this->refineries->refineriesForCorporation($corporationId)->keyBy('structure_id');
         // A refinery with its drill unfitted keeps the slots it already had, so
         // saving a blueprint that holds one must not trip over it. The picker
         // only offers refineries with a drill for anything new.
-        $present = $this->planner->presentRefineryIds($corporationId);
+        $present = $this->refineries->presentRefineryIds($corporationId);
 
         $slots = [];
         $seen = [];
@@ -120,7 +124,7 @@ class MoonBlueprintController extends Controller
             }
 
             $refinery = $known->get($structureId);
-            $moonId = $refinery ? $refinery->moon_id : $this->planner->resolveMoonId($structureId);
+            $moonId = $refinery ? $refinery->moon_id : $this->refineries->resolveMoonId($structureId);
 
             if (isset($seen[$structureId])) {
                 return response()->json([
@@ -351,7 +355,7 @@ class MoonBlueprintController extends Controller
             ->orderBy('name')
             ->get();
 
-        $flags = $this->planner->refineryFlags(
+        $flags = $this->refineries->refineryFlags(
             $corporationId,
             $blueprints->flatMap(fn (MoonRotation $blueprint) => $blueprint->slots->pluck('structure_id'))->all()
         );
@@ -388,7 +392,7 @@ class MoonBlueprintController extends Controller
      */
     protected function refineryOptions(int $corporationId): array
     {
-        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         if ($refineries->isEmpty()) {
             return [];
         }
@@ -402,7 +406,7 @@ class MoonBlueprintController extends Controller
             ->pluck('name', 'system_id');
 
         // Every refinery here has its drill, but one can still be unanchoring.
-        $flags = $this->planner->refineryFlags($corporationId, $refineries->pluck('structure_id')->all());
+        $flags = $this->refineries->refineryFlags($corporationId, $refineries->pluck('structure_id')->all());
 
         $options = $refineries->map(function ($refinery) use ($rows, $systemNames, $flags) {
             $row = $rows->firstWhere('structure_id', $refinery->structure_id);

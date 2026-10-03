@@ -280,7 +280,7 @@ class DiagnosticController extends Controller
         if ($hasPlans && $moonOwner) {
             try {
                 $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
-                $refineries = $planner->refineriesForCorporation((int) $moonOwner);
+                $refineries = app(\MiningManager\Services\Moon\RefineryService::class)->refineriesForCorporation((int) $moonOwner);
                 $total = $refineries->count();
                 $uncovered = 0;
                 foreach ($refineries as $r) {

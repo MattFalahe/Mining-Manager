@@ -34,10 +34,12 @@ class MoonRotationService
     public const DUPLICATE_TOLERANCE_MINUTES = 30;
 
     protected MoonPlannerService $planner;
+    protected RefineryService $refineries;
 
-    public function __construct(MoonPlannerService $planner)
+    public function __construct(MoonPlannerService $planner, RefineryService $refineries)
     {
         $this->planner = $planner;
+        $this->refineries = $refineries;
     }
 
     /**
@@ -105,8 +107,8 @@ class MoonRotationService
         // A refinery that has been unanchored or blown up is gone from the
         // corporation's structures. One still there with its moon drill
         // unfitted is not in the refinery list. Nothing can pull from either.
-        $present = $this->planner->presentRefineryIds((int) $rotation->corporation_id);
-        $drilled = $this->planner->refineriesForCorporation((int) $rotation->corporation_id)
+        $present = $this->refineries->presentRefineryIds((int) $rotation->corporation_id);
+        $drilled = $this->refineries->refineriesForCorporation((int) $rotation->corporation_id)
             ->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -288,7 +290,7 @@ class MoonRotationService
                 continue;
             }
 
-            $moonId = $row['moon_id'] ?? $this->planner->resolveMoonId($row['structure_id']);
+            $moonId = $row['moon_id'] ?? $this->refineries->resolveMoonId($row['structure_id']);
 
             $plan = MoonExtractionPlan::create([
                 'corporation_id' => (int) $rotation->corporation_id,
@@ -442,7 +444,7 @@ class MoonRotationService
                 $plan = MoonExtractionPlan::create([
                     'corporation_id' => (int) $rotation->corporation_id,
                     'structure_id' => (int) $slot->structure_id,
-                    'moon_id' => $slot->moon_id ? (int) $slot->moon_id : $this->planner->resolveMoonId((int) $slot->structure_id),
+                    'moon_id' => $slot->moon_id ? (int) $slot->moon_id : $this->refineries->resolveMoonId((int) $slot->structure_id),
                     'planned_arrival_time' => $when,
                     'source' => MoonExtractionPlan::SOURCE_ROTATION,
                     'status' => MoonExtractionPlan::STATUS_PLANNED,
@@ -504,7 +506,7 @@ class MoonRotationService
      */
     protected function slotsWithMissingRefineries(int $corporationId)
     {
-        $owned = $this->planner->presentRefineryIds($corporationId);
+        $owned = $this->refineries->presentRefineryIds($corporationId);
 
         // No refineries at all is far more likely to mean SeAT has nothing on
         // file for the corporation right now than that every one of them went

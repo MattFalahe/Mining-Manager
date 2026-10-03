@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use MiningManager\Models\MoonExtraction;
-use MiningManager\Services\Moon\MoonPlannerService;
+use MiningManager\Services\Moon\RefineryService;
 
 class DiagnoseMoonExtractionsCommand extends Command
 {
@@ -152,7 +152,7 @@ class DiagnoseMoonExtractionsCommand extends Command
         
         $drills = DB::table('corporation_structure_services')
             ->whereIn('structure_id', $refineries->pluck('structure_id')->all())
-            ->where('name', MoonPlannerService::MOON_DRILL_SERVICE)
+            ->where('name', RefineryService::MOON_DRILL_SERVICE)
             ->pluck('state', 'structure_id');
 
         $this->line("  Found {$refineries->count()} refineries (Athanor: 35835, Tatara: 35836), {$drills->count()} with a moon drill fitted");

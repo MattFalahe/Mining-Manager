@@ -299,7 +299,7 @@ const BP_ROUTES = {
 };
 const MAX_WEEKS = {{ $maxWeeks }};
 const REFINERIES = @json($refineries ?? []);
-const FLAG_LABELS = @json(\MiningManager\Services\Moon\MoonPlannerService::FLAG_LABELS);
+const FLAG_LABELS = @json(\MiningManager\Services\Moon\RefineryService::FLAG_LABELS);
 let blueprints = @json($blueprints ?? []);
 
 // The blueprint being edited. id null until it has been saved once.
