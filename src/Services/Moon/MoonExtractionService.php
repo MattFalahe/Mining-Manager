@@ -618,7 +618,7 @@ class MoonExtractionService
      *                          (which lives on the model, not in ESI data).
      * @return string
      */
-    private function determineStatus(array $data, ?MoonExtraction $existing = null): string
+    public function determineStatus(array $data, ?MoonExtraction $existing = null): string
     {
         $now = Carbon::now();
         $chunkArrival = Carbon::parse($data['chunk_arrival_time']);
