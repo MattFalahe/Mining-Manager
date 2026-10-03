@@ -1789,7 +1789,7 @@ class MoonExtractionService
      * @param int $extractionDays Number of days for extraction (6-56)
      * @return array|null
      */
-    public function simulateExtraction(int $moonId, int $extractionDays = 14): ?array
+    public function simulateExtraction(int $moonId, int $extractionDays = 14, array $fit = []): ?array
     {
         if (!Schema::hasTable('universe_moon_contents')) {
             return null;
@@ -1807,8 +1807,13 @@ class MoonExtractionService
             return null;
         }
 
+        // The refinery and its moon rigs. An Athanor takes Efficiency for the
+        // yield and Stability for the timers; a Tatara gets both from one
+        // Proficiency rig.
+        $rig = $this->simulatedRig($fit);
+
         $valuation = app(MoonValuation::class);
-        $valued = $valuation->value($ores, $extractionDays);
+        $valued = $valuation->value($ores, $extractionDays, $rig['yield_bonus']);
 
         $moonOreShare = 0.0;
         foreach ($ores as $typeId => $oreShare) {
@@ -1859,6 +1864,51 @@ class MoonExtractionService
             'prices_updated_at' => $valuation->pricesUpdatedAt(),
             'composition' => $composition,
             'moon_classification' => $this->determineMoonClassification($composition),
+            'rig' => $rig,
+        ];
+    }
+
+    /**
+     * What a refinery and its moon rigs do for one chunk.
+     *
+     * @param array{hull?: int, tiers?: array<string, int>} $fit
+     * @return array{hull: int, tiers: array<string, int>, names: string[], yield_bonus: float, timer_tier: int, mining_window_hours: int, unstable_hours: int, auto_fracture_minutes: float}
+     */
+    public function simulatedRig(array $fit): array
+    {
+        $tiers = $fit['tiers'] ?? [];
+        $tier = fn (string $kind) => max(0, min(2, (int) ($tiers[$kind] ?? 0)));
+
+        if ((int) ($fit['hull'] ?? 0) === RefineryService::TATARA) {
+            $hull = RefineryService::TATARA;
+            $chosen = [MoonDrillingRigs::PROFICIENCY => $tier(MoonDrillingRigs::PROFICIENCY)];
+            $timerTier = $yieldTier = $chosen[MoonDrillingRigs::PROFICIENCY];
+        } else {
+            $hull = RefineryService::ATHANOR;
+            $chosen = [
+                MoonDrillingRigs::EFFICIENCY => $tier(MoonDrillingRigs::EFFICIENCY),
+                MoonDrillingRigs::STABILITY => $tier(MoonDrillingRigs::STABILITY),
+            ];
+            $timerTier = $chosen[MoonDrillingRigs::STABILITY];
+            $yieldTier = $chosen[MoonDrillingRigs::EFFICIENCY];
+        }
+
+        $names = [];
+        foreach ($chosen as $kind => $kindTier) {
+            if ($kindTier > 0) {
+                $names[] = MoonDrillingRigs::RIGS[MoonDrillingRigs::typeFor($kind, $kindTier)]['name'];
+            }
+        }
+
+        return [
+            'hull' => $hull,
+            'tiers' => $chosen,
+            'names' => $names,
+            'yield_bonus' => MoonDrillingRigs::YIELD_BONUS[$yieldTier],
+            'timer_tier' => $timerTier,
+            'mining_window_hours' => MoonDrillingRigs::readyHours($timerTier),
+            'unstable_hours' => MoonDrillingRigs::UNSTABLE_HOURS,
+            'auto_fracture_minutes' => MoonDrillingRigs::autoFractureMinutes($timerTier),
         ];
     }
 

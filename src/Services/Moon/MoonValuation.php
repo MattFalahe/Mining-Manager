@@ -142,16 +142,22 @@ class MoonValuation
     /**
      * Value one extraction.
      *
+     * A yield rig's bonus, in percent, scales the volume. Only the simulator
+     * passes one: Find Moons and the quality ratings value the moon itself,
+     * and a rig belongs to the refinery, not the moon.
+     *
      * @param array<int, float> $ores ore type => share of the moon, 0.46 for 46%
      * @param int $days extraction length
+     * @param float $yieldBonus a Moon Drilling Efficiency or Proficiency rig's bonus, 2.4 for +2.4%
      * @return array{share: float, rate: int, volume: int, raw: float, refined: float, ores: array, unpriced: string[], unpriced_materials: string[]}
      */
-    public function value(array $ores, int $days): array
+    public function value(array $ores, int $days, float $yieldBonus = 0.0): array
     {
         $this->prepare(array_keys($ores));
 
         $share = (float) array_sum($ores);
-        $volume = MoonChunkModel::volume($share, $days);
+        $yieldFactor = 1 + max(0.0, $yieldBonus) / 100;
+        $volume = (int) round(MoonChunkModel::volume($share, $days) * $yieldFactor);
 
         $lines = [];
         $raw = 0.0;
@@ -199,7 +205,7 @@ class MoonValuation
 
         return [
             'share' => $share,
-            'rate' => MoonChunkModel::ratePerHour($share),
+            'rate' => (int) round(MoonChunkModel::ratePerHour($share) * $yieldFactor),
             'volume' => $volume,
             'raw' => $raw,
             'refined' => $refined,

@@ -606,6 +606,41 @@
                         </div>
                     </div>
 
+                    {{-- Moon drilling rigs: an Athanor takes Efficiency and Stability,
+                         a Tatara one Proficiency rig that does both. --}}
+                    <div class="form-group" id="rigSimulation">
+                        <label><i class="fas fa-cog"></i> {{ trans('mining-manager::moons.rig_simulation') }}</label>
+                        <div class="btn-group btn-group-sm d-flex mb-2" role="group">
+                            <button type="button" class="btn btn-outline-secondary rig-hull active" data-hull="35835">Athanor</button>
+                            <button type="button" class="btn btn-outline-secondary rig-hull" data-hull="35836">Tatara</button>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="efficiency" data-hull="35835">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_efficiency') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="stability" data-hull="35835">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_stability') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="proficiency" data-hull="35836" style="display: none;">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_proficiency') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <small class="text-muted">{{ trans('mining-manager::moons.rig_simulation_help') }}</small>
+                    </div>
+
                     <div class="mt-4">
                         <button type="button" class="btn btn-primary btn-lg btn-block" id="simulateButton">
                             <i class="fas fa-flask"></i> {{ trans('mining-manager::moons.simulate') }}
@@ -713,8 +748,10 @@
                                 <span id="resultComposition" class="badge badge-success" title="{{ trans('mining-manager::moons.moon_ore_richness') }}"></span>
                                 <span id="resultRate" class="badge badge-warning ml-1"></span>
                             </p>
+                            <p class="mb-0 mt-2 small text-muted" id="rigEffectSummary" style="display: none;"></p>
                         </div>
 
+                        <div class="mm-notice mm-notice-warn" id="rigNotices" style="display: none;"></div>
                         <div class="mm-notice mm-notice-warn" id="basisNotice" style="display: none;"></div>
                         <div class="mm-notice" id="unpricedOres" style="display: none;"></div>
 
@@ -945,6 +982,9 @@ let simulationResults = null;
 // when a moon is simulated from Find Moons so suggestions follow that search.
 let simulationScope = {};
 let simulationBasis = @json($defaultBasis);
+// The refinery and rigs picked for the simulation. Null means "what is fitted
+// on our refinery at this moon", which is where each new moon starts.
+let rigChoice = null;
 // Which figure tax is worked out from. Separate from the one the page shows
 // first, so the two can disagree, and the page says so when they do.
 const TAX_BASIS = @json($taxBasis);
@@ -957,6 +997,21 @@ $(document).ready(function() {
         $('.duration-preset').removeClass('active');
         $(this).addClass('active');
     });
+
+    // Moon drilling rigs. Picking one re-runs a simulation already on screen,
+    // so the difference shows straight away.
+    $('.rig-hull').on('click', function() {
+        showRigHull(parseInt($(this).data('hull'), 10));
+        rigChoice = readRigChoice();
+        if (simulationResults) { runSimulation(); }
+    });
+    $('.rig-tier').on('click', function() {
+        $(this).closest('.btn-group').find('.rig-tier').removeClass('active');
+        $(this).addClass('active');
+        rigChoice = readRigChoice();
+        if (simulationResults) { runSimulation(); }
+    });
+    $('#moonSelect').on('change', function() { rigChoice = null; });
 
     // Keep preset buttons in sync with manual input
     $('#extractionDays').on('change', function() {
@@ -1052,7 +1107,12 @@ function runSimulation() {
             moon_id: moonId,
             extraction_days: extractionDays,
             basis: simulationBasis
-        }, simulationScope),
+        }, simulationScope, rigChoice ? {
+            hull: rigChoice.hull,
+            rig_efficiency: rigChoice.efficiency,
+            rig_stability: rigChoice.stability,
+            rig_proficiency: rigChoice.proficiency
+        } : {}),
         success: function(response) {
             simulationResults = response;
             displayResults(response);
@@ -1109,6 +1169,8 @@ function displayResults(data) {
     // Update composition and rate badges
     $('#resultComposition').text(data.composition_percent + '% moon ore');
     $('#resultRate').text(formatNumber(data.extraction_rate_m3h) + ' m³/h');
+
+    renderRigs(data);
 
     renderSimulationNotices(data);
 
@@ -1370,6 +1432,57 @@ function securityBadge(moon) {
     // As the game shows it: anything above zero reads at least 0.1.
     const shown = security > 0 && security < 0.05 ? '0.1' : (Math.round(security * 10) / 10).toFixed(1);
     return `<span class="badge ${SECURITY_BADGES[moon.security_band] || 'badge-secondary'}">${shown}</span>`;
+}
+
+/**
+ * Show the rig choices for one refinery type: Efficiency and Stability for an
+ * Athanor, Proficiency for a Tatara.
+ */
+function showRigHull(hull) {
+    $('.rig-hull').removeClass('active');
+    $(`.rig-hull[data-hull="${hull}"]`).addClass('active');
+    $('.rig-row').each(function() {
+        $(this).toggle(parseInt($(this).data('hull'), 10) === hull);
+    });
+}
+
+function readRigChoice() {
+    const tierOf = kind => parseInt($(`.rig-row[data-kind="${kind}"] .rig-tier.active`).data('tier'), 10) || 0;
+    return {
+        hull: parseInt($('.rig-hull.active').data('hull'), 10) || 35835,
+        efficiency: tierOf('efficiency'),
+        stability: tierOf('stability'),
+        proficiency: tierOf('proficiency')
+    };
+}
+
+/**
+ * Set the rig choices to what the simulation ran with, say what that does, and
+ * warn where it differs from what our refinery at this moon has fitted.
+ */
+function renderRigs(data) {
+    const rig = data.rig;
+    if (!rig) {
+        $('#rigEffectSummary').hide();
+        $('#rigNotices').hide();
+        return;
+    }
+
+    showRigHull(rig.hull);
+    Object.entries(rig.tiers || {}).forEach(([kind, tier]) => {
+        const $group = $(`.rig-row[data-kind="${kind}"] .btn-group`);
+        $group.find('.rig-tier').removeClass('active');
+        $group.find(`.rig-tier[data-tier="${tier}"]`).addClass('active');
+    });
+
+    $('#rigEffectSummary')
+        .html('<i class="fas fa-cog"></i> ' + escapeHtml(data.rig_summary || ''))
+        .toggle(!!data.rig_summary);
+
+    const notices = data.rig_notices || [];
+    $('#rigNotices')
+        .html(notices.map(n => '<div><i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(n) + '</div>').join(''))
+        .toggle(notices.length > 0);
 }
 
 function escapeHtml(value) {

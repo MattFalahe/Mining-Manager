@@ -803,18 +803,36 @@ class MoonController extends Controller
         // Validate extraction days (6-56 days per EVE mechanics)
         $extractionDays = max(6, min(56, (int) $extractionDays));
 
-        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays);
+        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+
+        // Our refinery on this moon, if there is one, decides where the rig
+        // choices start. A failure here must not stop the simulation.
+        $assessed = null;
+        try {
+            $assessed = $finder->assess($moonId, $basis);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: moon assessment failed', ['moon_id' => $moonId, 'error' => $e->getMessage()]);
+        }
+
+        $fitted = $this->fittedOnMoon($assessed['station'] ?? null);
+        $fit = $this->requestedFit($request) ?? [
+            'hull' => $fitted['hull'] ?? \MiningManager\Services\Moon\RefineryService::ATHANOR,
+            'tiers' => array_map(fn ($tier) => (int) ($tier ?? 0), $fitted['tiers'] ?? []),
+        ];
+
+        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays, $fit);
 
         if (!$result) {
             return response()->json(['error' => 'Moon not found or not scanned'], 404);
         }
 
-        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+        $result['fitted'] = $fitted;
+        $result['rig_summary'] = $this->rigSummary($result['rig']);
+        $result['rig_notices'] = $this->rigNotices($result['rig'], $fitted);
 
         // Quality and suggestions come on top of the simulation. If either
         // fails, the simulation still comes back.
         try {
-            $assessed = $finder->assess($moonId, $basis);
             $result['quality'] = $assessed['quality'] ?? null;
             $result['station'] = $assessed['station'] ?? null;
 
@@ -1146,6 +1164,149 @@ class MoonController extends Controller
     {
         $extraction->ready_hours = $extraction->getReadyDurationHours();
         $extraction->auto_fracture_minutes = round($extraction->getAutoFractureDelayMinutes(), 1);
+    }
+
+    /**
+     * The refinery type and rig tiers a simulation asked for, or null to start
+     * from what is fitted.
+     */
+    private function requestedFit(Request $request): ?array
+    {
+        $hull = (int) $request->input('hull', 0);
+
+        if (!in_array($hull, \MiningManager\Services\Moon\RefineryService::REFINERY_TYPE_IDS, true)) {
+            return null;
+        }
+
+        $tiers = [];
+        foreach (['efficiency', 'stability', 'proficiency'] as $kind) {
+            $tiers[$kind] = max(0, min(2, (int) $request->input('rig_' . $kind, 0)));
+        }
+
+        return ['hull' => $hull, 'tiers' => $tiers];
+    }
+
+    /**
+     * What is fitted on the refinery at this moon: its type and each rig kind's
+     * tier, 0 for none, null when SeAT cannot tell.
+     *
+     * From the rig slots in SeAT's copy of the assets when it can see them;
+     * otherwise the timer rig from the refinery's latest chunk, which EVE timed
+     * with whatever was fitted, and the Athanor's yield rig left unknown.
+     */
+    private function fittedOnMoon(?array $station): ?array
+    {
+        $structureId = (int) ($station['structure_id'] ?? 0);
+        if ($structureId <= 0) {
+            return null;
+        }
+
+        $refineries = app(\MiningManager\Services\Moon\RefineryService::class);
+        $hull = $refineries->hullTypes([$structureId])[$structureId] ?? null;
+        $tiers = ['efficiency' => null, 'stability' => null, 'proficiency' => null];
+        $source = null;
+
+        if ($refineries->assetsVisible([$structureId])[$structureId] ?? false) {
+            $tiers = array_fill_keys(array_keys($tiers), 0);
+            foreach ($refineries->fittedRigSummary([$structureId])[$structureId]['rigs'] as $rig) {
+                $tiers[$rig['kind']] = $rig['tier'];
+            }
+            $source = 'assets';
+        } else {
+            $latest = MoonExtraction::where('structure_id', $structureId)
+                ->whereNotNull('natural_decay_time')
+                ->orderByDesc('chunk_arrival_time')
+                ->first()
+                ?? MoonExtractionHistory::where('structure_id', $structureId)
+                    ->whereNotNull('natural_decay_time')
+                    ->orderByDesc('chunk_arrival_time')
+                    ->first();
+
+            $timerTier = $latest ? $latest->timerRigTier() : null;
+            if ($timerTier !== null && $latest) {
+                $tiers[$hull === \MiningManager\Services\Moon\RefineryService::TATARA ? 'proficiency' : 'stability'] = $timerTier;
+                $source = 'timer';
+            }
+        }
+
+        return [
+            'structure_id' => $structureId,
+            'structure' => $station['structure'] ?? ('Structure ' . $structureId),
+            'hull' => $hull,
+            'tiers' => $tiers,
+            'source' => $source,
+        ];
+    }
+
+    /**
+     * One line saying what the simulation ran with.
+     */
+    private function rigSummary(array $rig): string
+    {
+        $hull = $rig['hull'] === \MiningManager\Services\Moon\RefineryService::TATARA ? 'Tatara' : 'Athanor';
+        $minutes = (int) round($rig['auto_fracture_minutes']);
+        $fracture = intdiv($minutes, 60) . 'h' . ($minutes % 60 ? ' ' . ($minutes % 60) . 'm' : '');
+
+        if (!$rig['names']) {
+            return trans('mining-manager::moons.rig_summary_none', ['hull' => $hull]);
+        }
+
+        return trans('mining-manager::moons.rig_summary', [
+            'fit' => $hull . ', ' . implode(' + ', $rig['names']),
+            'yield' => rtrim(rtrim(number_format($rig['yield_bonus'], 1), '0'), '.'),
+            'window' => $rig['mining_window_hours'],
+            'fracture' => $fracture,
+        ]);
+    }
+
+    /**
+     * A line for each choice that differs from what our refinery at this moon
+     * has fitted, so nobody mistakes a what-if for the real thing.
+     *
+     * @return string[]
+     */
+    private function rigNotices(array $rig, ?array $fitted): array
+    {
+        if (!$fitted) {
+            return [];
+        }
+
+        $names = ['efficiency' => 'Moon Drilling Efficiency', 'stability' => 'Moon Drilling Stability', 'proficiency' => 'Moon Drilling Proficiency'];
+        $tierName = fn (string $kind, int $tier) => $tier > 0
+            ? \MiningManager\Services\Moon\MoonDrillingRigs::RIGS[\MiningManager\Services\Moon\MoonDrillingRigs::typeFor($kind, $tier)]['name']
+            : trans('mining-manager::moons.rig_none_of_kind', ['kind' => $names[$kind]]);
+        $hullName = fn ($hull) => $hull === \MiningManager\Services\Moon\RefineryService::TATARA ? 'Tatara' : 'Athanor';
+
+        if ($fitted['hull'] && $fitted['hull'] !== $rig['hull']) {
+            return [trans('mining-manager::moons.rig_notice_hull', [
+                'structure' => $fitted['structure'],
+                'fitted' => $hullName($fitted['hull']),
+                'chosen' => $hullName($rig['hull']),
+            ])];
+        }
+
+        $notices = [];
+
+        foreach ($rig['tiers'] as $kind => $chosenTier) {
+            $fittedTier = $fitted['tiers'][$kind] ?? null;
+
+            if ($fittedTier === null) {
+                if ($kind === 'efficiency') {
+                    $notices[] = trans('mining-manager::moons.rig_notice_unknown', ['structure' => $fitted['structure']]);
+                }
+                continue;
+            }
+
+            if ($fittedTier !== $chosenTier) {
+                $notices[] = trans('mining-manager::moons.rig_notice_differs', [
+                    'structure' => $fitted['structure'],
+                    'fitted' => $tierName($kind, $fittedTier),
+                    'chosen' => $tierName($kind, $chosenTier),
+                ]);
+            }
+        }
+
+        return $notices;
     }
 
     private function positiveInt($value): ?int
