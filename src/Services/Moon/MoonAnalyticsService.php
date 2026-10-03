@@ -196,7 +196,7 @@ class MoonAnalyticsService
 
         // Mined data
         $startDate = $extraction->chunk_arrival_time ?? $extraction->extraction_start_time;
-        $endDate = $extraction->natural_decay_time ?? $startDate->copy()->addDays(3);
+        $endDate = $this->miningWindowEnd($extraction, $startDate);
 
         $minedData = MiningLedger::where('observer_id', $extraction->structure_id)
             ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
@@ -244,6 +244,25 @@ class MoonAnalyticsService
             'value_pct' => $poolIsk > 0 ? min(round(($totalMinedIsk / $poolIsk) * 100, 1), 100) : 0,
             'unique_miners' => $uniqueMiners,
         ];
+    }
+
+    /**
+     * When nobody can mine the chunk any more: fracture, the 48 hour window and
+     * the 2 hour unstable tail. natural_decay_time is only when the chunk would
+     * fracture on its own, a few hours after arrival, so ending the window there
+     * counted the arrival day and nothing after it.
+     *
+     * @param MoonExtraction|MoonExtractionHistory $extraction
+     */
+    private function miningWindowEnd($extraction, Carbon $start): Carbon
+    {
+        if ($extraction instanceof MoonExtraction && $extraction->getExpiryTime()) {
+            return $extraction->getExpiryTime();
+        }
+
+        $fracture = $extraction->fractured_at ?? $extraction->natural_decay_time ?? $start;
+
+        return Carbon::parse($fracture)->addHours(50);
     }
 
     /**

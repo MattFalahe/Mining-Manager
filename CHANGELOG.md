@@ -67,6 +67,10 @@ All notable changes to Mining Manager will be documented in this file.
 - **Claiming or watching a moon checks the moon exists first.** Both accepted any positive number, so a mistyped id wrote a perfectly good row for a moon nobody has scanned. It rendered nowhere, since the badges are painted onto search results, and it could not be cleared either, because clearing is a button on a result row. It just sat in the table.
 - Claiming a moon is now one write rather than two. Closing the previous claim and opening the new one were separate statements, so two people reporting the same moon at the same moment could both close and both insert, leaving the moon with two open claims.
 
+### Moon Analytics
+
+- Fixed: **an extraction's utilization only counted mining on the day its chunk arrived.** The mining window ended at the auto-fracture time, a few hours after arrival, so the days the belt was actually mined never made it into the figure. It now runs from arrival to the end of the chunk's life: fracture, the 48 hour window and the 2 hour unstable tail.
+
 ### Mining Ledger
 
 - Fixed: **the same mining could be counted twice.** Character ESI reports everything a pilot mined of one ore in one system that day; the corporation observer reports what came off your own refinery. The importer subtracts one from the other the first time it sees an observer entry, and only then, so when that single attempt did not land the mining stayed in the ledger twice: once as a taxed observer row and once as an untaxed personal copy. The nightly summary run now makes a second attempt over the last four days, and new command `mining-manager:reconcile-personal-mining` does the same on demand, with `--days` to reach further back and `--dry-run` to report what would go without writing anything.
