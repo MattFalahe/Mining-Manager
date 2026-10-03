@@ -69,7 +69,7 @@ class ResolveGuestAffiliationsCommand extends Command
             // but whose local cache has expired — force re-resolve them
             $cachedIds = DB::table('mining_manager_character_affiliations')
                 ->where('expires_at', '<', now())
-                ->whereNotNull('expiresAt')
+                ->whereNotNull('expires_at')
                 ->pluck('character_id')
                 ->toArray();
             $allMinerIds = DB::table('mining_ledger')
