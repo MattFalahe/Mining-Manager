@@ -222,14 +222,19 @@
                             <p><strong>{{ trans('mining-manager::moons.auto_fracture') }}:</strong></p>
                             <p class="ml-3 mb-3">
                                 @php
-                                    $autoFractureTime = $extraction->chunk_arrival_time->copy()->addHours(3);
+                                    // EVE's own auto-fracture time already carries the rig.
+                                    $autoFractureMinutes = (int) round($extraction->getAutoFractureDelayMinutes());
+                                    $autoFractureTime = $extraction->natural_decay_time
+                                        ? $extraction->natural_decay_time->copy()
+                                        : $extraction->chunk_arrival_time->copy()->addMinutes($autoFractureMinutes);
+                                    $autoFractureAfter = intdiv($autoFractureMinutes, 60) . 'h' . ($autoFractureMinutes % 60 ? ' ' . ($autoFractureMinutes % 60) . 'm' : '');
                                 @endphp
                                 <span class="eve-time" data-eve-time="{{ $autoFractureTime->toIso8601String() }}" data-show-local>{{ $autoFractureTime->format('M d, Y H:i') }} EVE</span><br>
                                 <small class="text-muted">
                                     <span class="eve-countdown" data-target="{{ $autoFractureTime->toIso8601String() }}">
                                         {{ $autoFractureTime->diffForHumans() }}
                                     </span>
-                                    &mdash; chunk arrival + 3h
+                                    &mdash; chunk arrival + {{ $autoFractureAfter }}
                                 </small>
                             </p>
 
@@ -332,9 +337,8 @@
                     <div class="mm-timer-box mm-timer-fracture">
                         <p class="mb-2">{{ trans('mining-manager::moons.unstable_in') }}</p>
                         @php
-                            $unstableTarget = $extraction->fractured_at
-                                ? $extraction->fractured_at->copy()->addHours(48)
-                                : $extraction->chunk_arrival_time->copy()->addHours(48);
+                            $unstableTarget = $extraction->getUnstableStartTime()
+                                ?? $extraction->chunk_arrival_time->copy()->addHours($extraction->getReadyDurationHours());
                         @endphp
                         <h2><span class="eve-countdown" data-target="{{ $unstableTarget->toIso8601String() }}">{{ floor($timeUntilUnstable / 24) }}d {{ $timeUntilUnstable % 24 }}h</span></h2>
                         @if($extraction->fractured_at)

@@ -139,6 +139,11 @@ class MoonExtractionEventPublisher
             'window_closes_at'      => optional($unstableStart)?->toIso8601String(),
             'expires_at'            => optional($expiryTime)?->toIso8601String(),
 
+            // How long the belt can be mined after fracture, 48 hours or 72 / 96
+            // with a Stability or Proficiency rig, and that rig's tier.
+            'mining_window_hours'   => $extraction->getReadyDurationHours(),
+            'timer_rig_tier'        => $extraction->timerRigTier(),
+
             // Useful metadata
             'auto_fractured'        => (bool) $extraction->auto_fractured,
             'is_jackpot'            => (bool) $extraction->is_jackpot,

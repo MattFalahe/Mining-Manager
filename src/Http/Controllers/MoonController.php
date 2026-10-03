@@ -70,7 +70,7 @@ class MoonController extends Controller
 
         // Quick status sync - detect fractures from late notifications, then expire
         app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
-        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        MoonExtraction::markExpired();
 
         // Update ready status for arrived chunks that aren't expired
         $now = Carbon::now();
@@ -308,8 +308,8 @@ class MoonController extends Controller
         // Detect auto-fractures before updating statuses
         app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
 
-        // Mark expired using fractured_at when available, legacy estimate otherwise
-        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        // Mark expired: past the chunk's mining window and its unstable tail
+        MoonExtraction::markExpired();
 
         // The month you are on, plus the two after it. A fortnightly moon has
         // its next two pulls outside the current month for half of every month,
@@ -337,6 +337,7 @@ class MoonController extends Controller
             // The tier badge on the grid, worked out from this extraction's own
             // ore rather than the refinery's last known composition.
             $extraction->rarity = MoonOreHelper::highestRarity($extraction->ore_composition);
+            $this->addChunkWindow($extraction);
         }
 
         // Also get archived history extractions for past months
@@ -375,8 +376,10 @@ class MoonController extends Controller
             $historyExtraction->auto_fractured = $history->auto_fractured ?? false;
             $historyExtraction->fractured_at = $history->fractured_at ?? null;
             $historyExtraction->fractured_by = $history->fractured_by ?? null;
+            $historyExtraction->moon_rigs = $history->moon_rigs;
             $historyExtraction->is_archived = true;
             $historyExtraction->rarity = MoonOreHelper::highestRarity($history->ore_composition);
+            $this->addChunkWindow($historyExtraction);
             $pseudoExtractions->push($historyExtraction);
         }
 
@@ -460,13 +463,17 @@ class MoonController extends Controller
             // This is more precise than solar_system_id + is_moon_ore, since
             // it only counts mining on THIS specific structure.
             //
-            // Window: 72 hours from chunk_arrival_time. Covers the full
-            // lifecycle: up to 3h pre-fracture + 48h post-fracture mining
-            // window (roids despawn ~48h after fracture) + buffer for
-            // stragglers. Previously the window was chunk_arrival →
-            // natural_decay (only 3h pre-fracture), which missed virtually
-            // all actual mining since chunks are mined AFTER fracture.
+            // Window: to the end of the chunk's life, never shorter than the
+            // 72 hours from arrival it has always had, so a rigged chunk gets
+            // its longer belt and an unrigged one is counted as before.
+            // Previously the window was chunk_arrival → natural_decay (only 3h
+            // pre-fracture), which missed virtually all actual mining since
+            // chunks are mined AFTER fracture.
             $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+            $expiry = $extraction->getExpiryTime();
+            if ($expiry && $expiry->gt($windowEnd)) {
+                $windowEnd = $expiry;
+            }
 
             $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
                 ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())
@@ -1115,6 +1122,17 @@ class MoonController extends Controller
         if (!$this->canFindMoons()) {
             abort(403, trans('mining-manager::moons.finder_no_access'));
         }
+    }
+
+    /**
+     * The chunk's own window, for the calendar to place it: hours of mining
+     * after fracture, and minutes from arrival until it fractures on its own.
+     * Both come from the chunk's rig, which only the server can read.
+     */
+    private function addChunkWindow(MoonExtraction $extraction): void
+    {
+        $extraction->ready_hours = $extraction->getReadyDurationHours();
+        $extraction->auto_fracture_minutes = round($extraction->getAutoFractureDelayMinutes(), 1);
     }
 
     private function positiveInt($value): ?int

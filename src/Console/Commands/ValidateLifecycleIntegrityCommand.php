@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 
 /**
  * Daily integrity check: walks moon_extractions, computes the expected
@@ -193,8 +194,10 @@ class ValidateLifecycleIntegrityCommand extends Command
      * counts these as "skipped" rather than divergent).
      *
      *   - extracting: now < chunk_arrival_time
-     *   - ready:      chunk_arrival_time <= now < fractureTime + 50h
-     *   - expired:    now >= fractureTime + 50h
+     *   - ready:      chunk_arrival_time <= now < fractureTime + window + 2h
+     *   - expired:    now >= fractureTime + window + 2h
+     *
+     * The window is 48h, or 72 / 96h with a Stability or Proficiency rig.
      *
      * Where fractureTime is fractured_at (if populated) or
      * natural_decay_time (as a conservative auto-fracture estimate when
@@ -223,7 +226,7 @@ class ValidateLifecycleIntegrityCommand extends Command
             ? $fractureTime
             : Carbon::parse($fractureTime);
 
-        $expiry = $fractureTime->copy()->addHours(50);
+        $expiry = $fractureTime->copy()->addHours($extraction->getReadyDurationHours() + MoonDrillingRigs::UNSTABLE_HOURS);
 
         return $now->lt($expiry) ? 'ready' : 'expired';
     }

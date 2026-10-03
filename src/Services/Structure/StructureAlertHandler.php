@@ -4,6 +4,7 @@ namespace MiningManager\Services\Structure;
 
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Services\Notification\NotificationService;
 use Carbon\Carbon;
 
@@ -112,13 +113,12 @@ class StructureAlertHandler
         }
 
         // Find the active extraction on this structure.
-        // Window: chunk_arrival within the last 55h covers the full plugin
-        // lifecycle (chunk_arrival → auto_fracture +3h → ready +48h →
-        // unstable +2h = 53h, plus some slack). Cancelled/expired are out.
+        // Window: chunk_arrival within the longest a chunk can last, rig
+        // included, plus some slack. Cancelled/expired are out.
         $extraction = MoonExtraction::query()
             ->where('structure_id', $structureId)
             ->whereNotIn('status', ['cancelled', 'expired'])
-            ->where('chunk_arrival_time', '>', Carbon::now()->subHours(55))
+            ->where('chunk_arrival_time', '>', Carbon::now()->subHours(MoonDrillingRigs::LONGEST_CHUNK_HOURS + 2))
             ->orderBy('chunk_arrival_time', 'desc')
             ->first();
 

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 
@@ -201,12 +202,10 @@ class CheckExtractionArrivalsCommand extends Command
                 // Broad bound: anything that COULD have its unstable phase
                 // within the next warningHours hours. Pre-fracture rows use
                 // chunk_arrival as the fallback base in getFractureTime();
-                // post-fracture rows use fractured_at. Either way, the
-                // unstable_start is at most ~55 hours after chunk_arrival
-                // (chunk_arrival + 3h auto-fracture + 48h ready + 2h unstable
-                // window = 53h; +2h warning lead = 55h).
+                // post-fracture rows use fractured_at. Either way the chunk is
+                // gone within LONGEST_CHUNK_HOURS of arrival, rig included.
                 ->where('chunk_arrival_time', '<=', $now)
-                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(55))
+                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(MoonDrillingRigs::LONGEST_CHUNK_HOURS + 2))
                 ->where('unstable_warning_sent', false)
                 ->whereNotIn('status', ['cancelled', 'expired']);
 

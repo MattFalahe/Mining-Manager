@@ -4,11 +4,15 @@ namespace MiningManager\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
+use MiningManager\Models\Concerns\ChunkLifecycle;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Services\Moon\MoonOreHelper;
 use Carbon\Carbon;
 
 class MoonExtraction extends Model
 {
+    use ChunkLifecycle;
+
     /**
      * The table associated with the model.
      *
@@ -52,6 +56,7 @@ class MoonExtraction extends Model
         'auto_fractured',
         'fractured_at',
         'fractured_by',
+        'moon_rigs',
     ];
 
     /**
@@ -94,6 +99,7 @@ class MoonExtraction extends Model
         'has_notification_data' => 'boolean',
         'auto_fractured' => 'boolean',
         'fractured_at' => 'datetime',
+        'moon_rigs' => 'array',
     ];
 
     /**
@@ -297,86 +303,6 @@ class MoonExtraction extends Model
     }
 
     /**
-     * Get the actual fracture time (when mining became available).
-     *
-     * Timeline:
-     * - Chunk arrives (chunk_arrival_time) → waiting for player to fire laser
-     * - Player fires laser → fractured_at = notification timestamp (manual fracture)
-     * - No one fires → auto-fracture 3h after arrival → fractured_at = chunk_arrival + 3h
-     * - From fractured_at: 48h ready → 2h unstable → expired
-     *
-     * If fractured_at is not set, falls back to chunk_arrival_time (legacy behavior).
-     */
-    public function getFractureTime(): ?Carbon
-    {
-        if ($this->fractured_at) {
-            return $this->fractured_at;
-        }
-
-        // Legacy fallback: estimate based on auto_fractured flag
-        if ($this->chunk_arrival_time) {
-            return $this->auto_fractured
-                ? $this->chunk_arrival_time->copy()->addHours(3)
-                : $this->chunk_arrival_time->copy();
-        }
-
-        return null;
-    }
-
-    /**
-     * Get the ready window duration in hours.
-     * Always 48 hours from fracture time.
-     */
-    public function getReadyDurationHours(): int
-    {
-        return 48;
-    }
-
-    /**
-     * Get the time when the unstable phase starts (end of ready window).
-     */
-    public function getUnstableStartTime(): ?Carbon
-    {
-        $fractureTime = $this->getFractureTime();
-        return $fractureTime ? $fractureTime->copy()->addHours(48) : null;
-    }
-
-    /**
-     * Get the time when the extraction expires (end of unstable window).
-     */
-    public function getExpiryTime(): ?Carbon
-    {
-        $fractureTime = $this->getFractureTime();
-        return $fractureTime ? $fractureTime->copy()->addHours(50) : null;
-    }
-
-    /**
-     * Check if moon is in unstable state.
-     * Unstable starts 48h after fracture and lasts 2 hours.
-     */
-    public function isUnstable(): bool
-    {
-        $unstableStart = $this->getUnstableStartTime();
-        $expiryTime = $this->getExpiryTime();
-
-        if (!$unstableStart || !$expiryTime) {
-            return false;
-        }
-
-        $now = Carbon::now();
-        return $now >= $unstableStart && $now < $expiryTime;
-    }
-
-    /**
-     * Check if extraction has expired (past the unstable window).
-     */
-    public function isExpired(): bool
-    {
-        $expiryTime = $this->getExpiryTime();
-        return $expiryTime ? Carbon::now() >= $expiryTime : false;
-    }
-
-    /**
      * Check if auto-fracture warning should be shown (during unstable window).
      */
     public function shouldShowAutoFractureWarning(): bool
@@ -483,48 +409,51 @@ class MoonExtraction extends Model
             return 'extracting';
         }
 
-        // If in unstable window (48-50h after fracture)
+        // If in the unstable window at the end of the chunk's life
         if ($this->isUnstable()) {
             return 'unstable';
         }
 
-        // Otherwise ready (arrived and within 48h)
+        // Otherwise ready (arrived and still in its mining window)
         return 'ready';
     }
 
     /**
-     * Scope: extractions that have expired based on fractured_at or legacy estimate.
-     * Uses SQL-level checks so it can be used in bulk updates.
+     * Scope: extractions that may have expired, narrowed in SQL.
      *
-     * Expiry = fractured_at + 50h (if fractured_at is set)
-     * Legacy: chunk_arrival + 50h (manual) or chunk_arrival + 53h (auto-fractured)
+     * Nothing can expire sooner than 50 hours after arrival: a chunk is never
+     * fractured before it arrives, then has at least 48 hours of mining and the
+     * 2 hour tail. Whether each one really has depends on its rig, which is
+     * isExpired()'s call; markExpired() puts the two together.
+     *
+     * Cancelled extractions are left as they are. They never had a chunk, and
+     * the archive takes them through a path of their own.
      */
     public function scopeExpiredByTime($query)
     {
-        $now = Carbon::now();
+        $earliest = Carbon::now()->subHours(MoonDrillingRigs::BASE_READY_HOURS + MoonDrillingRigs::UNSTABLE_HOURS);
 
-        return $query->where('status', '!=', 'expired')
-            ->where('status', '!=', 'fractured')
-            ->where(function ($q) use ($now) {
-                // Has actual fractured_at: expiry = fractured_at + 50h
-                $q->where(function ($q2) use ($now) {
-                    $q2->whereNotNull('fractured_at')
-                       ->where('fractured_at', '<', $now->copy()->subHours(50));
-                })
-                // Legacy fallback: no fractured_at, use old estimate
-                ->orWhere(function ($q2) use ($now) {
-                    $q2->whereNull('fractured_at')
-                       ->where(function ($q3) use ($now) {
-                           $q3->where(function ($q4) use ($now) {
-                               $q4->where('auto_fractured', false)
-                                  ->where('chunk_arrival_time', '<', $now->copy()->subHours(50));
-                           })->orWhere(function ($q4) use ($now) {
-                               $q4->where('auto_fractured', true)
-                                  ->where('chunk_arrival_time', '<', $now->copy()->subHours(53));
-                           });
-                       });
-                });
+        return $query->whereNotIn('status', ['expired', 'fractured', 'cancelled'])
+            ->where(function ($q) use ($earliest) {
+                $q->where('fractured_at', '<', $earliest)
+                    ->orWhere('chunk_arrival_time', '<', $earliest);
             });
+    }
+
+    /**
+     * Mark every extraction whose chunk is gone as expired.
+     *
+     * @return int how many changed
+     */
+    public static function markExpired(): int
+    {
+        $ids = static::expiredByTime()
+            ->get()
+            ->filter(fn (self $extraction) => $extraction->isExpired())
+            ->pluck('id')
+            ->all();
+
+        return $ids ? static::whereIn('id', $ids)->update(['status' => 'expired']) : 0;
     }
 
     /**

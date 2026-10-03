@@ -572,7 +572,8 @@ class NotificationService
      * Send a "moon chunk going unstable soon" SAFETY warning for capital pilots.
      *
      * Corp-scoped (moon owner). Fired ~2 hours before a chunk enters the
-     * PLUGIN's unstable state — which is fractured_at + 48h, NOT raw ESI
+     * PLUGIN's unstable state — fractured_at + its mining window (48h, or
+     * 72 / 96h with a Stability or Proficiency rig), NOT raw ESI
      * natural_decay_time. The plugin models a richer lifecycle than CCP:
      *
      *     chunk_arrival → fractured_at → 48h ready → 2h UNSTABLE → expired
@@ -604,7 +605,7 @@ class NotificationService
     public function sendMoonChunkUnstable(array $data): array
     {
         $data['description'] = $data['description']
-            ?? '⚠️ This chunk will enter **unstable state** soon (last 2 hours of the 50-hour post-fracture window). Capital ship pilots (Rorquals, Orcas) should dock up or warp to safety — unstable chunks are known hotspots for hostile activity.';
+            ?? '⚠️ This chunk will enter **unstable state** soon (the last 2 hours of its life after fracture). Capital ship pilots (Rorquals, Orcas) should dock up or warp to safety — unstable chunks are known hotspots for hostile activity.';
         return $this->send(self::TYPE_MOON_CHUNK_UNSTABLE, [], $data);
     }
 

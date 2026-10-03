@@ -34,6 +34,13 @@ final class MoonDrillingRigs
     public const UNSTABLE_HOURS = 2;
 
     /**
+     * The longest a chunk can last from arrival: a Tech II rig's 3h 43m to
+     * fracture on its own, 96 hours of mining and the 2 hour tail. Look-backs
+     * that have to catch every live chunk reach this far.
+     */
+    public const LONGEST_CHUNK_HOURS = 102;
+
+    /**
      * Every moon drilling rig, by type id. Bonuses in percent.
      */
     public const RIGS = [

@@ -447,17 +447,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     fractureTime = new Date(fracturedStr);
                 } else if (autoFractured) {
-                    // No fractured_at recorded, estimate as arrival + 3h
-                    fractureTime = new Date(arrivalTime.getTime() + 3 * 60 * 60 * 1000);
+                    // No fractured_at recorded: when it fractured on its own,
+                    // 3 hours after arrival or longer with a rig.
+                    const delayMinutes = extraction.auto_fracture_minutes || 180;
+                    fractureTime = new Date(arrivalTime.getTime() + delayMinutes * 60 * 1000);
                 }
 
                 const hoursSinceFracture = (now - fractureTime) / (1000 * 60 * 60);
+                // The mining window, 48 hours or stretched by the chunk's rig,
+                // then the 2 hour unstable tail.
+                const readyHours = extraction.ready_hours || 48;
 
                 if (arrivalTime > now) {
                     effectiveStatus = 'extracting';
-                } else if (hoursSinceFracture < 48) {
+                } else if (hoursSinceFracture < readyHours) {
                     effectiveStatus = 'ready';
-                } else if (hoursSinceFracture < 50) {
+                } else if (hoursSinceFracture < readyHours + 2) {
                     effectiveStatus = 'unstable';
                 } else {
                     effectiveStatus = 'expired';

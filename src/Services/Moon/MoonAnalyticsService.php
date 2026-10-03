@@ -247,22 +247,18 @@ class MoonAnalyticsService
     }
 
     /**
-     * When nobody can mine the chunk any more: fracture, the 48 hour window and
-     * the 2 hour unstable tail. natural_decay_time is only when the chunk would
-     * fracture on its own, a few hours after arrival, so ending the window there
-     * counted the arrival day and nothing after it.
+     * When nobody can mine the chunk any more: fracture, its mining window and
+     * the 2 hour unstable tail, the same cycle for live and archived rows.
+     * natural_decay_time is only when the chunk would fracture on its own, a
+     * few hours after arrival, so ending the window there counted the arrival
+     * day and nothing after it.
      *
      * @param MoonExtraction|MoonExtractionHistory $extraction
      */
     private function miningWindowEnd($extraction, Carbon $start): Carbon
     {
-        if ($extraction instanceof MoonExtraction && $extraction->getExpiryTime()) {
-            return $extraction->getExpiryTime();
-        }
-
-        $fracture = $extraction->fractured_at ?? $extraction->natural_decay_time ?? $start;
-
-        return Carbon::parse($fracture)->addHours(50);
+        return $extraction->getExpiryTime()
+            ?? $start->copy()->addHours(MoonDrillingRigs::BASE_READY_HOURS + MoonDrillingRigs::UNSTABLE_HOURS);
     }
 
     /**

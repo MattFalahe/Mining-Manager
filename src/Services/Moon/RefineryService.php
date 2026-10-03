@@ -2,6 +2,7 @@
 
 namespace MiningManager\Services\Moon;
 
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -380,6 +381,66 @@ class RefineryService
         }
 
         return $fitted;
+    }
+
+    /**
+     * Whether SeAT can see each refinery's assets at all. A structure in use
+     * always holds something (fuel, service modules), so no rows at all means
+     * SeAT cannot see in, rather than an empty refinery.
+     *
+     * @param array<int, int> $structureIds
+     * @return array<int, bool>
+     */
+    public function assetsVisible(array $structureIds): array
+    {
+        $wanted = array_values(array_unique(array_filter(array_map('intval', $structureIds))));
+
+        if (!$wanted) {
+            return [];
+        }
+
+        try {
+            $seen = DB::table('corporation_assets')
+                ->whereIn('location_id', $wanted)
+                ->distinct()
+                ->pluck('location_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+        } catch (\Throwable $e) {
+            $seen = [];
+        }
+
+        $visible = [];
+
+        foreach ($wanted as $id) {
+            $visible[$id] = in_array($id, $seen, true);
+        }
+
+        return $visible;
+    }
+
+    /**
+     * The record an extraction keeps of the rigs it was pulled with: the moon
+     * rig type ids seen in the rig slots, whether SeAT could see the
+     * refinery's assets at all, and when it looked.
+     *
+     * A look that cannot see in never replaces one that could: a Director
+     * token lapsing halfway through an extraction must not wipe what was
+     * already seen.
+     */
+    public function rigSnapshot(int $structureId, ?array $previous = null): array
+    {
+        $visible = $this->assetsVisible([$structureId])[$structureId] ?? false;
+
+        if (!$visible && is_array($previous) && !empty($previous['assets_visible'])) {
+            return $previous;
+        }
+
+        return [
+            'rigs' => $this->fittedMoonRigs([$structureId])[$structureId] ?? [],
+            'assets_visible' => $visible,
+            'seen_at' => Carbon::now()->toDateTimeString(),
+        ];
     }
 
     /**

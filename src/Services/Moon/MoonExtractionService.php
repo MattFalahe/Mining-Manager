@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Symfony\Component\Yaml\Yaml;
 
 class MoonExtractionService
@@ -492,7 +493,7 @@ class MoonExtractionService
      * @param CorporationStructure $structure
      * @return array
      */
-    private function updateStructureExtractions(CorporationStructure $structure): array
+    public function updateStructureExtractions(CorporationStructure $structure): array
     {
         $extractionData = $this->fetchExtractionData($structure->structure_id);
 
@@ -502,9 +503,14 @@ class MoonExtractionService
 
         $updated = 0;
         $created = 0;
+        $refineries = app(RefineryService::class);
 
-        DB::transaction(function () use ($structure, $extractionData, &$updated, &$created) {
+        DB::transaction(function () use ($structure, $extractionData, $refineries, &$updated, &$created) {
             foreach ($extractionData as $data) {
+                // The rigs a chunk is pulled with are looked at until it
+                // arrives; after that the chunk is what it is.
+                $onItsWay = Carbon::parse($data['chunk_arrival_time'])->isFuture();
+
                 $existing = MoonExtraction::where('structure_id', $structure->structure_id)
                     ->where('extraction_start_time', $data['extraction_start_time'])
                     ->first();
@@ -525,6 +531,12 @@ class MoonExtractionService
                         'ore_composition' => $data['ore_composition'] ?? null,
                     ]);
 
+                    if ($onItsWay) {
+                        $existing->update([
+                            'moon_rigs' => $refineries->rigSnapshot((int) $structure->structure_id, $existing->moon_rigs),
+                        ]);
+                    }
+
                     if (isset($data['ore_composition'])) {
                         $existing->update([
                             'estimated_value' => $this->valueService->calculateExtractionValue($existing),
@@ -533,16 +545,28 @@ class MoonExtractionService
 
                     $updated++;
                 } else {
-                    $extraction = MoonExtraction::create([
-                        'structure_id' => $structure->structure_id,
-                        'corporation_id' => $structure->corporation_id,
-                        'moon_id' => $data['moon_id'] ?? null,
-                        'extraction_start_time' => $data['extraction_start_time'],
-                        'chunk_arrival_time' => $data['chunk_arrival_time'],
-                        'natural_decay_time' => $data['natural_decay_time'],
-                        'status' => $this->determineStatus($data),
-                        'ore_composition' => $data['ore_composition'] ?? null,
-                    ]);
+                    // Another run can create the same row between the lookup
+                    // and here; the unique key on structure and start time
+                    // catches it, and that run's row stands.
+                    try {
+                        $extraction = MoonExtraction::create([
+                            'structure_id' => $structure->structure_id,
+                            'corporation_id' => $structure->corporation_id,
+                            'moon_id' => $data['moon_id'] ?? null,
+                            'extraction_start_time' => $data['extraction_start_time'],
+                            'chunk_arrival_time' => $data['chunk_arrival_time'],
+                            'natural_decay_time' => $data['natural_decay_time'],
+                            'status' => $this->determineStatus($data),
+                            'ore_composition' => $data['ore_composition'] ?? null,
+                            'moon_rigs' => $refineries->rigSnapshot((int) $structure->structure_id),
+                        ]);
+                    } catch (QueryException $e) {
+                        if (str_contains($e->getMessage(), 'Duplicate entry') || $e->getCode() === '23000') {
+                            continue;
+                        }
+
+                        throw $e;
+                    }
 
                     if (isset($data['ore_composition'])) {
                         $extraction->update([
@@ -567,10 +591,11 @@ class MoonExtractionService
      *   chunk_arrival_time), NOT the end of the chunk's life.
      *   The actual mineable window is:
      *     chunk_arrival_time → fractured_at (manual or auto)
-     *     fractured_at → fractured_at + 48h  (ready window)
-     *     fractured_at + 48h → fractured_at + 50h  (unstable window)
-     *     fractured_at + 50h → expired
-     *   So the chunk has ~50 hours of life from fracture, not from arrival.
+     *     fractured_at → fractured_at + 48h  (ready window; 72h or 96h
+     *       with a Stability or Proficiency rig, read from the chunk's timers)
+     *     then 2h unstable → expired
+     *   So the chunk has 50 hours of life from fracture (74 / 98 rigged),
+     *   not from arrival.
      *
      * The previous implementation treated `natural_decay_time` itself as
      * the expiry point, which flipped every chunk to `status='expired'`
@@ -586,7 +611,8 @@ class MoonExtractionService
      * `MoonminingLaserFired` / `MoonminingAutomaticFracture` ESI
      * notifications), and falls back to `natural_decay_time` as a
      * conservative auto-fracture estimate when fractured_at isn't yet
-     * known. Either way the +50h offset is the canonical end of life.
+     * known. Either way fracture + the mining window + 2h is the canonical
+     * end of life.
      *
      * @param array $data       Fresh ESI payload (chunk_arrival_time,
      *                          natural_decay_time, etc.)
@@ -620,8 +646,11 @@ class MoonExtractionService
             ? $existing->fractured_at
             : Carbon::parse($data['natural_decay_time']);
 
-        // Total mineable lifetime after fracture: 48h ready + 2h unstable.
-        $expiryTime = $fractureTime->copy()->addHours(50);
+        // The mining window, 48 hours or stretched by the chunk's rig, then the
+        // 2 hour unstable tail. The rig comes from the chunk's own timers.
+        $tier = MoonDrillingRigs::timerTier($data['chunk_arrival_time'], $data['natural_decay_time'] ?? null)
+            ?? ($existing ? $existing->timerRigTier() : 0);
+        $expiryTime = $fractureTime->copy()->addHours(MoonDrillingRigs::readyHours($tier) + MoonDrillingRigs::UNSTABLE_HOURS);
 
         return $now < $expiryTime ? 'ready' : 'expired';
     }
@@ -888,7 +917,8 @@ class MoonExtractionService
                 $q->where('estimated_value', 0)->orWhereNull('estimated_value');
             })
             ->whereNotNull('ore_composition')
-            ->get();
+            ->get()
+            ->filter(fn (MoonExtraction $extraction) => $extraction->isExpired());
 
         foreach ($aboutToExpire as $extraction) {
             try {
@@ -901,8 +931,8 @@ class MoonExtractionService
             }
         }
 
-        // Mark as expired using fractured_at when available, legacy estimate otherwise
-        $expired = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        // Mark as expired: past the chunk's mining window and its unstable tail
+        $expired = MoonExtraction::markExpired();
 
         if ($expired > 0) {
             Log::info("Mining Manager: Marked {$expired} extractions as expired");
@@ -1038,10 +1068,17 @@ class MoonExtractionService
             // format is reused by jackpot_detected notifications too.
             $oreSummary = $extraction->buildOreSummary();
 
-            // Auto fracture = chunk arrival + 3 hours
-            $autoFractureTime = $extraction->chunk_arrival_time
-                ? $extraction->chunk_arrival_time->copy()->addHours(3)->format('Y-m-d H:i')
-                : 'Unknown';
+            // When it fractures on its own: EVE's own time, which already
+            // carries the refinery's rig, else 3 hours stretched by it.
+            if ($extraction->natural_decay_time) {
+                $autoFractureTime = $extraction->natural_decay_time->format('Y-m-d H:i');
+            } elseif ($extraction->chunk_arrival_time) {
+                $autoFractureTime = $extraction->chunk_arrival_time->copy()
+                    ->addSeconds((int) round($extraction->getAutoFractureDelayMinutes() * 60))
+                    ->format('Y-m-d H:i');
+            } else {
+                $autoFractureTime = 'Unknown';
+            }
 
             $baseUrl = rtrim(config('app.url', ''), '/');
 
