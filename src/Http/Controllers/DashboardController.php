@@ -20,23 +20,27 @@ use MiningManager\Models\MiningLedgerDailySummary;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Carbon\Carbon;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\AffiliationResolutionService;
 
 class DashboardController extends Controller
 {
     protected $metricsService;
     protected $marketDataService;
     protected $characterInfoService;
+    protected AffiliationResolutionService $affiliationResolver;
     protected SettingsManagerService $settingsService;
 
     public function __construct(
         DashboardMetricsService $metricsService,
         MarketDataService $marketDataService,
         CharacterInfoService $characterInfoService,
+        AffiliationResolutionService $affiliationResolver,
         SettingsManagerService $settingsService
     ) {
         $this->metricsService = $metricsService;
         $this->marketDataService = $marketDataService;
         $this->characterInfoService = $characterInfoService;
+        $this->affiliationResolver = $affiliationResolver;
         $this->settingsService = $settingsService;
     }
     
@@ -445,8 +449,9 @@ class DashboardController extends Controller
                 ->toArray();
 
             // Miners without an affiliation row are not returned by the query
-            // above. Resolve their current corporation and treat anyone outside
-            // the home corporations as a guest too.
+            // above. Resolve their current corporation using the local cache
+            // table (filled by the scheduled ResolveGuestAffiliationsCommand).
+            // This avoids live ESI calls on the request path — see PR #4.
             $affiliatedIds = DB::table('character_affiliations')
                 ->whereIn('character_id', $allMinerIds)
                 ->pluck('character_id')
@@ -455,7 +460,7 @@ class DashboardController extends Controller
             $unresolvedIds = array_values(array_diff($allMinerIds, $affiliatedIds));
 
             if (!empty($unresolvedIds)) {
-                $info = $this->characterInfoService->getBatchCharacterInfo($unresolvedIds);
+                $info = $this->affiliationResolver->resolveBatch($unresolvedIds);
 
                 foreach ($info as $charId => $data) {
                     $corpId = $data['corporation_id'] ?? null;
@@ -1960,6 +1965,7 @@ class DashboardController extends Controller
                 // Characters with no affiliation row are kept by default. If
                 // they resolve to a corporation outside the home set they are
                 // guests, not members, so exclude them too.
+                // Uses local cache (no live ESI on the request path — see PR #4).
                 $affiliatedIds = DB::table('character_affiliations')
                     ->whereIn('character_id', $uniqueIds)
                     ->pluck('character_id')
@@ -1968,7 +1974,7 @@ class DashboardController extends Controller
                 $unresolvedIds = array_values(array_diff($uniqueIds, $affiliatedIds));
 
                 if (!empty($unresolvedIds)) {
-                    $info = $this->characterInfoService->getBatchCharacterInfo($unresolvedIds);
+                    $info = $this->affiliationResolver->resolveBatch($unresolvedIds);
 
                     foreach ($info as $charId => $data) {
                         $corpId = $data['corporation_id'] ?? null;
