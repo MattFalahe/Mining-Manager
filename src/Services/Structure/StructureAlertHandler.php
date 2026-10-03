@@ -112,13 +112,14 @@ class StructureAlertHandler
         }
 
         // Find the active extraction on this structure.
-        // Window: chunk_arrival within the last 55h covers the full plugin
-        // lifecycle (chunk_arrival → auto_fracture +3h → ready +48h →
-        // unstable +2h = 53h, plus some slack). Cancelled/expired are out.
+        // Window: chunk_arrival within the last 120h covers the full plugin
+        // lifecycle (chunk_arrival → auto_fracture +3.72h → ready +94h →
+        // unstable +2h ≈ 99h with a T2 stability rig, plus slack).
+        // Cancelled/expired are out.
         $extraction = MoonExtraction::query()
             ->where('structure_id', $structureId)
             ->whereNotIn('status', ['cancelled', 'expired'])
-            ->where('chunk_arrival_time', '>', Carbon::now()->subHours(55))
+            ->where('chunk_arrival_time', '>', Carbon::now()->subHours(120))
             ->orderBy('chunk_arrival_time', 'desc')
             ->first();
 

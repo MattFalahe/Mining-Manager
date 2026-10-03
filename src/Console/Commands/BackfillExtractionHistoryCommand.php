@@ -11,6 +11,7 @@ use Symfony\Component\Yaml\Yaml;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MiningLedger;
+use MiningManager\Services\Moon\StructureMoonRigs;
 
 /**
  * Backfill moon_extraction_history from EVE character notifications.
@@ -575,21 +576,23 @@ class BackfillExtractionHistoryCommand extends Command
      *
      * Timing note: in EVE, chunk_arrival_time is when the chunk is
      * ready to fracture. natural_decay_time in the plugin's data is
-     * the AUTO-FRACTURE time (3 hours after chunk arrival). AFTER
-     * fracture (manual or auto), the ore exists as minable belt roids
-     * for approximately 48 hours before despawning. So the real
-     * mining window is roughly:
+     * the AUTO-FRACTURE time (3 hours after chunk arrival, extended by
+     * the rig). AFTER fracture (manual or auto), the ore exists as
+     * minable belt roids for 48-96 hours (rig dependent) before
+     * despawning. So the real mining window is roughly:
      *
-     *   readyTime  →  autoTime + 48h  ≈  readyTime + 51h
+     *   readyTime  →  autoTime + lifetime
      *
-     * We use a 72-hour window from readyTime to be conservative and
-     * catch stragglers who mine just before despawn. The mining_ledger
-     * `date` column is date-only (no time), so we compare against
-     * date strings covering the full calendar days of the window.
+     * We use the structure's own rig-aware lifetime plus a small buffer,
+     * with a 72-hour floor, to be conservative and catch stragglers who
+     * mine just before despawn. The mining_ledger `date` column is
+     * date-only (no time), so we compare against date strings covering
+     * the full calendar days of the window.
      */
     private function calculateActualMined(int $structureId, Carbon $readyTime, Carbon $decayTime): array
     {
-        $windowEnd = $readyTime->copy()->addHours(72);
+        $lifetimeHours = StructureMoonRigs::forStructure($structureId)['lifetime_hours'];
+        $windowEnd = $readyTime->copy()->addHours(max(72, $lifetimeHours + 6));
 
         $entries = MiningLedger::where('observer_id', $structureId)
             ->where('date', '>=', $readyTime->toDateString())

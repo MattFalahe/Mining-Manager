@@ -252,11 +252,13 @@ class DetectJackpotsCommand extends Command
             return false;
         }
 
-        // End of mining window = fractured_at + 50h (plugin's lifecycle).
-        // Falls back to chunk_arrival + 53h if fractured_at isn't yet set
-        // (matches MoonExtraction::getExpiryTime() worst-case fallback).
+        // End of mining window = fracture + the row's rig-aware belt lifetime.
+        // Falls back to arrival + auto-fracture delay + lifetime when
+        // fractured_at isn't set yet (matches MoonExtraction::getExpiryTime()).
         $end = $extraction->getExpiryTime()
-            ?? $extraction->chunk_arrival_time->copy()->addHours(53);
+            ?? $extraction->chunk_arrival_time->copy()
+                ->addMinutes($extraction->getAutoFractureDelayMinutes())
+                ->addHours($extraction->getChunkLifetimeHours());
 
         return MiningLedger::query()
             ->where('observer_id', $extraction->structure_id)

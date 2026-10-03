@@ -196,7 +196,10 @@ class MoonAnalyticsService
 
         // Mined data
         $startDate = $extraction->chunk_arrival_time ?? $extraction->extraction_start_time;
-        $endDate = $extraction->natural_decay_time ?? $startDate->copy()->addDays(3);
+        // End of the chunk's mineable life (fracture + the rig-aware belt
+        // lifetime). natural_decay_time is only the auto-fracture mark a few
+        // hours after arrival, so using it here collapsed the window.
+        $endDate = $extraction->getExpiryTime() ?? $startDate->copy()->addDays(3);
 
         $minedData = MiningLedger::where('observer_id', $extraction->structure_id)
             ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])

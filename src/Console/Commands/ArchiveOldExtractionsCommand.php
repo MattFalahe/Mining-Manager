@@ -138,6 +138,8 @@ class ArchiveOldExtractionsCommand extends Command
                             'auto_fractured' => $extraction->auto_fractured,
                             'fractured_at' => $extraction->fractured_at,
                             'fractured_by' => $extraction->fractured_by,
+                            'chunk_lifetime_hours' => $extraction->chunk_lifetime_hours,
+                            'auto_fracture_delay_minutes' => $extraction->auto_fracture_delay_minutes,
                         ]);
 
                         // Delete the original extraction
@@ -203,11 +205,13 @@ class ArchiveOldExtractionsCommand extends Command
             }
 
             // Query by observer_id (the structure's moon drill) for precise
-            // attribution. Window: 72 hours from chunk_arrival_time — covers
-            // the full fracture + 48h mining lifecycle. Previously the window
-            // was chunk_arrival → natural_decay (only 3h pre-fracture), which
-            // missed all actual mining since chunks are mined AFTER fracture.
-            $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+            // attribution. Window: from chunk arrival through the row's
+            // rig-aware belt expiry (48-96h after fracture), covering the full
+            // mining lifecycle. Previously windowed to chunk_arrival →
+            // natural_decay (only 3h pre-fracture), which missed all actual
+            // mining since chunks are mined AFTER fracture.
+            $windowEnd = $extraction->getExpiryTime()
+                ?? $extraction->chunk_arrival_time->copy()->addHours(72);
 
             $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
                 ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())

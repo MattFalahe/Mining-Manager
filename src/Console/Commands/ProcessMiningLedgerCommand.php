@@ -714,8 +714,9 @@ class ProcessMiningLedgerCommand extends Command
      *                              fired its own notification when submitted.
      *
      * Window matching (BUG FIX 2026-04-24): uses the plugin's full mining-
-     * window expiry (MoonExtraction::getExpiryTime() = fractured_at + 50h,
-     * with chunk_arrival + 53h fallback). The previous implementation used
+     * window expiry (MoonExtraction::getExpiryTime() = fracture + the row's
+     * rig-aware belt lifetime, 48-96h, with a chunk_arrival fallback). The
+     * previous implementation used
      * natural_decay_time which is the auto-fracture mark (~3h after chunk
      * arrival), so the lookup missed essentially every chunk where mining
      * happened on a day other than chunk-arrival day — including all the
@@ -746,9 +747,10 @@ class ProcessMiningLedgerCommand extends Command
                 // Find extraction for this structure whose mining window
                 // includes the entry's date.
                 //
-                // Loose SQL bound: chunk_arrival within the last 56h of the
-                // entry date (max possible window is ~53h: chunk_arrival
-                // + 3h auto-fracture + 48h ready + 2h unstable). Tight PHP
+                // Loose SQL bound: chunk_arrival within the last 120h of the
+                // entry date (max possible window is ~99h: chunk_arrival
+                // + 3.72h auto-fracture + 94h ready + 2h unstable, i.e. a T2
+                // stability rig in space). Tight PHP
                 // filter then uses the model's getExpiryTime() helper for
                 // the canonical lifecycle-aware end-of-window check.
                 //
@@ -778,7 +780,7 @@ class ProcessMiningLedgerCommand extends Command
 
                 $candidates = MoonExtraction::where('structure_id', $observerId)
                     ->where('chunk_arrival_time', '<=', $entryDate->copy()->endOfDay())
-                    ->where('chunk_arrival_time', '>=', $entryDate->copy()->subHours(56)->startOfDay())
+                    ->where('chunk_arrival_time', '>=', $entryDate->copy()->subHours(120)->startOfDay())
                     ->whereNotIn('status', ['cancelled', 'expired'])
                     ->where(function ($q) {
                         $q->where('is_jackpot', false)
@@ -801,7 +803,7 @@ class ProcessMiningLedgerCommand extends Command
                     // matching MoonExtraction. Run a broader query to figure out
                     // WHY the match failed so the operator can correct the
                     // underlying state issue (most common: extraction not yet
-                    // imported, chunk arrived outside the 56h window, or the
+                    // imported, chunk arrived outside the 120h window, or the
                     // chunk is already flagged + verified).
                     $diag = MoonExtraction::where('structure_id', $observerId)
                         ->orderByDesc('chunk_arrival_time')
@@ -820,15 +822,15 @@ class ProcessMiningLedgerCommand extends Command
                                 => "already flagged + verified jackpot — no re-broadcast",
                             $latest->is_jackpot && $latest->jackpot_verified === false
                                 => "previously marked as not-jackpot via DetectJackpotsCommand — run --rerun-failed if this is wrong",
-                            ($entryDate->copy()->subHours(56)->startOfDay()->gt($latest->chunk_arrival_time))
-                                => "latest chunk_arrival ({$latest->chunk_arrival_time}) is older than 56h window from entry date ({$entryDate->toDateString()})",
+                            ($entryDate->copy()->subHours(120)->startOfDay()->gt($latest->chunk_arrival_time))
+                                => "latest chunk_arrival ({$latest->chunk_arrival_time}) is older than 120h window from entry date ({$entryDate->toDateString()})",
                             default => "no extraction within active mining window for this entry date",
                         };
                         $this->warn("  ⚠️  Jackpot ores at structure {$observerId} but no auto-detect match: {$reason}");
                         Log::info("ProcessMiningLedgerCommand: jackpot ores at structure {$observerId} but no match — {$reason}", [
                             'observer_id' => $observerId,
                             'entry_date' => $entryDate->toIso8601String(),
-                            'window_start' => $entryDate->copy()->subHours(56)->startOfDay()->toIso8601String(),
+                            'window_start' => $entryDate->copy()->subHours(120)->startOfDay()->toIso8601String(),
                             'window_end' => $entryDate->copy()->endOfDay()->toIso8601String(),
                             'latest_extraction' => $latest?->only(['id', 'chunk_arrival_time', 'status', 'is_jackpot', 'jackpot_verified']),
                         ]);
