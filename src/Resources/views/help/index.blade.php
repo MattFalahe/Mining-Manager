@@ -2842,6 +2842,63 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </div>
                 </div>
 
+                {{-- Moon drilling rigs --}}
+                <div class="help-card">
+                    <h3>
+                        <i class="fas fa-cog"></i>
+                        Moon Drilling Rigs
+                    </h3>
+                    <p>
+                        A refinery's moon drilling rigs change how long its chunks can be mined and how much ore they
+                        hold. The chunk cycle above stays the same, fracture, the mining window, then 2 hours
+                        unstable; the rigs only stretch the window and add to the yield.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-dark">
+                            <thead>
+                                <tr><th>Refinery</th><th>Rig</th><th>What it does</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Athanor</td><td>Standup M-Set Moon Drilling Efficiency I / II</td><td>+2% / +2.4% ore in each chunk</td></tr>
+                                <tr><td>Athanor</td><td>Standup M-Set Moon Drilling Stability I / II</td><td>a 72 / 96 hour mining window instead of 48, and 3h 36m / 3h 43m before the chunk fractures on its own instead of 3h</td></tr>
+                                <tr><td>Tatara</td><td>Standup L-Set Moon Drilling Proficiency I / II</td><td>both of the above from one rig</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        <strong>Which rig a chunk had comes from the chunk itself.</strong> EVE times every chunk to
+                        fracture on its own after it arrives, and that time already includes the rig: 3 hours with
+                        none, 3h 36m with Tech I, 3h 43m with Tech II. Mining Manager reads the rig from that time,
+                        chunk by chunk, so swapping a rig never changes a chunk already pulled, and it works for any
+                        refinery, another corporation's included.
+                    </p>
+                    <p>
+                        <strong>What is fitted now</strong> comes from the refinery's rig slots in SeAT's copy of the
+                        corporation assets, which needs a Director token with the corporation assets scope. Each
+                        extraction keeps a record of the rigs seen while its chunk was on its way. On an Athanor that
+                        record is the only way to know the yield rig, so where SeAT cannot see the fittings the
+                        extraction page says the yield is unknown rather than guessing.
+                    </p>
+                    <p>
+                        <strong>The game's own figures win.</strong> EVE reports a chunk's ore volumes when the
+                        extraction starts, when the chunk arrives, and when it is fractured, by the laser or on its
+                        own. Mining Manager uses the newest of these, so the extraction's value and Moon Analytics
+                        follow what is really in the chunk, and the extraction page lists each report and whether the
+                        figure changed. The extra a yield rig added is worked back out of those figures.
+                    </p>
+                    <p>
+                        <strong>In the simulator</strong>, pick an Athanor or a Tatara and each rig at none, Tech I or
+                        Tech II. It starts from what is fitted on our refinery at that moon; choose something else and
+                        a banner says what is really fitted. Both Tech II rigs fit an Athanor together, using 300 of
+                        its 400 calibration and leaving room for one more Tech I rig. Find Moons and the quality
+                        ratings still value the moon on its own.
+                    </p>
+                    <p>
+                        <code>mining-manager:diagnose-extractions</code> lists each refinery's drill and moon rigs, and
+                        Diagnostics compares the rigs SeAT can see with what each refinery's latest chunk was timed with.
+                    </p>
+                </div>
+
                 {{-- Cross-Plugin Threat Alerts (v2.0.0+) --}}
                 <div class="help-card">
                     <h3>
@@ -2901,15 +2958,15 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <div class="feature-grid">
                         <div class="feature-item" style="border-left: 4px solid #17a2b8;">
                             <h5><code>mining.extraction_ready</code></h5>
-                            <p>Chunk has fractured, 48h fleet-able mining window opens. Payload includes window_opens_at, window_closes_at, is_jackpot, estimated_value.</p>
+                            <p>Chunk has fractured and its mining window opens: 48 hours, or 72 / 96 with a Moon Drilling Stability or Proficiency rig. Payload includes window_opens_at, window_closes_at, mining_window_hours, timer_rig_tier, is_jackpot, estimated_value.</p>
                         </div>
                         <div class="feature-item" style="border-left: 4px solid #f39c12;">
                             <h5><code>mining.extraction_unstable</code></h5>
-                            <p>Final 2h capital-safety window before expiry (48-50h after fracture). Use for last-call FC reminders.</p>
+                            <p>The final 2 hours before expiry, after the mining window. Use for last-call FC reminders.</p>
                         </div>
                         <div class="feature-item" style="border-left: 4px solid #6c757d;">
                             <h5><code>mining.extraction_expired</code></h5>
-                            <p>Window closed, no more mining (past 50h after fracture). Consumers should drop the extraction from active views.</p>
+                            <p>Window closed, no more mining (past the mining window and its 2 hour tail). Consumers should drop the extraction from active views.</p>
                         </div>
                     </div>
 

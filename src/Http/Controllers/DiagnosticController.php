@@ -318,6 +318,79 @@ class DiagnosticController extends Controller
             }
         }
 
+        // Moon drilling rigs: the record on each extraction, and what SeAT can
+        // see in the rig slots against what each refinery's latest chunk was
+        // timed with. The two disagree for a while after a rig swap, until the
+        // next chunk is pulled with the new rig.
+        $hasRigRecord = \Schema::hasColumn('moon_extractions', 'moon_rigs');
+        $checks[] = [
+            'label'   => 'Migration 000034: moon rigs on each extraction',
+            'status'  => $hasRigRecord ? 'ok' : 'fail',
+            'message' => $hasRigRecord
+                ? 'Present: each extraction keeps the moon rigs it was pulled with.'
+                : 'Column missing, run migrations. Extractions cannot keep a record of their moon rigs.',
+        ];
+
+        if ($moonOwner) {
+            try {
+                $refineryService = app(\MiningManager\Services\Moon\RefineryService::class);
+                $ids = $refineryService->presentRefineryIds((int) $moonOwner);
+                $visible = $refineryService->assetsVisible($ids);
+                $fitted = $refineryService->fittedRigSummary($ids);
+                $names = DB::table('universe_structures')->whereIn('structure_id', $ids)->pluck('name', 'structure_id');
+                $seen = 0;
+                $blind = 0;
+                $rigged = 0;
+                $differ = [];
+
+                foreach ($ids as $id) {
+                    if (!($visible[$id] ?? false)) {
+                        $blind++;
+                        continue;
+                    }
+
+                    $seen++;
+                    if ($fitted[$id]['rigs']) {
+                        $rigged++;
+                    }
+
+                    $latest = \MiningManager\Models\MoonExtraction::where('structure_id', $id)
+                        ->whereNotNull('natural_decay_time')
+                        ->orderByDesc('chunk_arrival_time')
+                        ->first();
+                    if ($latest && $latest->timerRigTier() !== $fitted[$id]['timer_tier']) {
+                        $differ[] = ($names[$id] ?? "Structure {$id}") . ' (fitted: Tech ' . $fitted[$id]['timer_tier']
+                            . ', latest chunk: Tech ' . $latest->timerRigTier() . ')';
+                    }
+                }
+
+                $checks[] = [
+                    'label'   => 'Moon rigs on the Moon Owner Corporation\'s refineries',
+                    'status'  => $blind > 0 ? 'warn' : 'ok',
+                    'message' => count($ids) === 0
+                        ? 'No Athanor or Tatara on file for the Moon Owner Corporation.'
+                        : "{$seen} of " . count($ids) . " refineries' fittings visible to SeAT, {$rigged} with a moon rig."
+                            . ($blind > 0
+                                ? " For the other {$blind}, SeAT cannot see the assets (a Director token with the corporation assets scope is needed): their mining windows still come from each chunk's own timer, but an Athanor's yield rig is not known."
+                                : ''),
+                ];
+
+                if ($differ) {
+                    $checks[] = [
+                        'label'   => 'Moon rigs: fitted now and latest chunk differ',
+                        'status'  => 'info',
+                        'message' => implode('; ', $differ) . '. Expected for a while after a rig swap: the next chunk follows the new rig.',
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $checks[] = [
+                    'label'   => 'Moon rigs on the Moon Owner Corporation\'s refineries',
+                    'status'  => 'warn',
+                    'message' => 'Could not read the moon rigs: ' . $e->getMessage(),
+                ];
+            }
+        }
+
         // 8. The flags Find Moons keeps on moons: claims and the watchlist.
         $hasClaims = \Schema::hasTable('mining_manager_moon_claims');
         $hasWatchlist = \Schema::hasTable('mining_manager_moon_watchlist');

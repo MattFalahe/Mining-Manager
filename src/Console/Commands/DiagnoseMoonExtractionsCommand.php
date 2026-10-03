@@ -175,6 +175,26 @@ class DiagnoseMoonExtractionsCommand extends Command
                     $this->info("      ✓ Moon drill fitted ({$drill})");
                 }
                 
+                // Moon rigs in its rig slots, and the rig its latest chunk was
+                // timed with, which is what decides that chunk's mining window.
+                $refineryService = app(RefineryService::class);
+                $structureId = (int) $refinery->structure_id;
+                if ($refineryService->assetsVisible([$structureId])[$structureId] ?? false) {
+                    $rigs = array_column($refineryService->fittedRigSummary([$structureId])[$structureId]['rigs'], 'name');
+                    $this->line('      Moon rigs: ' . ($rigs ? implode(', ', $rigs) : 'none fitted'));
+                } else {
+                    $this->line('      Moon rigs: SeAT cannot see this refinery\'s assets');
+                }
+                $latest = MoonExtraction::where('structure_id', $structureId)
+                    ->whereNotNull('natural_decay_time')
+                    ->orderByDesc('chunk_arrival_time')
+                    ->first();
+                if ($latest) {
+                    $tier = $latest->timerRigTier();
+                    $this->line('      Latest chunk timed with: ' . ($tier ? 'a Tech ' . ($tier === 1 ? 'I' : 'II') . ' timer rig' : 'no timer rig')
+                        . ', ' . $latest->getReadyDurationHours() . 'h mining window');
+                }
+
                 // Check if we have extraction data for this structure
                 $extractionCount = MoonExtraction::where('structure_id', $refinery->structure_id)->count();
                 if ($extractionCount > 0) {

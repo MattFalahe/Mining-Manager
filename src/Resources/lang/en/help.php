@@ -389,9 +389,9 @@ return [
     'moon_status_extracting' => 'Extracting',
     'moon_status_extracting_desc' => 'The moon drill beam is active, forming a chunk. Duration depends on extraction settings (typically 6-56 days).',
     'moon_status_ready' => 'Ready',
-    'moon_status_ready_desc' => 'The chunk has fractured and an asteroid belt is available for mining. Belt lasts approximately 48 hours.',
+    'moon_status_ready_desc' => 'The chunk has fractured and an asteroid belt is available for mining. It can be mined for 48 hours after fracture, or 72 / 96 hours when the refinery has a Moon Drilling Stability or Proficiency rig.',
     'moon_status_unstable' => 'Unstable',
-    'moon_status_unstable_desc' => 'Belt is degrading and will expire soon (48-50 hours after fracture). Mining should be prioritized.',
+    'moon_status_unstable_desc' => 'The last 2 hours of the belt\'s life, after its mining window: 48 to 50 hours after fracture, later with a moon rig. Mining should be prioritized.',
     'moon_status_expired' => 'Expired',
     'moon_status_expired_desc' => 'Belt has despawned. No further mining possible until next extraction cycle.',
 

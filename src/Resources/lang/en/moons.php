@@ -154,7 +154,7 @@ return [
     'refreshing_60s' => 'Auto-refresh: 60s',
     'auto_fracture_warning' => 'Auto Fracture Warning',
     'unstable_warning' => 'Unstable Moon',
-    'unstable_message' => 'This moon chunk has been fractured for over 48 hours. The asteroid belt is degrading and will expire soon!',
+    'unstable_message' => 'This moon chunk is in the last 2 hours of its life. The asteroid belt is degrading and will expire soon!',
     'estimated' => 'Estimated',
     'value_unknown' => 'Value Unknown',
     
