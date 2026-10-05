@@ -18,6 +18,13 @@ use Carbon\Carbon;
  */
 class MoonAnalyticsService
 {
+    protected RefineryService $refineries;
+
+    public function __construct(RefineryService $refineries)
+    {
+        $this->refineries = $refineries;
+    }
+
     /**
      * Get summary statistics for the 4 top-level cards.
      */
@@ -105,6 +112,8 @@ class MoonAnalyticsService
                 ? DB::table('universe_structures')->whereIn('structure_id', $structureIds)->pluck('name', 'structure_id')->toArray()
                 : [];
 
+            [$hulls, $rigsNow] = $this->refineryRigs($structureIds);
+
             $results = [];
             foreach ($byMoon as $moonId => $moonExtractions) {
                 $poolM3 = 0;
@@ -112,6 +121,8 @@ class MoonAnalyticsService
                 $minedM3 = 0;
                 $minedIsk = 0;
                 $minerIds = [];
+                $counted = [];
+                $chunks = [];
 
                 foreach ($moonExtractions as $extraction) {
                     // Pool data from ore_composition
@@ -122,6 +133,22 @@ class MoonAnalyticsService
                             $poolIsk += (float) ($ore['value'] ?? 0);
                         }
                     }
+
+                    // What the chunk was pulled with, from its own timer.
+                    $mark = MoonRigMarks::chunk($extraction, $hulls[(int) $extraction->structure_id] ?? null);
+                    $chunks[] = [
+                        'at' => $extraction->chunk_arrival_time ? $extraction->chunk_arrival_time->getTimestamp() : 0,
+                        'date' => $extraction->chunk_arrival_time ? $extraction->chunk_arrival_time->format('M d') : '?',
+                        'rigged' => $mark['rigged'],
+                        'text' => $mark['text'],
+                    ];
+
+                    // A refinery's ledger rows already cover every chunk it had
+                    // this month, so they count once however many chunks there were.
+                    if (isset($counted[(int) $extraction->structure_id])) {
+                        continue;
+                    }
+                    $counted[(int) $extraction->structure_id] = true;
 
                     // Mined data
                     $structureData = $minedByStructure[$extraction->structure_id] ?? null;
@@ -135,6 +162,7 @@ class MoonAnalyticsService
                 }
 
                 $uniqueMiners = count(array_unique($minerIds));
+                usort($chunks, fn ($a, $b) => $a['at'] <=> $b['at']);
 
                 // Get structure name from the first extraction's structure_id
                 $firstStructureId = $moonExtractions->first()?->structure_id ?? null;
@@ -152,6 +180,9 @@ class MoonAnalyticsService
                     'mined_isk' => $minedIsk,
                     'value_pct' => $poolIsk > 0 ? min(round(($minedIsk / $poolIsk) * 100, 1), 100) : 0,
                     'unique_miners' => $uniqueMiners,
+                    'rigs_now' => $firstStructureId ? ($rigsNow[(int) $firstStructureId] ?? null) : null,
+                    'rig_chunks' => $chunks,
+                    'rigged_chunks' => count(array_filter($chunks, fn ($chunk) => $chunk['rigged'])),
                 ];
             }
 
@@ -224,6 +255,8 @@ class MoonAnalyticsService
             ->distinct('character_id')
             ->count('character_id');
 
+        [$hulls, $rigsNow] = $this->refineryRigs([(int) $extraction->structure_id]);
+
         // Moon name
         $moonName = 'Unknown Moon';
         if ($extraction->moon_id) {
@@ -243,6 +276,9 @@ class MoonAnalyticsService
             'util_pct' => $poolM3 > 0 ? min(round(($totalMinedM3 / $poolM3) * 100, 1), 100) : 0,
             'value_pct' => $poolIsk > 0 ? min(round(($totalMinedIsk / $poolIsk) * 100, 1), 100) : 0,
             'unique_miners' => $uniqueMiners,
+            'ends_at' => $endDate,
+            'rigs' => MoonRigMarks::chunk($extraction, $hulls[(int) $extraction->structure_id] ?? null),
+            'rigs_now' => $rigsNow[(int) $extraction->structure_id] ?? null,
         ];
     }
 
@@ -259,6 +295,68 @@ class MoonAnalyticsService
     {
         return $extraction->getExpiryTime()
             ?? $start->copy()->addHours(MoonDrillingRigs::BASE_READY_HOURS + MoonDrillingRigs::UNSTABLE_HOURS);
+    }
+
+    /**
+     * The ledger days a set of chunks could have been mined on: from the first
+     * arrival to the end of the last chunk's life. The last auto-fracture time
+     * is not the end, a chunk is mined for days after it, longer with a rig.
+     *
+     * @return array{0: Carbon, 1: Carbon}|null
+     */
+    private function minedWindow(Collection $extractions): ?array
+    {
+        $from = null;
+        $to = null;
+
+        foreach ($extractions as $extraction) {
+            $arrival = $extraction->chunk_arrival_time;
+            if (!$arrival) {
+                continue;
+            }
+
+            $end = $this->miningWindowEnd($extraction, $arrival);
+            $from = $from === null || $arrival->lt($from) ? $arrival : $from;
+            $to = $to === null || $end->gt($to) ? $end : $to;
+        }
+
+        return $from && $to ? [$from, $to] : null;
+    }
+
+    /**
+     * The hull of each refinery behind a set of chunks, and the moon rigs it
+     * has fitted now (null where SeAT cannot see its fittings).
+     *
+     * @param array<int, int> $structureIds
+     * @return array{0: array<int, int>, 1: array<int, array<int, string>|null>}
+     */
+    private function refineryRigs(array $structureIds): array
+    {
+        $hulls = $this->refineries->hullTypes($structureIds);
+        $visible = $this->refineries->assetsVisible($structureIds);
+        $fitted = $this->refineries->fittedRigSummary($structureIds);
+        $now = [];
+
+        foreach ($visible as $structureId => $seen) {
+            $now[$structureId] = MoonRigMarks::fitted($fitted[$structureId] ?? null, $seen);
+        }
+
+        return [$hulls, $now];
+    }
+
+    /**
+     * "Moon (Oct 03 - Oct 06) · Stability I": the days the chunk could be
+     * mined on and the rigs it was pulled with.
+     */
+    private function pickerLabel($extraction, ?int $hullType): string
+    {
+        $arrival = $extraction->chunk_arrival_time;
+        $label = ($extraction->moon_name ?? 'Unknown') . ' ('
+            . ($arrival ? $arrival->format('M d') : '?') . ' - '
+            . ($arrival ? $this->miningWindowEnd($extraction, $arrival)->format('M d') : '?') . ')';
+        $rigs = MoonRigMarks::chunk($extraction, $hullType)['short'];
+
+        return $rigs ? $label . ' · ' . implode(', ', $rigs) : $label;
     }
 
     /**
@@ -444,14 +542,12 @@ class MoonAnalyticsService
 
         // Load display names
         MoonExtraction::loadDisplayNames($extractions);
+        $hulls = $this->refineries->hullTypes($extractions->pluck('structure_id')->all());
 
-        return $extractions->map(function ($e) {
-            $arrivalDate = $e->chunk_arrival_time ? $e->chunk_arrival_time->format('M d') : '?';
-            $decayDate = $e->natural_decay_time ? $e->natural_decay_time->format('M d') : '?';
-
+        return $extractions->map(function ($e) use ($hulls) {
             return (object) [
                 'id' => $e->id,
-                'label' => ($e->moon_name ?? 'Unknown') . " ({$arrivalDate} - {$decayDate})",
+                'label' => $this->pickerLabel($e, $hulls[(int) $e->structure_id] ?? null),
                 'moon_name' => $e->moon_name ?? 'Unknown',
                 'structure_name' => $e->structure_name ?? 'Unknown',
                 'status' => $e->status,
@@ -509,16 +605,14 @@ class MoonAnalyticsService
             return ['total_m3' => 0, 'total_isk' => 0, 'unique_miners' => 0];
         }
 
-        // Use the month boundaries from the first extraction
-        $firstArrival = $extractions->min('chunk_arrival_time');
-        $lastDecay = $extractions->max('natural_decay_time');
+        $window = $this->minedWindow($extractions);
 
-        if (!$firstArrival || !$lastDecay) {
+        if (!$window) {
             return ['total_m3' => 0, 'total_isk' => 0, 'unique_miners' => 0];
         }
 
         $result = MiningLedger::whereIn('observer_id', $structureIds)
-            ->whereBetween('date', [$firstArrival->toDateString(), $lastDecay->toDateString()])
+            ->whereBetween('date', [$window[0]->toDateString(), $window[1]->toDateString()])
             ->where('is_moon_ore', true)
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->select(
@@ -546,15 +640,14 @@ class MoonAnalyticsService
             return [];
         }
 
-        $firstArrival = $extractions->min('chunk_arrival_time');
-        $lastDecay = $extractions->max('natural_decay_time');
+        $window = $this->minedWindow($extractions);
 
-        if (!$firstArrival || !$lastDecay) {
+        if (!$window) {
             return [];
         }
 
         $results = MiningLedger::whereIn('observer_id', $structureIds)
-            ->whereBetween('date', [$firstArrival->toDateString(), $lastDecay->toDateString()])
+            ->whereBetween('date', [$window[0]->toDateString(), $window[1]->toDateString()])
             ->where('is_moon_ore', true)
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
             ->select(

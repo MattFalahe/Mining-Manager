@@ -17,6 +17,20 @@
     .moon-stat-card h3 { font-size: 2rem; margin: 0; font-weight: bold; }
     .moon-stat-card p { margin: 5px 0 0; opacity: 0.9; }
     .chart-container { height: 350px; position: relative; }
+    .analytics-moons-page .mm-rig-mark {
+        display: inline-block;
+        margin-left: 4px;
+        padding: 0 6px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        white-space: nowrap;
+        cursor: help;
+        background: rgba(102, 126, 234, 0.2);
+        border: 1px solid rgba(102, 126, 234, 0.6);
+        color: #c3cdf7 !important;
+    }
+    .analytics-moons-page .mm-rig-line { color: #c3cdf7 !important; }
 </style>
 @endpush
 

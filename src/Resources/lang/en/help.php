@@ -463,6 +463,7 @@ return [
     'moon_analytics_utilization' => 'Moon Utilization - Track how much of each extraction pool is actually mined, with structure names and completion percentages.',
     'moon_analytics_pool_vs_mined' => 'Pool vs Mined - Compare what was available in each extraction against what was actually mined, broken down by ore type.',
     'moon_analytics_per_extraction' => 'Per-Extraction Analysis - Detailed view of individual extractions showing pool composition, mining activity, unique miners, and ISK values.',
+    'moon_analytics_rigs' => 'Moon Rigs - A cog marks refineries with moon rigs fitted now, and the chunks that were pulled with them. Hover it to see which rigs and what they did to each chunk.',
     'moon_analytics_popularity' => 'Ore Popularity - Track which ores are most frequently mined across all moon extractions.',
 
     'exporting_data' => 'Exporting Data',

@@ -2894,6 +2894,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         ratings still value the moon on its own.
                     </p>
                     <p>
+                        <strong>In Moon Analytics</strong>, a cog after a refinery's name shows the moon rigs fitted on
+                        it now, and a cog beside the extraction count shows how many of the month's chunks were pulled
+                        with rigs. Hover either for the detail. Each chunk is marked from its own timer and the record
+                        kept with it, so fitting or pulling a rig later never changes how an older chunk is shown.
+                    </p>
+                    <p>
                         <code>mining-manager:diagnose-extractions</code> lists each refinery's drill and moon rigs, and
                         Diagnostics compares the rigs SeAT can see with what each refinery's latest chunk was timed with.
                     </p>
@@ -3731,6 +3737,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>{{ trans('mining-manager::help.moon_analytics_utilization') }}</li>
                         <li>{{ trans('mining-manager::help.moon_analytics_pool_vs_mined') }}</li>
                         <li>{{ trans('mining-manager::help.moon_analytics_per_extraction') }}</li>
+                        <li>{{ trans('mining-manager::help.moon_analytics_rigs') }}</li>
                         <li>{{ trans('mining-manager::help.moon_analytics_popularity') }}</li>
                     </ul>
                 </div>
