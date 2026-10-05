@@ -119,6 +119,11 @@ class CheckExtractionArrivalsCommand extends Command
                 }
 
                 try {
+                    // The chunk is here: read its ore again, from the Chunk
+                    // Arrived notice once SeAT has it, and price it now, so the
+                    // snapshot and the notification both carry today's figure.
+                    $this->extractionService->refreshChunk($extraction);
+
                     // Snapshot the value at arrival — ONCE. This is the arrival-time
                     // price of the chunk, locked in at the moment the chunk became
                     // minable. Separate from estimated_value which tracks current

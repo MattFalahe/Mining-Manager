@@ -31,27 +31,39 @@ class MoonValueCalculationService
      * Calculate the estimated ISK value of a moon extraction.
      *
      * @param MoonExtraction $extraction
+     * @param bool $fresh price it now rather than take a figure cached in the
+     *                    last few hours
      * @return float|null
      */
-    public function calculateExtractionValue(MoonExtraction $extraction): ?float
+    public function calculateExtractionValue(MoonExtraction $extraction, bool $fresh = false): ?float
     {
         if (!$extraction->ore_composition) {
             Log::debug("Mining Manager: No ore composition data for extraction {$extraction->id}");
             return null;
         }
 
+        // Ensure ore_composition is an array
+        $oreComposition = is_string($extraction->ore_composition)
+            ? json_decode($extraction->ore_composition, true)
+            : $extraction->ore_composition;
+
         $pricingSettings = $this->settingsService->getPricingSettings();
         $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
-        // Include settings hash so cache invalidates when pricing config changes
+        // Include settings hash so cache invalidates when pricing config changes,
+        // and the ore itself: a newer notice when the chunk arrives or is
+        // fractured changes what is in it, and the value has to follow then,
+        // not when an older cached figure runs out.
         $settingsHash = md5(json_encode($pricingSettings));
-        $cacheKey = "mining-manager:moon-value:{$extraction->id}:{$settingsHash}";
+        $cacheKey = "mining-manager:moon-value:{$extraction->id}:{$settingsHash}:" . md5(json_encode($oreComposition));
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
-            // Ensure ore_composition is an array
-            $oreComposition = is_string($extraction->ore_composition)
-                ? json_decode($extraction->ore_composition, true)
-                : $extraction->ore_composition;
+        if ($fresh) {
+            $value = $this->calculateValue($oreComposition ?? []);
+            Cache::put($cacheKey, $value, now()->addMinutes($cacheDuration));
 
+            return $value;
+        }
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($oreComposition) {
             return $this->calculateValue($oreComposition ?? []);
         });
     }

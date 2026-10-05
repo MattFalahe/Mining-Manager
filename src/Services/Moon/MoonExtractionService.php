@@ -716,6 +716,51 @@ class MoonExtractionService
     }
 
     /**
+     * Read one extraction's ore again from the newest notice and price it now.
+     *
+     * The import does this for every extraction on each run. This is for the
+     * moments that should not wait for the next run: the chunk arriving, and
+     * the chunk being fractured by the laser or on its own, each of which
+     * brings a notice with the game's latest count.
+     *
+     * Never throws: the arrival notification and fracture detection that call
+     * it must carry on whatever happens to the pricing.
+     */
+    public function refreshChunk(MoonExtraction $extraction): bool
+    {
+        if (!$extraction->moon_id || !$extraction->extraction_start_time) {
+            return false;
+        }
+
+        try {
+            $composition = $this->getMoonComposition(
+                (int) $extraction->moon_id,
+                (int) $extraction->structure_id,
+                $extraction->extraction_start_time->format('Y-m-d H:i:s'),
+                $extraction->chunk_arrival_time,
+                $extraction->natural_decay_time
+            );
+
+            if ($composition === null) {
+                return false;
+            }
+
+            $extraction->ore_composition = $composition;
+            $extraction->update([
+                'ore_composition' => $composition,
+                'estimated_value' => $this->valueService->calculateExtractionValue($extraction, true),
+                'value_last_updated' => Carbon::now(),
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning("Mining Manager: could not refresh the ore and value of extraction {$extraction->id}: " . $e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
      * Determine the persisted `status` value for a moon_extractions row,
      * based on the chunk's lifecycle position.
      *
@@ -826,6 +871,7 @@ class MoonExtractionService
                 $extraction->auto_fractured = false;
                 $extraction->status = 'ready';
                 $extraction->save();
+                $this->refreshChunk($extraction);
                 $detected++;
                 Log::info("Mining Manager: Manual fracture detected for extraction {$extraction->id} at structure {$extraction->structure_id}" .
                     ($firedBy ? " by {$firedBy}" : ''));
@@ -847,6 +893,7 @@ class MoonExtractionService
                 $extraction->auto_fractured = true;
                 $extraction->status = 'ready';
                 $extraction->save();
+                $this->refreshChunk($extraction);
                 $detected++;
                 Log::info("Mining Manager: Auto-fracture detected for extraction {$extraction->id} at structure {$extraction->structure_id}");
             }
@@ -985,6 +1032,7 @@ class MoonExtractionService
                 'auto_fractured' => false,
                 'status' => 'ready',
             ]);
+            $this->refreshChunk($extraction);
 
             Log::info("Mining Manager: Manual fracture detected on page load for extraction {$extraction->id}" .
                 ($firedBy ? " by {$firedBy}" : ''));
@@ -1007,6 +1055,7 @@ class MoonExtractionService
                 'auto_fractured' => true,
                 'status' => 'ready',
             ]);
+            $this->refreshChunk($extraction);
 
             Log::info("Mining Manager: Auto-fracture detected on page load for extraction {$extraction->id}");
             return true;
