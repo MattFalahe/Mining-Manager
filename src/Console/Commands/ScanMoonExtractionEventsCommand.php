@@ -15,7 +15,8 @@ use MiningManager\Services\Events\MoonExtractionEventPublisher;
  * Core's EventBus exactly once per stage per extraction.
  *
  * Stages:
- *   - ready    : chunk has fractured, fleet-able window opens (48h)
+ *   - ready    : chunk has fractured, fleet-able window opens (48h, or 72 / 96h
+ *                with a moon rig)
  *   - unstable : final 2h capital-safety window before expiry
  *   - expired  : window closed, no more mining
  *

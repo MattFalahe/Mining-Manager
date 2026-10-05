@@ -15,7 +15,8 @@ use MiningManager\Models\MoonExtraction;
  * its event is published, so re-runs are idempotent).
  *
  * Event catalog (schema_version = 1):
- *   - mining.extraction_ready    — chunk has fractured, 48h fleet-able window opens
+ *   - mining.extraction_ready    — chunk has fractured, fleet-able window opens
+ *                                  (48h, or 72 / 96h with a moon rig)
  *   - mining.extraction_unstable — final 2h capital-safety window before expiry
  *   - mining.extraction_expired  — window closed, no more mining
  *
@@ -33,7 +34,7 @@ class MoonExtractionEventPublisher
 
     /**
      * Fired when an extraction transitions to the ready window
-     * (chunk arrived + fractured, 48h of fleet-able mining begins).
+     * (chunk arrived + fractured, its mining window begins).
      */
     public static function publishReady(MoonExtraction $extraction): bool
     {
@@ -42,7 +43,7 @@ class MoonExtractionEventPublisher
 
     /**
      * Fired when an extraction transitions to the unstable window
-     * (48h-50h after fracture — the final 2h capital-safety alert).
+     * (the 2 hours after its mining window, the final capital-safety alert).
      */
     public static function publishUnstable(MoonExtraction $extraction): bool
     {
@@ -50,7 +51,7 @@ class MoonExtractionEventPublisher
     }
 
     /**
-     * Fired when an extraction has expired (past 50h after fracture).
+     * Fired when an extraction has expired (past its mining window and the 2h tail).
      * Cleanup signal — consumers should drop the extraction from active views.
      */
     public static function publishExpired(MoonExtraction $extraction): bool

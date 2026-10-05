@@ -105,8 +105,8 @@ class DetectJackpotsCommand extends Command
                             $this->newLine();
                             $this->info("  ✅ VERIFIED: {$extraction->moon_name} (reported by character {$extraction->jackpot_reported_by})");
                         } elseif ($extraction->isExpired()) {
-                            // The mining window is fully closed (fractured_at + 50h has passed,
-                            // or the legacy fallback equivalent — see MoonExtraction::isExpired).
+                            // The mining window is fully closed (fracture, the chunk's mining
+                            // window and the 2h tail have all passed: see MoonExtraction::isExpired).
                             // Earlier versions used natural_decay_time->isPast() here, but that
                             // is the AUTO-FRACTURE mark (~3h after chunk_arrival) — verification
                             // would fire before miners had even started, producing false negatives

@@ -715,8 +715,8 @@ class ProcessMiningLedgerCommand extends Command
      *                              fired its own notification when submitted.
      *
      * Window matching (BUG FIX 2026-04-24): uses the plugin's full mining-
-     * window expiry (MoonExtraction::getExpiryTime() = fractured_at + 50h,
-     * with chunk_arrival + 53h fallback). The previous implementation used
+     * window expiry (MoonExtraction::getExpiryTime(): fracture + the chunk's
+     * mining window + the 2h tail). The previous implementation used
      * natural_decay_time which is the auto-fracture mark (~3h after chunk
      * arrival), so the lookup missed essentially every chunk where mining
      * happened on a day other than chunk-arrival day — including all the

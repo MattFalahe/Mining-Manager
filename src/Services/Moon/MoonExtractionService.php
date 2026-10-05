@@ -789,19 +789,12 @@ class MoonExtractionService
     }
 
     /**
-     * Detect auto-fractured extractions by scanning EVE notifications.
-     * When EVE auto-fractures a moon (no player fired the laser), a
-     * MoonminingAutoFracture notification is generated. This extends
-     * the ready window from 48h to 51h.
-     *
-     * @return int Number of auto-fractures detected
-     */
-    /**
      * Detect fracture events from ESI notifications.
      *
      * Checks for both:
      * - MoonminingLaserFired: player manually fired the laser
      * - MoonminingAutomaticFracture: no one fired, EVE auto-fractured after 3h
+     *   (3h 36m / 3h 43m with a moon rig)
      *
      * Sets fractured_at timestamp and fractured_by (player name for manual).
      */
@@ -1423,22 +1416,23 @@ class MoonExtractionService
      * Send the "chunk going unstable soon" SAFETY warning for capital pilots.
      *
      * Fired ~2 hours before the chunk enters the plugin's UNSTABLE state
-     * (which is fractured_at + 48h, i.e. the last 2 hours of the 50-hour
-     * post-fracture lifecycle). Unstable chunks attract hostile activity —
+     * (fracture + the chunk's mining window: 48h, or 72 / 96h with a
+     * Stability or Proficiency rig). Unstable chunks attract hostile activity —
      * this gives Rorqual / Orca pilots time to dock up or warp to safety
      * before the situation gets dangerous.
      *
      * IMPORTANT: this uses the PLUGIN's lifecycle model, not raw ESI data.
      * The plugin's lifecycle is richer than CCP's:
      *
-     *     chunk_arrival_time → fractured_at (manual laser fire OR auto +3h)
-     *                       → 48h READY window (stable)
+     *     chunk_arrival_time → fractured_at (manual laser fire OR auto at
+     *                          natural_decay_time)
+     *                       → READY for the mining window (48h, 72h or 96h)
      *                       → 2h UNSTABLE window (getUnstableStartTime())
      *                       → expired
      *
      * The unstable phase is what MoonExtraction::isUnstable() returns true
-     * for. We fire this warning 2h BEFORE that phase starts, which is
-     * fractured_at + 46h (= last 2 hours of the 48h stable window).
+     * for. We fire this warning 2h BEFORE that phase starts, in the last
+     * 2 hours of the mining window.
      *
      * ESI's `natural_decay_time` is the auto-fracture mark (~3h after
      * chunk_arrival), which is much earlier in the lifecycle and NOT the
@@ -1460,7 +1454,7 @@ class MoonExtractionService
         }
 
         // Use the plugin's canonical lifecycle helpers — NOT raw ESI
-        // natural_decay_time. getUnstableStartTime() = fractured_at + 48h,
+        // natural_decay_time. getUnstableStartTime() = fracture + the chunk's mining window,
         // falling back to a chunk_arrival-based estimate if fracture_at
         // isn't populated yet.
         $unstableStart = $extraction->getUnstableStartTime();

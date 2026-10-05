@@ -576,7 +576,8 @@ class NotificationService
      * 72 / 96h with a Stability or Proficiency rig), NOT raw ESI
      * natural_decay_time. The plugin models a richer lifecycle than CCP:
      *
-     *     chunk_arrival → fractured_at → 48h ready → 2h UNSTABLE → expired
+     *     chunk_arrival → fractured_at → mining window (48h, 72h or 96h)
+     *                   → 2h UNSTABLE → expired
      *
      * See MoonExtraction::getUnstableStartTime() for the authoritative
      * computation. Trigger logic lives in CheckExtractionArrivalsCommand's
