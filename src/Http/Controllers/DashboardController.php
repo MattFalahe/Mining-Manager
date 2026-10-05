@@ -451,27 +451,10 @@ class DashboardController extends Controller
                 ->pluck('character_id')
                 ->toArray();
 
-            // Miners without an affiliation row are not returned by the query
-            // above. Resolve their current corporation using the local cache
-            // table (filled by the scheduled ResolveGuestAffiliationsCommand).
-            // This avoids live ESI calls on the request path — see PR #4.
-            $affiliatedIds = DB::table('character_affiliations')
-                ->whereIn('character_id', $allMinerIds)
-                ->pluck('character_id')
-                ->toArray();
-
-            $unresolvedIds = array_values(array_diff($allMinerIds, $affiliatedIds));
-
-            if (!empty($unresolvedIds)) {
-                $info = $this->affiliationResolver->resolveBatch($unresolvedIds);
-
-                foreach ($info as $charId => $data) {
-                    $corpId = $data['corporation_id'] ?? null;
-                    if ($corpId && !in_array((int) $corpId, $homeCorporationIds, true)) {
-                        $guestIds[] = $charId;
-                    }
-                }
-            }
+            // Miners SeAT has no affiliation for are not in the query above.
+            // The background lookup may have placed them in another
+            // corporation; this only reads what it stored.
+            $guestIds = array_merge($guestIds, $this->affiliationResolver->outsideHome($allMinerIds, $homeCorporationIds));
 
             return array_values(array_unique($guestIds));
         } catch (\Exception $e) {
@@ -2071,27 +2054,9 @@ class DashboardController extends Controller
                     ->pluck('character_id')
                     ->toArray();
 
-                // Characters with no affiliation row are kept by default. If
-                // they resolve to a corporation outside the home set they are
-                // guests, not members, so exclude them too.
-                // Uses local cache (no live ESI on the request path — see PR #4).
-                $affiliatedIds = DB::table('character_affiliations')
-                    ->whereIn('character_id', $uniqueIds)
-                    ->pluck('character_id')
-                    ->toArray();
-
-                $unresolvedIds = array_values(array_diff($uniqueIds, $affiliatedIds));
-
-                if (!empty($unresolvedIds)) {
-                    $info = $this->affiliationResolver->resolveBatch($unresolvedIds);
-
-                    foreach ($info as $charId => $data) {
-                        $corpId = $data['corporation_id'] ?? null;
-                        if ($corpId && !in_array((int) $corpId, $homeCorporationIds, true)) {
-                            $nonCorpIds[] = $charId;
-                        }
-                    }
-                }
+                // Characters SeAT has no affiliation for stay in, unless the
+                // background lookup placed them in another corporation.
+                $nonCorpIds = array_merge($nonCorpIds, $this->affiliationResolver->outsideHome($uniqueIds, $homeCorporationIds));
 
                 if (!empty($nonCorpIds)) {
                     $uniqueIds = array_values(array_diff($uniqueIds, $nonCorpIds));

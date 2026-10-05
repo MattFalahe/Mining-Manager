@@ -2,8 +2,6 @@
 
 namespace MiningManager\Services\Character;
 
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Seat\Eveapi\Models\Character\CharacterAffiliation;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -54,37 +52,67 @@ class CharacterInfoService
             return $seatInfo;
         }
 
-        // Character not in SeAT — check local affiliation cache first.
-        // This is MattFalahe's suggested approach: resolve off the request
-        // path, write the answer locally, read from there.
-        if ($this->affiliationResolver !== null) {
-            $cached = $this->affiliationResolver->resolve($characterId);
-            if ($cached['resolved']) {
-                $mainCharacterId = $this->getMainCharacterId($characterId);
-                return [
-                    'character_id' => $cached['character_id'],
-                    'name' => $cached['corporation_name']
-                        ? "Character {$characterId}"
-                        : "Unknown Character {$characterId}",
-                    'corporation_id' => $cached['corporation_id'],
-                    'corporation_name' => $cached['corporation_name'] ?? 'Unknown Corporation',
-                    'is_registered' => false,
-                    'main_character_id' => $mainCharacterId,
-                ];
-            }
+        return $this->unregisteredInfo([$characterId])[$characterId];
+    }
+
+    /**
+     * Name and corporation for characters SeAT does not know, from the
+     * plugin's own lookups. A page never waits on one: whoever has not been
+     * looked up yet is asked for and shown as in progress, and the page
+     * refreshes once the background lookup has them. Work already running in
+     * the background can wait, so it looks them up there and then.
+     *
+     * @param array<int, int|string> $characterIds
+     * @return array<int, array>
+     */
+    protected function unregisteredInfo(array $characterIds): array
+    {
+        $resolver = $this->resolver();
+        $ids = array_values(array_unique(array_map('intval', $characterIds)));
+        $known = $resolver->known($ids);
+        $missing = array_values(array_diff($ids, array_keys($known)));
+
+        if ($missing && app()->runningInConsole()) {
+            $resolver->resolve($missing);
+            $known += $resolver->known($missing);
+            $missing = array_values(array_diff($missing, array_keys($known)));
         }
 
-        // No local cache — fall back to external APIs (may trigger ESI calls)
-        $externalInfo = $this->externalService->getCharacterInfo($characterId);
+        if ($missing) {
+            $resolver->request($missing);
+        }
 
-        return [
-            'character_id' => $characterId,
-            'name' => $externalInfo['name'],
-            'corporation_id' => $externalInfo['corporation_id'],
-            'corporation_name' => $externalInfo['corporation_name'],
-            'is_registered' => false,
-            'main_character_id' => null,
-        ];
+        $info = [];
+        foreach ($ids as $characterId) {
+            $row = $known[$characterId] ?? null;
+
+            $info[$characterId] = $row === null
+                ? [
+                    'character_id' => $characterId,
+                    'name' => trans('mining-manager::common.character_pending'),
+                    'corporation_id' => null,
+                    'corporation_name' => trans('mining-manager::common.corporation_pending'),
+                    'is_registered' => false,
+                    'main_character_id' => null,
+                    'pending' => true,
+                ]
+                : [
+                    'character_id' => $characterId,
+                    'name' => $row->character_name ?: "Character {$characterId}",
+                    'corporation_id' => $row->corporation_id ? (int) $row->corporation_id : null,
+                    'corporation_name' => $row->corporation_name ?: 'Unknown Corporation',
+                    'is_registered' => false,
+                    'main_character_id' => null,
+                    'pending' => false,
+                ];
+        }
+
+        return $info;
+    }
+
+    protected function resolver(): AffiliationResolutionService
+    {
+        return $this->affiliationResolver ??= app(AffiliationResolutionService::class);
     }
 
     /**
@@ -241,11 +269,13 @@ class CharacterInfoService
             ]);
         }
         
-        // Method 6: Try external API as last resort
+        // Method 6: what the plugin's own lookups have stored. Only work in the
+        // background may go out and ask; a page never waits on ESI.
         try {
-            $corpName = $this->externalService->getCorporationName($corporationId);
+            $corpName = $this->resolver()->corporationName((int) $corporationId)
+                ?: (app()->runningInConsole() ? $this->externalService->getCorporationName((int) $corporationId) : null);
             if ($corpName) {
-                Log::info('CharacterInfoService: Found corporation via external API', [
+                Log::info('CharacterInfoService: Found corporation via character lookups', [
                     'corporation_id' => $corporationId,
                     'corporation_name' => $corpName,
                     'character_id' => $character->character_id
@@ -373,6 +403,7 @@ class CharacterInfoService
     public function getBatchCharacterInfo(array $characterIds): array
     {
         $result = [];
+        $unregistered = [];
         
         // Get all registered characters in one query
         $registeredChars = CharacterInfo::whereIn('character_id', $characterIds)->get()->keyBy('character_id');
@@ -435,19 +466,21 @@ class CharacterInfoService
                     'main_character_id' => $mainCharId,
                 ];
             } else {
-                // Unregistered character - fetch from external
-                $externalInfo = $this->externalService->getCharacterInfo($charId);
-                $result[$charId] = [
-                    'character_id' => $charId,
-                    'name' => $externalInfo['name'],
-                    'corporation_id' => $externalInfo['corporation_id'],
-                    'corporation_name' => $externalInfo['corporation_name'],
-                    'is_registered' => false,
-                    'main_character_id' => null,
-                ];
+                $unregistered[] = (int) $charId;
             }
         }
-        
+
+        // Characters SeAT does not know come from the plugin's own lookups, in
+        // one go, kept in the order they were asked for.
+        if ($unregistered) {
+            $lookedUp = $this->unregisteredInfo($unregistered);
+            $ordered = [];
+            foreach ($characterIds as $charId) {
+                $ordered[$charId] = $result[$charId] ?? $lookedUp[(int) $charId];
+            }
+            $result = $ordered;
+        }
+
         return $result;
     }
     

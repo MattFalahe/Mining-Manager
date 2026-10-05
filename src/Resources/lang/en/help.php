@@ -653,6 +653,7 @@ return [
     'cli_test_desc' => 'Commands for generating test data. Only use in development environments — they create fake data:',
 
     // Schedule Labels
+    'schedule_1min' => 'Every minute',
     'schedule_30min' => 'Every 30 min',
     'schedule_2hours' => 'Every 2 hours',
     'schedule_4hours' => 'Every 4 hours',

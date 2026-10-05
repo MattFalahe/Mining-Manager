@@ -26,7 +26,7 @@ use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
 use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
-use MiningManager\Console\Commands\ResolveGuestAffiliationsCommand;
+use MiningManager\Console\Commands\ResolveCharactersCommand;
 use MiningManager\Console\Commands\DiagnoseCharacterCommand;
 use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
 use MiningManager\Console\Commands\DiagnoseTypeIdsCommand;
@@ -153,7 +153,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 CachePriceDataCommand::class,
                 DiagnosePricesCommand::class,
                 DiagnoseAffiliationCommand::class,
-                ResolveGuestAffiliationsCommand::class,
+                ResolveCharactersCommand::class,
                 DiagnoseCharacterCommand::class,
                 DiagnoseMoonExtractionsCommand::class,
                 DiagnoseTypeIdsCommand::class,
@@ -217,6 +217,12 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // context, within a request.
         $this->app->singleton(
             \MiningManager\Services\Tax\PaymentAllocationService::class
+        );
+
+        // Shared so the in-progress notice on a page sees the characters the
+        // controllers asked for while building it.
+        $this->app->singleton(
+            \MiningManager\Services\Character\AffiliationResolutionService::class
         );
 
         $this->app->singleton(

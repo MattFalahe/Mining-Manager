@@ -12,6 +12,13 @@ Route::group([
     // MEMBER ROUTES - View own data, join events, view moon schedules
     // =====================================================================
 
+    // Whether characters a page showed as in progress have been looked up yet
+    Route::get('/characters/pending', [
+        'as' => 'mining-manager.characters.pending',
+        'uses' => 'CharacterLookupController@pending',
+        'middleware' => 'can:mining-manager.member',
+    ]);
+
     // Dashboard Routes
     Route::group(['prefix' => 'dashboard'], function () {
         Route::get('/', [

@@ -3847,6 +3847,13 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><code>mining-manager:resolve-characters</code></td>
+                                    <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_1min') }}</span></td>
+                                    <td>Looks up names and corporations for characters SeAT does not know, such as visiting miners, and keeps them for every page to read, so no page ever waits on ESI. Every minute it takes the characters pages have asked for, which show as <em>Character info in progress</em> until then, and the page refreshes once they are in. Every 10 minutes it also takes miners SeAT has no affiliation for, which is how the dashboard tells a visiting miner from a member. ESI comes first, then EVEWho and zKillboard when ESI is down, and it stops calling ESI while the error budget it shares with SeAT is low.<br>
+                                        <small class="text-muted">Options: <code>--requested</code> only the characters pages asked for, <code>--stats</code> what the table holds</small>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td><code>mining-manager:cache-prices</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_4hours') }}</span></td>
                                     <td>Cache market price data from your configured price provider for all ore types.

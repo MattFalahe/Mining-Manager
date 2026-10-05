@@ -331,6 +331,32 @@ class DiagnosticController extends Controller
                 : 'Column missing, run migrations. Extractions cannot keep a record of their moon rigs.',
         ];
 
+        // Characters SeAT does not know, looked up in the background: a pile of
+        // characters still waiting means the lookup is not running.
+        $hasCharacterLookups = \Schema::hasTable('mining_manager_character_affiliations');
+        $lookups = [];
+        if ($hasCharacterLookups) {
+            try {
+                $lookups = app(\MiningManager\Services\Character\AffiliationResolutionService::class)->stats();
+            } catch (\Throwable $e) {
+                $lookups = [];
+            }
+        }
+        $waiting = $lookups['pending'] ?? 0;
+        $checks[] = [
+            'label'   => 'Migration 000035: character lookups',
+            'status'  => !$hasCharacterLookups ? 'fail' : ($waiting > 50 ? 'warn' : 'ok'),
+            'message' => !$hasCharacterLookups
+                ? 'Table missing, run migrations. Characters SeAT does not know show as in progress until it exists.'
+                : sprintf(
+                    '%d looked up from ESI, %d from EVEWho or zKillboard, %d rejected by ESI, %d waiting.',
+                    $lookups['esi'] ?? 0,
+                    ($lookups['evewho'] ?? 0) + ($lookups['zkillboard'] ?? 0),
+                    $lookups['invalid'] ?? 0,
+                    $waiting
+                ) . ($waiting > 50 ? ' That many waiting means mining-manager:resolve-characters is not running.' : ''),
+        ];
+
         if ($moonOwner) {
             try {
                 $refineryService = app(\MiningManager\Services\Moon\RefineryService::class);

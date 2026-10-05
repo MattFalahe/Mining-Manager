@@ -40,11 +40,19 @@ class ScheduleSeeder extends AbstractScheduleSeeder
     public function getSchedules(): array
     {
         return [
-            // Resolve guest miner affiliations in the background. Runs every
-            // 10 minutes so the dashboard can classify miners from cache
-            // instead of firing live ESI calls on each request.
+            // Characters SeAT does not know are looked up in the background, so
+            // no page waits on ESI: the ones pages asked for every minute, and
+            // every 10 minutes also miners SeAT has no affiliation for.
             [
-                'command' => 'mining-manager:resolve-guest-affiliations',
+                'command' => 'mining-manager:resolve-characters --requested',
+                'expression' => '* * * * *',
+                'allow_overlap' => false,
+                'allow_maintenance' => false,
+                'ping_before' => null,
+                'ping_after' => null,
+            ],
+            [
+                'command' => 'mining-manager:resolve-characters',
                 'expression' => '*/10 * * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,

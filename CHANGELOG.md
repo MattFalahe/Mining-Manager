@@ -56,9 +56,15 @@ All notable changes to Mining Manager will be documented in this file.
 
 - **The two ore categories now say what they hold.** Abyssal Ore and Triglavian Ore are easy to mix up, and the confusion runs the wrong way round: the ore from nullsec and wormhole escalations, Bezdnacine, Rakovene and Talassonite, is billed under **Abyssal**. Both rate fields and both Tax Selector toggles now name the ores they cover, and Help has a section explaining which is which, why the Triglavian rate never charges anything (its nine ores are mission and site objective items with no market price and no reprocessing output, so their value is always zero and no price refresh will change that), and where the Abyssal name came from. Nothing about the rates, the categories or the classification changed.
 
+### Character Lookups
+
+- **No page calls out to ESI for a character any more.** Names and corporations for characters SeAT does not know, such as visiting miners, are looked up in the background by `mining-manager:resolve-characters` and kept by the plugin, and every page reads them from there. A character nobody has looked up yet shows as *Character info in progress*, and the page refreshes itself once the lookup is in, usually within a minute. Before, a page could sit waiting on ESI, and on a bad ESI day show *Character 12345* and *Unknown Corporation*. Built on the resolver from [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).
+- Fixed: **the fallbacks for when ESI is down never worked.** The plugin asked EVEWho and zKillboard for fields those services do not return, so every fallback came back empty. The lookup now reads them correctly. It asks ESI first, up to 1000 characters a request, and only then EVEWho and zKillboard, a few characters a run. Those answers are checked again sooner, so ESI replaces them on its next good run. It stops calling ESI while the error budget it shares with SeAT's own jobs is low, and an id ESI rejects is set aside instead of failing the whole batch every time.
+
 ### Dashboard
 
 - Fixed: **the leaderboard's Show Specific Corporations Only setting did nothing.** Settings saved it and the Dashboard tab showed it, but no leaderboard ever read it. Every top miners board now keeps to the corporations you pick, the Corporation Moon Ore board included, and if the lookup behind it fails the board shows everyone rather than an error. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#5](https://github.com/MattFalahe/Mining-Manager/pull/5).
+- Fixed: **miners SeAT has never seen counted as your own members.** SeAT only keeps affiliations for characters it knows, so a visiting miner from another corporation had none and the dashboard treated them as a member. The background lookup now finds their corporation and the dashboard reads it, so they count as guests. Characters nobody has placed yet are still counted as members, as before. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).
 
 ### Paying Tax
 
@@ -112,6 +118,7 @@ All notable changes to Mining Manager will be documented in this file.
 - `000032` stamps the part-payment cutover for theft detection. It writes one settings row and changes nothing else.
 - `000033` adds the webhook opt-ins for Refinery Gone, Moon Extraction Cancelled, Moon Not Rescheduled and Moons Need Planning, all off by default, and `mining_manager_refinery_alerts`, where the planner keeps what it knows about a refinery between runs.
 - `000034` adds a nullable `moon_rigs` column to `moon_extractions` and `moon_extraction_history`: the moon rigs each extraction was pulled with. Existing rows stay empty.
+- `000035` adds `mining_manager_character_affiliations`, where the plugin keeps the names and corporations it looked up for characters SeAT does not know.
 
 No existing column is altered or dropped, and none of these migrations touches a row that already exists.
 
