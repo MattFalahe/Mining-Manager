@@ -2,10 +2,12 @@
 
 namespace MiningManager\Services\Character;
 
-use Seat\Eveapi\Models\Character\CharacterInfo;
-use Seat\Eveapi\Models\Character\CharacterAffiliation;
-use Seat\Eveapi\Models\Corporation\CorporationInfo;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Seat\Eveapi\Models\Character\CharacterAffiliation;
+use Seat\Eveapi\Models\Character\CharacterInfo;
+use Seat\Eveapi\Models\Corporation\CorporationInfo;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -19,9 +21,14 @@ class CharacterInfoService
 {
     protected $externalService;
 
-    public function __construct(ExternalCharacterService $externalService)
-    {
+    protected ?AffiliationResolutionService $affiliationResolver = null;
+
+    public function __construct(
+        ExternalCharacterService $externalService,
+        ?AffiliationResolutionService $affiliationResolver = null
+    ) {
         $this->externalService = $externalService;
+        $this->affiliationResolver = $affiliationResolver;
     }
 
     /**
@@ -42,14 +49,34 @@ class CharacterInfoService
     {
         // Try to get from SeAT first
         $seatInfo = $this->getCharacterInfoFromSeAT($characterId);
-        
+
         if ($seatInfo) {
             return $seatInfo;
         }
-        
-        // Character not in SeAT - get from external APIs
+
+        // Character not in SeAT — check local affiliation cache first.
+        // This is MattFalahe's suggested approach: resolve off the request
+        // path, write the answer locally, read from there.
+        if ($this->affiliationResolver !== null) {
+            $cached = $this->affiliationResolver->resolve($characterId);
+            if ($cached['resolved']) {
+                $mainCharacterId = $this->getMainCharacterId($characterId);
+                return [
+                    'character_id' => $cached['character_id'],
+                    'name' => $cached['corporation_name']
+                        ? "Character {$characterId}"
+                        : "Unknown Character {$characterId}",
+                    'corporation_id' => $cached['corporation_id'],
+                    'corporation_name' => $cached['corporation_name'] ?? 'Unknown Corporation',
+                    'is_registered' => false,
+                    'main_character_id' => $mainCharacterId,
+                ];
+            }
+        }
+
+        // No local cache — fall back to external APIs (may trigger ESI calls)
         $externalInfo = $this->externalService->getCharacterInfo($characterId);
-        
+
         return [
             'character_id' => $characterId,
             'name' => $externalInfo['name'],
