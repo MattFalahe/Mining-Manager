@@ -354,6 +354,20 @@ class CachePriceDataCommand extends Command
             }
         }
 
+        // A provider that failed outright hands back the cached prices so
+        // valuations keep going. Writing those back would only make stale
+        // prices look fresh, so the one thing written is a price for a type
+        // that had none, taken from SeAT's own market data.
+        $writable = null;
+        $kept = 0;
+        if ($this->priceService->lastFetchStoodIn()) {
+            $writable = array_flip($this->priceService->lastSeatStandInTypeIds());
+            $this->warn('  The price provider failed, so cached prices are left as they are.');
+            if ($writable) {
+                $this->line('  ' . count($writable) . " type(s) with no price yet were priced from SeAT's own market data.");
+            }
+        }
+
         $bar = $this->output->createProgressBar(count($due));
         $bar->start();
 
@@ -361,7 +375,13 @@ class CachePriceDataCommand extends Command
         foreach ($due as $typeId) {
             $price = (float) ($priced[$typeId] ?? 0);
 
-            if ($price > 0) {
+            if ($writable !== null && !isset($writable[$typeId])) {
+                if ($price > 0) {
+                    $kept++;
+                } else {
+                    $missing[] = $typeId;
+                }
+            } elseif ($price > 0) {
                 $this->priceService->cachePriceData($typeId, $regionId, [
                     'sell' => $price,
                     'buy' => $price,
@@ -389,6 +409,9 @@ class CachePriceDataCommand extends Command
         $this->info("Cached: {$cached} items");
         if ($skipped > 0) {
             $this->info("Skipped: {$skipped} (refreshed within the last half of the cache duration)");
+        }
+        if ($kept > 0) {
+            $this->info("Kept: {$kept} cached price(s), unchanged while the provider is down");
         }
         if ($errors > 0) {
             $this->warn("Errors: {$errors}");

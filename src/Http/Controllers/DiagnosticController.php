@@ -1021,6 +1021,16 @@ class DiagnosticController extends Controller
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
 
+            // A provider that failed outright still hands back the cached
+            // prices, which would read here as a passing test.
+            if ($this->priceService->lastFetchStoodIn()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice(),
+                    'provider' => $provider,
+                ]);
+            }
+
             // Get type names
             $typeNames = DB::table('invTypes')
                 ->whereIn('typeID', $testTypeIds)
@@ -1203,6 +1213,14 @@ class DiagnosticController extends Controller
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
+
+            if ($this->priceService->lastFetchStoodIn()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice(),
+                    'provider' => $provider,
+                ]);
+            }
 
             // Get type names
             $typeNames = DB::table('invTypes')
@@ -1429,6 +1447,15 @@ class DiagnosticController extends Controller
             // Fetch prices
             $prices = $this->priceService->getPrices($typeIds);
 
+            // A provider that failed outright hands back the cached prices.
+            // Writing those back would only make stale prices look fresh, so
+            // only a type that had no price at all is written, from SeAT's own
+            // market data, as the scheduled refresh does.
+            $standIn = $this->priceService->lastFetchStoodIn();
+            if ($standIn) {
+                $prices = array_intersect_key($prices, array_flip($this->priceService->lastSeatStandInTypeIds()));
+            }
+
             // Store in cache using correct price_type column
             $stored = 0;
             $failed = 0;
@@ -1471,6 +1498,15 @@ class DiagnosticController extends Controller
             }
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            if ($standIn) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice()
+                        . " {$stored} type(s) with no price yet were priced from SeAT's own market data.",
+                    'provider' => $provider,
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

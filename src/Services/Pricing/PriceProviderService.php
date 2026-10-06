@@ -60,6 +60,16 @@ class PriceProviderService
     protected ?string $lastRequestError = null;
 
     /**
+     * Whether the last fetch stood in for a provider that failed outright, and
+     * which types it priced from SeAT's own market data because nothing had
+     * priced them yet. Everything else it returned is the last good cached
+     * price, which a refresh must not write back as if it were new.
+     */
+    protected bool $lastFetchStoodIn = false;
+
+    protected array $lastSeatStandInTypeIds = [];
+
+    /**
      * Price provider constants
      */
     const PROVIDER_SEAT = 'seat';
@@ -145,6 +155,8 @@ class PriceProviderService
         $this->lastJitaFallbackTypeIds = [];
         $this->lastRequestErrors = 0;
         $this->lastRequestError = null;
+        $this->lastFetchStoodIn = false;
+        $this->lastSeatStandInTypeIds = [];
 
         $provider = $this->getConfiguredProvider();
         
@@ -191,13 +203,66 @@ class PriceProviderService
 
             $this->recordProviderOutcome($provider, false, $e->getMessage());
 
-            // Fallback to SeAT database if configured provider fails
             if ($provider !== self::PROVIDER_SEAT) {
-                Log::info('Falling back to SeAT database provider');
-                return $this->getPricesFromSeAT($typeIds);
+                return $this->standInPrices($typeIds);
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * What to use while the provider has failed outright: the last good cached
+     * price for every type that has one, so values age on the basis the
+     * corporation chose instead of jumping to another, and SeAT's own market
+     * data only for a type nothing has priced yet, so it is not valued at zero.
+     */
+    protected function standInPrices(array $typeIds): array
+    {
+        $this->lastFetchStoodIn = true;
+
+        $cached = $this->cachedPrices($typeIds);
+        $missing = array_values(array_diff(array_map('intval', $typeIds), array_keys($cached)));
+        $seat = $missing ? array_filter($this->getPricesFromSeAT($missing), fn ($price) => $price > 0) : [];
+        $this->lastSeatStandInTypeIds = array_map('intval', array_keys($seat));
+
+        Log::info('Mining Manager: the price provider failed, so cached prices are kept', [
+            'kept' => count($cached),
+            'priced_from_seat' => count($seat),
+        ]);
+
+        return $cached + $seat;
+    }
+
+    /**
+     * Each type's cached price, for the price type and home region the plugin
+     * values with.
+     *
+     * @return array<int, float>
+     */
+    protected function cachedPrices(array $typeIds): array
+    {
+        if (empty($typeIds)) {
+            return [];
+        }
+
+        try {
+            $column = self::cachedPriceColumn($this->settingsService->getPricingSettings()['price_type'] ?? 'sell');
+            $regionId = (int) ($this->settingsService->getGeneralSettings()['default_region_id'] ?? self::DEFAULT_REGION_ID);
+
+            $prices = [];
+            foreach (MiningPriceCache::where('region_id', $regionId)
+                ->whereIn('type_id', array_map('intval', $typeIds))
+                ->where($column, '>', 0)
+                ->pluck($column, 'type_id') as $typeId => $price) {
+                $prices[(int) $typeId] = (float) $price;
+            }
+
+            return $prices;
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not read cached prices', ['error' => $e->getMessage()]);
+
+            return [];
         }
     }
 
@@ -939,6 +1004,33 @@ class PriceProviderService
     }
 
     /**
+     * Whether the last getPrices() call stood in for a provider that failed
+     * outright, and the types it priced from SeAT's own market data.
+     */
+    public function lastFetchStoodIn(): bool
+    {
+        return $this->lastFetchStoodIn;
+    }
+
+    /**
+     * @return int[]
+     */
+    public function lastSeatStandInTypeIds(): array
+    {
+        return $this->lastSeatStandInTypeIds;
+    }
+
+    /**
+     * Why the last fetch stood in, for the tools that test the provider: they
+     * get prices back either way and would otherwise report a pass.
+     */
+    public function standInNotice(): string
+    {
+        return 'The provider did not answer: ' . rtrim((string) ($this->providerStatus()['error'] ?? 'no detail'), '. ')
+            . '. Until it does, Mining Manager keeps the last cached prices.';
+    }
+
+    /**
      * Fetch Janice prices with a specific market override
      *
      * @param array $typeIds
@@ -1245,7 +1337,7 @@ class PriceProviderService
 
             $price = $this->getPrice($testTypeId);
 
-            return $price !== null && $price > 0;
+            return !$this->lastFetchStoodIn && $price !== null && $price > 0;
         } catch (Exception $e) {
             Log::error('Provider test failed', [
                 'provider' => $provider,
@@ -1718,6 +1810,7 @@ class PriceProviderService
                 'provider' => $provider,
                 'failing' => !$ok,
                 'error' => $ok ? null : $error,
+                'advice' => $ok ? null : $this->providerAdvice($provider),
                 'since' => $ok ? $status['since'] : $now,
                 'last_success' => $ok ? $now : $status['last_success'],
             ]);
@@ -1726,6 +1819,19 @@ class PriceProviderService
             // alert did.
             Log::warning('Mining Manager: could not record the price provider status', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * What to do about a provider that has stopped working, said in the alert
+     * so nobody has to go looking for it.
+     */
+    protected function providerAdvice(string $provider): string
+    {
+        if ($provider === self::PROVIDER_MANAGER_CORE && !self::isManagerCoreInstalled()) {
+            return 'Manager Core is set as the price provider but is no longer installed. Install it again, or pick another provider under Settings, Pricing.';
+        }
+
+        return 'Check the provider on the Diagnostics page, under Price Provider, or pick another one under Settings, Pricing.';
     }
 
     protected function announceProviderStatus(array $data): void

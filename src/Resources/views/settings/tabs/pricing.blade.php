@@ -47,6 +47,15 @@
                 @error('price_provider')
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
+                {{-- Without Manager Core its option is not in the list, so the
+                     list shows another provider than the one actually set. --}}
+                @if(($settings['pricing']['price_provider'] ?? null) === 'manager-core' && !\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
+                    <div class="alert alert-warning mt-2 mb-2">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Manager Core is set as the price provider but is no longer installed, so price refreshes are failing and the last cached prices are kept.
+                        Pick another provider here and save, or install Manager Core again.
+                    </div>
+                @endif
                 <small class="form-text text-muted">
                     <strong>SeAT Database:</strong> Uses SeAT's existing market_prices table (refreshed by SeAT's jobs)<br>
                     <strong>Fuzzwork:</strong> External market data API - no configuration needed<br>

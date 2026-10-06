@@ -241,7 +241,7 @@
                     'price_provider' => [
                         'label' => 'Price Provider Trouble',
                         'icon' => 'fas fa-coins text-danger',
-                        'desc' => 'Price refreshes have started failing, or work again. Sent on the change only. Cached prices are kept while the provider is down, so values age rather than drop to zero. Standalone.',
+                        'desc' => 'Price refreshes have started failing, or work again, and what to do about it. Sent on the change only. Cached prices are kept while the provider is down, so values age rather than drop to zero. Standalone.',
                         'scope' => 'general',
                         'has_role_ping' => true,
                         'has_user_ping' => false,

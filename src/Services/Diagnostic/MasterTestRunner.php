@@ -797,6 +797,10 @@ class MasterTestRunner
             return $this->fail('Price provider roundtrip', 'pricing', 'getPrices threw: ' . $e->getMessage());
         }
 
+        if ($this->priceProvider->lastFetchStoodIn()) {
+            return $this->fail('Price provider roundtrip', 'pricing', $this->priceProvider->standInNotice());
+        }
+
         $tritPrice = (float) ($prices[34] ?? 0);
         if ($tritPrice <= 0) {
             return $this->warn(
