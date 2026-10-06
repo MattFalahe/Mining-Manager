@@ -357,6 +357,41 @@ class DiagnosticController extends Controller
                 ) . ($waiting > 50 ? ' That many waiting means mining-manager:resolve-characters is not running.' : ''),
         ];
 
+        // Moons with extractions but no scan in SeAT. Their chunks are valued
+        // from the game's notices, but only once the first notice is in, and
+        // the simulator, Find Moons and the quality ratings need the scan.
+        try {
+            $unscanned = DB::table('moon_extractions as e')
+                ->leftJoin('universe_moon_contents as c', 'c.moon_id', '=', 'e.moon_id')
+                ->whereNotNull('e.moon_id')
+                ->whereNull('c.moon_id')
+                ->where('e.status', '!=', 'cancelled')
+                ->distinct()
+                ->pluck('e.moon_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $moonNames = $unscanned
+                ? DB::table('moons')->whereIn('moon_id', $unscanned)->pluck('name', 'moon_id')->all()
+                : [];
+            $listed = array_map(fn ($id) => $moonNames[$id] ?? "Moon {$id}", array_slice($unscanned, 0, 10));
+
+            $checks[] = [
+                'label'   => 'Moon scans for moons with extractions',
+                'status'  => $unscanned ? 'warn' : 'ok',
+                'message' => $unscanned
+                    ? count($unscanned) . ' moon(s) with extractions have no scan in SeAT: ' . implode(', ', $listed)
+                        . (count($unscanned) > 10 ? ' and ' . (count($unscanned) - 10) . ' more' : '')
+                        . ". Their chunks are valued from the game's notices once the first one is in, but the simulator, Find Moons and the quality ratings need the scan. Add the moon's probe scan to SeAT."
+                    : 'Every moon with an extraction has a scan in SeAT.',
+            ];
+        } catch (\Throwable $e) {
+            $checks[] = [
+                'label'   => 'Moon scans for moons with extractions',
+                'status'  => 'warn',
+                'message' => 'Could not check the moon scans: ' . $e->getMessage(),
+            ];
+        }
+
         if ($moonOwner) {
             try {
                 $refineryService = app(\MiningManager\Services\Moon\RefineryService::class);

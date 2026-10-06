@@ -429,24 +429,29 @@ class MoonExtractionService
                 $actualVolumes = $this->getActualOreVolumesFromNotification($structureId, $extractionStartTime, $chunkArrivalTime, $naturalDecayTime);
             }
 
-            // Check if universe_moon_contents table exists
-            if (!Schema::hasTable('universe_moon_contents')) {
-                Log::debug("Mining Manager: universe_moon_contents table not found");
-                return null;
+            // The moon's scan gives each ore's share of the chunk.
+            $contents = Schema::hasTable('universe_moon_contents')
+                ? DB::table('universe_moon_contents')->where('moon_id', $moonId)->get()->all()
+                : [];
+
+            // The game's notice lists every ore in the chunk with its volume, so
+            // a moon nobody scanned into SeAT, or an ore its scan misses, still
+            // gets a line: the notice's own share stands in for the scan's rate.
+            $scanned = array_map(fn ($content) => (int) $content->type_id, $contents);
+            $noticeTotal = $actualVolumes ? array_sum($actualVolumes) : 0;
+            foreach ((array) $actualVolumes as $typeId => $volume) {
+                if ($noticeTotal > 0 && !in_array((int) $typeId, $scanned, true)) {
+                    $contents[] = (object) ['type_id' => (int) $typeId, 'rate' => $volume / $noticeTotal];
+                }
             }
 
-            // Get moon composition percentages
-            $contents = DB::table('universe_moon_contents')
-                ->where('moon_id', $moonId)
-                ->get();
-
-            if ($contents->isEmpty()) {
-                Log::debug("Mining Manager: No composition data found for moon {$moonId} - moon not scanned");
+            if (!$contents) {
+                Log::debug("Mining Manager: No composition for moon {$moonId}: not scanned, and no notice with its ore yet");
                 return null;
             }
 
             // Batch-load all ore type data to avoid N+1 queries
-            $typeIds = $contents->pluck('type_id')->unique()->toArray();
+            $typeIds = array_values(array_unique(array_map(fn ($content) => (int) $content->type_id, $contents)));
             $oreTypes = DB::table('invTypes')
                 ->whereIn('typeID', $typeIds)
                 ->get()
