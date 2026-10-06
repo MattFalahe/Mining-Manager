@@ -290,6 +290,7 @@ class MoonController extends Controller
             ->hullTypes([(int) $extraction->structure_id])[(int) $extraction->structure_id] ?? null;
         $chunkBonuses = \MiningManager\Services\Moon\ChunkBonuses::describe($extraction, $hull, $chunkM3, (float) ($estimatedValue ?? 0));
         $volumeChecks = $extractionService->volumeChecks($extraction);
+        $moonScanned = !$extraction->moon_id || $extractionService->isMoonScanned((int) $extraction->moon_id);
 
         return view('mining-manager::moon.show', compact(
             'extraction',
@@ -299,7 +300,8 @@ class MoonController extends Controller
             'timeUntilUnstable',
             'history',
             'chunkBonuses',
-            'volumeChecks'
+            'volumeChecks',
+            'moonScanned'
         ));
     }
 

@@ -394,6 +394,17 @@
                     </h3>
                 </div>
                 <div class="card-body">
+                    {{-- Built from the game's notices when the moon has no scan: the
+                         chunk is valued right, but the rest of the plugin cannot see
+                         the moon until someone scans it. --}}
+                    @if(!($moonScanned ?? true))
+                        <div class="alert alert-info mb-3">
+                            <i class="fas fa-satellite-dish"></i>
+                            <strong>{{ trans('mining-manager::moons.moon_not_scanned_title') }}</strong>
+                            {{ trans('mining-manager::moons.moon_not_scanned') }}
+                            <a href="{{ url('/tools/moons') }}" target="_blank">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                        </div>
+                    @endif
                     @if($extraction->is_jackpot)
                         <div class="alert mb-3" style="background: rgba(255, 215, 0, 0.1); border-left: 4px solid #ffd700; color: #ffd700;">
                             <i class="fas fa-info-circle"></i>
@@ -585,7 +596,7 @@
                         <i class="fas fa-hashtag"></i> <strong>Moon ID:</strong> {{ $extraction->moon_id ?? 'N/A' }}
                     </p>
                     <p class="text-muted">
-                        Once this moon is scanned, the ore composition, percentages, and estimated value will appear here.
+                        The ore composition and estimated value appear here once the moon is scanned, or once the game's first notice about this extraction comes in.
                     </p>
                 </div>
             </div>
