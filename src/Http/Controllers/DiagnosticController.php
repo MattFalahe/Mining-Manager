@@ -231,6 +231,19 @@ class DiagnosticController extends Controller
                     . '. Run migrations. Refinery Gone, Extraction Cancelled, Moon Not Rescheduled and Moons Need Planning cannot be sent or subscribed to.',
         ];
 
+        // 4c. Moon Scan Missing schema
+        $missingScanAlert = array_values(array_filter([
+            \Schema::hasTable('mining_manager_moon_scan_alerts') ? null : 'mining_manager_moon_scan_alerts',
+            \Schema::hasColumn('webhook_configurations', 'notify_moon_scan_missing') ? null : 'notify_moon_scan_missing',
+        ]));
+        $checks[] = [
+            'label'   => 'Migration 000036: moon scan alerts table + webhook opt-in',
+            'status'  => $missingScanAlert ? 'fail' : 'ok',
+            'message' => $missingScanAlert
+                ? 'Missing: ' . implode(', ', $missingScanAlert) . '. Run migrations. Moon Scan Missing cannot be sent or subscribed to.'
+                : 'mining_manager_moon_scan_alerts and notify_moon_scan_missing present.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [
@@ -381,7 +394,7 @@ class DiagnosticController extends Controller
                 'message' => $unscanned
                     ? count($unscanned) . ' moon(s) with extractions have no scan in SeAT: ' . implode(', ', $listed)
                         . (count($unscanned) > 10 ? ' and ' . (count($unscanned) - 10) . ' more' : '')
-                        . ". Their chunks are valued from the game's notices once the first one is in, but the simulator, Find Moons and the quality ratings need the scan. Add the moon's probe scan to SeAT."
+                        . ". Their chunks are valued from the game's notices once the first one is in, but the simulator, Find Moons and the quality ratings need the scan. Add the moon's probe scan to SeAT. Moon Scan Missing, in the webhooks' Plugin Health group, says when another one turns up."
                     : 'Every moon with an extraction has a scan in SeAT.',
             ];
         } catch (\Throwable $e) {
@@ -3888,6 +3901,7 @@ class DiagnosticController extends Controller
                 'next_planned' => $data['next_planned'] ?? now()->addHours(10)->format('Y-m-d H:i'),
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
             ])),
+            'moon_scan_missing' => $ns->sendMoonScanMissing($data),
             'schedule_needs_filling' => $ns->sendScheduleNeedsFilling(array_merge($data, [
                 'refineries' => $data['refineries'] ?? ['Perimeter: Diagnostic Athanor (R32), nothing planned', 'Jita: Diagnostic Tatara (R16), 1 of 2 planned'],
                 'more_count' => (int) ($data['more_count'] ?? 0),
@@ -4185,6 +4199,7 @@ class DiagnosticController extends Controller
             'event_started' => 'Mining Event Started',
             'event_completed' => 'Mining Event Completed',
             'price_provider' => 'Price Provider Trouble',
+            'moon_scan_missing' => 'Moon Scan Missing (moons with no scan)',
             'moon_ready' => 'Moon Extraction Ready',
             'jackpot_detected' => 'Jackpot Detected',
             'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
@@ -4370,6 +4385,8 @@ class DiagnosticController extends Controller
             'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
             'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
             'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+            'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+            'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
             'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
             default => NotificationService::TYPE_CUSTOM,
         };
@@ -4582,6 +4599,8 @@ class DiagnosticController extends Controller
                 'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
                 'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
                 'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+                'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+                'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -4863,6 +4882,8 @@ class DiagnosticController extends Controller
                 'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
                 'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
                 'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+                'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+                'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -5077,6 +5098,17 @@ class DiagnosticController extends Controller
                 'total' => 2,
                 'target' => 1,
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'moon_scan_missing' => [
+                'moons' => [
+                    'Perimeter: ' . $request->input('test_moon_name', 'Perimeter I - Moon 1') . ' (' . $request->input('test_structure_name', 'Athanor - Test Moon') . '), chunk due ' . now()->addDays(5)->format('Y-m-d H:i') . ' EVE, no value yet',
+                    'Jita: Jita IV - Moon 4 (Tatara - Test Moon), 2 pulls planned, next ' . now()->addDays(9)->format('Y-m-d H:i') . ' EVE',
+                ],
+                'more_count' => 0,
+                'total' => 2,
+                'reminder' => false,
+                'moons_url' => rtrim(config('app.url', ''), '/') . '/tools/moons',
                 'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             ],
             'metenox_cargo_full' => [

@@ -60,6 +60,7 @@ class NotificationService
     const TYPE_TAX_OVERDUE = 'tax_overdue';
     const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
     const TYPE_PRICE_PROVIDER = 'price_provider';
+    const TYPE_MOON_SCAN_MISSING = 'moon_scan_missing';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
@@ -276,6 +277,49 @@ class NotificationService
     }
 
     /**
+     * Price provider trouble: it stopped answering, or it is answering again.
+     *
+     * Sent on the change only. A provider that is down stays down for hours,
+     * and an alert every refresh would be noise nobody reads.
+     *
+     * @param array $data provider, failing, error, since, last_success
+     * @return array
+     */
+    public function sendPriceProviderStatus(array $data): array
+    {
+        $data['description'] = $data['description'] ?? (!empty($data['failing'])
+            ? 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.'
+            : 'Price refreshes are working again.');
+
+        return $this->send(self::TYPE_PRICE_PROVIDER, [], $data);
+    }
+
+    /**
+     * Send a `moon_scan_missing` notification: one message listing the moons
+     * our refineries drill that have no scan in SeAT, so their chunks are
+     * valued from the game's notices instead.
+     *
+     * The caller cuts the list to a length every channel accepts and counts
+     * what it left out; the total is always shown.
+     *
+     * Expected keys in $data:
+     *   moons (list of lines), more_count, total, reminder, moons_url
+     */
+    public function sendMoonScanMissing(array $data): array
+    {
+        if (!isset($data['description'])) {
+            $lines = array_map(fn ($line) => '• ' . $line, $data['moons'] ?? []);
+            if (($data['more_count'] ?? 0) > 0) {
+                $lines[] = sprintf('and %d more', $data['more_count']);
+            }
+            $data['description'] = "These moons have one of your refineries on them but no scan in SeAT, so Mining Manager values their chunks from the game's notices instead. A chunk has no value until its first notice is in, and the simulator, Find Moons and the quality ratings cannot see these moons until they are scanned.\n\n"
+                . implode("\n", $lines);
+        }
+
+        return $this->send(self::TYPE_MOON_SCAN_MISSING, [], $data);
+    }
+
+    /**
      * Send the outstanding-tax digest to directors.
      *
      * Every other tax notification speaks to one member about one debt. This is
@@ -294,24 +338,6 @@ class NotificationService
      * @param array $data
      * @return array
      */
-    /**
-     * Price provider trouble: it stopped answering, or it is answering again.
-     *
-     * Sent on the change only. A provider that is down stays down for hours,
-     * and an alert every refresh would be noise nobody reads.
-     *
-     * @param array $data provider, failing, error, since, last_success
-     * @return array
-     */
-    public function sendPriceProviderStatus(array $data): array
-    {
-        $data['description'] = $data['description'] ?? (!empty($data['failing'])
-            ? 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.'
-            : 'Price refreshes are working again.');
-
-        return $this->send(self::TYPE_PRICE_PROVIDER, [], $data);
-    }
-
     public function sendOutstandingDigest(array $data): array
     {
         $data['description'] = $data['description']
@@ -989,6 +1015,7 @@ class NotificationService
             'tax_overdue' => self::TYPE_TAX_OVERDUE,
             'tax_outstanding_digest' => self::TYPE_TAX_OUTSTANDING_DIGEST,
             'price_provider' => self::TYPE_PRICE_PROVIDER,
+            'moon_scan_missing' => self::TYPE_MOON_SCAN_MISSING,
             'event_created' => self::TYPE_EVENT_CREATED,
             'event_started' => self::TYPE_EVENT_STARTED,
             'event_completed' => self::TYPE_EVENT_COMPLETED,
@@ -1425,13 +1452,6 @@ class NotificationService
     }
 
     /**
-     * Check if a notification type is enabled for a specific channel
-     *
-     * @param string $type
-     * @param string $channel
-     * @return bool
-     */
-    /**
      * Check if a notification type is globally enabled (master toggle).
      * Stored in notifications.enabled_types setting.
      */
@@ -1452,6 +1472,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_PRICE_PROVIDER => 'price_provider',
+            self::TYPE_MOON_SCAN_MISSING => 'moon_scan_missing',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1483,6 +1504,13 @@ class NotificationService
         return (bool) ($enabledTypes[$typeKey] ?? true);
     }
 
+    /**
+     * Check if a notification type is enabled for a specific channel
+     *
+     * @param string $type
+     * @param string $channel
+     * @return bool
+     */
     protected function isTypeEnabledForChannel(string $type, string $channel): bool
     {
         $typeKey = match ($type) {
@@ -1493,6 +1521,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_PRICE_PROVIDER => 'price_provider',
+            self::TYPE_MOON_SCAN_MISSING => 'moon_scan_missing',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1535,6 +1564,33 @@ class NotificationService
 
         // Discord uses webhook-level toggles, always allow through here
         return true;
+    }
+
+    /**
+     * Whether a message of this type would reach anybody right now: Slack with
+     * the type left on, or a webhook bound to it in the Moon Owner
+     * Corporation's scope.
+     *
+     * For a check that runs every few hours and only counts something as said
+     * once it was: asking first keeps it from writing a skipped send to the
+     * notification log on every run while nobody has bound the alert. Only for
+     * corporation-scoped broadcasts whose webhook switch carries the type's
+     * own name.
+     */
+    public function reachesAnyone(string $type): bool
+    {
+        if (!$this->isEnabled() || !$this->isTypeGloballyEnabled($type)) {
+            return false;
+        }
+
+        if ((bool) $this->settings->getSetting('notifications.slack_enabled', false)
+            && $this->settings->getSetting('notifications.slack_webhook_url')
+            && $this->isTypeEnabledForChannel($type, self::CHANNEL_SLACK)) {
+            return true;
+        }
+
+        return $this->hasAnyEnabledWebhook()
+            && $this->getMoonOwnerScopedWebhooks($type)->isNotEmpty();
     }
 
     /**
@@ -1646,6 +1702,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => 'tax_overdue',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_PRICE_PROVIDER => 'price_provider',
+            self::TYPE_MOON_SCAN_MISSING => 'moon_scan_missing',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -2151,6 +2208,16 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
+            self::TYPE_MOON_SCAN_MISSING => [
+                'subject' => sprintf('Moon Scan Missing: %d', $data['total'] ?? 0),
+                'body' => sprintf(
+                    "%s\n\n%s\n\n" .
+                    "%s Management",
+                    $data['description'] ?? '',
+                    $this->moonScanTotalLine($data),
+                    $this->getCorpName()
+                )
+            ],
             self::TYPE_NEXT_EXTRACTION_PLANNED => [
                 'subject' => sprintf('Next Extraction Planned: %s', $data['structure_name'] ?? 'Refinery'),
                 'body' => sprintf(
@@ -2321,13 +2388,6 @@ class NotificationService
     }
 
     /**
-     * Format message for Slack
-     *
-     * @param string $type
-     * @param array $data
-     * @return array
-     */
-    /**
      * Build the Slack attachment payload for the given notification type.
      *
      * Public so the diagnostic preview UI can call it directly rather
@@ -2339,6 +2399,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => 'danger',
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
             self::TYPE_PRICE_PROVIDER => 'warning',
+            self::TYPE_MOON_SCAN_MISSING => '#E67E22',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
@@ -2373,6 +2434,7 @@ class NotificationService
             self::TYPE_PRICE_PROVIDER => !empty($data['failing'])
                 ? "Price provider " . ($data['provider'] ?? 'unknown') . " is not answering: " . ($data['error'] ?? 'no detail')
                 : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
+            self::TYPE_MOON_SCAN_MISSING => "🛰️ " . $this->moonScanTotalLine($data) . (!empty($data['description']) ? "\n" . $data['description'] : ''),
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
@@ -2700,6 +2762,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => 15158332, // Red
             self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
             self::TYPE_PRICE_PROVIDER => 15158332, // Red while it is failing; the title says which way it went
+            self::TYPE_MOON_SCAN_MISSING => 0xE67E22, // Orange: valued from a fallback until somebody scans
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
@@ -2737,6 +2800,7 @@ class NotificationService
             self::TYPE_TAX_OVERDUE => '❌ Overdue Tax Payment',
             self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
             self::TYPE_PRICE_PROVIDER => '💱 Price Provider',
+            self::TYPE_MOON_SCAN_MISSING => '🛰️ Moon Scan Missing',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
@@ -2955,6 +3019,10 @@ class NotificationService
             self::TYPE_SCHEDULE_NEEDS_FILLING => array_values(array_filter([
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
             ])),
+            self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
+                !empty($data['reminder']) ? ['title' => 'Reminder', 'value' => 'Daily, until each moon is scanned', 'short' => false] : null,
+                !empty($data['moons_url']) ? ['title' => 'Add a scan', 'value' => '<' . $data['moons_url'] . "|Open SeAT's Moons Reporter>", 'short' => false] : null,
+            ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 isset($data['alert_flavor']) ? ['title' => 'Threat Type', 'value' => ucwords(str_replace('_', ' ', $data['alert_flavor'])), 'short' => true] : null,
                 isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
@@ -3032,21 +3100,6 @@ class NotificationService
     }
 
     /**
-     * Format fields for Discord
-     *
-     * @param string $type
-     * @param array $data
-     * @return array
-     */
-    /**
-     * Label a timestamp as EVE time without doubling the suffix.
-     *
-     * The senders disagree: detectAndNotifyMismatches() appends " EVE" itself,
-     * sendNextExtractionPlannedNotification() and the two extraction_started
-     * callers do not. Rather than pick a side and leave the other rendering
-     * "14:00 EVE EVE", the field builder adds it only when it is missing.
-     */
-    /**
      * The closing line of the needs-planning message, worded for the target the
      * corporation set: "at least 1 extraction" reads as it should, and so does
      * "at least 2 extractions".
@@ -3063,6 +3116,19 @@ class NotificationService
         );
     }
 
+    protected function moonScanTotalLine(array $data): string
+    {
+        return sprintf('Moons missing a scan: %d', (int) ($data['total'] ?? 0));
+    }
+
+    /**
+     * Label a timestamp as EVE time without doubling the suffix.
+     *
+     * The senders disagree: detectAndNotifyMismatches() appends " EVE" itself,
+     * sendNextExtractionPlannedNotification() and the two extraction_started
+     * callers do not. Rather than pick a side and leave the other rendering
+     * "14:00 EVE EVE", the field builder adds it only when it is missing.
+     */
     protected function withEveSuffix(?string $time): ?string
     {
         if ($time === null || $time === '') {
@@ -3072,6 +3138,13 @@ class NotificationService
         return str_ends_with(strtoupper(trim($time)), ' EVE') ? $time : $time . ' EVE';
     }
 
+    /**
+     * Format fields for Discord
+     *
+     * @param string $type
+     * @param array $data
+     * @return array
+     */
     protected function formatFieldsForDiscord(string $type, array $data): array
     {
         return match ($type) {
@@ -3278,6 +3351,11 @@ class NotificationService
             self::TYPE_SCHEDULE_NEEDS_FILLING => array_values(array_filter([
                 ['name' => '📊 Total', 'value' => $this->needsPlanningTotalLine($data), 'inline' => false],
                 !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
+                ['name' => '📊 Total', 'value' => $this->moonScanTotalLine($data), 'inline' => false],
+                !empty($data['reminder']) ? ['name' => '🔁 Reminder', 'value' => 'Daily, until each moon is scanned', 'inline' => false] : null,
+                !empty($data['moons_url']) ? ['name' => '🔗 Add a scan', 'value' => "[Open SeAT's Moons Reporter](" . $data['moons_url'] . ')', 'inline' => false] : null,
             ])),
             self::TYPE_EXTRACTION_AT_RISK => array_values(array_filter([
                 // Flavor indicator — important for quick triage in a noisy channel

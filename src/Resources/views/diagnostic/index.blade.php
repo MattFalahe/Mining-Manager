@@ -1372,6 +1372,10 @@
                                                 <option value="moon_not_rescheduled">⏰ Moon Not Rescheduled (reminder)</option>
                                                 <option value="schedule_needs_filling">🗓️ Moons Need Planning (one list)</option>
                                             </optgroup>
+                                            <optgroup label="Plugin Health">
+                                                <option value="price_provider">💱 Price Provider Trouble</option>
+                                                <option value="moon_scan_missing">🛰️ Moon Scan Missing</option>
+                                            </optgroup>
                                             <optgroup label="Theft Detection">
                                                 <option value="theft_detected">⚠️ Theft Detected</option>
                                                 <option value="critical_theft">🔴 Critical Theft</option>
@@ -3530,7 +3534,7 @@ function runFireAllNotifications() {
     const spinner = document.getElementById('ntFireAllSpinner');
     const summary = document.getElementById('ntSummary');
 
-    // All 15 notification types grouped by surface.
+    // Every notification type, grouped by surface.
     // Order: lightest first (tax/event) → moon/report → theft last
     // so the user sees quick wins before the longer theft chain.
     const allTypes = [
@@ -3552,6 +3556,8 @@ function runFireAllNotifications() {
         { type: 'extraction_cancelled', label: '🛑 Moon Extraction Cancelled' },
         { type: 'moon_not_rescheduled', label: '⏰ Moon Not Rescheduled' },
         { type: 'schedule_needs_filling', label: '🗓️ Moons Need Planning' },
+        { type: 'price_provider', label: '💱 Price Provider Trouble' },
+        { type: 'moon_scan_missing', label: '🛰️ Moon Scan Missing' },
         { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
         { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
         { type: 'report_generated',    label: '📊 Report Generated' },

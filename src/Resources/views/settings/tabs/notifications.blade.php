@@ -235,6 +235,29 @@
                     ],
                 ],
             ],
+            'Plugin Health' => [
+                'icon' => 'fas fa-heartbeat text-danger',
+                'types' => [
+                    'price_provider' => [
+                        'label' => 'Price Provider Trouble',
+                        'icon' => 'fas fa-coins text-danger',
+                        'desc' => 'Price refreshes have started failing, or work again. Sent on the change only. Cached prices are kept while the provider is down, so values age rather than drop to zero. Standalone.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
+                    'moon_scan_missing' => [
+                        'label' => 'Moon Scan Missing',
+                        'icon' => 'fas fa-satellite-dish text-warning',
+                        'desc' => 'Moons your refineries drill that have no scan in SeAT. Their chunks are valued from the game\'s notices instead, only once the first notice is in, and the simulator, Find Moons and the quality ratings cannot see them. One message when a refinery with a moon drill is found on such a moon, when an extraction starts there and when a pull is planned there, and daily as well if you switch that on below. Standalone.',
+                        'scope' => 'general',
+                        'has_role_ping' => true,
+                        'has_user_ping' => false,
+                        'has_show_amount' => false,
+                    ],
+                ],
+            ],
             'Theft Detection' => [
                 'icon' => 'fas fa-user-secret text-danger',
                 'types' => [
@@ -670,6 +693,7 @@
                         'schedule_needs_filling' => ['label' => 'Moons Need Planning (one list)', 'icon' => 'fas fa-calendar-plus text-primary'],
                         'tax_outstanding_digest' => ['label' => 'Outstanding Mining Tax (digest)', 'icon' => 'fas fa-clipboard-list text-warning'],
                         'price_provider' => ['label' => 'Price Provider Trouble', 'icon' => 'fas fa-coins text-danger'],
+                        'moon_scan_missing' => ['label' => 'Moon Scan Missing', 'icon' => 'fas fa-satellite-dish text-warning'],
                         'theft_detected' => ['label' => 'Theft Detected', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'critical_theft' => ['label' => 'Critical Theft', 'icon' => 'fas fa-skull-crossbones text-danger'],
                         'active_theft' => ['label' => 'Active Theft', 'icon' => 'fas fa-bolt text-danger'],
@@ -921,6 +945,40 @@
                         <i class="fas fa-info-circle"></i>
                         Default 24 hours. Checked with every extraction import.
                     </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    {{-- MOON SCAN MISSING                                                --}}
+    {{-- ═══════════════════════════════════════════════════════════════ --}}
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-satellite-dish text-warning"></i>
+                Moon Scan Missing
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                A moon's scan in SeAT is where Mining Manager gets its ore. A moon without one is valued from the
+                game's notices instead, once the first one is in. Moon Scan Missing lists those moons when one of your
+                refineries with a moon drill is found on one, when an extraction starts there and when a pull is planned
+                there, each of them once. It is checked with every extraction import. Bind it to a webhook under
+                Webhooks, in the Plugin Health group, to receive it.
+            </small>
+            <div class="form-group row align-items-center mb-0">
+                <div class="col-md-4 col-form-label">Daily reminder</div>
+                <div class="col-md-8">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input"
+                               id="moon_scan_missing_daily" name="moon_scan_missing_daily" value="1"
+                               {{ old('moon_scan_missing_daily', $notificationSettings['moon_scan_missing_daily'] ?? false) ? 'checked' : '' }}>
+                        <label class="custom-control-label" for="moon_scan_missing_daily">
+                            Also list every moon still missing a scan once a day, until each one is scanned
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>

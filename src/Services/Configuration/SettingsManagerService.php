@@ -1202,6 +1202,8 @@ class SettingsManagerService
         'refinery_gone', 'extraction_cancelled', 'moon_not_rescheduled', 'schedule_needs_filling',
         // Metenox (v2.0.1) — bay-full warning, standalone (no cross-plugin deps)
         'metenox_cargo_full',
+        // Plugin health
+        'price_provider', 'moon_scan_missing',
         // Theft
         'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved',
         // Reports
@@ -1267,6 +1269,10 @@ class SettingsManagerService
             // ahead, and hours between lists while some fall short.
             'planned_ahead_target' => (int) $this->getSetting('notifications.planned_ahead_target', 1),
             'schedule_needs_filling_hours' => (int) $this->getSetting('notifications.schedule_needs_filling_hours', 24),
+
+            // Moon Scan Missing: list every moon still missing a scan again
+            // once a day, on top of the message for each new reason.
+            'moon_scan_missing_daily' => (bool) $this->getSetting('notifications.moon_scan_missing_daily', false),
 
             // extraction_started detection mode. 'auto' uses Manager Core's
             // ESI fast-poll when present (~2 min detection); 'seat_native'

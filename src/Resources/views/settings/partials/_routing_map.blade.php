@@ -210,10 +210,17 @@
                 'moon_not_rescheduled' => ['label' => 'Moon Not Rescheduled (reminder)', 'col' => 'notify_moon_not_rescheduled'],
                 'schedule_needs_filling' => ['label' => 'Moons Need Planning (one list)', 'col' => 'notify_schedule_needs_filling'],
                 'tax_outstanding_digest' => ['label' => 'Outstanding Mining Tax (digest)', 'col' => 'notify_tax_outstanding_digest'],
-                'price_provider' => ['label' => 'Price Provider Trouble', 'col' => 'notify_price_provider'],
                 'extraction_at_risk'  => ['label' => 'Extraction at Risk (MC+SM)',      'col' => 'notify_extraction_at_risk',  'requires_mc' => true, 'requires_sm' => true],
                 'extraction_lost'     => ['label' => 'Extraction Lost (MC+SM)',         'col' => 'notify_extraction_lost',     'requires_mc' => true, 'requires_sm' => true],
                 'metenox_cargo_full'  => ['label' => 'Metenox Cargo Bay Full',          'col' => 'notify_metenox_cargo_full'],
+            ],
+        ],
+        'health' => [
+            'label' => 'Plugin health',
+            'icon'  => 'fas fa-heartbeat',
+            'types' => [
+                'price_provider'    => ['label' => 'Price Provider Trouble', 'col' => 'notify_price_provider'],
+                'moon_scan_missing' => ['label' => 'Moon Scan Missing',      'col' => 'notify_moon_scan_missing'],
             ],
         ],
         'theft' => [

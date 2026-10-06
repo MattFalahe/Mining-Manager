@@ -590,6 +590,10 @@ class SettingsController extends Controller
                 'min:1',
                 'max:336',
             ],
+            'moon_scan_missing_daily' => [
+                'nullable',
+                'boolean',
+            ],
             'moon_extraction_fastpoll_mode' => [
                 'nullable',
                 'in:auto,seat_native',
@@ -685,6 +689,10 @@ class SettingsController extends Controller
             $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
                 ? (int) $everyInput
                 : 24;
+
+            // Moon Scan Missing goes once per new reason; the daily list on top
+            // of that is opt-in.
+            $data['moon_scan_missing_daily'] = $request->boolean('moon_scan_missing_daily');
 
             // extraction_started detection mode (auto = Manager Core fast-poll
             // when present; seat_native = endpoint-driven cron pass).
@@ -1408,6 +1416,7 @@ class SettingsController extends Controller
             $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
+            $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1485,6 +1494,7 @@ class SettingsController extends Controller
             $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
+            $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
@@ -1667,6 +1677,7 @@ class SettingsController extends Controller
             'notify_schedule_needs_filling' => 'nullable|boolean',
             'notify_tax_outstanding_digest' => 'nullable|boolean',
             'notify_price_provider' => 'nullable|boolean',
+            'notify_moon_scan_missing' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
             'notify_event_created' => 'nullable|boolean',

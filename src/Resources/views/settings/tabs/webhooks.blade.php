@@ -263,6 +263,11 @@
                                                     <i class="fas fa-coins"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_moon_scan_missing ?? false)
+                                                <span class="badge badge-warning" title="Moon Scan Missing">
+                                                    <i class="fas fa-satellite-dish"></i>
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
@@ -521,13 +526,6 @@
                                 Outstanding Mining Tax (weekly director digest)
                             </label>
                         </div>
-                        <div class="custom-control custom-checkbox">
-                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
-                            <label class="custom-control-label" for="notify-price-provider">
-                                <i class="fas fa-coins text-danger"></i>
-                                Price Provider Trouble
-                            </label>
-                        </div>
 
                         @php
                             // Cross-plugin checks for extraction_at_risk + extraction_lost.
@@ -634,6 +632,25 @@
                             <label class="custom-control-label" for="notify-report-generated">
                                 <i class="fas fa-chart-bar text-info"></i>
                                 {{ trans('mining-manager::settings.report_generated') }}
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-1"><strong>Plugin Health</strong></small>
+                        <small class="text-muted d-block mb-2">Something is stopping Mining Manager from valuing things properly. Worth a channel somebody reads.</small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
+                            <label class="custom-control-label" for="notify-price-provider">
+                                <i class="fas fa-coins text-danger"></i>
+                                Price Provider Trouble
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-scan-missing" name="notify_moon_scan_missing" value="1">
+                            <label class="custom-control-label" for="notify-moon-scan-missing">
+                                <i class="fas fa-satellite-dish text-warning"></i>
+                                Moon Scan Missing
                             </label>
                         </div>
                     </div>

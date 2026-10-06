@@ -2433,6 +2433,10 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                     <td><i class="fas fa-chart-bar text-primary"></i> {{ trans('mining-manager::help.webhook_cat_reports') }}</td>
                                     <td>{{ trans('mining-manager::help.webhook_cat_reports_events') }}</td>
                                 </tr>
+                                <tr>
+                                    <td><i class="fas fa-heartbeat text-danger"></i> {{ trans('mining-manager::help.webhook_cat_health') }}</td>
+                                    <td>{{ trans('mining-manager::help.webhook_cat_health_events') }}</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>

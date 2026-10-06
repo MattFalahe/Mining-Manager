@@ -97,6 +97,8 @@ function loadWebhookData(webhookId) {
                 if (digestField) digestField.checked = !!webhook.notify_tax_outstanding_digest;
                 const providerField = document.getElementById('notify-price-provider');
                 if (providerField) providerField.checked = !!webhook.notify_price_provider;
+                const scanMissingField = document.getElementById('notify-moon-scan-missing');
+                if (scanMissingField) scanMissingField.checked = !!webhook.notify_moon_scan_missing;
                 const atRiskField = document.getElementById('notify-extraction-at-risk');
                 if (atRiskField) atRiskField.checked = !!webhook.notify_extraction_at_risk;
                 const lostField = document.getElementById('notify-extraction-lost');
@@ -161,6 +163,7 @@ function saveWebhook() {
         notify_schedule_needs_filling: document.getElementById('notify-schedule-needs-filling')?.checked ? 1 : 0,
         notify_tax_outstanding_digest: document.getElementById('notify-tax-outstanding-digest')?.checked ? 1 : 0,
         notify_price_provider: document.getElementById('notify-price-provider')?.checked ? 1 : 0,
+        notify_moon_scan_missing: document.getElementById('notify-moon-scan-missing')?.checked ? 1 : 0,
         notify_extraction_at_risk: document.getElementById('notify-extraction-at-risk')?.checked ? 1 : 0,
         notify_extraction_lost: document.getElementById('notify-extraction-lost')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,

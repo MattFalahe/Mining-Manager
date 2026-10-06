@@ -188,6 +188,21 @@ class UpdateMoonExtractionsCommand extends Command
             $this->error("Planner reconciliation failed: {$e->getMessage()}");
         }
 
+        // Moons we drill with no scan in SeAT are valued from the game's notices
+        // instead, and the simulator cannot see them. Say so once per new
+        // reason, and daily as well if that is switched on.
+        try {
+            $moonOwnerCorpId = $settingsService->getTaxProgramCorporationId();
+            if ($moonOwnerCorpId !== null) {
+                $listed = app(\MiningManager\Services\Moon\MoonScanWatch::class)->run((int) $moonOwnerCorpId);
+                if ($listed > 0) {
+                    $this->warn("Sent Moon Scan Missing for {$listed} moon(s).");
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->error("Moon scan watch failed: {$e->getMessage()}");
+        }
+
         // Pulls planned on a refinery we no longer own cannot happen, so they
         // come off the calendar, but only once it has been missing on three
         // sightings twelve hours apart. A structure can drop out of SeAT for an

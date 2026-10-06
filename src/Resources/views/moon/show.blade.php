@@ -394,15 +394,14 @@
                     </h3>
                 </div>
                 <div class="card-body">
-                    {{-- Built from the game's notices when the moon has no scan: the
-                         chunk is valued right, but the rest of the plugin cannot see
-                         the moon until someone scans it. --}}
+                    {{-- The scan is the first source for a moon's ore. Without one the
+                         chunk is built from the game's notices, so say so plainly. --}}
                     @if(!($moonScanned ?? true))
-                        <div class="alert alert-info mb-3">
+                        <div class="alert alert-warning mb-3">
                             <i class="fas fa-satellite-dish"></i>
                             <strong>{{ trans('mining-manager::moons.moon_not_scanned_title') }}</strong>
                             {{ trans('mining-manager::moons.moon_not_scanned') }}
-                            <a href="{{ url('/tools/moons') }}" target="_blank">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                            <a href="{{ url('/tools/moons') }}" target="_blank" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
                         </div>
                     @endif
                     @if($extraction->is_jackpot)

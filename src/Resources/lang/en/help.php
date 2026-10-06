@@ -377,7 +377,7 @@ return [
     'moon_tracking' => 'Tracking Moon Extractions',
     'moon_tracking_desc' => 'The system automatically tracks all moon extraction activities from your structures. View extraction history, active extractions, completion progress, and structure names.',
     'moon_compositions' => 'Moon Compositions',
-    'moon_compositions_desc' => 'Record and analyze the ore composition of each moon. View ore percentages, rarity classification (R4-R64), and estimated extraction values based on current market prices.',
+    'moon_compositions_desc' => 'A moon\'s ore comes from its scan in SeAT\'s Moons Reporter: the percentages, the rarity (R4 to R64) and an estimated value at current market prices. A moon nobody has scanned is still valued, from the game\'s own extraction notices, once the first one is in. Its extraction page says so in an amber banner, and the simulator, Find Moons and the quality ratings cannot see it until it is scanned. Moon Scan Missing, in the Plugin Health group on the webhook form, lists the moons your refineries drill that need a scan.',
     'extraction_notifications' => 'Extraction Notifications',
     'extraction_notifications_desc' => 'A moon-arrival notification fires once, the moment a chunk actually becomes minable (within ~60s of arrival time). Enable / disable per channel and configure target webhooks under Settings → Notifications — the "moon_arrival" event type controls the master toggle, role ping, and per-webhook subscriptions.',
     'moon_value' => 'Moon Value Calculator',
@@ -783,6 +783,8 @@ return [
     'webhook_cat_tax_events' => 'Tax Generated (broadcast), Tax Announcement (broadcast: new invoices notification without ISK amounts), Tax Reminder (personal), Tax Invoice (personal), Tax Overdue (personal), Outstanding Mining Tax (weekly digest for directors of who still owes)',
     'webhook_cat_reports' => 'Reports',
     'webhook_cat_reports_events' => 'Report Generated (when a scheduled report completes)',
+    'webhook_cat_health' => 'Plugin Health',
+    'webhook_cat_health_events' => 'Price Provider Trouble (price refreshes started failing, or work again), Moon Scan Missing (moons your refineries drill with no scan in SeAT, valued from the game\'s notices until they are scanned; once per new reason, and daily as well if you switch that on)',
 
     'webhook_role_ping_title' => 'Discord Role Pinging',
     'webhook_role_ping_desc' => 'Role pinging is configured per notification type on the Notifications tab. Each notification type has its own "Ping Role" toggle and "Role ID" field, allowing you to ping different roles for different events (e.g., @officers for theft alerts, @miners for event announcements). Personal tax notifications (reminder, invoice, overdue) can optionally ping individual Discord users via seat-connector instead of a role. The "Show ISK Amount" toggle controls whether tax amounts are visible in notifications — disable this for privacy if the notification channel is public.',
