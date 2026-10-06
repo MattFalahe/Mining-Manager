@@ -784,7 +784,59 @@ class MoonController extends Controller
             // Same test OreValuationService makes: minerals, or else the ore.
             'taxBasis' => ($settings->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price' ? 'refined' : 'ore',
             'features' => $settings->getFeatureFlags(),
+            'unscannedRefineryMoons' => $this->unscannedRefineryMoons($settings),
         ]);
+    }
+
+    /**
+     * The moons our refineries sit on that nobody has scanned into SeAT. The
+     * simulator only works from a scan and its moon box only lists scanned
+     * moons, so without this those moons would simply be missing, with
+     * nothing to say why.
+     *
+     * @return array<int, string> "moon (refinery)", sorted
+     */
+    private function unscannedRefineryMoons(SettingsManagerService $settings): array
+    {
+        try {
+            $corporationId = (int) $settings->getTaxProgramCorporationId();
+            if ($corporationId <= 0) {
+                return [];
+            }
+
+            $refineries = app(\MiningManager\Services\Moon\RefineryService::class);
+            $moonIds = array_filter($refineries->moonIdsForStructures($refineries->presentRefineryIds($corporationId)));
+            if (!$moonIds) {
+                return [];
+            }
+
+            $scanned = DB::table('universe_moon_contents')
+                ->whereIn('moon_id', array_values($moonIds))
+                ->distinct()
+                ->pluck('moon_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $unscanned = array_filter($moonIds, fn ($moonId) => !in_array((int) $moonId, $scanned, true));
+            if (!$unscanned) {
+                return [];
+            }
+
+            $moonNames = DB::table('moons')->whereIn('moon_id', array_values($unscanned))->pluck('name', 'moon_id')->all();
+            $refineryNames = DB::table('universe_structures')->whereIn('structure_id', array_keys($unscanned))->pluck('name', 'structure_id')->all();
+
+            $list = [];
+            foreach ($unscanned as $structureId => $moonId) {
+                $moon = $moonNames[$moonId] ?? "Moon {$moonId}";
+                $list[] = isset($refineryNames[$structureId]) ? "{$moon} ({$refineryNames[$structureId]})" : $moon;
+            }
+            sort($list);
+
+            return $list;
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not list unscanned refinery moons: ' . $e->getMessage());
+
+            return [];
+        }
     }
 
     /**

@@ -158,6 +158,31 @@
 
 <div class="moon-simulator">
 
+    {{-- Our refineries' moons nobody has scanned. The moon box below only
+         lists scanned moons, so say why these are missing and how to fix it. --}}
+    @if(!empty($unscannedRefineryMoons))
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert alert-danger">
+                <h5><i class="fas fa-satellite-dish"></i> {{ trans('mining-manager::moons.scan_required_title') }}</h5>
+                <p class="mb-2">{{ trans('mining-manager::moons.scan_required') }}</p>
+                <ul class="mb-2">
+                    @foreach(array_slice($unscannedRefineryMoons, 0, 15) as $moonLabel)
+                        <li>{{ $moonLabel }}</li>
+                    @endforeach
+                    @if(count($unscannedRefineryMoons) > 15)
+                        <li>{{ trans('mining-manager::moons.scan_required_more', ['count' => count($unscannedRefineryMoons) - 15]) }}</li>
+                    @endif
+                </ul>
+                <p class="mb-0">
+                    {{ trans('mining-manager::moons.scan_required_how') }}
+                    <a href="{{ url('/tools/moons') }}" target="_blank" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- SIMULATOR EXPLANATION --}}
     <div class="row mb-3">
         <div class="col-12">
