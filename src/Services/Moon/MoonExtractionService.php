@@ -1146,24 +1146,42 @@ class MoonExtractionService
             Log::info("Mining Manager: No extractions transitioned to 'ready' this cycle");
         }
 
-        // DIAGNOSTIC: Detect extractions that might have been imported directly as 'ready'
-        // (happens if import cron ran AFTER chunk_arrival_time — skips the transition path).
-        // notification_sent flag is for the hours-before alerts, but we re-use it here to
-        // avoid spamming. If an extraction is ready + recent arrival + never notified,
-        // log a warning so admin can investigate / manually notify.
-        $missedNotifications = MoonExtraction::where('status', 'ready')
-            ->where('chunk_arrival_time', '>=', $now->copy()->subHours(6))
-            ->where('chunk_arrival_time', '<=', $now)
-            ->whereNotIn('id', $readyIds ?? [])
-            ->get();
-
-        if ($missedNotifications->isNotEmpty()) {
-            foreach ($missedNotifications as $missed) {
-                Log::warning("Mining Manager: Extraction {$missed->id} (moon: {$missed->moon_name}) is 'ready' with chunk_arrival_time {$missed->chunk_arrival_time} but did NOT transition from 'extracting' this cycle. May have been imported directly as ready — no notification was fired. Check UpdateMoonExtractionsCommand import logic.");
-            }
-        }
+        $this->warnAboutUnannouncedArrivals($now);
 
         Log::info("Mining Manager: updateExtractionStatuses() finished");
+    }
+
+    /**
+     * Log a warning for chunks that arrived a while ago and still have no
+     * arrival notification.
+     *
+     * The import marks an arrived chunk ready by itself, and the arrival
+     * notification is check-extraction-arrivals' job every minute, so a ready
+     * chunk that did not change state in updateExtractionStatuses() is normal.
+     * One with no notification half an hour after it arrived is not: that
+     * command is not running, or its webhook keeps failing.
+     *
+     * @return int how many were warned about
+     */
+    protected function warnAboutUnannouncedArrivals(Carbon $now): int
+    {
+        $unannounced = MoonExtraction::where('notification_sent', false)
+            ->where('status', '!=', 'cancelled')
+            ->where('chunk_arrival_time', '>=', $now->copy()->subHours(6))
+            ->where('chunk_arrival_time', '<=', $now->copy()->subMinutes(30));
+
+        $moonOwnerCorpId = $this->getMoonOwnerCorporationId();
+        if ($moonOwnerCorpId) {
+            $unannounced->where('corporation_id', $moonOwnerCorpId);
+        }
+
+        $missed = $unannounced->get();
+
+        foreach ($missed as $extraction) {
+            Log::warning("Mining Manager: Extraction {$extraction->id} (moon: {$extraction->moon_name}) arrived at {$extraction->chunk_arrival_time} and its arrival notification has still not gone out. Check that mining-manager:check-extraction-arrivals is running and that its webhook works.");
+        }
+
+        return $missed->count();
     }
 
     /**
