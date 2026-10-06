@@ -25,6 +25,7 @@ use Carbon\Carbon;
  * @property bool $notify_moon_chunk_unstable
  * @property bool $notify_extraction_at_risk
  * @property bool $notify_extraction_lost
+ * @property bool $notify_metenox_cargo_full
  * @property bool $notify_event_created
  * @property bool $notify_event_started
  * @property bool $notify_event_completed
@@ -202,8 +203,12 @@ class WebhookConfiguration extends Model
     /**
      * Scope to get webhooks that should be notified for a specific event
      *
+     * A type missing from the map gets no filter at all and reaches every
+     * enabled webhook whatever its switches say, so every type the dispatcher
+     * sends has to be listed here.
+     *
      * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $eventType (theft_detected, critical_theft, active_theft, incident_resolved)
+     * @param string $eventType The notify_ column's name without the prefix
      * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeForEvent($query, $eventType)
@@ -228,6 +233,7 @@ class WebhookConfiguration extends Model
             'schedule_needs_filling' => 'notify_schedule_needs_filling',
             'extraction_at_risk' => 'notify_extraction_at_risk',
             'extraction_lost' => 'notify_extraction_lost',
+            'metenox_cargo_full' => 'notify_metenox_cargo_full',
             'event_created' => 'notify_event_created',
             'event_started' => 'notify_event_started',
             'event_completed' => 'notify_event_completed',
@@ -364,6 +370,7 @@ class WebhookConfiguration extends Model
             'schedule_needs_filling' => $this->notify_schedule_needs_filling,
             'extraction_at_risk' => $this->notify_extraction_at_risk,
             'extraction_lost' => $this->notify_extraction_lost,
+            'metenox_cargo_full' => $this->notify_metenox_cargo_full,
             'event_created' => $this->notify_event_created,
             'event_started' => $this->notify_event_started,
             'event_completed' => $this->notify_event_completed,

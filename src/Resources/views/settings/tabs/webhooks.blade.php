@@ -173,6 +173,11 @@
                                                     <i class="fas fa-skull"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_metenox_cargo_full ?? false)
+                                                <span class="badge badge-warning" title="Metenox Cargo Bay Full">
+                                                    <i class="fas fa-box-open"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_event_created)
                                                 <span class="badge badge-primary" title="Event Created">
                                                     <i class="fas fa-calendar-plus"></i>
@@ -557,6 +562,13 @@
                                 @if(!$mmCrossReady)
                                     <small class="badge badge-secondary ml-1">Plugin required</small>
                                 @endif
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-metenox-cargo-full" name="notify_metenox_cargo_full" value="1">
+                            <label class="custom-control-label" for="notify-metenox-cargo-full">
+                                <i class="fas fa-box-open text-warning"></i>
+                                Metenox Cargo Bay Full
                             </label>
                         </div>
 

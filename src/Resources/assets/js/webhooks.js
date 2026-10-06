@@ -81,6 +81,8 @@ function loadWebhookData(webhookId) {
                 if (moonNotRescheduledField) moonNotRescheduledField.checked = !!webhook.notify_moon_not_rescheduled;
                 const scheduleNeedsFillingField = document.getElementById('notify-schedule-needs-filling');
                 if (scheduleNeedsFillingField) scheduleNeedsFillingField.checked = !!webhook.notify_schedule_needs_filling;
+                const metenoxCargoField = document.getElementById('notify-metenox-cargo-full');
+                if (metenoxCargoField) metenoxCargoField.checked = !!webhook.notify_metenox_cargo_full;
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
@@ -166,6 +168,7 @@ function saveWebhook() {
         notify_moon_scan_missing: document.getElementById('notify-moon-scan-missing')?.checked ? 1 : 0,
         notify_extraction_at_risk: document.getElementById('notify-extraction-at-risk')?.checked ? 1 : 0,
         notify_extraction_lost: document.getElementById('notify-extraction-lost')?.checked ? 1 : 0,
+        notify_metenox_cargo_full: document.getElementById('notify-metenox-cargo-full')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,

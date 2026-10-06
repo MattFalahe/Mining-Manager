@@ -1419,6 +1419,7 @@ class SettingsController extends Controller
             $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
+            $data['notify_metenox_cargo_full'] = $request->boolean('notify_metenox_cargo_full');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1497,6 +1498,7 @@ class SettingsController extends Controller
             $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
+            $data['notify_metenox_cargo_full'] = $request->boolean('notify_metenox_cargo_full');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1680,6 +1682,7 @@ class SettingsController extends Controller
             'notify_moon_scan_missing' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
+            'notify_metenox_cargo_full' => 'nullable|boolean',
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',
