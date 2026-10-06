@@ -57,6 +57,10 @@ All notable changes to Mining Manager will be documented in this file.
 
 - **The two ore categories now say what they hold.** Abyssal Ore and Triglavian Ore are easy to mix up, and the confusion runs the wrong way round: the ore from nullsec and wormhole escalations, Bezdnacine, Rakovene and Talassonite, is billed under **Abyssal**. Both rate fields and both Tax Selector toggles now name the ores they cover, and Help has a section explaining which is which, why the Triglavian rate never charges anything (its nine ores are mission and site objective items with no market price and no reprocessing output, so their value is always zero and no price refresh will change that), and where the Abyssal name came from. Nothing about the rates, the categories or the classification changed.
 
+### Notifications
+
+- Fixed: **four switches on a webhook never saved.** Price Provider Trouble, Outstanding Mining Tax, Extraction at Risk and Extraction Lost are on the webhook form, but saving never sent them, so every save switched all four off, ticked or not. They save now. If you ticked any of them, open the webhook and tick them again.
+
 ### Character Lookups
 
 - **No page calls out to ESI for a character any more.** Names and corporations for characters SeAT does not know, such as visiting miners, are looked up in the background by `mining-manager:resolve-characters` and kept by the plugin, and every page reads them from there. A character nobody has looked up yet shows as *Character info in progress*, and the page refreshes itself once the lookup is in, usually within a minute. Before, a page could sit waiting on ESI, and on a bad ESI day show *Character 12345* and *Unknown Corporation*. Built on the resolver from [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).

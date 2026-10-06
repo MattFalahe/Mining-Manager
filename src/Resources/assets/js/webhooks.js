@@ -137,6 +137,8 @@ function saveWebhook() {
     const corpSelectVal = document.getElementById('webhook-corporation-id')?.value || '';
     const corpForPayload = corpSelectVal === '' ? null : parseInt(corpSelectVal, 10);
 
+    // Every switch on the form has to be listed here: the controller reads one
+    // that is missing as off, so leaving it out switches it off on every save.
     const formData = {
         _token: $('meta[name="csrf-token"]').attr('content'),
         name: document.getElementById('webhook-name').value,
@@ -157,6 +159,10 @@ function saveWebhook() {
         notify_extraction_cancelled: document.getElementById('notify-extraction-cancelled')?.checked ? 1 : 0,
         notify_moon_not_rescheduled: document.getElementById('notify-moon-not-rescheduled')?.checked ? 1 : 0,
         notify_schedule_needs_filling: document.getElementById('notify-schedule-needs-filling')?.checked ? 1 : 0,
+        notify_tax_outstanding_digest: document.getElementById('notify-tax-outstanding-digest')?.checked ? 1 : 0,
+        notify_price_provider: document.getElementById('notify-price-provider')?.checked ? 1 : 0,
+        notify_extraction_at_risk: document.getElementById('notify-extraction-at-risk')?.checked ? 1 : 0,
+        notify_extraction_lost: document.getElementById('notify-extraction-lost')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,
