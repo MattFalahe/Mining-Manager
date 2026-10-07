@@ -127,7 +127,9 @@ class PlannerReminders
                 $alert->last_at = null;
             }
 
-            $due = $alert->count === 0
+            // A row not saved yet has no count at all: Eloquent does not fill
+            // in the column's default.
+            $due = (int) $alert->count === 0
                 || ($repeat && $alert->last_at && ($now->getTimestamp() - $alert->last_at->getTimestamp()) / 3600 >= $idleHours);
 
             if (!$due) {
