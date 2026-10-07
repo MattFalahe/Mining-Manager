@@ -24,7 +24,8 @@ use MiningManager\Services\Notification\NotificationService;
  * still missing its scan is listed again once a day until it has one.
  *
  * A refinery that cannot pull again is left out, as the planner's reminders
- * leave it out: reported destroyed, or being unanchored with nothing running.
+ * leave it out: reported destroyed, being unanchored with nothing running, or
+ * past the final pull marked for it on the planner.
  * One that has never run an extraction has no known moon yet, so it is first
  * mentioned when its first extraction starts.
  *
@@ -211,6 +212,11 @@ class MoonScanWatch
             $this->refineries->reportedDestroyed($ids),
             $this->refineries->unanchoringIdle($refineries, $this->refineries->running($ids))
         );
+        foreach (app(FinalPulls::class)->forStructures($ids, $now) as $structureId => $final) {
+            if ($final['arrived']) {
+                $cannotPull[] = $structureId;
+            }
+        }
         $onMoon = array_diff_key($onMoon, array_flip($cannotPull));
 
         if (!$onMoon) {

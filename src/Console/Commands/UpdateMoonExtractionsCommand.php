@@ -169,6 +169,16 @@ class UpdateMoonExtractionsCommand extends Command
                     $this->warn('Sent ' . count($idle) . ' Moon Not Rescheduled reminder(s).');
                 }
 
+                // An extraction started on a refinery whose last pull was
+                // marked final: told to the planner's channel, once.
+                foreach ($reminders->restartedAfterFinal($moonOwnerCorpId) as $restart) {
+                    try {
+                        $notifications->sendNextExtractionPlanned($restart + ['planner_url' => $plannerUrl]);
+                    } catch (\Throwable $e) {
+                        $this->error("Restart warning failed for structure {$restart['structure_id']}: {$e->getMessage()}");
+                    }
+                }
+
                 // One message for every refinery short of planned pulls. Only
                 // marked as sent when the send went through, so a failure is
                 // tried again on the next run rather than a day later.

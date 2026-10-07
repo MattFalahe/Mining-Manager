@@ -619,6 +619,17 @@ Route::group([
             'uses' => 'MoonPlannerController@destroy',
         ]);
 
+        // A refinery's last pull, and taking that back.
+        Route::post('/planner/final', [
+            'as' => 'mining-manager.moon.planner.final',
+            'uses' => 'MoonPlannerController@markFinal',
+        ]);
+
+        Route::post('/planner/resume', [
+            'as' => 'mining-manager.moon.planner.resume',
+            'uses' => 'MoonPlannerController@resume',
+        ]);
+
         // Blueprints: the repeating patterns the planner can be filled from.
         // Same gate as the planner, enforced in the controller, and the same
         // reason for sitting above the `/{id}` catch-all.

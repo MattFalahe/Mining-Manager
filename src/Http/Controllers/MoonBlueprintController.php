@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MoonRotation;
 use MiningManager\Models\MoonRotationSlot;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Moon\FinalPulls;
 use MiningManager\Services\Moon\MoonPlannerService;
 use MiningManager\Services\Moon\MoonRotationService;
 use MiningManager\Services\Moon\RefineryService;
@@ -112,10 +113,25 @@ class MoonBlueprintController extends Controller
         // only offers refineries with a drill for anything new.
         $present = $this->refineries->presentRefineryIds($corporationId);
 
+        $finals = app(FinalPulls::class)->forStructures(array_column($validated['slots'] ?? [], 'structure_id'));
+        $alreadyIn = [];
+        if (!empty($validated['id'])) {
+            $alreadyIn = MoonRotationSlot::where('rotation_id', (int) $validated['id'])
+                ->pluck('structure_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+        }
+
         $slots = [];
         $seen = [];
         foreach ($validated['slots'] ?? [] as $slot) {
             $structureId = (int) $slot['structure_id'];
+
+            if (isset($finals[$structureId]) && !in_array($structureId, $alreadyIn, true)) {
+                return response()->json([
+                    'error' => $this->structureName($structureId) . " has its final pull planned, so it cannot go into a blueprint. Resume normal operations for it on the planner first.",
+                ], 422);
+            }
 
             if (!in_array($structureId, $present, true)) {
                 return response()->json([
@@ -151,6 +167,15 @@ class MoonBlueprintController extends Controller
                 'structure_id' => $structureId,
                 'moon_id' => $moonId ? (int) $moonId : null,
             ];
+        }
+
+        // Carrying the change to the calendar would plan a refinery whose final
+        // pull is planned, so it is refused before anything is saved.
+        $finalIn = array_values(array_intersect(array_keys($finals), array_column($slots, 'structure_id')));
+        if ($request->boolean('resync') && !empty($validated['id']) && $finalIn) {
+            return response()->json([
+                'error' => $this->finalPullsBlockMessage($finalIn, 'carrying changes to the calendar'),
+            ], 422);
         }
 
         $blueprint = null;
@@ -342,7 +367,25 @@ class MoonBlueprintController extends Controller
             return [null, response()->json(['error' => 'That blueprint has no pulls in it yet.'], 422)];
         }
 
+        $finalIn = array_keys(app(FinalPulls::class)->forStructures($blueprint->slots()->pluck('structure_id')->all()));
+        if ($finalIn) {
+            return [null, response()->json(['error' => $this->finalPullsBlockMessage($finalIn, 'applying it')], 422)];
+        }
+
         return [$blueprint, null];
+    }
+
+    /**
+     * What stops a blueprint holding a refinery whose final pull is planned
+     * from being used, and the two ways out.
+     */
+    protected function finalPullsBlockMessage(array $structureIds, string $doing): string
+    {
+        $names = implode(', ', array_map(fn ($id) => $this->structureName((int) $id), $structureIds));
+
+        return "{$names} " . (count($structureIds) === 1 ? 'has its' : 'have their')
+            . " final pull planned. Resume normal operations on the planner, or take "
+            . (count($structureIds) === 1 ? 'it' : 'them') . " out of this blueprint, before {$doing}.";
     }
 
     /**
@@ -355,10 +398,11 @@ class MoonBlueprintController extends Controller
             ->orderBy('name')
             ->get();
 
-        $flags = $this->refineries->refineryFlags(
-            $corporationId,
-            $blueprints->flatMap(fn (MoonRotation $blueprint) => $blueprint->slots->pluck('structure_id'))->all()
-        );
+        $slotStructures = $blueprints->flatMap(fn (MoonRotation $blueprint) => $blueprint->slots->pluck('structure_id'))->all();
+        $flags = $this->refineries->refineryFlags($corporationId, $slotStructures);
+        foreach (array_keys(app(FinalPulls::class)->forStructures($slotStructures)) as $structureId) {
+            $flags[$structureId] ??= RefineryService::FLAG_FINAL;
+        }
 
         return $blueprints
             ->map(function (MoonRotation $blueprint) use ($flags) {
@@ -405,8 +449,12 @@ class MoonBlueprintController extends Controller
             ->whereIn('system_id', $rows->pluck('solar_system_id')->filter()->unique()->all())
             ->pluck('name', 'system_id');
 
-        // Every refinery here has its drill, but one can still be unanchoring.
+        // Every refinery here has its drill, but one can still be unanchoring,
+        // or have its final pull planned.
         $flags = $this->refineries->refineryFlags($corporationId, $refineries->pluck('structure_id')->all());
+        foreach (array_keys(app(FinalPulls::class)->forStructures($refineries->pluck('structure_id')->all())) as $structureId) {
+            $flags[$structureId] ??= RefineryService::FLAG_FINAL;
+        }
 
         $options = $refineries->map(function ($refinery) use ($rows, $systemNames, $flags) {
             $row = $rows->firstWhere('structure_id', $refinery->structure_id);

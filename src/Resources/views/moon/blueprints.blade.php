@@ -490,8 +490,11 @@ function openSlotDialog(editor) {
     const used = current.slots
         .filter(sl => sl !== editor.slot)
         .map(sl => sl.structure_id);
-    const free = REFINERIES.filter(r => used.indexOf(r.structure_id) === -1);
-    const keepsOwn = editing && !refinery(editor.slot.structure_id);
+    // Nor is one whose final pull is planned, though a slot already on it
+    // keeps it while its time is edited.
+    const own = editing ? refinery(editor.slot.structure_id) : null;
+    const free = REFINERIES.filter(r => used.indexOf(r.structure_id) === -1 && r.flag !== 'final');
+    const keepsOwn = editing && (!own || own.flag === 'final');
 
     if (!free.length && !keepsOwn) {
         $('#bp-error').addClass('mm-note-warn').show()

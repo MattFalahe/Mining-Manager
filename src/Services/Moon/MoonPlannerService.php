@@ -309,8 +309,15 @@ class MoonPlannerService
         // Each candidate: ['structure_id','moon_id','arrival'=>Carbon,'cadence_days','fallback'=>bool]
         $candidates = [];
 
+        // A refinery whose last pull is planned gets nothing more.
+        $finals = app(FinalPulls::class)->forStructures($refineries->pluck('structure_id')->all());
+
         foreach ($refineries as $refinery) {
             $structureId = (int) $refinery->structure_id;
+            if (isset($finals[$structureId])) {
+                $summary['skipped']++;
+                continue;
+            }
             $cad = $this->cadence($structureId);
 
             $cadenceDays = $cad['cadence_days'];

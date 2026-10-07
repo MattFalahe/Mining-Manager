@@ -31,6 +31,9 @@ use Carbon\Carbon;
  * @property int|null $variance_hours
  * @property int|null $created_by
  * @property string|null $notes
+ * @property bool $is_final              the refinery's last planned pull
+ * @property int|null $final_marked_by   character who marked it final
+ * @property \Carbon\Carbon|null $final_marked_at
  */
 class MoonExtractionPlan extends Model
 {
@@ -66,6 +69,9 @@ class MoonExtractionPlan extends Model
         'mismatch_notified_at',
         'created_by',
         'notes',
+        'is_final',
+        'final_marked_by',
+        'final_marked_at',
     ];
 
     protected $casts = [
@@ -81,6 +87,9 @@ class MoonExtractionPlan extends Model
         'rotation_id' => 'integer',
         'rotation_slot_id' => 'integer',
         'rotation_cycle' => 'integer',
+        'is_final' => 'boolean',
+        'final_marked_by' => 'integer',
+        'final_marked_at' => 'datetime',
     ];
 
     /**
@@ -91,6 +100,17 @@ class MoonExtractionPlan extends Model
     public const ACTIVE_STATUSES = [
         self::STATUS_PLANNED,
         self::STATUS_CONFIRMED,
+    ];
+
+    /**
+     * Statuses a final pull keeps its meaning in: still to come, matched to
+     * its extraction, or gone ahead off-plan and settled. Superseded and
+     * cancelled pulls never happened.
+     */
+    public const FINAL_STATUSES = [
+        self::STATUS_PLANNED,
+        self::STATUS_CONFIRMED,
+        self::STATUS_DONE,
     ];
 
     public function corporation()
@@ -127,6 +147,14 @@ class MoonExtractionPlan extends Model
     public function scopeActive($query)
     {
         return $query->whereIn('status', self::ACTIVE_STATUSES);
+    }
+
+    /**
+     * Pulls marked as their refinery's last.
+     */
+    public function scopeFinal($query)
+    {
+        return $query->where('is_final', true)->whereIn('status', self::FINAL_STATUSES);
     }
 
     public function scopeForMonth($query, Carbon $month)

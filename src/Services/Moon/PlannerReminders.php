@@ -21,6 +21,9 @@ use MiningManager\Services\Configuration\SettingsManagerService;
  *     seven days, too short for a new pull to arrive and be mined before the
  *     structure goes. While an extraction is still running, it is treated
  *     like any other refinery.
+ * Nor about one whose final pull is marked on the planner: nobody is meant
+ * to plan or restart it. If somebody starts an extraction there anyway,
+ * restartedAfterFinal() says so.
  *
  * Settings are read without a corporation context. These run from scheduled
  * commands, where the settings service can be left pointing at whichever
@@ -84,6 +87,7 @@ class PlannerReminders
 
         $running = $this->refineries->running($owned);
         $lastArrival = $this->lastArrivals($owned, $now);
+        $finals = app(FinalPulls::class)->forStructures($owned, $now);
         $drillDown = $this->refineries->drillsOffline($owned);
         $destroyed = $this->refineries->reportedDestroyed($owned);
         $unanchoring = $this->refineries->unanchoringIdle($refineries, $running);
@@ -109,10 +113,13 @@ class PlannerReminders
             }
 
             // Cannot be acted on right now, but nothing has been resolved
-            // either, so the count is kept for when it can.
+            // either, so the count is kept for when it can. A refinery whose
+            // final pull is planned is not to be restarted at all; its count
+            // is kept in case it resumes.
             if (in_array($structureId, $drillDown, true)
                 || in_array($structureId, $destroyed, true)
-                || in_array($structureId, $unanchoring, true)) {
+                || in_array($structureId, $unanchoring, true)
+                || isset($finals[$structureId])) {
                 continue;
             }
 
@@ -194,10 +201,13 @@ class PlannerReminders
         $drillDown = $this->refineries->drillsOffline($owned);
         $destroyed = $this->refineries->reportedDestroyed($owned);
         $unanchoring = $this->refineries->unanchoringIdle($refineries, $this->refineries->running($owned));
+        $finals = app(FinalPulls::class)->forStructures($owned, $now);
         $short = [];
 
         foreach ($owned as $structureId) {
-            if (in_array($structureId, $destroyed, true) || in_array($structureId, $unanchoring, true)) {
+            if (in_array($structureId, $destroyed, true)
+                || in_array($structureId, $unanchoring, true)
+                || isset($finals[$structureId])) {
                 continue;
             }
 
@@ -236,6 +246,57 @@ class PlannerReminders
             'total' => count($short),
             'target' => $target,
         ];
+    }
+
+    /**
+     * Refineries where somebody started an extraction after the final pull
+     * had arrived: the plan changed, or nobody told whoever started it. One
+     * message per extraction, to the planner's channel and never the one the
+     * extraction itself is announced in, since where a refinery goes next is
+     * not for every member to read.
+     *
+     * @return array<int, array> one entry per message to send on this pass
+     */
+    public function restartedAfterFinal(int $corporationId, ?Carbon $now = null): array
+    {
+        $now = $now ?? Carbon::now();
+        $owned = $this->refineries->refineriesForCorporation($corporationId)
+            ->pluck('structure_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $messages = [];
+
+        foreach (app(FinalPulls::class)->forStructures($owned, $now) as $structureId => $final) {
+            if (!$final['restarted']) {
+                continue;
+            }
+
+            $alert = RefineryAlert::firstOrNew([
+                'corporation_id' => $corporationId,
+                'structure_id' => $structureId,
+                'kind' => RefineryAlert::KIND_FINAL_RESTARTED,
+            ]);
+
+            if ($alert->exists && $alert->started_at
+                && $alert->started_at->getTimestamp() === $final['restarted']->getTimestamp()) {
+                continue;
+            }
+
+            $alert->started_at = $final['restarted'];
+            $alert->last_at = $now;
+            $alert->count = (int) $alert->count + 1;
+            $alert->save();
+
+            $messages[] = $this->refineries->names($structureId) + [
+                'variant' => 'restarted',
+                'structure_id' => $structureId,
+                'chunk_arrival_time' => $final['restarted']->format('Y-m-d H:i'),
+                'final_pull' => $final['time']->format('Y-m-d H:i'),
+            ];
+        }
+
+        return $messages;
     }
 
     /**

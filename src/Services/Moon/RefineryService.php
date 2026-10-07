@@ -43,10 +43,17 @@ class RefineryService
     public const FLAG_UNANCHORING = 'unanchoring';
     public const FLAG_NO_DRILL = 'no_drill';
 
+    /**
+     * Only ever set on the Blueprints tab: the refinery's last pull is marked
+     * final on the planner, so no blueprint may plan it until that changes.
+     */
+    public const FLAG_FINAL = 'final';
+
     public const FLAG_LABELS = [
         self::FLAG_GONE => 'Structure gone, not cleared yet',
         self::FLAG_UNANCHORING => 'Unanchoring in progress',
         self::FLAG_NO_DRILL => 'No moon drill fitted',
+        self::FLAG_FINAL => 'Final pull planned. Resume it on the planner, or take it out of this blueprint, before applying',
     ];
 
     /**

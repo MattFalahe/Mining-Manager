@@ -26,6 +26,9 @@ class RefineryAlert extends Model
     /** Chunk arrived and nothing has been started since. */
     public const KIND_NOT_RESCHEDULED = 'not_rescheduled';
 
+    /** An extraction started after the refinery's final pull. */
+    public const KIND_FINAL_RESTARTED = 'final_restarted';
+
     protected $table = 'mining_manager_refinery_alerts';
 
     protected $fillable = [

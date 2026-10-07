@@ -1430,6 +1430,32 @@ class MoonExtractionService
 
         try {
             $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
+            $baseUrl = rtrim(config('app.url', ''), '/');
+
+            // A refinery whose last pull is planned: the chunk that arrived was
+            // that pull, came after it, or comes before it.
+            $role = $extraction->chunk_arrival_time
+                ? app(\MiningManager\Services\Moon\FinalPulls::class)->arrivalRole((int) $extraction->structure_id, $extraction->chunk_arrival_time)
+                : null;
+
+            if ($role === 'final') {
+                app(\MiningManager\Services\Notification\NotificationService::class)->sendNextExtractionPlanned(array_filter([
+                    'variant' => 'final',
+                    'structure_name' => DB::table('universe_structures')->where('structure_id', $extraction->structure_id)->value('name')
+                        ?? "Structure {$extraction->structure_id}",
+                    'moon_name' => $extraction->moon_name ?? 'Unknown Moon',
+                    'arrived_at' => $extraction->chunk_arrival_time->format('Y-m-d H:i'),
+                    'planner_url' => $baseUrl . '/mining-manager/moon/planner',
+                ], fn ($v) => $v !== null));
+
+                Log::info("Mining Manager: the final pull arrived on structure {$extraction->structure_id}; said so instead of a next pull");
+                return;
+            }
+
+            // A pull started after the final one was reported when it started.
+            if ($role === 'after') {
+                return;
+            }
 
             // Prefer an explicit active plan for this refinery in the future.
             $plan = \MiningManager\Models\MoonExtractionPlan::where('structure_id', $extraction->structure_id)
@@ -1442,8 +1468,10 @@ class MoonExtractionService
             $source = $plan ? $plan->source : null;
             $cadenceDays = $plan?->cadence_days;
 
-            // Fall back to a fresh projection if there's no explicit plan.
-            if (!$plannedAt) {
+            // Fall back to a fresh projection if there's no explicit plan. Not
+            // for a refinery whose final pull is still to come: its next pull
+            // is whatever is planned, never a guess from its history.
+            if (!$plannedAt && $role === null) {
                 $plannedAt = $planner->projectNextArrival((int) $extraction->structure_id);
                 $source = 'auto';
                 $cadenceDays = $planner->cadence((int) $extraction->structure_id)['cadence_days'] ?? null;
@@ -1462,8 +1490,6 @@ class MoonExtractionService
                 ->first();
             $structureName = $structure->name ?? "Structure {$extraction->structure_id}";
 
-            $baseUrl = rtrim(config('app.url', ''), '/');
-
             $notificationService = app(\MiningManager\Services\Notification\NotificationService::class);
             $notificationService->sendNextExtractionPlanned(array_filter([
                 'structure_name' => $structureName,
@@ -1471,6 +1497,7 @@ class MoonExtractionService
                 'planned_arrival_time' => $plannedAt->format('Y-m-d H:i'),
                 'cadence_label' => $cadenceDays ? "~{$cadenceDays} days" : null,
                 'source' => $source,
+                'next_is_final' => $plan && $plan->is_final ? true : null,
                 'planner_url' => $baseUrl . '/mining-manager/moon/planner',
             ], fn ($v) => $v !== null));
 

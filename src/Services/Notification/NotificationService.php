@@ -685,15 +685,24 @@ class NotificationService
      *
      * Expected keys in $data (all optional, filtered if missing):
      *   moon_name, structure_name, planned_arrival_time, cadence_label,
-     *   source (auto|manual), planner_url
+     *   source (auto|manual), next_is_final, planner_url
+     *
+     * Two other forms go to the same webhooks, since they answer the same
+     * question for the same people: variant "final" when the chunk that
+     * arrived was the refinery's last planned pull (arrived_at), and variant
+     * "restarted" when somebody started an extraction after it
+     * (chunk_arrival_time, final_pull).
      *
      * @param array $data
      * @return array Result map from send()
      */
     public function sendNextExtractionPlanned(array $data): array
     {
-        $data['description'] = $data['description']
-            ?? '🗓️ This chunk is ready — the next pull for this refinery is planned below. Re-fire the drill to stay on the planned rotation.';
+        $data['description'] = $data['description'] ?? match ($data['variant'] ?? null) {
+            'final' => "🏁 This was the last extraction planned for this refinery, and nothing is planned after it. Ask leadership, or whoever handles this station, about next steps if needed.",
+            'restarted' => "⚠️ An extraction was started on this refinery, but its last pull is marked final on the planner. If it is carrying on, resume normal operations on its planner card. If not, check with whoever handles this station.",
+            default => '🗓️ This chunk is ready — the next pull for this refinery is planned below. Re-fire the drill to stay on the planned rotation.',
+        };
         return $this->send(self::TYPE_NEXT_EXTRACTION_PLANNED, [], $data);
     }
 
@@ -737,8 +746,9 @@ class NotificationService
      */
     public function sendRefineryGone(array $data): array
     {
-        $data['description'] = $data['description']
-            ?? 'This refinery is no longer one of yours, so the pulls planned on it cannot happen and have been taken off the calendar. A blueprint that still holds it keeps the slot until you clear it on the Blueprints tab.';
+        $data['description'] = $data['description'] ?? (!empty($data['final_pull'])
+            ? 'This refinery is no longer one of yours. Its last pull was marked final on the planner, so this was expected. A blueprint that still holds it keeps the slot until you clear it on the Blueprints tab.'
+            : 'This refinery is no longer one of yours, so the pulls planned on it cannot happen and have been taken off the calendar. A blueprint that still holds it keeps the slot until you clear it on the Blueprints tab.');
         return $this->send(self::TYPE_REFINERY_GONE, [], $data);
     }
 
@@ -2225,7 +2235,19 @@ class NotificationService
                     $this->getCorpName()
                 )
             ],
-            self::TYPE_NEXT_EXTRACTION_PLANNED => [
+            self::TYPE_NEXT_EXTRACTION_PLANNED => ($data['variant'] ?? null) !== null ? [
+                'subject' => sprintf(($data['variant'] === 'final' ? 'Final Extraction: %s' : 'Extraction Started After the Final Pull: %s'), $data['structure_name'] ?? 'Refinery'),
+                'body' => sprintf(
+                    "%s\n\nRefinery: %s\nMoon: %s\n%s\n\n%s Management",
+                    $data['description'] ?? '',
+                    $data['structure_name'] ?? 'Unknown Structure',
+                    $data['moon_name'] ?? 'Unknown',
+                    $data['variant'] === 'final'
+                        ? 'Chunk Arrived: ' . ($data['arrived_at'] ?? 'Unknown')
+                        : 'Chunk Due: ' . ($data['chunk_arrival_time'] ?? 'Unknown') . "\nFinal Pull: " . ($data['final_pull'] ?? 'Unknown'),
+                    $this->getCorpName()
+                )
+            ] : [
                 'subject' => sprintf('Next Extraction Planned: %s', $data['structure_name'] ?? 'Refinery'),
                 'body' => sprintf(
                     "This chunk is ready — the next pull for this refinery is planned.\n\n" .
@@ -2450,7 +2472,12 @@ class NotificationService
             self::TYPE_JACKPOT_DETECTED => "⭐ JACKPOT MOON DETECTED — " . ($data['moon_name'] ?? 'Unknown Moon'),
             self::TYPE_MOON_CHUNK_UNSTABLE => "⚠️ " . ($data['moon_name'] ?? 'Moon chunk') . " going unstable in " . ($data['time_until_unstable'] ?? '~2h') . " — capital pilots prepare to dock",
             self::TYPE_EXTRACTION_STARTED => "⛏️ Extraction started — " . ($data['moon_name'] ?? 'Unknown Moon') . " (chunk arrives " . ($data['chunk_arrival_time'] ?? 'soon') . ")",
-            self::TYPE_NEXT_EXTRACTION_PLANNED => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner'),
+            self::TYPE_NEXT_EXTRACTION_PLANNED => match ($data['variant'] ?? null) {
+                'final' => "🏁 Final extraction on " . ($data['structure_name'] ?? 'this refinery') . ": nothing is planned after it",
+                'restarted' => "⚠️ Extraction started on " . ($data['structure_name'] ?? 'a refinery') . " after its final pull",
+                default => "🗓️ Next pull planned for " . ($data['structure_name'] ?? 'this refinery') . " — " . ($data['planned_arrival_time'] ?? 'see planner')
+                    . (!empty($data['next_is_final']) ? ' (its final pull)' : ''),
+            },
             self::TYPE_SCHEDULE_MISMATCH => "⚠️ " . ($data['moon_name'] ?? 'A moon') . " is scheduled off-plan — planned " . ($data['planned_arrival_time'] ?? '?') . ", in-game " . ($data['actual_arrival_time'] ?? '?'),
             self::TYPE_REFINERY_GONE => "🏚️ " . ($data['structure_name'] ?? 'A refinery') . " is gone: " . ($data['pulls_removed'] ?? 0) . " planned pull(s) taken off the calendar",
             self::TYPE_EXTRACTION_CANCELLED => "🛑 Extraction cancelled on " . ($data['moon_name'] ?? 'a moon') . (!empty($data['cancelled_by']) ? " by " . $data['cancelled_by'] : ''),
@@ -2786,7 +2813,11 @@ class NotificationService
             self::TYPE_EXTRACTION_LOST => 0x1F0000, // Near-black / very dark red — post-mortem
             self::TYPE_METENOX_CARGO_FULL => 0xFF9800, // Orange — yield-stopping warning, not safety
             self::TYPE_EXTRACTION_STARTED => 0x1ABC9C, // Teal — new chunk on the clock
-            self::TYPE_NEXT_EXTRACTION_PLANNED => 0x9B59B6, // Purple — planner nudge
+            self::TYPE_NEXT_EXTRACTION_PLANNED => match ($data['variant'] ?? null) {
+                'final' => 0xE67E22, // Orange: the planner's colour for a final pull
+                'restarted' => 0xF39C12, // Amber: somebody should look
+                default => 0x9B59B6, // Purple — planner nudge
+            },
             self::TYPE_SCHEDULE_MISMATCH => 0xC0392B, // Red — scheduled off-plan
             self::TYPE_REFINERY_GONE => 0xE67E22, // Orange: the plan changed underneath you
             self::TYPE_EXTRACTION_CANCELLED => 0xC0392B, // Red: no chunk is coming
@@ -2820,7 +2851,11 @@ class NotificationService
             self::TYPE_EXTRACTION_LOST => '☠️ MOON CHUNK DESTROYED',
             self::TYPE_METENOX_CARGO_FULL => 'Metenox Cargo Bay Filling Up — Pull Soon',
             self::TYPE_EXTRACTION_STARTED => '⛏️ Moon Extraction Started',
-            self::TYPE_NEXT_EXTRACTION_PLANNED => '🗓️ Next Extraction Planned',
+            self::TYPE_NEXT_EXTRACTION_PLANNED => match ($data['variant'] ?? null) {
+                'final' => '🏁 Final Extraction',
+                'restarted' => '⚠️ Extraction Started After the Final Pull',
+                default => '🗓️ Next Extraction Planned',
+            },
             self::TYPE_SCHEDULE_MISMATCH => '⚠️ Moon Scheduled Off-Plan',
             self::TYPE_REFINERY_GONE => '🏚️ Refinery Gone: Planned Pulls Removed',
             self::TYPE_EXTRACTION_CANCELLED => '🛑 Moon Extraction Cancelled',
@@ -2991,7 +3026,10 @@ class NotificationService
             self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
                 isset($data['structure_name']) ? ['title' => 'Refinery', 'value' => $data['structure_name'], 'short' => true] : null,
                 isset($data['moon_name']) ? ['title' => 'Moon', 'value' => $data['moon_name'], 'short' => true] : null,
-                isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'], 'short' => true] : null,
+                isset($data['arrived_at']) ? ['title' => 'Chunk Arrived', 'value' => $data['arrived_at'], 'short' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['title' => 'Chunk Due', 'value' => $data['chunk_arrival_time'], 'short' => true] : null,
+                isset($data['final_pull']) ? ['title' => 'Final Pull', 'value' => $data['final_pull'], 'short' => true] : null,
+                isset($data['planned_arrival_time']) ? ['title' => 'Next Pull Planned', 'value' => $data['planned_arrival_time'] . (!empty($data['next_is_final']) ? ' (final pull)' : ''), 'short' => true] : null,
                 !empty($data['cadence_label']) ? ['title' => 'Cadence', 'value' => $data['cadence_label'], 'short' => true] : null,
                 !empty($data['source']) ? ['title' => 'Source', 'value' => ucfirst($data['source']), 'short' => true] : null,
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
@@ -3324,7 +3362,10 @@ class NotificationService
             self::TYPE_NEXT_EXTRACTION_PLANNED => array_values(array_filter([
                 isset($data['structure_name']) ? ['name' => '🏗️ Refinery', 'value' => $data['structure_name'], 'inline' => true] : null,
                 isset($data['moon_name']) ? ['name' => '🌙 Moon', 'value' => $data['moon_name'], 'inline' => true] : null,
-                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']), 'inline' => true] : null,
+                isset($data['arrived_at']) ? ['name' => '📥 Chunk Arrived', 'value' => $this->withEveSuffix($data['arrived_at']), 'inline' => true] : null,
+                isset($data['chunk_arrival_time']) ? ['name' => '⏳ Chunk Due', 'value' => $this->withEveSuffix($data['chunk_arrival_time']), 'inline' => true] : null,
+                isset($data['final_pull']) ? ['name' => '🏁 Final Pull', 'value' => $this->withEveSuffix($data['final_pull']), 'inline' => true] : null,
+                isset($data['planned_arrival_time']) ? ['name' => '🗓️ Next Pull Planned', 'value' => $this->withEveSuffix($data['planned_arrival_time']) . (!empty($data['next_is_final']) ? ' (final pull)' : ''), 'inline' => true] : null,
                 !empty($data['cadence_label']) ? ['name' => '🔁 Cadence', 'value' => $data['cadence_label'], 'inline' => true] : null,
                 !empty($data['source']) ? [
                     'name' => '📋 Source',

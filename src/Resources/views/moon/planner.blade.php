@@ -17,6 +17,9 @@
     .fc-event.mm-plan-locked .fc-event-title { font-style:italic; }
     /* Scheduled off-plan — the in-game timer diverged from the plan. */
     .fc-event.mm-plan-mismatch { background-color:#c0392b !important; border-color:#922b21 !important; color:#fff !important; }
+    /* A refinery's last planned pull, set in game or not. */
+    .fc-event.mm-plan-final { background-color:#6e3b0b !important; border-color:#e67e22 !important; border-width:2px !important; color:#fff !important; }
+    .moon-planner-page .mm-final-badge { background:#6e3b0b; color:#fff; border:1px solid #e67e22; }
 
     /* ---- calendar polish ---- */
     .mm-planner-month { margin-bottom: 1rem; border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden; }
@@ -280,8 +283,21 @@
                                 </div>
                             @endif
 
+                            {{-- A refinery whose last pull is planned shows that instead of
+                                 its coverage, and cannot be planned until it is resumed. --}}
+                            @php $final = $finalPulls[$r['structure_id']] ?? null; @endphp
+
                             {{-- Coverage: how many upcoming pulls are planned (0 = skipped). --}}
-                            @if($r['future_plan_count'] === 0)
+                            @if($final)
+                                <div class="mt-1">
+                                    <span class="badge mm-final-badge" title="The last pull planned for this refinery">
+                                        &#127937; {{ $final['arrived'] ? 'Final pull done' : 'Final pull' }}: {{ $final['when'] }}
+                                    </span>
+                                    @if($final['restarted'])
+                                        <span class="mm-flag mm-flag-warn" title="An extraction was started after the final pull, due {{ $final['restarted'] }}">!</span>
+                                    @endif
+                                </div>
+                            @elseif($r['future_plan_count'] === 0)
                                 <div class="mt-1"><span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> Not planned</span></div>
                             @elseif($r['future_plan_count'] === 1)
                                 <div class="mt-1"><span class="badge badge-info">Planned 1&times;</span></div>
@@ -289,7 +305,13 @@
                                 <div class="mt-1"><span class="badge badge-success">Planned {{ $r['future_plan_count'] }}&times;</span></div>
                             @endif
 
-                            @if($r['has_history'])
+                            @if($final)
+                                <button type="button" class="btn btn-xs btn-outline-warning mt-1 btn-resume-refinery"
+                                        data-structure-id="{{ $r['structure_id'] }}"
+                                        data-structure-name="{{ $r['structure_name'] }}">
+                                    <i class="fas fa-play"></i> Resume normal operations
+                                </button>
+                            @elseif($r['has_history'])
                                 <div style="font-size: 0.8em;">
                                     <i class="fas fa-history text-muted"></i>
                                     Cadence ~{{ $r['cadence_days'] }}d ({{ $r['arrival_count'] }} arrivals)
@@ -362,11 +384,18 @@
                     <label>Notes <small class="text-muted">(optional)</small></label>
                     <input type="text" class="form-control" id="plan-notes" maxlength="500" placeholder="e.g. shifted to Tuesday for evening fleet">
                 </div>
+                <div id="plan-final-note" class="alert alert-warning py-2 mb-2" style="display:none;">
+                    &#127937; This is this refinery's final pull. Nothing can be planned after it.
+                    <a href="#" class="alert-link link-resume-final">Resume normal operations</a>
+                </div>
                 <div id="plan-error" class="text-danger" style="display:none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-danger mr-auto" id="btn-delete-plan" style="display:none;">
                     <i class="fas fa-trash"></i> Remove
+                </button>
+                <button type="button" class="btn btn-outline-warning btn-mark-final" id="btn-mark-final" style="display:none;">
+                    &#127937; Mark as final pull
                 </button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success" id="btn-save-plan"><i class="fas fa-save"></i> Save</button>
@@ -400,6 +429,55 @@
     </div>
 </div>
 
+{{-- MARK A FINAL PULL: lists what planned after it would be taken off. --}}
+<div class="modal fade" id="finalModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">&#127937; Mark as this refinery's final pull</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p>These pulls are planned after it for <strong id="final-structure"></strong>, and will be removed from the planner:</p>
+                <ul id="final-later" class="mb-2"></ul>
+                <p class="mb-0 small">
+                    After its last chunk arrives, the planner stops reminding anyone to plan or restart this refinery.
+                    Arrival, fracture, jackpot and unstable alerts carry on as usual.
+                </p>
+                <div id="final-error" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="btn-confirm-final">&#127937; Remove them and mark it final</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- RESUME A REFINERY whose last pull was marked final. --}}
+<div class="modal fade" id="resumeModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-play text-success"></i> Resume normal operations?</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Is <strong id="resume-structure"></strong> carrying on after all?</p>
+                <p class="mb-0 small">
+                    Its final mark is cleared, so it can be planned again and the planner reminders start again.
+                    Pulls that were removed when it was marked are not brought back.
+                </p>
+                <div id="resume-error" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="btn-confirm-resume"><i class="fas fa-play"></i> Resume</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- LOCKED-ENTRY INFO MODAL --}}
 <div class="modal fade" id="lockedModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
@@ -408,8 +486,17 @@
                 <h5 class="modal-title"><i class="fas fa-lock text-muted"></i> Set in-game — can't be changed here</h5>
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
-            <div class="modal-body" id="locked-body"></div>
+            <div class="modal-body">
+                <div id="locked-body"></div>
+                <div id="locked-final-note" class="alert alert-warning py-2 mt-2 mb-0" style="display:none;">
+                    &#127937; This is this refinery's final pull. Nothing can be planned after it.
+                    <a href="#" class="alert-link link-resume-final">Resume normal operations</a>
+                </div>
+            </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-warning mr-auto btn-mark-final" id="btn-mark-final-locked" style="display:none;">
+                    &#127937; Mark as final pull
+                </button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>
         </div>
@@ -503,6 +590,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const refineries = @json($refinerySummaries ?? []);
     const refineryFlags = @json((object) ($refineryFlags ?? []));
     const FLAG_LABELS = @json(\MiningManager\Services\Moon\RefineryService::FLAG_LABELS);
+    const FINALS = @json((object) ($finalPulls ?? []));
     const minGap = {{ $minGapHours }};
     const routes = {
         store: '{{ route('mining-manager.moon.planner.store') }}',
@@ -511,6 +599,8 @@ document.addEventListener('DOMContentLoaded', function () {
         checkConflicts: '{{ route('mining-manager.moon.planner.check-conflicts') }}',
         history: '{{ route('mining-manager.moon.planner.history') }}',
         base: '{{ url('mining-manager/moon/planner') }}',
+        final: '{{ route('mining-manager.moon.planner.final') }}',
+        resume: '{{ route('mining-manager.moon.planner.resume') }}',
     };
 
     // Settle a scheduling mismatch: move the plan to the in-game time, or keep
@@ -587,9 +677,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 const locked = e.status === 'confirmed';
                 let cls = e.source === 'auto' ? 'mm-plan-auto' : 'mm-plan-manual';
                 if (locked) cls += ' mm-plan-locked';
+                if (e.final) cls += ' mm-plan-final';
                 events.push({
                     id: 'plan-' + e.id,
-                    title: (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
+                    title: (e.final ? '🏁 ' : '') + (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
                     start: e.iso,
                     className: cls,
                     extendedProps: { type: 'plan', raw: e, locked: locked },
@@ -599,9 +690,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 // A mismatch flag means the in-game timer diverged from a plan.
                 let cls = 'mm-plan-actual mm-plan-locked';
                 if (e.mismatch) cls = 'mm-plan-mismatch mm-plan-locked';
+                if (e.final) cls += ' mm-plan-final';
                 events.push({
                     id: 'actual-' + e.id,
-                    title: (e.mismatch ? '⚠ ' : '🔒 ') + (e.structure_name || 'Refinery'),
+                    title: (e.final ? '🏁 ' : '') + (e.mismatch ? '⚠ ' : '🔒 ') + (e.structure_name || 'Refinery'),
                     start: e.iso,
                     className: cls,
                     extendedProps: { type: 'actual', raw: e, locked: true, mismatch: !!e.mismatch },
@@ -736,6 +828,7 @@ document.addEventListener('DOMContentLoaded', function () {
     $(document).on('input change', '#plan-arrival', updateLocalConfirm);
 
     function openAddModal(structureId, projectedIso) {
+        $('#btn-mark-final, #plan-final-note').hide();
         editingPlan = null;
         $('#planModalTitle').text('Plan Pull');
         $('#plan-id').val('');
@@ -762,6 +855,8 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#plan-arrival').val(isoToLocalInput(raw.iso));
         $('#plan-notes').val(raw.notes || '');
         $('#btn-delete-plan').show().data('id', raw.id);
+        $('#btn-mark-final').toggle(!raw.final).data('target', { plan_id: raw.id, structure_id: raw.structure_id, structure_name: raw.structure_name });
+        $('#plan-final-note').toggle(!!raw.final).find('.link-resume-final').data('target', { structure_id: raw.structure_id, structure_name: raw.structure_name });
         $('#plan-error').hide().text('');
         updateLocalConfirm();
         $('#planModal').appendTo('body').modal('show');
@@ -801,6 +896,14 @@ document.addEventListener('DOMContentLoaded', function () {
             (localStr ? '<br><small class="text-muted"><i class="fas fa-user-clock"></i> ' + localStr + ' your time</small>' : '') +
             '</div>'
         );
+        const target = kind === 'confirmed'
+            ? { plan_id: raw.id }
+            : (raw.archived ? null : { extraction_id: raw.id });
+        if (target) {
+            Object.assign(target, { structure_id: raw.structure_id, structure_name: structure });
+        }
+        $('#btn-mark-final-locked').toggle(!!target && !raw.final).data('target', target);
+        $('#locked-final-note').toggle(!!raw.final).find('.link-resume-final').data('target', { structure_id: raw.structure_id, structure_name: structure });
         $('#lockedModal').appendTo('body').modal('show');
     }
 
@@ -830,6 +933,8 @@ document.addEventListener('DOMContentLoaded', function () {
         autofilled: { icon: 'fa-magic text-primary',         label: 'auto-filled' },
         realigned:  { icon: 'fa-clock text-warning',         label: 'realigned to in-game' },
         offset_ignored: { icon: 'fa-check text-warning',     label: 'ignored offset' },
+        marked_final: { icon: 'fa-flag-checkered text-warning', label: 'marked final' },
+        resumed:    { icon: 'fa-play text-success',          label: 'resumed normal operations' },
     };
 
     function fmtLocal(iso) {
@@ -955,6 +1060,76 @@ document.addEventListener('DOMContentLoaded', function () {
                 .done(() => window.location.reload())
                 .fail(() => alert('Save failed.'));
         }
+    });
+
+    // ---- Final pulls ----
+    let pendingFinal = null;
+
+    function failureText(xhr, fallback) {
+        return (xhr.responseJSON && (xhr.responseJSON.error
+            || Object.values(xhr.responseJSON.errors || {})[0])) || fallback;
+    }
+
+    function markFinal(target, confirmed) {
+        const data = { _token: CSRF, confirmed: confirmed ? 1 : 0 };
+        if (target.plan_id) { data.plan_id = target.plan_id; } else { data.extraction_id = target.extraction_id; }
+
+        return $.ajax({ url: routes.final, method: 'POST', data: data })
+            .done(() => window.location.reload())
+            .fail(xhr => {
+                if (xhr.status === 409 && xhr.responseJSON && xhr.responseJSON.requires_confirmation) {
+                    pendingFinal = target;
+                    $('.modal').modal('hide');
+                    $('#final-structure').text(target.structure_name || 'this refinery');
+                    const $list = $('#final-later').empty();
+                    (xhr.responseJSON.later || []).forEach(when => $list.append($('<li>').text(when)));
+                    $('#final-error').hide().text('');
+                    $('#finalModal').appendTo('body').modal('show');
+                    return;
+                }
+                const msg = failureText(xhr, 'Could not mark that pull final.');
+                if ($('#finalModal').hasClass('show')) {
+                    $('#final-error').show().text(msg);
+                } else {
+                    alert(msg);
+                }
+            });
+    }
+
+    $('.btn-mark-final').on('click', function () {
+        const target = $(this).data('target');
+        if (target) { markFinal(target, false); }
+    });
+
+    $('#btn-confirm-final').on('click', function () {
+        if (pendingFinal) { markFinal(pendingFinal, true); }
+    });
+
+    let pendingResume = null;
+
+    function askResume(target) {
+        pendingResume = target;
+        $('.modal').modal('hide');
+        $('#resume-structure').text(target.structure_name || 'this refinery');
+        $('#resume-error').hide().text('');
+        $('#resumeModal').appendTo('body').modal('show');
+    }
+
+    $('.btn-resume-refinery').on('click', function () {
+        askResume({ structure_id: $(this).data('structure-id'), structure_name: $(this).data('structure-name') });
+    });
+
+    $('.link-resume-final').on('click', function (event) {
+        event.preventDefault();
+        const target = $(this).data('target');
+        if (target) { askResume(target); }
+    });
+
+    $('#btn-confirm-resume').on('click', function () {
+        if (!pendingResume) { return; }
+        $.ajax({ url: routes.resume, method: 'POST', data: { _token: CSRF, structure_id: pendingResume.structure_id } })
+            .done(() => window.location.reload())
+            .fail(xhr => $('#resume-error').show().text(failureText(xhr, 'Could not resume that refinery.')));
     });
 
     $('#btn-delete-plan').on('click', function () {

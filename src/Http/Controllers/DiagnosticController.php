@@ -244,6 +244,19 @@ class DiagnosticController extends Controller
                 : 'mining_manager_moon_scan_alerts and notify_moon_scan_missing present.',
         ];
 
+        // 4d. Final pulls
+        $missingFinal = array_values(array_filter(
+            ['is_final', 'final_marked_by', 'final_marked_at'],
+            fn ($column) => !\Schema::hasColumn('moon_extraction_plans', $column)
+        ));
+        $checks[] = [
+            'label'   => 'Migration 000037: final pull columns on planned pulls',
+            'status'  => $missingFinal ? 'fail' : 'ok',
+            'message' => $missingFinal
+                ? 'Missing: ' . implode(', ', $missingFinal) . '. Run migrations. Pulls cannot be marked final.'
+                : 'is_final, final_marked_by and final_marked_at present.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [

@@ -240,6 +240,8 @@ class MissingRefineryWatch
             'missing_since' => $alert->started_at->format('Y-m-d H:i'),
             'pulls_removed' => $removed,
             'blueprints' => $this->blueprintNames($corporationId, $structureId),
+            // Its last pull was marked final, so this is the plan working.
+            'final_pull' => (bool) app(FinalPulls::class)->forStructures([$structureId]),
         ];
     }
 

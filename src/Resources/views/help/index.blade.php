@@ -3397,6 +3397,38 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <strong>Settings, Notifications, Moon Planner Reminders</strong>.
                     </p>
 
+                    <h4><i class="fas fa-flag-checkered"></i> A refinery's final pull</h4>
+                    <p>
+                        When a refinery is going to be relocated or unanchored, click its last pull on the planner, or
+                        the extraction already set in game, and choose <strong>Mark as final pull</strong>. Pulls
+                        planned after it are listed first and only removed once you confirm. The final pull shows in
+                        orange with a flag, and the refinery's card says when it is.
+                    </p>
+                    <ul>
+                        <li>
+                            Nothing can be planned after it, by hand, by auto-fill or by a blueprint. Pulls before it
+                            can still be added and moved, one at a time.
+                        </li>
+                        <li>Moons Need Planning and Moon Not Rescheduled leave the refinery out.</li>
+                        <li>
+                            When its last chunk arrives, <strong>Next Extraction Planned</strong> says that was the last
+                            pull and nothing is planned after it, instead of announcing a next one.
+                        </li>
+                        <li>
+                            If somebody starts an extraction there anyway, the same webhooks are told, and the card is
+                            marked until the refinery is resumed.
+                        </li>
+                        <li>Arrival, fracture, jackpot, unstable and the other chunk alerts go out as usual.</li>
+                    </ul>
+                    <p>
+                        Only the planner shows any of this. The extraction pages and calendar look as they always do,
+                        since where a refinery goes next is not for every member to read. A blueprint holding the
+                        refinery is marked, and cannot be applied until you resume the refinery or take it out of the
+                        blueprint. If the plans change, <strong>Resume normal operations</strong> on the refinery's
+                        card clears the mark after asking, and planning and reminders carry on. Pulls removed when it
+                        was marked are not brought back.
+                    </p>
+
                     <h4><i class="fas fa-industry"></i> The refinery panel</h4>
                     <p>
                         Down the right-hand side, each refinery shows its cadence, last arrival and next projected

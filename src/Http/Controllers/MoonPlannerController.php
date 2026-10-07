@@ -94,6 +94,7 @@ class MoonPlannerController extends Controller
         $refinerySummaries = [];
         $blueprintList = [];
         $refineryFlags = [];
+        $finalPulls = [];
         $minGapHours = $this->planner->getMinGapHours();
 
         if ($corporationId) {
@@ -115,6 +116,15 @@ class MoonPlannerController extends Controller
                 $onPage = array_merge($onPage, array_column($entries, 'structure_id'));
             }
             $refineryFlags = $this->refineries->refineryFlags($corporationId, $onPage);
+
+            foreach (app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures($onPage) as $structureId => $final) {
+                $finalPulls[$structureId] = [
+                    'plan_id' => $final['plan_id'],
+                    'when' => $final['time']->format('D d M Y H:i') . ' EVE',
+                    'arrived' => $final['arrived'],
+                    'restarted' => $final['restarted'] ? $final['restarted']->format('D d M Y H:i') . ' EVE' : null,
+                ];
+            }
         }
 
         return view('mining-manager::moon.planner', [
@@ -125,6 +135,7 @@ class MoonPlannerController extends Controller
             'refinerySummaries' => $refinerySummaries,
             'blueprintList' => $blueprintList,
             'refineryFlags' => $refineryFlags,
+            'finalPulls' => $finalPulls,
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
         ]);
@@ -360,6 +371,13 @@ class MoonPlannerController extends Controller
             ], 422);
         }
 
+        $final = app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures([$structureId])[$structureId] ?? null;
+        if ($final && $plannedAt->gt($final['time'])) {
+            return response()->json([
+                'error' => "That is after this refinery's final pull. Move the final pull, or resume normal operations on its card, first.",
+            ], 422);
+        }
+
         // Server-side gap guard — refuse unconfirmed clashes.
         if (!$request->boolean('confirmed')) {
             $conflicts = $this->planner->detectConflicts(
@@ -440,6 +458,22 @@ class MoonPlannerController extends Controller
 
         $plannedAt = Carbon::parse($validated['planned_arrival_time']);
 
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class);
+        $final = $finals->forStructures([(int) $plan->structure_id])[(int) $plan->structure_id] ?? null;
+        if ($final) {
+            // Carrying a move along the blueprint could take a pull past the
+            // final one, or the final one back past a pull that stays put.
+            if ($request->boolean('cascade')) {
+                return response()->json(['error' => "This refinery's last pull is marked final, so move its pulls one at a time."], 422);
+            }
+            if ($plan->is_final && $finals->laterPulls((int) $plan->structure_id, $plannedAt, (int) $plan->id)->isNotEmpty()) {
+                return response()->json(['error' => 'A pull is planned after that time. Move or remove it first.'], 422);
+            }
+            if (!$plan->is_final && $plannedAt->gt($final['time'])) {
+                return response()->json(['error' => "That is after this refinery's final pull. Move the final pull, or resume normal operations, first."], 422);
+            }
+        }
+
         if (!$request->boolean('confirmed')) {
             $conflicts = $this->planner->detectConflicts(
                 $corporationId,
@@ -500,6 +534,93 @@ class MoonPlannerController extends Controller
         }
 
         return response()->json(['success' => true, 'carried' => $carried]);
+    }
+
+    /**
+     * Mark a pull as its refinery's last: a planned pull, or one already set
+     * in game. Pulls planned after it are listed first and only taken off once
+     * that is confirmed.
+     */
+    public function markFinal(Request $request)
+    {
+        $corporationId = $this->plannerCorporationId();
+        if (!$corporationId) {
+            return response()->json(['error' => 'No Moon Owner Corporation configured.'], 422);
+        }
+
+        $validated = $request->validate([
+            'plan_id' => 'nullable|integer',
+            'extraction_id' => 'nullable|integer',
+            'confirmed' => 'nullable|boolean',
+        ]);
+
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class);
+        $plan = null;
+        $extraction = null;
+
+        if (!empty($validated['plan_id'])) {
+            $plan = MoonExtractionPlan::where('id', $validated['plan_id'])
+                ->where('corporation_id', $corporationId)
+                ->whereIn('status', MoonExtractionPlan::FINAL_STATUSES)
+                ->first();
+        } elseif (!empty($validated['extraction_id'])) {
+            $extraction = MoonExtraction::where('id', $validated['extraction_id'])
+                ->where('corporation_id', $corporationId)
+                ->whereNotNull('chunk_arrival_time')
+                ->first();
+        }
+
+        if (!$plan && !$extraction) {
+            return response()->json(['error' => 'That pull was not found.'], 404);
+        }
+
+        $structureId = (int) ($plan ? $plan->structure_id : $extraction->structure_id);
+        $time = $plan ? $plan->planned_arrival_time : $extraction->chunk_arrival_time;
+
+        if ($finals->runningAfter($structureId, $time)) {
+            return response()->json(['error' => 'An extraction after this pull is already set in game, so this cannot be the last one. Mark that one instead.'], 422);
+        }
+
+        $later = $finals->laterPulls($structureId, $time, $plan ? (int) $plan->id : null);
+        if ($later->isNotEmpty() && !$request->boolean('confirmed')) {
+            return response()->json([
+                'requires_confirmation' => true,
+                'later' => $later->map(fn (MoonExtractionPlan $pull) => $pull->planned_arrival_time->format('D d M Y H:i') . ' EVE')->values(),
+            ], 409);
+        }
+
+        [$actorId, $actorName] = $this->actor();
+
+        if (!$plan) {
+            $plan = $finals->planForExtraction($extraction, $corporationId, $actorId);
+        }
+
+        $removed = $finals->mark($plan, $actorId, $actorName);
+
+        return response()->json(['success' => true, 'removed' => $removed]);
+    }
+
+    /**
+     * The refinery carries on after all: clear its final mark.
+     */
+    public function resume(Request $request)
+    {
+        $corporationId = $this->plannerCorporationId();
+        if (!$corporationId) {
+            return response()->json(['error' => 'No Moon Owner Corporation configured.'], 422);
+        }
+
+        $validated = $request->validate(['structure_id' => 'required|integer']);
+        [$actorId, $actorName] = $this->actor();
+
+        $resumed = app(\MiningManager\Services\Moon\FinalPulls::class)
+            ->resume($corporationId, (int) $validated['structure_id'], $actorId, $actorName);
+
+        if (!$resumed) {
+            return response()->json(['error' => 'This refinery has no final pull to clear.'], 422);
+        }
+
+        return response()->json(['success' => true]);
     }
 
     /**
@@ -625,6 +746,11 @@ class MoonPlannerController extends Controller
         $calendar = [];
         $warnings = [];
 
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures(array_merge(
+            $plans->pluck('structure_id')->all(),
+            array_column($actuals, 'structure_id')
+        ));
+
         // Index which actuals get a mismatch flag (keyed by actual id).
         $mismatchByActual = [];
 
@@ -682,15 +808,20 @@ class MoonPlannerController extends Controller
                 'notes' => $plan->notes,
                 // What an edit here could carry to: the same moon's later
                 // pulls in the same blueprint. The page only offers the choice
-                // when there is something to carry it to.
+                // when there is something to carry it to, and never on a
+                // refinery whose final pull is planned, whose pulls move one
+                // at a time.
                 'rotation_id' => $plan->rotation_id,
-                'later_in_series' => $plan->rotation_id
+                'later_in_series' => $plan->rotation_id && !isset($finals[(int) $plan->structure_id])
                     ? $this->rotations->laterInSeries($plan)->count()
                     : 0,
+                'final' => (bool) $plan->is_final,
             ];
         }
 
-        // Render actuals (locked), tagging any flagged as a mismatch.
+        // Render actuals (locked), tagging any flagged as a mismatch. The real
+        // pull that is a refinery's final one carries the mark too, since its
+        // plan is hidden behind it.
         foreach ($actuals as $a) {
             $day = $a['time']->format('Y-m-d');
             $calendar[$day][] = [
@@ -705,6 +836,8 @@ class MoonPlannerController extends Controller
                 'status' => $a['status'],
                 'archived' => $a['archived'],
                 'mismatch' => isset($mismatchByActual[$a['id']]),
+                'final' => isset($finals[$a['structure_id']])
+                    && abs($a['time']->getTimestamp() - $finals[$a['structure_id']]['time']->getTimestamp()) <= $cycleWindow * 60,
             ];
         }
 
