@@ -438,30 +438,25 @@ class TheftDetectionService
             // Get from our price cache if available (uses cached_at, not updated_at)
             $priceType = $this->settingsService->getSetting('pricing.price_type', 'sell');
 
-            $priceCache = DB::table('mining_price_cache')
+            // The cached price however old it is: an aging market price is
+            // closer to what the ore is worth than SeAT's averages, which are
+            // only for a type that has never had a price.
+            $column = \MiningManager\Services\Pricing\PriceProviderService::cachedPriceColumn($priceType);
+            $cached = (float) DB::table('mining_price_cache')
                 ->where('type_id', $typeId)
-                ->where('cached_at', '>', Carbon::now()->subDays(1))
-                ->first();
+                ->where($column, '>', 0)
+                ->orderByDesc('cached_at')
+                ->value($column);
 
-            if ($priceCache) {
-                // Use correct column names: sell_price, buy_price, average_price
-                return match ($priceType) {
-                    'buy' => (float) ($priceCache->buy_price ?? 0),
-                    'average' => (float) ($priceCache->average_price ?? 0),
-                    default => (float) ($priceCache->sell_price ?? 0),
-                };
+            if ($cached > 0) {
+                return $cached;
             }
 
-            // Fallback to SeAT's market_prices table (has adjusted_price, average_price)
-            $marketData = DB::table('market_prices')
+            // CCP's average price as the last resort. Its adjusted price is an
+            // industry cost basis and can be far from any market.
+            return (float) (DB::table('market_prices')
                 ->where('type_id', $typeId)
-                ->first();
-
-            if ($marketData) {
-                return (float) ($marketData->adjusted_price ?? $marketData->average_price ?? 0);
-            }
-
-            return 0;
+                ->value('average_price') ?? 0);
         } catch (\Exception $e) {
             Log::warning('TheftDetectionService: Failed to get ore price', [
                 'type_id' => $typeId,

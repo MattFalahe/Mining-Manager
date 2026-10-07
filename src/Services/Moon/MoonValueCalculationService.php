@@ -204,6 +204,21 @@ class MoonValueCalculationService
             Log::warning("Mining Manager: Could not fetch from price provider for type_id {$typeId}: " . $e->getMessage());
         }
 
+        // The cached price however old it is: an aging market price is closer
+        // to what the ore is worth than SeAT's averages, which are only for a
+        // type that has never had a price.
+        if ($priceCache) {
+            $cachedPrice = (float) match ($priceType) {
+                'buy' => $priceCache->buy_price,
+                'average' => $priceCache->average_price,
+                default => $priceCache->sell_price,
+            };
+
+            if ($cachedPrice > 0) {
+                return $cachedPrice;
+            }
+        }
+
         // PRIORITY 3: Final fallback - SeAT's built-in market_prices table
         // Only used if both cache and provider fail
         try {

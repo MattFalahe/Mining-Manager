@@ -277,19 +277,26 @@ class NotificationService
     }
 
     /**
-     * Price provider trouble: it stopped answering, or it is answering again.
+     * Price provider trouble: it stopped answering, its fallback took over or
+     * stopped too, or it is answering again.
      *
      * Sent on the change only. A provider that is down stays down for hours,
      * and an alert every refresh would be noise nobody reads.
      *
-     * @param array $data provider, failing, error, since, last_success
+     * @param array $data provider, failing, error, advice, since, last_success,
+     *                    fallback, fallback_ok, fallback_error, fallback_note,
+     *                    was_on_fallback
      * @return array
      */
     public function sendPriceProviderStatus(array $data): array
     {
-        $data['description'] = $data['description'] ?? (!empty($data['failing'])
-            ? 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.'
-            : 'Price refreshes are working again.');
+        $data['description'] = $data['description'] ?? match (true) {
+            empty($data['failing']) => 'Price refreshes are working again.'
+                . (!empty($data['was_on_fallback']) ? ' Prices come from the price provider again instead of the fallback.' : ''),
+            !empty($data['fallback_ok']) => 'Price refreshes are failing, so prices come from the fallback provider instead, for the same buy, sell or split price, until the price provider answers again.',
+            !empty($data['fallback']) => 'Price refreshes are failing, and the fallback provider is not answering either. Cached prices are kept as they are, so values age rather than drop to zero.',
+            default => 'Price refreshes are failing. Cached prices are kept as they are, so values age rather than drop to zero.',
+        };
 
         return $this->send(self::TYPE_PRICE_PROVIDER, [], $data);
     }
@@ -2433,6 +2440,7 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => "Outstanding mining tax: " . ($data['member_count'] ?? 0) . " member(s), " . ($data['formatted_total'] ?? '0 ISK') . " still owed",
             self::TYPE_PRICE_PROVIDER => !empty($data['failing'])
                 ? "Price provider " . ($data['provider'] ?? 'unknown') . " is not answering: " . ($data['error'] ?? 'no detail')
+                    . (!empty($data['fallback_ok']) ? ". Prices come from " . $data['fallback'] . " meanwhile" : '')
                 : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
             self::TYPE_MOON_SCAN_MISSING => "🛰️ " . $this->moonScanTotalLine($data) . (!empty($data['description']) ? "\n" . $data['description'] : ''),
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
@@ -2883,6 +2891,10 @@ class NotificationService
             self::TYPE_PRICE_PROVIDER => array_values(array_filter([
                 ['title' => 'Provider', 'value' => $data['provider'] ?? 'unknown', 'short' => true],
                 ['title' => 'State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'short' => true],
+                !empty($data['failing']) ? ['title' => 'Fallback', 'value' => (!empty($data['fallback'])
+                    ? $data['fallback'] . (!empty($data['fallback_ok']) ? ': answering' : ': not answering' . (!empty($data['fallback_error']) ? ' (' . $data['fallback_error'] . ')' : ''))
+                        . (!empty($data['fallback_note']) ? ' ' . $data['fallback_note'] : '')
+                    : 'None. ' . ($data['fallback_error'] ?? '')), 'short' => false] : null,
                 !empty($data['error']) ? ['title' => 'Last error', 'value' => $data['error'], 'short' => false] : null,
                 !empty($data['advice']) ? ['title' => 'What to do', 'value' => $data['advice'], 'short' => false] : null,
                 !empty($data['since']) ? ['title' => 'Since', 'value' => $data['since'], 'short' => true] : null,
@@ -3185,11 +3197,15 @@ class NotificationService
             self::TYPE_PRICE_PROVIDER => array_values(array_filter([
                 ['name' => '🏷️ Provider', 'value' => $data['provider'] ?? 'unknown', 'inline' => true],
                 ['name' => '📡 State', 'value' => !empty($data['failing']) ? 'Not answering' : 'Answering again', 'inline' => true],
+                !empty($data['failing']) ? ['name' => '🔁 Fallback', 'value' => (!empty($data['fallback'])
+                    ? $data['fallback'] . (!empty($data['fallback_ok']) ? ': answering' : ': not answering' . (!empty($data['fallback_error']) ? ' (' . $data['fallback_error'] . ')' : ''))
+                        . (!empty($data['fallback_note']) ? ' ' . $data['fallback_note'] : '')
+                    : 'None. ' . ($data['fallback_error'] ?? '')), 'inline' => false] : null,
                 !empty($data['error']) ? ['name' => '⚠️ Last error', 'value' => $data['error'], 'inline' => false] : null,
                 !empty($data['advice']) ? ['name' => '🛠️ What to do', 'value' => $data['advice'], 'inline' => false] : null,
                 !empty($data['since']) ? ['name' => '🕒 Since', 'value' => $data['since'], 'inline' => true] : null,
                 !empty($data['last_success']) ? ['name' => '✅ Last good refresh', 'value' => $data['last_success'], 'inline' => true] : null,
-                !empty($data['failing']) ? ['name' => '💾 Cached prices', 'value' => "Kept as they are. Nothing is zeroed while the provider is down, and a type with no price yet is priced from SeAT's own market data.", 'inline' => false] : null,
+                !empty($data['failing']) && empty($data['fallback_ok']) ? ['name' => '💾 Cached prices', 'value' => "Kept as they are. Nothing is zeroed while the provider is down, and a type with no price yet is priced from SeAT's own market data.", 'inline' => false] : null,
             ])),
             self::TYPE_TAX_OUTSTANDING_DIGEST => array_values(array_filter([
                 ['name' => '👥 Members', 'value' => (string) ($data['member_count'] ?? 0), 'inline' => true],

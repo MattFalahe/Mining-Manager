@@ -118,10 +118,15 @@ class CachePriceDataCommand extends Command
             $pricingSettings = $this->settingsService->getPricingSettings();
             $provider = $pricingSettings['price_provider'] ?? 'seat';
 
-            if ($provider === 'manager-core' && PriceProviderService::isManagerCoreInstalled()) {
-                // A table to table copy. Nothing to pace and nothing to wait on.
-                $this->syncFromManagerCore($typeIds, $regionId);
-            } else {
+            // A table to table copy from Manager Core when it is the provider.
+            // Nothing to pace and nothing to wait on. When it cannot be copied
+            // from, the refresh goes through the provider like any other,
+            // which is where the fallback provider takes over.
+            $synced = $provider === 'manager-core'
+                && PriceProviderService::isManagerCoreInstalled()
+                && $this->syncFromManagerCore($typeIds, $regionId);
+
+            if (!$synced) {
                 $this->priceService->stopFetchingAfter($this->budgetEndsAt());
 
                 try {
@@ -147,9 +152,10 @@ class CachePriceDataCommand extends Command
      *
      * @param array $typeIds
      * @param int $regionId
-     * @return void
+     * @return bool false when Manager Core could not be copied from, so the
+     *              caller goes through the provider and its fallback instead
      */
-    private function syncFromManagerCore(array $typeIds, int $regionId): void
+    private function syncFromManagerCore(array $typeIds, int $regionId): bool
     {
         // Both market and variant come from SettingsManagerService now —
         // which resolves manager_core_market by calling MC's
@@ -217,13 +223,14 @@ class CachePriceDataCommand extends Command
                 }
             } elseif ($rawResult === null) {
                 $this->warn('Manager Core capability pricing.getPrices not registered; nothing to sync.');
-                $this->priceService->noteProviderOutcome(false, 'Manager Core capability pricing.getPrices is not registered');
+
+                return false;
             }
         } catch (\Throwable $e) {
             $this->error('Manager Core bridge call failed: ' . $e->getMessage());
             Log::warning('CachePriceDataCommand: pricing.getPrices threw', ['error' => $e->getMessage()]);
-            $this->priceService->noteProviderOutcome(false, $e->getMessage());
-            return;
+
+            return false;
         }
 
         $synced = 0;
@@ -271,16 +278,21 @@ class CachePriceDataCommand extends Command
 
         // Same rule as the other providers: nothing at all from a decent-sized
         // ask is Manager Core being empty or broken, not a quiet market.
-        $this->priceService->noteProviderOutcome(
-            $synced > 0 || count($typeIds) < PriceProviderService::PROVIDER_DOWN_MIN_IDS,
-            'Manager Core held no prices for any of the types asked for'
-        );
+        if ($synced === 0 && count($typeIds) >= PriceProviderService::PROVIDER_DOWN_MIN_IDS) {
+            $this->warn('Manager Core held no prices for any of the types asked for.');
+
+            return false;
+        }
+
+        $this->priceService->noteProviderOutcome(true);
 
         $this->info("Manager Core sync complete!");
         $this->info("Synced: {$synced} items");
         if ($missing > 0) {
             $this->warn("Missing in Manager Core: {$missing} items");
         }
+
+        return true;
     }
 
     /**
@@ -354,17 +366,21 @@ class CachePriceDataCommand extends Command
             }
         }
 
-        // A provider that failed outright hands back the cached prices so
-        // valuations keep going. Writing those back would only make stale
-        // prices look fresh, so the one thing written is a price for a type
-        // that had none, taken from SeAT's own market data.
-        $writable = null;
+        // While the provider is down, prices come from its fallback, and what
+        // that cannot price comes back at its cached price. Writing those back
+        // would only make stale prices look fresh, so they are left alone. A
+        // type that never had a price gets SeAT's, and that is written.
+        $keptIds = [];
         $kept = 0;
         if ($this->priceService->lastFetchStoodIn()) {
-            $writable = array_flip($this->priceService->lastSeatStandInTypeIds());
-            $this->warn('  The price provider failed, so cached prices are left as they are.');
-            if ($writable) {
-                $this->line('  ' . count($writable) . " type(s) with no price yet were priced from SeAT's own market data.");
+            $keptIds = array_flip($this->priceService->lastKeptTypeIds());
+            $fallback = $this->priceService->lastFallbackProvider();
+            $this->warn($fallback
+                ? '  The price provider failed, so prices came from ' . PriceProviderService::PROVIDER_LABELS[$fallback] . ' instead.'
+                : '  The price provider failed, so cached prices are left as they are.');
+            $fromSeat = count($this->priceService->lastSeatStandInTypeIds());
+            if ($fromSeat > 0) {
+                $this->line("  {$fromSeat} type(s) with no price yet were priced from SeAT's own market data.");
             }
         }
 
@@ -375,12 +391,8 @@ class CachePriceDataCommand extends Command
         foreach ($due as $typeId) {
             $price = (float) ($priced[$typeId] ?? 0);
 
-            if ($writable !== null && !isset($writable[$typeId])) {
-                if ($price > 0) {
-                    $kept++;
-                } else {
-                    $missing[] = $typeId;
-                }
+            if (isset($keptIds[$typeId])) {
+                $kept++;
             } elseif ($price > 0) {
                 $this->priceService->cachePriceData($typeId, $regionId, [
                     'sell' => $price,

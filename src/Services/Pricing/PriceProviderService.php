@@ -60,14 +60,31 @@ class PriceProviderService
     protected ?string $lastRequestError = null;
 
     /**
-     * Whether the last fetch stood in for a provider that failed outright, and
-     * which types it priced from SeAT's own market data because nothing had
-     * priced them yet. Everything else it returned is the last good cached
-     * price, which a refresh must not write back as if it were new.
+     * Whether the last fetch had to stand in for a provider that failed
+     * outright, and which types it priced from SeAT's own market data because
+     * nothing had priced them yet.
      */
     protected bool $lastFetchStoodIn = false;
 
     protected array $lastSeatStandInTypeIds = [];
+
+    /**
+     * Types the last fetch returned at their cached price because neither the
+     * provider nor its fallback had anything new for them. A refresh must not
+     * write those back as if they were new.
+     */
+    protected array $lastKeptTypeIds = [];
+
+    /** The fallback provider that answered for the last fetch, if one did. */
+    protected ?string $lastFallbackProvider = null;
+
+    /**
+     * The market and side a fetch asks for in place of the settings, while a
+     * fallback provider stands in for the configured one. Null otherwise.
+     *
+     * @var array{market: string, side: string}|null
+     */
+    protected ?array $fetchOverride = null;
 
     /**
      * Price provider constants
@@ -76,6 +93,35 @@ class PriceProviderService
     const PROVIDER_JANICE = 'janice';
     const PROVIDER_FUZZWORK = 'fuzzwork';
     const PROVIDER_MANAGER_CORE = 'manager-core';
+
+    /** What each provider is called on a page or in an alert. */
+    public const PROVIDER_LABELS = [
+        self::PROVIDER_SEAT => 'SeAT Database',
+        self::PROVIDER_FUZZWORK => 'Fuzzwork',
+        self::PROVIDER_JANICE => 'Janice',
+        self::PROVIDER_MANAGER_CORE => 'Manager Core',
+    ];
+
+    /** The fallback setting's value for no fallback provider. */
+    public const FALLBACK_NONE = 'none';
+
+    /** The providers that can stand in for another. SeAT's averages never do. */
+    public const FALLBACK_PROVIDERS = [self::PROVIDER_FUZZWORK, self::PROVIDER_JANICE, self::PROVIDER_MANAGER_CORE];
+
+    /**
+     * The trade hubs the providers have in common, with the region Fuzzwork
+     * prices each one in.
+     */
+    public const HUB_REGIONS = [
+        'jita' => 10000002,
+        'amarr' => 10000043,
+        'dodixie' => 10000032,
+        'hek' => 10000042,
+        'rens' => 10000030,
+    ];
+
+    /** The hubs Janice prices at. */
+    public const JANICE_MARKETS = ['jita', 'amarr'];
 
     /**
      * Threshold (in hours) beyond which a Manager Core price is considered
@@ -157,6 +203,8 @@ class PriceProviderService
         $this->lastRequestError = null;
         $this->lastFetchStoodIn = false;
         $this->lastSeatStandInTypeIds = [];
+        $this->lastKeptTypeIds = [];
+        $this->lastFallbackProvider = null;
 
         $provider = $this->getConfiguredProvider();
         
@@ -166,72 +214,272 @@ class PriceProviderService
         ]);
 
         try {
-            $prices = match ($provider) {
-                self::PROVIDER_JANICE => $this->getPricesFromJanice($typeIds),
-                self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzwork($typeIds),
-                self::PROVIDER_MANAGER_CORE => $this->getPricesFromManagerCore($typeIds),
-                default => $this->getPricesFromSeAT($typeIds),
-            };
-
-            // An ask that comes back with nothing at all is either the provider
-            // being down or a list of types with no market. Both are normal
-            // asks: a type nothing came back for keeps its old timestamp, so it
-            // is due on every run, and a steady install ends up asking for
-            // those and nothing else. Only ids that already have a cached price
-            // say anything about the provider, so judge it on those alone.
-            $answered = count(array_filter($prices, function ($price) {
-                return $price > 0;
-            }));
-
-            if ($answered > 0) {
-                $this->recordProviderOutcome($provider, true);
-            } elseif ($this->lastRequestErrors > 0) {
-                $this->recordProviderOutcome($provider, false, $this->lastRequestError ?? 'The provider did not answer');
-            } elseif ($this->countPricedInCache($typeIds) >= self::PROVIDER_DOWN_MIN_IDS) {
-                $this->recordProviderOutcome($provider, false, 'The provider answered, but with no prices at all');
-            }
-
-            // Fallback to Jita: if enabled and market is not Jita, retry zero-price items with Jita
-            $prices = $this->applyJitaFallback($provider, $prices, $typeIds);
-
-            return $prices;
+            $prices = $this->fetchFrom($provider, $typeIds);
         } catch (Exception $e) {
             Log::error('Failed to fetch prices', [
                 'provider' => $provider,
                 'error' => $e->getMessage()
             ]);
 
-            $this->recordProviderOutcome($provider, false, $e->getMessage());
-
-            if ($provider !== self::PROVIDER_SEAT) {
-                return $this->standInPrices($typeIds);
-            }
-
-            throw $e;
+            return $this->whileProviderIsDown($provider, $typeIds, $e->getMessage());
         }
+
+        // An ask that comes back with nothing at all is either the provider
+        // being down or a list of types with no market. Both are normal
+        // asks: a type nothing came back for keeps its old timestamp, so it
+        // is due on every run, and a steady install ends up asking for
+        // those and nothing else. Only ids that already have a cached price
+        // say anything about the provider, so judge it on those alone.
+        $answered = count(array_filter($prices, function ($price) {
+            return $price > 0;
+        }));
+
+        if ($answered === 0 && $this->lastRequestErrors > 0) {
+            return $this->whileProviderIsDown($provider, $typeIds, $this->lastRequestError ?? 'The provider did not answer');
+        }
+
+        if ($answered === 0 && $this->countPricedInCache($typeIds) >= self::PROVIDER_DOWN_MIN_IDS) {
+            return $this->whileProviderIsDown($provider, $typeIds, 'The provider answered, but with no prices at all');
+        }
+
+        if ($answered > 0) {
+            $this->recordProviderOutcome($provider, true);
+        }
+
+        // Fallback to Jita: if enabled and market is not Jita, retry zero-price items with Jita
+        return $this->applyJitaFallback($provider, $prices, $typeIds);
     }
 
     /**
-     * What to use while the provider has failed outright: the last good cached
-     * price for every type that has one, so values age on the basis the
-     * corporation chose instead of jumping to another, and SeAT's own market
-     * data only for a type nothing has priced yet, so it is not valued at zero.
+     * One provider's prices, for whatever market and side are in force.
      */
-    protected function standInPrices(array $typeIds): array
+    protected function fetchFrom(string $provider, array $typeIds): array
+    {
+        return match ($provider) {
+            self::PROVIDER_JANICE => $this->getPricesFromJanice($typeIds),
+            self::PROVIDER_FUZZWORK => $this->getPricesFromFuzzwork($typeIds),
+            self::PROVIDER_MANAGER_CORE => $this->getPricesFromManagerCore($typeIds),
+            default => $this->getPricesFromSeAT($typeIds),
+        };
+    }
+
+    /**
+     * The configured provider has failed outright. Ask the fallback provider
+     * for the same market and the same buy, sell or split price, and keep the
+     * cached price of anything it cannot price either. SeAT's own prices only
+     * ever fill a type that has no price anywhere.
+     */
+    protected function whileProviderIsDown(string $provider, array $typeIds, string $reason): array
     {
         $this->lastFetchStoodIn = true;
 
+        $fallback = $this->fallbackFor($provider);
+        $fresh = [];
+
+        if ($fallback['provider']) {
+            [$fresh, $down, $fallback['error']] = $this->askFallback($fallback, $typeIds);
+            $fallback['ok'] = !$down;
+            if ($fresh) {
+                $this->lastFallbackProvider = $fallback['provider'];
+            }
+        }
+
+        $this->recordProviderOutcome($provider, false, $reason, $fallback);
+
+        $missing = array_values(array_diff(array_map('intval', $typeIds), array_keys($fresh)));
+
+        return $fresh + $this->standInPrices($missing);
+    }
+
+    /**
+     * The fallback's prices for these types, whether it is down itself, and
+     * what it said if it is. Judged the way the provider is: no price for a
+     * type it has no market for is not a fault, no price for anything is.
+     *
+     * @return array{0: array<int, float>, 1: bool, 2: ?string}
+     */
+    protected function askFallback(array $fallback, array $typeIds): array
+    {
+        $saved = [$this->lastRequestErrors, $this->lastRequestError];
+        $this->lastRequestErrors = 0;
+        $this->lastRequestError = null;
+        $this->fetchOverride = ['market' => $fallback['market'], 'side' => $fallback['side']];
+
+        try {
+            $prices = [];
+            foreach ($this->fetchFrom($fallback['provider'], $typeIds) as $typeId => $price) {
+                if ($price > 0) {
+                    $prices[(int) $typeId] = (float) $price;
+                }
+            }
+
+            $down = !$prices
+                && ($this->lastRequestErrors > 0 || $this->countPricedInCache($typeIds) >= self::PROVIDER_DOWN_MIN_IDS);
+            $error = $down ? ($this->lastRequestError ?? 'It answered, but with no prices at all') : null;
+        } catch (\Throwable $e) {
+            $prices = [];
+            $down = true;
+            $error = $e->getMessage();
+        } finally {
+            $this->fetchOverride = null;
+            [$this->lastRequestErrors, $this->lastRequestError] = $saved;
+        }
+
+        return [$prices, $down, $error];
+    }
+
+    /**
+     * Cached prices for these types, and SeAT's own market data only for a
+     * type that has never had a price, so it is not valued at zero.
+     */
+    protected function standInPrices(array $typeIds): array
+    {
+        if (empty($typeIds)) {
+            return [];
+        }
+
         $cached = $this->cachedPrices($typeIds);
         $missing = array_values(array_diff(array_map('intval', $typeIds), array_keys($cached)));
-        $seat = $missing ? array_filter($this->getPricesFromSeAT($missing), fn ($price) => $price > 0) : [];
+
+        $seat = [];
+        if ($missing) {
+            try {
+                $seat = array_filter($this->getPricesFromSeAT($missing), fn ($price) => $price > 0);
+            } catch (\Throwable $e) {
+                Log::warning('Mining Manager: SeAT prices were not available as a last resort', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $this->lastKeptTypeIds = array_map('intval', array_keys($cached));
         $this->lastSeatStandInTypeIds = array_map('intval', array_keys($seat));
 
-        Log::info('Mining Manager: the price provider failed, so cached prices are kept', [
+        Log::info('Mining Manager: cached prices kept while the price provider is down', [
             'kept' => count($cached),
             'priced_from_seat' => count($seat),
         ]);
 
         return $cached + $seat;
+    }
+
+    /**
+     * The provider to ask while this one is down, with the market and side to
+     * ask it for, or why there is none. A fallback that cannot price at the
+     * market prices at Jita, and so does one standing in for Manager Core once
+     * it is gone, since its market cannot be read without it. The alert says
+     * when that happens.
+     *
+     * @return array{provider: ?string, market: string, side: string, note: ?string, why: ?string}
+     */
+    public function fallbackFor(string $provider): array
+    {
+        $choice = $this->settingsService->getPricingSettings()['fallback_provider'] ?? self::PROVIDER_FUZZWORK;
+        $market = $this->providerMarket($provider);
+        $side = $this->providerSide($provider);
+        $none = fn (string $why) => ['provider' => null, 'market' => $market, 'side' => $side, 'note' => null, 'why' => $why];
+
+        if (!$choice || $choice === self::FALLBACK_NONE) {
+            return $none('No fallback provider is set.');
+        }
+
+        if ($choice === $provider) {
+            return $none('The fallback provider is the price provider itself.');
+        }
+
+        $unavailable = $this->unavailableAsFallback($choice);
+        if ($unavailable !== null) {
+            return $none($unavailable);
+        }
+
+        $label = self::PROVIDER_LABELS[$choice];
+        $note = null;
+
+        if ($provider === self::PROVIDER_MANAGER_CORE && !self::isManagerCoreInstalled()) {
+            $market = 'jita';
+            $note = "Manager Core's market cannot be read while it is not installed, so {$label} prices at Jita.";
+        } elseif (!$this->canPriceAt($choice, $market)) {
+            $note = "{$label} cannot price at " . self::marketLabel($market) . ', so it prices at Jita.';
+            $market = 'jita';
+        }
+
+        return ['provider' => $choice, 'market' => $market, 'side' => $side, 'note' => $note, 'why' => null];
+    }
+
+    /**
+     * Why a provider cannot stand in for another, or null if it can.
+     */
+    public function unavailableAsFallback(string $candidate): ?string
+    {
+        if (!in_array($candidate, self::FALLBACK_PROVIDERS, true)) {
+            return (self::PROVIDER_LABELS[$candidate] ?? $candidate) . ' cannot be a fallback.';
+        }
+
+        if ($candidate === self::PROVIDER_JANICE && empty($this->settingsService->getPricingSettings()['janice_api_key'])) {
+            return 'Janice has no API key.';
+        }
+
+        if ($candidate === self::PROVIDER_MANAGER_CORE && !self::isManagerCoreInstalled()) {
+            return 'Manager Core is not installed.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether a provider can price at this market: a hub name, or for
+     * Fuzzwork any region id.
+     */
+    public function canPriceAt(string $provider, string $market): bool
+    {
+        return match ($provider) {
+            self::PROVIDER_JANICE => in_array($market, self::JANICE_MARKETS, true),
+            self::PROVIDER_MANAGER_CORE => isset(self::HUB_REGIONS[$market]),
+            self::PROVIDER_FUZZWORK => isset(self::HUB_REGIONS[$market]) || ctype_digit($market),
+            default => false,
+        };
+    }
+
+    /**
+     * Where a provider prices: a trade hub, or for Fuzzwork and SeAT the home
+     * region's id when it is not a hub's region.
+     */
+    public function providerMarket(string $provider): string
+    {
+        $pricing = $this->settingsService->getPricingSettings();
+
+        return match ($provider) {
+            self::PROVIDER_JANICE => (string) ($pricing['janice_market'] ?? 'jita'),
+            self::PROVIDER_MANAGER_CORE => (string) ($pricing['manager_core_market'] ?? 'jita'),
+            default => $this->hubForRegion((int) ($this->settingsService->getGeneralSettings()['default_region_id'] ?? self::DEFAULT_REGION_ID)),
+        };
+    }
+
+    /**
+     * Which price a provider gives: buy, sell, or split, the midpoint of the
+     * two. Janice has its own setting for it; the rest go by the price type.
+     */
+    public function providerSide(string $provider): string
+    {
+        $pricing = $this->settingsService->getPricingSettings();
+
+        if ($provider === self::PROVIDER_JANICE) {
+            return (string) ($pricing['janice_price_method'] ?? 'buy');
+        }
+
+        $type = (string) ($pricing['price_type'] ?? 'sell');
+
+        return $type === 'average' ? 'split' : $type;
+    }
+
+    public static function marketLabel(string $market): string
+    {
+        return ctype_digit($market) ? "region {$market}" : ucfirst($market);
+    }
+
+    protected function hubForRegion(int $regionId): string
+    {
+        $hub = array_search($regionId, self::HUB_REGIONS, true);
+
+        return $hub === false ? (string) $regionId : $hub;
     }
 
     /**
@@ -341,8 +589,8 @@ class PriceProviderService
             throw new Exception('Janice API key not configured. Set it in Settings UI or MINING_MANAGER_JANICE_API_KEY env variable.');
         }
 
-        $market = ($pricingSettings['janice_market'] ?? 'jita') === 'jita' ? '2' : '1';
-        $method = $pricingSettings['janice_price_method'] ?? 'buy';
+        $market = ($this->fetchOverride['market'] ?? $pricingSettings['janice_market'] ?? 'jita') === 'jita' ? '2' : '1';
+        $method = $this->fetchOverride['side'] ?? $pricingSettings['janice_price_method'] ?? 'buy';
         $batchSize = max(1, min(500, (int) $this->settingsService->getSetting('janice_batch_size', self::JANICE_BATCH_SIZE)));
         $pause = max(0, (int) $this->settingsService->getSetting('janice_rate_limit_delay', self::JANICE_BATCH_PAUSE_US));
 
@@ -538,7 +786,9 @@ class PriceProviderService
     protected function getPricesFromFuzzwork(array $typeIds): array
     {
         $generalSettings = $this->settingsService->getGeneralSettings();
-        $regionId = $generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID;
+        $regionId = $this->fetchOverride
+            ? (self::HUB_REGIONS[$this->fetchOverride['market']] ?? (int) $this->fetchOverride['market'])
+            : ($generalSettings['default_region_id'] ?? self::DEFAULT_REGION_ID);
 
         // Fuzzwork takes the ids in the query string, so a whole refresh in
         // one call is a URL thousands of characters long. Chunk it.
@@ -565,7 +815,9 @@ class PriceProviderService
 
         $data = $response->json();
         $prices = [];
-        $priceMethod = $pricingSettings['price_type'] ?? 'sell';
+        $priceMethod = $this->fetchOverride
+            ? ($this->fetchOverride['side'] === 'split' ? 'average' : $this->fetchOverride['side'])
+            : ($pricingSettings['price_type'] ?? 'sell');
 
         foreach ($typeIds as $typeId) {
             if (isset($data[$typeId])) {
@@ -609,8 +861,10 @@ class PriceProviderService
         }
 
         $pricingSettings = $this->settingsService->getPricingSettings();
-        $priceType = $pricingSettings['price_type'] ?? 'sell';
-        $market = $pricingSettings['manager_core_market'] ?? 'jita';
+        $priceType = $this->fetchOverride
+            ? ($this->fetchOverride['side'] === 'split' ? 'average' : $this->fetchOverride['side'])
+            : ($pricingSettings['price_type'] ?? 'sell');
+        $market = $this->fetchOverride['market'] ?? $pricingSettings['manager_core_market'] ?? 'jita';
         $variant = $pricingSettings['manager_core_variant'] ?? 'min';
 
         // For "average" we need both sides (we average buy.<variant> and
@@ -644,6 +898,8 @@ class PriceProviderService
             // (default), MC reads its cache populated by per-market routing.
             $rawResult = $bridge->call('ManagerCore', 'pricing.getPrices', $typeIds, $market, $bridgePriceType, 'mining-manager');
         } catch (\Throwable $e) {
+            $this->lastRequestErrors++;
+            $this->lastRequestError = 'Manager Core: ' . $e->getMessage();
             Log::warning('Mining Manager: pricing.getPrices bridge call failed; returning zeros', [
                 'error' => $e->getMessage(),
                 'count' => count($typeIds),
@@ -656,6 +912,8 @@ class PriceProviderService
             // Capability not registered (MC version without pricing.getPrices)
             // OR an error inside the call returned null — either way, fail
             // safe with zeros so the fallback-to-jita layer can kick in.
+            $this->lastRequestErrors++;
+            $this->lastRequestError = 'Manager Core has no pricing.getPrices capability';
             Log::warning('Mining Manager: pricing.getPrices returned null', [
                 'count' => count($typeIds),
                 'market' => $market,
@@ -1021,13 +1279,33 @@ class PriceProviderService
     }
 
     /**
+     * Types the last fetch returned at their cached price, which a refresh
+     * must leave alone rather than write back as new.
+     *
+     * @return int[]
+     */
+    public function lastKeptTypeIds(): array
+    {
+        return $this->lastKeptTypeIds;
+    }
+
+    /** The fallback provider that answered for the last fetch, if one did. */
+    public function lastFallbackProvider(): ?string
+    {
+        return $this->lastFallbackProvider;
+    }
+
+    /**
      * Why the last fetch stood in, for the tools that test the provider: they
      * get prices back either way and would otherwise report a pass.
      */
     public function standInNotice(): string
     {
-        return 'The provider did not answer: ' . rtrim((string) ($this->providerStatus()['error'] ?? 'no detail'), '. ')
-            . '. Until it does, Mining Manager keeps the last cached prices.';
+        $notice = 'The provider did not answer: ' . rtrim((string) ($this->providerStatus()['error'] ?? 'no detail'), '. ') . '.';
+
+        return $this->lastFallbackProvider
+            ? $notice . ' Until it does, prices come from ' . self::PROVIDER_LABELS[$this->lastFallbackProvider] . ' instead.'
+            : $notice . ' Until it does, Mining Manager keeps the last cached prices.';
     }
 
     /**
@@ -1318,8 +1596,9 @@ class PriceProviderService
             return $this->testProviderOverride;
         }
 
-        $pricingSettings = $this->settingsService->getPricingSettings();
-        return $pricingSettings['price_provider'] ?? self::PROVIDER_SEAT;
+        $provider = $this->settingsService->getPricingSettings()['price_provider'] ?? self::PROVIDER_SEAT;
+
+        return isset(self::PROVIDER_LABELS[$provider]) ? $provider : self::PROVIDER_SEAT;
     }
 
     /**
@@ -1615,9 +1894,10 @@ class PriceProviderService
     }
 
     /**
-     * What the price provider is doing: failing, and since when.
+     * What the price provider is doing: failing, since when, and whether a
+     * fallback provider is standing in.
      *
-     * @return array{failing: bool, provider: ?string, error: ?string, since: ?string, last_success: ?string}
+     * @return array{failing: bool, provider: ?string, error: ?string, since: ?string, last_success: ?string, fallback: ?string, fallback_ok: bool, fallback_error: ?string}
      */
     public function providerStatus(): array
     {
@@ -1634,6 +1914,9 @@ class PriceProviderService
             'error' => $status['error'] ?? null,
             'since' => $status['since'] ?? null,
             'last_success' => $status['last_success'] ?? null,
+            'fallback' => $status['fallback'] ?? null,
+            'fallback_ok' => (bool) ($status['fallback_ok'] ?? false),
+            'fallback_error' => $status['fallback_error'] ?? null,
         ];
     }
 
@@ -1784,15 +2067,22 @@ class PriceProviderService
      * Remember how the last fetch went, and say so once when that changes.
      *
      * Only the change is worth an alert: a provider that is down stays down
-     * for hours and one message per refresh would be noise nobody reads. An
-     * ore without a price is not failure at all, so nothing here fires for it.
+     * for hours and one message per refresh would be noise nobody reads. While
+     * it is down, its fallback starting or stopping answering is a change too.
+     * An ore without a price is not failure at all, so nothing here fires for
+     * it.
      */
-    protected function recordProviderOutcome(string $provider, bool $ok, ?string $error = null): void
+    protected function recordProviderOutcome(string $provider, bool $ok, ?string $error = null, array $fallback = []): void
     {
         try {
             $status = $this->providerStatus();
             $now = Carbon::now()->format('Y-m-d H:i');
-            $changed = $status['failing'] === $ok;
+            $fallbackKey = $ok ? null : ($fallback['provider'] ?? null);
+            $fallbackOk = $fallbackKey !== null && !empty($fallback['ok']);
+            $fallbackError = $ok ? null : ($fallbackKey !== null ? ($fallback['error'] ?? null) : ($fallback['why'] ?? null));
+
+            $changed = $status['failing'] === $ok
+                || (!$ok && ($status['fallback'] !== $fallbackKey || $status['fallback_ok'] !== $fallbackOk));
 
             $this->settingsService->updateGlobalSetting(self::PROVIDER_STATUS_KEY, [
                 'failing' => !$ok,
@@ -1800,6 +2090,9 @@ class PriceProviderService
                 'error' => $ok ? null : $error,
                 'since' => $ok ? null : ($status['since'] ?? $now),
                 'last_success' => $ok ? $now : $status['last_success'],
+                'fallback' => $fallbackKey,
+                'fallback_ok' => $fallbackOk,
+                'fallback_error' => $fallbackError,
             ], 'json');
 
             if (!$changed) {
@@ -1807,18 +2100,31 @@ class PriceProviderService
             }
 
             $this->announceProviderStatus([
-                'provider' => $provider,
+                'provider' => self::PROVIDER_LABELS[$provider] ?? $provider,
                 'failing' => !$ok,
                 'error' => $ok ? null : $error,
                 'advice' => $ok ? null : $this->providerAdvice($provider),
-                'since' => $ok ? $status['since'] : $now,
+                'since' => $ok ? $status['since'] : ($status['since'] ?? $now),
                 'last_success' => $ok ? $now : $status['last_success'],
+                'fallback' => $fallbackKey !== null ? $this->describeFallback($fallback) : null,
+                'fallback_ok' => $fallbackOk,
+                'fallback_error' => $fallbackError,
+                'fallback_note' => $fallbackKey !== null ? ($fallback['note'] ?? null) : null,
+                'was_on_fallback' => $ok && $status['fallback_ok'],
             ]);
         } catch (Exception $e) {
             // Fetching prices must not fall over because a status note or an
             // alert did.
             Log::warning('Mining Manager: could not record the price provider status', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * "Fuzzwork, Jita sell" for the alert.
+     */
+    protected function describeFallback(array $fallback): string
+    {
+        return self::PROVIDER_LABELS[$fallback['provider']] . ', ' . self::marketLabel((string) $fallback['market']) . ' ' . $fallback['side'];
     }
 
     /**

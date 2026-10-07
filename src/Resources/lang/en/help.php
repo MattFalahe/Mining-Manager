@@ -784,7 +784,7 @@ return [
     'webhook_cat_reports' => 'Reports',
     'webhook_cat_reports_events' => 'Report Generated (when a scheduled report completes)',
     'webhook_cat_health' => 'Plugin Health',
-    'webhook_cat_health_events' => 'Price Provider Trouble (price refreshes started failing, or work again), Moon Scan Missing (moons your refineries drill with no scan in SeAT, valued from the game\'s notices until they are scanned; once per new reason, and daily as well if you switch that on)',
+    'webhook_cat_health_events' => 'Price Provider Trouble (price refreshes started failing, the fallback provider took over or stopped answering, or they work again), Moon Scan Missing (moons your refineries drill with no scan in SeAT, valued from the game\'s notices until they are scanned; once per new reason, and daily as well if you switch that on)',
 
     'webhook_role_ping_title' => 'Discord Role Pinging',
     'webhook_role_ping_desc' => 'Role pinging is configured per notification type on the Notifications tab. Each notification type has its own "Ping Role" toggle and "Role ID" field, allowing you to ping different roles for different events (e.g., @officers for theft alerts, @miners for event announcements). Personal tax notifications (reminder, invoice, overdue) can optionally ping individual Discord users via seat-connector instead of a role. The "Show ISK Amount" toggle controls whether tax amounts are visible in notifications — disable this for privacy if the notification channel is public.',

@@ -47,6 +47,16 @@
                 @error('price_provider')
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
+                {{-- SeAT's prices are CCP's averages, which can be far from what
+                     anything sells for. Shown while SeAT is the provider. --}}
+                @php
+                    $mmSeatProvider = !in_array($settings['pricing']['price_provider'] ?? 'seat', ['fuzzwork', 'janice', 'manager-core'], true);
+                @endphp
+                <div class="alert alert-warning mt-2 mb-2" id="seat-provider-warning" style="{{ $mmSeatProvider ? '' : 'display: none;' }}">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    SeAT Database prices are CCP's average prices across all of New Eden, not what ore and materials sell for at a trade hub, so values priced from them can be well off.
+                    A market provider such as Fuzzwork, free and with no key needed, prices at your home market.
+                </div>
                 {{-- Without Manager Core its option is not in the list, so the
                      list shows another provider than the one actually set. --}}
                 @if(($settings['pricing']['price_provider'] ?? null) === 'manager-core' && !\MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled())
@@ -295,6 +305,44 @@
                     Which market price to use for calculations (used by SeAT, Fuzzwork, and Manager Core)
                 </small>
             </div>
+
+            {{-- What stands in when the provider stops working. A provider
+                 that is not set up is only listed when it is the saved choice,
+                 so the form never quietly changes it. --}}
+            @php
+                $mmPriceService = app(\MiningManager\Services\Pricing\PriceProviderService::class);
+                $mmFallbackChoice = old('fallback_provider', $settings['pricing']['fallback_provider'] ?? 'fuzzwork');
+                $mmFallbackOptions = [];
+                foreach (\MiningManager\Services\Pricing\PriceProviderService::FALLBACK_PROVIDERS as $mmCandidate) {
+                    $mmWhyNot = $mmPriceService->unavailableAsFallback($mmCandidate);
+                    if ($mmWhyNot === null || $mmFallbackChoice === $mmCandidate) {
+                        $mmFallbackOptions[$mmCandidate] = \MiningManager\Services\Pricing\PriceProviderService::PROVIDER_LABELS[$mmCandidate]
+                            . ($mmWhyNot !== null ? ' (not available: ' . $mmWhyNot . ')' : '');
+                    }
+                }
+            @endphp
+            <div class="form-group mt-3" id="fallback-provider-group">
+                <label for="fallback_provider">
+                    <i class="fas fa-life-ring"></i>
+                    Fallback Provider
+                </label>
+                <select class="form-control @error('fallback_provider') is-invalid @enderror"
+                        id="fallback_provider"
+                        name="fallback_provider">
+                    @foreach($mmFallbackOptions as $mmCandidate => $mmLabel)
+                        <option value="{{ $mmCandidate }}" {{ $mmFallbackChoice === $mmCandidate ? 'selected' : '' }}>{{ $mmLabel }}</option>
+                    @endforeach
+                    <option value="none" {{ $mmFallbackChoice === 'none' ? 'selected' : '' }}>None: keep the last cached prices</option>
+                </select>
+                @error('fallback_provider')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+                <small class="form-text text-muted">
+                    Asked when the price provider stops working, for the same market and the same buy, sell or split price, so values keep moving on the basis you chose.
+                    If it cannot price at your market it prices at Jita. If it cannot help either, the last cached prices are kept, and SeAT's own prices are only used for an ore that has never had a price.
+                    Every change is sent as a Price Provider Trouble notification, with what to do about it.
+                </small>
+            </div>
         </div>
     </div>
 
@@ -510,8 +558,22 @@ $(document).ready(function() {
         }
     }
 
+    function toggleProviderNotes() {
+        const provider = $('#price_provider').val();
+
+        $('#seat-provider-warning').toggle(!['fuzzwork', 'janice', 'manager-core'].includes(provider));
+        $('#fallback_provider option').each(function () {
+            $(this).prop('disabled', $(this).val() === provider);
+        });
+        if ($('#fallback_provider option:selected').prop('disabled')) {
+            $('#fallback_provider').val('none');
+        }
+    }
+
     // Initialize on page load
     toggleProviderConfig();
+    toggleProviderNotes();
+    $('#price_provider').on('change', toggleProviderNotes);
 
     // Update when provider changes
     $('#price_provider').on('change', toggleProviderConfig);

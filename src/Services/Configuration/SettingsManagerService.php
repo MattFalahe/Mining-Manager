@@ -1038,6 +1038,10 @@ class SettingsManagerService
             'cache_duration' => $this->getSetting('pricing.cache_duration', 240),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
 
+            // Asked when the price provider fails outright; 'none' keeps the
+            // cached prices instead.
+            'fallback_provider' => $this->getSetting('pricing.fallback_provider', 'fuzzwork'),
+
             // Janice settings (checks settings first, then falls back to ENV)
             'janice_api_key' => $this->getSetting('janice_api_key')
                 ?: config('mining-manager.general.price_provider_api_key', ''),
