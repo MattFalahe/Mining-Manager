@@ -385,6 +385,12 @@
                                 </div>
                             @endif
 
+                            {{-- A disabled switch is not submitted, so its stored value rides
+                                 along here. Without it, saving would switch the type off. --}}
+                            @if(!$crossPluginReady && $isEnabled)
+                                <input type="hidden" name="notify_global_{{ $typeKey }}" value="1">
+                            @endif
+
                             {{-- Master toggle row --}}
                             <div class="d-flex align-items-center justify-content-between">
                                 <div class="custom-control custom-switch">
@@ -675,6 +681,7 @@
                 @php
                     $slackTypeList = [
                         'tax_generated' => ['label' => 'Mining Taxes Summary', 'icon' => 'fas fa-calculator text-info'],
+                        'tax_announcement' => ['label' => 'New Invoices Announcement', 'icon' => 'fas fa-bullhorn text-primary'],
                         'tax_reminder' => ['label' => 'Tax Reminder', 'icon' => 'fas fa-clock text-warning'],
                         'tax_invoice' => ['label' => 'Tax Invoice Created', 'icon' => 'fas fa-file-invoice text-info'],
                         'tax_overdue' => ['label' => 'Tax Overdue', 'icon' => 'fas fa-exclamation-circle text-danger'],
@@ -685,6 +692,9 @@
                         'jackpot_detected' => ['label' => 'Jackpot Detected', 'icon' => 'fas fa-star text-warning'],
                         'moon_chunk_unstable' => ['label' => 'Moon Chunk Unstable (capital safety)', 'icon' => 'fas fa-exclamation-triangle text-warning'],
                         'extraction_started' => ['label' => 'Extraction Started', 'icon' => 'fas fa-hammer text-info'],
+                        'extraction_at_risk' => ['label' => 'Extraction at Risk', 'icon' => 'fas fa-fire text-danger'],
+                        'extraction_lost' => ['label' => 'Extraction Lost', 'icon' => 'fas fa-skull text-danger'],
+                        'metenox_cargo_full' => ['label' => 'Metenox Cargo Bay Full', 'icon' => 'fas fa-box-open text-warning'],
                         'next_extraction_planned' => ['label' => 'Next Extraction Planned', 'icon' => 'fas fa-calendar-check text-primary'],
                         'schedule_mismatch' => ['label' => 'Moon Scheduled Off-Plan', 'icon' => 'fas fa-exclamation-triangle text-danger'],
                         'refinery_gone' => ['label' => 'Refinery Gone (planned pulls removed)', 'icon' => 'fas fa-house-damage text-danger'],

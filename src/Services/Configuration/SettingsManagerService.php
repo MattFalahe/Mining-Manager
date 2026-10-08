@@ -1187,12 +1187,10 @@ class SettingsManagerService
     }
 
     /**
-     * Get notification settings
-     *
-     * @return array
-     */
-    /**
-     * All notification type keys used across the system
+     * The types with a card on Settings > Notifications, which is where a
+     * type's master switch and role ping are set. Saving that page writes
+     * these types only. A type with no card, such as the outstanding tax
+     * digest, keeps what is stored for it, or the defaults: on, no role ping.
      */
     public const NOTIFICATION_TYPES = [
         // Tax
@@ -1200,7 +1198,9 @@ class SettingsManagerService
         // Events
         'event_created', 'event_started', 'event_completed',
         // Moon
-        'moon_ready', 'jackpot_detected',
+        'moon_ready', 'jackpot_detected', 'moon_chunk_unstable',
+        // Moon, from Structure Manager's alerts through Manager Core
+        'extraction_at_risk', 'extraction_lost',
         // Planner — extraction lifecycle coordination
         'extraction_started', 'next_extraction_planned', 'schedule_mismatch',
         'refinery_gone', 'extraction_cancelled', 'moon_not_rescheduled', 'schedule_needs_filling',
@@ -1214,6 +1214,35 @@ class SettingsManagerService
         'report_generated',
     ];
 
+    /**
+     * The types with a box in the Slack list on the same page. A list of its
+     * own because the digest has a Slack box but no card.
+     */
+    public const SLACK_NOTIFICATION_TYPES = [
+        // Tax
+        'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue',
+        // Events
+        'event_created', 'event_started', 'event_completed',
+        // Moon
+        'moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_started',
+        'extraction_at_risk', 'extraction_lost', 'metenox_cargo_full',
+        // Planner
+        'next_extraction_planned', 'schedule_mismatch', 'refinery_gone', 'extraction_cancelled',
+        'moon_not_rescheduled', 'schedule_needs_filling',
+        'tax_outstanding_digest',
+        // Plugin health
+        'price_provider', 'moon_scan_missing',
+        // Theft
+        'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved',
+        // Reports
+        'report_generated',
+    ];
+
+    /**
+     * Get notification settings
+     *
+     * @return array
+     */
     public function getNotificationSettings(): array
     {
         $allTypes = self::NOTIFICATION_TYPES;

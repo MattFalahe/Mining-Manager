@@ -620,15 +620,20 @@ class SettingsController extends Controller
             $data = [];
             $allTypes = SettingsManagerService::NOTIFICATION_TYPES;
 
+            // Each per-type map is updated in place, and only for the types
+            // its list on the page shows. An unticked box is simply missing
+            // from the request, so writing a type the page has no box for
+            // would store it as off.
+
             // Global per-type toggles (master switches)
-            $enabledTypes = [];
+            $enabledTypes = $this->storedNotificationMap('enabled_types');
             foreach ($allTypes as $type) {
                 $enabledTypes[$type] = $request->has('notify_global_' . $type);
             }
             $data['enabled_types'] = $enabledTypes;
 
             // Per-type settings (role ping, user ping, show amount)
-            $typeSettings = [];
+            $typeSettings = $this->storedNotificationMap('type_settings');
             foreach ($allTypes as $type) {
                 $typeSettings[$type] = [
                     'ping_role' => $request->has("type_{$type}_ping_role"),
@@ -639,25 +644,18 @@ class SettingsController extends Controller
             }
             $data['type_settings'] = $typeSettings;
 
-            // EVE Mail
+            // EVE Mail. The page has no per-type EVE Mail boxes, so
+            // evemail_types is left as stored.
             $data['evemail_enabled'] = $request->has('evemail_enabled');
             $data['evemail_sender_character_id'] = $request->input('evemail_sender_character_id');
             $data['evemail_sender_character_override'] = $request->input('evemail_sender_character_override');
-
-            // Build EVE mail types array from individual checkboxes
-            $evemailTypes = [];
-            foreach ($allTypes as $type) {
-                $evemailTypes[$type] = $request->has('evemail_type_' . $type);
-            }
-            $data['evemail_types'] = $evemailTypes;
 
             // Slack
             $data['slack_enabled'] = $request->has('slack_enabled');
             $data['slack_webhook_url'] = $request->input('slack_webhook_url', '');
 
-            // Build Slack types array
-            $slackTypes = [];
-            foreach ($allTypes as $type) {
+            $slackTypes = $this->storedNotificationMap('slack_types');
+            foreach (SettingsManagerService::SLACK_NOTIFICATION_TYPES as $type) {
                 $slackTypes[$type] = $request->has('slack_type_' . $type);
             }
             $data['slack_types'] = $slackTypes;
@@ -729,6 +727,19 @@ class SettingsController extends Controller
                 ->withInput()
                 ->with('error', 'Error updating notification settings: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * A per-type notification map as it is stored now, for a save to update.
+     *
+     * @param string $key e.g. 'enabled_types'
+     * @return array
+     */
+    private function storedNotificationMap(string $key): array
+    {
+        $stored = $this->settingsService->getSetting('notifications.' . $key, []);
+
+        return is_array($stored) ? $stored : [];
     }
 
     /**
