@@ -95,6 +95,8 @@ class MoonPlannerController extends Controller
         $blueprintList = [];
         $refineryFlags = [];
         $finalPulls = [];
+        $tightPairs = [];
+        $tightMarks = [];
         $minGapHours = $this->planner->getMinGapHours();
 
         if ($corporationId) {
@@ -125,6 +127,8 @@ class MoonPlannerController extends Controller
                     'restarted' => $final['restarted'] ? $final['restarted']->format('D d M Y H:i') . ' EVE' : null,
                 ];
             }
+
+            ['pairs' => $tightPairs, 'marks' => $tightMarks] = $this->spacingWarnings($corporationId, $rangeStart, $rangeEnd);
         }
 
         return view('mining-manager::moon.planner', [
@@ -136,6 +140,9 @@ class MoonPlannerController extends Controller
             'blueprintList' => $blueprintList,
             'refineryFlags' => $refineryFlags,
             'finalPulls' => $finalPulls,
+            'tightPairs' => $tightPairs,
+            'tightMarks' => $tightMarks,
+            'spacingLabel' => $this->planner->refinerySpacingLabel(),
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
         ]);
@@ -297,11 +304,13 @@ class MoonPlannerController extends Controller
         $created = 0;
         $fallback = 0;
         $spreadAdjusted = 0;
+        $tooClose = 0;
         foreach ([0, 1, 2] as $offset) {
             $s = $this->planner->autoFill($corporationId, $anchor->copy()->addMonths($offset), $spread, $createdBy);
             $created += $s['created'];
             $fallback += $s['fallback'];
             $spreadAdjusted += $s['spread_adjusted'];
+            $tooClose += $s['too_close'];
         }
 
         if ($created > 0) {
@@ -322,13 +331,14 @@ class MoonPlannerController extends Controller
         }
 
         $msg = sprintf(
-            'Auto-fill complete: %d pull%s planned across %s–%s%s%s.',
+            'Auto-fill complete: %d pull%s planned across %s–%s%s%s%s.',
             $created,
             $created === 1 ? '' : 's',
             $anchor->format('M Y'),
             $anchor->copy()->addMonths(2)->format('M Y'),
             $fallback > 0 ? " ({$fallback} estimated from corp cadence — limited history)" : '',
-            $spreadAdjusted > 0 ? ", {$spreadAdjusted} nudged to keep the {$this->planner->getMinGapHours()}h gap" : ''
+            $spreadAdjusted > 0 ? ", {$spreadAdjusted} nudged to keep the {$this->planner->getMinGapHours()}h gap" : '',
+            $tooClose > 0 ? ", {$tooClose} left out for landing less than {$this->planner->refinerySpacingLabel()} from another pull on the same refinery" : ''
         );
 
         return redirect()
@@ -378,7 +388,9 @@ class MoonPlannerController extends Controller
             ], 422);
         }
 
-        // Server-side gap guard — refuse unconfirmed clashes.
+        // Server-side guards, both warnings the operator can agree to: another
+        // moon arriving within the minimum gap, and this refinery's own pulls
+        // closer together than one extraction allows.
         if (!$request->boolean('confirmed')) {
             $conflicts = $this->planner->detectConflicts(
                 $corporationId,
@@ -386,12 +398,9 @@ class MoonPlannerController extends Controller
                 null,
                 $structureId
             );
-            if (!empty($conflicts)) {
-                return response()->json([
-                    'requires_confirmation' => true,
-                    'conflicts' => $conflicts,
-                    'min_gap_hours' => $this->planner->getMinGapHours(),
-                ], 409);
+            $tooClose = $this->planner->tooClose($corporationId, $structureId, $plannedAt);
+            if ($conflicts || $tooClose) {
+                return response()->json($this->confirmation($conflicts, $tooClose), 409);
             }
         }
 
@@ -481,12 +490,24 @@ class MoonPlannerController extends Controller
                 $plan->id,
                 $plan->structure_id
             );
-            if (!empty($conflicts)) {
-                return response()->json([
-                    'requires_confirmation' => true,
-                    'conflicts' => $conflicts,
-                    'min_gap_hours' => $this->planner->getMinGapHours(),
-                ], 409);
+            // Only asked when the time changes: a note on a pull already that
+            // close has nothing new to agree to, and the banner still shows
+            // it. A carried move takes the blueprint's later pulls along by
+            // the same amount, so they are not in this one's way.
+            $tooClose = [];
+            if ($plannedAt->ne($plan->planned_arrival_time)) {
+                $carriedIds = $request->boolean('cascade') && $plan->rotation_id
+                    ? $this->rotations->laterInSeries($plan)->pluck('id')->all()
+                    : [];
+                $tooClose = $this->planner->tooClose(
+                    $corporationId,
+                    (int) $plan->structure_id,
+                    $plannedAt,
+                    array_merge([(int) $plan->id], $carriedIds)
+                );
+            }
+            if ($conflicts || $tooClose) {
+                return response()->json($this->confirmation($conflicts, $tooClose), 409);
             }
         }
 
@@ -954,6 +975,63 @@ class MoonPlannerController extends Controller
         });
 
         return response()->json(['entries' => $entries]);
+    }
+
+    /**
+     * What a save asks the operator to agree to: other moons arriving within
+     * the minimum gap, and pulls on the same refinery closer than the refinery
+     * spacing.
+     */
+    protected function confirmation(array $conflicts, array $tooClose): array
+    {
+        return [
+            'requires_confirmation' => true,
+            'conflicts' => $conflicts,
+            'too_close' => $tooClose,
+            'min_gap_hours' => $this->planner->getMinGapHours(),
+            'spacing' => $this->planner->refinerySpacingLabel(),
+        ];
+    }
+
+    /**
+     * Pulls on one refinery closer together than the drill can manage,
+     * however they got there: a line each for the banner, and the text of the
+     * mark on each planned pull involved, keyed by plan id.
+     *
+     * @return array{pairs: array<int, array>, marks: array<int, string>}
+     */
+    protected function spacingWarnings(int $corporationId, Carbon $from, Carbon $to): array
+    {
+        $at = fn (array $pull) => $pull['time']->format('D d M H:i') . ' EVE';
+        $what = fn (array $pull) => ($pull['type'] === 'plan' ? 'planned ' : 'set in game for ') . $at($pull);
+
+        $names = [];
+        $pairs = [];
+        $marks = [];
+
+        foreach ($this->planner->tightPairs($corporationId, $from, $to) as $pair) {
+            $names[$pair['structure_id']] ??= $this->refineries->names($pair['structure_id']);
+
+            $pairs[] = $names[$pair['structure_id']] + [
+                'first' => $what($pair['first']),
+                'second' => $what($pair['second']),
+                'gap' => $pair['gap'],
+            ];
+
+            if ($pair['first']['type'] === 'plan') {
+                $marks[$pair['first']['id']][] = "Only {$pair['gap']} before the pull on " . $at($pair['second']) . ' on this refinery.';
+            }
+            if ($pair['second']['type'] === 'plan') {
+                $marks[$pair['second']['id']][] = "Only {$pair['gap']} after the pull on " . $at($pair['first']) . ' on this refinery.';
+            }
+        }
+
+        $marks = array_map(
+            fn (array $lines) => implode("\n", $lines) . "\nAn extraction takes at least 6 days, and the next one can only be started once the chunk is in.",
+            $marks
+        );
+
+        return ['pairs' => $pairs, 'marks' => $marks];
     }
 
     /**

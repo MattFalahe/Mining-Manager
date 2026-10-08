@@ -3223,7 +3223,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         calendar. A refinery needs at least two recorded arrivals for this; with three or more the
                         median interval is used so one unusual cycle doesn't skew it. Refineries without enough
                         history of their own borrow the typical cadence of your other moons and are marked as
-                        estimates.
+                        estimates. It never places a pull closer than the refinery spacing (7 days by default) to
+                        another pull on the same refinery, real or planned.
                     </p>
                     <p>
                         If a refinery is missing history, run
@@ -3244,7 +3245,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <strong>Plan from Blueprint</strong> on the planner itself: pick the blueprint, the date to
                         start from and how many cycles to write, and you get the full list before anything is saved. Each line says whether it will be planned, skipped and why (before your
                         start date, already in the past, or that refinery is already planned within half an hour),
-                        or planned but landing inside the minimum gap of another moon.
+                        or planned but landing inside the minimum gap of another moon, or closer than the refinery
+                        spacing to another pull on the same refinery.
                     </p>
                     <p>
                         <strong>Make this blueprint the plan for these weeks</strong> is the tick box on that
@@ -3312,6 +3314,17 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         default, configurable at Settings &rarr; Notifications) you'll get a confirmation listing the
                         moons it clashes with and how far apart they are. You can still go ahead &mdash; it's a
                         warning, not a block &mdash; but nothing gets saved past the gap without you agreeing to it.
+                    </p>
+                    <p>
+                        Pulls on the <strong>same refinery</strong> get their own check. An extraction takes at least
+                        6 days, and the next one can only be started once the chunk is in, so two pulls on one
+                        refinery closer together than the <strong>refinery spacing</strong> (7 days by default,
+                        arrival to arrival, at Settings &rarr; Notifications) are unlikely to both happen as planned.
+                        The same confirmation lists them, the blueprint preview marks them, and the planner shows a
+                        <strong>Pulls too close together</strong> banner, with a yellow <strong>!</strong> on each
+                        planned pull involved, however it got onto the calendar. Exactly the spacing apart is fine:
+                        at 7 days, a pull on the 1st at 17:00 leaves the 8th at 17:00 clear. Like the gap, it is a
+                        warning, not a block.
                     </p>
 
                     <h4><i class="fas fa-lock"></i> Locked entries</h4>

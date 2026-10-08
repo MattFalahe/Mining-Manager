@@ -1264,6 +1264,13 @@ class SettingsManagerService
             // arrivals before the planner warns about clustering.
             'min_extraction_gap_hours' => (int) $this->getSetting('notifications.min_extraction_gap_hours', 24),
 
+            // Moon Extraction Planner: how close two pulls on one refinery may
+            // be before the planner warns, in hours. The form shows days.
+            'min_refinery_spacing_hours' => (int) $this->getSetting(
+                'notifications.min_refinery_spacing_hours',
+                \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS
+            ),
+
             // Moon Not Rescheduled: idle hours before the reminder, and whether
             // it repeats every that many hours until an extraction starts.
             'moon_not_rescheduled_hours' => (int) $this->getSetting('notifications.moon_not_rescheduled_hours', 48),

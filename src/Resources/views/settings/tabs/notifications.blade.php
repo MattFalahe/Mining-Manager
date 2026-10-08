@@ -822,6 +822,58 @@
         </div>
     </div>
 
+    {{-- Moon Planner: time between pulls on one refinery. Kept in hours, shown in days. --}}
+    @php
+        $spacingHours = (int) ($notificationSettings['min_refinery_spacing_hours'] ?? \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS);
+        $spacingDays = rtrim(rtrim(number_format($spacingHours / 24, 2, '.', ''), '0'), '.');
+    @endphp
+    <div class="card bg-dark mb-3">
+        <div class="card-header" style="background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-ruler-horizontal text-primary"></i>
+                Moon Planner: Time Between Pulls on One Refinery
+            </h5>
+        </div>
+        <div class="card-body">
+            <small class="form-text text-muted mb-3 d-block">
+                How close two pulls on the same refinery can be, arrival to arrival, before the
+                <a href="{{ route('mining-manager.moon.planner') }}">Moon Extraction Planner</a> warns. An
+                extraction takes at least 6 days, and the next one can only be started once the chunk is in, so
+                the default of <strong>7 days</strong> leaves a day to start it. Anything closer is flagged when you
+                plan or move a pull, in the blueprint preview and on the planner, and Auto-fill leaves it out. It is
+                a warning, not a block. Between <code>6</code> and <code>56</code> days.
+            </small>
+            <div class="form-group row align-items-center mb-0">
+                <label for="min_refinery_spacing_days" class="col-md-4 col-form-label">
+                    Minimum time between pulls on one refinery
+                </label>
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <input type="number"
+                               class="form-control"
+                               id="min_refinery_spacing_days"
+                               name="min_refinery_spacing_days"
+                               min="6" max="56" step="any"
+                               value="{{ old('min_refinery_spacing_days', $spacingDays) }}">
+                        <div class="input-group-append">
+                            <span class="input-group-text">days</span>
+                        </div>
+                    </div>
+                    @error('min_refinery_spacing_days')
+                        <small class="invalid-feedback d-block">{{ $message }}</small>
+                    @enderror
+                </div>
+                <div class="col-md-5">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i>
+                        Counted in hours: at 7 days, a pull on the 1st at 17:00 leaves the 8th at 17:00 clear, and
+                        the 7th at 17:00 gets the warning.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- ═══════════════════════════════════════════════════════════════ --}}
     {{-- MOON PLANNER — REMINDERS                                          --}}
     {{-- ═══════════════════════════════════════════════════════════════ --}}

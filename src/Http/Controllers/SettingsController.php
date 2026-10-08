@@ -563,6 +563,15 @@ class SettingsController extends Controller
                 'min:1',
                 'max:168',
             ],
+            // How close two pulls on one refinery may be, entered in days and
+            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
+            // longest.
+            'min_refinery_spacing_days' => [
+                'nullable',
+                'numeric',
+                'min:6',
+                'max:56',
+            ],
             // Moon Not Rescheduled: hours a drill sits idle after its chunk
             // arrives before the reminder goes, and between repeats. Up to two
             // weeks; past that the reminder has stopped being one.
@@ -671,6 +680,14 @@ class SettingsController extends Controller
             $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
                 ? (int) $gapInput
                 : 24;
+
+            // Time between pulls on one refinery: days on the form, hours kept,
+            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
+            // at 17:00.
+            $spacingInput = $request->input('min_refinery_spacing_days');
+            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
+                ? (int) round((float) $spacingInput * 24)
+                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
 
             // Moon Not Rescheduled reminder. The whole tab is one form, so an
             // unticked repeat box is simply absent and reads as off.

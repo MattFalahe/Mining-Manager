@@ -178,9 +178,11 @@ window.BlueprintApply = (function () {
                 let status = '<span class="text-success">will be planned</span>';
                 if (row.skip) {
                     status = '<span class="text-muted">skipped, ' + row.skip + '</span>';
-                } else if (row.clashes) {
-                    status = '<span class="text-warning">planned, ' + row.clashes +
-                        ' within the gap of another moon</span>';
+                } else if (row.clashes || row.too_close) {
+                    status = '<span class="text-warning">planned, ' + [
+                        row.too_close ? 'only ' + row.too_close + ' from another pull on this refinery' : '',
+                        row.clashes ? row.clashes + ' within the gap of another moon' : '',
+                    ].filter(Boolean).join(', ') + '</span>';
                 }
                 $tbody.append(
                     '<tr><td>' + row.cycle + '</td><td>' + row.arrival + '</td><td>' +
@@ -207,6 +209,7 @@ window.BlueprintApply = (function () {
                 '<strong>' + res.summary.plan + '</strong> pull(s) would be written, ' +
                 res.summary.skip + ' skipped' +
                 (res.summary.clash ? ', ' + res.summary.clash + ' land within the minimum gap of another moon' : '') +
+                (res.summary.tight ? ', ' + res.summary.tight + ' less than ' + res.spacing + ' from another pull on their refinery' : '') +
                 '. Nothing is saved until you confirm.'
             );
 

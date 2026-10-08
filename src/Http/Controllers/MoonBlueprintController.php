@@ -301,6 +301,7 @@ class MoonBlueprintController extends Controller
         return response()->json([
             'success' => true,
             'summary' => $preview['summary'],
+            'spacing' => $this->planner->refinerySpacingLabel(),
             'max_cycles' => $this->rotations->maxCycles($blueprint),
             // What taking over the window would clear out of it, so the
             // operator sees the cost before agreeing to it.
@@ -320,6 +321,7 @@ class MoonBlueprintController extends Controller
                     'arrival' => $row['arrival']->format('D d M Y H:i'),
                     'skip' => $row['skip'],
                     'clashes' => $row['clashes'],
+                    'too_close' => $row['too_close'],
                 ];
             }, $preview['rows']),
         ]);

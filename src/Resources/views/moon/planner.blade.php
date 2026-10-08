@@ -214,6 +214,28 @@
         </div>
     @endif
 
+    {{-- Pulls on one refinery closer together than an extraction allows,
+         however they got onto the calendar. --}}
+    @if(!empty($tightPairs))
+        <div class="mm-note mm-note-warn">
+            <h6><i class="fas fa-exclamation-triangle mm-note-icon"></i> Pulls too close together ({{ count($tightPairs) }})</h6>
+            <div class="mm-note-sub mb-2">These refineries have pulls less than {{ $spacingLabel }} apart. An extraction takes at least 6 days, and the next one can only be started once the chunk is in, so one pull of each pair is unlikely to happen as planned. Move one of them, or leave it if the timing really works.</div>
+            <ul style="font-size: 0.88em;">
+                @foreach($tightPairs as $pair)
+                    <li class="mb-1">
+                        @if(!empty($pair['moon_name']))
+                            <strong>{{ $pair['moon_name'] }}</strong> ({{ $pair['structure_name'] }}):
+                        @else
+                            <strong>{{ $pair['structure_name'] }}</strong>:
+                        @endif
+                        {{ $pair['first'] }}, then {{ $pair['second'] }}
+                        <span class="badge mm-offset-badge">{{ $pair['gap'] }} apart</span>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="row">
         {{-- CALENDAR --}}
         <div class="col-lg-9">
@@ -413,11 +435,19 @@
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
-                <p>This pull lands within the <strong id="conflict-gap"></strong>-hour minimum gap of:</p>
-                <div id="conflict-list"></div>
-                <p class="text-muted mb-0"><small>
-                    Chunks not mined promptly can be wasted. Plan it this way anyway?
-                </small></p>
+                <div id="conflict-gap-block">
+                    <p>This pull lands within the <strong id="conflict-gap"></strong>-hour minimum gap of:</p>
+                    <div id="conflict-list"></div>
+                    <p class="text-muted"><small>Chunks not mined promptly can be wasted.</small></p>
+                </div>
+                <div id="conflict-spacing-block">
+                    <p>
+                        It is less than <strong id="conflict-spacing"></strong> from another pull on this refinery.
+                        An extraction takes at least 6 days, and the next one can only be started once the chunk is in:
+                    </p>
+                    <div id="conflict-spacing-list" class="mb-3"></div>
+                </div>
+                <p class="text-muted mb-0"><small>Plan it this way anyway?</small></p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Pick another time</button>
@@ -591,6 +621,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const refineryFlags = @json((object) ($refineryFlags ?? []));
     const FLAG_LABELS = @json(\MiningManager\Services\Moon\RefineryService::FLAG_LABELS);
     const FINALS = @json((object) ($finalPulls ?? []));
+    const TIGHT = @json((object) ($tightMarks ?? []));
     const minGap = {{ $minGapHours }};
     const routes = {
         store: '{{ route('mining-manager.moon.planner.store') }}',
@@ -709,13 +740,16 @@ document.addEventListener('DOMContentLoaded', function () {
         wrap.title = raw.structure_name + (raw.moon_name ? ' (' + raw.moon_name + ')' : '');
 
         // Marked on every plan, and on a real pull still to come. A pull
-        // already done is history, whatever became of the refinery since.
+        // already done is history, whatever became of the refinery since. A
+        // plan too close to another pull on its refinery shares the mark.
         const flag = refineryFlags[raw.structure_id];
         const upcoming = arg.event.start && arg.event.start.getTime() > Date.now();
-        if (flag && (arg.event.extendedProps.type === 'plan' || (!raw.archived && upcoming))) {
+        const flagged = flag && (arg.event.extendedProps.type === 'plan' || (!raw.archived && upcoming));
+        const tight = arg.event.extendedProps.type === 'plan' ? TIGHT[raw.id] : null;
+        if (flagged || tight) {
             const mark = document.createElement('span');
-            mark.className = 'mm-flag ' + (flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn');
-            mark.title = FLAG_LABELS[flag] || '';
+            mark.className = 'mm-flag ' + (flagged && flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn');
+            mark.title = [flagged ? (FLAG_LABELS[flag] || '') : '', tight || ''].filter(Boolean).join('\n');
             mark.textContent = '!';
             wrap.appendChild(mark);
         }
@@ -1037,16 +1071,35 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showConflicts(data) {
+        // Structure names are player-set, so everything from the server goes
+        // in as text.
+        const esc = value => $('<div>').text(value == null ? '' : String(value)).html();
+        const conflicts = data.conflicts || [];
+        const tooClose = data.too_close || [];
+
         $('#conflict-gap').text(data.min_gap_hours);
+        $('#conflict-gap-block').toggle(conflicts.length > 0);
         const $list = $('#conflict-list').empty();
-        (data.conflicts || []).forEach(c => {
+        conflicts.forEach(c => {
             $list.append(
                 '<div class="mm-conflict-row">' +
-                '<strong>' + c.moon_name + '</strong> (' + c.structure_name + ')<br>' +
-                '<small>' + c.arrival + ' — ' + (c.type === 'actual' ? 'live extraction' : 'planned') +
-                ', ' + Math.abs(c.gap_hours) + 'h apart</small></div>'
+                '<strong>' + esc(c.moon_name) + '</strong> (' + esc(c.structure_name) + ')<br>' +
+                '<small>' + esc(c.arrival) + ' (' + (c.type === 'actual' ? 'live extraction' : 'planned') +
+                ', ' + Math.abs(c.gap_hours) + 'h apart)</small></div>'
             );
         });
+
+        $('#conflict-spacing').text(data.spacing || '');
+        $('#conflict-spacing-block').toggle(tooClose.length > 0);
+        const $close = $('#conflict-spacing-list').empty();
+        tooClose.forEach(c => {
+            $close.append(
+                '<div class="mm-conflict-row"><small>' + esc(c.arrival) + ' (' +
+                (c.type === 'actual' ? 'set in game' : 'planned') + ', ' + esc(c.gap) + ' ' +
+                (c.before ? 'before' : 'after') + ' this one)</small></div>'
+            );
+        });
+
         $('#planModal').modal('hide');
         $('#conflictModal').appendTo('body').modal('show');
     }

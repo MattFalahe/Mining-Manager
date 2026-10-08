@@ -83,8 +83,9 @@ class MoonRotationService
      *
      * Every occurrence is returned, including the ones that would be skipped,
      * so the operator sees the whole picture before committing: which pulls
-     * land, which are already planned, and which sit within the minimum gap of
-     * another moon.
+     * land, which are already planned, which sit within the minimum gap of
+     * another moon, and which are closer to another pull on their own refinery
+     * than the refinery spacing.
      *
      * Taking over the window means the blueprint becomes the plan for it:
      * everything else planned in those weeks is listed for removal, including
@@ -112,6 +113,14 @@ class MoonRotationService
             ->pluck('structure_id')
             ->map(fn ($id) => (int) $id)
             ->all();
+
+        // What a take-over clears, worked out first so a slot is not measured
+        // against a pull that is about to go.
+        $removals = $takeOver
+            ? $this->plansInWindow($rotation, $anchor, $cycles, $startDate, $now, $slots->isNotEmpty())
+            : [];
+        $replaced = array_column($removals, 'id');
+        $spacing = $this->planner->getRefinerySpacingHours() * 60;
 
         $rows = [];
         $placed = [];  // structure_id => Carbon[] of times placed in this preview
@@ -151,6 +160,23 @@ class MoonRotationService
                     $structureId
                 );
 
+                // Closer to another pull on this refinery than the drill can
+                // manage: one already there, or one this run places.
+                $tight = null;
+                if (!$skip) {
+                    $gaps = array_column(
+                        $this->planner->tooClose((int) $rotation->corporation_id, $structureId, $arrival, $replaced),
+                        'gap_minutes'
+                    );
+                    foreach ($placed[$structureId] ?? [] as $time) {
+                        $gap = intdiv(abs($time->getTimestamp() - $arrival->getTimestamp()), 60);
+                        if ($gap < $spacing) {
+                            $gaps[] = $gap;
+                        }
+                    }
+                    $tight = $gaps ? min($gaps) : null;
+                }
+
                 if (!$skip) {
                     $placed[$structureId][] = $arrival->copy();
                 }
@@ -163,15 +189,12 @@ class MoonRotationService
                     'arrival' => $arrival,
                     'skip' => $skip,
                     'clashes' => count($clashes),
+                    'too_close' => $tight !== null ? MoonPlannerService::gapLabel($tight) : null,
                 ];
             }
         }
 
         usort($rows, fn ($a, $b) => $a['arrival'] <=> $b['arrival']);
-
-        $removals = $takeOver
-            ? $this->plansInWindow($rotation, $anchor, $cycles, $startDate, $now, $rows !== [])
-            : [];
 
         return [
             'rows' => $rows,
@@ -180,6 +203,7 @@ class MoonRotationService
                 'plan' => count(array_filter($rows, fn ($r) => $r['skip'] === null)),
                 'skip' => count(array_filter($rows, fn ($r) => $r['skip'] !== null)),
                 'clash' => count(array_filter($rows, fn ($r) => $r['skip'] === null && $r['clashes'] > 0)),
+                'tight' => count(array_filter($rows, fn ($r) => $r['skip'] === null && $r['too_close'] !== null)),
                 'remove' => count($removals),
             ],
         ];
@@ -252,8 +276,9 @@ class MoonRotationService
 
     /**
      * Write the pulls a preview described. Skipped rows stay skipped; a row
-     * that clashes with another moon is still written, because the gap is a
-     * warning the operator has already seen, not a rule.
+     * that clashes with another moon, or sits close to another pull on its
+     * refinery, is still written: both are warnings the operator has already
+     * seen, not rules.
      *
      * @return array{created:int,skipped:int,removed:int}
      */
