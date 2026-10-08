@@ -520,13 +520,15 @@ class MoonPlannerController extends Controller
         }
 
         // Carry the same move to this moon's later pulls in the rotation, when
-        // that is what was asked for. By the same amount, so the pattern keeps
-        // its spacing instead of collapsing onto one time.
+        // that is what was asked for: the ones after where this pull was, as
+        // the page counted them. By the same amount, so the pattern keeps its
+        // spacing instead of collapsing onto one time.
         $carried = 0;
         if ($request->boolean('cascade') && $plan->rotation_id && $oldArrival->ne($plannedAt)) {
             [$actorId, $actorName] = $this->actor();
             $carried = $this->rotations->shiftLater(
                 $plan,
+                $oldArrival,
                 (int) round($oldArrival->diffInMinutes($plannedAt, false)),
                 $actorId,
                 $actorName

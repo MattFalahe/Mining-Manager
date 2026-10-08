@@ -629,10 +629,13 @@ class MoonRotationService
 
     /**
      * The later pulls an edit to this one could carry to: same refinery, same
-     * rotation, still ahead of it. A moon can sit in a rotation twice, on two
-     * different weekdays, and both are this moon's later pulls.
+     * rotation, still ahead of it.
+     *
+     * Ahead of $after when given, otherwise of the pull's own time. A pull
+     * that has just moved passes where it was, and is kept out of its own
+     * series by id because its new time can be later than that.
      */
-    public function laterInSeries(MoonExtractionPlan $plan)
+    public function laterInSeries(MoonExtractionPlan $plan, ?Carbon $after = null)
     {
         if (!$plan->rotation_id) {
             return collect();
@@ -642,7 +645,7 @@ class MoonRotationService
             ->active()
             ->where('rotation_id', $plan->rotation_id)
             ->where('structure_id', $plan->structure_id)
-            ->where('planned_arrival_time', '>', $plan->planned_arrival_time)
+            ->where('planned_arrival_time', '>', $after ?? $plan->planned_arrival_time)
             ->where('id', '!=', $plan->id)
             ->orderBy('planned_arrival_time')
             ->get();
@@ -656,18 +659,29 @@ class MoonRotationService
      * moving a rotation means. Setting them all to one time would collapse the
      * pattern into a single date.
      *
+     * Later than where this one was, not where it lands. Those are the pulls
+     * the planner counted when it asked; measured from the new time, a move
+     * past the next pull would leave that pull behind, and a move back past
+     * an earlier one would drag it along.
+     *
+     * @param  Carbon $movedFrom where this pull was before the move
      * @return int how many were moved
      */
-    public function shiftLater(MoonExtractionPlan $plan, int $minutes, ?int $actorId = null, ?string $actorName = null): int
-    {
+    public function shiftLater(
+        MoonExtractionPlan $plan,
+        Carbon $movedFrom,
+        int $minutes,
+        ?int $actorId = null,
+        ?string $actorName = null
+    ): int {
         if ($minutes === 0) {
             return 0;
         }
 
         $moved = 0;
 
-        DB::transaction(function () use ($plan, $minutes, $actorId, $actorName, &$moved) {
-            foreach ($this->laterInSeries($plan) as $later) {
+        DB::transaction(function () use ($plan, $movedFrom, $minutes, $actorId, $actorName, &$moved) {
+            foreach ($this->laterInSeries($plan, $movedFrom) as $later) {
                 $from = $later->planned_arrival_time->copy();
                 $to = $from->copy()->addMinutes($minutes);
 
