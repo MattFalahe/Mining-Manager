@@ -223,7 +223,7 @@ class TaxController extends Controller
         $this->setCorporationContext($moonOwnerCorpId);
 
         // Build query - include affiliation for corporation_id lookup
-        $query = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices']);
+        $query = MiningTax::with(['affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
             // "outstanding" is the view a director actually wants: everything
@@ -1032,18 +1032,17 @@ class TaxController extends Controller
         $payerInvoiceMap = [];
         $heldCredits = collect();
         if ($canSeeAll && $corporationId) {
-            $unpaidTaxes = MiningTax::with('character')
-                ->whereIn('status', ['unpaid', 'overdue', 'partial'])
+            $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
                 ->orderByRaw('COALESCE(period_start, month) asc')
                 ->get();
 
-            // Get corporation member IDs for manual entry character dropdown
-            $corpCharacterIds = DB::table('character_affiliations')
-                ->where('corporation_id', $corporationId)
-                ->join('character_infos', 'character_affiliations.character_id', '=', 'character_infos.character_id')
-                ->select('character_infos.character_id', 'character_infos.name')
-                ->orderBy('character_infos.name')
-                ->get();
+            // Who mines for the corporation, for the manual entry character
+            // dropdown, named whether SeAT knows them or not.
+            $corpCharacterIds = collect(app(\MiningManager\Services\Character\CharacterNames::class)
+                ->many(app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)))
+                ->map(fn ($info) => (object) ['character_id' => $info['character_id'], 'name' => $info['name']])
+                ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+                ->values();
 
             // Which open invoices each pending payer could legitimately settle.
             // Resolved here rather than in the browser because working out who
@@ -1051,8 +1050,7 @@ class TaxController extends Controller
             // of distinct payers on screen, so it stays cheap.
             $payerInvoiceMap = $this->buildPayerInvoiceMap($transactions, $unpaidTaxes);
 
-            $heldCredits = PaymentCredit::with('character')
-                ->where('remaining', '>', 0)
+            $heldCredits = PaymentCredit::where('remaining', '>', 0)
                 ->orderBy('created_at')
                 ->get();
         }
@@ -1749,7 +1747,7 @@ class TaxController extends Controller
         $status = $request->input('status', 'all');
         $month = $request->input('month');
 
-        $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])
+        $query = MiningTax::with(['taxCodes', 'taxInvoices'])
             ->whereIn('character_id', $taxCharacterIds);
 
         if ($status !== 'all') {
@@ -1799,7 +1797,7 @@ class TaxController extends Controller
         // much has been paid on it: leaving it out sent the page to the current
         // period instead, and a member who had paid anything at all lost the
         // instructions for paying the rest.
-        $unpaidTaxes = MiningTax::with(['character', 'taxCodes'])
+        $unpaidTaxes = MiningTax::with(['taxCodes'])
             ->whereIn('character_id', $taxCharacterIds)
             ->outstanding()
             ->orderByRaw('COALESCE(period_start, month) asc')
@@ -1810,7 +1808,7 @@ class TaxController extends Controller
         // shows the current period's bill, which usually does not exist yet
         // because taxes are calculated after a period ends.
         $currentTax = $unpaidTaxes->first()
-            ?? MiningTax::with(['character', 'taxCodes'])
+            ?? MiningTax::with(['taxCodes'])
                 ->whereIn('character_id', $taxCharacterIds)
                 ->where('period_start', $currentPeriodStart->toDateString())
                 ->first();
@@ -2012,7 +2010,7 @@ class TaxController extends Controller
         $viewAll = $this->isViewingAll();
 
         // Build query
-        $query = TaxCode::with(['character', 'miningTax']);
+        $query = TaxCode::with(['miningTax']);
 
         // Scope: only show own codes unless viewing all
         $taxCharacterIds = [];
@@ -2488,7 +2486,7 @@ class TaxController extends Controller
      */
     public function details(Request $request, $taxId)
     {
-        $tax = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
+        $tax = MiningTax::with(['affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
 
         // Enrich with character/corporation names
         $this->enrichModelWithCharacterInfo($tax, $this->characterInfoService);
@@ -2815,7 +2813,7 @@ class TaxController extends Controller
         // so a bug here cannot leak someone else's balance.
         $scopeCharacterIds = $canSeeAll ? null : $this->getUserCharacterIds();
 
-        $creditsQuery = PaymentCredit::with('character')->orderByDesc('created_at');
+        $creditsQuery = PaymentCredit::orderByDesc('created_at');
 
         if ($scopeCharacterIds !== null) {
             if (empty($scopeCharacterIds)) {
@@ -3218,7 +3216,7 @@ class TaxController extends Controller
                 ], 400);
             }
 
-            $characterName = $tax->character->name ?? 'Unknown';
+            $characterName = $tax->character_name;
             $tax->delete();
 
             Log::info('Tax record deleted', [
@@ -3263,7 +3261,7 @@ class TaxController extends Controller
             }
 
             // Build query
-            $query = MiningTax::with(['character']);
+            $query = MiningTax::query();
 
             // Scope: only export own taxes unless viewing all
             if (!$this->isViewingAll()) {
@@ -3285,7 +3283,7 @@ class TaxController extends Controller
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
                     return [
-                        'character' => $tax->character->name ?? 'Unknown',
+                        'character' => app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
@@ -3320,7 +3318,7 @@ class TaxController extends Controller
                 // Data rows
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
-                        $tax->character->name ?? 'Unknown',
+                        app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         $tax->period_type ?? 'monthly',
                         $tax->month,
@@ -3368,8 +3366,7 @@ class TaxController extends Controller
                 $format = 'csv';
             }
 
-            $taxes = MiningTax::with(['character'])
-                ->whereIn('character_id', $characterIds)
+            $taxes = MiningTax::whereIn('character_id', $characterIds)
                 ->orderByRaw('COALESCE(period_start, month) DESC')
                 ->orderBy('character_id')
                 ->get();
@@ -3377,7 +3374,7 @@ class TaxController extends Controller
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
                     return [
-                        'character' => $tax->character->name ?? 'Unknown',
+                        'character' => app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
@@ -3410,7 +3407,7 @@ class TaxController extends Controller
 
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
-                        $tax->character->name ?? 'Unknown',
+                        app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         $tax->period_type ?? 'monthly',
                         $tax->month,
@@ -3444,7 +3441,7 @@ class TaxController extends Controller
     public function downloadReceipt(Request $request, $id)
     {
         try {
-            $tax = MiningTax::with(['character', 'taxCode'])->findOrFail($id);
+            $tax = MiningTax::with(['taxCode'])->findOrFail($id);
 
             // Check if user has permission to view this tax
             $user = auth()->user();
@@ -3460,7 +3457,7 @@ class TaxController extends Controller
             // Generate simple text receipt
             $receipt = "TAX RECEIPT\n";
             $receipt .= "===========\n\n";
-            $receipt .= "Character: " . ($tax->character->name ?? 'Unknown') . "\n";
+            $receipt .= "Character: " . app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id) . "\n";
             $receipt .= "Period: " . ($tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y')) . "\n";
             $receipt .= "Amount Owed: " . number_format($tax->amount_owed, 2) . " ISK\n";
             $receipt .= "Amount Paid: " . number_format($tax->amount_paid ?? 0, 2) . " ISK\n";

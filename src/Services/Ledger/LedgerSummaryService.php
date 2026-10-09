@@ -784,7 +784,6 @@ class LedgerSummaryService
         $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
             ->forCorporation($corporationId)
             ->finalized()
-            ->with('character')
             ->get();
 
         // If no finalized summaries exist, calculate live
@@ -829,7 +828,6 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
             ->groupBy('character_id')
-            ->with('character')
             ->get();
 
         // Get total_tax from daily summaries (single source of truth) instead of

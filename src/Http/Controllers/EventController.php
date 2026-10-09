@@ -217,11 +217,10 @@ class EventController extends Controller
     public function show($id)
     {
         try {
-            $event = MiningEvent::with(['participants.character', 'creator'])->findOrFail($id);
+            $event = MiningEvent::with(['participants', 'creator'])->findOrFail($id);
 
             // Get participants sorted by quantity mined
             $participants = $event->participants()
-                ->with('character')
                 ->orderBy('quantity_mined', 'desc')
                 ->get();
 

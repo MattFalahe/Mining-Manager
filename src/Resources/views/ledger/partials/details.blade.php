@@ -11,13 +11,9 @@
 
                     <dt class="col-sm-4">{{ trans('mining-manager::ledger.character') }}:</dt>
                     <dd class="col-sm-8">
-                        @if($entry->character)
-                            <img src="https://images.evetech.net/characters/{{ $entry->character->character_id }}/portrait?size=32" 
-                                 class="img-circle" style="width: 24px; height: 24px;">
-                            {{ $entry->character->name }}
-                        @else
-                            {{ trans('mining-manager::ledger.unknown') }}
-                        @endif
+                        <img src="https://images.evetech.net/characters/{{ $entry->character_id }}/portrait?size=32"
+                             class="img-circle" style="width: 24px; height: 24px;">
+                        {{ $entry->character_name }}
                     </dd>
 
                     <dt class="col-sm-4">{{ trans('mining-manager::ledger.ore_type') }}:</dt>

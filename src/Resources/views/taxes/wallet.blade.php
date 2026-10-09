@@ -103,7 +103,7 @@
                         <tbody>
                             @foreach($heldCredits as $credit)
                             <tr>
-                                <td>{{ $credit->character->name ?? "Character #{$credit->character_id}" }}</td>
+                                <td>{{ $credit->character_name }}</td>
                                 <td class="text-right">{{ number_format($credit->remaining, 0) }} ISK</td>
                             </tr>
                             @endforeach
@@ -602,7 +602,7 @@ $(document).on('change', '#rpTaxId', function() {
                         <option value="__balance__">{{ trans('mining-manager::taxes.assign_balance_option') }}</option>
                         @foreach(($unpaidTaxes ?? collect()) as $tax)
                             @php
-                                $charName = $tax->character->name ?? "Character #{$tax->character_id}";
+                                $charName = $tax->character_name;
                                 $period = $tax->period_start
                                     ? $tax->period_start->format('M d') . ' - ' . $tax->period_end->format('M d, Y')
                                     : ($tax->month ? $tax->month->format('M Y') : 'Unknown');
@@ -702,7 +702,7 @@ $(document).on('change', '#rpTaxId', function() {
                                     <option value="">&mdash; {{ trans('mining-manager::taxes.select_invoice') }} &mdash;</option>
                                     @forelse(($unpaidTaxes ?? collect()) as $tax)
                                         @php
-                                            $charName = $tax->character->name ?? "Character #{$tax->character_id}";
+                                            $charName = $tax->character_name;
                                             $period = $tax->period_start ? $tax->period_start->format('M d') . ' - ' . $tax->period_end->format('M d, Y') : ($tax->month ? $tax->month->format('M Y') : 'Unknown');
                                             $remaining = (float)$tax->amount_owed - (float)($tax->amount_paid ?? 0);
                                             $statusBadge = $tax->status === 'overdue' ? '(overdue)' : ($tax->status === 'partial' ? '(partial)' : '');

@@ -397,7 +397,6 @@ class MiningEvent extends Model
     public function topParticipants(int $limit = 10)
     {
         return $this->participants()
-            ->with('character')
             ->orderByDesc('quantity_mined')
             ->limit($limit)
             ->get();

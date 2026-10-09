@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -13,6 +14,7 @@ use Seat\Eveapi\Models\Character\CharacterAffiliation;
 class MiningTax extends Model
 {
     use SoftDeletes;
+    use HasCharacterName;
 
     /**
      * The table associated with the model.

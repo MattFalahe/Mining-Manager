@@ -118,7 +118,7 @@
                                         <tr>
                                             <td>
                                                 <img src="https://images.evetech.net/characters/{{ $participant->character_id }}/portrait?size=32" class="img-circle" style="width: 32px;">
-                                                {{ $participant->character->name ?? 'Character ' . $participant->character_id }}
+                                                {{ $participant->character_name }}
                                             </td>
                                             <td class="text-right">{{ number_format($participant->value_mined ?? 0, 0) }} ISK</td>
                                             <td class="text-right">{{ number_format($participant->quantity_mined ?? 0, 0) }}</td>
@@ -156,7 +156,7 @@
                                         </span>
                                         <div class="info-box-content">
                                             <span class="info-box-text">{{ ['1st Place', '2nd Place', '3rd Place'][$index] }}</span>
-                                            <span class="info-box-number">{{ ($features['show_character_names'] ?? true) ? ($top->character->name ?? 'Character ' . $top->character_id) : 'Miner #' . ($top->character_id ?? $index + 1) }}</span>
+                                            <span class="info-box-number">{{ ($features['show_character_names'] ?? true) ? $top->character_name : 'Miner #' . ($top->character_id ?? $index + 1) }}</span>
                                             <small>{{ number_format($top->value_mined ?? 0, 0) }} ISK</small>
                                         </div>
                                     </div>

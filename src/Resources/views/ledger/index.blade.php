@@ -296,9 +296,9 @@
                                         <img src="https://images.evetech.net/characters/{{ $entry->character_id }}/portrait?size=32" 
                                              class="img-circle" 
                                              style="width: 32px; height: 32px;"
-                                             alt="{{ $entry->character_info['name'] ?? 'Character' }}">
+                                             alt="{{ $entry->character_info['name'] ?? $entry->character_name }}">
                                         
-                                        <strong>{{ $entry->character_info['name'] ?? ($entry->character->name ?? "Character {$entry->character_id}") }}</strong>
+                                        <strong>{{ $entry->character_info['name'] ?? $entry->character_name }}</strong>
                                         
                                         @if(isset($entry->character_info))
                                             {{-- Show "Not Registered" badge for external characters --}}
@@ -316,12 +316,11 @@
                                                 <i class="fas fa-building"></i>
                                                 {{ $entry->character_info['corporation_name'] }}
                                             </small>
-                                        @elseif($entry->character)
-                                            {{-- Fallback to relationship if character_info not available --}}
+                                        @else
                                             <br>
                                             <small class="text-muted">
                                                 <i class="fas fa-building"></i>
-                                                {{ $entry->affiliation->corporation_name ?? trans('mining-manager::ledger.unknown') }}
+                                                {{ $entry->characterLookup()['corporation_name'] }}
                                             </small>
                                         @endif
                                     </td>

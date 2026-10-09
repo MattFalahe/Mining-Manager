@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Seat\Eveapi\Models\Character\CharacterAffiliation;
@@ -25,6 +26,7 @@ use Illuminate\Support\Facades\Log;
 class MiningLedger extends Model
 {
     use SoftDeletes;
+    use HasCharacterName;
 
     /**
      * The table associated with the model.

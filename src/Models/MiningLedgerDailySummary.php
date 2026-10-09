@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 
@@ -32,6 +33,8 @@ use Carbon\Carbon;
  */
 class MiningLedgerDailySummary extends Model
 {
+    use HasCharacterName;
+
     protected $table = 'mining_ledger_daily_summaries';
 
     protected $fillable = [

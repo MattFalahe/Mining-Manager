@@ -37,7 +37,7 @@ class TheftIncidentController extends Controller
     public function index(Request $request)
     {
         // Build query
-        $query = TheftIncident::with(['character', 'corporation', 'miningTax']);
+        $query = TheftIncident::with(['corporation', 'miningTax']);
 
         // Apply filters
         if ($request->filled('status')) {
@@ -118,7 +118,7 @@ class TheftIncidentController extends Controller
      */
     public function show($id)
     {
-        $incident = TheftIncident::with(['character', 'corporation', 'miningTax'])
+        $incident = TheftIncident::with(['corporation', 'miningTax'])
             ->findOrFail($id);
 
         // Get mining history for the character during the incident period
@@ -279,7 +279,7 @@ class TheftIncidentController extends Controller
         }
 
         // Build query with same filters as index
-        $query = TheftIncident::with(['character', 'corporation', 'miningTax']);
+        $query = TheftIncident::with(['corporation', 'miningTax']);
 
         if ($request->filled('status')) {
             $status = $request->input('status');

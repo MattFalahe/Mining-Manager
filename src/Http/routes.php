@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 Route::group([
     'namespace' => 'MiningManager\Http\Controllers',
     'prefix' => 'mining-manager',
-    'middleware' => ['web', 'auth', 'locale'],
+    'middleware' => ['web', 'auth', 'locale', \MiningManager\Http\Middleware\PendingCharactersHeader::class],
 ], function () {
 
     // =====================================================================

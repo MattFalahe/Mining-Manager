@@ -173,8 +173,8 @@ class EventTrackingService
         $cacheKey = "mining-events:progress:{$eventId}";
         $cacheDuration = 5; // 5 minutes
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($eventId) {
-            $event = MiningEvent::with(['participants.character'])->findOrFail($eventId);
+        return app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($eventId) {
+            $event = MiningEvent::with(['participants'])->findOrFail($eventId);
 
             $totalMined = $event->participants->sum('quantity_mined');
             $participantCount = $event->participants->count();
@@ -203,12 +203,11 @@ class EventTrackingService
                 'mining_rate_per_hour' => round($miningRate, 2),
                 'average_per_participant' => $participantCount > 0 ? $totalMined / $participantCount : 0,
                 'top_miners' => $event->participants()
-                    ->with('character')
                     ->orderByDesc('quantity_mined')
                     ->limit(5)
                     ->get()
                     ->map(fn($p) => [
-                        'name' => $p->character->name,
+                        'name' => $p->character_name,
                         'quantity' => $p->quantity_mined,
                     ]),
             ];
@@ -307,7 +306,7 @@ class EventTrackingService
 
         return [
             'participant' => [
-                'name' => $participant->character->name,
+                'name' => $participant->character_name,
                 'joined_at' => $participant->joined_at,
                 'total_mined' => $participant->quantity_mined,
             ],
@@ -371,13 +370,12 @@ class EventTrackingService
         $cutoffTime = Carbon::now()->subHours($hoursInactive);
 
         return EventParticipant::where('event_id', $eventId)
-            ->with('character')
             ->where('last_updated', '<', $cutoffTime)
             ->get()
             ->map(function ($participant) use ($cutoffTime) {
                 return [
                     'character_id' => $participant->character_id,
-                    'character_name' => $participant->character->name,
+                    'character_name' => $participant->character_name,
                     'last_active' => $participant->last_updated,
                     'hours_inactive' => $participant->last_updated->diffInHours($cutoffTime),
                     'quantity_mined' => $participant->quantity_mined,
@@ -396,7 +394,6 @@ class EventTrackingService
         $event = MiningEvent::findOrFail($eventId);
 
         $participants = EventParticipant::where('event_id', $eventId)
-            ->with('character')
             ->orderByDesc('quantity_mined')
             ->get();
 
@@ -411,7 +408,7 @@ class EventTrackingService
             'leaderboard' => $participants->map(function ($participant, $index) use ($totalMined) {
                 return [
                     'rank' => $index + 1,
-                    'character_name' => $participant->character->name,
+                    'character_name' => $participant->character_name,
                     'quantity_mined' => $participant->quantity_mined,
                     'percentage_of_total' => $totalMined > 0
                         ? round(($participant->quantity_mined / $totalMined) * 100, 2)

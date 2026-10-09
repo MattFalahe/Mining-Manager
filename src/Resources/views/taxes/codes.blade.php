@@ -45,7 +45,7 @@
                             @forelse($taxCodes ?? [] as $code)
                             <tr>
                                 <td><code>{{ $taxCodePrefix }}{{ $code->code }}</code></td>
-                                <td>{{ $code->character_info['name'] ?? $code->character->name ?? 'Unknown' }}</td>
+                                <td>{{ $code->character_info['name'] ?? $code->character_name }}</td>
                                 <td data-order="{{ $code->miningTax ? \Carbon\Carbon::parse($code->miningTax->period_start ?? $code->miningTax->month)->format('Y-m-d') : '' }}">{{ $code->miningTax ? ($code->miningTax->formatted_period ?? \Carbon\Carbon::parse($code->miningTax->month)->format('F Y')) : '-' }}</td>
                                 <td data-order="{{ $code->miningTax ? (float) $code->miningTax->amount_owed : 0 }}">{{ $code->miningTax ? number_format($code->miningTax->amount_owed, 0) . ' ISK' : '-' }}</td>
                                 <td>

@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -15,6 +16,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class PaymentRefund extends Model
 {
+    use HasCharacterName;
+
     protected $table = 'mining_manager_payment_refunds';
 
     protected $fillable = [

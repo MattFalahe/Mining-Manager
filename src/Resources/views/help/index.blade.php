@@ -3756,6 +3756,12 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         dropdown when you want every corporation on the install, but it is a choice you make
                         rather than where you land.
                     </p>
+                    <p>
+                        Every miner counts, whether SeAT has a record of the character or not. A corporation means
+                        the same here as on the dashboard: its members SeAT knows, members only the background
+                        lookups know, and anyone whose mining was recorded under it, less anyone known to be in
+                        another corporation.
+                    </p>
                     <p>On top of the dates and corporation, Performance Charts can be narrowed three ways:</p>
                     <ul>
                         <li><strong>Source:</strong> all mining, my moons only, all moon ore, or other moons only. <em>My moons</em> reads your corporation's moon observers, so it means what it says.</li>

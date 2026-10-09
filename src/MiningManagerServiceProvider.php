@@ -225,6 +225,18 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
             \MiningManager\Services\Character\AffiliationResolutionService::class
         );
 
+        // Names one request or one queued job has looked up, so a page names
+        // everything it shows in one batch, and a long-running worker never
+        // carries yesterday's names into today's jobs.
+        $this->app->scoped(
+            \MiningManager\Services\Character\CharacterNames::class
+        );
+
+        // Who mines for a corporation, worked out once a request.
+        $this->app->scoped(
+            \MiningManager\Services\Character\CorporationMembers::class
+        );
+
         $this->app->singleton(
             \MiningManager\Services\Pricing\PriceProviderService::class
         );

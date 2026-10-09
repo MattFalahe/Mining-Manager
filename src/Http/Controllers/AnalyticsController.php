@@ -573,9 +573,9 @@ class AnalyticsController extends Controller
             : Carbon::now();
         $limit = $request->input('limit', 10);
 
-        // Get character IDs for corporation filter
+        // Who mines for the corporation, as every page counts it
         $corpCharIds = $corporationId
-            ? DB::table('character_affiliations')->where('corporation_id', $corporationId)->pluck('character_id')->toArray()
+            ? app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)
             : null;
 
         // Get top miners by quantity
@@ -587,11 +587,11 @@ class AnalyticsController extends Controller
         if ($corpCharIds !== null) {
             $queryByQty->whereIn('character_id', $corpCharIds);
         }
-        $topByQuantity = $queryByQty->with('character')->get()
+        $topByQuantity = $queryByQty->get()
             ->map(function($ledger) {
                 return [
                     'character_id' => $ledger->character_id,
-                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'character_name' => $ledger->character_name,
                     'total_quantity' => $ledger->total_quantity,
                     'total_value' => $ledger->total_value,
                     'days_active' => $ledger->days_active,
@@ -608,11 +608,11 @@ class AnalyticsController extends Controller
         if ($corpCharIds !== null) {
             $queryByVal->whereIn('character_id', $corpCharIds);
         }
-        $topByValue = $queryByVal->with('character')->get()
+        $topByValue = $queryByVal->get()
             ->map(function($ledger) {
                 return [
                     'character_id' => $ledger->character_id,
-                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'character_name' => $ledger->character_name,
                     'total_value' => $ledger->total_value,
                     'total_quantity' => $ledger->total_quantity,
                     'days_active' => $ledger->days_active,

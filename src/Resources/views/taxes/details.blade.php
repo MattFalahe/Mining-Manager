@@ -1,7 +1,7 @@
 @extends('web::layouts.grids.12')
 
 @section('title', trans('mining-manager::taxes.tax_details'))
-@section('page_header', trans('mining-manager::taxes.tax_details') . ' - ' . ($tax->character_info['name'] ?? $tax->character->name ?? 'Unknown'))
+@section('page_header', trans('mining-manager::taxes.tax_details') . ' - ' . ($tax->character_info['name'] ?? $tax->character_name))
 
 @push('head')
 <link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
@@ -52,7 +52,7 @@
                         <img class="profile-user-img img-fluid img-circle"
                              src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=128">
                     </div>
-                    <h3 class="profile-username text-center">{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}</h3>
+                    <h3 class="profile-username text-center">{{ $tax->character_info['name'] ?? $tax->character_name }}</h3>
                     <p class="text-muted text-center">{{ $tax->character_info['corporation_name'] ?? $tax->affiliation->corporation_name ?? 'Unknown' }}</p>
 
                     <ul class="list-group list-group-unbordered mb-3">

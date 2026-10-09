@@ -204,7 +204,7 @@
                                             <img src="https://images.evetech.net/characters/{{ $entry->character_id }}/portrait?size=32"
                                                  style="width: 24px; height: 24px; border-radius: 4px; vertical-align: middle; margin-right: 5px;"
                                                  alt="">
-                                            {{ $entry->character->name ?? "Character {$entry->character_id}" }}
+                                            {{ $entry->character_name }}
                                         </td>
                                     @endif
                                     <td>

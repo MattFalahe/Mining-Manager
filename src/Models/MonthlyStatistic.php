@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Web\Models\User;
@@ -14,6 +15,8 @@ use Seat\Web\Models\User;
  */
 class MonthlyStatistic extends Model
 {
+    use HasCharacterName;
+
     /**
      * The table associated with the model.
      *

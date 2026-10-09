@@ -15,7 +15,6 @@ use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-use Seat\Eveapi\Models\Character\CharacterInfo;
 use MiningManager\Services\OreClassifier;
 
 class TaxCalculationService
@@ -296,9 +295,10 @@ class TaxCalculationService
 
                     // Create notes explaining the breakdown
                     $notes = "Accumulated tax from " . count($taxBreakdown) . " character(s):\n";
+                    $names = app(\MiningManager\Services\Character\CharacterNames::class);
+                    $names->lookUpNow(array_column($taxBreakdown, 'character_id'));
                     foreach ($taxBreakdown as $item) {
-                        $charInfo = CharacterInfo::find($item['character_id']);
-                        $charName = $charInfo ? $charInfo->name : "Character {$item['character_id']}";
+                        $charName = $names->nameOrId($item['character_id']);
                         $notes .= "- {$charName}: " . number_format($item['tax_amount'], 2) . " ISK\n";
                     }
 

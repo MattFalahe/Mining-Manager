@@ -94,9 +94,7 @@
                         <h5 class="mb-1"><strong>JACKPOT EXTRACTION</strong></h5>
                         @if($extraction->jackpot_reported_by)
                             @php
-                                $reporterName = \DB::table('character_infos')
-                                    ->where('character_id', $extraction->jackpot_reported_by)
-                                    ->value('name') ?? 'Character #' . $extraction->jackpot_reported_by;
+                                $reporterName = app(\MiningManager\Services\Character\CharacterNames::class)->name($extraction->jackpot_reported_by);
                             @endphp
                             <span>Reported by <strong>{{ $reporterName }}</strong>
                             on <span class="eve-time" data-eve-time="{{ $extraction->jackpot_detected_at->toIso8601String() }}">{{ $extraction->jackpot_detected_at->format('M d, Y H:i') }} EVE</span></span>

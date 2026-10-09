@@ -881,7 +881,9 @@ class ProcessMiningLedgerCommand extends Command
 
                 // First miner who mined jackpot ore
                 $firstEntry = $entries->first();
-                $detectedBy = $firstEntry->character_name ?? "Character {$firstEntry->character_id}";
+                $names = app(\MiningManager\Services\Character\CharacterNames::class);
+                $names->lookUpNow([$firstEntry->character_id]);
+                $detectedBy = $names->nameOrId($firstEntry->character_id);
 
                 // Build the same ore-summary format used by moon_ready
                 // notifications. Since a jackpot chunk has +100% variants

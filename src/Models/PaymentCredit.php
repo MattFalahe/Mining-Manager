@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 
@@ -15,6 +16,8 @@ use Seat\Eveapi\Models\Character\CharacterInfo;
  */
 class PaymentCredit extends Model
 {
+    use HasCharacterName;
+
     /**
      * The table associated with the model.
      */

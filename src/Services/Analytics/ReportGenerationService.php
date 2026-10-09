@@ -430,14 +430,19 @@ class ReportGenerationService
     {
         $rows = [];
 
-        MiningLedger::with(['character', 'type', 'solarSystem'])
+        // Rows stream one at a time here, so name everyone in the range first
+        // rather than one lookup per row.
+        $names = app(\MiningManager\Services\Character\CharacterNames::class);
+        $names->preload(MiningLedger::whereBetween('date', [$startDate, $endDate])->distinct()->pluck('character_id'));
+
+        MiningLedger::with(['type', 'solarSystem'])
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
             ->cursor()
-            ->each(function ($entry) use (&$rows) {
+            ->each(function ($entry) use (&$rows, $names) {
                 $rows[] = [
                     'date'         => $entry->date->toDateString(),
-                    'character'    => $entry->character->name ?? 'Unknown',
+                    'character'    => $names->nameOrId($entry->character_id),
                     'character_id' => $entry->character_id,
                     'ore_type'     => $entry->type_name,
                     'type_id'      => $entry->type_id,
@@ -461,14 +466,13 @@ class ReportGenerationService
      */
     private function getTaxRecordsExport(Carbon $startDate, Carbon $endDate): array
     {
-        return MiningTax::with('character')
-            ->whereBetween('month', [$startDate->startOfMonth(), $endDate->endOfMonth()])
+        return MiningTax::whereBetween('month', [$startDate->startOfMonth(), $endDate->endOfMonth()])
             ->orderByRaw('COALESCE(period_start, month) DESC')
             ->get()
             ->map(function ($tax) {
                 return [
                     'month'        => $tax->month->format('Y-m'),
-                    'character'    => $tax->character->name ?? 'Unknown',
+                    'character'    => app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                     'character_id' => $tax->character_id,
                     'amount_owed'  => (float) $tax->amount_owed,
                     'amount_paid'  => (float) $tax->amount_paid,

@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningTax;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
-use Seat\Eveapi\Models\Character\CharacterInfo;
 
 /**
  * The weekly "who still owes" summary for directors.
@@ -143,8 +142,8 @@ class SendOutstandingDigestCommand extends Command
             // Largest debt first: that is the order a director wants to work in.
             uasort($byCharacter, fn ($a, $b) => $b['outstanding'] <=> $a['outstanding']);
 
-            $names = CharacterInfo::whereIn('character_id', array_keys($byCharacter))
-                ->pluck('name', 'character_id');
+            $names = app(\MiningManager\Services\Character\CharacterNames::class);
+            $names->lookUpNow(array_keys($byCharacter));
 
             $rows = [];
             foreach ($byCharacter as $characterId => $totals) {
@@ -154,7 +153,7 @@ class SendOutstandingDigestCommand extends Command
 
                 $rows[] = [
                     'character_id' => $characterId,
-                    'character_name' => $names[$characterId] ?? "Character #{$characterId}",
+                    'character_name' => $names->nameOrId($characterId),
                     'outstanding' => round($totals['outstanding'], 2),
                     'formatted_outstanding' => number_format($totals['outstanding'], 0) . ' ISK',
                     'percent_paid' => $percentPaid,

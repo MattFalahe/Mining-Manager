@@ -78,12 +78,17 @@ All notable changes to Mining Manager will be documented in this file.
 ### Character Lookups
 
 - **No page calls out to ESI for a character any more.** Names and corporations for characters SeAT does not know, such as visiting miners, are looked up in the background by `mining-manager:resolve-characters` and kept by the plugin, and every page reads them from there. A character nobody has looked up yet shows as *Character info in progress*, and the page refreshes itself once the lookup is in, usually within a minute. Before, a page could sit waiting on ESI, and on a bad ESI day show *Character 12345* and *Unknown Corporation*. Built on the resolver from [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).
+- **Every page names characters the same way.** The ledger, taxes, balances, wallet, events, the moon page, exports, reports and notifications now take names from the same place as the dashboard: SeAT's own records first, then the plugin's lookups. A miner SeAT does not know is named everywhere instead of showing as *Unknown* or a number, and a page names everyone on it in one go however many rows it shows. Charts and tables a page loads after itself also say when a name is still being looked up, and refresh the page once it is in. Files, receipts and stored notes say *Character 12345* rather than *in progress*. The event checks on the Diagnostic page no longer fail on a participant SeAT does not know.
 - Fixed: **the fallbacks for when ESI is down never worked.** The plugin asked EVEWho and zKillboard for fields those services do not return, so every fallback came back empty. The lookup now reads them correctly. It asks ESI first, up to 1000 characters a request, and only then EVEWho and zKillboard, a few characters a run. Those answers are checked again sooner, so ESI replaces them on its next good run. It stops calling ESI while the error budget it shares with SeAT's own jobs is low, and an id ESI rejects is set aside instead of failing the whole batch every time.
 
 ### Dashboard
 
 - Fixed: **the leaderboard's Show Specific Corporations Only setting did nothing.** Settings saved it and the Dashboard tab showed it, but no leaderboard ever read it. Every top miners board now keeps to the corporations you pick, the Corporation Moon Ore board included, and if the lookup behind it fails the board shows everyone rather than an error. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#5](https://github.com/MattFalahe/Mining-Manager/pull/5).
 - Fixed: **miners SeAT has never seen counted as your own members.** SeAT only keeps affiliations for characters it knows, so a visiting miner from another corporation had none and the dashboard treated them as a member. The background lookup now finds their corporation and the dashboard reads it, so they count as guests. Characters nobody has placed yet are still counted as members, as before. Found and fixed by [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).
+
+### Mining Analytics
+
+- Fixed: **miners SeAT does not know were left out.** Top miners, the per-character statistics and the export only counted characters SeAT has a record of, and with a corporation picked every number left out its members SeAT had not placed in it. Every miner now counts and is named, and a corporation means the same here as on the dashboard: its members SeAT knows, members only the plugin's lookups know, and anyone whose mining was recorded under it, less anyone known to be in another corporation. Numbers for past months can go up as a result. Nothing stored changes, only what the page counts. The export also keeps rows whose solar system SeAT does not know.
 
 ### Paying Tax
 
@@ -127,6 +132,7 @@ All notable changes to Mining Manager will be documented in this file.
   No tax changes: a personal moon-ore row was never taxable, so this corrects the value figures on dashboards, leaderboards and member totals, not anybody's bill.
 
 - The nightly **"reconciling late observer data" step is the same code as that command** rather than a second attempt at the same job. It used its own rules, looked back two days instead of four, and subtracted the observer quantity from the personal row rather than removing it, which on a second night took the same quantity off again and ate the part of a pilot's mining that belonged to somebody else's moon. That behaviour is gone.
+- The corporation filter, and the character pickers on Calculate Taxes and on the wallet's manual entry, list a corporation's members the same way as the dashboard, so members SeAT has no record of are in them too.
 
 ### Ore Classification
 

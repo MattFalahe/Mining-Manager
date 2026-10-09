@@ -357,7 +357,7 @@
                                 @forelse($taxes as $tax)
                                 <tr data-tax-id="{{ $tax->id }}"
                                     data-character-id="{{ $tax->character_id }}"
-                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
+                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character_name }}"
                                     data-amount-owed="{{ $tax->amount_owed }}"
                                     data-amount-paid="{{ $tax->amount_paid }}"
                                     data-amount-remaining="{{ in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0 }}"
@@ -373,7 +373,7 @@
                                              class="img-circle"
                                              style="width: 32px; height: 32px;">
                                         <a href="{{ route('mining-manager.taxes.details', $tax->id) }}">
-                                            {{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}
+                                            {{ $tax->character_info['name'] ?? $tax->character_name }}
                                         </a>
                                         @if($moonOwnerCorpId)
                                             @php $taxCorpId = $tax->character_info['corporation_id'] ?? $tax->corporation_id ?? null; @endphp
@@ -549,7 +549,7 @@
                                             <button type="button"
                                                     class="btn btn-sm btn-warning send-reminder"
                                                     data-tax-id="{{ $tax->id }}"
-                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
+                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character_name }}"
                                                     data-toggle="tooltip"
                                                     title="{{ trans('mining-manager::taxes.send_reminder') }}">
                                                 <i class="fas fa-envelope"></i>
@@ -557,7 +557,7 @@
                                             <button type="button"
                                                     class="btn btn-sm btn-danger delete-tax"
                                                     data-tax-id="{{ $tax->id }}"
-                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character->name ?? 'Unknown' }}"
+                                                    data-character-name="{{ $tax->character_info['name'] ?? $tax->character_name }}"
                                                     data-month="{{ $tax->formatted_period ?? \Carbon\Carbon::parse($tax->month)->format('F Y') }}"
                                                     data-toggle="tooltip"
                                                     title="Delete tax record">

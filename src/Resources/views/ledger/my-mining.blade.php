@@ -395,7 +395,7 @@
                                         <img src="https://images.evetech.net/characters/{{ $activity->character_id }}/portrait?size=32" 
                                              class="img-circle" 
                                              style="width: 32px; height: 32px;">
-                                        {{ $activity->character->name ?? 'Unknown' }}
+                                        {{ $activity->character_name }}
                                     </td>
                                     <td>
                                         <img src="https://images.evetech.net/types/{{ $activity->type_id }}/icon?size=32" 

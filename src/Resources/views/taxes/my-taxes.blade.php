@@ -571,7 +571,7 @@
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32"
                                              class="img-circle mr-1" style="width:20px;height:20px;">
-                                        {{ $tax->character->name ?? 'Unknown' }}
+                                        {{ $tax->character_name }}
                                     </td>
                                     @endif
                                     <td class="text-right">

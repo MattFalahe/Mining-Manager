@@ -84,7 +84,7 @@ class DashboardController extends Controller
         $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
         // Cache dashboard data for 30 minutes (1800 seconds)
-        $dashboardData = Cache::remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === CURRENT MONTH STATISTICS ===
             $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
 
@@ -165,7 +165,7 @@ class DashboardController extends Controller
         // Corporation tab data is loaded via AJAX when user clicks the tab.
         $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
-        $dashboardData = Cache::remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === PERSONAL STATISTICS (Director's own mining) ===
             $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
             $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
@@ -237,7 +237,7 @@ class DashboardController extends Controller
 
         $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
 
-        $data = Cache::remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
@@ -291,7 +291,7 @@ class DashboardController extends Controller
 
         $cacheKey = 'dashboard.guest-tab.' . $corporationId . '.' . $monthKey;
 
-        $data = Cache::remember($cacheKey, 300, function () use ($corporationId, $monthDate) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $monthDate) {
             $guestIds = $this->getGuestMinerCharacterIds($corporationId, $monthDate);
 
             if (empty($guestIds)) {
@@ -1943,31 +1943,9 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get all characters for a corporation from multiple sources.
-     *
-     * Corporation mining data comes from ESI mining observers, which record
-     * mining activity for ALL pilots at corp structures — including unregistered
-     * pilots who aren't in character_affiliations. We merge results from every
-     * available source so the corp charts include everyone.
+     * Who mines for a corporation: the same answer Analytics, the ledger and
+     * the character pickers give.
      */
-    /**
-     * Get character IDs belonging to a corporation.
-     *
-     * Gathers candidates from 3 sources then filters out characters confirmed
-     * to be in a different corporation (via character_affiliations).
-     *
-     * Sources:
-     *  1. character_affiliations — confirmed corp members registered in SeAT
-     *  2. mining_ledger rows tagged with this corporation_id
-     *  3. corporation mining observer data (anyone who mined at corp structures)
-     *
-     * Sources 2 & 3 include non-corp miners at your structures. To keep only
-     * corp members, we exclude characters who have an affiliation entry for a
-     * DIFFERENT corporation. Characters with no affiliation data are kept
-     * (likely unregistered corp members).
-     */
-    private $corpCharacterIdsCache = [];
-
     private function getCorporationCharacterIds($corporationId)
     {
         if (!$corporationId) {
@@ -1975,110 +1953,7 @@ class DashboardController extends Controller
             return [];
         }
 
-        // Return cached result if already resolved this request
-        if (isset($this->corpCharacterIdsCache[$corporationId])) {
-            return $this->corpCharacterIdsCache[$corporationId];
-        }
-
-        $allIds = [];
-
-        // Source 1: character_affiliations (confirmed corp members)
-        try {
-            $ids = DB::table('character_affiliations')
-                ->where('corporation_id', $corporationId)
-                ->pluck('character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: character_affiliations query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Source 2: mining_ledger rows tagged with this corporation_id
-        try {
-            $ids = DB::table('mining_ledger')
-                ->where('corporation_id', $corporationId)
-                ->distinct()
-                ->pluck('character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: mining_ledger query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Source 3: corporation mining observer data
-        try {
-            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-            $observerCorpId = $moonOwnerCorpId ?: $corporationId;
-
-            $ids = DB::table('corporation_industry_mining_observer_data as d')
-                ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
-                ->where('o.corporation_id', $observerCorpId)
-                ->distinct()
-                ->pluck('d.character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: mining observer query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        $uniqueIds = array_values(array_unique($allIds));
-
-        // Filter: exclude characters confirmed to be in a DIFFERENT corporation.
-        // Uses all configured corporations (not just moon owner) so holding corp setups work.
-        // Characters with NO affiliation entry are kept (unregistered corp members).
-        if (!empty($uniqueIds)) {
-            try {
-                $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
-                if (empty($homeCorporationIds)) {
-                    $homeCorporationIds = [$corporationId];
-                }
-
-                $nonCorpIds = DB::table('character_affiliations')
-                    ->whereIn('character_id', $uniqueIds)
-                    ->whereNotIn('corporation_id', $homeCorporationIds)
-                    ->pluck('character_id')
-                    ->toArray();
-
-                // Characters SeAT has no affiliation for stay in, unless the
-                // background lookup placed them in another corporation.
-                $nonCorpIds = array_merge($nonCorpIds, $this->affiliationResolver->outsideHome($uniqueIds, $homeCorporationIds));
-
-                if (!empty($nonCorpIds)) {
-                    $uniqueIds = array_values(array_diff($uniqueIds, $nonCorpIds));
-                    \Log::debug('getCorporationCharacterIds: Excluded non-corp members', [
-                        'excluded_count' => count($nonCorpIds),
-                    ]);
-                }
-            } catch (\Exception $e) {
-                \Log::warning('getCorporationCharacterIds: Non-corp filter failed', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        \Log::debug('getCorporationCharacterIds: Final count', [
-            'corporation_id' => $corporationId,
-            'count' => count($uniqueIds),
-        ]);
-
-        $this->corpCharacterIdsCache[$corporationId] = $uniqueIds;
-
-        return $uniqueIds;
+        return app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId);
     }
 
     /**
