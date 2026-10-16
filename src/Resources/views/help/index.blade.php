@@ -4077,9 +4077,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.exporting_desc') }}</p>
                     <p>
                         Exporting can be switched off under Settings, Features, <strong>Allow Data Export</strong>.
-                        Off means off for everyone, directors and admins included, and it covers the mining
-                        ledger, tax records, members' own exports, analytics, theft incidents and report
-                        downloads. The check sits on the downloads themselves, so an old export link stops
+                        Off means off for everyone, directors and admins included, and it covers tax records,
+                        members' own exports, analytics, Find Moons, theft incidents and report downloads. The check sits on the downloads themselves, so an old export link stops
                         working too. Your settings backup is separate and stays available.
                     </p>
                 </div>
