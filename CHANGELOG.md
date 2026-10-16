@@ -2,6 +2,14 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [Unreleased]
+
+**Backwards compatible.** No migrations.
+
+### Mining Ledger
+
+- **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
+
 ## [2.0.5] — 2026-10-18 — The Ecosystem Era: Rotations and Rigs
 
 Moon pulls, planned rather than placed one at a time. A blueprint lays a whole rotation over the planner, the planner warns when two pulls on one refinery are too close, marks a refinery's final pull before it moves, and says when a drill has been left idle or a moon has nothing planned. A refinery's moon rigs now set its chunks' mining window and yield wherever the plugin times or values a chunk, and a chunk's value is settled when it fractures. Around that: a banner on the Mining Dashboard for tax still owed, part-paid bills that keep their payment steps, a fallback price provider, miners SeAT does not know named and counted on every page, and a run of notification switches that now save.
@@ -126,6 +134,7 @@ Moon pulls, planned rather than placed one at a time. A blueprint lays a whole r
 - **No page calls out to ESI for a character any more.** Names and corporations for characters SeAT does not know, such as visiting miners, are looked up in the background by `mining-manager:resolve-characters` and kept by the plugin, and every page reads them from there. A character nobody has looked up yet shows as *Character info in progress*, and the page refreshes itself once the lookup is in, usually within a minute. Before, a page could sit waiting on ESI, and on a bad ESI day show *Character 12345* and *Unknown Corporation*. Built on the resolver from [Nauclerus](https://github.com/Nauclerus) in [#4](https://github.com/MattFalahe/Mining-Manager/pull/4).
 - **Every page names characters the same way.** The ledger, taxes, balances, wallet, events, the moon page, exports, reports and notifications now take names from the same place as the dashboard: SeAT's own records first, then the plugin's lookups. A miner SeAT does not know is named everywhere instead of showing as *Unknown* or a number, and a page names everyone on it in one go however many rows it shows. Charts and tables a page loads after itself also say when a name is still being looked up, and refresh the page once it is in. Files, receipts and stored notes say *Character 12345* rather than *in progress*. The event checks on the Diagnostic page no longer fail on a participant SeAT does not know.
 - Fixed: **the fallbacks for when ESI is down never worked.** The plugin asked EVEWho and zKillboard for fields those services do not return, so every fallback came back empty. The lookup now reads them correctly. It asks ESI first, up to 1000 characters a request, and only then EVEWho and zKillboard, a few characters a run. Those answers are checked again sooner, so ESI replaces them on its next good run. It stops calling ESI while the error budget it shares with SeAT's own jobs is low, and an id ESI rejects is set aside instead of failing the whole batch every time.
+- The character pickers on Calculate Taxes and on the wallet's manual entry list a corporation's members the same way as the dashboard, so members SeAT has no record of are in them too. A guest corporation lists the characters placed in it.
 
 ### Dashboard
 
@@ -185,7 +194,6 @@ Moon pulls, planned rather than placed one at a time. A blueprint lays a whole r
 
   No tax changes: a personal moon-ore row was never taxable, so this corrects the value figures on dashboards, leaderboards and member totals, not anybody's bill.
 
-- The corporation filter, and the character pickers on Calculate Taxes and on the wallet's manual entry, list a corporation's members the same way as the dashboard, so members SeAT has no record of are in them too. A guest corporation lists the characters placed in it.
 - Fixed: **My Mining showed tax for untaxed mining.** When neither the daily summaries nor the ledger had any tax for the period, as for exempt mining or a 0% rate, it worked out an estimate at the regular ore rate. It now shows what was worked out, and nothing when nothing is due.
 - Fixed: **My Mining's Tax Paid ignored the character picked**, while Tax Owed followed it, so the outstanding figure set one character's bills against the whole account's payments. Both now cover the same bills.
 - Fixed: **Corp Rank ranked against the whole install.** It compared the account's total with every single character on it, guests and other corporations included. It now ranks among your corporation's miners, account against account.

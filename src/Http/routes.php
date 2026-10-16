@@ -120,26 +120,6 @@ Route::group([
             'uses' => 'LedgerController@exportPersonal',
             'middleware' => 'can:mining-manager.member',
         ]);
-
-        // Director routes
-        Route::get('/export', [
-            'as' => 'mining-manager.ledger.export',
-            'uses' => 'LedgerController@export',
-            'middleware' => 'can:mining-manager.director',
-        ]);
-
-        // Delete routes - Admin
-        Route::delete('/delete/{id}', [
-            'as' => 'mining-manager.ledger.delete',
-            'uses' => 'LedgerController@delete',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
-
-        Route::post('/bulk-delete', [
-            'as' => 'mining-manager.ledger.bulk-delete',
-            'uses' => 'LedgerController@bulkDelete',
-            'middleware' => 'can:mining-manager.admin',
-        ]);
     });
 
     // Tax Management Routes
