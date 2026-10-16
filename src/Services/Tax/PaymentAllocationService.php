@@ -311,6 +311,109 @@ class PaymentAllocationService
     }
 
     /**
+     * ISK a member handed over outside the wallet before any bill names it,
+     * such as someone settling up as they leave the corporation mid-period.
+     *
+     * Treated like an upfront payment: it pays down their oldest open bills
+     * first, and what is left is held as credit for the next bill to draw
+     * down when it is raised. It used to be saved as a pre-paid tax record of
+     * its own, which the real bill for the period never took into account.
+     *
+     * @return array{allocations: array, credited: float}
+     */
+    public function recordPaymentByHand(int $characterId, float $amount, ?int $actorId = null, ?string $notes = null): array
+    {
+        $amount = round($amount, 2);
+        $result = ['allocations' => [], 'credited' => 0.0];
+
+        if ($amount < self::SETTLED_TOLERANCE) {
+            return $result;
+        }
+
+        $acceptAlts = (bool) ($this->settings->getPaymentSettings()['accept_alt_characters'] ?? true);
+        $eligibleCharacterIds = $this->eligibleCharacterIds($characterId, $acceptAlts);
+
+        DB::transaction(function () use ($characterId, $amount, $actorId, $notes, $eligibleCharacterIds, &$result) {
+            $remaining = $amount;
+
+            foreach ($this->buildTargetList(null, $eligibleCharacterIds, true) as $taxId) {
+                if ($remaining < self::SETTLED_TOLERANCE) {
+                    break;
+                }
+
+                $tax = MiningTax::where('id', $taxId)->lockForUpdate()->first();
+
+                if (!$tax) {
+                    continue;
+                }
+
+                $outstanding = round((float) $tax->amount_owed - (float) ($tax->amount_paid ?? 0), 2);
+
+                if ($outstanding < self::SETTLED_TOLERANCE) {
+                    continue;
+                }
+
+                $slice = round(min($remaining, $outstanding), 2);
+                $remaining = round($remaining - $slice, 2);
+
+                $this->creditTax($tax, $slice, null, Carbon::now());
+
+                PaymentAllocation::create([
+                    'transaction_id' => null,
+                    'credit_id' => null,
+                    'mining_tax_id' => $tax->id,
+                    'character_id' => $characterId,
+                    'amount' => $slice,
+                    'source' => PaymentAllocation::SOURCE_MANUAL,
+                    'allocated_by' => $actorId,
+                    'notes' => $notes,
+                    'allocated_at' => Carbon::now(),
+                ]);
+
+                $result['allocations'][] = [
+                    'tax_id' => (int) $tax->id,
+                    'amount' => $slice,
+                ];
+            }
+
+            // Held whatever "hold surplus as credit" says. That setting is for
+            // stray wallet overpayments; this is money a director has taken
+            // for the member's next bill, and dropping it would lose it.
+            if ($remaining >= self::SETTLED_TOLERANCE) {
+                // With no wallet transaction to tie them together, the credit
+                // says itself how much of the payment went to bills first.
+                $settled = round($amount - $remaining, 2);
+                $creditNotes = $settled > 0
+                    ? trim(($notes ?? '') . "\n" . number_format($amount, 0) . ' ISK received, '
+                        . number_format($settled, 0) . ' ISK of it paid open bills first.')
+                    : $notes;
+
+                PaymentCredit::create([
+                    'character_id' => $characterId,
+                    'transaction_id' => null,
+                    'amount' => $remaining,
+                    'remaining' => $remaining,
+                    'source' => PaymentCredit::SOURCE_MANUAL,
+                    'created_by' => $actorId,
+                    'notes' => $creditNotes,
+                ]);
+
+                $result['credited'] = $remaining;
+            }
+        });
+
+        Log::info('Mining Manager: recorded a payment taken by hand', [
+            'character_id' => $characterId,
+            'amount' => $amount,
+            'invoices' => count($result['allocations']),
+            'held' => $result['credited'],
+            'recorded_by' => $actorId,
+        ]);
+
+        return $result;
+    }
+
+    /**
      * Ordered list of invoice ids a payment should try to settle.
      *
      * The nominated invoice always comes first so a director's explicit choice
@@ -441,7 +544,7 @@ class PaymentAllocationService
                     'amount' => $slice,
                     'source' => PaymentAllocation::SOURCE_CREDIT,
                     'allocated_by' => $actorId,
-                    'notes' => 'Drawn from surplus held on an earlier payment',
+                    'notes' => 'Drawn from a balance held from an earlier payment',
                     'allocated_at' => Carbon::now(),
                 ]);
 
@@ -456,7 +559,7 @@ class PaymentAllocationService
             if ($applied > 0) {
                 $note = Carbon::now()->format('Y-m-d H:i') . ' - '
                     . number_format($applied, 0)
-                    . ' ISK paid from account balance held on an earlier overpayment.';
+                    . ' ISK paid from account balance held from an earlier payment.';
 
                 $locked->update([
                     'notes' => $locked->notes ? $locked->notes . "

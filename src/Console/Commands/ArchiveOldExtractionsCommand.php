@@ -66,7 +66,7 @@ class ArchiveOldExtractionsCommand extends Command
         }
 
         // First, update status for extractions that have passed their expiry time
-        $expiredCount = MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        $expiredCount = MoonExtraction::markExpired();
 
         if ($expiredCount > 0) {
             $this->info("Updated {$expiredCount} extractions to 'expired' status");
@@ -138,6 +138,7 @@ class ArchiveOldExtractionsCommand extends Command
                             'auto_fractured' => $extraction->auto_fractured,
                             'fractured_at' => $extraction->fractured_at,
                             'fractured_by' => $extraction->fractured_by,
+                            'moon_rigs' => $extraction->moon_rigs,
                         ]);
 
                         // Delete the original extraction
@@ -203,11 +204,17 @@ class ArchiveOldExtractionsCommand extends Command
             }
 
             // Query by observer_id (the structure's moon drill) for precise
-            // attribution. Window: 72 hours from chunk_arrival_time — covers
-            // the full fracture + 48h mining lifecycle. Previously the window
-            // was chunk_arrival → natural_decay (only 3h pre-fracture), which
-            // missed all actual mining since chunks are mined AFTER fracture.
+            // attribution. Window: to the end of the chunk's life, and never
+            // shorter than the 72 hours from arrival it has always had, so a
+            // rigged chunk gets its longer belt and nothing else changes.
+            // Previously the window was chunk_arrival → natural_decay (only 3h
+            // pre-fracture), which missed all actual mining since chunks are
+            // mined AFTER fracture.
             $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+            $expiry = $extraction->getExpiryTime();
+            if ($expiry && $expiry->gt($windowEnd)) {
+                $windowEnd = $expiry;
+            }
 
             $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
                 ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())

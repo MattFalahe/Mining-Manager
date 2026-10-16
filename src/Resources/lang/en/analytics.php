@@ -52,6 +52,7 @@ return [
     'weekly_trends' => 'Weekly Trends',
     'monthly_trends' => 'Monthly Trends',
     'trend_comparison' => 'Trend Comparison',
+    'trend_day' => 'Day :day',
     
     // Distribution
     'ore_distribution' => 'Ore Distribution',
@@ -363,6 +364,19 @@ return [
     'no_mining_activity' => 'No mining activity recorded for this extraction.',
     'total' => 'Total',
     'pool_vs_mined' => 'Pool vs Mined Comparison',
+
+    // Moon rig marks
+    'rig_marks_now' => 'Moon rigs fitted now: :rigs',
+    'rig_marks_chunks' => 'Chunks pulled with moon rigs: :count of :total',
+    'rig_mark_window' => ':rig, :hours hour mining window',
+    'rig_mark_window_yield' => ':rig, :hours hour mining window, +:bonus% yield',
+    'rig_mark_yield' => ':rig, +:bonus% yield',
+    'rig_mark_none' => 'no moon rigs',
+    'rig_mark_yield_unknown' => 'yield rig unknown',
+    'rig_mark_no_timer_yield_unknown' => 'no timer rig, yield rig unknown',
+    'rig_mark_unknown_hull' => 'Tech :tier timer rig',
+    'rig_chunk' => 'Moon rigs on this chunk',
+    'rig_fitted_now' => 'Fitted now',
 
     // Account/Character Grouping
     'by_account' => 'By Account',

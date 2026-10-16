@@ -316,8 +316,8 @@
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $summary->character_id }}/portrait?size=32"
                                              class="character-portrait"
-                                             alt="{{ $summary->character_info['name'] ?? ($summary->character->name ?? 'Unknown') }}">
-                                        <strong>{{ $summary->character_info['name'] ?? ($summary->character->name ?? 'Unknown') }}</strong>
+                                             alt="{{ $summary->character_info['name'] ?? $summary->character_name }}">
+                                        <strong>{{ $summary->character_info['name'] ?? $summary->character_name }}</strong>
 
                                         {{-- Corporation Badge --}}
                                         @if(isset($summary->character_info['corporation_name']))

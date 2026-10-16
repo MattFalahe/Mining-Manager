@@ -3,13 +3,11 @@
 namespace MiningManager\Services\Moon;
 
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionHistory;
 use MiningManager\Models\MoonExtractionPlan;
 use MiningManager\Services\Configuration\SettingsManagerService;
-use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use Carbon\Carbon;
 
 /**
@@ -22,23 +20,21 @@ use Carbon\Carbon;
  *   - projectNextArrival(): chain the next projected pull off the latest
  *     anchor (last actual arrival OR last active plan — whichever is later,
  *     so a manual re-anchor sticks going forward).
- *   - detectConflicts(): the <24h guard. Returns every other planned/actual
- *     arrival within the configured gap window so the UI can warn + require
+ *   - detectConflicts(): the <24h guard. Returns other moons' planned/actual
+ *     arrivals within the configured gap window so the UI can warn + require
  *     confirmation, and the save endpoint can refuse unconfirmed clashes.
+ *   - tooClose() / tightPairs(): pulls on one refinery closer together than
+ *     an extraction allows (the refinery spacing, 7 days by default).
  *   - autoFill(): project every refinery's next slot for a month and, on
  *     request, greedily spread them so none violate the gap.
  *   - reconcile(): pair planned slots with real ESI extractions once they
  *     appear, recording variance.
  *
- * Refineries = Athanor (35835) + Tatara (35836). Metenox (81826) drills are
- * deliberately excluded — they accumulate continuously and have no chunk
- * cadence to plan around.
+ * Which structures count as refineries, and everything else about them, is
+ * RefineryService's job; the planner only asks it.
  */
 class MoonPlannerService
 {
-    /** Athanor + Tatara — the only structures that run plannable chunk extractions. */
-    public const REFINERY_TYPE_IDS = [35835, 35836];
-
     /**
      * A plan and a real extraction for the same refinery within this many
      * minutes are the SAME pull — deduped silently. Beyond it (but within the
@@ -55,11 +51,28 @@ class MoonPlannerService
      */
     public const CYCLE_MATCH_WINDOW_HOURS = 72;
 
-    protected SettingsManagerService $settings;
+    /**
+     * Default for how close two pulls on one refinery may be, arrival to
+     * arrival: the shortest extraction EVE allows is six days, plus a day for
+     * somebody to start the next one once the chunk is in.
+     */
+    public const DEFAULT_REFINERY_SPACING_HOURS = 168;
 
-    public function __construct(SettingsManagerService $settings)
+    /**
+     * The longest and shortest extractions EVE allows. A pull planned more
+     * than the longest ahead cannot be set up in game yet. The planner still
+     * takes it, and the notifications say when it can be started.
+     */
+    public const MAX_EXTRACTION_DAYS = 56;
+    public const MIN_EXTRACTION_DAYS = 6;
+
+    protected SettingsManagerService $settings;
+    protected RefineryService $refineries;
+
+    public function __construct(SettingsManagerService $settings, RefineryService $refineries)
     {
         $this->settings = $settings;
+        $this->refineries = $refineries;
     }
 
     /**
@@ -75,146 +88,47 @@ class MoonPlannerService
     }
 
     /**
-     * Resolved structure_id => moon_id, memoised for the request.
-     *
-     * @var array<int,int|null>
+     * How close two pulls on one refinery may be before the planner warns, in
+     * hours, arrival to arrival. One setting for the whole install, entered and
+     * shown in days.
      */
-    protected array $moonIdCache = [];
+    public function getRefinerySpacingHours(): int
+    {
+        return max(1, (int) $this->settings->getSetting(
+            'notifications.min_refinery_spacing_hours',
+            self::DEFAULT_REFINERY_SPACING_HOURS
+        ));
+    }
 
     /**
-     * Every refinery (Athanor/Tatara) belonging to a corporation.
-     *
-     * Each structure comes back with a resolved `moon_id`. SeAT's
-     * corporation_structures table has no such column, so callers reading
-     * `$refinery->moon_id` straight off the model silently got null forever
-     * (Eloquent returns null for an attribute that was never selected, rather
-     * than complaining). Resolving it here means every consumer of this method
-     * gets a real moon without having to know where moons actually live.
-     *
-     * @return \Illuminate\Support\Collection<int,CorporationStructure>
+     * The refinery spacing as the settings show it: "7 days", "6 days 12 hours".
      */
-    public function refineriesForCorporation(int $corporationId): Collection
+    public function refinerySpacingLabel(): string
     {
-        $refineries = CorporationStructure::whereIn('type_id', self::REFINERY_TYPE_IDS)
-            ->where('corporation_id', $corporationId)
-            ->get();
+        $hours = $this->getRefinerySpacingHours();
+        $days = intdiv($hours, 24);
+        $rest = $hours % 24;
 
-        if ($refineries->isEmpty()) {
-            return $refineries;
-        }
-
-        $moonIds = $this->moonIdsForStructures(
-            $refineries->pluck('structure_id')->map(fn ($id) => (int) $id)->all()
+        return trim(
+            ($days ? $days . ($days === 1 ? ' day' : ' days') : '')
+            . ($rest ? ' ' . $rest . ($rest === 1 ? ' hour' : ' hours') : '')
         );
-
-        foreach ($refineries as $refinery) {
-            $refinery->moon_id = $moonIds[(int) $refinery->structure_id] ?? null;
-        }
-
-        return $refineries;
     }
 
     /**
-     * The moon a refinery is anchored on, or null if nothing knows yet.
-     *
-     * An Upwell structure is anchored on exactly one moon and cannot move, so
-     * this mapping is stable once anything has observed it.
+     * A gap between two pulls, short: "4d 6h", "18h", "25m".
      */
-    public function resolveMoonId(int $structureId): ?int
+    public static function gapLabel(int $minutes): string
     {
-        return $this->moonIdsForStructures([$structureId])[$structureId] ?? null;
-    }
+        $minutes = abs($minutes);
+        $days = intdiv($minutes, 1440);
+        $hours = intdiv($minutes % 1440, 60);
 
-    /**
-     * Bulk structure_id => moon_id.
-     *
-     * Three sources, in order of how much we trust them to be current:
-     * our own live extractions, our archived history, and finally SeAT's raw
-     * extraction table for a refinery we have not imported yet. A refinery
-     * that has never run an extraction resolves to null, which is a legitimate
-     * answer and why the plan column is nullable.
-     *
-     * @param  array<int,int>  $structureIds
-     * @return array<int,int|null>
-     */
-    public function moonIdsForStructures(array $structureIds): array
-    {
-        $wanted = array_values(array_unique(array_filter(array_map('intval', $structureIds))));
-
-        if (empty($wanted)) {
-            return [];
+        if ($days === 0 && $hours === 0) {
+            return ($minutes % 60) . 'm';
         }
 
-        $resolved = [];
-        $outstanding = [];
-
-        foreach ($wanted as $id) {
-            if (array_key_exists($id, $this->moonIdCache)) {
-                $resolved[$id] = $this->moonIdCache[$id];
-            } else {
-                $outstanding[] = $id;
-            }
-        }
-
-        if (empty($outstanding)) {
-            return $resolved;
-        }
-
-        // Ordered oldest first on purpose: pluck() keys by structure_id and the
-        // last row processed wins, so ascending order leaves the most recently
-        // observed moon in place. A refinery's moon never changes, but a
-        // structure id can be reused after an unanchor, and the newest
-        // observation is the right answer if it ever is.
-        $lookups = [
-            fn (array $ids) => MoonExtraction::whereIn('structure_id', $ids)
-                ->whereNotNull('moon_id')
-                ->orderBy('chunk_arrival_time')
-                ->pluck('moon_id', 'structure_id'),
-
-            fn (array $ids) => MoonExtractionHistory::whereIn('structure_id', $ids)
-                ->whereNotNull('moon_id')
-                ->orderBy('chunk_arrival_time')
-                ->pluck('moon_id', 'structure_id'),
-
-            fn (array $ids) => DB::table('corporation_industry_mining_extractions')
-                ->whereIn('structure_id', $ids)
-                ->whereNotNull('moon_id')
-                ->orderBy('chunk_arrival_time')
-                ->pluck('moon_id', 'structure_id'),
-        ];
-
-        foreach ($lookups as $lookup) {
-            if (empty($outstanding)) {
-                break;
-            }
-
-            try {
-                foreach ($lookup($outstanding) as $structureId => $moonId) {
-                    $resolved[(int) $structureId] = (int) $moonId;
-                }
-            } catch (\Exception $e) {
-                Log::warning('Mining Manager: a moon lookup failed, falling through to the next source', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            $outstanding = array_values(array_filter(
-                $outstanding,
-                fn ($id) => !isset($resolved[$id])
-            ));
-        }
-
-        // Remember the misses too, so a refinery with no extraction history
-        // does not re-run all three lookups on every call within a request.
-        foreach ($outstanding as $id) {
-            $resolved[$id] = null;
-        }
-
-        foreach ($wanted as $id) {
-            $this->moonIdCache[$id] = $resolved[$id] ?? null;
-        }
-
-        return $resolved;
+        return trim(($days ? $days . 'd ' : '') . ($hours ? $hours . 'h' : ''));
     }
 
     /**
@@ -296,6 +210,21 @@ class MoonPlannerService
     }
 
     /**
+     * When an extraction can be started for its chunk to arrive at $arrival:
+     * from the longest extraction before it, which also gives the biggest
+     * chunk, to the shortest.
+     *
+     * @return array{0: Carbon, 1: Carbon} the earliest and the latest start
+     */
+    public static function startWindow(Carbon $arrival): array
+    {
+        return [
+            $arrival->copy()->subDays(self::MAX_EXTRACTION_DAYS),
+            $arrival->copy()->subDays(self::MIN_EXTRACTION_DAYS),
+        ];
+    }
+
+    /**
      * Project the next arrival for a structure.
      *
      * Anchor = the LATER of (last actual arrival, last active plan's arrival)
@@ -350,10 +279,11 @@ class MoonPlannerService
      * @param  int         $corporationId
      * @param  Carbon      $plannedAt      the slot being placed/moved
      * @param  int|null    $ignorePlanId   exclude this plan (when editing it)
-     * @param  int|null    $structureId    exclude this structure's own live
-     *                                      extraction (re-firing the same rig
-     *                                      back-to-back is the operator's call,
-     *                                      not a cross-moon clash)
+     * @param  int|null    $structureId    the refinery being planned: its own
+     *                                      pulls are left out, as this check is
+     *                                      about different moons landing
+     *                                      together. How close they are to one
+     *                                      another is tooClose()'s job.
      * @return array<int,array{type:string,moon_name:string,structure_name:string,arrival:string,gap_hours:float}>
      */
     public function detectConflicts(int $corporationId, Carbon $plannedAt, ?int $ignorePlanId = null, ?int $structureId = null): array
@@ -364,11 +294,12 @@ class MoonPlannerService
 
         $conflicts = [];
 
-        // Other active plans within the window.
+        // Other moons' active plans within the window.
         $plans = MoonExtractionPlan::forCorporation($corporationId)
             ->active()
             ->whereBetween('planned_arrival_time', [$windowStart, $windowEnd])
             ->when($ignorePlanId, fn ($q) => $q->where('id', '!=', $ignorePlanId))
+            ->when($structureId, fn ($q) => $q->where('structure_id', '!=', $structureId))
             ->get();
         MoonExtractionPlan::loadDisplayNames($plans);
 
@@ -411,6 +342,185 @@ class MoonPlannerService
     }
 
     /**
+     * Other pulls on this refinery closer to $at than the refinery spacing,
+     * nearest first: plans still ahead, and real extractions. Exactly the
+     * spacing apart is fine. For the confirmation before a pull is saved, and
+     * the blueprint preview.
+     *
+     * @param  array<int,int> $ignorePlanIds the pull being moved, or pulls about to be replaced
+     * @return array<int, array{type:string, id:int, arrival:string, gap:string, gap_minutes:int, before:bool}>
+     */
+    public function tooClose(int $corporationId, int $structureId, Carbon $at, array $ignorePlanIds = []): array
+    {
+        $spacing = $this->getRefinerySpacingHours() * 60;
+        $pulls = $this->pullsInWindow(
+            $corporationId,
+            [$structureId],
+            $at->copy()->subMinutes($spacing),
+            $at->copy()->addMinutes($spacing),
+            $ignorePlanIds
+        )[$structureId] ?? [];
+
+        $close = [];
+        foreach ($pulls as $pull) {
+            $gap = intdiv($pull['time']->getTimestamp() - $at->getTimestamp(), 60);
+            if (abs($gap) >= $spacing) {
+                continue;
+            }
+
+            $close[] = [
+                'type' => $pull['type'],
+                'id' => $pull['id'],
+                'arrival' => $pull['time']->format('M d, Y H:i'),
+                'gap' => self::gapLabel($gap),
+                'gap_minutes' => abs($gap),
+                'before' => $gap < 0,
+            ];
+        }
+
+        usort($close, fn ($a, $b) => $a['gap_minutes'] <=> $b['gap_minutes']);
+
+        return $close;
+    }
+
+    /**
+     * Pulls on one refinery closer together than the refinery spacing, as
+     * pairs, where at least one of the two is still a plan: two real
+     * extractions are what the drill did, not something to plan around. For
+     * the planner's banner and the marks on its calendar, so it does not matter
+     * how a pull got there. Only pairs with a pull inside the window.
+     *
+     * @return array<int, array{structure_id:int, first:array, second:array, gap:string, gap_minutes:int}>
+     */
+    public function tightPairs(int $corporationId, Carbon $from, Carbon $to): array
+    {
+        $spacing = $this->getRefinerySpacingHours() * 60;
+        $pairs = [];
+
+        $byRefinery = $this->pullsInWindow(
+            $corporationId,
+            null,
+            $from->copy()->subMinutes($spacing),
+            $to->copy()->addMinutes($spacing)
+        );
+
+        foreach ($byRefinery as $structureId => $pulls) {
+            for ($i = 1, $n = count($pulls); $i < $n; $i++) {
+                $first = $pulls[$i - 1];
+                $second = $pulls[$i];
+                $gap = intdiv($second['time']->getTimestamp() - $first['time']->getTimestamp(), 60);
+
+                if ($gap >= $spacing
+                    || ($first['type'] === 'actual' && $second['type'] === 'actual')
+                    || $second['time']->getTimestamp() < $from->getTimestamp()
+                    || $first['time']->getTimestamp() > $to->getTimestamp()) {
+                    continue;
+                }
+
+                $pairs[] = [
+                    'structure_id' => (int) $structureId,
+                    'first' => $first,
+                    'second' => $second,
+                    'gap' => self::gapLabel($gap),
+                    'gap_minutes' => $gap,
+                ];
+            }
+        }
+
+        usort($pairs, fn ($a, $b) => $a['first']['time']->getTimestamp() <=> $b['first']['time']->getTimestamp());
+
+        return $pairs;
+    }
+
+    /**
+     * The pulls the calendar shows in a window, by refinery and in time order:
+     * real extractions, live or archived, and plans still ahead. A plan within
+     * the cycle window of a real pull on its refinery is that pull, as the
+     * calendar has it, so it is not counted twice. A cancelled extraction never
+     * ran.
+     *
+     * @param  array<int,int>|null $structureIds null for every refinery
+     * @param  array<int,int>      $ignorePlanIds
+     * @return array<int, array<int, array{type:string, id:int, time:Carbon}>>
+     */
+    protected function pullsInWindow(int $corporationId, ?array $structureIds, Carbon $from, Carbon $to, array $ignorePlanIds = []): array
+    {
+        $window = self::CYCLE_MATCH_WINDOW_HOURS * 60;
+        $wideFrom = $from->copy()->subMinutes($window);
+        $wideTo = $to->copy()->addMinutes($window);
+        $ignorePlanIds = array_map('intval', $ignorePlanIds);
+
+        $live = MoonExtraction::where('corporation_id', $corporationId)
+            ->when($structureIds !== null, fn ($q) => $q->whereIn('structure_id', $structureIds))
+            ->where('status', '!=', 'cancelled')
+            ->whereBetween('chunk_arrival_time', [$wideFrom, $wideTo])
+            ->get();
+        $archived = MoonExtractionHistory::where('corporation_id', $corporationId)
+            ->when($structureIds !== null, fn ($q) => $q->whereIn('structure_id', $structureIds))
+            ->where('final_status', '!=', 'cancelled')
+            ->whereBetween('chunk_arrival_time', [$wideFrom, $wideTo])
+            ->get();
+
+        // The same extraction can sit in both tables for a while.
+        $actuals = [];
+        $seen = [];
+        foreach ([$live, $archived] as $rows) {
+            foreach ($rows as $row) {
+                if (!$row->chunk_arrival_time) {
+                    continue;
+                }
+                $time = Carbon::parse($row->chunk_arrival_time);
+                $key = $row->structure_id . '@' . $time->format('Y-m-d H:i');
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $actuals[(int) $row->structure_id][] = ['type' => 'actual', 'id' => (int) $row->id, 'time' => $time];
+            }
+        }
+
+        $plans = MoonExtractionPlan::forCorporation($corporationId)
+            ->active()
+            ->when($structureIds !== null, fn ($q) => $q->whereIn('structure_id', $structureIds))
+            ->where('planned_arrival_time', '>', Carbon::now())
+            ->whereBetween('planned_arrival_time', [$from, $to])
+            ->get();
+
+        $pulls = [];
+        foreach ($plans as $plan) {
+            if (in_array((int) $plan->id, $ignorePlanIds, true)) {
+                continue;
+            }
+
+            $structureId = (int) $plan->structure_id;
+            $time = $plan->planned_arrival_time;
+            foreach ($actuals[$structureId] ?? [] as $actual) {
+                if (abs($actual['time']->getTimestamp() - $time->getTimestamp()) <= $window * 60) {
+                    continue 2;
+                }
+            }
+
+            $pulls[$structureId][] = ['type' => 'plan', 'id' => (int) $plan->id, 'time' => $time->copy()];
+        }
+
+        foreach ($actuals as $structureId => $list) {
+            foreach ($list as $actual) {
+                if ($actual['time']->getTimestamp() >= $from->getTimestamp()
+                    && $actual['time']->getTimestamp() <= $to->getTimestamp()) {
+                    $pulls[$structureId][] = $actual;
+                }
+            }
+        }
+
+        foreach ($pulls as &$list) {
+            usort($list, fn ($a, $b) => $a['time']->getTimestamp() <=> $b['time']->getTimestamp());
+        }
+        unset($list);
+
+        return $pulls;
+    }
+
+    /**
      * Auto-fill projected pulls for a corporation across a target month.
      *
      * Unlike a single "next pull" projection, this walks each refinery's
@@ -427,17 +537,17 @@ class MoonPlannerService
      * cadence so they still get projected (flagged in the `fallback` count) —
      * the operator can drag them to the real day.
      *
-     * @return array{created:int,skipped:int,no_cadence:int,spread_adjusted:int,fallback:int}
+     * @return array{created:int,skipped:int,no_cadence:int,spread_adjusted:int,fallback:int,too_close:int}
      */
     public function autoFill(int $corporationId, Carbon $month, bool $spread = true, ?int $createdBy = null): array
     {
-        $summary = ['created' => 0, 'skipped' => 0, 'no_cadence' => 0, 'spread_adjusted' => 0, 'fallback' => 0];
+        $summary = ['created' => 0, 'skipped' => 0, 'no_cadence' => 0, 'spread_adjusted' => 0, 'fallback' => 0, 'too_close' => 0];
 
         $monthStart = $month->copy()->startOfMonth();
         $monthEnd = $month->copy()->endOfMonth();
         $gapHours = $this->getMinGapHours();
 
-        $refineries = $this->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         if ($refineries->isEmpty()) {
             return $summary;
         }
@@ -456,8 +566,15 @@ class MoonPlannerService
         // Each candidate: ['structure_id','moon_id','arrival'=>Carbon,'cadence_days','fallback'=>bool]
         $candidates = [];
 
+        // A refinery whose last pull is planned gets nothing more.
+        $finals = app(FinalPulls::class)->forStructures($refineries->pluck('structure_id')->all());
+
         foreach ($refineries as $refinery) {
             $structureId = (int) $refinery->structure_id;
+            if (isset($finals[$structureId])) {
+                $summary['skipped']++;
+                continue;
+            }
             $cad = $this->cadence($structureId);
 
             $cadenceDays = $cad['cadence_days'];
@@ -530,6 +647,29 @@ class MoonPlannerService
             }
             unset($c);
         }
+
+        // Never closer than the refinery spacing to another pull on the same
+        // refinery, real or planned, its own included: the drill could not
+        // make it. The spread only ever moves a pull later, so this comes last.
+        $spacing = $this->getRefinerySpacingHours() * 60;
+        usort($candidates, fn ($a, $b) => $a['arrival']->getTimestamp() <=> $b['arrival']->getTimestamp());
+        $taken = [];
+        $kept = [];
+        foreach ($candidates as $c) {
+            $structureId = $c['structure_id'];
+            $taken[$structureId] ??= $this->existingActualTimes($structureId)
+                ->merge($this->existingPlanTimes($structureId))
+                ->all();
+
+            if ($this->coveredWithin(collect($taken[$structureId]), $c['arrival'], $spacing)) {
+                $summary['too_close']++;
+                continue;
+            }
+
+            $taken[$structureId][] = $c['arrival'];
+            $kept[] = $c;
+        }
+        $candidates = $kept;
 
         foreach ($candidates as $c) {
             MoonExtractionPlan::create([
@@ -832,25 +972,8 @@ class MoonPlannerService
                 ->value('ore_composition');
         }
 
-        if (!is_array($composition) || empty($composition)) {
-            return null;
-        }
-
-        $rank = ['R4' => 1, 'R8' => 2, 'R16' => 3, 'R32' => 4, 'R64' => 5];
-        $best = null;
-        $bestRank = 0;
-        foreach ($composition as $ore) {
-            $typeId = is_array($ore) ? ($ore['type_id'] ?? null) : null;
-            if (!$typeId) {
-                continue;
-            }
-            $rarity = \MiningManager\Services\Moon\MoonOreHelper::getRarity((int) $typeId);
-            if ($rarity && ($rank[$rarity] ?? 0) > $bestRank) {
-                $bestRank = $rank[$rarity];
-                $best = $rarity;
-            }
-        }
-
-        return $best;
+        return \MiningManager\Services\Moon\MoonOreHelper::highestRarity(
+            is_array($composition) ? $composition : null
+        );
     }
 }

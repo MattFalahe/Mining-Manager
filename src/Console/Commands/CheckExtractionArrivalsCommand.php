@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 
@@ -32,7 +33,7 @@ class CheckExtractionArrivalsCommand extends Command
     protected $signature = 'mining-manager:check-extraction-arrivals
                             {--hours-back=72 : Only consider arrivals within this many hours (prevents spam on historical data)}
                             {--limit=50 : Maximum notifications to dispatch per run}
-                            {--unstable-warning-hours=2 : Fire moon_chunk_unstable this many hours before natural_decay_time}
+                            {--unstable-warning-hours=2 : Fire moon_chunk_unstable this many hours before the chunk turns unstable}
                             {--dry-run : Show what would be notified without firing}';
 
     protected $description = 'Fire moon_arrival + moon_chunk_unstable notifications based on stored timestamps';
@@ -98,12 +99,14 @@ class CheckExtractionArrivalsCommand extends Command
                 ->limit($limit)
                 ->get();
 
+            // Most minutes nothing has arrived, which is no reason to stop here:
+            // the unstable warning, which nothing else sends, and the
+            // extraction-started pass below have to run every minute too.
             if ($extractions->isEmpty()) {
                 $this->info("No extraction arrivals pending notification (checked window: last {$hoursBack}h).");
-                return Command::SUCCESS;
+            } else {
+                $this->info("Found {$extractions->count()} extraction(s) needing arrival notification:");
             }
-
-            $this->info("Found {$extractions->count()} extraction(s) needing arrival notification:");
 
             $dispatched = 0;
             $failed = 0;
@@ -118,6 +121,11 @@ class CheckExtractionArrivalsCommand extends Command
                 }
 
                 try {
+                    // The chunk is here: read its ore again, from the Chunk
+                    // Arrived notice once SeAT has it, and price it now, so the
+                    // snapshot and the notification both carry today's figure.
+                    $this->extractionService->refreshChunk($extraction);
+
                     // Snapshot the value at arrival — ONCE. This is the arrival-time
                     // price of the chunk, locked in at the moment the chunk became
                     // minable. Separate from estimated_value which tracks current
@@ -179,15 +187,17 @@ class CheckExtractionArrivalsCommand extends Command
             // ================================================================
             // PASS 2: fire moon_chunk_unstable SAFETY warnings for capital
             // pilots. Fires N hours (default 2) BEFORE the chunk enters
-            // the plugin's UNSTABLE state (= fractured_at + 48h, which is
+            // the plugin's UNSTABLE state (fracture + the chunk's mining
+            // window, 48h or 72 / 96h with a moon rig, which is
             // MoonExtraction::getUnstableStartTime()). Gives Rorqual / Orca
             // pilots time to dock up before hostile gangs arrive.
             //
             // IMPORTANT: uses the PLUGIN's lifecycle model, not ESI's
             // natural_decay_time. The plugin defines:
-            //   chunk arrives → fractured_at → 48h ready → 2h unstable → expired
-            // Raw ESI natural_decay_time is the auto-fracture mark (~3h
-            // after arrival), which is a totally different point in the
+            //   chunk arrives → fractured_at → mining window (48h, 72h or 96h)
+            //   → 2h unstable → expired
+            // Raw ESI natural_decay_time is the auto-fracture mark (3h after
+            // arrival, longer with a rig), which is a totally different point in the
             // lifecycle and NOT the right trigger for this warning.
             //
             // SQL broadens the candidate set (anything with a recent
@@ -201,12 +211,10 @@ class CheckExtractionArrivalsCommand extends Command
                 // Broad bound: anything that COULD have its unstable phase
                 // within the next warningHours hours. Pre-fracture rows use
                 // chunk_arrival as the fallback base in getFractureTime();
-                // post-fracture rows use fractured_at. Either way, the
-                // unstable_start is at most ~55 hours after chunk_arrival
-                // (chunk_arrival + 3h auto-fracture + 48h ready + 2h unstable
-                // window = 53h; +2h warning lead = 55h).
+                // post-fracture rows use fractured_at. Either way the chunk is
+                // gone within LONGEST_CHUNK_HOURS of arrival, rig included.
                 ->where('chunk_arrival_time', '<=', $now)
-                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(55))
+                ->where('chunk_arrival_time', '>=', $now->copy()->subHours(MoonDrillingRigs::LONGEST_CHUNK_HOURS + 2))
                 ->where('unstable_warning_sent', false)
                 ->whereNotIn('status', ['cancelled', 'expired']);
 
@@ -238,7 +246,7 @@ class CheckExtractionArrivalsCommand extends Command
                 ->values();
 
             if ($unstableCandidates->isEmpty()) {
-                $this->info("No chunks approaching unstable state (within next {$warningHours}h of fractured_at + 48h).");
+                $this->info("No chunks approaching unstable state within the next {$warningHours}h.");
             } else {
                 $this->info("Found {$unstableCandidates->count()} chunk(s) approaching unstable state:");
 

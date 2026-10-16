@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Seat\Eveapi\Models\Character\CharacterInfo;
@@ -19,6 +20,8 @@ use Seat\Eveapi\Models\Universe\UniverseStructure;
  */
 class CorporationObserverMining extends Model
 {
+    use HasCharacterName;
+
     /**
      * The table associated with the model.
      * 
@@ -122,17 +125,6 @@ class CorporationObserverMining extends Model
     public function scopeRecent($query, $days = 30)
     {
         return $query->where('last_updated', '>=', now()->subDays($days));
-    }
-    
-    /**
-     * Get the character name (handles non-registered miners).
-     */
-    public function getCharacterNameAttribute()
-    {
-        if ($this->character && $this->character->name) {
-            return $this->character->name;
-        }
-        return "Character {$this->character_id}";
     }
     
     /**

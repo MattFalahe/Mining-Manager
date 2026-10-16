@@ -1038,6 +1038,10 @@ class SettingsManagerService
             'cache_duration' => $this->getSetting('pricing.cache_duration', 240),
             'fallback_to_jita' => $this->getSetting('pricing.fallback_to_jita', true),
 
+            // Asked when the price provider fails outright; 'none' keeps the
+            // cached prices instead.
+            'fallback_provider' => $this->getSetting('pricing.fallback_provider', 'fuzzwork'),
+
             // Janice settings (checks settings first, then falls back to ENV)
             'janice_api_key' => $this->getSetting('janice_api_key')
                 ?: config('mining-manager.general.price_provider_api_key', ''),
@@ -1183,30 +1187,63 @@ class SettingsManagerService
     }
 
     /**
-     * Get notification settings
-     *
-     * @return array
-     */
-    /**
-     * All notification type keys used across the system
+     * The types with a card on Settings > Notifications, which is where a
+     * type's master switch and role ping are set. Saving that page writes
+     * these types only. A type with no card, such as the outstanding tax
+     * digest, keeps what is stored for it, or the defaults: on, no role ping.
      */
     public const NOTIFICATION_TYPES = [
         // Tax
-        'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue',
+        'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue', 'tax_outstanding_digest',
         // Events
         'event_created', 'event_started', 'event_completed',
         // Moon
-        'moon_ready', 'jackpot_detected',
+        'moon_ready', 'jackpot_detected', 'moon_chunk_unstable',
+        // Moon, from Structure Manager's alerts through Manager Core
+        'extraction_at_risk', 'extraction_lost',
         // Planner — extraction lifecycle coordination
         'extraction_started', 'next_extraction_planned', 'schedule_mismatch',
+        'refinery_gone', 'extraction_cancelled', 'moon_not_rescheduled', 'schedule_needs_filling',
         // Metenox (v2.0.1) — bay-full warning, standalone (no cross-plugin deps)
         'metenox_cargo_full',
+        // Plugin health
+        'price_provider', 'moon_scan_missing',
         // Theft
         'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved',
         // Reports
         'report_generated',
     ];
 
+    /**
+     * The types with a box in the Slack list on the same page. A list of its
+     * own, as a type can have a Slack box without a card or the other way
+     * round, and a box missing from its list would save as off.
+     */
+    public const SLACK_NOTIFICATION_TYPES = [
+        // Tax
+        'tax_generated', 'tax_announcement', 'tax_reminder', 'tax_invoice', 'tax_overdue',
+        // Events
+        'event_created', 'event_started', 'event_completed',
+        // Moon
+        'moon_ready', 'jackpot_detected', 'moon_chunk_unstable', 'extraction_started',
+        'extraction_at_risk', 'extraction_lost', 'metenox_cargo_full',
+        // Planner
+        'next_extraction_planned', 'schedule_mismatch', 'refinery_gone', 'extraction_cancelled',
+        'moon_not_rescheduled', 'schedule_needs_filling',
+        'tax_outstanding_digest',
+        // Plugin health
+        'price_provider', 'moon_scan_missing',
+        // Theft
+        'theft_detected', 'critical_theft', 'active_theft', 'incident_resolved',
+        // Reports
+        'report_generated',
+    ];
+
+    /**
+     * Get notification settings
+     *
+     * @return array
+     */
     public function getNotificationSettings(): array
     {
         $allTypes = self::NOTIFICATION_TYPES;
@@ -1257,6 +1294,27 @@ class SettingsManagerService
             // arrivals before the planner warns about clustering.
             'min_extraction_gap_hours' => (int) $this->getSetting('notifications.min_extraction_gap_hours', 24),
 
+            // Moon Extraction Planner: how close two pulls on one refinery may
+            // be before the planner warns, in hours. The form shows days.
+            'min_refinery_spacing_hours' => (int) $this->getSetting(
+                'notifications.min_refinery_spacing_hours',
+                \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS
+            ),
+
+            // Moon Not Rescheduled: idle hours before the reminder, and whether
+            // it repeats every that many hours until an extraction starts.
+            'moon_not_rescheduled_hours' => (int) $this->getSetting('notifications.moon_not_rescheduled_hours', 48),
+            'moon_not_rescheduled_repeat' => (bool) $this->getSetting('notifications.moon_not_rescheduled_repeat', true),
+
+            // Moons Need Planning: pulls each refinery should have planned
+            // ahead, and hours between lists while some fall short.
+            'planned_ahead_target' => (int) $this->getSetting('notifications.planned_ahead_target', 1),
+            'schedule_needs_filling_hours' => (int) $this->getSetting('notifications.schedule_needs_filling_hours', 24),
+
+            // Moon Scan Missing: list every moon still missing a scan again
+            // once a day, on top of the message for each new reason.
+            'moon_scan_missing_daily' => (bool) $this->getSetting('notifications.moon_scan_missing_daily', false),
+
             // extraction_started detection mode. 'auto' uses Manager Core's
             // ESI fast-poll when present (~2 min detection); 'seat_native'
             // forces the slower endpoint-driven cron pass even with MC.
@@ -1283,6 +1341,8 @@ class SettingsManagerService
             'role_id' => $typeSettings['role_id'] ?? null,
             'ping_user' => (bool) ($typeSettings['ping_user'] ?? false),
             'show_amount' => (bool) ($typeSettings['show_amount'] ?? true),
+            // Only the corporations picked on the card; none picked means all.
+            'corporations' => array_values(array_filter(array_map('intval', (array) ($typeSettings['corporations'] ?? [])))),
         ];
     }
 
@@ -1351,9 +1411,11 @@ class SettingsManagerService
     {
         $configDefaults = config('mining-manager.dashboard', []);
 
+        // Install-wide: read the way the dashboard reads them, whatever
+        // corporation the settings page is set to.
         return array_merge($configDefaults, [
-            'dashboard_leaderboard_corporation_filter' => $this->getSetting('dashboard_leaderboard_corporation_filter', 'all'),
-            'dashboard_leaderboard_corporation_ids' => $this->getSetting('dashboard_leaderboard_corporation_ids', '[]'),
+            'dashboard_leaderboard_corporation_filter' => $this->getSettingForCorporation('dashboard_leaderboard_corporation_filter', null, 'all'),
+            'dashboard_leaderboard_corporation_ids' => $this->getSettingForCorporation('dashboard_leaderboard_corporation_ids', null, '[]'),
         ]);
     }
 

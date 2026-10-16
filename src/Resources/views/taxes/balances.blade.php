@@ -79,7 +79,8 @@
     {{-- How to pay ahead. While upfront payments are on this tab shows for
          everyone, which makes it the one page every member can open whether or
          not they hold a balance yet. With the feature off there is nothing to
-         explain: overpaying an invoice is the only way money gets here. --}}
+         explain: money only gets here by overpaying an invoice, or by a
+         director recording a payment taken by hand. --}}
     @if($upfrontKeyword)
     <div class="row">
         <div class="col-12">
@@ -163,7 +164,7 @@
                             @endphp
                             <tr class="{{ (float) $credit->remaining <= 0 ? 'text-muted' : '' }}">
                                 @if($canSeeAll)
-                                <td>{{ $credit->character->name ?? "Character #{$credit->character_id}" }}</td>
+                                <td>{{ $credit->character_name }}</td>
                                 @endif
                                 <td>{{ $credit->created_at ? $credit->created_at->format('Y-m-d H:i') : '-' }}</td>
                                 <td class="text-right">
@@ -220,7 +221,7 @@
                                             </span>
                                             @if($canSeeAll)
                                             <button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline"
-                                                    onclick="openMarkSent({{ $refund->id }}, {{ (float) $refund->amount }}, '{{ addslashes($credit->character->name ?? "Character #{$credit->character_id}") }}')">
+                                                    onclick="openMarkSent({{ $refund->id }}, {{ (float) $refund->amount }}, '{{ addslashes($credit->character_name) }}')">
                                                 {{ trans('mining-manager::taxes.refund_mark_sent') }}
                                             </button>
                                             @endif
@@ -255,7 +256,7 @@
                                 <td class="text-right">
                                     @if((float) $credit->remaining > 0)
                                     <button type="button" class="btn btn-sm btn-outline-warning"
-                                            onclick="openRefund({{ $credit->id }}, '{{ addslashes($credit->character->name ?? "Character #{$credit->character_id}") }}', {{ (float) $credit->remaining }})">
+                                            onclick="openRefund({{ $credit->id }}, '{{ addslashes($credit->character_name) }}', {{ (float) $credit->remaining }})">
                                         <i class="fas fa-undo"></i> {{ trans('mining-manager::taxes.refund_balance') }}
                                     </button>
                                     @endif

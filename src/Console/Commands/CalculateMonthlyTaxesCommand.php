@@ -47,6 +47,19 @@ class CalculateMonthlyTaxesCommand extends Command
         }
 
         try {
+        // Bills already raised go overdue on time every day, so this runs
+        // before anything below can skip the run or fail it. Most days are not
+        // a period boundary, and Send Tax Reminders, the only other daily
+        // caller, can be switched off.
+        try {
+            $overdueCount = $this->taxService->updateOverdueTaxes();
+            if ($overdueCount > 0) {
+                $this->info("Marked {$overdueCount} taxes as overdue");
+            }
+        } catch (\Exception $e) {
+            $this->warn("Failed to update overdue statuses: {$e->getMessage()}");
+        }
+
         // Check feature flag
         $features = $this->settingsService->getFeatureFlags();
         if (!($features['auto_calculate_taxes'] ?? true)) {
@@ -151,16 +164,6 @@ class CalculateMonthlyTaxesCommand extends Command
                 $this->error("Tax calculation failed: {$e->getMessage()}");
                 return Command::FAILURE;
             }
-        }
-
-        // Always update overdue statuses (runs daily regardless of period boundary)
-        try {
-            $overdueCount = $this->taxService->updateOverdueTaxes();
-            if ($overdueCount > 0) {
-                $this->info("Marked {$overdueCount} taxes as overdue");
-            }
-        } catch (\Exception $e) {
-            $this->warn("Failed to update overdue statuses: {$e->getMessage()}");
         }
 
         return Command::SUCCESS;

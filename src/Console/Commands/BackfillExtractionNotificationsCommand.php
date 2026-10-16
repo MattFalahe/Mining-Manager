@@ -104,10 +104,17 @@ class BackfillExtractionNotificationsCommand extends Command
         $processed = 0;
         $updated = 0;
         $notFound = 0;
+        $settled = 0;
         $errors = 0;
 
         foreach ($extractions as $extraction) {
             $progressBar->advance();
+
+            // Priced at its fracture: its ore and value stay as they were.
+            if ($extraction->valueIsFinal()) {
+                $settled++;
+                continue;
+            }
 
             try {
                 $notificationData = $this->findNotificationForExtraction(
@@ -176,6 +183,7 @@ class BackfillExtractionNotificationsCommand extends Command
                 ['Processed', $processed],
                 ['Updated', $updated],
                 ['Notifications Not Found', $notFound],
+                ['Already priced at fracture', $settled],
                 ['Errors', $errors],
             ]
         );

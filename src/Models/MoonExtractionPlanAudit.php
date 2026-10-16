@@ -13,7 +13,7 @@ use Carbon\Carbon;
  * @property int|null $plan_id
  * @property int|null $structure_id
  * @property int|null $moon_id
- * @property string $action           created|moved|deleted|autofilled|realigned|offset_ignored
+ * @property string $action           created|moved|deleted|autofilled|rotation|realigned|offset_ignored|marked_final|resumed
  * @property int|null $character_id
  * @property string|null $character_name
  * @property \Carbon\Carbon|null $old_arrival
@@ -32,11 +32,20 @@ class MoonExtractionPlanAudit extends Model
     public const ACTION_DELETED = 'deleted';
     public const ACTION_AUTOFILLED = 'autofilled';
 
+    // Written by applying a rotation. Apart from autofilled because one is a
+    // projection from what a refinery has done, the other a pattern somebody
+    // chose, and the history should not blur them.
+    public const ACTION_ROTATION = 'rotation';
+
     // Settling a pull that was fired off-plan. Kept apart from moved on
     // purpose: re-planning ahead and accepting what already happened in-game
     // are different decisions, and the history should say which it was.
     public const ACTION_REALIGNED = 'realigned';
     public const ACTION_OFFSET_IGNORED = 'offset_ignored';
+    // A pull marked as its refinery's last, and the refinery carrying on
+    // after all.
+    public const ACTION_MARKED_FINAL = 'marked_final';
+    public const ACTION_RESUMED = 'resumed';
 
     protected $fillable = [
         'corporation_id',

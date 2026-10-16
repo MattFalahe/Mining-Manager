@@ -25,6 +25,7 @@ use Carbon\Carbon;
  * @property bool $notify_moon_chunk_unstable
  * @property bool $notify_extraction_at_risk
  * @property bool $notify_extraction_lost
+ * @property bool $notify_metenox_cargo_full
  * @property bool $notify_event_created
  * @property bool $notify_event_started
  * @property bool $notify_event_completed
@@ -79,7 +80,12 @@ class WebhookConfiguration extends Model
         'notify_next_extraction_planned',
         'notify_tax_outstanding_digest',
         'notify_price_provider',
+        'notify_moon_scan_missing',
         'notify_schedule_mismatch',
+        'notify_refinery_gone',
+        'notify_extraction_cancelled',
+        'notify_moon_not_rescheduled',
+        'notify_schedule_needs_filling',
         'notify_extraction_at_risk',
         'notify_extraction_lost',
         'notify_metenox_cargo_full',
@@ -119,7 +125,12 @@ class WebhookConfiguration extends Model
         'notify_next_extraction_planned' => 'boolean',
         'notify_tax_outstanding_digest' => 'boolean',
         'notify_price_provider' => 'boolean',
+        'notify_moon_scan_missing' => 'boolean',
         'notify_schedule_mismatch' => 'boolean',
+        'notify_refinery_gone' => 'boolean',
+        'notify_extraction_cancelled' => 'boolean',
+        'notify_moon_not_rescheduled' => 'boolean',
+        'notify_schedule_needs_filling' => 'boolean',
         'notify_extraction_at_risk' => 'boolean',
         'notify_extraction_lost' => 'boolean',
         'notify_metenox_cargo_full' => 'boolean',
@@ -192,8 +203,12 @@ class WebhookConfiguration extends Model
     /**
      * Scope to get webhooks that should be notified for a specific event
      *
+     * A type missing from the map gets no filter at all and reaches every
+     * enabled webhook whatever its switches say, so every type the dispatcher
+     * sends has to be listed here.
+     *
      * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $eventType (theft_detected, critical_theft, active_theft, incident_resolved)
+     * @param string $eventType The notify_ column's name without the prefix
      * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeForEvent($query, $eventType)
@@ -210,9 +225,15 @@ class WebhookConfiguration extends Model
             'next_extraction_planned' => 'notify_next_extraction_planned',
             'tax_outstanding_digest' => 'notify_tax_outstanding_digest',
             'price_provider' => 'notify_price_provider',
+            'moon_scan_missing' => 'notify_moon_scan_missing',
             'schedule_mismatch' => 'notify_schedule_mismatch',
+            'refinery_gone' => 'notify_refinery_gone',
+            'extraction_cancelled' => 'notify_extraction_cancelled',
+            'moon_not_rescheduled' => 'notify_moon_not_rescheduled',
+            'schedule_needs_filling' => 'notify_schedule_needs_filling',
             'extraction_at_risk' => 'notify_extraction_at_risk',
             'extraction_lost' => 'notify_extraction_lost',
+            'metenox_cargo_full' => 'notify_metenox_cargo_full',
             'event_created' => 'notify_event_created',
             'event_started' => 'notify_event_started',
             'event_completed' => 'notify_event_completed',
@@ -341,9 +362,15 @@ class WebhookConfiguration extends Model
             'next_extraction_planned' => $this->notify_next_extraction_planned,
             'tax_outstanding_digest' => $this->notify_tax_outstanding_digest,
             'price_provider' => $this->notify_price_provider,
+            'moon_scan_missing' => $this->notify_moon_scan_missing,
             'schedule_mismatch' => $this->notify_schedule_mismatch,
+            'refinery_gone' => $this->notify_refinery_gone,
+            'extraction_cancelled' => $this->notify_extraction_cancelled,
+            'moon_not_rescheduled' => $this->notify_moon_not_rescheduled,
+            'schedule_needs_filling' => $this->notify_schedule_needs_filling,
             'extraction_at_risk' => $this->notify_extraction_at_risk,
             'extraction_lost' => $this->notify_extraction_lost,
+            'metenox_cargo_full' => $this->notify_metenox_cargo_full,
             'event_created' => $this->notify_event_created,
             'event_started' => $this->notify_event_started,
             'event_completed' => $this->notify_event_completed,

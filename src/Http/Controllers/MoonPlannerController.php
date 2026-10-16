@@ -7,6 +7,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MoonExtractionPlan;
 use MiningManager\Services\Moon\MoonPlannerService;
+use MiningManager\Services\Moon\RefineryService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -26,20 +27,43 @@ use Illuminate\Support\Facades\DB;
  */
 class MoonPlannerController extends Controller
 {
-    protected MoonPlannerService $planner;
-    protected SettingsManagerService $settings;
+    /**
+     * Who may plan pulls: the planner and its blueprints. The section's tabs
+     * read the same list to decide whether to show them.
+     */
+    public const PLANNER_ABILITIES = [
+        'mining-manager.moon_manager',
+        'mining-manager.director',
+    ];
 
-    public function __construct(MoonPlannerService $planner, SettingsManagerService $settings)
-    {
+    protected MoonPlannerService $planner;
+    protected \MiningManager\Services\Moon\MoonRotationService $rotations;
+    protected SettingsManagerService $settings;
+    protected RefineryService $refineries;
+
+    public function __construct(
+        MoonPlannerService $planner,
+        SettingsManagerService $settings,
+        \MiningManager\Services\Moon\MoonRotationService $rotations,
+        RefineryService $refineries
+    ) {
         $this->planner = $planner;
         $this->settings = $settings;
+        $this->rotations = $rotations;
+        $this->refineries = $refineries;
 
-        // moon_manager OR director (admin bypasses both via can()).
+        // moon_manager OR director (admin bypasses both via can()). Somebody
+        // with the Extraction Simulator but not the planner, a Moon Finder
+        // for one, reaches this section from the sidebar as well, so the
+        // planner's page sends them on to the simulator instead of refusing.
         $this->middleware(function ($request, $next) {
             $user = auth()->user();
-            if ($user
-                && ($user->can('mining-manager.moon_manager') || $user->can('mining-manager.director'))) {
+            if ($user && $user->canAny(self::PLANNER_ABILITIES)) {
                 return $next($request);
+            }
+            if ($user && $request->isMethod('GET') && $request->routeIs('mining-manager.moon.planner')
+                && $user->canAny(MoonController::SIMULATOR_ABILITIES)) {
+                return redirect()->route('mining-manager.moon.calculator');
             }
             abort(403, 'You need the Moon Manager or Director role to access the planner.');
         });
@@ -83,6 +107,11 @@ class MoonPlannerController extends Controller
         $calendar = [];
         $warnings = [];
         $refinerySummaries = [];
+        $blueprintList = [];
+        $refineryFlags = [];
+        $finalPulls = [];
+        $tightPairs = [];
+        $tightMarks = [];
         $minGapHours = $this->planner->getMinGapHours();
 
         if ($corporationId) {
@@ -94,6 +123,27 @@ class MoonPlannerController extends Controller
             $calendar = $built['calendar'];
             $warnings = $built['warnings'];
             $refinerySummaries = $this->buildRefinerySummaries($corporationId);
+            $blueprintList = $this->rotations->listForCorporation($corporationId);
+
+            // Gone, being unanchored, or no drill: marked on the cards and the
+            // pulls rather than hidden. Only a gone refinery's pulls are ever
+            // taken off, and only once the Refinery Gone check is sure.
+            $onPage = array_column($refinerySummaries, 'structure_id');
+            foreach ($calendar as $entries) {
+                $onPage = array_merge($onPage, array_column($entries, 'structure_id'));
+            }
+            $refineryFlags = $this->refineries->refineryFlags($corporationId, $onPage);
+
+            foreach (app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures($onPage) as $structureId => $final) {
+                $finalPulls[$structureId] = [
+                    'plan_id' => $final['plan_id'],
+                    'when' => $final['time']->format('D d M Y H:i') . ' EVE',
+                    'arrived' => $final['arrived'],
+                    'restarted' => $final['restarted'] ? $final['restarted']->format('D d M Y H:i') . ' EVE' : null,
+                ];
+            }
+
+            ['pairs' => $tightPairs, 'marks' => $tightMarks] = $this->spacingWarnings($corporationId, $rangeStart, $rangeEnd);
         }
 
         return view('mining-manager::moon.planner', [
@@ -102,6 +152,12 @@ class MoonPlannerController extends Controller
             'calendar' => $calendar,
             'warnings' => $warnings,
             'refinerySummaries' => $refinerySummaries,
+            'blueprintList' => $blueprintList,
+            'refineryFlags' => $refineryFlags,
+            'finalPulls' => $finalPulls,
+            'tightPairs' => $tightPairs,
+            'tightMarks' => $tightMarks,
+            'spacingLabel' => $this->planner->refinerySpacingLabel(),
             'minGapHours' => $minGapHours,
             'corporationId' => $corporationId,
         ]);
@@ -263,11 +319,13 @@ class MoonPlannerController extends Controller
         $created = 0;
         $fallback = 0;
         $spreadAdjusted = 0;
+        $tooClose = 0;
         foreach ([0, 1, 2] as $offset) {
             $s = $this->planner->autoFill($corporationId, $anchor->copy()->addMonths($offset), $spread, $createdBy);
             $created += $s['created'];
             $fallback += $s['fallback'];
             $spreadAdjusted += $s['spread_adjusted'];
+            $tooClose += $s['too_close'];
         }
 
         if ($created > 0) {
@@ -288,13 +346,14 @@ class MoonPlannerController extends Controller
         }
 
         $msg = sprintf(
-            'Auto-fill complete: %d pull%s planned across %s–%s%s%s.',
+            'Auto-fill complete: %d pull%s planned across %s–%s%s%s%s.',
             $created,
             $created === 1 ? '' : 's',
             $anchor->format('M Y'),
             $anchor->copy()->addMonths(2)->format('M Y'),
             $fallback > 0 ? " ({$fallback} estimated from corp cadence — limited history)" : '',
-            $spreadAdjusted > 0 ? ", {$spreadAdjusted} nudged to keep the {$this->planner->getMinGapHours()}h gap" : ''
+            $spreadAdjusted > 0 ? ", {$spreadAdjusted} nudged to keep the {$this->planner->getMinGapHours()}h gap" : '',
+            $tooClose > 0 ? ", {$tooClose} left out for landing less than {$this->planner->refinerySpacingLabel()} from another pull on the same refinery" : ''
         );
 
         return redirect()
@@ -328,7 +387,7 @@ class MoonPlannerController extends Controller
         // plan for a structure this corp does not own that renders as
         // "Structure 12345" on the calendar forever. Checking it against the
         // corp's refineries also hands us the resolved moon.
-        $refinery = $this->planner->refineriesForCorporation($corporationId)
+        $refinery = $this->refineries->refineriesForCorporation($corporationId)
             ->firstWhere('structure_id', $structureId);
 
         if (!$refinery) {
@@ -337,7 +396,16 @@ class MoonPlannerController extends Controller
             ], 422);
         }
 
-        // Server-side gap guard — refuse unconfirmed clashes.
+        $final = app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures([$structureId])[$structureId] ?? null;
+        if ($final && $plannedAt->gt($final['time'])) {
+            return response()->json([
+                'error' => "That is after this refinery's final pull. Move the final pull, or resume normal operations on its card, first.",
+            ], 422);
+        }
+
+        // Server-side guards, both warnings the operator can agree to: another
+        // moon arriving within the minimum gap, and this refinery's own pulls
+        // closer together than one extraction allows.
         if (!$request->boolean('confirmed')) {
             $conflicts = $this->planner->detectConflicts(
                 $corporationId,
@@ -345,12 +413,9 @@ class MoonPlannerController extends Controller
                 null,
                 $structureId
             );
-            if (!empty($conflicts)) {
-                return response()->json([
-                    'requires_confirmation' => true,
-                    'conflicts' => $conflicts,
-                    'min_gap_hours' => $this->planner->getMinGapHours(),
-                ], 409);
+            $tooClose = $this->planner->tooClose($corporationId, $structureId, $plannedAt);
+            if ($conflicts || $tooClose) {
+                return response()->json($this->confirmation($conflicts, $tooClose), 409);
             }
         }
 
@@ -417,6 +482,22 @@ class MoonPlannerController extends Controller
 
         $plannedAt = Carbon::parse($validated['planned_arrival_time']);
 
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class);
+        $final = $finals->forStructures([(int) $plan->structure_id])[(int) $plan->structure_id] ?? null;
+        if ($final) {
+            // Carrying a move along the blueprint could take a pull past the
+            // final one, or the final one back past a pull that stays put.
+            if ($request->boolean('cascade')) {
+                return response()->json(['error' => "This refinery's last pull is marked final, so move its pulls one at a time."], 422);
+            }
+            if ($plan->is_final && $finals->laterPulls((int) $plan->structure_id, $plannedAt, (int) $plan->id)->isNotEmpty()) {
+                return response()->json(['error' => 'A pull is planned after that time. Move or remove it first.'], 422);
+            }
+            if (!$plan->is_final && $plannedAt->gt($final['time'])) {
+                return response()->json(['error' => "That is after this refinery's final pull. Move the final pull, or resume normal operations, first."], 422);
+            }
+        }
+
         if (!$request->boolean('confirmed')) {
             $conflicts = $this->planner->detectConflicts(
                 $corporationId,
@@ -424,12 +505,24 @@ class MoonPlannerController extends Controller
                 $plan->id,
                 $plan->structure_id
             );
-            if (!empty($conflicts)) {
-                return response()->json([
-                    'requires_confirmation' => true,
-                    'conflicts' => $conflicts,
-                    'min_gap_hours' => $this->planner->getMinGapHours(),
-                ], 409);
+            // Only asked when the time changes: a note on a pull already that
+            // close has nothing new to agree to, and the banner still shows
+            // it. A carried move takes the blueprint's later pulls along by
+            // the same amount, so they are not in this one's way.
+            $tooClose = [];
+            if ($plannedAt->ne($plan->planned_arrival_time)) {
+                $carriedIds = $request->boolean('cascade') && $plan->rotation_id
+                    ? $this->rotations->laterInSeries($plan)->pluck('id')->all()
+                    : [];
+                $tooClose = $this->planner->tooClose(
+                    $corporationId,
+                    (int) $plan->structure_id,
+                    $plannedAt,
+                    array_merge([(int) $plan->id], $carriedIds)
+                );
+            }
+            if ($conflicts || $tooClose) {
+                return response()->json($this->confirmation($conflicts, $tooClose), 409);
             }
         }
 
@@ -442,7 +535,7 @@ class MoonPlannerController extends Controller
             'source' => MoonExtractionPlan::SOURCE_MANUAL,
             // Self-heal: a plan made for a refinery with no extraction history
             // has no moon yet. Once one turns up, take it.
-            'moon_id' => $plan->moon_id ?? $this->planner->resolveMoonId((int) $plan->structure_id),
+            'moon_id' => $plan->moon_id ?? $this->refineries->resolveMoonId((int) $plan->structure_id),
         ]);
 
         // Only log an actual time change as a "move".
@@ -462,13 +555,116 @@ class MoonPlannerController extends Controller
             ]);
         }
 
+        // Carry the same move to this moon's later pulls in the rotation, when
+        // that is what was asked for: the ones after where this pull was, as
+        // the page counted them. By the same amount, so the pattern keeps its
+        // spacing instead of collapsing onto one time.
+        $carried = 0;
+        if ($request->boolean('cascade') && $plan->rotation_id && $oldArrival->ne($plannedAt)) {
+            [$actorId, $actorName] = $this->actor();
+            $carried = $this->rotations->shiftLater(
+                $plan,
+                $oldArrival,
+                (int) round($oldArrival->diffInMinutes($plannedAt, false)),
+                $actorId,
+                $actorName
+            );
+        }
+
+        return response()->json(['success' => true, 'carried' => $carried]);
+    }
+
+    /**
+     * Mark a pull as its refinery's last: a planned pull, or one already set
+     * in game. Pulls planned after it are listed first and only taken off once
+     * that is confirmed.
+     */
+    public function markFinal(Request $request)
+    {
+        $corporationId = $this->plannerCorporationId();
+        if (!$corporationId) {
+            return response()->json(['error' => 'No Moon Owner Corporation configured.'], 422);
+        }
+
+        $validated = $request->validate([
+            'plan_id' => 'nullable|integer',
+            'extraction_id' => 'nullable|integer',
+            'confirmed' => 'nullable|boolean',
+        ]);
+
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class);
+        $plan = null;
+        $extraction = null;
+
+        if (!empty($validated['plan_id'])) {
+            $plan = MoonExtractionPlan::where('id', $validated['plan_id'])
+                ->where('corporation_id', $corporationId)
+                ->whereIn('status', MoonExtractionPlan::FINAL_STATUSES)
+                ->first();
+        } elseif (!empty($validated['extraction_id'])) {
+            $extraction = MoonExtraction::where('id', $validated['extraction_id'])
+                ->where('corporation_id', $corporationId)
+                ->whereNotNull('chunk_arrival_time')
+                ->first();
+        }
+
+        if (!$plan && !$extraction) {
+            return response()->json(['error' => 'That pull was not found.'], 404);
+        }
+
+        $structureId = (int) ($plan ? $plan->structure_id : $extraction->structure_id);
+        $time = $plan ? $plan->planned_arrival_time : $extraction->chunk_arrival_time;
+
+        if ($finals->runningAfter($structureId, $time)) {
+            return response()->json(['error' => 'An extraction after this pull is already set in game, so this cannot be the last one. Mark that one instead.'], 422);
+        }
+
+        $later = $finals->laterPulls($structureId, $time, $plan ? (int) $plan->id : null);
+        if ($later->isNotEmpty() && !$request->boolean('confirmed')) {
+            return response()->json([
+                'requires_confirmation' => true,
+                'later' => $later->map(fn (MoonExtractionPlan $pull) => $pull->planned_arrival_time->format('D d M Y H:i') . ' EVE')->values(),
+            ], 409);
+        }
+
+        [$actorId, $actorName] = $this->actor();
+
+        if (!$plan) {
+            $plan = $finals->planForExtraction($extraction, $corporationId, $actorId);
+        }
+
+        $removed = $finals->mark($plan, $actorId, $actorName);
+
+        return response()->json(['success' => true, 'removed' => $removed]);
+    }
+
+    /**
+     * The refinery carries on after all: clear its final mark.
+     */
+    public function resume(Request $request)
+    {
+        $corporationId = $this->plannerCorporationId();
+        if (!$corporationId) {
+            return response()->json(['error' => 'No Moon Owner Corporation configured.'], 422);
+        }
+
+        $validated = $request->validate(['structure_id' => 'required|integer']);
+        [$actorId, $actorName] = $this->actor();
+
+        $resumed = app(\MiningManager\Services\Moon\FinalPulls::class)
+            ->resume($corporationId, (int) $validated['structure_id'], $actorId, $actorName);
+
+        if (!$resumed) {
+            return response()->json(['error' => 'This refinery has no final pull to clear.'], 422);
+        }
+
         return response()->json(['success' => true]);
     }
 
     /**
      * Remove a planned pull.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $corporationId = $this->plannerCorporationId();
         $plan = MoonExtractionPlan::where('id', $id)
@@ -480,6 +676,13 @@ class MoonPlannerController extends Controller
         }
 
         [$actorId, $actorName] = $this->actor();
+
+        // Done before this one goes: finding the later pulls needs its time.
+        $carried = 0;
+        if ($request->boolean('cascade') && $plan->rotation_id) {
+            $carried = $this->rotations->deleteLater($plan, $actorId, $actorName);
+        }
+
         \MiningManager\Models\MoonExtractionPlanAudit::record([
             'corporation_id' => $corporationId,
             'plan_id' => $plan->id,
@@ -494,7 +697,7 @@ class MoonPlannerController extends Controller
 
         $plan->delete();
 
-        return response()->json(['success' => true]);
+        return response()->json(['success' => true, 'carried' => $carried]);
     }
 
     /**
@@ -523,8 +726,12 @@ class MoonPlannerController extends Controller
             ->get();
         MoonExtractionPlan::loadDisplayNames($plans);
 
+        // A cancelled extraction never ran, live or archived. Shown, a pull
+        // cancelled in game and started again sat on the calendar twice, and
+        // an archived cancelled one could stand in for a plan it never kept.
         $extractions = MoonExtraction::where('corporation_id', $corporationId)
             ->whereBetween('chunk_arrival_time', [$rangeStart, $rangeEnd])
+            ->where('status', '!=', 'cancelled')
             ->orderBy('chunk_arrival_time')
             ->get();
         MoonExtraction::loadDisplayNames($extractions);
@@ -534,6 +741,7 @@ class MoonPlannerController extends Controller
         // chunk already arrived + got archived doesn't vanish from the planner.
         $history = \MiningManager\Models\MoonExtractionHistory::where('corporation_id', $corporationId)
             ->whereBetween('chunk_arrival_time', [$rangeStart, $rangeEnd])
+            ->where('final_status', '!=', 'cancelled')
             ->orderBy('chunk_arrival_time')
             ->get();
         MoonExtraction::loadDisplayNames($history);
@@ -581,6 +789,11 @@ class MoonPlannerController extends Controller
         $calendar = [];
         $warnings = [];
 
+        $finals = app(\MiningManager\Services\Moon\FinalPulls::class)->forStructures(array_merge(
+            $plans->pluck('structure_id')->all(),
+            array_column($actuals, 'structure_id')
+        ));
+
         // Index which actuals get a mismatch flag (keyed by actual id).
         $mismatchByActual = [];
 
@@ -591,11 +804,6 @@ class MoonPlannerController extends Controller
             $nearestOffset = null;
             foreach ($actuals as $a) {
                 if ($a['structure_id'] !== (int) $plan->structure_id) {
-                    continue;
-                }
-                // The same real pulls the mismatch check counts: a live
-                // extraction that was cancelled never ran.
-                if (!$a['archived'] && $a['status'] === 'cancelled') {
                     continue;
                 }
                 $offset = abs($plan->planned_arrival_time->diffInMinutes($a['time']));
@@ -636,10 +844,22 @@ class MoonPlannerController extends Controller
                 'status' => $plan->status,
                 'cadence_days' => $plan->cadence_days,
                 'notes' => $plan->notes,
+                // What an edit here could carry to: the same moon's later
+                // pulls in the same blueprint. The page only offers the choice
+                // when there is something to carry it to, and never on a
+                // refinery whose final pull is planned, whose pulls move one
+                // at a time.
+                'rotation_id' => $plan->rotation_id,
+                'later_in_series' => $plan->rotation_id && !isset($finals[(int) $plan->structure_id])
+                    ? $this->rotations->laterInSeries($plan)->count()
+                    : 0,
+                'final' => (bool) $plan->is_final,
             ];
         }
 
-        // Render actuals (locked), tagging any flagged as a mismatch.
+        // Render actuals (locked), tagging any flagged as a mismatch. The real
+        // pull that is a refinery's final one carries the mark too, since its
+        // plan is hidden behind it.
         foreach ($actuals as $a) {
             $day = $a['time']->format('Y-m-d');
             $calendar[$day][] = [
@@ -654,6 +874,8 @@ class MoonPlannerController extends Controller
                 'status' => $a['status'],
                 'archived' => $a['archived'],
                 'mismatch' => isset($mismatchByActual[$a['id']]),
+                'final' => isset($finals[$a['structure_id']])
+                    && abs($a['time']->getTimestamp() - $finals[$a['structure_id']]['time']->getTimestamp()) <= $cycleWindow * 60,
             ];
         }
 
@@ -677,16 +899,25 @@ class MoonPlannerController extends Controller
      */
     protected function buildRefinerySummaries(int $corporationId): array
     {
-        $refineries = $this->planner->refineriesForCorporation($corporationId);
+        $refineries = $this->refineries->refineriesForCorporation($corporationId);
         if ($refineries->isEmpty()) {
             return [];
         }
 
-        // Batch moon + structure names.
+        // Batch moon + structure names, and the system each refinery sits in
+        // so the Plan Pull dropdown can be read in system order. The cards
+        // themselves stay in attention order, uncovered and richest first.
         $structureIds = $refineries->pluck('structure_id')->all();
-        $names = DB::table('universe_structures')
+        $structureRows = DB::table('universe_structures')
             ->whereIn('structure_id', $structureIds)
-            ->pluck('name', 'structure_id');
+            ->get(['structure_id', 'name', 'solar_system_id']);
+        $names = $structureRows->pluck('name', 'structure_id');
+        $systemNames = DB::table('solar_systems')
+            ->whereIn('system_id', $structureRows->pluck('solar_system_id')->filter()->unique()->all())
+            ->pluck('name', 'system_id');
+        $systemOf = $structureRows->mapWithKeys(fn ($row) => [
+            (int) $row->structure_id => $systemNames[$row->solar_system_id] ?? null,
+        ]);
         $moonNames = DB::table('moons')
             ->whereIn('moon_id', $refineries->pluck('moon_id')->filter()->all())
             ->pluck('name', 'moon_id');
@@ -701,6 +932,7 @@ class MoonPlannerController extends Controller
                 'structure_id' => $sid,
                 'moon_id' => $refinery->moon_id,
                 'structure_name' => $names[$sid] ?? "Structure {$sid}",
+                'system_name' => $systemOf[$sid] ?? null,
                 'moon_name' => $refinery->moon_id ? ($moonNames[$refinery->moon_id] ?? "Moon {$refinery->moon_id}") : null,
                 'cadence_days' => $cadence['cadence_days'],
                 'arrival_count' => $cadence['arrival_count'],
@@ -731,6 +963,66 @@ class MoonPlannerController extends Controller
     }
 
     /**
+     * What Resend Next-Pull Notices would send, for the confirmation: every
+     * refinery whose chunk has arrived with nothing started since, and why
+     * any of them is left out.
+     */
+    public function nextPullNotices()
+    {
+        $corporationId = $this->plannerCorporationId();
+
+        return response()->json([
+            'entries' => $corporationId
+                ? $this->presentNotices(app(\MiningManager\Services\Moon\NextPullNotices::class)->candidates($corporationId))
+                : [],
+        ]);
+    }
+
+    /**
+     * Send Next Extraction Planned again to each of those refineries.
+     */
+    public function sendNextPullNotices()
+    {
+        $corporationId = $this->plannerCorporationId();
+
+        if (!$corporationId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No Moon Owner Corporation is set, so there are no refineries to send for.',
+            ], 422);
+        }
+
+        $result = app(\MiningManager\Services\Moon\NextPullNotices::class)->send($corporationId);
+
+        return response()->json([
+            'success' => true,
+            'sent' => $result['sent'],
+            'undelivered' => $result['undelivered'],
+            'entries' => $this->presentNotices($result['entries']),
+        ]);
+    }
+
+    /**
+     * The list as the page shows it, in EVE time as the messages print it.
+     */
+    protected function presentNotices(array $entries): array
+    {
+        return array_map(fn (array $entry) => [
+            'structure_name' => $entry['structure_name'] ?? "Structure {$entry['structure_id']}",
+            'moon_name' => $entry['moon_name'] ?? null,
+            'system_name' => $entry['system_name'] ?? null,
+            'arrived_at' => $entry['arrived_at']->format('Y-m-d H:i'),
+            'planned_at' => isset($entry['planned_at']) ? $entry['planned_at']->format('Y-m-d H:i') : null,
+            'startable_from' => !empty($entry['startable_from']) ? $entry['startable_from']->format('Y-m-d H:i') : null,
+            'projected' => (bool) ($entry['projected'] ?? false),
+            'next_is_final' => (bool) ($entry['next_is_final'] ?? false),
+            'skip' => $entry['skip'],
+            'delivered' => $entry['delivered'] ?? null,
+            'reason' => $entry['reason'] ?? null,
+        ], $entries);
+    }
+
+    /**
      * Recent planner change history for the corp (who did what) — JSON for the
      * History modal.
      */
@@ -758,6 +1050,63 @@ class MoonPlannerController extends Controller
         });
 
         return response()->json(['entries' => $entries]);
+    }
+
+    /**
+     * What a save asks the operator to agree to: other moons arriving within
+     * the minimum gap, and pulls on the same refinery closer than the refinery
+     * spacing.
+     */
+    protected function confirmation(array $conflicts, array $tooClose): array
+    {
+        return [
+            'requires_confirmation' => true,
+            'conflicts' => $conflicts,
+            'too_close' => $tooClose,
+            'min_gap_hours' => $this->planner->getMinGapHours(),
+            'spacing' => $this->planner->refinerySpacingLabel(),
+        ];
+    }
+
+    /**
+     * Pulls on one refinery closer together than the drill can manage,
+     * however they got there: a line each for the banner, and the text of the
+     * mark on each planned pull involved, keyed by plan id.
+     *
+     * @return array{pairs: array<int, array>, marks: array<int, string>}
+     */
+    protected function spacingWarnings(int $corporationId, Carbon $from, Carbon $to): array
+    {
+        $at = fn (array $pull) => $pull['time']->format('D d M H:i') . ' EVE';
+        $what = fn (array $pull) => ($pull['type'] === 'plan' ? 'planned ' : 'set in game for ') . $at($pull);
+
+        $names = [];
+        $pairs = [];
+        $marks = [];
+
+        foreach ($this->planner->tightPairs($corporationId, $from, $to) as $pair) {
+            $names[$pair['structure_id']] ??= $this->refineries->names($pair['structure_id']);
+
+            $pairs[] = $names[$pair['structure_id']] + [
+                'first' => $what($pair['first']),
+                'second' => $what($pair['second']),
+                'gap' => $pair['gap'],
+            ];
+
+            if ($pair['first']['type'] === 'plan') {
+                $marks[$pair['first']['id']][] = "Only {$pair['gap']} before the pull on " . $at($pair['second']) . ' on this refinery.';
+            }
+            if ($pair['second']['type'] === 'plan') {
+                $marks[$pair['second']['id']][] = "Only {$pair['gap']} after the pull on " . $at($pair['first']) . ' on this refinery.';
+            }
+        }
+
+        $marks = array_map(
+            fn (array $lines) => implode("\n", $lines) . "\nAn extraction takes at least 6 days, and the next one can only be started once the chunk is in.",
+            $marks
+        );
+
+        return ['pairs' => $pairs, 'marks' => $marks];
     }
 
     /**

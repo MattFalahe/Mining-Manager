@@ -78,14 +78,34 @@
                         </thead>
                         <tbody>
                             @forelse($utilization as $moon)
+                            @php
+                                // Today's fit on the refinery, and the rigs each of the
+                                // month's chunks really had: one can change without the other.
+                                $rigsNowTitle = !empty($moon->rigs_now)
+                                    ? trans('mining-manager::analytics.rig_marks_now', ['rigs' => implode(', ', $moon->rigs_now)])
+                                    : null;
+                                $riggedChunks = (int) ($moon->rigged_chunks ?? 0);
+                                $rigChunksTitle = $riggedChunks > 0
+                                    ? trans('mining-manager::analytics.rig_marks_chunks', ['count' => $riggedChunks, 'total' => count($moon->rig_chunks)])
+                                        . "\n" . implode("\n", array_map(fn ($chunk) => $chunk['date'] . ': ' . $chunk['text'], $moon->rig_chunks))
+                                    : null;
+                            @endphp
                             <tr>
                                 <td>
                                     <i class="fas fa-moon"></i> {{ $moon->moon_name }}
                                     @if($moon->structure_name)
                                         <br><small class="text-muted"><i class="fas fa-industry"></i> {{ $moon->structure_name }}</small>
+                                        @if($rigsNowTitle)
+                                            <span class="mm-rig-mark" title="{{ $rigsNowTitle }}"><i class="fas fa-cog"></i></span>
+                                        @endif
                                     @endif
                                 </td>
-                                <td class="text-center">{{ $moon->extraction_count }}</td>
+                                <td class="text-center">
+                                    {{ $moon->extraction_count }}
+                                    @if($rigChunksTitle)
+                                        <span class="mm-rig-mark" title="{{ $rigChunksTitle }}"><i class="fas fa-cog"></i> {{ $riggedChunks }}</span>
+                                    @endif
+                                </td>
                                 <td class="text-right">{{ number_format($moon->pool_m3, 0) }}</td>
                                 <td class="text-right">{{ number_format($moon->mined_m3, 0) }}</td>
                                 <td>

@@ -32,7 +32,7 @@
             <div class="small-box bg-success">
                 <div class="inner">
                     <h3>{{ $stats['verified'] ?? 0 }}</h3>
-                    <p>{{ trans('mining-manager::taxes.verified_today') }}</p>
+                    <p>{{ trans('mining-manager::taxes.verified_recent', ['days' => $stats['days'] ?? 30]) }}</p>
                 </div>
                 <div class="icon"><i class="fas fa-check"></i></div>
             </div>
@@ -50,7 +50,7 @@
             <div class="small-box bg-primary">
                 <div class="inner">
                     <h3>{{ number_format($stats['total_amount'] ?? 0, 0) }}</h3>
-                    <p>{{ trans('mining-manager::taxes.total_verified_isk') }}</p>
+                    <p>{{ trans('mining-manager::taxes.total_verified_isk', ['days' => $stats['days'] ?? 30]) }}</p>
                 </div>
                 <div class="icon"><i class="fas fa-coins"></i></div>
             </div>
@@ -103,7 +103,7 @@
                         <tbody>
                             @foreach($heldCredits as $credit)
                             <tr>
-                                <td>{{ $credit->character->name ?? "Character #{$credit->character_id}" }}</td>
+                                <td>{{ $credit->character_name }}</td>
                                 <td class="text-right">{{ number_format($credit->remaining, 0) }} ISK</td>
                             </tr>
                             @endforeach
@@ -504,8 +504,6 @@ function submitRecordPayment() {
 function submitManualEntry() {
     var characterId = $('#meCharacterId').val();
     var amount = $('#meAmount').val();
-    var periodStart = $('#mePeriodStart').val();
-    var periodEnd = $('#mePeriodEnd').val();
     var notes = $('#meNotes').val();
 
     if (!characterId) {
@@ -516,10 +514,6 @@ function submitManualEntry() {
         toastr.error('Please enter a valid amount');
         return;
     }
-    if (!periodStart || !periodEnd) {
-        toastr.error('Please enter period dates');
-        return;
-    }
 
     $.ajax({
         url: '{{ route("mining-manager.taxes.manual-entry") }}',
@@ -528,13 +522,11 @@ function submitManualEntry() {
             _token: '{{ csrf_token() }}',
             character_id: characterId,
             amount: amount,
-            period_start: periodStart,
-            period_end: periodEnd,
             notes: notes
         },
         success: function(response) {
             $('#manualEntryModal').modal('hide');
-            toastr.success(response.message || 'Manual entry created');
+            toastr.success(response.message || 'Payment recorded');
             setTimeout(function() { location.reload(); }, 1200);
         },
         error: function(xhr) {
@@ -602,7 +594,7 @@ $(document).on('change', '#rpTaxId', function() {
                         <option value="__balance__">{{ trans('mining-manager::taxes.assign_balance_option') }}</option>
                         @foreach(($unpaidTaxes ?? collect()) as $tax)
                             @php
-                                $charName = $tax->character->name ?? "Character #{$tax->character_id}";
+                                $charName = $tax->character_name;
                                 $period = $tax->period_start
                                     ? $tax->period_start->format('M d') . ' - ' . $tax->period_end->format('M d, Y')
                                     : ($tax->month ? $tax->month->format('M Y') : 'Unknown');
@@ -702,7 +694,7 @@ $(document).on('change', '#rpTaxId', function() {
                                     <option value="">&mdash; {{ trans('mining-manager::taxes.select_invoice') }} &mdash;</option>
                                     @forelse(($unpaidTaxes ?? collect()) as $tax)
                                         @php
-                                            $charName = $tax->character->name ?? "Character #{$tax->character_id}";
+                                            $charName = $tax->character_name;
                                             $period = $tax->period_start ? $tax->period_start->format('M d') . ' - ' . $tax->period_end->format('M d, Y') : ($tax->month ? $tax->month->format('M Y') : 'Unknown');
                                             $remaining = (float)$tax->amount_owed - (float)($tax->amount_paid ?? 0);
                                             $statusBadge = $tax->status === 'overdue' ? '(overdue)' : ($tax->status === 'partial' ? '(partial)' : '');
@@ -760,20 +752,6 @@ $(document).on('change', '#rpTaxId', function() {
                             <div class="form-group">
                                 <label>{{ trans('mining-manager::taxes.amount_isk') }}</label>
                                 <input type="number" class="form-control" id="meAmount" min="1" required>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>{{ trans('mining-manager::taxes.period_start') }}</label>
-                                        <input type="date" class="form-control" id="mePeriodStart" value="{{ now()->startOfMonth()->format('Y-m-d') }}" required>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label>{{ trans('mining-manager::taxes.period_end') }}</label>
-                                        <input type="date" class="form-control" id="mePeriodEnd" value="{{ now()->format('Y-m-d') }}" required>
-                                    </div>
-                                </div>
                             </div>
                             <div class="form-group">
                                 <label>{{ trans('mining-manager::taxes.notes') }}</label>

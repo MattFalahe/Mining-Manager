@@ -170,8 +170,8 @@ return [
     'matched_tax' => 'Matched Tax',
     'mismatch' => 'Mismatch',
     'mismatched' => 'Mismatched',
-    'verified_today' => 'Verified Today',
-    'total_verified_isk' => 'Total Verified ISK',
+    'verified_recent' => 'Bills Credited, Last :days Days',
+    'total_verified_isk' => 'ISK Verified, Last :days Days',
     'verification_actions' => 'Verification Actions',
     'no_transactions' => 'No transactions found',
 
@@ -290,6 +290,7 @@ return [
     'status_updated' => 'Status updated successfully',
     'status_update_error' => 'An error occurred updating the status',
     'cannot_delete_paid' => 'Cannot delete a paid tax record',
+    'cannot_delete_with_payments' => 'Cannot delete a tax record with payments recorded against it: the member would lose what they have paid',
     'tax_deleted' => 'Tax record deleted successfully',
     'deletion_error' => 'An error occurred deleting the tax record',
 
@@ -305,10 +306,9 @@ return [
     'manual_entry_tab' => 'Manual Entry',
     'select_invoice' => 'Select Invoice',
     'no_unpaid_invoices' => 'No unpaid invoices found',
-    'manual_entry_description' => 'Create a manual tax record for ad-hoc payments (e.g. character leaving corporation mid-period).',
-    'manual_entry_success' => 'Manual tax entry created successfully',
-    'manual_entry_error' => 'Error creating manual tax entry',
-    'duplicate_manual_entry' => 'A manual entry already exists for this character and period',
+    'manual_entry_description' => 'Record ISK a member paid you outside the wallet before their bill exists, such as someone settling up as they leave mid-period. It pays off anything they still owe, oldest bill first, and the rest is held on their balance and taken off their next bill.',
+    'manual_entry_success' => 'Payment recorded: :settled ISK paid towards open bills, :held ISK held on their balance for the next bill',
+    'manual_entry_error' => 'Error recording the payment',
     'character_name_or_id' => 'Character Name or ID',
     'period_start' => 'Period Start',
     'period_end' => 'Period End',
@@ -479,4 +479,21 @@ return [
     'refund_failed_refund_matched_to_transfer' => 'That refund was matched to a real transfer, so there is nothing to undo.',
     'refund_failed_error' => 'Something went wrong. Nothing was changed, so it is safe to try again.',
     'refund_failed_unknown' => 'Could not record that refund.',
+
+    // What is left on a bill, and how long there is to pay it
+    'left_to_pay' => 'Left to Pay',
+    'left_to_pay_short' => 'left',
+    'left_to_pay_amount' => ':amount ISK left to pay',
+    'left_of_billed' => 'ISK left of :owed for :period',
+    'part_paid_received' => ':paid ISK of this :owed ISK bill has already been received, so only the rest is asked for below.',
+    'due_in_days' => '{1} 1 day left to pay|[2,*] :count days left to pay',
+    'due_today' => 'Due today',
+    'days_late' => '{1} 1 day late|[2,*] :count days late',
+
+    // Dashboard banner
+    'banner_title' => 'Mining tax: :countdown',
+    'banner_one_bill' => ':amount ISK to pay for :period, due :due.',
+    'banner_many_bills' => ':amount ISK to pay across :count bills. The oldest is for :period, due :due.',
+    'banner_part_paid' => 'Part paid: :paid ISK of the :owed ISK billed has already been received.',
+    'banner_pay_now' => 'Pay now',
 ];

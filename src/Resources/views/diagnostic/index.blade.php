@@ -1360,11 +1360,21 @@
                                                 <option value="jackpot_detected">🎰 Jackpot Detected</option>
                                                 <option value="moon_chunk_unstable">⚠️ Moon Chunk Unstable (capital safety)</option>
                                                 <option value="extraction_started">⛏️ Extraction Started (drill lit)</option>
-                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
-                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
                                                 <option value="metenox_cargo_full">📦 Metenox Cargo Bay Full (v2.0.1, yield-stopping)</option>
                                                 <option value="extraction_at_risk">🔥 Extraction at Risk (cross-plugin — MC+SM)</option>
                                                 <option value="extraction_lost">☠️ Extraction Lost (cross-plugin — MC+SM)</option>
+                                            </optgroup>
+                                            <optgroup label="Moon Planner Notifications">
+                                                <option value="next_extraction_planned">🗓️ Next Extraction Planned (planner nudge)</option>
+                                                <option value="schedule_mismatch">⚠️ Moon Scheduled Off-Plan (planner mismatch)</option>
+                                                <option value="refinery_gone">🏚️ Refinery Gone (planned pulls removed)</option>
+                                                <option value="extraction_cancelled">🛑 Moon Extraction Cancelled</option>
+                                                <option value="moon_not_rescheduled">⏰ Moon Not Rescheduled (reminder)</option>
+                                                <option value="schedule_needs_filling">🗓️ Moons Need Planning (one list)</option>
+                                            </optgroup>
+                                            <optgroup label="Plugin Health">
+                                                <option value="price_provider">💱 Price Provider Trouble</option>
+                                                <option value="moon_scan_missing">🛰️ Moon Scan Missing</option>
                                             </optgroup>
                                             <optgroup label="Theft Detection">
                                                 <option value="theft_detected">⚠️ Theft Detected</option>
@@ -3524,7 +3534,7 @@ function runFireAllNotifications() {
     const spinner = document.getElementById('ntFireAllSpinner');
     const summary = document.getElementById('ntSummary');
 
-    // All 15 notification types grouped by surface.
+    // Every notification type, grouped by surface.
     // Order: lightest first (tax/event) → moon/report → theft last
     // so the user sees quick wins before the longer theft chain.
     const allTypes = [
@@ -3542,6 +3552,12 @@ function runFireAllNotifications() {
         { type: 'extraction_started',  label: '⛏️ Extraction Started' },
         { type: 'next_extraction_planned', label: '🗓️ Next Extraction Planned' },
         { type: 'schedule_mismatch',   label: '⚠️ Moon Scheduled Off-Plan' },
+        { type: 'refinery_gone', label: '🏚️ Refinery Gone' },
+        { type: 'extraction_cancelled', label: '🛑 Moon Extraction Cancelled' },
+        { type: 'moon_not_rescheduled', label: '⏰ Moon Not Rescheduled' },
+        { type: 'schedule_needs_filling', label: '🗓️ Moons Need Planning' },
+        { type: 'price_provider', label: '💱 Price Provider Trouble' },
+        { type: 'moon_scan_missing', label: '🛰️ Moon Scan Missing' },
         { type: 'extraction_at_risk',  label: '🔥 Extraction at Risk' },
         { type: 'extraction_lost',     label: '☠️ Extraction Lost' },
         { type: 'report_generated',    label: '📊 Report Generated' },
@@ -4109,7 +4125,7 @@ function runTaxPipeline() {
             </div>
         </div>`;
 
-        // Optional: Character calculation - controller returns {character_id, calculated_tax, above_exemption, above_minimum} or {error}
+        // Optional: Character calculation - controller returns {character_id, calculated_tax, account_tax, account_characters, above_exemption, above_minimum} or {error}
         if (data.character_calculation) {
             const calc = data.character_calculation;
             if (calc.error) {
@@ -4118,12 +4134,15 @@ function runTaxPipeline() {
                     <p class="text-danger">${calc.error}</p>
                 </div>`;
             } else {
-                html += `<div class="provider-test-result ${(calc.calculated_tax || 0) > 0 ? 'success' : 'warning'}" style="margin-top: 10px;">
+                // The thresholds are checked against the account total, the
+                // way the bill adds up a main and its alts.
+                html += `<div class="provider-test-result ${(calc.account_tax || 0) > 0 ? 'success' : 'warning'}" style="margin-top: 10px;">
                     <h5><i class="fas fa-user"></i> Character Calculation: ID ${calc.character_id || charId}</h5>
                     <div class="row mb-2">
-                        <div class="col-md-4"><strong>Calculated Tax:</strong> ${fmtISK(calc.calculated_tax)} ISK</div>
-                        <div class="col-md-4"><strong>Above Exemption:</strong> <span class="badge badge-${calc.above_exemption ? 'success' : 'warning'}">${calc.above_exemption ? 'YES' : 'NO'}</span></div>
-                        <div class="col-md-4"><strong>Above Minimum:</strong> <span class="badge badge-${calc.above_minimum ? 'success' : 'warning'}">${calc.above_minimum ? 'YES' : 'NO'}</span></div>
+                        <div class="col-md-3"><strong>This Character:</strong> ${fmtISK(calc.calculated_tax)} ISK</div>
+                        <div class="col-md-3"><strong>Account Total:</strong> ${fmtISK(calc.account_tax)} ISK <small>(${calc.account_characters} character${calc.account_characters === 1 ? '' : 's'})</small></div>
+                        <div class="col-md-3"><strong>Above Exemption:</strong> <span class="badge badge-${calc.above_exemption ? 'success' : 'warning'}">${calc.above_exemption ? 'YES' : 'NO'}</span></div>
+                        <div class="col-md-3"><strong>Above Minimum:</strong> <span class="badge badge-${calc.above_minimum ? 'success' : 'warning'}">${calc.above_minimum ? 'YES' : 'NO'}</span></div>
                     </div>
                 </div>`;
             }

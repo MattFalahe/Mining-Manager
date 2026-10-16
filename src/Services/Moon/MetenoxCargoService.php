@@ -81,6 +81,12 @@ class MetenoxCargoService
     public const MOON_MATERIAL_VOLUME_M3 = 0.05;
 
     /**
+     * Share of a moon material a Metenox gets out of its ore. It reprocesses
+     * what it drills on the spot at 40%, and keeps only the moon materials.
+     */
+    public const REPROCESSING_YIELD = 0.40;
+
+    /**
      * Return every ore-stack row across the corp's Metenox drills.
      *
      * Each row in the result represents one type_id stack in one drill's

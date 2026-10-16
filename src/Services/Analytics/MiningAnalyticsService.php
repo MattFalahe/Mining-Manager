@@ -5,7 +5,8 @@ namespace MiningManager\Services\Analytics;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Services\Configuration\SettingsManagerService;
-use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Services\Character\CharacterNames;
+use MiningManager\Services\Character\CorporationMembers;
 use MiningManager\Services\TypeIdRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -26,20 +27,14 @@ class MiningAnalyticsService
      */
     protected SettingsManagerService $settingsService;
 
-    /**
-     * Character info service
-     */
-    protected CharacterInfoService $characterInfoService;
-
-    public function __construct(SettingsManagerService $settingsService, CharacterInfoService $characterInfoService)
+    public function __construct(SettingsManagerService $settingsService)
     {
         $this->settingsService = $settingsService;
-        $this->characterInfoService = $characterInfoService;
     }
 
     /**
-     * Get character IDs belonging to a corporation.
-     * Uses character_affiliations table for current corp membership.
+     * Who mines for a corporation, the same answer the dashboard gives, so a
+     * member SeAT has no record of counts here too.
      *
      * @param int $corporationId
      * @return array
@@ -50,10 +45,7 @@ class MiningAnalyticsService
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
         return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($corporationId) {
-            return DB::table('character_affiliations')
-                ->where('corporation_id', $corporationId)
-                ->pluck('character_id')
-                ->toArray();
+            return app(CorporationMembers::class)->characterIds($corporationId);
         });
     }
 
@@ -228,20 +220,26 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:top-miners:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$limit}" . $this->corpCacheKey($corporationId);
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId) {
-            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id');
+        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId) {
+            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
-            return $query->select(
+            $miners = $query->select(
                     'mining_ledger.character_id',
-                    'character_infos.name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value')
                 )
-                ->groupBy('mining_ledger.character_id', 'character_infos.name')
+                ->groupBy('mining_ledger.character_id')
                 ->orderByDesc('total_quantity')
                 ->limit($limit)
                 ->get();
+
+            // Every miner counts, whether SeAT knows them or not.
+            $names = app(CharacterNames::class)->many($miners->pluck('character_id'));
+            foreach ($miners as $miner) {
+                $miner->setAttribute('name', $names[(int) $miner->character_id]['name'] ?? "Character {$miner->character_id}");
+            }
+
+            return $miners;
         });
     }
 
@@ -260,19 +258,17 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:top-miners-account:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}:{$limit}" . $this->corpCacheKey($corporationId) . $filter->cacheKey();
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId, $filter) {
-            // Get per-character mining data (left join so non-SeAT characters are included)
-            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->leftJoin('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id');
+        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $limit, $corporationId, $filter) {
+            // Every miner counts, whether SeAT knows them or not.
+            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
             $filter->applyTo($query);
             $perCharacter = $query->select(
                     'mining_ledger.character_id',
-                    'character_infos.name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value')
                 )
-                ->groupBy('mining_ledger.character_id', 'character_infos.name')
+                ->groupBy('mining_ledger.character_id')
                 ->get();
 
             if ($perCharacter->isEmpty()) {
@@ -292,24 +288,11 @@ class MiningAnalyticsService
                 ->pluck('main_character_id', 'id')
                 ->toArray();
 
-            // Get all character names we might need
-            $allCharIds = array_unique(array_merge($characterIds, array_values($userMainChars)));
-            $charNames = DB::table('character_infos')
-                ->whereIn('character_id', $allCharIds)
-                ->pluck('name', 'character_id')
-                ->toArray();
-
-            // Resolve missing guest names via CharacterInfoService
-            $guestCharIds = array_diff($characterIds, array_keys($userMap));
-            $missingGuestIds = array_filter($guestCharIds, fn($id) => !isset($charNames[$id]));
-            if (!empty($missingGuestIds)) {
-                $batchInfo = $this->characterInfoService->getBatchCharacterInfo(array_values($missingGuestIds));
-                foreach ($batchInfo as $cId => $info) {
-                    if (!empty($info['name']) && $info['name'] !== "Character {$cId}") {
-                        $charNames[$cId] = $info['name'];
-                    }
-                }
-            }
+            // Names for every miner and every account's main, SeAT's or looked up.
+            $charNames = array_map(
+                fn ($info) => $info['name'],
+                app(CharacterNames::class)->many(array_merge($characterIds, array_values($userMainChars)))
+            );
 
             // Group by SeAT account (user_id)
             $grouped = [];
@@ -328,7 +311,7 @@ class MiningAnalyticsService
                 if (!isset($grouped[$groupKey])) {
                     $grouped[$groupKey] = [
                         'main_character_id' => $mainId,
-                        'name' => $charNames[$mainId] ?? ($miner->name ?? "Unknown #{$miner->character_id}"),
+                        'name' => $charNames[$mainId] ?? "Character {$mainId}",
                         'total_quantity' => 0,
                         'total_value' => 0,
                         'character_count' => 0,
@@ -479,16 +462,11 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:char-stats:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}" . $this->corpCacheKey($corporationId);
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $corporationId) {
-            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-                ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
-                ->leftJoin('character_affiliations', 'mining_ledger.character_id', '=', 'character_affiliations.character_id')
-                ->leftJoin('corporation_infos', 'character_affiliations.corporation_id', '=', 'corporation_infos.corporation_id');
+        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $corporationId) {
+            $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
-            return $query->select(
+            $stats = $query->select(
                     'mining_ledger.character_id',
-                    'character_infos.name',
-                    'corporation_infos.name as corporation_name',
                     DB::raw('SUM(mining_ledger.quantity) as total_quantity'),
                     DB::raw('SUM(mining_ledger.total_value) as total_value'),
                     DB::raw('COUNT(DISTINCT mining_ledger.date) as days_active'),
@@ -496,9 +474,20 @@ class MiningAnalyticsService
                     DB::raw('COUNT(DISTINCT mining_ledger.solar_system_id) as unique_systems'),
                     DB::raw('MAX(mining_ledger.date) as last_activity')
                 )
-                ->groupBy('mining_ledger.character_id', 'character_infos.name', 'corporation_infos.name')
+                ->groupBy('mining_ledger.character_id')
                 ->orderByDesc('total_quantity')
                 ->get();
+
+            // Every miner counts, with the name and corporation SeAT or the
+            // lookups have for them.
+            $names = app(CharacterNames::class)->many($stats->pluck('character_id'));
+            foreach ($stats as $row) {
+                $info = $names[(int) $row->character_id] ?? null;
+                $row->setAttribute('name', $info['name'] ?? "Character {$row->character_id}");
+                $row->setAttribute('corporation_name', $info['corporation_name'] ?? null);
+            }
+
+            return $stats;
         });
     }
 
@@ -588,17 +577,16 @@ class MiningAnalyticsService
         $filter = $filter ?? ChartFilter::none();
 
         $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate])
-            ->join('character_infos', 'mining_ledger.character_id', '=', 'character_infos.character_id')
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->join('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id');
+            ->leftJoin('solar_systems', 'mining_ledger.solar_system_id', '=', 'solar_systems.system_id');
         $this->applyCorporationFilter($query, $corporationId);
 
         // Same slice as the charts above the button. An export that quietly
         // ignored the filters would hand somebody a file that disagrees with
         // the page they took it from.
         $filter->applyTo($query);
-        return $query->select(
-                'character_infos.name as character',
+        $rows = $query->select(
+                'mining_ledger.character_id',
                 'invTypes.typeName as ore_type',
                 'mining_ledger.quantity',
                 'mining_ledger.total_value as value',
@@ -606,14 +594,19 @@ class MiningAnalyticsService
                 'mining_ledger.date'
             )
             ->orderBy('mining_ledger.date', 'desc')
-            ->get()
-            ->map(function ($item) {
+            ->get();
+
+        // Every miner is in the file, named whether SeAT knows them or not.
+        $names = app(CharacterNames::class);
+        $names->preload($rows->pluck('character_id'));
+
+        return $rows->map(function ($item) use ($names) {
                 return [
-                    $item->character,
+                    $names->nameOrId($item->character_id),
                     $item->ore_type,
                     $item->quantity,
                     number_format($item->value, 2),
-                    $item->system,
+                    $item->system ?? 'Unknown',
                     $item->date->format('Y-m-d'),
                 ];
             })
@@ -747,7 +740,7 @@ class MiningAnalyticsService
         $cacheKey = "mining-analytics:heatmap:{$startDate->format('Ymd')}:{$endDate->format('Ymd')}" . $this->corpCacheKey($corporationId) . $filter->cacheKey();
         $cacheDuration = config('mining-manager.performance.query_cache_duration', 15);
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $corporationId, $filter) {
+        return app(CharacterNames::class)->remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($startDate, $endDate, $corporationId, $filter) {
             // Get daily data per character
             $query = MiningLedger::whereBetween('mining_ledger.date', [$startDate, $endDate]);
             $this->applyCorporationFilter($query, $corporationId);
@@ -821,26 +814,12 @@ class MiningAnalyticsService
                     ->pluck('main_character_id', 'id')
                     ->toArray();
 
-                // Get all character names we might need
-                $allCharIds = array_unique(array_merge($charIds, array_values($userMainChars)));
-                $charNames = DB::table('character_infos')
-                    ->whereIn('character_id', $allCharIds)
-                    ->pluck('name', 'character_id')
-                    ->toArray();
-
-                // Identify guest character IDs (not in refresh_tokens) missing from character_infos
-                $guestCharIds = array_diff($charIds, array_keys($userMap));
-                $missingGuestIds = array_filter($guestCharIds, fn($id) => !isset($charNames[$id]));
-
-                // Resolve missing guest names via CharacterInfoService (ESI/zKill fallback)
-                if (!empty($missingGuestIds)) {
-                    $batchInfo = $this->characterInfoService->getBatchCharacterInfo(array_values($missingGuestIds));
-                    foreach ($batchInfo as $cId => $info) {
-                        if (!empty($info['name']) && $info['name'] !== "Character {$cId}") {
-                            $charNames[$cId] = $info['name'];
-                        }
-                    }
-                }
+                // Names for every miner and every account's main, SeAT's or
+                // looked up.
+                $charNames = array_map(
+                    fn ($info) => $info['name'],
+                    app(CharacterNames::class)->many(array_merge($charIds, array_values($userMainChars)))
+                );
 
                 foreach ($characterTotals as $charId => $dowValues) {
                     $userId = $userMap[$charId] ?? null;

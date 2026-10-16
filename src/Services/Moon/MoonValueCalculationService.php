@@ -30,28 +30,47 @@ class MoonValueCalculationService
     /**
      * Calculate the estimated ISK value of a moon extraction.
      *
+     * A chunk already priced at its fracture keeps that price, here as much
+     * as in the database, so every page shows the same settled figure.
+     *
      * @param MoonExtraction $extraction
+     * @param bool $fresh price it now rather than take a figure cached in the
+     *                    last few hours
      * @return float|null
      */
-    public function calculateExtractionValue(MoonExtraction $extraction): ?float
+    public function calculateExtractionValue(MoonExtraction $extraction, bool $fresh = false): ?float
     {
+        if ($extraction->valueIsFinal()) {
+            return (float) $extraction->estimated_value;
+        }
+
         if (!$extraction->ore_composition) {
             Log::debug("Mining Manager: No ore composition data for extraction {$extraction->id}");
             return null;
         }
 
+        // Ensure ore_composition is an array
+        $oreComposition = is_string($extraction->ore_composition)
+            ? json_decode($extraction->ore_composition, true)
+            : $extraction->ore_composition;
+
         $pricingSettings = $this->settingsService->getPricingSettings();
         $cacheDuration = (int) ($pricingSettings['cache_duration'] ?? 240);
-        // Include settings hash so cache invalidates when pricing config changes
+        // Include settings hash so cache invalidates when pricing config changes,
+        // and the ore itself: a newer notice when the chunk arrives or is
+        // fractured changes what is in it, and the value has to follow then,
+        // not when an older cached figure runs out.
         $settingsHash = md5(json_encode($pricingSettings));
-        $cacheKey = "mining-manager:moon-value:{$extraction->id}:{$settingsHash}";
+        $cacheKey = "mining-manager:moon-value:{$extraction->id}:{$settingsHash}:" . md5(json_encode($oreComposition));
 
-        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($extraction) {
-            // Ensure ore_composition is an array
-            $oreComposition = is_string($extraction->ore_composition)
-                ? json_decode($extraction->ore_composition, true)
-                : $extraction->ore_composition;
+        if ($fresh) {
+            $value = $this->calculateValue($oreComposition ?? []);
+            Cache::put($cacheKey, $value, now()->addMinutes($cacheDuration));
 
+            return $value;
+        }
+
+        return Cache::remember($cacheKey, now()->addMinutes($cacheDuration), function () use ($oreComposition) {
             return $this->calculateValue($oreComposition ?? []);
         });
     }
@@ -190,6 +209,21 @@ class MoonValueCalculationService
             }
         } catch (\Exception $e) {
             Log::warning("Mining Manager: Could not fetch from price provider for type_id {$typeId}: " . $e->getMessage());
+        }
+
+        // The cached price however old it is: an aging market price is closer
+        // to what the ore is worth than SeAT's averages, which are only for a
+        // type that has never had a price.
+        if ($priceCache) {
+            $cachedPrice = (float) match ($priceType) {
+                'buy' => $priceCache->buy_price,
+                'average' => $priceCache->average_price,
+                default => $priceCache->sell_price,
+            };
+
+            if ($cachedPrice > 0) {
+                return $cachedPrice;
+            }
         }
 
         // PRIORITY 3: Final fallback - SeAT's built-in market_prices table

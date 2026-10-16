@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\PaymentAllocation;
+use MiningManager\Models\PaymentCredit;
 use MiningManager\Models\ProcessedTransaction;
 use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\PaymentAllocationService;
@@ -42,7 +43,7 @@ class VerifyWalletPaymentsCommand extends Command
                             {--character_id= : Verify payments for specific character}
                             {--auto-match : Automatically match payments to taxes}
                             {--ignore-cutover : Include payments dated before the verification cutover}
-                            {--reset-month= : Reset all payment data for a month (YYYY-MM) and re-match}
+                            {--reset-month= : Undo the automatic payment matches of a month (YYYY-MM) and match them again}
                             {--dry-run : With --reset-month, report what would be undone and change nothing}
                             {--force : With --reset-month, skip the confirmation prompt}';
 
@@ -106,18 +107,18 @@ class VerifyWalletPaymentsCommand extends Command
     /**
      * Scan the configured wallet divisions and credit what can be credited.
      */
-    protected function runVerification(): int
+    protected function runVerification(?int $days = null, ?bool $autoMatch = null, ?bool $ignoreCutover = null): int
     {
         $this->info('Starting payment verification...');
 
-        $days = (int) $this->option('days');
+        $days = $days ?? (int) $this->option('days');
         $characterId = $this->option('character_id');
 
         $paymentSettings = $this->settingsService->getPaymentSettings();
 
         // The schedule always passes --auto-match; the setting is what lets an
         // operator hold every match for review without editing the schedule.
-        $autoMatch = (bool) $this->option('auto-match');
+        $autoMatch = $autoMatch ?? (bool) $this->option('auto-match');
         if ($autoMatch && !($paymentSettings['auto_match_payments'] ?? true)) {
             $autoMatch = false;
             $this->warn('Auto-match is turned off in settings, reporting matches without applying them');
@@ -133,7 +134,7 @@ class VerifyWalletPaymentsCommand extends Command
         $this->info("Primary wallet division: {$divisionName} (division {$division})" .
             ($division !== 1 ? ' + Master Wallet (fallback)' : ''));
 
-        $ignoreCutover = (bool) $this->option('ignore-cutover');
+        $ignoreCutover = $ignoreCutover ?? (bool) $this->option('ignore-cutover');
         $epoch = $this->allocator->getDedupEpoch();
 
         if ($epoch && !$ignoreCutover) {
@@ -352,11 +353,22 @@ class VerifyWalletPaymentsCommand extends Command
     }
 
     /**
-     * Reset payment data for a specific month and re-match from wallet.
+     * Undo one month's automatic payment matches and run the matcher again.
      *
-     * Releases the transaction claims as well as the invoice state. Without
-     * that the re-match would find every payment already consumed and quietly
-     * leave every invoice unpaid.
+     * Only what the matcher did can be undone and redone: a wallet payment
+     * whose every slice was matched automatically onto this month's invoices.
+     * Anything else stays as it is, because matching again could not put it
+     * back the way it was:
+     *
+     *  - payments assigned by hand, and bills marked paid by hand
+     *  - balance drawn down from earlier credit
+     *  - a payment that also paid an invoice outside this month; undoing half
+     *    of it would leave its claim in place and lose the other half
+     *  - a payment whose surplus was banked and has since been spent or
+     *    refunded
+     *
+     * An unspent surplus goes with its payment: matching it again banks it
+     * again, and keeping both would hold the same ISK twice.
      */
     protected function handleResetMonth(string $monthStr): int
     {
@@ -372,71 +384,61 @@ class VerifyWalletPaymentsCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
         $force = (bool) $this->option('force');
 
-        $taxes = MiningTax::where('month', $month->format('Y-m-01'))
-            ->orWhere(function ($q) use ($month) {
-                $q->where('period_start', '>=', $month->copy()->startOfMonth()->format('Y-m-d'))
-                    ->where('period_start', '<=', $month->copy()->endOfMonth()->format('Y-m-d'));
-            })
-            ->get();
+        // Matching again is the point of a reset. With automatic matching
+        // switched off nothing would put the payments back, so stop before
+        // anything is undone.
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        if (!$dryRun && !($paymentSettings['auto_match_payments'] ?? true)) {
+            $this->error('Automatic matching is switched off in settings, so nothing would match these payments again after the reset. Switch it on first, or look with --dry-run.');
 
-        if ($taxes->isEmpty()) {
+            return Command::FAILURE;
+        }
+
+        $taxIds = $this->resetScope($month);
+
+        if (empty($taxIds)) {
             $this->warn("No tax records found for {$monthLabel}");
 
             return Command::SUCCESS;
         }
 
-        // Work out exactly what is at stake before touching any of it. This
-        // command un-does payments: invoices go back to unpaid, the ISK recorded
-        // against them is cleared, and payment codes members are holding become
-        // live again. That is a reasonable thing to want after a bad match, and
-        // a very unreasonable thing to do to the wrong month by accident.
-        $taxIds = $taxes->pluck('id')->all();
-
-        $affected = $taxes->filter(function ($tax) {
-            return $tax->amount_paid > 0 || in_array($tax->status, ['paid', 'partial'], true);
-        });
-
-        $iskCleared = $affected->sum(function ($tax) {
-            return (float) $tax->amount_paid;
-        });
-
-        $allocationCount = PaymentAllocation::whereIn('mining_tax_id', $taxIds)->count();
-        $codeCount = TaxCode::whereIn('mining_tax_id', $taxIds)->where('status', 'used')->count();
+        // Work out exactly what is at stake before touching any of it.
+        $plan = $this->planReset($taxIds);
 
         $this->line('');
-        $this->warn("This will undo payment data for {$monthLabel}.");
+        $this->warn("This undoes the automatic payment matches for {$monthLabel} and matches them again.");
         $this->table(['What', 'Count'], [
-            ['Tax records in scope', $taxes->count()],
-            ['Paid or partial, reset to unpaid', $affected->count()],
-            ['ISK recorded as paid, cleared', number_format($iskCleared, 2)],
-            ['Payment allocation rows deleted', $allocationCount],
-            ['Used payment codes made active again', $codeCount],
+            ['Tax records in scope', count($taxIds)],
+            ['Wallet payments undone and matched again', count($plan['transactions'])],
+            ['ISK taken off invoices until they match again', number_format($plan['isk'], 2)],
+            ['Invoices that change', count($plan['undo'])],
+            ['Unspent held balances removed with their payment', count($plan['credits'])],
+            ['Payments left as they are', count($plan['kept'])],
         ]);
 
-        if ($affected->isNotEmpty()) {
+        if (!empty($plan['kept'])) {
             $this->line('');
-            $this->line('Invoices that would be reset:');
-            $this->table(
-                ['Tax', 'Character', 'Status', 'Owed', 'Paid'],
-                $affected->take(15)->map(function ($tax) {
-                    return [
-                        $tax->id,
-                        $tax->character_id,
-                        $tax->status,
-                        number_format((float) $tax->amount_owed, 2),
-                        number_format((float) $tax->amount_paid, 2),
-                    ];
-                })->all()
-            );
+            $this->line('Left as they are:');
+            $this->table(['Transaction', 'Why'], collect($plan['kept'])
+                ->map(fn ($why, $transactionId) => [$transactionId, $why])
+                ->take(15)
+                ->values()
+                ->all());
 
-            if ($affected->count() > 15) {
-                $this->line('  ... and ' . ($affected->count() - 15) . ' more');
+            if (count($plan['kept']) > 15) {
+                $this->line('  ... and ' . (count($plan['kept']) - 15) . ' more');
             }
         }
 
         if ($dryRun) {
             $this->line('');
             $this->comment('Dry run. Nothing was changed and no re-match was run.');
+
+            return Command::SUCCESS;
+        }
+
+        if (empty($plan['transactions'])) {
+            $this->info("Nothing in {$monthLabel} was matched automatically, so there is nothing to undo.");
 
             return Command::SUCCESS;
         }
@@ -452,84 +454,188 @@ class VerifyWalletPaymentsCommand extends Command
 
         $this->info('Resetting payment data...');
 
-        $resetCount = 0;
-        $releasedCount = 0;
+        $applied = DB::transaction(function () use ($taxIds) {
+            // Planned again under lock: the preview can be minutes old by the
+            // time somebody answers the prompt.
+            MiningTax::whereIn('id', $taxIds)->lockForUpdate()->get();
 
-        DB::transaction(function () use ($taxes, &$resetCount, &$releasedCount) {
-            $taxIds = $taxes->pluck('id')->all();
+            $plan = $this->planReset($taxIds);
+            $this->applyReset($plan);
 
-            $transactionIds = PaymentAllocation::whereIn('mining_tax_id', $taxIds)
-                ->whereNotNull('transaction_id')
-                ->pluck('transaction_id')
-                ->unique()
-                ->all();
+            return $plan;
+        });
 
-            PaymentAllocation::whereIn('mining_tax_id', $taxIds)->delete();
+        $this->info('Undid ' . count($applied['transactions']) . ' payment(s) on ' . count($applied['undo']) . ' invoice(s)');
+        $this->info('Re-matching payments from wallet...');
 
-            // Only release a payment that no surviving invoice still relies on.
-            if (!empty($transactionIds)) {
-                $stillAllocated = PaymentAllocation::whereIn('transaction_id', $transactionIds)
-                    ->pluck('transaction_id')
-                    ->unique()
-                    ->all();
+        $daysSinceMonthStart = (int) Carbon::now()->diffInDays($month->copy()->startOfMonth()) + 5;
 
-                $releasable = array_values(array_diff($transactionIds, $stillAllocated));
+        // In this run, under this run's lock. Calling the command again from
+        // here found its own lock held and skipped, which left every invoice
+        // reset and nothing matched.
+        return $this->runVerification($daysSinceMonthStart, true, true);
+    }
 
-                if (!empty($releasable)) {
-                    $releasedCount = ProcessedTransaction::whereIn('transaction_id', $releasable)->delete();
-                }
+    /**
+     * The month's invoices a reset may touch. Bills a director settled by
+     * decision rather than by payment are left out.
+     *
+     * @return array<int>
+     */
+    protected function resetScope(Carbon $month): array
+    {
+        return MiningTax::where(function ($q) use ($month) {
+                $q->where('month', $month->format('Y-m-01'))
+                    ->orWhere(function ($q) use ($month) {
+                        $q->where('period_start', '>=', $month->copy()->startOfMonth()->format('Y-m-d'))
+                            ->where('period_start', '<=', $month->copy()->endOfMonth()->format('Y-m-d'));
+                    });
+            })
+            ->whereNotIn('status', ['waived', 'exempted'])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * What a reset of these invoices would undo, and what it would leave.
+     *
+     * @param  array<int>  $taxIds
+     * @return array{transactions: array<int>, slices: array<int>, credits: array<int>, undo: array<int, float>, legacy: array<int, int>, isk: float, kept: array<int, string>}
+     */
+    protected function planReset(array $taxIds): array
+    {
+        $plan = ['transactions' => [], 'slices' => [], 'credits' => [], 'undo' => [], 'legacy' => [], 'isk' => 0.0, 'kept' => []];
+
+        $candidates = PaymentAllocation::whereIn('mining_tax_id', $taxIds)
+            ->whereNotNull('transaction_id')
+            ->whereNull('credit_id')
+            ->pluck('transaction_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($candidates as $transactionId) {
+            // Every slice of the payment, here and anywhere else, including
+            // draw-downs of a surplus it banked, which carry its id too.
+            $slices = PaymentAllocation::where('transaction_id', $transactionId)->get();
+            $own = $slices->filter(fn ($slice) => $slice->credit_id === null);
+            $credits = PaymentCredit::where('transaction_id', $transactionId)->get();
+
+            $why = null;
+
+            if ($own->contains(fn ($slice) => $slice->source === PaymentAllocation::SOURCE_MANUAL)) {
+                $why = 'assigned by hand';
+            } elseif ($own->contains(fn ($slice) => !in_array((int) $slice->mining_tax_id, $taxIds, true))) {
+                $why = 'also paid an invoice outside this month';
+            } elseif ($slices->contains(fn ($slice) => $slice->credit_id !== null)
+                || $credits->contains(fn ($credit) => round((float) $credit->remaining, 2) < round((float) $credit->amount, 2))) {
+                $why = 'its held balance has been spent or refunded';
             }
 
-            // Invoices predating the allocation ledger have no allocation rows,
-            // so fall back to the transaction id still recorded on the invoice.
-            $legacyIds = $taxes->pluck('transaction_id')
-                ->filter(fn ($id) => $id !== null && ctype_digit((string) $id))
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->all();
+            if ($why !== null) {
+                $plan['kept'][$transactionId] = $why;
 
-            if (!empty($legacyIds)) {
-                $releasedCount += ProcessedTransaction::whereIn('transaction_id', $legacyIds)->delete();
+                continue;
             }
 
-            foreach ($taxes as $tax) {
-                $wasChanged = $tax->amount_paid > 0 || $tax->status === 'paid' || $tax->status === 'partial';
+            $plan['transactions'][] = $transactionId;
 
-                $tax->update([
-                    'amount_paid' => 0,
-                    'paid_at' => null,
-                    'status' => 'unpaid',
-                    'transaction_id' => null,
-                ]);
+            foreach ($own as $slice) {
+                $taxId = (int) $slice->mining_tax_id;
+                $plan['slices'][] = (int) $slice->id;
+                $plan['undo'][$taxId] = round(($plan['undo'][$taxId] ?? 0) + (float) $slice->amount, 2);
+                $plan['isk'] += (float) $slice->amount;
+            }
 
-                TaxCode::where('mining_tax_id', $tax->id)
+            foreach ($credits as $credit) {
+                $plan['credits'][] = (int) $credit->id;
+            }
+        }
+
+        // Invoices credited before the allocation ledger existed have no
+        // slices, only the id of the last payment on them. The wallet matched
+        // those, so they reset the way they always did, unless that payment
+        // has been recorded against anything in the ledger since.
+        foreach (MiningTax::whereIn('id', $taxIds)->whereNotNull('transaction_id')->get() as $tax) {
+            if ((float) $tax->amount_paid <= 0 || !ctype_digit((string) $tax->transaction_id)) {
+                continue;
+            }
+
+            $transactionId = (int) $tax->transaction_id;
+
+            if (PaymentAllocation::where('mining_tax_id', $tax->id)->exists()
+                || PaymentAllocation::where('transaction_id', $transactionId)->exists()) {
+                continue;
+            }
+
+            $plan['legacy'][(int) $tax->id] = $transactionId;
+            $plan['undo'][(int) $tax->id] = round((float) $tax->amount_paid, 2);
+            $plan['isk'] += (float) $tax->amount_paid;
+            $plan['transactions'][] = $transactionId;
+        }
+
+        $plan['transactions'] = array_values(array_unique($plan['transactions']));
+        $plan['isk'] = round($plan['isk'], 2);
+
+        return $plan;
+    }
+
+    /**
+     * Take the planned payments off their invoices and release them for the
+     * matcher. Each invoice loses exactly what is undone, so a part paid by
+     * hand, from credit or before the ledger existed stays on it.
+     */
+    protected function applyReset(array $plan): void
+    {
+        if (!empty($plan['slices'])) {
+            PaymentAllocation::whereIn('id', $plan['slices'])->delete();
+        }
+
+        if (!empty($plan['credits'])) {
+            PaymentCredit::whereIn('id', $plan['credits'])->delete();
+        }
+
+        if (!empty($plan['transactions'])) {
+            ProcessedTransaction::whereIn('transaction_id', $plan['transactions'])->delete();
+        }
+
+        foreach ($plan['undo'] as $taxId => $undone) {
+            $tax = MiningTax::where('id', $taxId)->first();
+
+            if (!$tax) {
+                continue;
+            }
+
+            $paid = isset($plan['legacy'][$taxId])
+                ? 0.0
+                : max(0.0, round((float) $tax->amount_paid - $undone, 2));
+
+            $settled = $paid > 0
+                && ((float) $tax->amount_owed - $paid) < PaymentAllocationService::SETTLED_TOLERANCE;
+
+            $latest = PaymentAllocation::where('mining_tax_id', $taxId)
+                ->orderByDesc('allocated_at')
+                ->get();
+
+            $tax->update([
+                'amount_paid' => $paid,
+                'status' => $settled ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid'),
+                'paid_at' => $paid > 0 ? ($latest->first()->allocated_at ?? $tax->paid_at) : null,
+                'transaction_id' => $latest->first(fn ($slice) => $slice->transaction_id !== null)->transaction_id ?? null,
+            ]);
+
+            // A bill that is open again takes payments on its code again.
+            if (!$settled) {
+                TaxCode::where('mining_tax_id', $taxId)
                     ->where('status', 'used')
                     ->update([
                         'status' => 'active',
                         'used_at' => null,
                         'transaction_id' => null,
                     ]);
-
-                if ($wasChanged) {
-                    $resetCount++;
-                }
             }
-        });
-
-        $this->info("Reset {$resetCount} paid/partial records back to unpaid");
-        $this->info("Released {$releasedCount} transaction claim(s) for re-matching");
-        $this->info('Re-matching payments from wallet...');
-
-        $daysSinceMonthStart = Carbon::now()->diffInDays($month->copy()->startOfMonth()) + 5;
-
-        // A month reset is a deliberate re-run over historical data, so the
-        // cutover guard would defeat the whole point of it.
-        $this->call('mining-manager:verify-payments', [
-            '--days' => $daysSinceMonthStart,
-            '--auto-match' => true,
-            '--ignore-cutover' => true,
-        ]);
-
-        return Command::SUCCESS;
+        }
     }
 }

@@ -114,10 +114,14 @@
                                 </span>
                                 <div class="info-box-content">
                                     <span class="info-box-text">{{ trans('mining-manager::taxes.current_balance') }}</span>
-                                    <span class="info-box-number">{{ number_format($currentTax->amount_owed ?? 0, 0) }}</span>
+                                    <span class="info-box-number">{{ number_format($currentTax ? $currentTax->getRemainingBalance() : 0, 0) }}</span>
                                     <small>
-                                        ISK {{ trans('mining-manager::taxes.for') }}
-                                        {{ $currentTax ? $currentTax->formatted_period : ($currentPeriodLabel ?? now()->format('F Y')) }}
+                                        @if($currentTax && $currentTax->status !== 'paid' && (float) $currentTax->amount_paid > 0)
+                                            {{ trans('mining-manager::taxes.left_of_billed', ['owed' => number_format($currentTax->amount_owed, 0), 'period' => $currentTax->formatted_period]) }}
+                                        @else
+                                            ISK {{ trans('mining-manager::taxes.for') }}
+                                            {{ $currentTax ? $currentTax->formatted_period : ($currentPeriodLabel ?? now()->format('F Y')) }}
+                                        @endif
                                     </small>
                                 </div>
                             </div>
@@ -139,7 +143,7 @@
 
                         {{-- Due Date --}}
                         <div class="col-lg-4 col-md-6">
-                            <div class="info-box {{ $currentTax && $currentTax->due_date && \Carbon\Carbon::parse($currentTax->due_date)->isPast() && $currentTax->status !== 'paid' ? 'bg-gradient-danger' : 'bg-gradient-secondary' }}">
+                            <div class="info-box {{ $currentTax && $currentTax->due_date && $currentTax->isOverdue() ? 'bg-gradient-danger' : 'bg-gradient-secondary' }}">
                                 <span class="info-box-icon">
                                     <i class="fas fa-calendar-alt"></i>
                                 </span>
@@ -149,7 +153,9 @@
                                         {{ $currentTax && $currentTax->due_date ? \Carbon\Carbon::parse($currentTax->due_date)->format('M d') : 'N/A' }}
                                     </span>
                                     <small>
-                                        @if($currentTax && $currentTax->due_date)
+                                        @if($currentTax && $currentTax->due_date && $currentTax->status !== 'paid')
+                                            {{ $currentTax->dueCountdown() }}
+                                        @elseif($currentTax && $currentTax->due_date)
                                             {{ \Carbon\Carbon::parse($currentTax->due_date)->diffForHumans() }}
                                         @else
                                             -
@@ -166,6 +172,12 @@
                             <div class="alert alert-info">
                                 <h5><i class="icon fas fa-info-circle"></i> {{ trans('mining-manager::taxes.payment_instructions') }}</h5>
                                 <p>{{ trans('mining-manager::taxes.payment_info_text') }}</p>
+                                @if((float) $currentTax->amount_paid > 0)
+                                <p class="mb-2">
+                                    <i class="fas fa-adjust"></i>
+                                    {{ trans('mining-manager::taxes.part_paid_received', ['paid' => number_format($currentTax->amount_paid, 0), 'owed' => number_format($currentTax->amount_owed, 0)]) }}
+                                </p>
+                                @endif
 
                                 @php
                                     $activeTaxCode = $currentTax->taxCodes->where('status', 'active')->first();
@@ -188,8 +200,8 @@
                                             </li>
                                             @endif
                                             <li class="mb-2">
-                                                Enter the amount: <strong>{{ number_format($currentTax->amount_owed, 0) }} ISK</strong>
-                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ round($currentTax->amount_owed) }}', 'ISK amount')">
+                                                Enter the amount: <strong>{{ number_format($currentTax->getRemainingBalance(), 0) }} ISK</strong>
+                                                <button type="button" class="btn btn-xs btn-outline-primary ml-2" onclick="copyToClipboard('{{ round($currentTax->getRemainingBalance()) }}', 'ISK amount')">
                                                     <i class="fas fa-copy"></i> Copy
                                                 </button>
                                             </li>
@@ -265,7 +277,7 @@
                                         <thead>
                                             <tr>
                                                 <th>Period</th>
-                                                <th class="text-right">Amount Owed</th>
+                                                <th class="text-right">{{ trans('mining-manager::taxes.left_to_pay') }}</th>
                                                 <th>Due</th>
                                                 <th>Status</th>
                                                 <th></th>
@@ -275,17 +287,24 @@
                                             @foreach($unpaidTaxes as $unpaidTax)
                                             <tr>
                                                 <td>{{ $unpaidTax->formatted_period }}</td>
-                                                <td class="text-right">{{ number_format($unpaidTax->amount_owed, 0) }} ISK</td>
+                                                <td class="text-right">
+                                                    {{ number_format($unpaidTax->getRemainingBalance(), 0) }} ISK
+                                                    @if((float) $unpaidTax->amount_paid > 0)
+                                                        <br><small class="text-muted">of {{ number_format($unpaidTax->amount_owed, 0) }}</small>
+                                                    @endif
+                                                </td>
                                                 <td>
                                                     @if($unpaidTax->due_date)
                                                         {{ \Carbon\Carbon::parse($unpaidTax->due_date)->format('M d') }}
-                                                        <small class="text-muted">({{ \Carbon\Carbon::parse($unpaidTax->due_date)->diffForHumans() }})</small>
+                                                        <br><small class="text-muted">{{ $unpaidTax->dueCountdown() }}</small>
                                                     @else
                                                         &mdash;
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    <span class="badge badge-{{ $unpaidTax->status === 'overdue' ? 'danger' : 'warning' }}">
+                                                    {{-- Red once it is late, whatever the status says: a part-paid
+                                                         bill keeps status Partial however late it gets. --}}
+                                                    <span class="badge badge-{{ $unpaidTax->isOverdue() ? 'danger' : 'warning' }}">
                                                         {{ strtoupper($unpaidTax->status) }}
                                                     </span>
                                                 </td>
@@ -535,6 +554,7 @@
                                     @endif
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_owed') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.amount_paid') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.left_to_pay') }}</th>
                                     <th>{{ trans('mining-manager::taxes.status') }}</th>
                                     <th>{{ trans('mining-manager::taxes.payment_date') }}</th>
                                     <th>{{ trans('mining-manager::taxes.tax_code') }}</th>
@@ -551,25 +571,33 @@
                                     <td>
                                         <img src="https://images.evetech.net/characters/{{ $tax->character_id }}/portrait?size=32"
                                              class="img-circle mr-1" style="width:20px;height:20px;">
-                                        {{ $tax->character->name ?? 'Unknown' }}
+                                        {{ $tax->character_name }}
                                     </td>
                                     @endif
                                     <td class="text-right">
                                         {{ number_format($tax->amount_owed, 0) }} ISK
-                                        @if(in_array($tax->status, ['unpaid', 'overdue', 'partial']))
-                                        <button type="button"
-                                                class="btn btn-xs btn-link"
-                                                onclick="copyToClipboard('{{ round($tax->amount_owed) }}', 'ISK amount')"
-                                                data-toggle="tooltip"
-                                                title="{{ trans('mining-manager::taxes.copy') }} ISK">
-                                            <i class="fas fa-copy"></i>
-                                        </button>
-                                        @endif
                                     </td>
                                     <td class="text-right">
                                         {{ number_format($tax->amount_paid, 0) }} ISK
                                         @if($tax->amount_paid > 0 && $tax->amount_paid < $tax->amount_owed)
-                                            <br><small class="text-warning">({{ number_format(($tax->amount_paid / $tax->amount_owed) * 100, 1) }}%)</small>
+                                            @php $paidShare = ($tax->amount_paid / $tax->amount_owed) * 100; @endphp
+                                            {{-- A token payment rounds to 0.0%, which reads as nothing paid. --}}
+                                            <br><small class="text-warning">({{ $paidShare < 0.1 ? '<0.1' : number_format($paidShare, 1) }}%)</small>
+                                        @endif
+                                    </td>
+                                    @php $leftToPay = in_array($tax->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $tax->getRemainingBalance() : 0; @endphp
+                                    <td class="text-right">
+                                        @if($leftToPay > 0)
+                                        {{ number_format($leftToPay, 0) }} ISK
+                                        <button type="button"
+                                                class="btn btn-xs btn-link"
+                                                onclick="copyToClipboard('{{ round($leftToPay) }}', 'ISK amount')"
+                                                data-toggle="tooltip"
+                                                title="{{ trans('mining-manager::taxes.copy') }} ISK">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        @else
+                                        <span class="text-muted">-</span>
                                         @endif
                                     </td>
                                     <td>
@@ -599,7 +627,7 @@
                                     <td>
                                         @if($tax->paid_at)
                                             {{ \Carbon\Carbon::parse($tax->paid_at)->format('Y-m-d') }}
-                                            @if($tax->due_date && \Carbon\Carbon::parse($tax->paid_at)->gt(\Carbon\Carbon::parse($tax->due_date)))
+                                            @if($tax->due_date && \Carbon\Carbon::parse($tax->paid_at)->gt(\Carbon\Carbon::parse($tax->due_date)->endOfDay()))
                                                 <br><small class="text-warning">({{ trans('mining-manager::taxes.late') }})</small>
                                             @endif
                                         @else
@@ -644,7 +672,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ $taxMethod === 'character' ? 8 : 7 }}" class="text-center text-muted">
+                                    <td colspan="{{ $taxMethod === 'character' ? 9 : 8 }}" class="text-center text-muted">
                                         <i class="fas fa-inbox fa-3x mb-3 mt-3"></i>
                                         <p>{{ trans('mining-manager::taxes.no_history') }}</p>
                                     </td>
@@ -660,6 +688,7 @@
                                     @endif
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_owed'), 0) }} ISK</strong></td>
                                     <td class="text-right"><strong>{{ number_format($taxHistory->sum('amount_paid'), 0) }} ISK</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($taxHistory->sum(fn ($t) => in_array($t->status, \MiningManager\Models\MiningTax::OUTSTANDING_STATUSES) ? $t->getRemainingBalance() : 0), 0) }} ISK</strong></td>
                                     <td colspan="{{ $taxMethod === 'character' ? 4 : 4 }}"></td>
                                 </tr>
                             </tfoot>

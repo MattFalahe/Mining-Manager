@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Moon\MoonOreHelper;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 
 class DetectJackpotsCommand extends Command
 {
@@ -104,8 +105,8 @@ class DetectJackpotsCommand extends Command
                             $this->newLine();
                             $this->info("  ✅ VERIFIED: {$extraction->moon_name} (reported by character {$extraction->jackpot_reported_by})");
                         } elseif ($extraction->isExpired()) {
-                            // The mining window is fully closed (fractured_at + 50h has passed,
-                            // or the legacy fallback equivalent — see MoonExtraction::isExpired).
+                            // The mining window is fully closed (fracture, the chunk's mining
+                            // window and the 2h tail have all passed: see MoonExtraction::isExpired).
                             // Earlier versions used natural_decay_time->isPast() here, but that
                             // is the AUTO-FRACTURE mark (~3h after chunk_arrival) — verification
                             // would fire before miners had even started, producing false negatives
@@ -252,11 +253,10 @@ class DetectJackpotsCommand extends Command
             return false;
         }
 
-        // End of mining window = fractured_at + 50h (plugin's lifecycle).
-        // Falls back to chunk_arrival + 53h if fractured_at isn't yet set
-        // (matches MoonExtraction::getExpiryTime() worst-case fallback).
+        // End of the mining window: fracture, the chunk's mining window and
+        // the 2 hour tail. The fallback is the longest any chunk can last.
         $end = $extraction->getExpiryTime()
-            ?? $extraction->chunk_arrival_time->copy()->addHours(53);
+            ?? $extraction->chunk_arrival_time->copy()->addHours(MoonDrillingRigs::LONGEST_CHUNK_HOURS);
 
         return MiningLedger::query()
             ->where('observer_id', $extraction->structure_id)

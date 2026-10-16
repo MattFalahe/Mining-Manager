@@ -20,23 +20,27 @@ use MiningManager\Models\MiningLedgerDailySummary;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Carbon\Carbon;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\AffiliationResolutionService;
 
 class DashboardController extends Controller
 {
     protected $metricsService;
     protected $marketDataService;
     protected $characterInfoService;
+    protected AffiliationResolutionService $affiliationResolver;
     protected SettingsManagerService $settingsService;
 
     public function __construct(
         DashboardMetricsService $metricsService,
         MarketDataService $marketDataService,
         CharacterInfoService $characterInfoService,
+        AffiliationResolutionService $affiliationResolver,
         SettingsManagerService $settingsService
     ) {
         $this->metricsService = $metricsService;
         $this->marketDataService = $marketDataService;
         $this->characterInfoService = $characterInfoService;
+        $this->affiliationResolver = $affiliationResolver;
         $this->settingsService = $settingsService;
     }
     
@@ -80,7 +84,7 @@ class DashboardController extends Controller
         $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
         // Cache dashboard data for 30 minutes (1800 seconds)
-        $dashboardData = Cache::remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === CURRENT MONTH STATISTICS ===
             $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
 
@@ -130,6 +134,8 @@ class DashboardController extends Controller
             ];
         });
 
+        $dashboardData['taxBanner'] = $this->taxBanner($user);
+
         return view('mining-manager::dashboard.member', $dashboardData);
     }
 
@@ -159,7 +165,7 @@ class DashboardController extends Controller
         // Corporation tab data is loaded via AJAX when user clicks the tab.
         $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m');
 
-        $dashboardData = Cache::remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
             // === PERSONAL STATISTICS (Director's own mining) ===
             $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
             $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
@@ -210,6 +216,7 @@ class DashboardController extends Controller
         // Pass corporation tab AJAX URL to view
         $dashboardData['corpTabUrl'] = route('mining-manager.dashboard.tab.corporation');
         $dashboardData['guestTabUrl'] = route('mining-manager.dashboard.tab.guest-miners');
+        $dashboardData['taxBanner'] = $this->taxBanner(auth()->user());
 
         return view('mining-manager::dashboard.combined-director', $dashboardData);
     }
@@ -230,7 +237,7 @@ class DashboardController extends Controller
 
         $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
 
-        $data = Cache::remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
@@ -284,7 +291,7 @@ class DashboardController extends Controller
 
         $cacheKey = 'dashboard.guest-tab.' . $corporationId . '.' . $monthKey;
 
-        $data = Cache::remember($cacheKey, 300, function () use ($corporationId, $monthDate) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $monthDate) {
             $guestIds = $this->getGuestMinerCharacterIds($corporationId, $monthDate);
 
             if (empty($guestIds)) {
@@ -443,6 +450,11 @@ class DashboardController extends Controller
                 ->whereNotIn('corporation_id', $homeCorporationIds)
                 ->pluck('character_id')
                 ->toArray();
+
+            // Miners SeAT has no affiliation for are not in the query above.
+            // The background lookup may have placed them in another
+            // corporation; this only reads what it stored.
+            $guestIds = array_merge($guestIds, $this->affiliationResolver->outsideHome($allMinerIds, $homeCorporationIds));
 
             return array_values(array_unique($guestIds));
         } catch (\Exception $e) {
@@ -724,9 +736,11 @@ class DashboardController extends Controller
                 ->sum('amount_owed');
         }
 
+        // Everything paid on the month's bills, instalments on bills not yet
+        // settled included. Fully paid bills alone would leave every part
+        // payment out.
         $taxCollected = MiningTax::whereIn('character_id', $characterIds)
             ->where('month', $startDate->format('Y-m-01'))
-            ->where('status', 'paid')
             ->sum('amount_paid');
 
         return [
@@ -760,10 +774,10 @@ class DashboardController extends Controller
         $allOreValue = $stats->all_ore_value ?? 0;
         $moonOreValue = $stats->moon_ore_value ?? 0;
 
+        // Part payments included, as for the current month above.
         $endDate = Carbon::now();
         $taxCollected = MiningTax::whereIn('character_id', $characterIds)
             ->whereBetween('month', [$startDate->format('Y-m-01'), $endDate->format('Y-m-01')])
-            ->where('status', 'paid')
             ->sum('amount_paid');
 
         return [
@@ -776,6 +790,61 @@ class DashboardController extends Controller
             'tax_collected' => $taxCollected,
             'active_miners' => $stats->active_miners ?? 0,
         ];
+    }
+
+    /**
+     * Apply the dashboard "Leaderboard Corporations" setting. When the operator
+     * has limited the leaderboard to specific corporations, keep only the
+     * characters affiliated with them.
+     *
+     * The setting is an install-wide one rather than per corporation, so it is
+     * read from the global rows.
+     */
+    private function filterLeaderboardCharacterIds(array $characterIds): array
+    {
+        if (empty($characterIds)) {
+            return $characterIds;
+        }
+
+        $filter = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_filter', null, 'all');
+
+        if ($filter !== 'specific') {
+            return $characterIds;
+        }
+
+        $configured = $this->settingsService->getSettingForCorporation('dashboard_leaderboard_corporation_ids', null, '[]');
+        $corporationIds = is_array($configured) ? $configured : (json_decode((string) $configured, true) ?: []);
+
+        if (empty($corporationIds)) {
+            return $characterIds;
+        }
+
+        try {
+            $placed = DB::table('character_affiliations')
+                ->whereIn('character_id', $characterIds)
+                ->pluck('corporation_id', 'character_id')
+                ->all();
+        } catch (\Exception $e) {
+            \Log::warning('DashboardController: leaderboard corporation filter failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $characterIds;
+        }
+
+        // A miner SeAT has no record of is placed by the plugin's own lookups,
+        // as everywhere else. Checking SeAT alone would drop every one of them
+        // as soon as a corporation is picked.
+        foreach ($this->affiliationResolver->known(array_diff($characterIds, array_keys($placed))) as $characterId => $row) {
+            if (!empty($row->corporation_id)) {
+                $placed[$characterId] = $row->corporation_id;
+            }
+        }
+
+        $wanted = array_map('intval', $corporationIds);
+        $allowed = array_keys(array_filter($placed, fn ($corporationId) => in_array((int) $corporationId, $wanted, true)));
+
+        return array_values(array_intersect($characterIds, $allowed));
     }
 
     /**
@@ -793,7 +862,9 @@ class DashboardController extends Controller
         }
 
         // Always filter to viewing user's corporation members
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -855,7 +926,9 @@ class DashboardController extends Controller
             return $this->getTopMoonMinersFromLedger($corporationId, null, null, $limit);
         }
 
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -882,7 +955,9 @@ class DashboardController extends Controller
             return $this->getTopMoonMinersFromLedger($corporationId, $startDate, $endDate, $limit);
         }
 
-        $characterIds = $this->getCorporationCharacterIds($corporationId);
+        $characterIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($characterIds)) {
             return [];
@@ -954,7 +1029,9 @@ class DashboardController extends Controller
         }
 
         // Restrict to corporation members only
-        $corpMemberIds = $this->getCorporationCharacterIds($corporationId);
+        $corpMemberIds = $this->filterLeaderboardCharacterIds(
+            $this->getCorporationCharacterIds($corporationId)
+        );
 
         if (empty($corpMemberIds)) {
             return [];
@@ -1332,7 +1409,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get mining income chart data with refined value, tax, and events (uses stored data)
+     * Get mining income chart data with refined value, tax, and events (refined
+     * value from stored data for closed months)
      */
     private function getMiningIncomeLast12Months($characterIds)
     {
@@ -1359,19 +1437,19 @@ class DashboardController extends Controller
             // Use stored stats for closed months
             if (isset($storedStats[$monthKey]) && $i > 0) {
                 $value = $storedStats[$monthKey]->total_value;
-                $tax = $storedStats[$monthKey]->tax_paid;
             } else {
                 // Calculate live for current month or if no stored stats
                 $value = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
                     ->whereBetween('date', [$month, $monthEnd])
                     ->sum('total_value');
-
-                // Tax paid
-                $tax = MiningTax::whereIn('character_id', $characterIds)
-                    ->where('month', $month->format('Y-m-01'))
-                    ->where('status', 'paid')
-                    ->sum('amount_paid');
             }
+
+            // Tax paid on the month's bills, part payments included, read from
+            // the bills for every month. The stored monthly figure only counts
+            // bills paid in full.
+            $tax = MiningTax::whereIn('character_id', $characterIds)
+                ->where('month', $month->format('Y-m-01'))
+                ->sum('amount_paid');
 
             // Event bonus = ISK saved this month via event tax modifiers.
             // Previously this computed $event->total_mined × hardcoded 10% ×
@@ -1520,9 +1598,9 @@ class DashboardController extends Controller
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->startOfMonth()->subMonths($i);
 
+            // Part payments included: what has come in on the month's bills.
             $collectedAmount = MiningTax::whereIn('character_id', $characterIds)
                 ->where('month', $month->format('Y-m-01'))
-                ->where('status', 'paid')
                 ->sum('amount_paid');
 
             $owedAmount = MiningTax::whereIn('character_id', $characterIds)
@@ -1566,13 +1644,10 @@ class DashboardController extends Controller
         $months = [];
         $data = [];
 
-        // Pre-compute the set of character IDs belonging to this corporation,
-        // so the discount total is scoped to members (daily summaries don't
-        // always carry a stable corp_id; character affiliation is the anchor).
-        $characterIds = \Illuminate\Support\Facades\DB::table('character_affiliations')
-            ->where('corporation_id', $corporationId)
-            ->pluck('character_id')
-            ->all();
+        // The same members as every other chart on the tab, so the discount
+        // total covers the members SeAT has no record of too (daily summaries
+        // don't always carry a stable corp_id).
+        $characterIds = $this->getCorporationCharacterIds($corporationId);
 
         for ($i = 11; $i >= 0; $i--) {
             $month = Carbon::now()->startOfMonth()->subMonths($i);
@@ -1624,6 +1699,60 @@ class DashboardController extends Controller
      * FIXED: Get user's character IDs with multiple fallback methods
      * Addresses SeAT v5.x relationship issues
      */
+    /**
+     * What the person looking still owes in mining tax, for the banner at the top
+     * of the dashboard, or null when they owe nothing.
+     *
+     * Worked out on every load rather than inside the dashboard cache, so the
+     * banner goes as soon as a payment is matched instead of minutes later. Bills
+     * sit under the main character, the same lookup Tax Overview uses.
+     */
+    private function taxBanner($user): ?array
+    {
+        try {
+            if (!$user || !($this->settingsService->getFeatureFlags()['enable_tax_tracking'] ?? true)) {
+                return null;
+            }
+
+            $billingIds = $user->main_character_id
+                ? [(int) $user->main_character_id]
+                : $this->getUserCharacterIds($user);
+
+            if (empty($billingIds)) {
+                return null;
+            }
+
+            $bills = MiningTax::whereIn('character_id', $billingIds)
+                ->outstanding()
+                ->get()
+                ->filter(fn ($bill) => $bill->getRemainingBalance() > 0)
+                ->sortBy(fn ($bill) => $bill->effectiveDueDate()->getTimestamp())
+                ->values();
+
+            if ($bills->isEmpty()) {
+                return null;
+            }
+
+            return [
+                // The first to fall due sets the countdown; any late bill turns it red.
+                'first' => $bills->first(),
+                'late' => $bills->contains(fn ($bill) => $bill->isOverdue()),
+                'count' => $bills->count(),
+                'remaining' => round($bills->sum(fn ($bill) => $bill->getRemainingBalance()), 2),
+                'billed' => round($bills->sum(fn ($bill) => (float) $bill->amount_owed), 2),
+                'paid' => round($bills->sum(fn ($bill) => (float) $bill->amount_paid), 2),
+            ];
+        } catch (\Exception $e) {
+            // A missing banner is better than a dashboard that will not load.
+            \Log::warning('DashboardController: could not work out the tax banner', [
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     private function getUserCharacterIds($user)
     {
         if (!$user) {
@@ -1825,31 +1954,9 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get all characters for a corporation from multiple sources.
-     *
-     * Corporation mining data comes from ESI mining observers, which record
-     * mining activity for ALL pilots at corp structures — including unregistered
-     * pilots who aren't in character_affiliations. We merge results from every
-     * available source so the corp charts include everyone.
+     * Who mines for a corporation: the same answer Analytics, the ledger and
+     * the character pickers give.
      */
-    /**
-     * Get character IDs belonging to a corporation.
-     *
-     * Gathers candidates from 3 sources then filters out characters confirmed
-     * to be in a different corporation (via character_affiliations).
-     *
-     * Sources:
-     *  1. character_affiliations — confirmed corp members registered in SeAT
-     *  2. mining_ledger rows tagged with this corporation_id
-     *  3. corporation mining observer data (anyone who mined at corp structures)
-     *
-     * Sources 2 & 3 include non-corp miners at your structures. To keep only
-     * corp members, we exclude characters who have an affiliation entry for a
-     * DIFFERENT corporation. Characters with no affiliation data are kept
-     * (likely unregistered corp members).
-     */
-    private $corpCharacterIdsCache = [];
-
     private function getCorporationCharacterIds($corporationId)
     {
         if (!$corporationId) {
@@ -1857,106 +1964,7 @@ class DashboardController extends Controller
             return [];
         }
 
-        // Return cached result if already resolved this request
-        if (isset($this->corpCharacterIdsCache[$corporationId])) {
-            return $this->corpCharacterIdsCache[$corporationId];
-        }
-
-        $allIds = [];
-
-        // Source 1: character_affiliations (confirmed corp members)
-        try {
-            $ids = DB::table('character_affiliations')
-                ->where('corporation_id', $corporationId)
-                ->pluck('character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: character_affiliations query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Source 2: mining_ledger rows tagged with this corporation_id
-        try {
-            $ids = DB::table('mining_ledger')
-                ->where('corporation_id', $corporationId)
-                ->distinct()
-                ->pluck('character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: mining_ledger query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Source 3: corporation mining observer data
-        try {
-            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-            $observerCorpId = $moonOwnerCorpId ?: $corporationId;
-
-            $ids = DB::table('corporation_industry_mining_observer_data as d')
-                ->join('corporation_industry_mining_observers as o', 'd.observer_id', '=', 'o.observer_id')
-                ->where('o.corporation_id', $observerCorpId)
-                ->distinct()
-                ->pluck('d.character_id')
-                ->toArray();
-
-            if (!empty($ids)) {
-                $allIds = array_merge($allIds, $ids);
-            }
-        } catch (\Exception $e) {
-            \Log::warning('getCorporationCharacterIds: mining observer query failed', [
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        $uniqueIds = array_values(array_unique($allIds));
-
-        // Filter: exclude characters confirmed to be in a DIFFERENT corporation.
-        // Uses all configured corporations (not just moon owner) so holding corp setups work.
-        // Characters with NO affiliation entry are kept (unregistered corp members).
-        if (!empty($uniqueIds)) {
-            try {
-                $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
-                if (empty($homeCorporationIds)) {
-                    $homeCorporationIds = [$corporationId];
-                }
-
-                $nonCorpIds = DB::table('character_affiliations')
-                    ->whereIn('character_id', $uniqueIds)
-                    ->whereNotIn('corporation_id', $homeCorporationIds)
-                    ->pluck('character_id')
-                    ->toArray();
-
-                if (!empty($nonCorpIds)) {
-                    $uniqueIds = array_values(array_diff($uniqueIds, $nonCorpIds));
-                    \Log::debug('getCorporationCharacterIds: Excluded non-corp members', [
-                        'excluded_count' => count($nonCorpIds),
-                    ]);
-                }
-            } catch (\Exception $e) {
-                \Log::warning('getCorporationCharacterIds: Non-corp filter failed', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        \Log::debug('getCorporationCharacterIds: Final count', [
-            'corporation_id' => $corporationId,
-            'count' => count($uniqueIds),
-        ]);
-
-        $this->corpCharacterIdsCache[$corporationId] = $uniqueIds;
-
-        return $uniqueIds;
+        return app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId);
     }
 
     /**
@@ -2171,10 +2179,10 @@ class DashboardController extends Controller
         if ($userId) {
             // Clear member dashboard cache for specific user
             Cache::forget('dashboard.member.' . $userId . '.' . $currentMonth);
+            Cache::forget('dashboard.director.personal.' . $userId . '.' . $currentMonth);
 
-            // Clear director dashboard cache if corporation ID provided
             if ($corporationId) {
-                Cache::forget('dashboard.director.' . $userId . '.' . $corporationId . '.' . $currentMonth);
+                Cache::forget('dashboard.corp-tab.' . $corporationId . '.' . $currentMonth);
             }
         } else {
             // Clear dashboard caches for all users with active sessions
@@ -2184,12 +2192,21 @@ class DashboardController extends Controller
                 $userIds = \Seat\Web\Models\User::pluck('id');
                 foreach ($userIds as $uid) {
                     Cache::forget('dashboard.member.' . $uid . '.' . $currentMonth);
-                    // Director caches use corporation_id in key — clear common patterns
-                    // These will naturally expire via TTL if not explicitly cleared
+                    Cache::forget('dashboard.director.personal.' . $uid . '.' . $currentMonth);
+                }
+
+                // The Corporation tab is cached per viewer's corporation, and
+                // a viewer's corporation is one a registered character is in.
+                $corporationIds = DB::table('character_affiliations')
+                    ->whereIn('character_id', DB::table('refresh_tokens')->select('character_id'))
+                    ->distinct()
+                    ->pluck('corporation_id');
+                foreach ($corporationIds as $cid) {
+                    Cache::forget('dashboard.corp-tab.' . $cid . '.' . $currentMonth);
                 }
             } catch (\Exception $e) {
-                // If user lookup fails, caches will expire via 30-min TTL
-                Log::warning('Mining Manager: Could not clear dashboard caches: ' . $e->getMessage());
+                // If the lookups fail, the caches run out within five minutes
+                \Log::warning('Mining Manager: Could not clear dashboard caches: ' . $e->getMessage());
             }
 
             // Clear DashboardMetricsService caches

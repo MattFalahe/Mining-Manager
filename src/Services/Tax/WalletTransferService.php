@@ -815,14 +815,14 @@ class WalletTransferService
     public function getCorporationDonations(int $corporationId, int $days = 30)
     {
         $donations = DB::table('corporation_wallet_journals as cwj')
-            ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
             ->whereIn('cwj.division', $this->getPaymentDivisions())
             ->where('cwj.date', '>=', Carbon::now()->subDays($days))
-            ->select('cwj.*', 'ci.name as character_name')
+            ->select('cwj.*')
             ->orderBy('cwj.date', 'desc')
             ->get();
+        $this->namePayers($donations);
 
         $claimed = $this->claimedTransactionMap(
             $donations->pluck('id')->map(fn ($id) => (int) $id)->all()
@@ -944,14 +944,14 @@ class WalletTransferService
     public function unmatchedDonationBreakdown(int $corporationId, int $days = 30, bool $includeLegacy = false): array
     {
         $donations = DB::table('corporation_wallet_journals as cwj')
-            ->leftJoin('character_infos as ci', 'cwj.first_party_id', '=', 'ci.character_id')
             ->where('cwj.corporation_id', $corporationId)
             ->where('cwj.ref_type', 'player_donation')
             ->whereIn('cwj.division', $this->getPaymentDivisions())
             ->where('cwj.date', '>=', Carbon::now()->subDays($days))
-            ->select('cwj.*', 'ci.name as character_name')
+            ->select('cwj.*')
             ->orderBy('cwj.date', 'desc')
             ->get();
+        $this->namePayers($donations);
 
         $claimed = $this->claimedTransactionMap(
             $donations->pluck('id')->map(fn ($id) => (int) $id)->all()
@@ -1093,5 +1093,17 @@ class WalletTransferService
         }
 
         return $totalDays / $paidTaxes->count();
+    }
+
+    /**
+     * Name whoever sent each payment, whether SeAT knows them or not.
+     */
+    private function namePayers($donations): void
+    {
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)->many($donations->pluck('first_party_id'));
+
+        foreach ($donations as $donation) {
+            $donation->character_name = $names[(int) $donation->first_party_id]['name'] ?? null;
+        }
     }
 }

@@ -2,9 +2,11 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use MiningManager\Services\Tax\PartPaymentEpoch;
 use MiningManager\Services\Tax\TaxPeriodHelper;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Character\CharacterAffiliation;
@@ -12,6 +14,7 @@ use Seat\Eveapi\Models\Character\CharacterAffiliation;
 class MiningTax extends Model
 {
     use SoftDeletes;
+    use HasCharacterName;
 
     /**
      * The table associated with the model.
@@ -19,6 +22,15 @@ class MiningTax extends Model
      * @var string
      */
     protected $table = 'mining_taxes';
+
+    /**
+     * Statuses that still have money owing on them.
+     *
+     * A part-paid bill is one of them however late it gets. Its status records
+     * how much is covered, not whether it is settled; lateness is worked out from
+     * the due date instead (see isOverdue()).
+     */
+    public const OUTSTANDING_STATUSES = ['unpaid', 'partial', 'overdue'];
 
     /**
      * The attributes that are mass assignable.
@@ -149,6 +161,39 @@ class MiningTax extends Model
     }
 
     /**
+     * Scope a query to bills with money still owing on them, part-paid included.
+     */
+    public function scopeOutstanding($query)
+    {
+        return $query->whereIn('status', self::OUTSTANDING_STATUSES);
+    }
+
+    /**
+     * Scope a query to the bills theft detection treats as unpaid.
+     *
+     * Unpaid and overdue, always. A part-paid bill joins them only if it was
+     * raised after the part-payment cutover: before it, any payment at all took
+     * a bill off this list, and bills raised then keep that rule so upgrading
+     * does not open incidents over debts nobody was chasing. A bill with no
+     * created_at counts as raised before.
+     */
+    public function scopeUnpaidForTheft($query)
+    {
+        $epoch = PartPaymentEpoch::get();
+
+        return $query->where(function ($q) use ($epoch) {
+            $q->whereIn('status', ['unpaid', 'overdue']);
+
+            if ($epoch !== null) {
+                $q->orWhere(function ($partPaid) use ($epoch) {
+                    $partPaid->where('status', 'partial')
+                        ->where('created_at', '>=', $epoch);
+                });
+            }
+        });
+    }
+
+    /**
      * Scope a query to only include unpaid taxes.
      */
     public function scopeUnpaid($query)
@@ -199,6 +244,9 @@ class MiningTax extends Model
     /**
      * Check if tax is overdue.
      * Uses period_end + grace period (or due_date if set).
+     *
+     * The due date is a day, not a moment: paying any time on it is on time,
+     * so the bill only becomes late once that day is over.
      */
     public function isOverdue()
     {
@@ -206,27 +254,71 @@ class MiningTax extends Model
             return false;
         }
 
-        // Use explicit due_date if set
+        return now()->greaterThan($this->effectiveDueDate()->copy()->endOfDay());
+    }
+
+    /**
+     * The date payment is due by. Records made before due dates were stored
+     * fall back to the end of their period plus the grace period.
+     */
+    public function effectiveDueDate(): Carbon
+    {
         if ($this->due_date) {
-            return now()->greaterThan($this->due_date);
+            return Carbon::parse($this->due_date);
         }
 
-        // Fallback: calculate from period_end or month
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
         $gracePeriod = (int) $settingsService->getSetting('exemptions.grace_period_days',
             config('mining-manager.tax_payment.grace_period_days', 7));
         $periodEnd = $this->period_end ?? $this->month->copy()->endOfMonth();
-        $dueDate = Carbon::parse($periodEnd)->addDays($gracePeriod);
 
-        return now()->greaterThan($dueDate);
+        return Carbon::parse($periodEnd)->addDays($gracePeriod);
     }
 
     /**
-     * Get remaining balance.
+     * Whole days from today to the due date: positive while there is time left,
+     * 0 on the day itself, negative once it has passed.
+     *
+     * Counted in calendar days rather than hours, so "2 days left" does not
+     * become "1 day left" halfway through the afternoon.
      */
-    public function getRemainingBalance()
+    public function daysUntilDue(): int
     {
-        return $this->amount_owed - $this->amount_paid;
+        $today = now()->startOfDay();
+        $due = $this->effectiveDueDate()->copy()->startOfDay();
+
+        // Rounded rather than floored so a clock change in a non-UTC install
+        // cannot turn a 23 hour day into zero days.
+        return (int) round(($due->getTimestamp() - $today->getTimestamp()) / 86400);
+    }
+
+    /**
+     * The countdown in words: days left to pay, due today, or days late.
+     */
+    public function dueCountdown(): string
+    {
+        $days = $this->daysUntilDue();
+
+        if ($days > 0) {
+            return trans_choice('mining-manager::taxes.due_in_days', $days, ['count' => $days]);
+        }
+
+        if ($days === 0) {
+            return trans('mining-manager::taxes.due_today');
+        }
+
+        return trans_choice('mining-manager::taxes.days_late', -$days, ['count' => -$days]);
+    }
+
+    /**
+     * What is still to pay: the bill less everything paid against it.
+     *
+     * Never negative. Anything paid beyond the bill is held as account credit,
+     * not owed back on the bill.
+     */
+    public function getRemainingBalance(): float
+    {
+        return max(0.0, round((float) $this->amount_owed - (float) ($this->amount_paid ?? 0), 2));
     }
 
     /**

@@ -347,17 +347,16 @@ class TheftIncident extends Model
     }
 
     /**
-     * Get the character name (uses cached name for unregistered characters).
+     * The character's name as it is known now, or the one kept when the
+     * incident was raised if nothing better is known.
      *
      * @return string
      */
     public function getCharacterName()
     {
-        if ($this->character) {
-            return $this->character->name;
-        }
+        $now = app(\MiningManager\Services\Character\CharacterNames::class)->info($this->character_id);
 
-        return $this->character_name ?? "Character {$this->character_id}";
+        return $now['named'] ? $now['name'] : ($this->character_name ?: $now['name']);
     }
 
     /**

@@ -99,7 +99,7 @@ class RecalculateExtractionValuesCommand extends Command
                     $oldValue = $extraction->estimated_value;
 
                     // Recalculate value based on current prices
-                    $newValue = $this->valueService->calculateExtractionValue($extraction);
+                    $newValue = $this->valueService->calculateExtractionValue($extraction, true);
 
                     if ($newValue === null) {
                         $this->warn("  Could not calculate value for extraction {$extraction->id}");

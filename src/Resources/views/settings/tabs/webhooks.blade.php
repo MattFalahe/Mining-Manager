@@ -173,6 +173,11 @@
                                                     <i class="fas fa-skull"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_metenox_cargo_full ?? false)
+                                                <span class="badge badge-warning" title="Metenox Cargo Bay Full">
+                                                    <i class="fas fa-box-open"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_event_created)
                                                 <span class="badge badge-primary" title="Event Created">
                                                     <i class="fas fa-calendar-plus"></i>
@@ -233,6 +238,26 @@
                                                     <i class="fas fa-exclamation-triangle"></i>
                                                 </span>
                                             @endif
+                                            @if($webhook->notify_refinery_gone ?? false)
+                                                <span class="badge badge-danger" title="Refinery Gone (planned pulls removed)">
+                                                    <i class="fas fa-house-damage"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_extraction_cancelled ?? false)
+                                                <span class="badge badge-danger" title="Moon Extraction Cancelled">
+                                                    <i class="fas fa-ban"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_moon_not_rescheduled ?? false)
+                                                <span class="badge badge-warning" title="Moon Not Rescheduled (reminder)">
+                                                    <i class="fas fa-hourglass-half"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_schedule_needs_filling ?? false)
+                                                <span class="badge badge-primary" title="Moons Need Planning (one list)">
+                                                    <i class="fas fa-calendar-plus"></i>
+                                                </span>
+                                            @endif
                                             @if($webhook->notify_tax_outstanding_digest ?? false)
                                                 <span class="badge badge-warning" title="Outstanding Mining Tax (weekly director digest)">
                                                     <i class="fas fa-clipboard-list"></i>
@@ -241,6 +266,11 @@
                                             @if($webhook->notify_price_provider ?? false)
                                                 <span class="badge badge-danger" title="Price Provider Trouble">
                                                     <i class="fas fa-coins"></i>
+                                                </span>
+                                            @endif
+                                            @if($webhook->notify_moon_scan_missing ?? false)
+                                                <span class="badge badge-warning" title="Moon Scan Missing">
+                                                    <i class="fas fa-satellite-dish"></i>
                                                 </span>
                                             @endif
                                         </div>
@@ -467,17 +497,38 @@
                             </label>
                         </div>
                         <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-refinery-gone" name="notify_refinery_gone" value="1">
+                            <label class="custom-control-label" for="notify-refinery-gone">
+                                <i class="fas fa-house-damage text-danger"></i>
+                                Refinery Gone (planned pulls removed)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-extraction-cancelled" name="notify_extraction_cancelled" value="1">
+                            <label class="custom-control-label" for="notify-extraction-cancelled">
+                                <i class="fas fa-ban text-danger"></i>
+                                Moon Extraction Cancelled
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-not-rescheduled" name="notify_moon_not_rescheduled" value="1">
+                            <label class="custom-control-label" for="notify-moon-not-rescheduled">
+                                <i class="fas fa-hourglass-half text-warning"></i>
+                                Moon Not Rescheduled (reminder)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-schedule-needs-filling" name="notify_schedule_needs_filling" value="1">
+                            <label class="custom-control-label" for="notify-schedule-needs-filling">
+                                <i class="fas fa-calendar-plus text-primary"></i>
+                                Moons Need Planning (one list)
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
                             <input type="checkbox" class="custom-control-input" id="notify-tax-outstanding-digest" name="notify_tax_outstanding_digest" value="1">
                             <label class="custom-control-label" for="notify-tax-outstanding-digest">
                                 <i class="fas fa-clipboard-list text-warning"></i>
                                 Outstanding Mining Tax (weekly director digest)
-                            </label>
-                        </div>
-                        <div class="custom-control custom-checkbox">
-                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
-                            <label class="custom-control-label" for="notify-price-provider">
-                                <i class="fas fa-coins text-danger"></i>
-                                Price Provider Trouble
                             </label>
                         </div>
 
@@ -511,6 +562,13 @@
                                 @if(!$mmCrossReady)
                                     <small class="badge badge-secondary ml-1">Plugin required</small>
                                 @endif
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-metenox-cargo-full" name="notify_metenox_cargo_full" value="1">
+                            <label class="custom-control-label" for="notify-metenox-cargo-full">
+                                <i class="fas fa-box-open text-warning"></i>
+                                Metenox Cargo Bay Full
                             </label>
                         </div>
 
@@ -586,6 +644,25 @@
                             <label class="custom-control-label" for="notify-report-generated">
                                 <i class="fas fa-chart-bar text-info"></i>
                                 {{ trans('mining-manager::settings.report_generated') }}
+                            </label>
+                        </div>
+
+                        <hr class="my-2">
+                        <small class="text-muted d-block mb-1"><strong>Plugin Health</strong></small>
+                        <small class="text-muted d-block mb-2">Something is stopping Mining Manager from valuing things properly. Worth a channel somebody reads.</small>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-price-provider" name="notify_price_provider" value="1">
+                            <label class="custom-control-label" for="notify-price-provider">
+                                <i class="fas fa-coins text-danger"></i>
+                                Price Provider Trouble
+                            </label>
+                        </div>
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="notify-moon-scan-missing" name="notify_moon_scan_missing" value="1">
+                            <label class="custom-control-label" for="notify-moon-scan-missing">
+                                <i class="fas fa-satellite-dish text-warning"></i>
+                                Moon Scan Missing
                             </label>
                         </div>
                     </div>

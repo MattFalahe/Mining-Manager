@@ -17,16 +17,34 @@
     .fc-event.mm-plan-locked .fc-event-title { font-style:italic; }
     /* Scheduled off-plan — the in-game timer diverged from the plan. */
     .fc-event.mm-plan-mismatch { background-color:#c0392b !important; border-color:#922b21 !important; color:#fff !important; }
+    /* A refinery's last planned pull, set in game or not. */
+    .fc-event.mm-plan-final { background-color:#6e3b0b !important; border-color:#e67e22 !important; border-width:2px !important; color:#fff !important; }
+    .moon-planner-page .mm-final-badge { background:#6e3b0b; color:#fff; border:1px solid #e67e22; }
 
     /* ---- calendar polish ---- */
     .mm-planner-month { margin-bottom: 1rem; border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden; }
     .mm-planner-month .fc-col-header-cell { background: rgba(255,255,255,0.04); }
     .mm-planner-month .fc-col-header-cell-cushion { text-transform:uppercase; font-size:0.7rem; letter-spacing:0.04em; color:#9aa4b2; padding:6px 4px; }
     .mm-planner-month .fc-daygrid-day-number { font-size:0.75rem; color:#8a94a3; padding:4px 6px; }
-    .mm-planner-month .fc-day-today { background: rgba(52,152,219,0.10) !important; }
+    /* The same amber the extraction calendar uses. A 10% blue tint on a blue-grey
+       grid was invisible, and today is the one cell you look for first. */
+    .mm-planner-month .fc-day-today { background: rgba(243,156,18,0.15) !important; }
+    .mm-planner-month .fc-day-today .fc-daygrid-day-number { color:#f39c12; font-weight:700; }
     .mm-planner-month .fc-event { border-radius:4px; padding:1px 4px; font-size:0.72rem; margin:1px 2px; box-shadow:0 1px 2px rgba(0,0,0,0.25); }
     .mm-planner-month .fc-event:hover { filter:brightness(1.12); }
     .mm-planner-month .fc-daygrid-event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* One event reads left to right as time, moon tier, refinery. The badge is
+       the same family as the Blueprints grid and the sidebar cards, so a rich
+       moon looks the same everywhere it appears. */
+    .mm-planner-month .mm-cal-event { display:flex; align-items:center; gap:4px; min-width:0; }
+    .mm-planner-month .mm-cal-time { flex:none; font-weight:600; }
+    .mm-planner-month .mm-cal-tier { flex:none; font-size:0.62rem; padding:1px 4px; line-height:1.25; }
+    .mm-planner-month .mm-cal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* Why a refinery cannot pull, on hover: yellow while it is still there and
+       could change back, red once it is gone. Same mark as the Blueprints grid. */
+    .moon-planner-page .mm-flag { display:inline-block; flex:none; width:1.1em; height:1.1em; line-height:1.1em; border-radius:50%; text-align:center; font-weight:700; cursor:help; }
+    .moon-planner-page .mm-flag-warn { background:#ffc107; color:#212529; }
+    .moon-planner-page .mm-flag-gone { background:#dc3545; color:#fff; box-shadow:0 0 0 1px #fff; }
     .mm-month-heading { display:flex; align-items:center; gap:8px; font-weight:600; color:#cfd6df; }
     .mm-month-heading .mm-month-pill { font-size:0.65rem; background:rgba(255,255,255,0.06); color:#9aa4b2; padding:1px 8px; border-radius:10px; }
 
@@ -59,27 +77,10 @@
 @section('full')
 <div class="mining-manager-wrapper mining-dashboard moon-planner-page">
 
-{{-- TAB NAVIGATION (shared moon sub-nav + Planner) --}}
+{{-- TAB NAVIGATION (the Moon Planner section) --}}
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
-        <ul class="nav nav-tabs">
-            <li class="nav-item">
-                <a class="nav-link" href="{{ route('mining-manager.moon.index') }}">
-                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="{{ route('mining-manager.moon.calendar') }}">
-                    <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="{{ route('mining-manager.moon.planner') }}">
-                    <i class="fas fa-calendar-check"></i> {{ trans('mining-manager::menu.moon_planner') }}
-                    <span class="badge badge-primary ml-1" style="font-size: 0.6em;">Moon Manager</span>
-                </a>
-            </li>
-        </ul>
+        @include('mining-manager::moon.partials._planning_tabs', ['active' => 'planner'])
     </div>
     <div class="card-body">
 
@@ -117,6 +118,14 @@
                     <i class="fas fa-magic"></i> Auto-fill from History
                 </button>
             </form>
+            <button type="button" class="btn btn-sm btn-outline-primary ml-1" id="btn-plan-blueprint"
+                    title="Lay a repeating pattern of pulls over the calendar from a date you choose">
+                <i class="fas fa-drafting-compass"></i> Plan from Blueprint
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary ml-1" id="btn-next-pull-notices"
+                    title="Send Next Extraction Planned again for every refinery whose chunk has arrived and has not been started since">
+                <i class="fas fa-paper-plane"></i> Resend Next-Pull Notices
+            </button>
             <button type="button" class="btn btn-sm btn-outline-secondary ml-1" id="btn-history"
                     title="Who changed what on the planner">
                 <i class="fas fa-history"></i> History
@@ -186,6 +195,28 @@
         </div>
     @endif
 
+    {{-- Pulls on one refinery closer together than an extraction allows,
+         however they got onto the calendar. --}}
+    @if(!empty($tightPairs))
+        <div class="mm-note mm-note-warn">
+            <h6><i class="fas fa-exclamation-triangle mm-note-icon"></i> Pulls too close together ({{ count($tightPairs) }})</h6>
+            <div class="mm-note-sub mb-2">These refineries have pulls less than {{ $spacingLabel }} apart. An extraction takes at least 6 days, and the next one can only be started once the chunk is in, so one pull of each pair is unlikely to happen as planned. Move one of them, or leave it if the timing really works.</div>
+            <ul style="font-size: 0.88em;">
+                @foreach($tightPairs as $pair)
+                    <li class="mb-1">
+                        @if(!empty($pair['moon_name']))
+                            <strong>{{ $pair['moon_name'] }}</strong> ({{ $pair['structure_name'] }}):
+                        @else
+                            <strong>{{ $pair['structure_name'] }}</strong>:
+                        @endif
+                        {{ $pair['first'] }}, then {{ $pair['second'] }}
+                        <span class="badge mm-offset-badge">{{ $pair['gap'] }} apart</span>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="row">
         {{-- CALENDAR --}}
         <div class="col-lg-9">
@@ -236,7 +267,14 @@
                     @forelse($refinerySummaries as $r)
                         <div class="mm-sidebar-item mm-refinery-card mb-2">
                             <div class="mm-structure-name d-flex justify-content-between align-items-start">
-                                <span><i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}</span>
+                                <span>
+                                    <i class="fas fa-building text-primary"></i> {{ $r['structure_name'] }}
+                                    @if(!empty($refineryFlags[$r['structure_id']]))
+                                        @php $flag = $refineryFlags[$r['structure_id']]; @endphp
+                                        <span class="mm-flag {{ $flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn' }}"
+                                              title="{{ \MiningManager\Services\Moon\RefineryService::FLAG_LABELS[$flag] ?? '' }}">!</span>
+                                    @endif
+                                </span>
                                 @if(!empty($r['rarity']))
                                     <span class="badge ml-1 {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($r['rarity']) }}"
                                           title="Highest ore tier on this moon">{{ $r['rarity'] }}</span>
@@ -248,8 +286,21 @@
                                 </div>
                             @endif
 
+                            {{-- A refinery whose last pull is planned shows that instead of
+                                 its coverage, and cannot be planned until it is resumed. --}}
+                            @php $final = $finalPulls[$r['structure_id']] ?? null; @endphp
+
                             {{-- Coverage: how many upcoming pulls are planned (0 = skipped). --}}
-                            @if($r['future_plan_count'] === 0)
+                            @if($final)
+                                <div class="mt-1">
+                                    <span class="badge mm-final-badge" title="The last pull planned for this refinery">
+                                        &#127937; {{ $final['arrived'] ? 'Final pull done' : 'Final pull' }}: {{ $final['when'] }}
+                                    </span>
+                                    @if($final['restarted'])
+                                        <span class="mm-flag mm-flag-warn" title="An extraction was started after the final pull, due {{ $final['restarted'] }}">!</span>
+                                    @endif
+                                </div>
+                            @elseif($r['future_plan_count'] === 0)
                                 <div class="mt-1"><span class="badge badge-warning"><i class="fas fa-exclamation-triangle"></i> Not planned</span></div>
                             @elseif($r['future_plan_count'] === 1)
                                 <div class="mt-1"><span class="badge badge-info">Planned 1&times;</span></div>
@@ -257,7 +308,13 @@
                                 <div class="mt-1"><span class="badge badge-success">Planned {{ $r['future_plan_count'] }}&times;</span></div>
                             @endif
 
-                            @if($r['has_history'])
+                            @if($final)
+                                <button type="button" class="btn btn-xs btn-outline-warning mt-1 btn-resume-refinery"
+                                        data-structure-id="{{ $r['structure_id'] }}"
+                                        data-structure-name="{{ $r['structure_name'] }}">
+                                    <i class="fas fa-play"></i> Resume normal operations
+                                </button>
+                            @elseif($r['has_history'])
                                 <div style="font-size: 0.8em;">
                                     <i class="fas fa-history text-muted"></i>
                                     Cadence ~{{ $r['cadence_days'] }}d ({{ $r['arrival_count'] }} arrivals)
@@ -290,7 +347,7 @@
                     @empty
                         <div class="text-center text-muted py-3">
                             <i class="fas fa-industry fa-2x mb-2"></i>
-                            <p class="mb-0">No Athanor/Tatara refineries found for this corporation.</p>
+                            <p class="mb-0">No Athanor or Tatara with a moon drill fitted found for this corporation.</p>
                         </div>
                     @endforelse
                 </div>
@@ -330,11 +387,18 @@
                     <label>Notes <small class="text-muted">(optional)</small></label>
                     <input type="text" class="form-control" id="plan-notes" maxlength="500" placeholder="e.g. shifted to Tuesday for evening fleet">
                 </div>
+                <div id="plan-final-note" class="alert alert-warning py-2 mb-2" style="display:none;">
+                    &#127937; This is this refinery's final pull. Nothing can be planned after it.
+                    <a href="#" class="alert-link link-resume-final">Resume normal operations</a>
+                </div>
                 <div id="plan-error" class="text-danger" style="display:none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-danger mr-auto" id="btn-delete-plan" style="display:none;">
                     <i class="fas fa-trash"></i> Remove
+                </button>
+                <button type="button" class="btn btn-outline-warning btn-mark-final" id="btn-mark-final" style="display:none;">
+                    &#127937; Mark as final pull
                 </button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success" id="btn-save-plan"><i class="fas fa-save"></i> Save</button>
@@ -352,17 +416,74 @@
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
             <div class="modal-body">
-                <p>This pull lands within the <strong id="conflict-gap"></strong>-hour minimum gap of:</p>
-                <div id="conflict-list"></div>
-                <p class="text-muted mb-0"><small>
-                    Chunks not mined promptly can be wasted. Plan it this way anyway?
-                </small></p>
+                <div id="conflict-gap-block">
+                    <p>This pull lands within the <strong id="conflict-gap"></strong>-hour minimum gap of:</p>
+                    <div id="conflict-list"></div>
+                    <p class="text-muted"><small>Chunks not mined promptly can be wasted.</small></p>
+                </div>
+                <div id="conflict-spacing-block">
+                    <p>
+                        It is less than <strong id="conflict-spacing"></strong> from another pull on this refinery.
+                        An extraction takes at least 6 days, and the next one can only be started once the chunk is in:
+                    </p>
+                    <div id="conflict-spacing-list" class="mb-3"></div>
+                </div>
+                <p class="text-muted mb-0"><small>Plan it this way anyway?</small></p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Pick another time</button>
                 <button type="button" class="btn btn-warning" id="btn-confirm-conflict">
                     <i class="fas fa-check"></i> Plan anyway
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- MARK A FINAL PULL: lists what planned after it would be taken off. --}}
+<div class="modal fade" id="finalModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">&#127937; Mark as this refinery's final pull</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p>These pulls are planned after it for <strong id="final-structure"></strong>, and will be removed from the planner:</p>
+                <ul id="final-later" class="mb-2"></ul>
+                <p class="mb-0 small">
+                    After its last chunk arrives, the planner stops reminding anyone to plan or restart this refinery.
+                    Arrival, fracture, jackpot and unstable alerts carry on as usual.
+                </p>
+                <div id="final-error" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="btn-confirm-final">&#127937; Remove them and mark it final</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- RESUME A REFINERY whose last pull was marked final. --}}
+<div class="modal fade" id="resumeModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-play text-success"></i> Resume normal operations?</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Is <strong id="resume-structure"></strong> carrying on after all?</p>
+                <p class="mb-0 small">
+                    Its final mark is cleared, so it can be planned again and the planner reminders start again.
+                    Pulls that were removed when it was marked are not brought back.
+                </p>
+                <div id="resume-error" class="text-danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="btn-confirm-resume"><i class="fas fa-play"></i> Resume</button>
             </div>
         </div>
     </div>
@@ -376,8 +497,17 @@
                 <h5 class="modal-title"><i class="fas fa-lock text-muted"></i> Set in-game — can't be changed here</h5>
                 <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
             </div>
-            <div class="modal-body" id="locked-body"></div>
+            <div class="modal-body">
+                <div id="locked-body"></div>
+                <div id="locked-final-note" class="alert alert-warning py-2 mt-2 mb-0" style="display:none;">
+                    &#127937; This is this refinery's final pull. Nothing can be planned after it.
+                    <a href="#" class="alert-link link-resume-final">Resume normal operations</a>
+                </div>
+            </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-warning mr-auto btn-mark-final" id="btn-mark-final-locked" style="display:none;">
+                    &#127937; Mark as final pull
+                </button>
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             </div>
         </div>
@@ -432,6 +562,62 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="noticesModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-paper-plane"></i> Resend next-pull notices</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">
+                    Next Extraction Planned goes out again, one message each, for every refinery whose chunk has
+                    arrived and has not been started since, to the webhooks that take it. A pull planned more than
+                    {{ \MiningManager\Services\Moon\MoonPlannerService::MAX_EXTRACTION_DAYS }} days ahead says from
+                    when it can be started.
+                </p>
+                <div id="notices-summary"></div>
+                <div id="notices-body"></div>
+            </div>
+            <div class="modal-footer">
+                <small class="text-muted mr-auto">Times in EVE (UTC), as the messages print them.</small>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-success" id="btn-send-notices" disabled>
+                    <i class="fas fa-paper-plane"></i> <span>Send</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@include('mining-manager::moon.partials._blueprint_apply', ['blueprints' => $blueprintList ?? []])
+
+<div class="modal fade" id="noBlueprintModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="fas fa-exclamation-triangle"></i> No blueprint yet</h5>
+                <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="mm-note mm-note-warn mb-0">
+                    <p class="mb-2">
+                        A blueprint is the repeating pattern you plan from: which refinery, which weekday,
+                        what EVE time, over one to eight weeks. There are none saved yet, so there is
+                        nothing to lay over the calendar.
+                    </p>
+                    <p class="mb-0">Build one on the <strong>Blueprints</strong> tab, then come back here.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Close</button>
+                <a class="btn btn-sm btn-success" href="{{ route('mining-manager.moon.blueprints') }}">
+                    <i class="fas fa-drafting-compass"></i> Create a blueprint
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('javascript')
@@ -441,6 +627,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const CSRF = $('meta[name="csrf-token"]').attr('content');
     const calendarData = @json($calendar ?? []);
     const refineries = @json($refinerySummaries ?? []);
+    const refineryFlags = @json((object) ($refineryFlags ?? []));
+    const FLAG_LABELS = @json(\MiningManager\Services\Moon\RefineryService::FLAG_LABELS);
+    const FINALS = @json((object) ($finalPulls ?? []));
+    const TIGHT = @json((object) ($tightMarks ?? []));
     const minGap = {{ $minGapHours }};
     const routes = {
         store: '{{ route('mining-manager.moon.planner.store') }}',
@@ -449,6 +639,10 @@ document.addEventListener('DOMContentLoaded', function () {
         checkConflicts: '{{ route('mining-manager.moon.planner.check-conflicts') }}',
         history: '{{ route('mining-manager.moon.planner.history') }}',
         base: '{{ url('mining-manager/moon/planner') }}',
+        final: '{{ route('mining-manager.moon.planner.final') }}',
+        resume: '{{ route('mining-manager.moon.planner.resume') }}',
+        nextPullNotices: '{{ route('mining-manager.moon.planner.next-pull-notices') }}',
+        sendNextPullNotices: '{{ route('mining-manager.moon.planner.next-pull-notices.send') }}',
     };
 
     // Settle a scheduling mismatch: move the plan to the in-game time, or keep
@@ -507,6 +701,14 @@ document.addEventListener('DOMContentLoaded', function () {
           });
     });
 
+    const RARITY_CLASS = { R4: 'badge-r4', R8: 'badge-r8', R16: 'badge-r16', R32: 'badge-r32', R64: 'badge-r64' };
+
+    // The tier of each refinery's moon is already on the page for the sidebar
+    // cards, so the calendar costs nothing extra to label. A refinery the corp
+    // no longer owns is not in that list and simply goes unbadged.
+    const rarityByStructure = {};
+    refineries.forEach(r => { if (r.rarity) { rarityByStructure[r.structure_id] = r.rarity; } });
+
     // ---- Build FullCalendar events from the day-grouped payload ----
     const events = [];
     for (const [day, entries] of Object.entries(calendarData)) {
@@ -517,9 +719,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 const locked = e.status === 'confirmed';
                 let cls = e.source === 'auto' ? 'mm-plan-auto' : 'mm-plan-manual';
                 if (locked) cls += ' mm-plan-locked';
+                if (e.final) cls += ' mm-plan-final';
                 events.push({
                     id: 'plan-' + e.id,
-                    title: (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
+                    title: (e.final ? '🏁 ' : '') + (locked ? '🔒 ' : '') + (e.structure_name || 'Refinery'),
                     start: e.iso,
                     className: cls,
                     extendedProps: { type: 'plan', raw: e, locked: locked },
@@ -529,15 +732,60 @@ document.addEventListener('DOMContentLoaded', function () {
                 // A mismatch flag means the in-game timer diverged from a plan.
                 let cls = 'mm-plan-actual mm-plan-locked';
                 if (e.mismatch) cls = 'mm-plan-mismatch mm-plan-locked';
+                if (e.final) cls += ' mm-plan-final';
                 events.push({
                     id: 'actual-' + e.id,
-                    title: (e.mismatch ? '⚠ ' : '🔒 ') + (e.structure_name || 'Refinery'),
+                    title: (e.final ? '🏁 ' : '') + (e.mismatch ? '⚠ ' : '🔒 ') + (e.structure_name || 'Refinery'),
                     start: e.iso,
                     className: cls,
                     extendedProps: { type: 'actual', raw: e, locked: true, mismatch: !!e.mismatch },
                 });
             }
         });
+    }
+
+    function renderEvent(arg) {
+        const raw = arg.event.extendedProps.raw || {};
+        const wrap = document.createElement('div');
+        wrap.className = 'mm-cal-event';
+        wrap.title = raw.structure_name + (raw.moon_name ? ' (' + raw.moon_name + ')' : '');
+
+        // Marked on every plan, and on a real pull still to come. A pull
+        // already done is history, whatever became of the refinery since. A
+        // plan too close to another pull on its refinery shares the mark.
+        const flag = refineryFlags[raw.structure_id];
+        const upcoming = arg.event.start && arg.event.start.getTime() > Date.now();
+        const flagged = flag && (arg.event.extendedProps.type === 'plan' || (!raw.archived && upcoming));
+        const tight = arg.event.extendedProps.type === 'plan' ? TIGHT[raw.id] : null;
+        if (flagged || tight) {
+            const mark = document.createElement('span');
+            mark.className = 'mm-flag ' + (flagged && flag === 'gone' ? 'mm-flag-gone' : 'mm-flag-warn');
+            mark.title = [flagged ? (FLAG_LABELS[flag] || '') : '', tight || ''].filter(Boolean).join('\n');
+            mark.textContent = '!';
+            wrap.appendChild(mark);
+        }
+
+        if (arg.timeText) {
+            const time = document.createElement('span');
+            time.className = 'mm-cal-time';
+            time.textContent = arg.timeText;
+            wrap.appendChild(time);
+        }
+
+        const tier = rarityByStructure[raw.structure_id];
+        if (tier) {
+            const badge = document.createElement('span');
+            badge.className = 'badge mm-cal-tier ' + (RARITY_CLASS[tier] || 'badge-secondary');
+            badge.textContent = tier;
+            wrap.appendChild(badge);
+        }
+
+        const title = document.createElement('span');
+        title.className = 'mm-cal-title';
+        title.textContent = arg.event.title;
+        wrap.appendChild(title);
+
+        return { domNodes: [wrap] };
     }
 
     function onEventClick(info) {
@@ -568,6 +816,7 @@ document.addEventListener('DOMContentLoaded', function () {
             height: 'auto',
             eventDisplay: 'block',
             dayMaxEvents: 4,
+            eventContent: renderEvent,
             eventClick: onEventClick,
         });
         cal.render();
@@ -576,7 +825,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // ---- Modal helpers ----
     function fillRefinerySelect(selectedId) {
         const $sel = $('#plan-structure-id').empty();
-        refineries.forEach(r => {
+        // By system, then by name inside it. The cards down the side are in
+        // attention order, which is no use when you are hunting for one rig in
+        // a list. A refinery whose system we don't know sorts to the bottom.
+        const ordered = refineries.slice().sort((a, b) => {
+            const keyA = (a.system_name || '￿') + ' ' + (a.structure_name || '');
+            const keyB = (b.system_name || '￿') + ' ' + (b.structure_name || '');
+            return keyA.localeCompare(keyB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        ordered.forEach(r => {
             const label = r.structure_name + (r.moon_name ? ' — ' + r.moon_name : '');
             $sel.append($('<option>').val(r.structure_id).text(label));
         });
@@ -616,6 +873,8 @@ document.addEventListener('DOMContentLoaded', function () {
     $(document).on('input change', '#plan-arrival', updateLocalConfirm);
 
     function openAddModal(structureId, projectedIso) {
+        $('#btn-mark-final, #plan-final-note').hide();
+        editingPlan = null;
         $('#planModalTitle').text('Plan Pull');
         $('#plan-id').val('');
         $('#refinery-select-group').show();
@@ -628,7 +887,12 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#planModal').appendTo('body').modal('show');
     }
 
+    // The pull the modal is open on, kept so a save or a delete can offer to
+    // carry to the rest of its blueprint.
+    let editingPlan = null;
+
     function openEditModal(raw) {
+        editingPlan = raw;
         $('#planModalTitle').text('Edit Planned Pull');
         $('#plan-id').val(raw.id);
         $('#refinery-select-group').hide();
@@ -636,6 +900,8 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#plan-arrival').val(isoToLocalInput(raw.iso));
         $('#plan-notes').val(raw.notes || '');
         $('#btn-delete-plan').show().data('id', raw.id);
+        $('#btn-mark-final').toggle(!raw.final).data('target', { plan_id: raw.id, structure_id: raw.structure_id, structure_name: raw.structure_name });
+        $('#plan-final-note').toggle(!!raw.final).find('.link-resume-final').data('target', { structure_id: raw.structure_id, structure_name: raw.structure_name });
         $('#plan-error').hide().text('');
         updateLocalConfirm();
         $('#planModal').appendTo('body').modal('show');
@@ -675,10 +941,31 @@ document.addEventListener('DOMContentLoaded', function () {
             (localStr ? '<br><small class="text-muted"><i class="fas fa-user-clock"></i> ' + localStr + ' your time</small>' : '') +
             '</div>'
         );
+        const target = kind === 'confirmed'
+            ? { plan_id: raw.id }
+            : (raw.archived ? null : { extraction_id: raw.id });
+        if (target) {
+            Object.assign(target, { structure_id: raw.structure_id, structure_name: structure });
+        }
+        $('#btn-mark-final-locked').toggle(!!target && !raw.final).data('target', target);
+        $('#locked-final-note').toggle(!!raw.final).find('.link-resume-final').data('target', { structure_id: raw.structure_id, structure_name: structure });
         $('#lockedModal').appendTo('body').modal('show');
     }
 
     $('#btn-add-pull').on('click', () => openAddModal(null, null));
+
+    // Plan from a blueprint without leaving the calendar. With none saved, say
+    // so and offer the way to make one rather than opening an empty dialog.
+    $('#btn-plan-blueprint').on('click', function () {
+        if (BlueprintApply.count() === 0) {
+            $('#noBlueprintModal')
+                .appendTo('body')
+                .addClass('mining-manager-wrapper mining-dashboard moon-planner-page')
+                .modal('show');
+            return;
+        }
+        BlueprintApply.open(null);
+    });
     $('.btn-plan-refinery').on('click', function () {
         openAddModal($(this).data('structure-id'), $(this).data('projected') || null);
     });
@@ -691,6 +978,8 @@ document.addEventListener('DOMContentLoaded', function () {
         autofilled: { icon: 'fa-magic text-primary',         label: 'auto-filled' },
         realigned:  { icon: 'fa-clock text-warning',         label: 'realigned to in-game' },
         offset_ignored: { icon: 'fa-check text-warning',     label: 'ignored offset' },
+        marked_final: { icon: 'fa-flag-checkered text-warning', label: 'marked final' },
+        resumed:    { icon: 'fa-play text-success',          label: 'resumed normal operations' },
     };
 
     function fmtLocal(iso) {
@@ -735,6 +1024,89 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     });
 
+    // ---- Resend next-pull notices ----
+    // The list comes first, so it is clear who gets a message before any is
+    // sent; after sending, each row says whether its message went anywhere.
+    const MAX_EXTRACTION_DAYS = {{ \MiningManager\Services\Moon\MoonPlannerService::MAX_EXTRACTION_DAYS }};
+
+    function noticeRow(e) {
+        // Structure names are player-set, so everything from the server is escaped.
+        const esc = function (t) { return $('<div>').text(t || '').html(); };
+        let next;
+        if (e.skip) {
+            next = '<span class="text-muted">Left out: ' + esc(e.skip) + '</span>';
+        } else {
+            next = esc(e.planned_at) + ' EVE' +
+                (e.projected ? ' <span class="badge badge-secondary">projected</span>' : '') +
+                (e.next_is_final ? ' <span class="badge badge-warning">final pull</span>' : '');
+            if (e.startable_from) {
+                next += '<br><small class="text-warning"><i class="fas fa-hourglass-half"></i> More than ' +
+                    MAX_EXTRACTION_DAYS + ' days ahead: can be started from ' + esc(e.startable_from) + ' EVE</small>';
+            }
+        }
+        let outcome = '';
+        if (e.delivered === true) {
+            outcome = '<span class="text-success"><i class="fas fa-check"></i> sent</span>';
+        } else if (e.delivered === false) {
+            outcome = '<span class="text-danger"><i class="fas fa-times"></i> ' + esc(e.reason || 'not sent') + '</span>';
+        }
+        return '<tr>' +
+            '<td>' + esc(e.structure_name) + (e.moon_name ? '<br><small class="text-muted">' + esc(e.moon_name) + '</small>' : '') + '</td>' +
+            '<td style="white-space:nowrap;">' + esc(e.arrived_at) + ' EVE</td>' +
+            '<td>' + next + '</td>' +
+            '<td style="white-space:nowrap;">' + outcome + '</td>' +
+            '</tr>';
+    }
+
+    function renderNotices(entries) {
+        if (!entries.length) {
+            $('#notices-body').html('<p class="text-muted mb-0">No refinery is waiting: every one whose chunk has arrived has its next extraction running.</p>');
+            return 0;
+        }
+        let html = '<table class="table table-sm table-dark mb-0"><thead><tr>' +
+            '<th>Refinery</th><th>Chunk arrived</th><th>Next pull</th><th></th></tr></thead><tbody>';
+        entries.forEach(function (e) { html += noticeRow(e); });
+        html += '</tbody></table>';
+        $('#notices-body').html(html);
+        return entries.filter(function (e) { return !e.skip; }).length;
+    }
+
+    $('#btn-next-pull-notices').on('click', function () {
+        const $send = $('#btn-send-notices').prop('disabled', true);
+        $send.find('span').text('Send');
+        $('#notices-summary').empty();
+        $('#notices-body').html('<div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> Loading…</div>');
+        $('#noticesModal').appendTo('body').modal('show');
+        $.getJSON(routes.nextPullNotices)
+            .done(function (res) {
+                const count = renderNotices(res.entries || []);
+                $send.prop('disabled', count === 0);
+                $send.find('span').text(count === 1 ? 'Send 1 notice' : 'Send ' + count + ' notices');
+            })
+            .fail(function () {
+                $('#notices-body').html('<p class="text-danger mb-0">Could not load the list.</p>');
+            });
+    });
+
+    $('#btn-send-notices').on('click', function () {
+        const $send = $(this).prop('disabled', true);
+        $send.find('span').text('Sending…');
+        $.ajax({ url: routes.sendNextPullNotices, method: 'POST', data: { _token: CSRF } })
+            .done(function (res) {
+                renderNotices(res.entries || []);
+                $send.find('span').text('Sent');
+                const sent = res.sent === 1 ? '1 notice sent' : res.sent + ' notices sent';
+                $('#notices-summary').html(res.undelivered > 0
+                    ? '<div class="alert alert-warning py-2">' + sent + ', ' + res.undelivered + ' went nowhere. The list says why.</div>'
+                    : '<div class="alert alert-success py-2">' + sent + '.</div>');
+            })
+            .fail(function (xhr) {
+                $send.prop('disabled', false).find('span').text('Send');
+                const message = (xhr.responseJSON && xhr.responseJSON.message) || 'Could not send the notices.';
+                $('#notices-summary').html('<div class="alert alert-danger py-2">' + $('<div>').text(message).html() + '</div>');
+            });
+    });
+
     // ---- Save (create or update), with the gap-confirm flow ----
     let pendingPayload = null; // stashed across the conflict modal
 
@@ -754,11 +1126,28 @@ document.addEventListener('DOMContentLoaded', function () {
         const iso = inputToIso($('#plan-arrival').val());
         if (!iso) { $('#plan-error').show().text('Pick a planned arrival time.'); return; }
 
+        // A pull from a blueprint can take the rest of its moon's pulls with
+        // it. Only worth asking when the time actually moved and there is
+        // something later to move.
+        let cascade = 0;
+        // Compared as instants: the value built here and the one the calendar
+        // handed over are the same moment written two different ways.
+        const moved = editingPlan && new Date(iso).getTime() !== new Date(editingPlan.iso).getTime();
+        if (isUpdate && moved && editingPlan.rotation_id && editingPlan.later_in_series > 0) {
+            cascade = confirm(
+                'This pull comes from a blueprint and has ' + editingPlan.later_in_series +
+                ' later pull(s) for this moon.\n\n' +
+                'OK: move those by the same amount, keeping the pattern.\n' +
+                'Cancel: move only this one.'
+            ) ? 1 : 0;
+        }
+
         const payload = {
             structure_id: $('#plan-structure-id').val(),
             planned_arrival_time: iso,
             notes: $('#plan-notes').val(),
             confirmed: confirmed ? 1 : 0,
+            cascade: cascade,
         };
         pendingPayload = { payload, isUpdate, planId };
 
@@ -776,16 +1165,35 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showConflicts(data) {
+        // Structure names are player-set, so everything from the server goes
+        // in as text.
+        const esc = value => $('<div>').text(value == null ? '' : String(value)).html();
+        const conflicts = data.conflicts || [];
+        const tooClose = data.too_close || [];
+
         $('#conflict-gap').text(data.min_gap_hours);
+        $('#conflict-gap-block').toggle(conflicts.length > 0);
         const $list = $('#conflict-list').empty();
-        (data.conflicts || []).forEach(c => {
+        conflicts.forEach(c => {
             $list.append(
                 '<div class="mm-conflict-row">' +
-                '<strong>' + c.moon_name + '</strong> (' + c.structure_name + ')<br>' +
-                '<small>' + c.arrival + ' — ' + (c.type === 'actual' ? 'live extraction' : 'planned') +
-                ', ' + Math.abs(c.gap_hours) + 'h apart</small></div>'
+                '<strong>' + esc(c.moon_name) + '</strong> (' + esc(c.structure_name) + ')<br>' +
+                '<small>' + esc(c.arrival) + ' (' + (c.type === 'actual' ? 'live extraction' : 'planned') +
+                ', ' + Math.abs(c.gap_hours) + 'h apart)</small></div>'
             );
         });
+
+        $('#conflict-spacing').text(data.spacing || '');
+        $('#conflict-spacing-block').toggle(tooClose.length > 0);
+        const $close = $('#conflict-spacing-list').empty();
+        tooClose.forEach(c => {
+            $close.append(
+                '<div class="mm-conflict-row"><small>' + esc(c.arrival) + ' (' +
+                (c.type === 'actual' ? 'set in game' : 'planned') + ', ' + esc(c.gap) + ' ' +
+                (c.before ? 'before' : 'after') + ' this one)</small></div>'
+            );
+        });
+
         $('#planModal').modal('hide');
         $('#conflictModal').appendTo('body').modal('show');
     }
@@ -801,13 +1209,96 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // ---- Final pulls ----
+    let pendingFinal = null;
+
+    function failureText(xhr, fallback) {
+        return (xhr.responseJSON && (xhr.responseJSON.error
+            || Object.values(xhr.responseJSON.errors || {})[0])) || fallback;
+    }
+
+    function markFinal(target, confirmed) {
+        const data = { _token: CSRF, confirmed: confirmed ? 1 : 0 };
+        if (target.plan_id) { data.plan_id = target.plan_id; } else { data.extraction_id = target.extraction_id; }
+
+        return $.ajax({ url: routes.final, method: 'POST', data: data })
+            .done(() => window.location.reload())
+            .fail(xhr => {
+                if (xhr.status === 409 && xhr.responseJSON && xhr.responseJSON.requires_confirmation) {
+                    pendingFinal = target;
+                    $('.modal').modal('hide');
+                    $('#final-structure').text(target.structure_name || 'this refinery');
+                    const $list = $('#final-later').empty();
+                    (xhr.responseJSON.later || []).forEach(when => $list.append($('<li>').text(when)));
+                    $('#final-error').hide().text('');
+                    $('#finalModal').appendTo('body').modal('show');
+                    return;
+                }
+                const msg = failureText(xhr, 'Could not mark that pull final.');
+                if ($('#finalModal').hasClass('show')) {
+                    $('#final-error').show().text(msg);
+                } else {
+                    alert(msg);
+                }
+            });
+    }
+
+    $('.btn-mark-final').on('click', function () {
+        const target = $(this).data('target');
+        if (target) { markFinal(target, false); }
+    });
+
+    $('#btn-confirm-final').on('click', function () {
+        if (pendingFinal) { markFinal(pendingFinal, true); }
+    });
+
+    let pendingResume = null;
+
+    function askResume(target) {
+        pendingResume = target;
+        $('.modal').modal('hide');
+        $('#resume-structure').text(target.structure_name || 'this refinery');
+        $('#resume-error').hide().text('');
+        $('#resumeModal').appendTo('body').modal('show');
+    }
+
+    $('.btn-resume-refinery').on('click', function () {
+        askResume({ structure_id: $(this).data('structure-id'), structure_name: $(this).data('structure-name') });
+    });
+
+    $('.link-resume-final').on('click', function (event) {
+        event.preventDefault();
+        const target = $(this).data('target');
+        if (target) { askResume(target); }
+    });
+
+    $('#btn-confirm-resume').on('click', function () {
+        if (!pendingResume) { return; }
+        $.ajax({ url: routes.resume, method: 'POST', data: { _token: CSRF, structure_id: pendingResume.structure_id } })
+            .done(() => window.location.reload())
+            .fail(xhr => $('#resume-error').show().text(failureText(xhr, 'Could not resume that refinery.')));
+    });
+
     $('#btn-delete-plan').on('click', function () {
         const id = $(this).data('id');
-        if (!confirm('Remove this planned pull?')) return;
+        let cascade = 0;
+
+        if (editingPlan && editingPlan.rotation_id && editingPlan.later_in_series > 0) {
+            const answer = confirm(
+                'This pull comes from a blueprint and has ' + editingPlan.later_in_series +
+                ' later pull(s) for this moon.\n\n' +
+                'OK: remove this one and those.\n' +
+                'Cancel: remove only this one.'
+            );
+            cascade = answer ? 1 : 0;
+        } else if (!confirm('Remove this planned pull?')) {
+            return;
+        }
+
         $.ajax({
             url: routes.destroy + '/' + id,
             method: 'DELETE',
-            data: { _token: CSRF },
+            data: { _token: CSRF, cascade: cascade },
         }).done(() => window.location.reload()).fail(() => alert('Delete failed.'));
     });
 });

@@ -4,6 +4,7 @@ namespace MiningManager;
 
 use Seat\Services\AbstractSeatPlugin;
 use MiningManager\Console\Commands\ProcessMiningLedgerCommand;
+use MiningManager\Console\Commands\ReconcilePersonalMiningCommand;
 use MiningManager\Console\Commands\BackfillOreTypeFlagsCommand;
 use MiningManager\Console\Commands\CalculateMonthlyTaxesCommand;
 use MiningManager\Console\Commands\CalculateMonthlyStatisticsCommand;
@@ -25,6 +26,7 @@ use MiningManager\Console\Commands\InitializeCommand;
 use MiningManager\Console\Commands\CachePriceDataCommand;
 use MiningManager\Console\Commands\DiagnosePricesCommand;
 use MiningManager\Console\Commands\DiagnoseAffiliationCommand;
+use MiningManager\Console\Commands\ResolveCharactersCommand;
 use MiningManager\Console\Commands\DiagnoseCharacterCommand;
 use MiningManager\Console\Commands\DiagnoseMoonExtractionsCommand;
 use MiningManager\Console\Commands\DiagnoseTypeIdsCommand;
@@ -132,6 +134,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         if ($this->app->runningInConsole()) {
             $this->commands([
                 ProcessMiningLedgerCommand::class,
+                ReconcilePersonalMiningCommand::class,
                 BackfillOreTypeFlagsCommand::class,
                 CalculateMonthlyTaxesCommand::class,
                 CalculateMonthlyStatisticsCommand::class,
@@ -150,6 +153,7 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
                 CachePriceDataCommand::class,
                 DiagnosePricesCommand::class,
                 DiagnoseAffiliationCommand::class,
+                ResolveCharactersCommand::class,
                 DiagnoseCharacterCommand::class,
                 DiagnoseMoonExtractionsCommand::class,
                 DiagnoseTypeIdsCommand::class,
@@ -213,6 +217,24 @@ class MiningManagerServiceProvider extends AbstractSeatPlugin
         // context, within a request.
         $this->app->singleton(
             \MiningManager\Services\Tax\PaymentAllocationService::class
+        );
+
+        // Shared so the in-progress notice on a page sees the characters the
+        // controllers asked for while building it.
+        $this->app->singleton(
+            \MiningManager\Services\Character\AffiliationResolutionService::class
+        );
+
+        // Names one request or one queued job has looked up, so a page names
+        // everything it shows in one batch, and a long-running worker never
+        // carries yesterday's names into today's jobs.
+        $this->app->scoped(
+            \MiningManager\Services\Character\CharacterNames::class
+        );
+
+        // Who mines for a corporation, worked out once a request.
+        $this->app->scoped(
+            \MiningManager\Services\Character\CorporationMembers::class
         );
 
         $this->app->singleton(

@@ -18,10 +18,25 @@
                     @if($data['extraction']->chunk_arrival_time)
                         {{ $data['extraction']->chunk_arrival_time->format('M d, Y') }}
                         &mdash;
-                        {{ $data['extraction']->natural_decay_time ? $data['extraction']->natural_decay_time->format('M d, Y') : '?' }}
+                        {{ !empty($data['ends_at']) ? $data['ends_at']->format('M d, Y') : '?' }}
                     @endif
                 </div>
             </div>
+            @php
+                $chunkRigs = $data['rigs'] ?? null;
+                $rigsNow = $data['rigs_now'] ?? null;
+            @endphp
+            @if(($chunkRigs['rigged'] ?? false) || !empty($rigsNow))
+                <div class="card-body py-2">
+                    <small class="mm-rig-line">
+                        <i class="fas fa-cog"></i>
+                        {{ trans('mining-manager::analytics.rig_chunk') }}: {{ $chunkRigs['text'] ?? '' }}
+                        @if(is_array($rigsNow))
+                            <span class="ml-3">{{ trans('mining-manager::analytics.rig_fitted_now') }}: {{ $rigsNow ? implode(', ', $rigsNow) : trans('mining-manager::analytics.rig_mark_none') }}</span>
+                        @endif
+                    </small>
+                </div>
+            @endif
         </div>
     </div>
 </div>

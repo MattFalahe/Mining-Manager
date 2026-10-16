@@ -9,6 +9,7 @@ use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Moon\MoonFinderService;
 use MiningManager\Services\Moon\MoonValuation;
 use MiningManager\Services\Moon\MoonExtractionService;
+use MiningManager\Services\Moon\MoonOreHelper;
 use MiningManager\Services\Moon\MoonValueCalculationService;
 use MiningManager\Services\Moon\MetenoxCargoService;
 use MiningManager\Services\Pricing\PriceProviderService;
@@ -24,6 +25,22 @@ use Illuminate\Support\Facades\Log;
 class MoonController extends Controller
 {
     use GuardsDataExport;
+
+    /**
+     * The Extraction Simulator, with Find Moons on it, is for whoever decides
+     * which moons to drill. Find Moons can list every valuable moon in a
+     * region at once, far stronger intel than one moon at a time, and the
+     * simulator without it was half a page members had no use for, so the
+     * two go to the same people and members do not see the tab at all.
+     * Admin is listed because the tiers are inherited in the controllers,
+     * not the gate. The moon pages' tabs read the same list.
+     */
+    public const SIMULATOR_ABILITIES = [
+        'mining-manager.director',
+        'mining-manager.admin',
+        'mining-manager.moon_manager',
+        'mining-manager.moon_finder',
+    ];
 
     /**
      * Moon extraction service
@@ -69,7 +86,7 @@ class MoonController extends Controller
 
         // Quick status sync - detect fractures from late notifications, then expire
         app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
-        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        MoonExtraction::markExpired();
 
         // Update ready status for arrived chunks that aren't expired
         $now = Carbon::now();
@@ -279,13 +296,28 @@ class MoonController extends Controller
                 ->diffInDays(Carbon::parse($record->chunk_arrival_time));
         }
 
+        // What the moon rigs did for this chunk, and which of the game's notices
+        // its ore figures came from.
+        $chunkM3 = 0.0;
+        foreach ((is_array($extraction->ore_composition) ? $extraction->ore_composition : []) as $ore) {
+            $chunkM3 += (float) ($ore['volume_m3'] ?? 0);
+        }
+        $hull = app(\MiningManager\Services\Moon\RefineryService::class)
+            ->hullTypes([(int) $extraction->structure_id])[(int) $extraction->structure_id] ?? null;
+        $chunkBonuses = \MiningManager\Services\Moon\ChunkBonuses::describe($extraction, $hull, $chunkM3, (float) ($estimatedValue ?? 0));
+        $volumeChecks = $extractionService->volumeChecks($extraction);
+        $moonScanned = !$extraction->moon_id || $extractionService->isMoonScanned((int) $extraction->moon_id);
+
         return view('mining-manager::moon.show', compact(
             'extraction',
             'estimatedValue',
             'timeUntilArrival',
             'timeUntilDecay',
             'timeUntilUnstable',
-            'history'
+            'history',
+            'chunkBonuses',
+            'volumeChecks',
+            'moonScanned'
         ));
     }
 
@@ -307,14 +339,24 @@ class MoonController extends Controller
         // Detect auto-fractures before updating statuses
         app(\MiningManager\Services\Moon\MoonExtractionService::class)->detectAutoFractures();
 
-        // Mark expired using fractured_at when available, legacy estimate otherwise
-        MoonExtraction::expiredByTime()->update(['status' => 'expired']);
+        // Mark expired: past the chunk's mining window and its unstable tail
+        MoonExtraction::markExpired();
 
-        // Get extractions for the month (including expired/past)
+        // The month you are on, plus the two after it. A fortnightly moon has
+        // its next two pulls outside the current month for half of every month,
+        // and the Next 7 Days panel used to go blank at a month boundary for
+        // the same reason.
+        $windowStart = $month->copy()->startOfMonth();
+        $windowEnd = $month->copy()->startOfMonth()->addMonths(2)->endOfMonth();
+
+        // Get extractions for the window (including expired/past). A cancelled
+        // one never delivers its chunk: left in, a pull cancelled in game and
+        // started again showed on both dates.
         $extractions = MoonExtraction::whereBetween('chunk_arrival_time', [
-            $month->copy()->startOfMonth(),
-            $month->copy()->endOfMonth()
-        ])->with(['structure', 'corporation'])
+            $windowStart,
+            $windowEnd
+        ])->where('status', '!=', 'cancelled')
+            ->with(['structure', 'corporation'])
             ->orderBy('chunk_arrival_time')
             ->get();
 
@@ -326,13 +368,18 @@ class MoonController extends Controller
             if ($extraction->ore_composition) {
                 $extraction->calculated_value = $this->computeDisplayValue($extraction);
             }
+            // The tier badge on the grid, worked out from this extraction's own
+            // ore rather than the refinery's last known composition.
+            $extraction->rarity = MoonOreHelper::highestRarity($extraction->ore_composition);
+            $this->addChunkWindow($extraction);
         }
 
         // Also get archived history extractions for past months
         $historyExtractions = MoonExtractionHistory::whereBetween('chunk_arrival_time', [
-            $month->copy()->startOfMonth(),
-            $month->copy()->endOfMonth()
-        ])->orderBy('chunk_arrival_time')
+            $windowStart,
+            $windowEnd
+        ])->where('final_status', '!=', 'cancelled')
+            ->orderBy('chunk_arrival_time')
             ->get();
 
         // Group by day (current extractions)
@@ -364,7 +411,10 @@ class MoonController extends Controller
             $historyExtraction->auto_fractured = $history->auto_fractured ?? false;
             $historyExtraction->fractured_at = $history->fractured_at ?? null;
             $historyExtraction->fractured_by = $history->fractured_by ?? null;
+            $historyExtraction->moon_rigs = $history->moon_rigs;
             $historyExtraction->is_archived = true;
+            $historyExtraction->rarity = MoonOreHelper::highestRarity($history->ore_composition);
+            $this->addChunkWindow($historyExtraction);
             $pseudoExtractions->push($historyExtraction);
         }
 
@@ -380,7 +430,21 @@ class MoonController extends Controller
             $calendar[$day][] = $historyExtraction;
         }
 
-        return view('mining-manager::moon.calendar', compact('calendar', 'month'));
+        // Open on today when today is in view, so the week and list views land
+        // on the current week rather than whatever week the 1st falls in.
+        $initialDate = Carbon::now()->between($windowStart, $windowEnd)
+            ? Carbon::now()->toDateString()
+            : $windowStart->toDateString();
+
+        $months = [
+            $windowStart->copy(),
+            $windowStart->copy()->addMonth(),
+            $windowStart->copy()->addMonths(2),
+        ];
+
+        return view('mining-manager::moon.calendar', compact(
+            'calendar', 'month', 'months', 'windowStart', 'windowEnd', 'initialDate'
+        ));
     }
 
     /**
@@ -434,13 +498,17 @@ class MoonController extends Controller
             // This is more precise than solar_system_id + is_moon_ore, since
             // it only counts mining on THIS specific structure.
             //
-            // Window: 72 hours from chunk_arrival_time. Covers the full
-            // lifecycle: up to 3h pre-fracture + 48h post-fracture mining
-            // window (roids despawn ~48h after fracture) + buffer for
-            // stragglers. Previously the window was chunk_arrival →
-            // natural_decay (only 3h pre-fracture), which missed virtually
-            // all actual mining since chunks are mined AFTER fracture.
+            // Window: to the end of the chunk's life, never shorter than the
+            // 72 hours from arrival it has always had, so a rigged chunk gets
+            // its longer belt and an unrigged one is counted as before.
+            // Previously the window was chunk_arrival → natural_decay (only 3h
+            // pre-fracture), which missed virtually all actual mining since
+            // chunks are mined AFTER fracture.
             $windowEnd = $extraction->chunk_arrival_time->copy()->addHours(72);
+            $expiry = $extraction->getExpiryTime();
+            if ($expiry && $expiry->gt($windowEnd)) {
+                $windowEnd = $expiry;
+            }
 
             $miningData = MiningLedger::where('observer_id', $extraction->structure_id)
                 ->where('date', '>=', $extraction->chunk_arrival_time->toDateString())
@@ -721,13 +789,12 @@ class MoonController extends Controller
      */
     public function calculator(MoonFinderService $finder, MoonValuation $valuation, SettingsManagerService $settings)
     {
-        $canFindMoons = $this->canFindMoons();
+        $this->authorizeSimulator();
 
         return view('mining-manager::moon.calculator', [
             'scannedMoonCount' => $finder->scannedMoonCount(),
-            'canFindMoons' => $canFindMoons,
-            'finderRegions' => $canFindMoons ? $finder->regions() : [],
-            'finderOres' => $canFindMoons ? $finder->oreOptions() : [],
+            'finderRegions' => $finder->regions(),
+            'finderOres' => $finder->oreOptions(),
             'pricesUpdatedAt' => $valuation->pricesUpdatedAt(),
             'defaultBasis' => !empty($settings->getPricingSettings()['use_refined_value']) ? 'refined' : 'ore',
             // Which figure tax is actually worked out from. The page only
@@ -736,7 +803,60 @@ class MoonController extends Controller
             // Same test OreValuationService makes: minerals, or else the ore.
             'taxBasis' => ($settings->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price' ? 'refined' : 'ore',
             'features' => $settings->getFeatureFlags(),
+            'unscannedRefineryMoons' => $this->unscannedRefineryMoons($settings),
+            'canSeeMoonIncome' => $this->canSeeMoonIncome(),
         ]);
+    }
+
+    /**
+     * The moons our refineries sit on that nobody has scanned into SeAT. The
+     * simulator only works from a scan and its moon box only lists scanned
+     * moons, so without this those moons would simply be missing, with
+     * nothing to say why.
+     *
+     * @return array<int, string> "moon (refinery)", sorted
+     */
+    private function unscannedRefineryMoons(SettingsManagerService $settings): array
+    {
+        try {
+            $corporationId = (int) $settings->getTaxProgramCorporationId();
+            if ($corporationId <= 0) {
+                return [];
+            }
+
+            $refineries = app(\MiningManager\Services\Moon\RefineryService::class);
+            $moonIds = array_filter($refineries->moonIdsForStructures($refineries->presentRefineryIds($corporationId)));
+            if (!$moonIds) {
+                return [];
+            }
+
+            $scanned = DB::table('universe_moon_contents')
+                ->whereIn('moon_id', array_values($moonIds))
+                ->distinct()
+                ->pluck('moon_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $unscanned = array_filter($moonIds, fn ($moonId) => !in_array((int) $moonId, $scanned, true));
+            if (!$unscanned) {
+                return [];
+            }
+
+            $moonNames = DB::table('moons')->whereIn('moon_id', array_values($unscanned))->pluck('name', 'moon_id')->all();
+            $refineryNames = DB::table('universe_structures')->whereIn('structure_id', array_keys($unscanned))->pluck('name', 'structure_id')->all();
+
+            $list = [];
+            foreach ($unscanned as $structureId => $moonId) {
+                $moon = $moonNames[$moonId] ?? "Moon {$moonId}";
+                $list[] = isset($refineryNames[$structureId]) ? "{$moon} ({$refineryNames[$structureId]})" : $moon;
+            }
+            sort($list);
+
+            return $list;
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not list unscanned refinery moons: ' . $e->getMessage());
+
+            return [];
+        }
     }
 
     /**
@@ -747,6 +867,8 @@ class MoonController extends Controller
      */
     public function simulate(Request $request, MoonFinderService $finder)
     {
+        $this->authorizeSimulator();
+
         $moonId = (int) $request->input('moon_id');
         $extractionDays = $request->input('extraction_days', 14);
 
@@ -757,35 +879,64 @@ class MoonController extends Controller
         // Validate extraction days (6-56 days per EVE mechanics)
         $extractionDays = max(6, min(56, (int) $extractionDays));
 
-        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays);
+        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+
+        // Our refinery on this moon, if there is one, decides where the rig
+        // choices start. A failure here must not stop the simulation.
+        $assessed = null;
+        try {
+            $assessed = $finder->assess($moonId, $basis);
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: moon assessment failed', ['moon_id' => $moonId, 'error' => $e->getMessage()]);
+        }
+
+        $fitted = $this->fittedOnMoon($assessed['station'] ?? null);
+        $fit = $this->requestedFit($request) ?? [
+            'hull' => $fitted['hull'] ?? \MiningManager\Services\Moon\RefineryService::ATHANOR,
+            'tiers' => array_map(fn ($tier) => (int) ($tier ?? 0), $fitted['tiers'] ?? []),
+        ];
+
+        $result = $this->extractionService->simulateExtraction($moonId, $extractionDays, $fit);
 
         if (!$result) {
             return response()->json(['error' => 'Moon not found or not scanned'], 404);
         }
 
-        $basis = $request->input('basis') === 'refined' ? 'refined' : 'ore';
+        $result['fitted'] = $fitted;
+        $result['rig_summary'] = $this->rigSummary($result['rig']);
+        $result['rig_notices'] = $this->rigNotices($result['rig'], $fitted);
 
         // Quality and suggestions come on top of the simulation. If either
         // fails, the simulation still comes back.
         try {
-            $assessed = $finder->assess($moonId, $basis);
             $result['quality'] = $assessed['quality'] ?? null;
             $result['station'] = $assessed['station'] ?? null;
 
-            if ($this->canFindMoons()) {
-                $result['suggestions'] = $finder->betterMoons(
-                    $moonId,
-                    $extractionDays,
-                    $basis,
-                    $this->positiveInt($request->input('scope_constellation_id')),
-                    $this->positiveInt($request->input('scope_region_id'))
-                );
-            }
+            $result['suggestions'] = $finder->betterMoons(
+                $moonId,
+                $extractionDays,
+                $basis,
+                $this->positiveInt($request->input('scope_constellation_id')),
+                $this->positiveInt($request->input('scope_region_id'))
+            );
         } catch (\Throwable $e) {
             Log::warning('Mining Manager: moon quality or suggestions failed', [
                 'moon_id' => $moonId,
                 'error' => $e->getMessage(),
             ]);
+        }
+
+        // Refinery against Metenox, in the corporation's own income. Like the
+        // rest, a failure here must not cost the simulation.
+        if ($this->canSeeMoonIncome()) {
+            try {
+                $result['income'] = app(\MiningManager\Services\Moon\MoonIncomeEstimate::class)->forSimulation($result);
+            } catch (\Throwable $e) {
+                Log::warning('Mining Manager: moon income estimate failed', [
+                    'moon_id' => $moonId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json($result);
@@ -796,6 +947,8 @@ class MoonController extends Controller
      */
     public function scannedMoons(Request $request, MoonFinderService $finder)
     {
+        $this->authorizeSimulator();
+
         return response()->json([
             'results' => $finder->moonsNamed((string) $request->input('q', '')),
         ]);
@@ -807,7 +960,7 @@ class MoonController extends Controller
      */
     public function finderLocations(Request $request, MoonFinderService $finder)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         $level = $request->input('level') === 'system' ? 'system' : 'constellation';
         $text = $request->input('q');
@@ -828,7 +981,7 @@ class MoonController extends Controller
      */
     public function finderSearch(Request $request, MoonFinderService $finder)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         return response()->json($finder->search($finder->normalizeCriteria($request->all())));
     }
@@ -838,7 +991,7 @@ class MoonController extends Controller
      */
     public function finderExport(Request $request, MoonFinderService $finder)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         if (!$this->dataExportIsAllowed()) {
             return $this->refuseDataExport($request);
@@ -919,10 +1072,10 @@ class MoonController extends Controller
      */
     public function claimMoon(Request $request)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
-        if ($moonId === null) {
+        if ($moonId === null || !$this->isKnownMoon($moonId)) {
             return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
         }
 
@@ -933,17 +1086,29 @@ class MoonController extends Controller
 
         [$characterId, $characterName] = $this->actor();
 
-        // A second report replaces the first rather than sitting beside it,
-        // and the old row stays closed for the history.
-        $this->closeClaims($moonId, $characterId, $characterName);
+        // Closing the old claim and opening the new one is one act. Apart,
+        // two people reporting the same moon at the same moment can both
+        // close and both insert, and the moon ends up with two open claims.
+        // The lock takes the (moon_id, cleared_at) range, so the second one
+        // waits rather than reading a row that is about to change.
+        $claim = DB::transaction(function () use ($request, $moonId, $characterId, $characterName) {
+            MoonClaim::where('moon_id', $moonId)
+                ->whereNull('cleared_at')
+                ->lockForUpdate()
+                ->get();
 
-        $claim = MoonClaim::create([
-            'moon_id' => $moonId,
-            'claimed_by' => $this->trimmedOrNull($request->input('claimed_by')),
-            'note' => $this->trimmedOrNull($request->input('note')),
-            'character_id' => $characterId,
-            'character_name' => $characterName,
-        ]);
+            // A second report replaces the first rather than sitting beside
+            // it, and the old row stays closed for the history.
+            $this->closeClaims($moonId, $characterId, $characterName);
+
+            return MoonClaim::create([
+                'moon_id' => $moonId,
+                'claimed_by' => $this->trimmedOrNull($request->input('claimed_by')),
+                'note' => $this->trimmedOrNull($request->input('note')),
+                'character_id' => $characterId,
+                'character_name' => $characterName,
+            ]);
+        });
 
         return response()->json([
             'claim' => [
@@ -960,7 +1125,7 @@ class MoonController extends Controller
      */
     public function clearMoonClaim(Request $request)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
         if ($moonId === null) {
@@ -978,10 +1143,10 @@ class MoonController extends Controller
      */
     public function watchMoon(Request $request)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
-        if ($moonId === null) {
+        if ($moonId === null || !$this->isKnownMoon($moonId)) {
             return response()->json(['error' => trans('mining-manager::moons.claim_unknown_moon')], 422);
         }
 
@@ -1012,7 +1177,7 @@ class MoonController extends Controller
      */
     public function unwatchMoon(Request $request)
     {
-        $this->authorizeMoonFinder();
+        $this->authorizeSimulator();
 
         $moonId = $this->positiveInt($request->input('moon_id'));
         if ($moonId === null) {
@@ -1056,32 +1221,210 @@ class MoonController extends Controller
     }
 
     /**
-     * Find Moons can list every valuable moon in a region at once, which is
-     * far stronger intel than the one-moon simulator every member has. It
-     * needs Director, Moon Manager or its own Moon Finder permission; the OR
-     * cannot be a single can: middleware.
+     * Any one of SIMULATOR_ABILITIES. The OR cannot be a single can:
+     * middleware, so every simulator and Find Moons endpoint asks this.
      */
-    private function canFindMoons(): bool
+    private function canUseSimulator(): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null && $user->canAny(self::SIMULATOR_ABILITIES);
+    }
+
+    /**
+     * The simulator's income comparison is the corporation's money, not a
+     * member's, so it needs Director or Admin. Admin is asked separately
+     * because the tiers are inherited in the controllers, not the gate.
+     */
+    private function canSeeMoonIncome(): bool
     {
         $user = auth()->user();
 
         return $user !== null && (
             $user->can('mining-manager.director')
-            || $user->can('mining-manager.moon_manager')
-            || $user->can('mining-manager.moon_finder')
+            || $user->can('mining-manager.admin')
         );
     }
 
-    private function authorizeMoonFinder(): void
+    private function authorizeSimulator(): void
     {
-        if (!$this->canFindMoons()) {
+        if (!$this->canUseSimulator()) {
             abort(403, trans('mining-manager::moons.finder_no_access'));
         }
+    }
+
+    /**
+     * The chunk's own window, for the calendar to place it: hours of mining
+     * after fracture, and minutes from arrival until it fractures on its own.
+     * Both come from the chunk's rig, which only the server can read.
+     */
+    private function addChunkWindow(MoonExtraction $extraction): void
+    {
+        $extraction->ready_hours = $extraction->getReadyDurationHours();
+        $extraction->auto_fracture_minutes = round($extraction->getAutoFractureDelayMinutes(), 1);
+    }
+
+    /**
+     * The refinery type and rig tiers a simulation asked for, or null to start
+     * from what is fitted.
+     */
+    private function requestedFit(Request $request): ?array
+    {
+        $hull = (int) $request->input('hull', 0);
+
+        if (!in_array($hull, \MiningManager\Services\Moon\RefineryService::REFINERY_TYPE_IDS, true)) {
+            return null;
+        }
+
+        $tiers = [];
+        foreach (['efficiency', 'stability', 'proficiency'] as $kind) {
+            $tiers[$kind] = max(0, min(2, (int) $request->input('rig_' . $kind, 0)));
+        }
+
+        return ['hull' => $hull, 'tiers' => $tiers];
+    }
+
+    /**
+     * What is fitted on the refinery at this moon: its type and each rig kind's
+     * tier, 0 for none, null when SeAT cannot tell.
+     *
+     * From the rig slots in SeAT's copy of the assets when it can see them;
+     * otherwise the timer rig from the refinery's latest chunk, which EVE timed
+     * with whatever was fitted, and the Athanor's yield rig left unknown.
+     */
+    private function fittedOnMoon(?array $station): ?array
+    {
+        $structureId = (int) ($station['structure_id'] ?? 0);
+        if ($structureId <= 0) {
+            return null;
+        }
+
+        $refineries = app(\MiningManager\Services\Moon\RefineryService::class);
+        $hull = $refineries->hullTypes([$structureId])[$structureId] ?? null;
+        $tiers = ['efficiency' => null, 'stability' => null, 'proficiency' => null];
+        $source = null;
+
+        if ($refineries->assetsVisible([$structureId])[$structureId] ?? false) {
+            $tiers = array_fill_keys(array_keys($tiers), 0);
+            foreach ($refineries->fittedRigSummary([$structureId])[$structureId]['rigs'] as $rig) {
+                $tiers[$rig['kind']] = $rig['tier'];
+            }
+            $source = 'assets';
+        } else {
+            $latest = MoonExtraction::where('structure_id', $structureId)
+                ->whereNotNull('natural_decay_time')
+                ->orderByDesc('chunk_arrival_time')
+                ->first()
+                ?? MoonExtractionHistory::where('structure_id', $structureId)
+                    ->whereNotNull('natural_decay_time')
+                    ->orderByDesc('chunk_arrival_time')
+                    ->first();
+
+            $timerTier = $latest ? $latest->timerRigTier() : null;
+            if ($timerTier !== null && $latest) {
+                $tiers[$hull === \MiningManager\Services\Moon\RefineryService::TATARA ? 'proficiency' : 'stability'] = $timerTier;
+                $source = 'timer';
+            }
+        }
+
+        return [
+            'structure_id' => $structureId,
+            'structure' => $station['structure'] ?? ('Structure ' . $structureId),
+            'hull' => $hull,
+            'tiers' => $tiers,
+            'source' => $source,
+        ];
+    }
+
+    /**
+     * One line saying what the simulation ran with.
+     */
+    private function rigSummary(array $rig): string
+    {
+        $hull = $rig['hull'] === \MiningManager\Services\Moon\RefineryService::TATARA ? 'Tatara' : 'Athanor';
+        $minutes = (int) round($rig['auto_fracture_minutes']);
+        $fracture = intdiv($minutes, 60) . 'h' . ($minutes % 60 ? ' ' . ($minutes % 60) . 'm' : '');
+
+        if (!$rig['names']) {
+            return trans('mining-manager::moons.rig_summary_none', ['hull' => $hull]);
+        }
+
+        return trans('mining-manager::moons.rig_summary', [
+            'fit' => $hull . ', ' . implode(' + ', $rig['names']),
+            'yield' => rtrim(rtrim(number_format($rig['yield_bonus'], 1), '0'), '.'),
+            'window' => $rig['mining_window_hours'],
+            'fracture' => $fracture,
+        ]);
+    }
+
+    /**
+     * A line for each choice that differs from what our refinery at this moon
+     * has fitted, so nobody mistakes a what-if for the real thing.
+     *
+     * @return string[]
+     */
+    private function rigNotices(array $rig, ?array $fitted): array
+    {
+        if (!$fitted) {
+            return [];
+        }
+
+        $names = ['efficiency' => 'Moon Drilling Efficiency', 'stability' => 'Moon Drilling Stability', 'proficiency' => 'Moon Drilling Proficiency'];
+        $tierName = fn (string $kind, int $tier) => $tier > 0
+            ? \MiningManager\Services\Moon\MoonDrillingRigs::RIGS[\MiningManager\Services\Moon\MoonDrillingRigs::typeFor($kind, $tier)]['name']
+            : trans('mining-manager::moons.rig_none_of_kind', ['kind' => $names[$kind]]);
+        $hullName = fn ($hull) => $hull === \MiningManager\Services\Moon\RefineryService::TATARA ? 'Tatara' : 'Athanor';
+
+        if ($fitted['hull'] && $fitted['hull'] !== $rig['hull']) {
+            return [trans('mining-manager::moons.rig_notice_hull', [
+                'structure' => $fitted['structure'],
+                'fitted' => $hullName($fitted['hull']),
+                'chosen' => $hullName($rig['hull']),
+            ])];
+        }
+
+        $notices = [];
+
+        foreach ($rig['tiers'] as $kind => $chosenTier) {
+            $fittedTier = $fitted['tiers'][$kind] ?? null;
+
+            if ($fittedTier === null) {
+                if ($kind === 'efficiency') {
+                    $notices[] = trans('mining-manager::moons.rig_notice_unknown', ['structure' => $fitted['structure']]);
+                }
+                continue;
+            }
+
+            if ($fittedTier !== $chosenTier) {
+                $notices[] = trans('mining-manager::moons.rig_notice_differs', [
+                    'structure' => $fitted['structure'],
+                    'fitted' => $tierName($kind, $fittedTier),
+                    'chosen' => $tierName($kind, $chosenTier),
+                ]);
+            }
+        }
+
+        return $notices;
     }
 
     private function positiveInt($value): ?int
     {
         return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /**
+     * A moon somebody has scanned, which is the only kind any page here can
+     * show.
+     *
+     * Without this a mistyped id writes a perfectly good claim row that
+     * renders nowhere, and cannot be cleared either, because clearing is a
+     * button on a search result. It just sits in the table.
+     */
+    private function isKnownMoon(int $moonId): bool
+    {
+        return DB::table('universe_moon_contents')
+            ->where('moon_id', $moonId)
+            ->exists();
     }
 
     /**

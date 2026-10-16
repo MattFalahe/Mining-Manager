@@ -244,6 +244,7 @@
                             'settings' => $settings ?? [],
                             'roleProviderAvailable' => $roleProviderAvailable ?? false,
                             'roleProviderLabel' => $roleProviderLabel ?? 'Manual input only',
+                            'taxedCorporations' => $taxedCorporations ?? [],
                         ])
                     </div>
 
@@ -260,7 +261,7 @@
                     <div id="dashboard" class="settings-section">
                         @include('mining-manager::settings.tabs.dashboard', [
                             'settings' => $settings,
-                            'corporations' => $corporations,
+                            'leaderboardCorporations' => $leaderboardCorporations ?? [],
                             'selectedCorporationId' => $corporationId ?? null
                         ])
                     </div>

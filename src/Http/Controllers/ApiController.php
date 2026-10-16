@@ -369,12 +369,15 @@ class ApiController extends Controller
             return response()->json([]);
         }
 
-        $characters = DB::table('character_affiliations')
-            ->join('character_infos', 'character_affiliations.character_id', '=', 'character_infos.character_id')
-            ->where('character_affiliations.corporation_id', $corporationId)
-            ->select('character_infos.character_id', 'character_infos.name')
-            ->orderBy('character_infos.name')
-            ->get();
+        // Who mines for it, as every page counts it, named whether SeAT knows
+        // them or not.
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)
+            ->many(app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId));
+
+        $characters = collect($names)
+            ->map(fn ($info) => ['character_id' => $info['character_id'], 'name' => $info['name']])
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
 
         return response()->json($characters);
     }

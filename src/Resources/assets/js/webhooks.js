@@ -73,6 +73,16 @@ function loadWebhookData(webhookId) {
                 if (nextPlannedField) nextPlannedField.checked = !!webhook.notify_next_extraction_planned;
                 const mismatchField = document.getElementById('notify-schedule-mismatch');
                 if (mismatchField) mismatchField.checked = !!webhook.notify_schedule_mismatch;
+                const refineryGoneField = document.getElementById('notify-refinery-gone');
+                if (refineryGoneField) refineryGoneField.checked = !!webhook.notify_refinery_gone;
+                const extractionCancelledField = document.getElementById('notify-extraction-cancelled');
+                if (extractionCancelledField) extractionCancelledField.checked = !!webhook.notify_extraction_cancelled;
+                const moonNotRescheduledField = document.getElementById('notify-moon-not-rescheduled');
+                if (moonNotRescheduledField) moonNotRescheduledField.checked = !!webhook.notify_moon_not_rescheduled;
+                const scheduleNeedsFillingField = document.getElementById('notify-schedule-needs-filling');
+                if (scheduleNeedsFillingField) scheduleNeedsFillingField.checked = !!webhook.notify_schedule_needs_filling;
+                const metenoxCargoField = document.getElementById('notify-metenox-cargo-full');
+                if (metenoxCargoField) metenoxCargoField.checked = !!webhook.notify_metenox_cargo_full;
                 document.getElementById('notify-event-created').checked = webhook.notify_event_created;
                 document.getElementById('notify-event-started').checked = webhook.notify_event_started;
                 document.getElementById('notify-event-completed').checked = webhook.notify_event_completed;
@@ -89,6 +99,8 @@ function loadWebhookData(webhookId) {
                 if (digestField) digestField.checked = !!webhook.notify_tax_outstanding_digest;
                 const providerField = document.getElementById('notify-price-provider');
                 if (providerField) providerField.checked = !!webhook.notify_price_provider;
+                const scanMissingField = document.getElementById('notify-moon-scan-missing');
+                if (scanMissingField) scanMissingField.checked = !!webhook.notify_moon_scan_missing;
                 const atRiskField = document.getElementById('notify-extraction-at-risk');
                 if (atRiskField) atRiskField.checked = !!webhook.notify_extraction_at_risk;
                 const lostField = document.getElementById('notify-extraction-lost');
@@ -129,6 +141,8 @@ function saveWebhook() {
     const corpSelectVal = document.getElementById('webhook-corporation-id')?.value || '';
     const corpForPayload = corpSelectVal === '' ? null : parseInt(corpSelectVal, 10);
 
+    // Every switch on the form has to be listed here: the controller reads one
+    // that is missing as off, so leaving it out switches it off on every save.
     const formData = {
         _token: $('meta[name="csrf-token"]').attr('content'),
         name: document.getElementById('webhook-name').value,
@@ -145,6 +159,16 @@ function saveWebhook() {
         notify_extraction_started: document.getElementById('notify-extraction-started')?.checked ? 1 : 0,
         notify_next_extraction_planned: document.getElementById('notify-next-extraction-planned')?.checked ? 1 : 0,
         notify_schedule_mismatch: document.getElementById('notify-schedule-mismatch')?.checked ? 1 : 0,
+        notify_refinery_gone: document.getElementById('notify-refinery-gone')?.checked ? 1 : 0,
+        notify_extraction_cancelled: document.getElementById('notify-extraction-cancelled')?.checked ? 1 : 0,
+        notify_moon_not_rescheduled: document.getElementById('notify-moon-not-rescheduled')?.checked ? 1 : 0,
+        notify_schedule_needs_filling: document.getElementById('notify-schedule-needs-filling')?.checked ? 1 : 0,
+        notify_tax_outstanding_digest: document.getElementById('notify-tax-outstanding-digest')?.checked ? 1 : 0,
+        notify_price_provider: document.getElementById('notify-price-provider')?.checked ? 1 : 0,
+        notify_moon_scan_missing: document.getElementById('notify-moon-scan-missing')?.checked ? 1 : 0,
+        notify_extraction_at_risk: document.getElementById('notify-extraction-at-risk')?.checked ? 1 : 0,
+        notify_extraction_lost: document.getElementById('notify-extraction-lost')?.checked ? 1 : 0,
+        notify_metenox_cargo_full: document.getElementById('notify-metenox-cargo-full')?.checked ? 1 : 0,
         notify_event_created: document.getElementById('notify-event-created').checked ? 1 : 0,
         notify_event_started: document.getElementById('notify-event-started').checked ? 1 : 0,
         notify_event_completed: document.getElementById('notify-event-completed').checked ? 1 : 0,

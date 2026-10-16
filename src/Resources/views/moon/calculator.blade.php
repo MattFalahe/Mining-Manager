@@ -97,6 +97,35 @@
         background: rgba(245, 158, 11, 0.15);
     }
     .moon-simulator-page .mm-notice .btn { margin-left: 0.5rem; }
+    /* Corporation income: a refinery against a Metenox, side by side. The
+       side ahead at the chosen share gets the green edge. */
+    .moon-simulator-page .income-intro,
+    .moon-simulator-page .income-note,
+    .moon-simulator-page .income-per-day { color: var(--mm-text-muted) !important; }
+    .moon-simulator-page .income-side {
+        border: 1px solid var(--mm-border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.02);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .moon-simulator-page .income-side.income-ahead {
+        border-color: #28a745;
+        box-shadow: inset 0 0 0 1px rgba(40, 167, 69, 0.35);
+    }
+    .moon-simulator-page .income-side-title { font-weight: 600; margin-bottom: 10px; }
+    .moon-simulator-page .income-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+    .moon-simulator-page .income-row > span:last-child { text-align: right; white-space: nowrap; }
+    .moon-simulator-page .income-net {
+        border-top: 1px solid var(--mm-border);
+        margin-top: 6px;
+        padding-top: 8px;
+        font-weight: 700;
+        font-size: 1.05rem;
+    }
+    .moon-simulator-page .income-net.income-negative > span:last-child { color: #dc3545 !important; }
+    .moon-simulator-page .income-per-day { font-size: 0.8rem; }
 </style>
 @endpush
 
@@ -114,49 +143,40 @@
 @endphp
 <div class="mining-manager-wrapper mining-dashboard moon-simulator-page">
 
-{{-- TAB NAVIGATION --}}
+{{-- TAB NAVIGATION (the Moon Planner section) --}}
 <div class="card card-dark card-tabs">
     <div class="card-header p-0 pt-1">
-        <ul class="nav nav-tabs">
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon') && !Request::is('*/moon/*') ? 'active' : '' }}" href="{{ route('mining-manager.moon.index') }}">
-                    <i class="fas fa-list"></i> {{ trans('mining-manager::menu.all_extractions') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/active') ? 'active' : '' }}" href="{{ route('mining-manager.moon.active') }}">
-                    <i class="fas fa-hourglass-half"></i> {{ trans('mining-manager::menu.active_extractions') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/calendar') ? 'active' : '' }}" href="{{ route('mining-manager.moon.calendar') }}">
-                    <i class="fas fa-calendar-alt"></i> {{ trans('mining-manager::menu.extraction_calendar') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/compositions') ? 'active' : '' }}" href="{{ route('mining-manager.moon.compositions') }}">
-                    <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/calculator') ? 'active' : '' }}" href="{{ route('mining-manager.moon.calculator') }}">
-                    <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
-                </a>
-            </li>
-            @can('mining-manager.director')
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">
-                    <i class="fas fa-box-open"></i> {{ trans('mining-manager::menu.metenox_cargo') }}
-                    <span class="badge badge-info ml-1" style="font-size: 0.6em;">Director</span>
-                </a>
-            </li>
-            @endcan
-        </ul>
+        @include('mining-manager::moon.partials._planning_tabs', ['active' => 'simulator'])
     </div>
     <div class="card-body">
 
 
 <div class="moon-simulator">
+
+    {{-- Our refineries' moons nobody has scanned. The moon box below only
+         lists scanned moons, so say why these are missing and how to fix it. --}}
+    @if(!empty($unscannedRefineryMoons))
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert alert-danger">
+                <h5><i class="fas fa-satellite-dish"></i> {{ trans('mining-manager::moons.scan_required_title') }}</h5>
+                <p class="mb-2">{{ trans('mining-manager::moons.scan_required') }}</p>
+                <ul class="mb-2">
+                    @foreach(array_slice($unscannedRefineryMoons, 0, 15) as $moonLabel)
+                        <li>{{ $moonLabel }}</li>
+                    @endforeach
+                    @if(count($unscannedRefineryMoons) > 15)
+                        <li>{{ trans('mining-manager::moons.scan_required_more', ['count' => count($unscannedRefineryMoons) - 15]) }}</li>
+                    @endif
+                </ul>
+                <p class="mb-0">
+                    {{ trans('mining-manager::moons.scan_required_how') }}
+                    <a href="{{ url('/tools/moons') }}" target="_blank" class="alert-link">{{ trans('mining-manager::moons.moon_not_scanned_link') }}</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- SIMULATOR EXPLANATION --}}
     <div class="row mb-3">
@@ -250,7 +270,6 @@
 
     @if($scannedMoonCount > 0)
 
-    @if($canFindMoons)
     {{-- FIND MOONS --}}
     <div class="row mb-3">
         <div class="col-12">
@@ -566,7 +585,6 @@
             </div>
         </div>
     </div>
-    @endif
 
     <div class="row" id="simulatorRow">
         {{-- SIMULATOR INPUTS --}}
@@ -604,6 +622,41 @@
                             <button type="button" class="btn btn-outline-secondary duration-preset" data-days="28">28d</button>
                             <button type="button" class="btn btn-outline-secondary duration-preset" data-days="56">56d</button>
                         </div>
+                    </div>
+
+                    {{-- Moon drilling rigs: an Athanor takes Efficiency and Stability,
+                         a Tatara one Proficiency rig that does both. --}}
+                    <div class="form-group" id="rigSimulation">
+                        <label><i class="fas fa-cog"></i> {{ trans('mining-manager::moons.rig_simulation') }}</label>
+                        <div class="btn-group btn-group-sm d-flex mb-2" role="group">
+                            <button type="button" class="btn btn-outline-secondary rig-hull active" data-hull="35835">Athanor</button>
+                            <button type="button" class="btn btn-outline-secondary rig-hull" data-hull="35836">Tatara</button>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="efficiency" data-hull="35835">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_efficiency') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="stability" data-hull="35835">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_stability') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <div class="rig-row mb-2" data-kind="proficiency" data-hull="35836" style="display: none;">
+                            <small class="text-muted d-block mb-1">{{ trans('mining-manager::moons.rig_proficiency') }}</small>
+                            <div class="btn-group btn-group-sm d-flex" role="group">
+                                <button type="button" class="btn btn-outline-secondary rig-tier active" data-tier="0">{{ trans('mining-manager::moons.rig_none') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="1">{{ trans('mining-manager::moons.rig_tech_i') }}</button>
+                                <button type="button" class="btn btn-outline-secondary rig-tier" data-tier="2">{{ trans('mining-manager::moons.rig_tech_ii') }}</button>
+                            </div>
+                        </div>
+                        <small class="text-muted">{{ trans('mining-manager::moons.rig_simulation_help') }}</small>
                     </div>
 
                     <div class="mt-4">
@@ -669,14 +722,12 @@
                         <span id="resultStation"></span>
                         <span id="resultClaim"></span>
                         <span id="resultWatch"></span>
-                        @if($canFindMoons)
-                            <button type="button" class="btn btn-xs btn-outline-warning ml-1" id="resultClaimButton" style="display: none;">
-                                <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_button') }}
-                            </button>
-                            <button type="button" class="btn btn-xs btn-outline-info ml-1" id="resultWatchButton" style="display: none;">
-                                <i class="fas fa-star"></i> {{ trans('mining-manager::moons.watch_button') }}
-                            </button>
-                        @endif
+                        <button type="button" class="btn btn-xs btn-outline-warning ml-1" id="resultClaimButton" style="display: none;">
+                            <i class="fas fa-flag"></i> {{ trans('mining-manager::moons.claim_button') }}
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-info ml-1" id="resultWatchButton" style="display: none;">
+                            <i class="fas fa-star"></i> {{ trans('mining-manager::moons.watch_button') }}
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -713,8 +764,10 @@
                                 <span id="resultComposition" class="badge badge-success" title="{{ trans('mining-manager::moons.moon_ore_richness') }}"></span>
                                 <span id="resultRate" class="badge badge-warning ml-1"></span>
                             </p>
+                            <p class="mb-0 mt-2 small text-muted" id="rigEffectSummary" style="display: none;"></p>
                         </div>
 
+                        <div class="mm-notice mm-notice-warn" id="rigNotices" style="display: none;"></div>
                         <div class="mm-notice mm-notice-warn" id="basisNotice" style="display: none;"></div>
                         <div class="mm-notice" id="unpricedOres" style="display: none;"></div>
 
@@ -788,7 +841,75 @@
                 </div>
             </div>
 
-            @if($canFindMoons)
+            @if($canSeeMoonIncome ?? false)
+            {{-- CORPORATION INCOME: a refinery against a Metenox. Directors and
+                 admins only, since it is the corporation's money; the server
+                 sends the figures to nobody else. --}}
+            <div class="card card-dark" id="incomeCard" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-coins"></i>
+                        <span id="incomeTitle"></span>
+                    </h3>
+                    <div class="card-tools">
+                        <span class="badge badge-secondary">{{ trans('mining-manager::moons.income_directors_only') }}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="small mb-3 income-intro" id="incomeIntro"></p>
+
+                    <div class="form-group mb-3">
+                        <label for="incomeShare" class="mb-1">
+                            {{ trans('mining-manager::moons.income_share_label') }}
+                            <strong id="incomeShareValue"></strong>
+                        </label>
+                        <input type="range" class="custom-range" id="incomeShare" min="0" max="100" step="1" value="100">
+                        <small class="d-block income-note" id="incomeShareSource"></small>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="income-side" id="incomeRefinery">
+                                <h6 class="income-side-title"><i class="fas fa-industry"></i> <span id="incomeRefineryTitle"></span></h6>
+                                <div class="income-row"><span>{{ trans('mining-manager::moons.income_tax') }}</span><span id="incomeRefineryTax"></span></div>
+                                <div class="income-row"><span id="incomeRefineryFuelLabel"></span><span id="incomeRefineryFuel"></span></div>
+                                <div class="income-row income-net" id="incomeRefineryNetRow"><span>{{ trans('mining-manager::moons.income_corporation') }}</span><span id="incomeRefineryNet"></span></div>
+                                <div class="income-row income-per-day"><span></span><span id="incomeRefineryPerDay"></span></div>
+                                <small class="d-block income-note mt-2" id="incomeMembers"></small>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="income-side" id="incomeMetenox">
+                                <h6 class="income-side-title"><i class="fas fa-satellite"></i> {{ trans('mining-manager::moons.income_metenox') }}</h6>
+                                <div class="income-row"><span>{{ trans('mining-manager::moons.income_materials') }}</span><span id="incomeMetenoxValue"></span></div>
+                                <div class="income-row"><span id="incomeMetenoxFuelLabel"></span><span id="incomeMetenoxFuel"></span></div>
+                                <div class="income-row income-net" id="incomeMetenoxNetRow"><span>{{ trans('mining-manager::moons.income_corporation') }}</span><span id="incomeMetenoxNet"></span></div>
+                                <div class="income-row income-per-day"><span></span><span id="incomeMetenoxPerDay"></span></div>
+                                <small class="d-block income-note mt-2" id="incomeBay"></small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mm-notice" id="incomeVerdict"></div>
+                    <div id="incomeNotices"></div>
+
+                    <h6 class="mt-3"><i class="fas fa-flask"></i> {{ trans('mining-manager::moons.income_materials_title') }}</h6>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ trans('mining-manager::moons.income_material') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::moons.income_quantity') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::moons.income_value') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incomeMaterialsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            @endif
+
             {{-- BETTER MOONS NEARBY --}}
             <div class="card card-dark" id="suggestionsCard" style="display: none;">
                 <div class="card-header">
@@ -806,7 +927,6 @@
                     </div>
                 </div>
             </div>
-            @endif
 
             @if($features['allow_export_data'] ?? true)
             {{-- EXPORT OPTIONS --}}
@@ -921,15 +1041,27 @@
     $moonRoutes = [
         'simulate' => route('mining-manager.moon.simulate'),
         'scanned' => route('mining-manager.moon.scanned-moons'),
+        'locations' => route('mining-manager.moon.finder.locations'),
+        'search' => route('mining-manager.moon.finder.search'),
+        'export' => route('mining-manager.moon.finder.export'),
+        'claim' => route('mining-manager.moon.finder.claim'),
+        'claim_clear' => route('mining-manager.moon.finder.claim-clear'),
+        'watch' => route('mining-manager.moon.finder.watch'),
+        'watch_remove' => route('mining-manager.moon.finder.watch-remove'),
     ];
-    if ($canFindMoons) {
-        $moonRoutes['locations'] = route('mining-manager.moon.finder.locations');
-        $moonRoutes['search'] = route('mining-manager.moon.finder.search');
-        $moonRoutes['export'] = route('mining-manager.moon.finder.export');
-        $moonRoutes['claim'] = route('mining-manager.moon.finder.claim');
-        $moonRoutes['claim_clear'] = route('mining-manager.moon.finder.claim-clear');
-        $moonRoutes['watch'] = route('mining-manager.moon.finder.watch');
-        $moonRoutes['watch_remove'] = route('mining-manager.moon.finder.watch-remove');
+    if ($canSeeMoonIncome ?? false) {
+        foreach ([
+            'income_title', 'income_intro_refined', 'income_intro_ore', 'income_share_moon',
+            'income_share_corporation', 'income_share_none', 'income_refinery', 'income_fuel',
+            'income_fuel_refinery', 'income_fuel_metenox', 'income_fuel_not_counted', 'income_per_day',
+            'income_members_keep', 'income_bay', 'income_ahead_refinery', 'income_ahead_metenox',
+            'income_level', 'income_break_even', 'income_metenox_always', 'income_refinery_always',
+            'income_no_tax', 'income_no_moon_owner', 'income_metenox_loss', 'income_fuel_unavailable',
+            'income_fuel_disabled', 'income_fuel_unpriced', 'income_fuel_priced', 'income_fuel_priced_plain',
+            'income_fuel_blocks', 'income_magmatic_gas', 'income_unpriced_materials',
+        ] as $incomeKey) {
+            $moonLang[$incomeKey] = trans('mining-manager::moons.' . $incomeKey);
+        }
     }
 @endphp
 <script>
@@ -945,6 +1077,9 @@ let simulationResults = null;
 // when a moon is simulated from Find Moons so suggestions follow that search.
 let simulationScope = {};
 let simulationBasis = @json($defaultBasis);
+// The refinery and rigs picked for the simulation. Null means "what is fitted
+// on our refinery at this moon", which is where each new moon starts.
+let rigChoice = null;
 // Which figure tax is worked out from. Separate from the one the page shows
 // first, so the two can disagree, and the page says so when they do.
 const TAX_BASIS = @json($taxBasis);
@@ -957,6 +1092,23 @@ $(document).ready(function() {
         $('.duration-preset').removeClass('active');
         $(this).addClass('active');
     });
+
+    // Moon drilling rigs. Picking one re-runs a simulation already on screen,
+    // so the difference shows straight away.
+    $('.rig-hull').on('click', function() {
+        showRigHull(parseInt($(this).data('hull'), 10));
+        rigChoice = readRigChoice();
+        if (simulationResults) { runSimulation(); }
+    });
+    $('.rig-tier').on('click', function() {
+        $(this).closest('.btn-group').find('.rig-tier').removeClass('active');
+        $(this).addClass('active');
+        rigChoice = readRigChoice();
+        if (simulationResults) { runSimulation(); }
+    });
+    $('#moonSelect').on('change', function() { rigChoice = null; });
+
+    $('#incomeShare').on('input change', updateIncome);
 
     // Keep preset buttons in sync with manual input
     $('#extractionDays').on('change', function() {
@@ -1043,6 +1195,7 @@ function runSimulation() {
     $('#quickStatsRow').hide();
     $('#exportCard').hide();
     $('#suggestionsCard').hide();
+    $('#incomeCard').hide();
 
     $.ajax({
         url: MOON_ROUTES.simulate,
@@ -1052,7 +1205,12 @@ function runSimulation() {
             moon_id: moonId,
             extraction_days: extractionDays,
             basis: simulationBasis
-        }, simulationScope),
+        }, simulationScope, rigChoice ? {
+            hull: rigChoice.hull,
+            rig_efficiency: rigChoice.efficiency,
+            rig_stability: rigChoice.stability,
+            rig_proficiency: rigChoice.proficiency
+        } : {}),
         success: function(response) {
             simulationResults = response;
             displayResults(response);
@@ -1109,6 +1267,8 @@ function displayResults(data) {
     // Update composition and rate badges
     $('#resultComposition').text(data.composition_percent + '% moon ore');
     $('#resultRate').text(formatNumber(data.extraction_rate_m3h) + ' m³/h');
+
+    renderRigs(data);
 
     renderSimulationNotices(data);
 
@@ -1176,7 +1336,171 @@ function displayResults(data) {
 
     renderSuggestions(data.suggestions);
 
+    renderIncome(data);
+
     toastr.success(MOON_LANG.simulation_complete);
+}
+
+// The income comparison the server sent, kept so the mined-share slider can
+// work the figures out again without another request.
+let incomeData = null;
+// The moon the slider was last set for. Re-running the same moon, say with
+// other rigs, keeps the share chosen; a new moon starts from its history.
+let incomeShareMoon = null;
+
+/**
+ * Corporation income, a refinery against a Metenox. Only directors and admins
+ * have the card, and only they get the figures from the server.
+ */
+function renderIncome(data) {
+    const $card = $('#incomeCard');
+    incomeData = data.income || null;
+    if (!$card.length || !incomeData) {
+        $card.hide();
+        return;
+    }
+
+    const income = incomeData;
+    const minedShare = income.mined_share || { share: 1, source: 'none', chunks: 0 };
+
+    if (incomeShareMoon !== data.moon_id) {
+        $('#incomeShare').val(Math.round((minedShare.share || 0) * 100));
+        incomeShareMoon = data.moon_id;
+    }
+
+    $('#incomeTitle').text(MOON_LANG.income_title.replace(':days', income.days));
+    $('#incomeIntro').text(income.tax_basis === 'refined' ? MOON_LANG.income_intro_refined : MOON_LANG.income_intro_ore);
+    $('#incomeShareSource').text(
+        minedShare.source === 'moon' ? MOON_LANG.income_share_moon.replace(':count', minedShare.chunks)
+            : minedShare.source === 'corporation' ? MOON_LANG.income_share_corporation.replace(':count', minedShare.chunks)
+            : MOON_LANG.income_share_none
+    );
+    $('#incomeRefineryTitle').text(MOON_LANG.income_refinery.replace(':hull', income.refinery.hull === 35836 ? 'Tatara' : 'Athanor'));
+
+    const metenox = income.metenox;
+    if (metenox.bay_full_days) {
+        $('#incomeBay').text(MOON_LANG.income_bay
+            .replace(':m3', formatNumber(metenox.bay_m3))
+            .replace(':capacity', formatNumber(metenox.bay_capacity_m3))
+            .replace(':days', formatNumber(metenox.bay_full_days))).show();
+    } else {
+        $('#incomeBay').hide();
+    }
+
+    $('#incomeMaterialsBody').html((metenox.materials || []).map(material => `
+        <tr>
+            <td>${escapeHtml(material.name)}</td>
+            <td class="text-right">${formatNumber(material.quantity)}</td>
+            <td class="text-right">${formatNumber(material.value)} ISK</td>
+        </tr>
+    `).join(''));
+
+    const notices = [];
+    const fuel = income.fuel || { status: 'unavailable', missing: [] };
+    if (!income.moon_owner_set) {
+        notices.push(['warn', MOON_LANG.income_no_moon_owner]);
+    } else if (!(income.refinery.tax > 0)) {
+        notices.push(['', MOON_LANG.income_no_tax]);
+    }
+    if (fuel.status === 'priced') {
+        if (metenox.value < (metenox.fuel ? metenox.fuel.isk : 0)) {
+            notices.push(['warn', MOON_LANG.income_metenox_loss]);
+        }
+        notices.push(['', fuel.market && fuel.price_type
+            ? MOON_LANG.income_fuel_priced.replace(':source', fuel.price_type.toUpperCase() + ' on ' + fuel.market.toUpperCase())
+            : MOON_LANG.income_fuel_priced_plain]);
+    } else if (fuel.status === 'disabled') {
+        notices.push(['warn', MOON_LANG.income_fuel_disabled]);
+    } else if (fuel.status === 'unpriced') {
+        const names = (fuel.missing || []).map(key => key === 'magmatic_gas' ? MOON_LANG.income_magmatic_gas : MOON_LANG.income_fuel_blocks);
+        notices.push(['warn', MOON_LANG.income_fuel_unpriced.replace(':items', names.join(', '))]);
+    } else {
+        notices.push(['', MOON_LANG.income_fuel_unavailable]);
+    }
+    if ((metenox.unpriced || []).length > 0) {
+        notices.push(['warn', MOON_LANG.income_unpriced_materials.replace(':materials', metenox.unpriced.join(', '))]);
+    }
+    $('#incomeNotices').empty().append(notices.map(([kind, text]) =>
+        $('<div class="mm-notice"></div>').toggleClass('mm-notice-warn', kind === 'warn').text(text)
+    ));
+
+    updateIncome();
+    $card.show();
+}
+
+/**
+ * Work both sides out at the share on the slider. Fuel counts only when both
+ * sides have it in ISK, so the two are always compared like for like.
+ */
+function updateIncome() {
+    if (!incomeData) {
+        return;
+    }
+
+    const income = incomeData;
+    const refinery = income.refinery;
+    const metenox = income.metenox;
+    const share = (parseInt($('#incomeShare').val(), 10) || 0) / 100;
+    const percent = Math.round(share * 100);
+    const days = income.days || 1;
+    const priced = income.fuel && income.fuel.status === 'priced';
+
+    const refineryFuel = priced ? refinery.fuel.isk : 0;
+    const metenoxFuel = priced ? metenox.fuel.isk : 0;
+    const tax = refinery.tax * share;
+    const refineryNet = tax - refineryFuel;
+    const metenoxNet = metenox.value - metenoxFuel;
+
+    $('#incomeShareValue').text(percent + '%');
+
+    $('#incomeRefineryTax').text(formatNumber(tax) + ' ISK');
+    $('#incomeRefineryFuelLabel').text(refinery.fuel
+        ? MOON_LANG.income_fuel_refinery.replace(':blocks', formatNumber(refinery.fuel.blocks))
+        : MOON_LANG.income_fuel);
+    $('#incomeRefineryFuel').text(priced ? '− ' + formatNumber(refineryFuel) + ' ISK' : MOON_LANG.income_fuel_not_counted);
+    $('#incomeRefineryNet').text(formatNumber(refineryNet) + ' ISK');
+    $('#incomeRefineryNetRow').toggleClass('income-negative', refineryNet < 0);
+    $('#incomeRefineryPerDay').text(MOON_LANG.income_per_day.replace(':value', formatNumber(refineryNet / days)));
+    $('#incomeMembers').text(MOON_LANG.income_members_keep.replace(':value', formatNumber((refinery.value - refinery.tax) * share)));
+
+    $('#incomeMetenoxValue').text(formatNumber(metenox.value) + ' ISK');
+    $('#incomeMetenoxFuelLabel').text(metenox.fuel
+        ? MOON_LANG.income_fuel_metenox
+            .replace(':blocks', formatNumber(metenox.fuel.blocks))
+            .replace(':gas', formatNumber(metenox.fuel.magmatic_gas))
+        : MOON_LANG.income_fuel);
+    $('#incomeMetenoxFuel').text(priced ? '− ' + formatNumber(metenoxFuel) + ' ISK' : MOON_LANG.income_fuel_not_counted);
+    $('#incomeMetenoxNet').text(formatNumber(metenoxNet) + ' ISK');
+    $('#incomeMetenoxNetRow').toggleClass('income-negative', metenoxNet < 0);
+    $('#incomeMetenoxPerDay').text(MOON_LANG.income_per_day.replace(':value', formatNumber(metenoxNet / days)));
+
+    const difference = refineryNet - metenoxNet;
+    const lines = [];
+    if (Math.abs(difference) < 1) {
+        lines.push(MOON_LANG.income_level.replace(':share', percent));
+    } else if (difference > 0) {
+        lines.push(MOON_LANG.income_ahead_refinery.replace(':share', percent).replace(':value', formatNumber(difference)));
+    } else {
+        lines.push(MOON_LANG.income_ahead_metenox.replace(':share', percent).replace(':value', formatNumber(-difference)));
+    }
+
+    // The share at which the two earn the same. The slider moves in whole
+    // percent, so rounding down names the last step where the refinery is
+    // not yet ahead; the nudge stops 0.57 * 100 = 56.99... landing a step low.
+    if (refinery.tax > 0) {
+        const breakEven = (metenoxNet + refineryFuel) / refinery.tax;
+        if (breakEven <= 0) {
+            lines.push(MOON_LANG.income_refinery_always);
+        } else if (breakEven >= 1) {
+            lines.push(MOON_LANG.income_metenox_always);
+        } else {
+            lines.push(MOON_LANG.income_break_even.replace(':share', Math.floor(breakEven * 100 + 1e-9)));
+        }
+    }
+    $('#incomeVerdict').text(lines.join(' '));
+
+    $('#incomeRefinery').toggleClass('income-ahead', difference >= 1);
+    $('#incomeMetenox').toggleClass('income-ahead', difference <= -1);
 }
 
 /**
@@ -1372,6 +1696,57 @@ function securityBadge(moon) {
     return `<span class="badge ${SECURITY_BADGES[moon.security_band] || 'badge-secondary'}">${shown}</span>`;
 }
 
+/**
+ * Show the rig choices for one refinery type: Efficiency and Stability for an
+ * Athanor, Proficiency for a Tatara.
+ */
+function showRigHull(hull) {
+    $('.rig-hull').removeClass('active');
+    $(`.rig-hull[data-hull="${hull}"]`).addClass('active');
+    $('.rig-row').each(function() {
+        $(this).toggle(parseInt($(this).data('hull'), 10) === hull);
+    });
+}
+
+function readRigChoice() {
+    const tierOf = kind => parseInt($(`.rig-row[data-kind="${kind}"] .rig-tier.active`).data('tier'), 10) || 0;
+    return {
+        hull: parseInt($('.rig-hull.active').data('hull'), 10) || 35835,
+        efficiency: tierOf('efficiency'),
+        stability: tierOf('stability'),
+        proficiency: tierOf('proficiency')
+    };
+}
+
+/**
+ * Set the rig choices to what the simulation ran with, say what that does, and
+ * warn where it differs from what our refinery at this moon has fitted.
+ */
+function renderRigs(data) {
+    const rig = data.rig;
+    if (!rig) {
+        $('#rigEffectSummary').hide();
+        $('#rigNotices').hide();
+        return;
+    }
+
+    showRigHull(rig.hull);
+    Object.entries(rig.tiers || {}).forEach(([kind, tier]) => {
+        const $group = $(`.rig-row[data-kind="${kind}"] .btn-group`);
+        $group.find('.rig-tier').removeClass('active');
+        $group.find(`.rig-tier[data-tier="${tier}"]`).addClass('active');
+    });
+
+    $('#rigEffectSummary')
+        .html('<i class="fas fa-cog"></i> ' + escapeHtml(data.rig_summary || ''))
+        .toggle(!!data.rig_summary);
+
+    const notices = data.rig_notices || [];
+    $('#rigNotices')
+        .html(notices.map(n => '<div><i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(n) + '</div>').join(''))
+        .toggle(notices.length > 0);
+}
+
 function escapeHtml(value) {
     return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function(character) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
@@ -1446,7 +1821,6 @@ function copyToClipboard() {
 }
 </script>
 
-@if($canFindMoons)
 <script>
 let finderPage = 1;
 let finderCriteriaUsed = null;
@@ -1993,7 +2367,6 @@ function exportFinder() {
     window.location.href = MOON_ROUTES.export + '?' + $.param(params);
 }
 </script>
-@endif
 @endpush
 
     </div>

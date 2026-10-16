@@ -150,7 +150,7 @@
 
                     {{-- TAX STATUS ROW --}}
                     <div class="row mt-3">
-                        {{-- Estimated Tax This Month --}}
+                        {{-- Estimated Tax, for the period picked above --}}
                         <div class="col-lg-3 col-md-6">
                             <div class="small-box bg-gradient-danger">
                                 <div class="inner">
@@ -189,7 +189,7 @@
                             </div>
                         </div>
 
-                        {{-- Sessions This Month --}}
+                        {{-- Sessions, for the period picked above --}}
                         <div class="col-lg-3 col-md-6">
                             <div class="small-box bg-gradient-info">
                                 <div class="inner">
@@ -395,7 +395,7 @@
                                         <img src="https://images.evetech.net/characters/{{ $activity->character_id }}/portrait?size=32" 
                                              class="img-circle" 
                                              style="width: 32px; height: 32px;">
-                                        {{ $activity->character->name ?? 'Unknown' }}
+                                        {{ $activity->character_name }}
                                     </td>
                                     <td>
                                         <img src="https://images.evetech.net/types/{{ $activity->type_id }}/icon?size=32" 

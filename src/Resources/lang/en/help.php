@@ -135,19 +135,19 @@ return [
     'tax_step_1_title' => '1. Mining Data is Fetched',
     'tax_step_1_desc' => 'The process-ledger command runs every 30 minutes and fetches mining data from ESI corporation mining observers. Each entry records the character, ore type, quantity, date, and solar system.',
     'tax_step_2_title' => '2. Prices are Applied',
-    'tax_step_2_desc' => 'The update-ledger-prices command runs daily at 1:00 AM and applies current market prices to each mining entry. Prices come from your configured price provider (SeAT, Fuzzwork, Janice, or Manager Core) using the selected price type (sell, buy, or average) from your chosen market hub region. If a price is not available on your configured market, the system falls back to Jita prices automatically.',
+    'tax_step_2_desc' => 'The update-ledger-prices command runs daily at 1:00 AM and applies current market prices to each mining entry. Prices come from your configured price provider (SeAT, Fuzzwork, Janice, or Manager Core) using the selected price type (sell, buy, or average) from your chosen market hub region. If a price is not available on your configured market, the system falls back to Jita prices automatically. If the provider stops answering altogether, the fallback price provider set under Settings > Pricing prices instead, and when that cannot help either the cached prices are kept as they are.',
     'tax_step_3_title' => '3. Daily Summaries are Generated',
     'tax_step_3_desc' => 'The update-daily-summaries command (1:30 AM) creates per-character, per-day summaries containing: total ISK value, per-ore breakdown with tax rates, event modifiers, and estimated tax. These summaries always use your current tax settings — if you change a rate, the next summary regeneration picks it up.',
     'tax_step_4_title' => '4. Month is Finalized',
     'tax_step_4_desc' => 'On the 2nd of each month at 2:00 AM, the finalize-month command locks the previous month\'s daily summaries. This runs on the 2nd (not 1st) to allow observer data from EVE ESI — which can lag 12-24 hours — to settle before locking in final numbers.',
     'tax_step_5_title' => '5. Tax is Calculated',
-    'tax_step_5_desc' => 'The calculate-taxes command runs daily at 2:15 AM but only acts on period boundaries — the 2nd for monthly, the 2nd and 16th for biweekly, or Tuesdays for weekly. The 1-day shift allows late-arriving observer data to be reconciled before tax calculation. It sums daily summaries into a tax record per member (grouped by main character) for the previous completed period. Each record stores the period type, start/end dates, due date, and a triggered_by audit trail.',
+    'tax_step_5_desc' => 'The calculate-taxes command runs daily at 2:15 AM. Every night it marks bills overdue once their due date is over, but it only works out tax on period boundaries: the 2nd for monthly, the 2nd and 16th for biweekly. The 1-day shift allows late-arriving observer data to be reconciled before tax calculation. It sums daily summaries into a tax record per member (grouped by main character) for the previous completed period. Each record stores the period type, start/end dates, due date, and a triggered_by audit trail.',
     'tax_step_6_title' => '6. Invoice is Generated',
     'tax_step_6_desc' => 'The generate-invoices command runs daily at 2:30 AM and creates invoice records for any unpaid taxes with completed periods. It skips taxes that already have an invoice — safe to run every day.',
     'tax_step_7_title' => '7. Payment Codes are Issued',
     'tax_step_7_desc' => 'Each tax record gets a unique payment code (e.g., TAX-MINC-VX45XUQC). Members pay by sending ISK to the corporation wallet with their code in the transfer reason field. Each period gets its own code.',
     'tax_step_8_title' => '8. Payments are Verified',
-    'tax_step_8_desc' => 'The verify-payments command scans corporation wallet journal entries every 6 hours and automatically matches the reason field against issued tax codes. Matched payments update the tax status to "paid".',
+    'tax_step_8_desc' => 'The verify-payments command scans corporation wallet journal entries every 6 hours and automatically matches the reason field against issued tax codes. A payment that covers the bill marks it "paid"; one that covers part of it marks it "partial", and the bill keeps asking for what is left.',
     'tax_step_9_title' => '9. Reminders are Sent',
     'tax_step_9_desc' => 'The send-reminders command runs daily at 10:00 AM. It finds unpaid taxes approaching their due date (within the configured reminder window, default 3 days before) or already overdue, and sends one notification per character with their total owed and earliest due date.',
 
@@ -158,16 +158,16 @@ return [
     'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 2nd and 16th.',
     // tax_period_weekly removed in v1.0.3. Historical rows with period_type='weekly' still render via MiningTax::formatted_period.
     'tax_periods_charts' => 'Charts always display data monthly regardless of period type. Biweekly periods within the same month are aggregated into one data point.',
-    'tax_periods_due_date' => 'Each tax record gets a due date calculated as: period end date + payment deadline days (configurable in settings, default 7 days). For example, a biweekly period ending March 14 would be due March 21.',
+    'tax_periods_due_date' => 'Each tax record gets a due date calculated as: period end date + payment deadline days (configurable in settings, default 7 days). For example, a biweekly period ending March 14 would be due March 21. The due date is a whole day: paying on it is on time, and a bill only counts as late once that day is over.',
     'tax_periods_codes' => 'Each period generates its own unique tax code. Biweekly members receive 2 codes per month.',
 
     // Nightly Pipeline
     'nightly_pipeline_title' => 'Behind the Scenes — Nightly Pipeline',
     'nightly_pipeline_desc' => 'Every night, a chain of automated commands runs in a specific order. Each step depends on the previous one completing first:',
     'pipeline_step_1' => '1:00 AM — update-ledger-prices: Locks in current market prices on mining ledger entries.',
-    'pipeline_step_2' => '1:30 AM — update-daily-summaries: Catches any missed mining data (belt mining, late ESI imports), reconciles character-imported entries against late-arriving observer data from the previous 2 days, and ensures all summaries are current.',
+    'pipeline_step_2' => '1:30 AM — update-daily-summaries: Catches any missed mining data (belt mining, late ESI imports), removes character-imported entries from the last 4 days that your Moon Owner Corporation\'s observer data has since recorded in full, and ensures all summaries are current.',
     'pipeline_step_3' => '2:00 AM — finalize-month (2nd only): Locks the previous month\'s summaries as final so they won\'t be regenerated. Runs on the 2nd to allow observer data to settle.',
-    'pipeline_step_4' => '2:15 AM — calculate-taxes: Creates tax records for the completed period. Only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly, Tuesdays for weekly). The 1-day shift allows late observer data to be reconciled first.',
+    'pipeline_step_4' => '2:15 AM — calculate-taxes: Creates tax records for the completed period. Only acts on period boundary days (2nd for monthly, 2nd/16th for biweekly). The 1-day shift allows late observer data to be reconciled first. Every night it also marks bills overdue once their due date is over.',
     'pipeline_step_5' => '2:30 AM — generate-invoices: Creates invoice records for any new unpaid taxes with completed periods.',
     'pipeline_step_6' => '3:00 AM — calculate-monthly-stats (2nd only): Pre-calculates dashboard statistics for the closed month.',
     'pipeline_step_7' => '10:00 AM — send-reminders: Sends payment reminders for taxes approaching or past their due date.',
@@ -183,7 +183,7 @@ return [
     // Admin Tax Controls
     'admin_controls_title' => 'Admin Tax Management',
     'admin_controls_desc' => 'Administrators have additional controls on the Tax Overview and Tax Details pages:',
-    'admin_control_delete' => 'Delete — Remove a tax record entirely. Useful for incorrectly created records.',
+    'admin_control_delete' => 'Delete — Remove a tax record entirely. Useful for incorrectly created records. A bill with any payment recorded against it cannot be deleted.',
     'admin_control_mark_paid' => 'Mark as Paid — Manually mark a tax as paid with optional notes (e.g., "Paid via contract" or "Waived"). This also marks any active tax codes as "used" to prevent the wallet verification from double-processing.',
     'admin_control_status' => 'Change Status — Change a tax record\'s status (unpaid, paid, overdue, waived). Changing to "paid" also marks tax codes as used.',
 
@@ -193,7 +193,7 @@ return [
     'daily_summaries_when_generated' => 'Summaries are generated automatically when mining data is processed and when prices are updated. They can also be regenerated on demand using the Recalculate button or the update-daily-summaries command.',
     'daily_summaries_settings' => 'Tax rates in daily summaries always reflect your current settings at the time of generation. If you change a tax rate mid-month, use Recalculate to regenerate all summaries for that month with the new rates.',
     'daily_summaries_reconciliation_title' => 'Observer Data Reconciliation:',
-    'daily_summaries_reconciliation_desc' => 'EVE ESI corporation observer data can lag 12-24 hours behind character mining data. The daily summary update command automatically reconciles the previous 2 days — matching character-imported moon ore entries against late-arriving Moon Owner Corporation observer data, removing duplicates, and adjusting quantities. Only observer data from the configured Moon Owner Corporation is used for reconciliation — observer data from other corporations is ignored. Affected daily summaries are regenerated automatically.',
+    'daily_summaries_reconciliation_desc' => 'EVE ESI corporation observer data can lag 12-24 hours behind character mining data, so the same moon mining can arrive twice: once from the pilot and once from your refinery. The nightly summary run looks back over the last 4 days and removes a character-imported entry only when its quantity is exactly what your Moon Owner Corporation\'s observer recorded for that pilot, ore and day, the one case that can be proved, so mining on somebody else\'s moon is never taken off. Observer data from other corporations is ignored, days covered by an issued invoice are left exactly as they are, and affected daily summaries are rebuilt. mining-manager:reconcile-personal-mining does the same on demand, with --days to reach further back and --dry-run to report without writing.',
 
     // ================================================================
     // Corporation Tax Model
@@ -205,7 +205,7 @@ return [
     'corp_model_moon_owner_desc' => 'This is the corporation that owns the moon mining structures (configured in Settings > General). Only mining observer data from THIS corporation\'s structures is used for moon ore taxation. If someone else\'s corporation has a director in your SeAT, their observer data will flow into the database but will be completely ignored for tax purposes — you will never accidentally tax someone for mining on structures you don\'t own.',
 
     'corp_model_configured_title' => 'Configured Corporations (Switch Corporation Context)',
-    'corp_model_configured_desc' => 'Each corporation in the "Switch Corporation Context" dropdown has its own tax rates. When a member of that corporation mines, they are taxed at their corporation\'s configured rates. Character ledger data (regular ore, ice, gas mined anywhere) is taxed based on which configured corporation the miner belongs to. If a character is not a member of any configured corporation, their character ledger mining is not taxed.',
+    'corp_model_configured_desc' => 'A corporation picked under "Switch Corporation Context" gets its own tax rates once you save them. When a member of that corporation mines, they are taxed at their corporation\'s configured rates. Character ledger data (regular ore, ice, gas mined anywhere) is taxed based on which configured corporation the miner belongs to. If a character is not a member of any configured corporation, their character ledger mining is not taxed.',
 
     'corp_model_flow_title' => 'How Mining Entries Are Processed',
     'corp_model_flow_desc' => 'Every mining entry in the database has a corporation_id field. Here is how the system decides what to do with each entry:',
@@ -246,8 +246,8 @@ return [
     'tax_rate_regular_ore' => 'Regular Ore — A single rate applied to all non-moon, non-ice, non-gas ores (Veldspar, Scordite, Plagioclase, etc.).',
     'tax_rate_ice' => 'Ice — Applied to all ice mining products.',
     'tax_rate_gas' => 'Gas — Applied to all gas cloud harvesting.',
-    'tax_rate_abyssal' => 'Abyssal Ore — Applied to rare ores from Abyssal Deadspace (Bezdnacine, Rakovene, Talassonite). Disabled by default in the Tax Selector.',
-    'tax_rate_triglavian' => 'Triglavian Ore — Applied to ores from Pochven/Triglavian space (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). Disabled by default in the Tax Selector.',
+    'tax_rate_abyssal' => 'Abyssal Ore: Bezdnacine, Rakovene and Talassonite, every grade and compressed form. Nullsec and wormhole border ore, including Ore Prospecting Array escalations. Disabled by default in the Tax Selector.',
+    'tax_rate_triglavian' => 'Triglavian Ore: mission and site objective ore (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). None of it can be sold or reprocessed, so this rate never charges anything. Disabled by default in the Tax Selector.',
 
     // Tax Selector
     'tax_selector_explained' => 'Tax Selector (What Gets Taxed)',
@@ -259,7 +259,7 @@ return [
 
     // Guest Mining
     'guest_mining_explained' => 'Guest Mining and Guest Tax Rates',
-    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of configured ("home") corporations. The home corporation list includes all corporations with settings configured (any corp in the "Switch Corporation Context" dropdown) plus the Moon Owner Corporation. Guest miners only appear via moon mining observer data — they are characters who mine on your Moon Owner Corporation\'s structures but are not members of any configured corporation.',
+    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of configured ("home") corporations. The home corporation list includes all corporations with settings configured (any corp you have saved settings for under "Switch Corporation Context") plus the Moon Owner Corporation. Guest miners only appear via moon mining observer data: they are characters who mine on your Moon Owner Corporation\'s structures but are not members of any configured corporation.',
     'guest_rates_config' => 'Guest tax rates are configured in Settings > General under "Guest Miner Tax Rates" and are always tied to the Moon Owner Corporation. These are global rates — they do not change when you switch corporation context. You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal, triglavian).',
     'guest_zero_rate' => 'Setting a guest rate to 0 means actual 0% tax (no tax charged). It does NOT fall back to the regular member rate. If you want guests to pay the same rate as members, enter the same percentage. If you want guests to mine for free, set it to 0.',
     'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against all configured corporations. Members of any configured corporation are taxed at that corporation\'s rates, not as guests. Guest miners\' character ledger data (non-moon mining) is not taxed — only their moon mining on your structures is subject to guest rates.',
@@ -318,14 +318,14 @@ return [
     'exemptions_explained' => 'Exemptions and Minimum Tax',
     'exemptions_desc' => 'Two thresholds control small tax amounts. They are evaluated in order during tax calculation:',
     'exemption_threshold' => 'Exemption Threshold',
-    'exemption_threshold_desc' => 'If a character\'s total calculated tax for the period is below this amount, they are exempt from tax entirely — no invoice is generated. This is useful for encouraging new players to try mining without being charged for very small amounts. Configured in Settings > Tax Rates > Exemptions. Default: 1,000,000 ISK. Set to 0 to disable.',
+    'exemption_threshold_desc' => 'If an account\'s total calculated tax for the period, a main and its alts added together, is below this amount, it is exempt from tax entirely and no invoice is generated. This is useful for encouraging new players to try mining without being charged for very small amounts. Switch on Enable Tax Exemption Threshold in Settings > Tax Rates to use it. Default: 1,000,000 ISK, off until switched on.',
     'minimum_tax' => 'Minimum Tax Amount',
-    'minimum_tax_desc' => 'If a character\'s tax is above the exemption threshold but below the minimum tax amount, the system applies one of two behaviors (configurable in Settings > Tax Rates):',
+    'minimum_tax_desc' => 'If an account\'s tax is above the exemption threshold but below the minimum tax amount, the system applies one of two behaviors (configurable in Settings > Tax Rates):',
     'minimum_tax_behavior_exempt' => 'No tax (default) — The tax is treated as zero and no invoice is generated. The miner is not charged.',
     'minimum_tax_behavior_enforce' => 'Enforce minimum — The tax is raised to the minimum amount. The miner receives an invoice for the minimum regardless of their actual mining value.',
     'minimum_tax_default' => 'Default: 1,000,000 ISK with "No tax" behavior. Set the amount to 0 to disable minimum tax entirely.',
     'exemption_flow_title' => 'How It Works (Evaluation Order)',
-    'exemption_flow_step1' => 'Calculate the miner\'s total tax from their mining activity for the period.',
+    'exemption_flow_step1' => 'Add up the tax on everything the account mined in the period, the main and its alts together.',
     'exemption_flow_step2' => 'Check Exemption Threshold: If tax < exemption threshold → No tax (exempt). Stop.',
     'exemption_flow_step3' => 'Check Minimum Tax: If tax < minimum amount → Apply the configured behavior (no tax or enforce minimum).',
     'exemption_flow_step4' => 'Otherwise: Use the calculated tax amount as-is.',
@@ -377,11 +377,11 @@ return [
     'moon_tracking' => 'Tracking Moon Extractions',
     'moon_tracking_desc' => 'The system automatically tracks all moon extraction activities from your structures. View extraction history, active extractions, completion progress, and structure names.',
     'moon_compositions' => 'Moon Compositions',
-    'moon_compositions_desc' => 'Record and analyze the ore composition of each moon. View ore percentages, rarity classification (R4-R64), and estimated extraction values based on current market prices.',
+    'moon_compositions_desc' => 'A moon\'s ore comes from its scan in SeAT\'s Moons Reporter: the percentages, the rarity (R4 to R64) and an estimated value at current market prices. A moon nobody has scanned is still valued, from the game\'s own extraction notices, once the first one is in. Its extraction page says so in an amber banner, and the simulator, Find Moons and the quality ratings cannot see it until it is scanned. Moon Scan Missing, in the Plugin Health group on the webhook form, lists the moons your refineries drill that need a scan.',
     'extraction_notifications' => 'Extraction Notifications',
-    'extraction_notifications_desc' => 'A moon-arrival notification fires once, the moment a chunk actually becomes minable (within ~60s of arrival time). Enable / disable per channel and configure target webhooks under Settings → Notifications — the "moon_arrival" event type controls the master toggle, role ping, and per-webhook subscriptions.',
+    'extraction_notifications_desc' => 'Moon Chunk Ready fires once, within about a minute of the chunk arriving, when it can be fractured with the laser. Its master switch and role ping are on its card under Settings, Notifications, and each webhook decides whether it gets it.',
     'moon_value' => 'Moon Value Calculator',
-    'moon_value_desc' => 'The Extraction Simulator tab estimates what a scanned moon yields over an extraction, as ore and as refined value, from the price cache. See Extraction Simulator and Find Moons below.',
+    'moon_value_desc' => 'The Extraction Simulator, in the Moon Planner section, estimates what a scanned moon yields over an extraction, as ore and as refined value, from the price cache. See Extraction Simulator and Find Moons below.',
 
     // Moon Extraction Lifecycle
     'moon_lifecycle' => 'Moon Extraction Lifecycle',
@@ -389,9 +389,9 @@ return [
     'moon_status_extracting' => 'Extracting',
     'moon_status_extracting_desc' => 'The moon drill beam is active, forming a chunk. Duration depends on extraction settings (typically 6-56 days).',
     'moon_status_ready' => 'Ready',
-    'moon_status_ready_desc' => 'The chunk has fractured and an asteroid belt is available for mining. Belt lasts approximately 48 hours.',
+    'moon_status_ready_desc' => 'The chunk has fractured and an asteroid belt is available for mining. It can be mined for 48 hours after fracture, or 72 / 96 hours when the refinery has a Moon Drilling Stability or Proficiency rig.',
     'moon_status_unstable' => 'Unstable',
-    'moon_status_unstable_desc' => 'Belt is degrading and will expire soon (48-50 hours after fracture). Mining should be prioritized.',
+    'moon_status_unstable_desc' => 'The last 2 hours of the belt\'s life, after its mining window: 48 to 50 hours after fracture, later with a moon rig. Mining should be prioritized.',
     'moon_status_expired' => 'Expired',
     'moon_status_expired_desc' => 'Belt has despawned. No further mining possible until next extraction cycle.',
 
@@ -463,6 +463,7 @@ return [
     'moon_analytics_utilization' => 'Moon Utilization - Track how much of each extraction pool is actually mined, with structure names and completion percentages.',
     'moon_analytics_pool_vs_mined' => 'Pool vs Mined - Compare what was available in each extraction against what was actually mined, broken down by ore type.',
     'moon_analytics_per_extraction' => 'Per-Extraction Analysis - Detailed view of individual extractions showing pool composition, mining activity, unique miners, and ISK values.',
+    'moon_analytics_rigs' => 'Moon Rigs - A cog marks refineries with moon rigs fitted now, and the chunks that were pulled with them. Hover it to see which rigs and what they did to each chunk.',
     'moon_analytics_popularity' => 'Ore Popularity - Track which ores are most frequently mined across all moon extractions.',
 
     'exporting_data' => 'Exporting Data',
@@ -478,15 +479,17 @@ return [
     'settings_general' => 'General',
     'settings_general_desc' => 'Moon owner corporation, payment settings (match tolerance, grace period), and Guest Miner Tax Rates (global rates tied to Moon Owner Corporation — 0% means no tax).',
     'settings_pricing' => 'Pricing',
-    'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, and cache duration. When Manager Core is the provider, the market + price-type lookup is centralized in MC (single source of truth) — the panel becomes a read-only status readout plus a "Configure pricing in Manager Core →" deep-link that lands you on MC\'s Pricing Preferences page with Mining Manager\'s row in view. MC routes the lookup through whichever provider is configured per market (Fuzzwork for hubs by default; Goonpraisal for the 7 pre-seeded nullsec markets) so changing your market in MC also switches the upstream silently. <strong>Per-plugin provider override</strong> on MC\'s Pricing Preferences page lets you route Mining Manager specifically through a different provider than the market\'s default (e.g. Janice for Jita tax accuracy) without affecting other plugins reading the same market. Fallback-to-Jita auto-fills any zero-priced types from Jita as a per-item safety net.',
+    'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, and cache duration. When Manager Core is the provider, the market + price-type lookup is centralized in MC (single source of truth) — the panel becomes a read-only status readout plus a "Configure pricing in Manager Core →" deep-link that lands you on MC\'s Pricing Preferences page with Mining Manager\'s row in view. MC routes the lookup through whichever provider is configured per market (Fuzzwork for hubs by default; Goonpraisal for the 7 pre-seeded nullsec markets) so changing your market in MC also switches the upstream silently. <strong>Per-plugin provider override</strong> on MC\'s Pricing Preferences page lets you route Mining Manager specifically through a different provider than the market\'s default (e.g. Janice for Jita tax accuracy) without affecting other plugins reading the same market. Fallback-to-Jita auto-fills any zero-priced types from Jita as a per-item safety net. The fallback price provider (Fuzzwork by default, Janice, Manager Core or none) prices instead when the provider fails outright, for the same market and price type, and the Price Provider Trouble notification says when that happens.',
     'settings_features' => 'Features',
-    'settings_features_desc' => 'Toggle individual plugin features on/off: wallet verification, mining events, theft detection, moon analytics, notifications, reports, and diagnostics. Disabled features are hidden from the UI.',
+    'settings_features_desc' => 'Toggle individual plugin features on/off: ledger tracking, tax tracking, moon tracking, mining events, analytics, reports, wallet verification and upfront payments, along with Allow Data Export, the automatic ledger, tax and invoice runs, and how long old ledger and tax records are kept. Disabled features are hidden from the UI.',
     'settings_webhooks' => 'Webhooks',
     'settings_webhooks_desc' => 'Configure webhook integrations for notifications. Set up webhook URLs, choose the type (Discord, Slack, or Custom), and select which notification events each webhook should receive.',
     'settings_notifications' => 'Notifications',
-    'settings_notifications_desc' => 'Configure notification delivery settings. Enable or disable notification types globally, set up per-type Discord role pinging, configure user pinging for personal tax notifications (requires seat-connector), and manage Slack integration.',
+    'settings_notifications_desc' => 'Configure notification delivery settings. Each notification type has a card with its master switch and Discord role ping, user pinging for personal tax notifications (requires seat-connector), and the Outstanding Mining Tax card also chooses which corporations its digest covers. The same tab holds the Moon Planner timings (the minimum gap between moons, the spacing between pulls on one refinery, and the reminder hours), the Metenox bay threshold, Moon Scan Missing\'s daily reminder, and the Slack channel.',
     'settings_dashboard' => 'Dashboard',
-    'settings_dashboard_desc' => 'Customize dashboard appearance and behavior. Configure which charts and widgets are visible, default date ranges, top miner counts, and chart display preferences.',
+    'settings_dashboard_desc' => 'Choose which corporations the dashboard\'s Top Miners boards include: every corporation, or only the ones you pick. It is one setting for the whole install, whichever corporation the settings page is set to.',
+    'settings_routing_map' => 'Notification Routing Map',
+    'settings_routing_map_desc' => 'A read-only view of where each notification goes: which webhooks receive it and which role it pings. It warns about a notification that is switched on but reaches no webhook. Nothing on it can be changed; use the Webhooks and Notifications tabs for that.',
 
     // Corporation-Specific Settings
     'settings_corp_header' => 'Corporation-Specific Settings',
@@ -548,7 +551,7 @@ return [
     'faq_q6' => 'Can members see other members\' mining data?',
     'faq_a6' => 'Members with the "view" permission can only see their own data and the help page. Director and admin permissions grant access to corporation-wide data and management features.',
     'faq_q7' => 'What is a jackpot extraction?',
-    'faq_a7' => 'A jackpot extraction occurs when the moon drill hits an exceptionally rich deposit, yielding significantly more ore than normal. The system automatically detects and flags these.',
+    'faq_a7' => 'A jackpot chunk is made of the +100% variants of its ores (Shining Monazite rather than Monazite, for example), which reprocess to about twice the minerals, so the chunk is worth about twice as much. ESI does not say which chunks are jackpots, so the plugin finds them in the mining ledger once the ore is mined, or takes a member\'s report from the extraction page.',
     'faq_q8' => 'How does theft detection work?',
     'faq_a8' => 'The system compares mining observer data from your moon structures against your corporation member list. Any mining by non-members is flagged as potential theft.',
     'faq_q9' => 'How do mining events work?',
@@ -556,7 +559,7 @@ return [
     'faq_q10' => 'Is this compatible with other SeAT plugins?',
     'faq_a10' => 'Mining Manager is designed to work alongside other SeAT v5.x plugins. It uses standard SeAT authentication, permissions, and database systems.',
     'faq_q11' => 'Why are taxes calculated on the 2nd instead of the 1st?',
-    'faq_a11' => 'EVE ESI corporation mining observer data can lag 12-24 hours behind the actual mining. Tax calculation, monthly finalization, and stats are shifted to the 2nd of the month (or Tuesday for weekly, 2nd/16th for biweekly) to allow this late-arriving data to settle. Additionally, the daily summary update command runs a reconciliation step on the previous 2 days, matching character-imported entries against observer data that arrived late.',
+    'faq_a11' => 'EVE ESI corporation mining observer data can lag 12-24 hours behind the actual mining. Tax calculation, monthly finalization, and stats are shifted to the 2nd of the month (2nd/16th for biweekly) to allow this late-arriving data to settle. Additionally, the daily summary update command runs a reconciliation step over the last 4 days, removing character-imported entries that observer data arriving late has since recorded.',
     'faq_q12' => 'Why does some moon ore show 0% tax?',
     'faq_a12' => 'If you use the "Only Corp Moon Ore" tax selector, moon ore must have observer data (corporation_id) to be taxed. Character mining ESI data arrives without corporation_id — it only gets linked when corporation observer data arrives (up to 24h later). The daily reconciliation process matches these entries automatically. If you see 0% tax, wait for the next update-daily-summaries run or manually trigger it.',
 
@@ -564,7 +567,7 @@ return [
     'faq_a13' => 'Install both Manager Core (mattfalahe/manager-core) and Structure Manager (mattfalahe/structure-manager). When both plugins are present, the extraction_at_risk and extraction_lost webhook toggles become available in Settings → Notifications. Structure Manager publishes the threat events; Mining Manager subscribes via Manager Core\'s EventBus and dispatches notifications with attacker info, fuel/timer details, severity-aware embed colors, and a one-click Structure Board deeplink. The toggles auto-disable when either plugin is missing — no operator action needed to handle the standalone case.',
 
     'faq_q14' => 'What is the Master Test diagnostic and when should I run it?',
-    'faq_a14' => 'Master Test is the default tab on the internal Diagnostic page. The Diagnostic page is admin-only and intentionally NOT in the sidebar — navigate to it manually at /mining-manager/diagnostic. The Master Test runs a one-click read-only smoke chain of ~26 checks across schema integrity, settings consistency, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security hardening — typically completing in under 30 seconds. Idempotent (never mutates production data) so you can run it anytime. Recommended after every plugin upgrade, settings change, or when you suspect something\'s broken — it catches stale route caches, missing migrations, broken cross-plugin links, and partial deploys before they cause real-world dispatch failures. Pass/warn/fail/skip results are grouped by category with a "Show only issues" filter for noisy reports.',
+    'faq_a14' => 'Master Test is the second tab on the internal Diagnostic page, after Health Checks. The Diagnostic page is admin-only and intentionally NOT in the sidebar — navigate to it manually at /mining-manager/diagnostic. The Master Test runs a one-click read-only smoke chain of 39 checks across schema integrity, settings consistency, cross-plugin integration, pricing, notifications, lifecycle, tax pipeline, and security hardening — typically completing in under 30 seconds. Idempotent (never mutates production data) so you can run it anytime. Recommended after every plugin upgrade, settings change, or when you suspect something\'s broken — it catches stale route caches, missing migrations, broken cross-plugin links, and partial deploys before they cause real-world dispatch failures. Pass/warn/fail/skip results are grouped by category with a "Show only issues" filter for noisy reports.',
 
     'faq_q15' => 'What does the "Auto-match wallet payments" toggle do?',
     'faq_a15' => 'On Settings → General → Payment Settings. When ON (default), the wallet listener applies matched payments to taxes automatically as ESI wallet updates arrive — operators see paid taxes appear in real time. When OFF, matches are detected and listed on the Wallet Verification page but require manual confirmation before any tax row updates. Useful for installs that want a human-review step before any tax balance moves on the books — multi-corp setups where the director wants to verify each match, or environments with strict audit requirements. Even with auto-match OFF, the dedup tracking still records every match so the same transaction never re-credits.',
@@ -652,6 +655,7 @@ return [
     'cli_test_desc' => 'Commands for generating test data. Only use in development environments — they create fake data:',
 
     // Schedule Labels
+    'schedule_1min' => 'Every minute',
     'schedule_30min' => 'Every 30 min',
     'schedule_2hours' => 'Every 2 hours',
     'schedule_4hours' => 'Every 4 hours',
@@ -679,24 +683,24 @@ return [
     'pay_timeline_title' => 'What Happens (Timeline)',
     'pay_step_1' => 'You mine ore on a corporation moon (or anywhere, depending on corp settings). The system automatically tracks what you mine via ESI data — you do not need to report anything.',
     'pay_step_2' => 'Every day, the system calculates the value of what you mined and how much tax you owe based on the ore type and corporation tax rates. This is stored as a daily summary.',
-    'pay_step_3' => 'At the end of the tax period (monthly, biweekly, or weekly — depends on your corp settings), all your daily totals are added up into one tax bill.',
+    'pay_step_3' => 'At the end of the tax period (monthly or biweekly, depending on your corp settings), all your daily totals are added up into one tax bill.',
     'pay_step_4' => 'You receive a notification (Discord or Slack depending on corp setup) with your tax amount and a link to the Tax page.',
-    'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see the amount owed, due date, and your unique tax code (e.g. TAX-A1B2C3).',
+    'pay_step_5' => 'Go to Mining Manager > My Taxes to see your bill. You will see what is left to pay, the due date and how many days you have, and your unique tax code (e.g. TAX-A1B2C3). While you owe anything, a banner at the top of the Mining Dashboard says how much and when it is due.',
     'pay_step_6' => 'Pay your corporation in game (right-click its name and choose "Give Money") with your tax code in the "reason" field. That is how the system matches your payment to your bill.',
     'pay_step_7' => 'The system automatically scans wallet transactions every 6 hours. Once it finds your payment with the matching tax code, your status changes to "Paid". Done!',
 
     'pay_ingame_title' => 'How to Send Payment In-Game',
     'pay_ingame_step_1' => 'In EVE Online, right-click your corporation\'s name and choose "Give Money". "Give ISK" in your own wallet can\'t send to a corporation.',
-    'pay_ingame_step_4' => 'Enter the exact amount shown on your tax bill (or a partial amount if paying in installments).',
+    'pay_ingame_step_4' => 'Enter the amount shown in the payment steps on My Taxes, or part of it if you are paying in instalments. After a part payment it shows only what is left.',
     'pay_ingame_step_5' => 'In the "Reason" field, paste your tax code exactly as shown (e.g. TAX-A1B2C3). This is the most important step — without the code, the system cannot match your payment.',
 
     'pay_reason_warning' => 'The tax code MUST be in the "Reason" field of the wallet transfer, not the description or anywhere else. If you forget the code or type it wrong, your payment will not be automatically matched and a director will need to manually verify it.',
 
     'pay_partial_title' => 'Can I Pay in Installments?',
-    'pay_partial_desc' => 'Yes. You can split your payment into multiple transfers using the same tax code each time. For example, if you owe 100M ISK, you can send 50M now and 50M later — both with the same tax code. The system tracks partial payments and updates your status accordingly (Partial → Paid once the full amount is received).',
+    'pay_partial_desc' => 'Yes. You can split your payment into several transfers using the same tax code each time. For example, if you owe 100M ISK, you can send 50M now and 50M later, both with the same tax code. Your status shows Partial until the full amount is in, then Paid. My Taxes keeps the payment steps and your tax code on screen until then, and asks only for what is left.',
 
     'pay_verification_title' => 'How Do I Know My Payment Went Through?',
-    'pay_verification_desc' => 'Go to Mining Manager > My Taxes. Your tax status will update automatically: "Unpaid" means no payment detected yet, "Partial" means some amount received but not the full bill, "Paid" means you are all clear. The Wallet Verification page also shows your payment history. Payments are scanned every 6 hours, so it may take up to 6 hours for your status to update.',
+    'pay_verification_desc' => 'Go to Mining Manager > My Taxes. Your tax status will update automatically: "Unpaid" means no payment detected yet, "Partial" means some amount received but not the full bill, "Paid" means you are all clear. The banner on the Mining Dashboard goes once the bill is paid in full. The Wallet Verification page also shows your payment history. Payments are scanned every 6 hours, so it may take up to 6 hours for your status to update.',
 
     'pay_tip' => 'If you have alt characters linked to your SeAT account, all their mining is combined into one tax bill under your main character. You only need to pay once for all your alts.',
 
@@ -710,7 +714,7 @@ return [
     'collect_setup_desc' => 'Before taxes can be collected, an admin needs to configure these settings:',
     'collect_setup_step_1' => 'Settings > Tax Rates — Set tax percentages for each ore type (moon R64-R4, regular ore, ice, gas). The tax selector controls which ore types are taxed.',
     'collect_setup_step_2' => 'Settings > General — Set the moon owner corporation and payment settings. Settings > Pricing — Set the price provider, valuation method, and market region. These control how ore values are calculated.',
-    'collect_setup_step_3' => 'Settings > Webhooks — Create webhook(s) for Discord/Slack notifications. Enable the tax-related toggles (Tax Generated, Tax Reminder, Tax Invoice, Tax Overdue) so members get notified.',
+    'collect_setup_step_3' => 'Settings > Webhooks — Create webhook(s) for Discord/Slack notifications. Enable the tax-related toggles (Tax Generated, New Invoices Announcement, Tax Reminder, Tax Invoice, Tax Overdue) so members get notified, and Outstanding Mining Tax on a directors\' channel for the weekly list of who still owes.',
     'collect_setup_step_4' => 'Settings > Features — Make sure "Wallet Verification" and "Notifications" are enabled.',
 
     'collect_timeline_title' => 'The Tax Collection Timeline',
@@ -722,7 +726,7 @@ return [
     'collect_step_5' => 'Members pay by sending ISK to the corp wallet with their tax code in the "Reason" field.',
     'collect_step_6' => 'Every 6 hours, the verify-payments command scans the corporation wallet journal and auto-matches payments using tax codes. Matched payments update the bill status.',
     'collect_step_7' => 'Daily at 10:00 AM, the send-reminders command checks for unpaid taxes approaching their due date and sends reminder notifications to those members.',
-    'collect_step_8' => 'After the grace period, unpaid taxes are marked as "Overdue". You can view all overdue taxes on the Tax Overview page and take action.',
+    'collect_step_8' => 'Once the due date is over, an unpaid bill is marked "Overdue" (later if the ESI Wallet Lag Buffer under Settings, General is set above its default 24 hours, to give a payment made late on the due date time to reach SeAT). You can view all overdue taxes on the Tax Overview page and take action.',
 
     'collect_reminders_title' => 'Sending Reminders',
     'collect_reminders_desc' => 'There are three ways to remind members about unpaid taxes:',
@@ -734,7 +738,7 @@ return [
     'collect_verify_desc' => 'Payment verification happens automatically, but directors have additional tools:',
     'collect_verify_auto' => 'Auto-match — Runs every 6 hours. Scans wallet journal for transfers containing tax codes and matches them to bills. Handles partial payments and prevents duplicate processing.',
     'collect_verify_manual' => 'Manual verify — On the Wallet Verification page (visible to directors and admins), you can see all corporation wallet transactions and manually match payments that were not auto-detected.',
-    'collect_verify_reset' => 'Reset month — If payment data gets corrupted (e.g. double-counted transactions), run: docker exec -it seat-docker-front-1 php artisan mining-manager:verify-payments --reset-month=2026-03 — this resets all payment data for that month and re-matches everything from scratch.',
+    'collect_verify_reset' => 'Reset month: if automatic payment matching went wrong for a month (e.g. double-counted transactions), run docker exec -it seat-docker-front-1 php artisan mining-manager:verify-payments --reset-month=2026-03 --dry-run to see what it would undo, then the same without --dry-run. It undoes that month\'s automatic matches and matches them again. Payments marked or assigned by hand, balance drawn from credit, and any payment it could not redo cleanly are left as they are and listed.',
 
     'collect_troubleshoot_title' => 'Troubleshooting Payments',
     'collect_troubleshoot_desc' => 'If a member says they paid but it is not showing: check the Wallet Verification page to see if the transaction exists. Common issues include misspelled tax codes, missing "Reason" field, or sending to the wrong corp wallet. Directors can manually mark taxes as paid from the Tax Overview page if needed.',
@@ -772,15 +776,17 @@ return [
     'webhook_cat_theft' => 'Theft',
     'webhook_cat_theft_events' => 'Theft Detected, Critical Theft, Active Theft, Incident Resolved',
     'webhook_cat_moon' => 'Moon',
-    'webhook_cat_moon_events' => 'Moon Arrival (extraction ready), Jackpot Detected, Moon Chunk Unstable (capital-pilots safety warning fired ~2h before the chunk enters the unstable phase), Extraction Started (a refinery started an extraction, naming who started it), Next Extraction Planned (the refinery\'s next planned pull, once a chunk is ready), Moon Scheduled Off-Plan (an extraction set in game away from the planned time)',
+    'webhook_cat_moon_events' => 'Moon Chunk Ready (a chunk has arrived), Jackpot Detected, Moon Chunk Unstable (capital-pilots safety warning fired ~2h before the chunk enters the unstable phase), Extraction Started (a refinery started an extraction, naming who started it), Next Extraction Planned (the refinery\'s next planned pull, once a chunk is ready, and when a pull planned more than 56 days ahead can be started), Moon Scheduled Off-Plan (an extraction set in game away from the planned time), Refinery Gone (planned pulls taken off a refinery the corporation no longer owns), Moon Extraction Cancelled, Moon Not Rescheduled (a drill left idle after its chunk arrived), Moons Need Planning (one list of refineries short of planned pulls), Metenox Cargo Bay Full (a Metenox drill\'s bay is nearly full)',
     'webhook_cat_structure_alerts' => 'Structure Alerts (cross-plugin)',
-    'webhook_cat_structure_alerts_events' => 'Extraction At Risk (fuel critical or shield/armor/hull reinforced), Extraction Lost (refinery destroyed). Requires Manager Core + Structure Manager — toggles auto-disable when either plugin is missing. SM publishes the events; MM dispatches notifications with attacker info, system security, fuel/timer details, and a one-click Structure Board deeplink.',
+    'webhook_cat_structure_alerts_events' => 'Extraction At Risk (fuel critical, shield or armor reinforced), Extraction Lost (refinery destroyed). Requires Manager Core + Structure Manager — toggles auto-disable when either plugin is missing. SM publishes the events; MM dispatches notifications with attacker info, system security, fuel/timer details, and a one-click Structure Board deeplink.',
     'webhook_cat_events' => 'Mining Events',
     'webhook_cat_events_list' => 'Event Created, Event Started, Event Completed',
     'webhook_cat_tax' => 'Tax',
     'webhook_cat_tax_events' => 'Tax Generated (broadcast), Tax Announcement (broadcast: new invoices notification without ISK amounts), Tax Reminder (personal), Tax Invoice (personal), Tax Overdue (personal), Outstanding Mining Tax (weekly digest for directors of who still owes)',
     'webhook_cat_reports' => 'Reports',
     'webhook_cat_reports_events' => 'Report Generated (when a scheduled report completes)',
+    'webhook_cat_health' => 'Plugin Health',
+    'webhook_cat_health_events' => 'Price Provider Trouble (price refreshes started failing, the fallback provider took over or stopped answering, or they work again), Moon Scan Missing (moons your refineries drill with no scan in SeAT, valued from the game\'s notices until they are scanned; once per new reason, and daily as well if you switch that on)',
 
     'webhook_role_ping_title' => 'Discord Role Pinging',
     'webhook_role_ping_desc' => 'Role pinging is configured per notification type on the Notifications tab. Each notification type has its own "Ping Role" toggle and "Role ID" field, allowing you to ping different roles for different events (e.g., @officers for theft alerts, @miners for event announcements). Personal tax notifications (reminder, invoice, overdue) can optionally ping individual Discord users via seat-connector instead of a role. The "Show ISK Amount" toggle controls whether tax amounts are visible in notifications — disable this for privacy if the notification channel is public.',
@@ -791,7 +797,7 @@ return [
     // Diagnostic Page (Tax Trace)
     // ================================================================
     'diagnostic_page_title' => 'Diagnostic Page (Web UI) — internal / dev only',
-    'diagnostic_page_desc' => 'Internal admin-only tooling for troubleshooting. Intentionally NOT linked from the Mining Manager sidebar — admins reach it by typing /mining-manager/diagnostic in the address bar. Default tab is the Master Test (read-only smoke chain, safe to run anytime). The legacy Tax Trace tab + per-area diagnostics remain for deep-dive debugging. The Test Data Generation tab creates fake corps/characters/mining for development environments only — do not use on a live install.',
+    'diagnostic_page_desc' => 'Internal admin-only tooling for troubleshooting. Intentionally NOT linked from the Mining Manager sidebar — admins reach it by typing /mining-manager/diagnostic in the address bar. It opens on Health Checks; the Master Test next to it is the read-only smoke chain, safe to run anytime. The legacy Tax Trace tab + per-area diagnostics remain for deep-dive debugging. The Test Data Generation tab creates fake corps/characters/mining for development environments only — do not use on a live install.',
 
     'tax_trace_title' => 'Tax Trace',
     'tax_trace_desc' => 'Enter a character ID and month to get a comprehensive tax diagnostic. The trace shows four sections:',
@@ -812,13 +818,13 @@ return [
 
     // Diagnostic → Notification Testing
     'notif_test_title' => 'Notification Testing',
-    'notif_test_desc' => 'End-to-end testing for the 15 notification types the plugin can dispatch. Three modes of increasing scope:',
+    'notif_test_desc' => 'End-to-end testing for every notification type except the weekly Outstanding Mining Tax digest, which mining-manager:send-outstanding-digest --dry-run prints instead. Three modes of increasing scope:',
     'notif_test_preview' => 'Preview Test',
     'notif_test_preview_desc' => 'Renders the selected notification type + POSTs it to one webhook (either selected from the dropdown or a custom URL you paste in). Best for checking embed layout, colors, role pings, and single-webhook wiring. Does not write to the audit log.',
     'notif_test_live' => 'Fire Live Notification',
     'notif_test_live_desc' => 'Routes the selected type through the full NotificationService pipeline — fires to every subscribed, enabled webhook (respecting corp scoping + per-type toggles) and writes to the audit log. Use to verify one specific notification surface works end-to-end without waiting for a real triggering event.',
     'notif_test_chain' => 'Fire ALL (Chain)',
-    'notif_test_chain_desc' => 'Sequentially fires every notification type (all 15) through the full pipeline with a 1.5s delay between each. Takes ~22 seconds. Every subscribed webhook receives 15 messages in quick succession. Post-deploy smoke test — confirms the consolidated pipeline still works for every surface end-to-end.',
+    'notif_test_chain_desc' => 'Sequentially fires the notification types through the full pipeline with a 1.5s delay between each, so it takes under a minute and every subscribed webhook receives one message per type in quick succession. Metenox Cargo Bay Full is left out of the chain; test it on its own. Post-deploy smoke test — confirms the consolidated pipeline still works for every surface end-to-end.',
     'notif_test_chain_tip' => 'Fire ALL is the fastest way to verify all notification types after a deploy. If any type fails, its specific error is highlighted in the log so you can drill into it with Fire Live Notification.',
 
     // ================================================================
@@ -835,6 +841,7 @@ return [
     'per_type_ping_role' => 'Ping Role — When enabled, the specified Discord Role ID will be @mentioned in the notification. Configure a different role for different notification types (e.g., @officers for theft, @miners for events).',
     'per_type_ping_user' => 'Ping User — For personal tax notifications (reminder, invoice, overdue), individual Discord users can be @mentioned. This requires the seat-connector package to map SeAT characters to Discord users.',
     'per_type_show_amount' => 'Show ISK Amount — For tax notifications, controls whether the ISK amount is visible in the message. Disable this for privacy if the notification channel is public.',
+    'per_type_corporations' => 'Corporations: Outstanding Mining Tax only. Pick corporations and the weekly digest lists just their members, by the corporation SeAT or the plugin\'s lookups place each one in, and says which corporations it covers. With one picked, its link opens Tax Overview on that corporation. Pick none to list everyone who owes.',
 
     // ================================================================
     // Tax Announcement

@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningTax;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\Notification\NotificationService;
-use Seat\Eveapi\Models\Character\CharacterInfo;
 
 /**
  * The weekly "who still owes" summary for directors.
@@ -82,19 +81,40 @@ class SendOutstandingDigestCommand extends Command
             $limit = max(1, (int) $this->option('limit'));
             $dryRun = (bool) $this->option('dry-run');
 
+            // Switched off on its card: nothing to work out, and the week does
+            // not start, so switching it back on sends the next one on time.
+            if (!$dryRun && !$this->notificationService->isTypeGloballyEnabled(NotificationService::TYPE_TAX_OUTSTANDING_DIGEST)) {
+                $this->info('Outstanding Mining Tax is switched off under Settings, Notifications. No digest sent.');
+
+                return self::SUCCESS;
+            }
+
             // Everything with money still on it. 'partial' matters most here:
             // it is the state a token payment produces, and the one that used to
             // be invisible to every other notification.
-            $taxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
+            $taxes = MiningTax::outstanding()
                 ->where('amount_owed', '>', 0)
                 ->get();
+
+            $names = app(\MiningManager\Services\Character\CharacterNames::class);
+
+            // Only members of the corporations picked on the card, when any
+            // are, by the corporation each one is in now.
+            $corporations = $this->settingsService->getTypeNotificationSettings('tax_outstanding_digest')['corporations'];
+
+            if ($corporations) {
+                $names->lookUpNow($taxes->pluck('character_id')->unique()->all());
+                $taxes = $taxes
+                    ->filter(fn ($tax) => in_array((int) $names->info($tax->character_id)['corporation_id'], $corporations, true))
+                    ->values();
+            }
 
             $byCharacter = [];
 
             foreach ($taxes as $tax) {
                 $owed = (float) $tax->amount_owed;
                 $paid = (float) ($tax->amount_paid ?? 0);
-                $outstanding = round($owed - $paid, 2);
+                $outstanding = $tax->getRemainingBalance();
 
                 if ($outstanding <= 0) {
                     continue;
@@ -143,8 +163,7 @@ class SendOutstandingDigestCommand extends Command
             // Largest debt first: that is the order a director wants to work in.
             uasort($byCharacter, fn ($a, $b) => $b['outstanding'] <=> $a['outstanding']);
 
-            $names = CharacterInfo::whereIn('character_id', array_keys($byCharacter))
-                ->pluck('name', 'character_id');
+            $names->lookUpNow(array_keys($byCharacter));
 
             $rows = [];
             foreach ($byCharacter as $characterId => $totals) {
@@ -154,7 +173,7 @@ class SendOutstandingDigestCommand extends Command
 
                 $rows[] = [
                     'character_id' => $characterId,
-                    'character_name' => $names[$characterId] ?? "Character #{$characterId}",
+                    'character_name' => $names->nameOrId($characterId),
                     'outstanding' => round($totals['outstanding'], 2),
                     'formatted_outstanding' => number_format($totals['outstanding'], 0) . ' ISK',
                     'percent_paid' => $percentPaid,
@@ -167,6 +186,10 @@ class SendOutstandingDigestCommand extends Command
             $truncated = max(0, count($rows) - count($shown));
 
             $this->info(count($rows) . ' member(s) owe ' . number_format($total, 2) . ' ISK in total');
+
+            if ($corporations) {
+                $this->info('Only members of ' . $this->corporationsLabel($corporations));
+            }
 
             if ($dryRun) {
                 $this->table(
@@ -188,16 +211,24 @@ class SendOutstandingDigestCommand extends Command
                 return self::SUCCESS;
             }
 
-            $this->notificationService->sendOutstandingDigest([
+            $result = $this->notificationService->sendOutstandingDigest([
                 'member_count' => count($rows),
                 'formatted_total' => number_format($total, 0) . ' ISK',
                 'rows' => $shown,
                 'rows_text' => $this->formatRows($shown),
                 'truncated_count' => $truncated,
                 'period_label' => 'All open invoices as at ' . Carbon::now()->format('Y-m-d'),
-                'tax_page_url' => $this->outstandingUrl(),
+                'corporations_label' => $corporations ? $this->corporationsLabel($corporations) : null,
+                'tax_page_url' => $this->outstandingUrl(count($corporations) === 1 ? $corporations[0] : null),
                 'corporation_id' => $moonOwnerCorpId ? (int) $moonOwnerCorpId : null,
             ]);
+
+            // Nothing went out, so the week does not start.
+            if (!empty($result['skipped'])) {
+                $this->warn('Not sent: ' . ($result['reason'] ?? 'no channel took it') . '.');
+
+                return self::SUCCESS;
+            }
 
             Log::info('Mining Manager: sent the outstanding tax digest', [
                 'members' => count($rows),
@@ -276,10 +307,27 @@ class SendOutstandingDigestCommand extends Command
     }
 
     /**
-     * Deep link to the tax page already filtered to what this message is about.
+     * The corporations a filtered digest covers, by name.
+     *
+     * @param array<int, int> $corporationIds
      */
-    protected function outstandingUrl(): string
+    protected function corporationsLabel(array $corporationIds): string
     {
-        return rtrim(config('app.url', ''), '/') . '/mining-manager/tax?status=outstanding';
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)->corporationNames($corporationIds);
+        $labels = array_map(fn ($id) => $names[$id] ?? "Corporation {$id}", $corporationIds);
+        sort($labels, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return implode(', ', $labels);
+    }
+
+    /**
+     * Deep link to the tax page already filtered to what this message is about.
+     * Tax Overview filters by one corporation, so only a digest for a single
+     * corporation links to it.
+     */
+    protected function outstandingUrl(?int $corporationId = null): string
+    {
+        return rtrim(config('app.url', ''), '/') . '/mining-manager/tax?status=outstanding'
+            . ($corporationId ? '&corporation_id=' . $corporationId : '');
     }
 }

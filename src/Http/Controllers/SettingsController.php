@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationInfo;
+use MiningManager\Services\Character\AffiliationResolutionService;
+use MiningManager\Services\Character\CharacterNames;
+use Carbon\Carbon;
 
 class SettingsController extends Controller
 {
@@ -165,6 +168,15 @@ class SettingsController extends Controller
         $roleProviderAvailable = DiscordRoleResolver::isAvailable();
         $roleProviderLabel     = DiscordRoleResolver::providerLabel();
 
+        $taxedCorporations = $this->getTaxedCorporations();
+
+        // Saved JSON-encoded under the json type, so it reads back as text.
+        $picked = $settings['dashboard']['dashboard_leaderboard_corporation_ids'] ?? [];
+        $picked = is_string($picked) ? json_decode($picked, true) : $picked;
+        $leaderboardCorporations = $this->getLeaderboardCorporations(
+            array_values(array_unique(array_filter(array_map('intval', (array) $picked))))
+        );
+
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
@@ -178,8 +190,57 @@ class SettingsController extends Controller
             'allTokenCharacters',
             'seatConnectorAvailable',
             'roleProviderAvailable',
-            'roleProviderLabel'
+            'roleProviderLabel',
+            'taxedCorporations',
+            'leaderboardCorporations'
         ));
+    }
+
+    /**
+     * Corporations whose members have been billed mining tax, by name, for
+     * the Outstanding Mining Tax corporation filter. A corporation already
+     * picked stays on the list after its members' bills are gone.
+     *
+     * @return array<int, string> corporation_id => name
+     */
+    private function getTaxedCorporations(): array
+    {
+        $ids = [];
+
+        try {
+            $billed = fn () => DB::table('mining_taxes')->select('character_id')->distinct();
+
+            // SeAT's affiliations first, the plugin's lookups for anyone SeAT
+            // has no record of.
+            $ids = DB::table('character_affiliations')
+                ->whereIn('character_id', $billed())
+                ->distinct()
+                ->pluck('corporation_id')
+                ->all();
+
+            $ids = array_merge($ids, DB::table(AffiliationResolutionService::TABLE)
+                ->whereIn('character_id', $billed())
+                ->whereNotIn('character_id', DB::table('character_affiliations')->select('character_id'))
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->all());
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not list the corporations with tax bills: ' . $e->getMessage());
+        }
+
+        $picked = $this->settingsService->getTypeNotificationSettings('tax_outstanding_digest')['corporations'];
+        $ids = array_values(array_unique(array_filter(array_map('intval', array_merge($ids, $picked)))));
+
+        $names = app(CharacterNames::class)->corporationNames($ids);
+
+        $corporations = [];
+        foreach ($ids as $id) {
+            $corporations[$id] = $names[$id] ?? "Corporation {$id}";
+        }
+        asort($corporations, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $corporations;
     }
 
     /**
@@ -260,33 +321,135 @@ class SettingsController extends Controller
     }
 
     /**
-     * Get list of available corporations from SeAT
+     * Corporations the General tab offers for the moon owner and the
+     * corporation context: every player corporation a registered character is
+     * in, plus any corporation that already has its own settings or owns the
+     * moons, so a saved choice is always on the list.
      *
-     * @return \Illuminate\Support\Collection
+     * SeAT 5 keeps a character's corporation in character_affiliations and
+     * who owns a character in refresh_tokens. Beware the older columns: a
+     * subquery naming a column its table lacks takes it from the outer query
+     * instead of failing, so a query on them runs and returns the wrong rows.
+     *
+     * @return \Illuminate\Support\Collection of corporation_id, name, ticker
      */
     private function getAvailableCorporations()
     {
+        $ids = [];
+
         try {
-            // Get corporations that the user has access to
-            // via character affiliations
-            return CorporationInfo::whereIn('corporation_id', function($query) {
-                $query->select('corporation_id')
-                    ->from('character_infos')
-                    ->whereIn('character_id', function($subQuery) {
-                        $subQuery->select('character_id')
-                            ->from('user_settings')
-                            ->where('user_id', auth()->user()->id);
-                    });
-            })
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
-        } catch (\Exception $e) {
-            Log::error('Error loading corporations for settings', [
-                'error' => $e->getMessage()
-            ]);
+            $ids = DB::table('character_affiliations')
+                ->whereIn('character_id', DB::table('refresh_tokens')->whereNull('deleted_at')->select('character_id'))
+                // NPC corporations: alts start in one, nobody runs a tax program from one.
+                ->whereNotBetween('corporation_id', [1000000, 1999999])
+                ->distinct()
+                ->pluck('corporation_id')
+                ->all();
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not list the corporations of registered characters: ' . $e->getMessage());
+        }
+
+        $ids = array_values(array_unique(array_map('intval', array_merge($ids, $this->settingsService->getHomeCorporationIds()))));
+
+        if (!$ids) {
             return collect();
         }
+
+        try {
+            return CorporationInfo::whereIn('corporation_id', $ids)
+                ->select('corporation_id', 'name', 'ticker')
+                ->orderBy('name')
+                ->get();
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not load corporations for settings: ' . $e->getMessage());
+
+            return collect();
+        }
+    }
+
+    /**
+     * The corporations the Top Miners leaderboard can be limited to, with how
+     * many of their characters mined in the last 12 months, the longest
+     * window the leaderboard shows.
+     *
+     * Only member corporations are offered: the moon owner and those with
+     * their own settings. The leaderboard ranks members alone, so picking a
+     * guest corporation would empty it rather than add anyone. A corporation
+     * already picked stays on the list so it can be taken off again.
+     *
+     * Each character counts under the corporation they are in now, SeAT's
+     * affiliations first and the plugin's lookups for anyone SeAT has no
+     * record of, the same answer the dashboard filters on.
+     *
+     * @param array<int, int> $picked corporations saved in the filter
+     * @return array<int, array{label: string, miners: int, picked: bool}> by corporation_id, sorted by name
+     */
+    private function getLeaderboardCorporations(array $picked): array
+    {
+        $since = Carbon::now()->subMonths(12)->startOfMonth()->toDateString();
+        $corporationOf = [];
+
+        try {
+            $characterIds = DB::table('mining_ledger_daily_summaries')
+                ->where('date', '>=', $since)
+                ->distinct()
+                ->pluck('character_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            foreach (array_chunk($characterIds, 1000) as $chunk) {
+                foreach (DB::table('character_affiliations')->whereIn('character_id', $chunk)->pluck('corporation_id', 'character_id') as $characterId => $corporationId) {
+                    $corporationOf[(int) $characterId] = (int) $corporationId;
+                }
+            }
+
+            $unplaced = array_values(array_diff($characterIds, array_keys($corporationOf)));
+            foreach (app(AffiliationResolutionService::class)->known($unplaced) as $characterId => $row) {
+                if (!empty($row->corporation_id)) {
+                    $corporationOf[(int) $characterId] = (int) $row->corporation_id;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: could not list the corporations with mining for the leaderboard filter: ' . $e->getMessage());
+        }
+
+        $miners = array_intersect_key(
+            array_count_values($corporationOf),
+            array_flip(array_map('intval', $this->settingsService->getHomeCorporationIds()))
+        );
+
+        foreach ($picked as $corporationId) {
+            $miners[$corporationId] = $miners[$corporationId] ?? 0;
+        }
+
+        if (!$miners) {
+            return [];
+        }
+
+        $ids = array_keys($miners);
+        $names = app(CharacterNames::class)->corporationNames($ids);
+
+        try {
+            $tickers = DB::table('corporation_infos')->whereIn('corporation_id', $ids)->pluck('ticker', 'corporation_id')->all();
+        } catch (\Throwable $e) {
+            $tickers = [];
+        }
+
+        $corporations = [];
+        foreach ($miners as $corporationId => $count) {
+            $name = $names[$corporationId] ?? "Corporation {$corporationId}";
+            $ticker = $tickers[$corporationId] ?? null;
+
+            $corporations[$corporationId] = [
+                'label' => $ticker ? "[{$ticker}] {$name}" : $name,
+                'miners' => $count,
+                'picked' => in_array($corporationId, $picked, true),
+            ];
+        }
+
+        uksort($corporations, fn ($a, $b) => strnatcasecmp($names[$a] ?? "Corporation {$a}", $names[$b] ?? "Corporation {$b}"));
+
+        return $corporations;
     }
 
     /**
@@ -563,6 +726,49 @@ class SettingsController extends Controller
                 'min:1',
                 'max:168',
             ],
+            // How close two pulls on one refinery may be, entered in days and
+            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
+            // longest.
+            'min_refinery_spacing_days' => [
+                'nullable',
+                'numeric',
+                'min:6',
+                'max:56',
+            ],
+            // Moon Not Rescheduled: hours a drill sits idle after its chunk
+            // arrives before the reminder goes, and between repeats. Up to two
+            // weeks; past that the reminder has stopped being one.
+            'moon_not_rescheduled_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+            'moon_not_rescheduled_repeat' => [
+                'nullable',
+                'boolean',
+            ],
+            // Moons Need Planning: how many pulls each refinery should have
+            // planned ahead, and how often the list goes out.
+            'planned_ahead_target' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:10',
+            ],
+            'schedule_needs_filling_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+            'moon_scan_missing_daily' => [
+                'nullable',
+                'boolean',
+            ],
+            // Outstanding Mining Tax: whose bills the digest lists.
+            'type_tax_outstanding_digest_corporations' => 'nullable|array',
+            'type_tax_outstanding_digest_corporations.*' => 'integer|min:1',
             'moon_extraction_fastpoll_mode' => [
                 'nullable',
                 'in:auto,seat_native',
@@ -580,15 +786,20 @@ class SettingsController extends Controller
             $data = [];
             $allTypes = SettingsManagerService::NOTIFICATION_TYPES;
 
+            // Each per-type map is updated in place, and only for the types
+            // its list on the page shows. An unticked box is simply missing
+            // from the request, so writing a type the page has no box for
+            // would store it as off.
+
             // Global per-type toggles (master switches)
-            $enabledTypes = [];
+            $enabledTypes = $this->storedNotificationMap('enabled_types');
             foreach ($allTypes as $type) {
                 $enabledTypes[$type] = $request->has('notify_global_' . $type);
             }
             $data['enabled_types'] = $enabledTypes;
 
             // Per-type settings (role ping, user ping, show amount)
-            $typeSettings = [];
+            $typeSettings = $this->storedNotificationMap('type_settings');
             foreach ($allTypes as $type) {
                 $typeSettings[$type] = [
                     'ping_role' => $request->has("type_{$type}_ping_role"),
@@ -596,28 +807,28 @@ class SettingsController extends Controller
                     'ping_user' => $request->has("type_{$type}_ping_user"),
                     'show_amount' => $request->has("type_{$type}_show_amount"),
                 ];
+
+                // A card with a corporation filter says so, as a list with
+                // nothing picked is not sent at all.
+                if ($request->has("type_{$type}_corporation_filter")) {
+                    $typeSettings[$type]['corporations'] = array_values(array_unique(array_map('intval',
+                        (array) $request->input("type_{$type}_corporations", []))));
+                }
             }
             $data['type_settings'] = $typeSettings;
 
-            // EVE Mail
+            // EVE Mail. The page has no per-type EVE Mail boxes, so
+            // evemail_types is left as stored.
             $data['evemail_enabled'] = $request->has('evemail_enabled');
             $data['evemail_sender_character_id'] = $request->input('evemail_sender_character_id');
             $data['evemail_sender_character_override'] = $request->input('evemail_sender_character_override');
-
-            // Build EVE mail types array from individual checkboxes
-            $evemailTypes = [];
-            foreach ($allTypes as $type) {
-                $evemailTypes[$type] = $request->has('evemail_type_' . $type);
-            }
-            $data['evemail_types'] = $evemailTypes;
 
             // Slack
             $data['slack_enabled'] = $request->has('slack_enabled');
             $data['slack_webhook_url'] = $request->input('slack_webhook_url', '');
 
-            // Build Slack types array
-            $slackTypes = [];
-            foreach ($allTypes as $type) {
+            $slackTypes = $this->storedNotificationMap('slack_types');
+            foreach (SettingsManagerService::SLACK_NOTIFICATION_TYPES as $type) {
                 $slackTypes[$type] = $request->has('slack_type_' . $type);
             }
             $data['slack_types'] = $slackTypes;
@@ -641,6 +852,36 @@ class SettingsController extends Controller
                 ? (int) $gapInput
                 : 24;
 
+            // Time between pulls on one refinery: days on the form, hours kept,
+            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
+            // at 17:00.
+            $spacingInput = $request->input('min_refinery_spacing_days');
+            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
+                ? (int) round((float) $spacingInput * 24)
+                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
+
+            // Moon Not Rescheduled reminder. The whole tab is one form, so an
+            // unticked repeat box is simply absent and reads as off.
+            $idleInput = $request->input('moon_not_rescheduled_hours');
+            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
+                ? (int) $idleInput
+                : 48;
+            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
+
+            // Moons Need Planning.
+            $targetInput = $request->input('planned_ahead_target');
+            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
+                ? (int) $targetInput
+                : 1;
+            $everyInput = $request->input('schedule_needs_filling_hours');
+            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
+                ? (int) $everyInput
+                : 24;
+
+            // Moon Scan Missing goes once per new reason; the daily list on top
+            // of that is opt-in.
+            $data['moon_scan_missing_daily'] = $request->boolean('moon_scan_missing_daily');
+
             // extraction_started detection mode (auto = Manager Core fast-poll
             // when present; seat_native = endpoint-driven cron pass).
             $fastpollMode = $request->input('moon_extraction_fastpoll_mode');
@@ -659,6 +900,19 @@ class SettingsController extends Controller
                 ->withInput()
                 ->with('error', 'Error updating notification settings: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * A per-type notification map as it is stored now, for a save to update.
+     *
+     * @param string $key e.g. 'enabled_types'
+     * @return array
+     */
+    private function storedNotificationMap(string $key): array
+    {
+        $stored = $this->settingsService->getSetting('notifications.' . $key, []);
+
+        return is_array($stored) ? $stored : [];
     }
 
     /**
@@ -808,6 +1062,7 @@ class SettingsController extends Controller
             'price_type' => 'required|in:sell,buy,average',
             'cache_duration' => 'required|integer|min:1|max:1440',
             'fallback_to_jita' => 'nullable|boolean',
+            'fallback_provider' => 'nullable|in:none,fuzzwork,janice,manager-core',
             
             // Janice-specific settings
             'janice_api_key' => 'nullable|string|max:255',
@@ -922,14 +1177,18 @@ class SettingsController extends Controller
             // last remaining reader was switched to MC's getPreferenceForPlugin
             // bridge call in commit d61e9e9. The forward-only migration
             // 000018 cleans up the legacy rows on existing installs.
-            $this->settingsService->updatePricingSettings([
+            $pricing = [
                 'price_type' => $data['price_type'],
                 'cache_duration' => $data['cache_duration'],
                 'fallback_to_jita' => $request->has('fallback_to_jita'),
                 // Refining settings
                 'use_refined_value' => $request->has('use_refined_value'),
                 'refining_efficiency' => $data['refining_efficiency'],
-            ]);
+            ];
+            if (isset($data['fallback_provider'])) {
+                $pricing['fallback_provider'] = $data['fallback_provider'];
+            }
+            $this->settingsService->updatePricingSettings($pricing);
 
             // Clear all settings + price caches
             $this->clearSettingsCache();
@@ -961,7 +1220,9 @@ class SettingsController extends Controller
         $validator = Validator::make($request->all(), [
             'dashboard_leaderboard_corporation_filter' => 'required|in:all,specific',
             'dashboard_leaderboard_corporation_ids' => 'nullable|array',
-            'dashboard_leaderboard_corporation_ids.*' => 'integer|exists:corporation_infos,corporation_id',
+            // Not exists:corporation_infos: a corporation known only from the
+            // plugin's own lookups can be picked too.
+            'dashboard_leaderboard_corporation_ids.*' => 'integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -980,17 +1241,19 @@ class SettingsController extends Controller
                 $this->settingsService->setActiveCorporation((int)$corporationId);
             }
 
-            // Store dashboard settings via settings service (respects corporation context)
-            $this->settingsService->updateSetting(
+            // The dashboard reads one install-wide filter, so it is saved as one
+            // whichever corporation the page is set to. A copy saved under a
+            // corporation is never read once a global one exists.
+            $this->settingsService->updateGlobalSetting(
                 'dashboard_leaderboard_corporation_filter',
                 $data['dashboard_leaderboard_corporation_filter']
             );
 
             // Store corporation IDs as JSON
             $corpIds = ($data['dashboard_leaderboard_corporation_filter'] === 'specific')
-                ? ($data['dashboard_leaderboard_corporation_ids'] ?? [])
+                ? array_values(array_unique(array_map('intval', $data['dashboard_leaderboard_corporation_ids'] ?? [])))
                 : [];
-            $this->settingsService->updateSetting(
+            $this->settingsService->updateGlobalSetting(
                 'dashboard_leaderboard_corporation_ids',
                 json_encode($corpIds),
                 'json'
@@ -998,6 +1261,10 @@ class SettingsController extends Controller
 
             // Clear all settings caches
             $this->clearSettingsCache();
+
+            // The leaderboards are cached for five minutes. Without this the
+            // dashboard keeps showing the old filter until they run out.
+            DashboardController::clearDashboardCache();
 
             // Redirect back with corporation_id to maintain context
             $redirectUrl = route('mining-manager.settings.index');
@@ -1245,23 +1512,13 @@ class SettingsController extends Controller
         $search = $request->input('search', '');
         
         try {
-            $corporations = CorporationInfo::whereIn('corporation_id', function($query) {
-                $query->select('corporation_id')
-                    ->from('character_infos')
-                    ->whereIn('character_id', function($subQuery) {
-                        $subQuery->select('character_id')
-                            ->from('user_settings')
-                            ->where('user_id', auth()->user()->id);
-                    });
-            })
-            ->where(function($query) use ($search) {
-                $query->where('name', 'LIKE', "%{$search}%")
-                      ->orWhere('ticker', 'LIKE', "%{$search}%");
-            })
-            ->select('corporation_id', 'name', 'ticker')
-            ->limit(20)
-            ->orderBy('name')
-            ->get();
+            $search = (string) $search;
+            $corporations = $this->getAvailableCorporations()
+                ->filter(fn ($corp) => $search === ''
+                    || stripos((string) $corp->name, $search) !== false
+                    || stripos((string) $corp->ticker, $search) !== false)
+                ->take(20)
+                ->values();
 
             return response()->json($corporations);
         } catch (\Exception $e) {
@@ -1357,10 +1614,16 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_refinery_gone'] = $request->boolean('notify_refinery_gone');
+            $data['notify_extraction_cancelled'] = $request->boolean('notify_extraction_cancelled');
+            $data['notify_moon_not_rescheduled'] = $request->boolean('notify_moon_not_rescheduled');
+            $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
+            $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
+            $data['notify_metenox_cargo_full'] = $request->boolean('notify_metenox_cargo_full');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1430,10 +1693,16 @@ class SettingsController extends Controller
             $data['notify_extraction_started'] = $request->boolean('notify_extraction_started');
             $data['notify_next_extraction_planned'] = $request->boolean('notify_next_extraction_planned');
             $data['notify_schedule_mismatch'] = $request->boolean('notify_schedule_mismatch');
+            $data['notify_refinery_gone'] = $request->boolean('notify_refinery_gone');
+            $data['notify_extraction_cancelled'] = $request->boolean('notify_extraction_cancelled');
+            $data['notify_moon_not_rescheduled'] = $request->boolean('notify_moon_not_rescheduled');
+            $data['notify_schedule_needs_filling'] = $request->boolean('notify_schedule_needs_filling');
             $data['notify_tax_outstanding_digest'] = $request->boolean('notify_tax_outstanding_digest');
             $data['notify_price_provider'] = $request->boolean('notify_price_provider');
+            $data['notify_moon_scan_missing'] = $request->boolean('notify_moon_scan_missing');
             $data['notify_extraction_at_risk'] = $request->boolean('notify_extraction_at_risk');
             $data['notify_extraction_lost'] = $request->boolean('notify_extraction_lost');
+            $data['notify_metenox_cargo_full'] = $request->boolean('notify_metenox_cargo_full');
             $data['notify_event_created'] = $request->boolean('notify_event_created');
             $data['notify_event_started'] = $request->boolean('notify_event_started');
             $data['notify_event_completed'] = $request->boolean('notify_event_completed');
@@ -1608,10 +1877,16 @@ class SettingsController extends Controller
             'notify_extraction_started' => 'nullable|boolean',
             'notify_next_extraction_planned' => 'nullable|boolean',
             'notify_schedule_mismatch' => 'nullable|boolean',
+            'notify_refinery_gone' => 'nullable|boolean',
+            'notify_extraction_cancelled' => 'nullable|boolean',
+            'notify_moon_not_rescheduled' => 'nullable|boolean',
+            'notify_schedule_needs_filling' => 'nullable|boolean',
             'notify_tax_outstanding_digest' => 'nullable|boolean',
             'notify_price_provider' => 'nullable|boolean',
+            'notify_moon_scan_missing' => 'nullable|boolean',
             'notify_extraction_at_risk' => ['nullable', 'boolean', $crossPluginRule],
             'notify_extraction_lost' => ['nullable', 'boolean', $crossPluginRule],
+            'notify_metenox_cargo_full' => 'nullable|boolean',
             'notify_event_created' => 'nullable|boolean',
             'notify_event_started' => 'nullable|boolean',
             'notify_event_completed' => 'nullable|boolean',

@@ -410,8 +410,8 @@ class AnalyticsController extends Controller
             'volume_data' => [$period1Data['total_volume'], $period2Data['total_volume']],
             'volume_m3_data' => [$period1Data['total_volume_m3'], $period2Data['total_volume_m3']],
             'value_data' => [$period1Data['total_value'], $period2Data['total_value']],
-            'trend_labels' => $this->getTrendLabels($period1Start, $period1End),
-            'trend_datasets' => $this->getTrendDatasets($period1Start, $period1End, $period2Start, $period2End),
+            'trend_labels' => $this->getTrendLabels($period1Start, $period1End, $period2Start, $period2End),
+            'trend_datasets' => $this->getTrendDatasets($period1Start, $period1End, $period2Start, $period2End, $corporationId),
             'detailed' => $this->getDetailedComparison($period1Data, $period2Data),
             'top_period_1' => $this->analyticsService->getTopMiners($period1Start, $period1End, 5, $corporationId),
             'top_period_2' => $this->analyticsService->getTopMiners($period2Start, $period2End, 5, $corporationId),
@@ -573,9 +573,9 @@ class AnalyticsController extends Controller
             : Carbon::now();
         $limit = $request->input('limit', 10);
 
-        // Get character IDs for corporation filter
+        // Who mines for the corporation, as every page counts it
         $corpCharIds = $corporationId
-            ? DB::table('character_affiliations')->where('corporation_id', $corporationId)->pluck('character_id')->toArray()
+            ? app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)
             : null;
 
         // Get top miners by quantity
@@ -587,11 +587,11 @@ class AnalyticsController extends Controller
         if ($corpCharIds !== null) {
             $queryByQty->whereIn('character_id', $corpCharIds);
         }
-        $topByQuantity = $queryByQty->with('character')->get()
+        $topByQuantity = $queryByQty->get()
             ->map(function($ledger) {
                 return [
                     'character_id' => $ledger->character_id,
-                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'character_name' => $ledger->character_name,
                     'total_quantity' => $ledger->total_quantity,
                     'total_value' => $ledger->total_value,
                     'days_active' => $ledger->days_active,
@@ -608,11 +608,11 @@ class AnalyticsController extends Controller
         if ($corpCharIds !== null) {
             $queryByVal->whereIn('character_id', $corpCharIds);
         }
-        $topByValue = $queryByVal->with('character')->get()
+        $topByValue = $queryByVal->get()
             ->map(function($ledger) {
                 return [
                     'character_id' => $ledger->character_id,
-                    'character_name' => $ledger->character->name ?? 'Unknown',
+                    'character_name' => $ledger->character_name,
                     'total_value' => $ledger->total_value,
                     'total_quantity' => $ledger->total_quantity,
                     'days_active' => $ledger->days_active,
@@ -647,8 +647,9 @@ class AnalyticsController extends Controller
             : Carbon::now();
         $limit = $request->input('limit', 10);
 
+        // Who mines for the corporation, as every page counts it
         $corpCharIds = $corporationId
-            ? DB::table('character_affiliations')->where('corporation_id', $corporationId)->pluck('character_id')->toArray()
+            ? app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)
             : null;
 
         // Get mining activity by system
@@ -705,8 +706,9 @@ class AnalyticsController extends Controller
             : Carbon::now();
         $limit = $request->input('limit', 15);
 
+        // Who mines for the corporation, as every page counts it
         $corpCharIds = $corporationId
-            ? DB::table('character_affiliations')->where('corporation_id', $corporationId)->pluck('character_id')->toArray()
+            ? app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)
             : null;
 
         // Get ore statistics by value
@@ -942,37 +944,64 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * Get trend labels for period comparison chart
+     * Get trend labels for period comparison chart: one per day of the longer
+     * period. The two periods are laid over each other day by day, so a date
+     * from either one would be wrong for the other.
      */
-    private function getTrendLabels($start, $end)
+    private function getTrendLabels($p1Start, $p1End, $p2Start, $p2End)
     {
-        $labels = [];
-        $current = $start->copy();
-        while ($current->lte($end)) {
-            $labels[] = $current->format('M d');
-            $current->addDay();
-        }
-        return $labels;
+        $days = max(count($this->trendDays($p1Start, $p1End)), count($this->trendDays($p2Start, $p2End)));
+
+        return array_map(
+            fn ($day) => trans('mining-manager::analytics.trend_day', ['day' => $day]),
+            $days > 0 ? range(1, $days) : []
+        );
     }
 
     /**
-     * Get trend datasets for period comparison chart
+     * Get trend datasets for period comparison chart: each period's value per
+     * day in millions of ISK, which is what the chart's axis and tooltip say,
+     * with a day that had no mining as zero so every value sits on its own day.
      */
-    private function getTrendDatasets($p1Start, $p1End, $p2Start, $p2End)
+    private function getTrendDatasets($p1Start, $p1End, $p2Start, $p2End, ?int $corporationId = null)
     {
-        $p1Trends = $this->analyticsService->getDailyTrends($p1Start, $p1End);
-        $p2Trends = $this->analyticsService->getDailyTrends($p2Start, $p2End);
+        $series = function ($start, $end) use ($corporationId) {
+            $byDate = [];
+            foreach ($this->analyticsService->getDailyTrends($start, $end, $corporationId) as $row) {
+                $byDate[Carbon::parse($row->date)->toDateString()] = (float) $row->total_value;
+            }
+
+            return array_map(
+                fn ($date) => round(($byDate[$date] ?? 0) / 1000000, 2),
+                $this->trendDays($start, $end)
+            );
+        };
 
         return [
             [
                 'label' => $p1Start->format('M d') . ' - ' . $p1End->format('M d'),
-                'data' => $p1Trends->pluck('total_value')->toArray(),
+                'data' => $series($p1Start, $p1End),
             ],
             [
                 'label' => $p2Start->format('M d') . ' - ' . $p2End->format('M d'),
-                'data' => $p2Trends->pluck('total_value')->toArray(),
+                'data' => $series($p2Start, $p2End),
             ],
         ];
+    }
+
+    /**
+     * Every date from start to end, both included.
+     *
+     * @return array<int, string> Y-m-d
+     */
+    private function trendDays($start, $end): array
+    {
+        $days = [];
+        for ($day = $start->copy()->startOfDay(); $day->lte($end); $day->addDay()) {
+            $days[] = $day->toDateString();
+        }
+
+        return $days;
     }
 
     /**

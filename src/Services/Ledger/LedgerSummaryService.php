@@ -145,6 +145,22 @@ class LedgerSummaryService
      */
     public function generateDailySummary(int $characterId, string $date): MiningLedgerDailySummary
     {
+        // Rates are read in the corporation each entry belongs to, so the
+        // settings context moves while a day is built. It goes back to the
+        // caller's afterwards: Recalculate rebuilds a month of days and then
+        // reads the exemption threshold and minimum for the moon owner, and a
+        // context left on the last character's corporation answered instead.
+        $callerContext = $this->settingsService->getActiveCorporation();
+
+        try {
+            return $this->buildDailySummary($characterId, $date);
+        } finally {
+            $this->settingsService->setActiveCorporation($callerContext);
+        }
+    }
+
+    protected function buildDailySummary(int $characterId, string $date): MiningLedgerDailySummary
+    {
         $dateCarbon = Carbon::parse($date);
 
         // Only aggregate entries that have been processed (have prices calculated).
@@ -491,8 +507,12 @@ class LedgerSummaryService
             // event_discount_total, which then zeroed out the dashboard
             // chart too. Exclude only 'planned' (hasn't started) and
             // 'cancelled'.
+            //
+            // $date is the start of the mining day, so an event counts if it
+            // starts any time that day. Compared with midnight, an evening op
+            // missed its own first day and a one-day op never applied.
             $events = MiningEvent::whereIn('status', ['active', 'completed'])
-                ->where('start_time', '<=', $date)
+                ->where('start_time', '<=', $date->copy()->endOfDay())
                 ->where(function ($q) use ($date) {
                     $q->whereNull('end_time')->orWhere('end_time', '>=', $date);
                 })
@@ -545,11 +565,14 @@ class LedgerSummaryService
      * Get tax rate for a specific ore type.
      * Respects per-rarity moon ore rates and guest miner multiplier.
      *
+     * Public, with shouldTaxType(), so the Extraction Simulator's income
+     * estimate charges what an invoice would rather than keeping a copy.
+     *
      * @param int $typeId
      * @param int|null $characterCorpId
      * @return float Tax rate as percentage (0-100)
      */
-    private function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
+    public function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
     {
         $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
 
@@ -592,7 +615,7 @@ class LedgerSummaryService
      * @param int|null $moonOwnerCorpId Configured moon owner corporation
      * @return bool
      */
-    private function shouldTaxType(int $typeId, ?int $entryCorporationId = null, ?int $moonOwnerCorpId = null): bool
+    public function shouldTaxType(int $typeId, ?int $entryCorporationId = null, ?int $moonOwnerCorpId = null): bool
     {
         $taxSelector = $this->settingsService->getTaxSelector();
 
@@ -784,7 +807,6 @@ class LedgerSummaryService
         $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
             ->forCorporation($corporationId)
             ->finalized()
-            ->with('character')
             ->get();
 
         // If no finalized summaries exist, calculate live
@@ -829,7 +851,6 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value
             ')
             ->groupBy('character_id')
-            ->with('character')
             ->get();
 
         // Get total_tax from daily summaries (single source of truth) instead of

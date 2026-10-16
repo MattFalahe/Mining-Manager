@@ -8,6 +8,7 @@ use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Tax\PaymentAllocationService;
 use MiningManager\Services\Tax\TaxCalculationService;
 use MiningManager\Services\Tax\TaxPeriodHelper;
+use MiningManager\Services\Tax\TaxTotals;
 use MiningManager\Services\Tax\WalletTransferService;
 use MiningManager\Services\Tax\TaxCodeGeneratorService;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -222,7 +223,7 @@ class TaxController extends Controller
         $this->setCorporationContext($moonOwnerCorpId);
 
         // Build query - include affiliation for corporation_id lookup
-        $query = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices']);
+        $query = MiningTax::with(['affiliation', 'taxCodes', 'taxInvoices']);
 
         if ($status !== 'all') {
             // "outstanding" is the view a director actually wants: everything
@@ -311,14 +312,18 @@ class TaxController extends Controller
             });
         }
 
-        $totalOwed = $scopeSummary(MiningTax::where('status', 'unpaid'))->sum('amount_owed');
-        $totalOverdue = $scopeSummary(MiningTax::where('status', 'overdue'))->sum('amount_owed');
-        $collectedThisMonth = $scopeSummary(MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month))->sum('amount_paid');
-        $unpaidCount = $scopeSummary(MiningTax::where('status', 'unpaid'))->count();
-        $overdueCount = $scopeSummary(MiningTax::where('status', 'overdue'))->count();
-        $paidCount = $scopeSummary(MiningTax::where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month))->count();
+        // What is left to pay, part-paid bills included, and what actually
+        // arrived this month. See TaxTotals for why the cards no longer ask by
+        // status alone.
+        $outstanding = TaxTotals::outstanding($scopeSummary(MiningTax::query()));
+        $collected = TaxTotals::collectedThisMonth($scopeSummary(MiningTax::query()));
+
+        $totalOwed = $outstanding['owed'];
+        $totalOverdue = $outstanding['overdue'];
+        $collectedThisMonth = $collected['amount'];
+        $unpaidCount = $outstanding['owed_count'];
+        $overdueCount = $outstanding['overdue_count'];
+        $paidCount = $collected['bills'];
 
         // Calculate collection rate
         $totalExpected = $totalOwed + $totalOverdue + $collectedThisMonth;
@@ -335,21 +340,19 @@ class TaxController extends Controller
         ];
 
         // Add corp vs guest breakdown if moon owner is configured
+        // Owed covers everything still to pay, late or not. It used to be the
+        // unpaid bills alone while the count beside it took in overdue ones too,
+        // so the two figures were describing different sets of bills.
         if ($moonOwnerCorpId && $corpSummaryQuery && $guestSummaryQuery) {
-            $summary['corp_members'] = [
-                'owed' => (clone $corpSummaryQuery)->where('status', 'unpaid')->sum('amount_owed'),
-                'count' => (clone $corpSummaryQuery)->whereIn('status', ['unpaid', 'overdue'])->count(),
-                'collected' => (clone $corpSummaryQuery)->where('status', 'paid')
-                    ->whereMonth('paid_at', Carbon::now()->month)
-                    ->sum('amount_paid'),
-            ];
-            $summary['guest_miners'] = [
-                'owed' => (clone $guestSummaryQuery)->where('status', 'unpaid')->sum('amount_owed'),
-                'count' => (clone $guestSummaryQuery)->whereIn('status', ['unpaid', 'overdue'])->count(),
-                'collected' => (clone $guestSummaryQuery)->where('status', 'paid')
-                    ->whereMonth('paid_at', Carbon::now()->month)
-                    ->sum('amount_paid'),
-            ];
+            foreach (['corp_members' => $corpSummaryQuery, 'guest_miners' => $guestSummaryQuery] as $group => $groupQuery) {
+                $groupOutstanding = TaxTotals::outstanding($groupQuery);
+
+                $summary[$group] = [
+                    'owed' => round($groupOutstanding['owed'] + $groupOutstanding['overdue'], 2),
+                    'count' => $groupOutstanding['owed_count'] + $groupOutstanding['overdue_count'],
+                    'collected' => TaxTotals::collectedThisMonth($groupQuery)['amount'],
+                ];
+            }
         }
 
         // Get payment method from settings
@@ -388,9 +391,10 @@ class TaxController extends Controller
         // calendar month.
         $collectedThisPeriod = null;
         if ($periodType !== 'monthly') {
+            // Whatever has been paid on this period's bills, part payments
+            // included; a bill with nothing paid adds nothing.
             $collectedThisPeriod = $scopeSummary(
-                MiningTax::where('status', 'paid')
-                    ->where('period_start', $currentPeriodStart->toDateString())
+                MiningTax::where('period_start', $currentPeriodStart->toDateString())
             )->sum('amount_paid');
         }
 
@@ -975,14 +979,14 @@ class TaxController extends Controller
             $statsBaseQuery->whereIn('character_id', $taxCharIds);
         }
 
-        $totalVerifiedIsk = (clone $statsBaseQuery)->where('status', 'paid')
-            ->where('paid_at', '>=', Carbon::now()->subDays($days))
-            ->sum('amount_paid');
+        // Payments credited in the window, read from the allocation ledger as
+        // Tax Overview's Collected card is, so instalments on bills not yet
+        // settled count. Fully paid bills alone would leave every one out.
+        $verified = TaxTotals::collectedBetween($statsBaseQuery, Carbon::now()->subDays((int) $days), Carbon::now());
+        $totalVerifiedIsk = $verified['amount'];
 
         $pendingCount = $unmatchedDonations->count();
-        $verifiedCount = (clone $statsBaseQuery)->where('status', 'paid')
-            ->where('paid_at', '>=', Carbon::now()->subDays($days))
-            ->count();
+        $verifiedCount = $verified['bills'];
 
         // "Mismatched" used to repeat the pending count, which made the two
         // tiles say the same thing. It now means what it sounds like: a
@@ -996,6 +1000,7 @@ class TaxController extends Controller
             'verified' => $verifiedCount,
             'mismatched' => $mismatchedCount,
             'total_amount' => $totalVerifiedIsk,
+            'days' => (int) $days,
         ];
 
         // Filter transactions based on status
@@ -1028,18 +1033,17 @@ class TaxController extends Controller
         $payerInvoiceMap = [];
         $heldCredits = collect();
         if ($canSeeAll && $corporationId) {
-            $unpaidTaxes = MiningTax::with('character')
-                ->whereIn('status', ['unpaid', 'overdue', 'partial'])
+            $unpaidTaxes = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
                 ->orderByRaw('COALESCE(period_start, month) asc')
                 ->get();
 
-            // Get corporation member IDs for manual entry character dropdown
-            $corpCharacterIds = DB::table('character_affiliations')
-                ->where('corporation_id', $corporationId)
-                ->join('character_infos', 'character_affiliations.character_id', '=', 'character_infos.character_id')
-                ->select('character_infos.character_id', 'character_infos.name')
-                ->orderBy('character_infos.name')
-                ->get();
+            // Who mines for the corporation, for the manual entry character
+            // dropdown, named whether SeAT knows them or not.
+            $corpCharacterIds = collect(app(\MiningManager\Services\Character\CharacterNames::class)
+                ->many(app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId)))
+                ->map(fn ($info) => (object) ['character_id' => $info['character_id'], 'name' => $info['name']])
+                ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+                ->values();
 
             // Which open invoices each pending payer could legitimately settle.
             // Resolved here rather than in the browser because working out who
@@ -1047,8 +1051,7 @@ class TaxController extends Controller
             // of distinct payers on screen, so it stays cheap.
             $payerInvoiceMap = $this->buildPayerInvoiceMap($transactions, $unpaidTaxes);
 
-            $heldCredits = PaymentCredit::with('character')
-                ->where('remaining', '>', 0)
+            $heldCredits = PaymentCredit::where('remaining', '>', 0)
                 ->orderBy('created_at')
                 ->get();
         }
@@ -1213,10 +1216,12 @@ class TaxController extends Controller
             // non-numeric tax_id values fall through to MySQL with soft type
             // coercion, and garbage payment_date strings throw deep inside
             // Carbon::parse and bubble up as a 500. Validation surfaces
-            // these as a 422 with field-level errors instead.
+            // these as a 422 naming the field instead. Nothing paid is not a
+            // payment: zero would turn an unpaid bill part-paid with nothing
+            // behind it.
             $validated = $request->validate([
                 'tax_id' => 'required|integer|exists:mining_taxes,id',
-                'amount_paid' => 'required|numeric|min:0',
+                'amount_paid' => 'required|numeric|gt:0',
                 'payment_date' => 'nullable|date',
                 'notes' => 'nullable|string|max:1000',
             ]);
@@ -1233,7 +1238,9 @@ class TaxController extends Controller
             // failure can't leave active tax codes after a tax row is marked paid
             // (which would cause the wallet listener to double-process).
             $result = DB::transaction(function () use ($taxId, $amountPaid, $paymentDate, $notes, $userName) {
-                $tax = MiningTax::findOrFail($taxId);
+                // Locked like the wallet matcher locks it, so a payment it
+                // credits at the same moment is added to, not written over.
+                $tax = MiningTax::where('id', $taxId)->lockForUpdate()->firstOrFail();
 
                 // Accumulate partial payments
                 $previouslyPaid = (float) ($tax->amount_paid ?? 0);
@@ -1302,6 +1309,11 @@ class TaxController extends Controller
                 'message' => trans('mining-manager::taxes.marked_as_paid_success'),
             ]);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->validator->errors()->first(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Error marking tax as paid: ' . $e->getMessage());
 
@@ -1314,9 +1326,12 @@ class TaxController extends Controller
     }
 
     /**
-     * Create a manual tax entry (ad-hoc payment record).
-     * Used for mid-period payments, characters leaving corp, etc.
-     * No tax code is generated — wallet listener will not interfere.
+     * Record ISK a member paid by hand before a bill exists for it, such as
+     * somebody settling up as they leave mid-period.
+     *
+     * It goes through the allocator like an upfront payment: open bills
+     * first, the rest held on the member's balance for their next bill. No
+     * tax code is involved, so wallet matching never sees it.
      */
     public function createManualEntry(Request $request)
     {
@@ -1324,84 +1339,39 @@ class TaxController extends Controller
             $request->validate([
                 'character_id' => 'required|integer',
                 'amount' => 'required|numeric|min:1',
-                'period_start' => 'required|date',
-                'period_end' => 'required|date|after_or_equal:period_start',
                 'notes' => 'nullable|string|max:1000',
             ]);
 
             $characterId = (int) $request->input('character_id');
             $amount = (float) $request->input('amount');
-            $periodStart = Carbon::parse($request->input('period_start'));
-            $periodEnd = Carbon::parse($request->input('period_end'));
             $notes = $request->input('notes');
 
-            // Check for duplicate manual entry for same character and overlapping period
-            $existing = MiningTax::where('character_id', $characterId)
-                ->where('triggered_by', 'like', 'Manual Entry:%')
-                ->where(function ($q) use ($periodStart, $periodEnd) {
-                    $q->where(function ($inner) use ($periodStart, $periodEnd) {
-                        $inner->where('period_start', '<=', $periodEnd)
-                              ->where('period_end', '>=', $periodStart);
-                    });
-                })
-                ->first();
-
-            if ($existing) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => trans('mining-manager::taxes.duplicate_manual_entry'),
-                ], 422);
-            }
+            $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+            $this->setCorporationContext($moonOwnerCorpId);
 
             $user = auth()->user();
             $userName = $user->main_character->name ?? $user->name ?? 'Unknown';
 
-            $paymentNote = "Manual entry by {$userName} on " . Carbon::now()->format('Y-m-d H:i');
+            $paymentNote = "Paid by hand, recorded by {$userName} on " . Carbon::now()->format('Y-m-d H:i');
             if ($notes) {
                 $paymentNote .= "\n{$notes}";
             }
 
-            $tax = MiningTax::create([
-                'character_id' => $characterId,
-                'month' => $periodStart->copy()->startOfMonth(),
-                'period_type' => 'manual',
-                'period_start' => $periodStart,
-                'period_end' => $periodEnd,
-                'amount_owed' => $amount,
-                'amount_paid' => $amount,
-                'status' => 'paid',
-                'calculated_at' => Carbon::now(),
-                'paid_at' => Carbon::now(),
-                'due_date' => null,
-                'triggered_by' => "Manual Entry: {$userName}",
-                'notes' => $paymentNote,
-            ]);
+            $result = $this->allocationService->recordPaymentByHand(
+                $characterId,
+                $amount,
+                $user->main_character_id ?? $user->id,
+                $paymentNote
+            );
 
-            // Born fully paid, so record the payment behind it for the same
-            // reconciliation reason as markPaid().
-            PaymentAllocation::create([
-                'transaction_id' => null,
-                'credit_id' => null,
-                'mining_tax_id' => $tax->id,
-                'character_id' => $characterId,
-                'amount' => $amount,
-                'source' => PaymentAllocation::SOURCE_MANUAL,
-                'allocated_by' => $user->main_character_id ?? $user->id,
-                'notes' => $paymentNote,
-                'allocated_at' => Carbon::now(),
-            ]);
-
-            Log::info('Manual tax entry created', [
-                'tax_id' => $tax->id,
-                'character_id' => $characterId,
-                'amount' => $amount,
-                'period' => $periodStart->format('Y-m-d') . ' to ' . $periodEnd->format('Y-m-d'),
-                'created_by' => $userName,
-            ]);
+            $settled = array_sum(array_column($result['allocations'], 'amount'));
 
             return response()->json([
                 'status' => 'success',
-                'message' => trans('mining-manager::taxes.manual_entry_success'),
+                'message' => trans('mining-manager::taxes.manual_entry_success', [
+                    'settled' => number_format($settled, 0),
+                    'held' => number_format($result['credited'], 0),
+                ]),
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1410,7 +1380,7 @@ class TaxController extends Controller
                 'message' => $e->validator->errors()->first(),
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Error creating manual tax entry: ' . $e->getMessage());
+            Log::error('Error recording a payment taken by hand: ' . $e->getMessage());
 
             return response()->json([
                 'status' => 'error',
@@ -1745,7 +1715,7 @@ class TaxController extends Controller
         $status = $request->input('status', 'all');
         $month = $request->input('month');
 
-        $query = MiningTax::with(['character', 'taxCodes', 'taxInvoices'])
+        $query = MiningTax::with(['taxCodes', 'taxInvoices'])
             ->whereIn('character_id', $taxCharacterIds);
 
         if ($status !== 'all') {
@@ -1767,34 +1737,15 @@ class TaxController extends Controller
             ->orderBy('character_id')
             ->paginate(25);
 
-        // Personal summary statistics (query all user characters for mining data)
-        $totalOwed = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'unpaid')
-            ->sum('amount_owed');
-
-        $totalOverdue = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'overdue')
-            ->sum('amount_owed');
-
-        $paidThisMonth = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'paid')
-            ->whereMonth('paid_at', Carbon::now()->month)
-            ->sum('amount_paid');
-
-        $unpaidCount = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'unpaid')
-            ->count();
-
-        $overdueCount = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'overdue')
-            ->count();
+        // Personal summary, worked out the same way as Tax Overview's cards.
+        $outstanding = TaxTotals::outstanding(MiningTax::whereIn('character_id', $taxCharacterIds));
 
         $summary = [
-            'total_owed' => $totalOwed,
-            'overdue_amount' => $totalOverdue,
-            'paid_this_month' => $paidThisMonth,
-            'unpaid_count' => $unpaidCount,
-            'overdue_count' => $overdueCount,
+            'total_owed' => $outstanding['owed'],
+            'overdue_amount' => $outstanding['overdue'],
+            'paid_this_month' => TaxTotals::collectedThisMonth(MiningTax::whereIn('character_id', $taxCharacterIds))['amount'],
+            'unpaid_count' => $outstanding['owed_count'],
+            'overdue_count' => $outstanding['overdue_count'],
         ];
 
         // Resolve the configured tax period (monthly / biweekly / weekly)
@@ -1809,31 +1760,26 @@ class TaxController extends Controller
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
-        // Pull the tax row that matches the current active period (may not
-        // exist yet — taxes are calculated after the period ends). Fall back
-        // to the most-recent UNPAID tax so the user sees a meaningful balance
-        // card when the current period hasn't been invoiced yet.
-        $currentTax = MiningTax::with(['character', 'taxCodes'])
+        // Every bill with money still owing, oldest period first, which is the
+        // order payments are applied in. A part-paid bill belongs here however
+        // much has been paid on it: leaving it out sent the page to the current
+        // period instead, and a member who had paid anything at all lost the
+        // instructions for paying the rest.
+        $unpaidTaxes = MiningTax::with(['taxCodes'])
             ->whereIn('character_id', $taxCharacterIds)
-            ->where('period_start', $currentPeriodStart->toDateString())
-            ->first();
-
-        if (!$currentTax) {
-            $currentTax = MiningTax::with(['character', 'taxCodes'])
-                ->whereIn('character_id', $taxCharacterIds)
-                ->whereIn('status', ['unpaid', 'overdue'])
-                ->orderBy('due_date', 'asc')
-                ->first();
-        }
-
-        // All unpaid/overdue taxes — used by the view to stack multiple
-        // period rows (bi-weekly with both halves unpaid, weekly with
-        // multiple open weeks, etc.) rather than silently showing only one.
-        $unpaidTaxes = MiningTax::with(['character', 'taxCodes'])
-            ->whereIn('character_id', $taxCharacterIds)
-            ->whereIn('status', ['unpaid', 'overdue'])
-            ->orderBy('due_date', 'asc')
+            ->outstanding()
+            ->orderByRaw('COALESCE(period_start, month) asc')
+            ->orderBy('id')
             ->get();
+
+        // The status card shows what needs paying first. With nothing owing it
+        // shows the current period's bill, which usually does not exist yet
+        // because taxes are calculated after a period ends.
+        $currentTax = $unpaidTaxes->first()
+            ?? MiningTax::with(['taxCodes'])
+                ->whereIn('character_id', $taxCharacterIds)
+                ->where('period_start', $currentPeriodStart->toDateString())
+                ->first();
 
         // Mining breakdown scoped to the current active period, so the
         // "Mining Breakdown - {period}" section matches the tax row it's
@@ -1846,22 +1792,26 @@ class TaxController extends Controller
         );
 
         // Get payment statistics (all time)
+        // Everything paid, instalments on unsettled bills included. Counting
+        // settled bills alone left this card short of the Totals row beneath it
+        // by exactly whatever had been part paid.
         $totalTaxPaid = MiningTax::whereIn('character_id', $taxCharacterIds)
-            ->where('status', 'paid')
             ->sum('amount_paid');
 
+        // due_date is a day and paid_at a moment. Compared as they are, the
+        // due date reads as midnight and a payment made on the day counts late.
         $onTimePayments = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereNotNull('due_date')
-            ->whereColumn('paid_at', '<=', 'due_date')
+            ->whereRaw('DATE(paid_at) <= due_date')
             ->count();
 
         $latePayments = MiningTax::whereIn('character_id', $taxCharacterIds)
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereNotNull('due_date')
-            ->whereColumn('paid_at', '>', 'due_date')
+            ->whereRaw('DATE(paid_at) > due_date')
             ->count();
 
         $isAdmin = $this->isAdmin();
@@ -1880,9 +1830,9 @@ class TaxController extends Controller
 
         $corpName = $this->payingCorporationName();
 
-        // Money we are holding for this player from an earlier overpayment.
-        // Alt-aware, because the surplus can sit on whichever character sent
-        // the ISK while the invoices belong to their main.
+        // Money we are holding for this player from an earlier payment.
+        // Alt-aware, because the balance can sit on whichever character sent
+        // or was credited the ISK while the invoices belong to their main.
         $creditBalance = PaymentCredit::balanceFor($characterIds);
         $creditRecords = $creditBalance > 0
             ? PaymentCredit::whereIn('character_id', $characterIds)
@@ -2030,7 +1980,7 @@ class TaxController extends Controller
         $viewAll = $this->isViewingAll();
 
         // Build query
-        $query = TaxCode::with(['character', 'miningTax']);
+        $query = TaxCode::with(['miningTax']);
 
         // Scope: only show own codes unless viewing all
         $taxCharacterIds = [];
@@ -2506,7 +2456,7 @@ class TaxController extends Controller
      */
     public function details(Request $request, $taxId)
     {
-        $tax = MiningTax::with(['character', 'affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
+        $tax = MiningTax::with(['affiliation', 'taxCodes', 'taxInvoices'])->findOrFail($taxId);
 
         // Enrich with character/corporation names
         $this->enrichModelWithCharacterInfo($tax, $this->characterInfoService);
@@ -2833,7 +2783,7 @@ class TaxController extends Controller
         // so a bug here cannot leak someone else's balance.
         $scopeCharacterIds = $canSeeAll ? null : $this->getUserCharacterIds();
 
-        $creditsQuery = PaymentCredit::with('character')->orderByDesc('created_at');
+        $creditsQuery = PaymentCredit::orderByDesc('created_at');
 
         if ($scopeCharacterIds !== null) {
             if (empty($scopeCharacterIds)) {
@@ -3155,7 +3105,9 @@ class TaxController extends Controller
             // failure can't leave active tax codes after a tax row is marked paid
             // (which would cause the wallet listener to double-process).
             $oldStatus = DB::transaction(function () use ($id, $validated, $userName) {
-                $tax = MiningTax::findOrFail($id);
+                // Locked for the same reason as markPaid(): a wallet payment
+                // landing meanwhile would otherwise be overwritten.
+                $tax = MiningTax::where('id', $id)->lockForUpdate()->firstOrFail();
                 $oldStatus = $tax->status;
                 $tax->status = $validated['status'];
 
@@ -3236,7 +3188,18 @@ class TaxController extends Controller
                 ], 400);
             }
 
-            $characterName = $tax->character->name ?? 'Unknown';
+            // A part-paid bill is no different. Its payments point at this
+            // record, so deleting it would take what the member has already
+            // paid off their balance without crediting it anywhere.
+            if ((float) $tax->amount_paid > 0
+                || PaymentAllocation::where('mining_tax_id', $tax->id)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => trans('mining-manager::taxes.cannot_delete_with_payments'),
+                ], 400);
+            }
+
+            $characterName = $tax->character_name;
             $tax->delete();
 
             Log::info('Tax record deleted', [
@@ -3281,7 +3244,7 @@ class TaxController extends Controller
             }
 
             // Build query
-            $query = MiningTax::with(['character']);
+            $query = MiningTax::query();
 
             // Scope: only export own taxes unless viewing all
             if (!$this->isViewingAll()) {
@@ -3303,7 +3266,7 @@ class TaxController extends Controller
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
                     return [
-                        'character' => $tax->character->name ?? 'Unknown',
+                        'character' => app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
@@ -3338,7 +3301,7 @@ class TaxController extends Controller
                 // Data rows
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
-                        $tax->character->name ?? 'Unknown',
+                        app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         $tax->period_type ?? 'monthly',
                         $tax->month,
@@ -3386,8 +3349,7 @@ class TaxController extends Controller
                 $format = 'csv';
             }
 
-            $taxes = MiningTax::with(['character'])
-                ->whereIn('character_id', $characterIds)
+            $taxes = MiningTax::whereIn('character_id', $characterIds)
                 ->orderByRaw('COALESCE(period_start, month) DESC')
                 ->orderBy('character_id')
                 ->get();
@@ -3395,7 +3357,7 @@ class TaxController extends Controller
             if ($format === 'json') {
                 $data = $taxes->map(function ($tax) {
                     return [
-                        'character' => $tax->character->name ?? 'Unknown',
+                        'character' => app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         'period' => $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         'period_type' => $tax->period_type ?? 'monthly',
                         'month' => $tax->month ? Carbon::parse($tax->month)->format('Y-m') : null,
@@ -3428,7 +3390,7 @@ class TaxController extends Controller
 
                 foreach ($taxes as $tax) {
                     fputcsv($file, [
-                        $tax->character->name ?? 'Unknown',
+                        app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id),
                         $tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y'),
                         $tax->period_type ?? 'monthly',
                         $tax->month,
@@ -3462,7 +3424,7 @@ class TaxController extends Controller
     public function downloadReceipt(Request $request, $id)
     {
         try {
-            $tax = MiningTax::with(['character', 'taxCode'])->findOrFail($id);
+            $tax = MiningTax::with(['taxCode'])->findOrFail($id);
 
             // Check if user has permission to view this tax
             $user = auth()->user();
@@ -3478,7 +3440,7 @@ class TaxController extends Controller
             // Generate simple text receipt
             $receipt = "TAX RECEIPT\n";
             $receipt .= "===========\n\n";
-            $receipt .= "Character: " . ($tax->character->name ?? 'Unknown') . "\n";
+            $receipt .= "Character: " . app(\MiningManager\Services\Character\CharacterNames::class)->nameOrId($tax->character_id) . "\n";
             $receipt .= "Period: " . ($tax->formatted_period ?? Carbon::parse($tax->month)->format('F Y')) . "\n";
             $receipt .= "Amount Owed: " . number_format($tax->amount_owed, 2) . " ISK\n";
             $receipt .= "Amount Paid: " . number_format($tax->amount_paid ?? 0, 2) . " ISK\n";

@@ -697,6 +697,7 @@
                                    min="0" max="100" step="0.1">
                             <div class="input-group-append"><span class="input-group-text">%</span></div>
                         </div>
+                        <small class="form-text text-muted">Bezdnacine, Rakovene, Talassonite.</small>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -708,6 +709,7 @@
                                    min="0" max="100" step="0.1">
                             <div class="input-group-append"><span class="input-group-text">%</span></div>
                         </div>
+                        <small class="form-text text-muted">Mission and site ore. Never worth anything.</small>
                     </div>
                 </div>
             </div>

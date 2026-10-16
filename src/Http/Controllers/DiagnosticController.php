@@ -215,6 +215,48 @@ class DiagnosticController extends Controller
                 : 'Column(s) missing — run migrations. The "moon scheduled off-plan" alert cannot latch or be subscribed to.',
         ];
 
+        // 4b. Planner alert schema (refinery gone, cancelled, not rescheduled, needs planning)
+        $hasAlertTable = \Schema::hasTable('mining_manager_refinery_alerts');
+        $missingAlertCols = array_values(array_filter([
+            'notify_refinery_gone', 'notify_extraction_cancelled',
+            'notify_moon_not_rescheduled', 'notify_schedule_needs_filling',
+        ], fn ($column) => !\Schema::hasColumn('webhook_configurations', $column)));
+        $alertsOk = $hasAlertTable && !$missingAlertCols;
+        $checks[] = [
+            'label'   => 'Migration 000033: planner alerts table + four webhook opt-ins',
+            'status'  => $alertsOk ? 'ok' : 'fail',
+            'message' => $alertsOk
+                ? 'mining_manager_refinery_alerts and all four notify columns present.'
+                : 'Missing: ' . implode(', ', array_merge($hasAlertTable ? [] : ['mining_manager_refinery_alerts'], $missingAlertCols))
+                    . '. Run migrations. Refinery Gone, Extraction Cancelled, Moon Not Rescheduled and Moons Need Planning cannot be sent or subscribed to.',
+        ];
+
+        // 4c. Moon Scan Missing schema
+        $missingScanAlert = array_values(array_filter([
+            \Schema::hasTable('mining_manager_moon_scan_alerts') ? null : 'mining_manager_moon_scan_alerts',
+            \Schema::hasColumn('webhook_configurations', 'notify_moon_scan_missing') ? null : 'notify_moon_scan_missing',
+        ]));
+        $checks[] = [
+            'label'   => 'Migration 000036: moon scan alerts table + webhook opt-in',
+            'status'  => $missingScanAlert ? 'fail' : 'ok',
+            'message' => $missingScanAlert
+                ? 'Missing: ' . implode(', ', $missingScanAlert) . '. Run migrations. Moon Scan Missing cannot be sent or subscribed to.'
+                : 'mining_manager_moon_scan_alerts and notify_moon_scan_missing present.',
+        ];
+
+        // 4d. Final pulls
+        $missingFinal = array_values(array_filter(
+            ['is_final', 'final_marked_by', 'final_marked_at'],
+            fn ($column) => !\Schema::hasColumn('moon_extraction_plans', $column)
+        ));
+        $checks[] = [
+            'label'   => 'Migration 000037: final pull columns on planned pulls',
+            'status'  => $missingFinal ? 'fail' : 'ok',
+            'message' => $missingFinal
+                ? 'Missing: ' . implode(', ', $missingFinal) . '. Run migrations. Pulls cannot be marked final.'
+                : 'is_final, final_marked_by and final_marked_at present.',
+        ];
+
         // 5. Moon Owner Corporation — the planner's operating scope
         $moonOwner = $this->settingsService->getTaxProgramCorporationId();
         $checks[] = [
@@ -264,7 +306,7 @@ class DiagnosticController extends Controller
         if ($hasPlans && $moonOwner) {
             try {
                 $planner = app(\MiningManager\Services\Moon\MoonPlannerService::class);
-                $refineries = $planner->refineriesForCorporation((int) $moonOwner);
+                $refineries = app(\MiningManager\Services\Moon\RefineryService::class)->refineriesForCorporation((int) $moonOwner);
                 $total = $refineries->count();
                 $uncovered = 0;
                 foreach ($refineries as $r) {
@@ -276,7 +318,7 @@ class DiagnosticController extends Controller
                     'label'   => 'Planner coverage: refineries with an upcoming planned pull',
                     'status'  => $total === 0 ? 'warn' : ($uncovered === 0 ? 'ok' : 'warn'),
                     'message' => $total === 0
-                        ? 'No Athanor/Tatara refineries found for the Moon Owner Corporation.'
+                        ? 'No Athanor or Tatara with a moon drill fitted found for the Moon Owner Corporation. The planner only counts refineries with a drill in a service slot.'
                         : ($uncovered === 0
                             ? "All {$total} refineries have at least one upcoming planned pull."
                             : "{$uncovered} of {$total} refineries have no upcoming planned pull (skipped moons). Use Auto-fill from History on the planner."),
@@ -298,6 +340,140 @@ class DiagnosticController extends Controller
                     'label'   => 'Planner data sanity',
                     'status'  => 'warn',
                     'message' => 'Could not evaluate planner data: ' . $e->getMessage(),
+                ];
+            }
+        }
+
+        // Moon drilling rigs: the record on each extraction, and what SeAT can
+        // see in the rig slots against what each refinery's latest chunk was
+        // timed with. The two disagree for a while after a rig swap, until the
+        // next chunk is pulled with the new rig.
+        $hasRigRecord = \Schema::hasColumn('moon_extractions', 'moon_rigs');
+        $checks[] = [
+            'label'   => 'Migration 000034: moon rigs on each extraction',
+            'status'  => $hasRigRecord ? 'ok' : 'fail',
+            'message' => $hasRigRecord
+                ? 'Present: each extraction keeps the moon rigs it was pulled with.'
+                : 'Column missing, run migrations. Extractions cannot keep a record of their moon rigs.',
+        ];
+
+        // Characters SeAT does not know, looked up in the background: a pile of
+        // characters still waiting means the lookup is not running.
+        $hasCharacterLookups = \Schema::hasTable('mining_manager_character_affiliations');
+        $lookups = [];
+        if ($hasCharacterLookups) {
+            try {
+                $lookups = app(\MiningManager\Services\Character\AffiliationResolutionService::class)->stats();
+            } catch (\Throwable $e) {
+                $lookups = [];
+            }
+        }
+        $waiting = $lookups['pending'] ?? 0;
+        $checks[] = [
+            'label'   => 'Migration 000035: character lookups',
+            'status'  => !$hasCharacterLookups ? 'fail' : ($waiting > 50 ? 'warn' : 'ok'),
+            'message' => !$hasCharacterLookups
+                ? 'Table missing, run migrations. Characters SeAT does not know show as in progress until it exists.'
+                : sprintf(
+                    '%d looked up from ESI, %d from EVEWho or zKillboard, %d rejected by ESI, %d waiting.',
+                    $lookups['esi'] ?? 0,
+                    ($lookups['evewho'] ?? 0) + ($lookups['zkillboard'] ?? 0),
+                    $lookups['invalid'] ?? 0,
+                    $waiting
+                ) . ($waiting > 50 ? ' That many waiting means mining-manager:resolve-characters is not running.' : ''),
+        ];
+
+        // Moons with extractions but no scan in SeAT. Their chunks are valued
+        // from the game's notices, but only once the first notice is in, and
+        // the simulator, Find Moons and the quality ratings need the scan.
+        try {
+            $unscanned = DB::table('moon_extractions as e')
+                ->leftJoin('universe_moon_contents as c', 'c.moon_id', '=', 'e.moon_id')
+                ->whereNotNull('e.moon_id')
+                ->whereNull('c.moon_id')
+                ->where('e.status', '!=', 'cancelled')
+                ->distinct()
+                ->pluck('e.moon_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $moonNames = $unscanned
+                ? DB::table('moons')->whereIn('moon_id', $unscanned)->pluck('name', 'moon_id')->all()
+                : [];
+            $listed = array_map(fn ($id) => $moonNames[$id] ?? "Moon {$id}", array_slice($unscanned, 0, 10));
+
+            $checks[] = [
+                'label'   => 'Moon scans for moons with extractions',
+                'status'  => $unscanned ? 'warn' : 'ok',
+                'message' => $unscanned
+                    ? count($unscanned) . ' moon(s) with extractions have no scan in SeAT: ' . implode(', ', $listed)
+                        . (count($unscanned) > 10 ? ' and ' . (count($unscanned) - 10) . ' more' : '')
+                        . ". Their chunks are valued from the game's notices once the first one is in, but the simulator, Find Moons and the quality ratings need the scan. Add the moon's probe scan to SeAT. Moon Scan Missing, in the webhooks' Plugin Health group, says when another one turns up."
+                    : 'Every moon with an extraction has a scan in SeAT.',
+            ];
+        } catch (\Throwable $e) {
+            $checks[] = [
+                'label'   => 'Moon scans for moons with extractions',
+                'status'  => 'warn',
+                'message' => 'Could not check the moon scans: ' . $e->getMessage(),
+            ];
+        }
+
+        if ($moonOwner) {
+            try {
+                $refineryService = app(\MiningManager\Services\Moon\RefineryService::class);
+                $ids = $refineryService->presentRefineryIds((int) $moonOwner);
+                $visible = $refineryService->assetsVisible($ids);
+                $fitted = $refineryService->fittedRigSummary($ids);
+                $names = DB::table('universe_structures')->whereIn('structure_id', $ids)->pluck('name', 'structure_id');
+                $seen = 0;
+                $blind = 0;
+                $rigged = 0;
+                $differ = [];
+
+                foreach ($ids as $id) {
+                    if (!($visible[$id] ?? false)) {
+                        $blind++;
+                        continue;
+                    }
+
+                    $seen++;
+                    if ($fitted[$id]['rigs']) {
+                        $rigged++;
+                    }
+
+                    $latest = \MiningManager\Models\MoonExtraction::where('structure_id', $id)
+                        ->whereNotNull('natural_decay_time')
+                        ->orderByDesc('chunk_arrival_time')
+                        ->first();
+                    if ($latest && $latest->timerRigTier() !== $fitted[$id]['timer_tier']) {
+                        $differ[] = ($names[$id] ?? "Structure {$id}") . ' (fitted: Tech ' . $fitted[$id]['timer_tier']
+                            . ', latest chunk: Tech ' . $latest->timerRigTier() . ')';
+                    }
+                }
+
+                $checks[] = [
+                    'label'   => 'Moon rigs on the Moon Owner Corporation\'s refineries',
+                    'status'  => $blind > 0 ? 'warn' : 'ok',
+                    'message' => count($ids) === 0
+                        ? 'No Athanor or Tatara on file for the Moon Owner Corporation.'
+                        : "{$seen} of " . count($ids) . " refineries' fittings visible to SeAT, {$rigged} with a moon rig."
+                            . ($blind > 0
+                                ? " For the other {$blind}, SeAT cannot see the assets (a Director token with the corporation assets scope is needed): their mining windows still come from each chunk's own timer, but an Athanor's yield rig is not known."
+                                : ''),
+                ];
+
+                if ($differ) {
+                    $checks[] = [
+                        'label'   => 'Moon rigs: fitted now and latest chunk differ',
+                        'status'  => 'info',
+                        'message' => implode('; ', $differ) . '. Expected for a while after a rig swap: the next chunk follows the new rig.',
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $checks[] = [
+                    'label'   => 'Moon rigs on the Moon Owner Corporation\'s refineries',
+                    'status'  => 'warn',
+                    'message' => 'Could not read the moon rigs: ' . $e->getMessage(),
                 ];
             }
         }
@@ -858,6 +1034,16 @@ class DiagnosticController extends Controller
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2); // milliseconds
 
+            // A provider that failed outright still hands back the cached
+            // prices, which would read here as a passing test.
+            if ($this->priceService->lastFetchStoodIn()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice(),
+                    'provider' => $provider,
+                ]);
+            }
+
             // Get type names
             $typeNames = DB::table('invTypes')
                 ->whereIn('typeID', $testTypeIds)
@@ -936,6 +1122,7 @@ class DiagnosticController extends Controller
                     'janice_market' => $pricingSettings['janice_market'] ?? 'jita',
                     'janice_price_method' => $pricingSettings['janice_price_method'] ?? 'buy',
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
+                    'fallback_provider' => $this->describeFallbackSetting($pricingSettings['fallback_provider'] ?? 'fuzzwork'),
                     'cache_duration' => ($pricingSettings['cache_duration'] ?? 240) . ' minutes',
                     'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
                     'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
@@ -951,6 +1138,21 @@ class DiagnosticController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * The fallback provider as Diagnostics shows it, with why it cannot stand
+     * in when it cannot.
+     */
+    protected function describeFallbackSetting(string $choice): string
+    {
+        if ($choice === PriceProviderService::FALLBACK_NONE) {
+            return 'None: cached prices are kept when the provider fails';
+        }
+
+        $whyNot = $this->priceService->unavailableAsFallback($choice);
+
+        return (PriceProviderService::PROVIDER_LABELS[$choice] ?? $choice) . ($whyNot !== null ? " (not available: {$whyNot})" : '');
     }
 
     /**
@@ -1040,6 +1242,14 @@ class DiagnosticController extends Controller
 
             $endTime = microtime(true);
             $duration = round(($endTime - $startTime) * 1000, 2);
+
+            if ($this->priceService->lastFetchStoodIn()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice(),
+                    'provider' => $provider,
+                ]);
+            }
 
             // Get type names
             $typeNames = DB::table('invTypes')
@@ -1181,10 +1391,24 @@ class DiagnosticController extends Controller
         }
 
         if ($health['provider_failing']) {
+            $fallback = $health['provider']['fallback'] ?? null;
             $recommendations[] = [
                 'severity' => 'warning',
-                'message' => 'Price refreshes are failing. Cached prices stay as they are until they work again.',
+                'message' => $fallback && !empty($health['provider']['fallback_ok'])
+                    ? 'Price refreshes from the price provider are failing. Prices come from ' . (PriceProviderService::PROVIDER_LABELS[$fallback] ?? $fallback) . ' until it answers again.'
+                    : 'Price refreshes are failing. Cached prices stay as they are until they work again.',
                 'action' => 'Check the price provider settings under Settings, Pricing'
+            ];
+        }
+
+        // SeAT's prices are CCP's averages, which can be far from what
+        // anything sells for. Said rather than changed for the operator.
+        $configured = $this->settingsService->getPricingSettings()['price_provider'] ?? 'seat';
+        if (!in_array($configured, [PriceProviderService::PROVIDER_FUZZWORK, PriceProviderService::PROVIDER_JANICE, PriceProviderService::PROVIDER_MANAGER_CORE], true)) {
+            $recommendations[] = [
+                'severity' => 'warning',
+                'message' => "The price provider is SeAT Database: CCP's average prices across New Eden, not what ore and materials sell for at a trade hub, so values priced from them can be well off.",
+                'action' => 'Pick a market provider such as Fuzzwork, free and with no key needed, under Settings, Pricing'
             ];
         }
 
@@ -1266,6 +1490,15 @@ class DiagnosticController extends Controller
             // Fetch prices
             $prices = $this->priceService->getPrices($typeIds);
 
+            // A provider that failed outright hands back its fallback's prices
+            // and, for what that cannot price, the cached ones. Writing the
+            // cached ones back would only make stale prices look fresh, so
+            // they are left out, as the scheduled refresh does.
+            $standIn = $this->priceService->lastFetchStoodIn();
+            if ($standIn) {
+                $prices = array_diff_key($prices, array_flip($this->priceService->lastKeptTypeIds()));
+            }
+
             // Store in cache using correct price_type column
             $stored = 0;
             $failed = 0;
@@ -1308,6 +1541,14 @@ class DiagnosticController extends Controller
             }
 
             $duration = round((microtime(true) - $startTime) * 1000, 2);
+
+            if ($standIn) {
+                return response()->json([
+                    'success' => false,
+                    'error' => $this->priceService->standInNotice() . " {$stored} price(s) written.",
+                    'provider' => $provider,
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
@@ -2292,12 +2533,18 @@ class DiagnosticController extends Controller
             $characterCalc = null;
             if ($characterId) {
                 try {
-                    $charTax = $taxService->calculateCharacterTax($characterId, $monthStart, $monthEnd, true);
+                    $figures = $taxService->accountTaxBeforeThresholds((int) $characterId, $monthStart, $monthEnd);
+
+                    // A bill adds up the main and its alts before either
+                    // threshold is applied, so both are checked against that
+                    // total rather than the one character asked about.
                     $characterCalc = [
                         'character_id' => $characterId,
-                        'calculated_tax' => round($charTax, 2),
-                        'above_exemption' => $charTax >= ($exemptions['threshold'] ?? 0),
-                        'above_minimum' => $charTax >= ($paymentSettings['minimum_tax_amount'] ?? 1000000),
+                        'calculated_tax' => $figures['character_tax'],
+                        'account_tax' => $figures['account_tax'],
+                        'account_characters' => $figures['account_characters'],
+                        'above_exemption' => $figures['account_tax'] >= ($exemptions['threshold'] ?? 0),
+                        'above_minimum' => $figures['account_tax'] >= ($paymentSettings['minimum_tax_amount'] ?? 1000000),
                     ];
                 } catch (\Exception $e) {
                     $characterCalc = ['error' => $e->getMessage()];
@@ -3688,9 +3935,12 @@ class DiagnosticController extends Controller
             'event_started' => $ns->sendEventStarted($this->buildFakeMiningEvent($data), []),
             'event_completed' => $ns->sendEventCompleted($this->buildFakeMiningEvent($data), []),
             'price_provider' => $ns->sendPriceProviderStatus(array_merge([
-                'provider' => 'janice',
+                'provider' => 'Janice',
                 'failing' => true,
                 'error' => 'Janice refused the request with HTTP 429 (too many requests)',
+                'advice' => 'Check the provider on the Diagnostics page, under Price Provider, or pick another one under Settings, Pricing.',
+                'fallback' => 'Fuzzwork, Jita buy',
+                'fallback_ok' => true,
                 'since' => now()->subHours(4)->format('Y-m-d H:i'),
                 'last_success' => now()->subHours(8)->format('Y-m-d H:i'),
             ], $data)),
@@ -3711,6 +3961,39 @@ class DiagnosticController extends Controller
                 'planned_arrival_time' => $data['planned_arrival_time'] ?? now()->addDays(7)->format('Y-m-d H:i'),
                 'actual_arrival_time' => $data['actual_arrival_time'] ?? now()->addDays(7)->subHours(3)->format('Y-m-d H:i'),
                 'offset_hours' => $data['offset_hours'] ?? 3.0,
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'refinery_gone' => $ns->sendRefineryGone(array_merge($data, [
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'system_name' => $data['system_name'] ?? 'Perimeter',
+                'reason' => $data['reason'] ?? 'Unanchored, as reported by the game',
+                'missing_since' => $data['missing_since'] ?? now()->subHours(26)->format('Y-m-d H:i'),
+                'pulls_removed' => (int) ($data['pulls_removed'] ?? 6),
+                'blueprints' => $data['blueprints'] ?? 'Standard fortnight, Mon Wed Fri',
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'extraction_cancelled' => $ns->sendExtractionCancelled(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'cancelled_by' => $data['cancelled_by'] ?? 'Diagnostic Director',
+                'chunk_arrival_time' => $data['chunk_arrival_time'] ?? now()->addDays(4)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'moon_not_rescheduled' => $ns->sendMoonNotRescheduled(array_merge($data, [
+                'moon_name' => $data['moon_name'] ?? 'Test Moon IV - Moon 3',
+                'structure_name' => $data['structure_name'] ?? 'Diagnostic Athanor',
+                'arrived_at' => $data['arrived_at'] ?? now()->subHours(50)->format('Y-m-d H:i'),
+                'hours_since' => (int) ($data['hours_since'] ?? 50),
+                'next_planned' => $data['next_planned'] ?? now()->addHours(10)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+            ])),
+            'moon_scan_missing' => $ns->sendMoonScanMissing($data),
+            'schedule_needs_filling' => $ns->sendScheduleNeedsFilling(array_merge($data, [
+                'refineries' => $data['refineries'] ?? ['Perimeter: Diagnostic Athanor (R32), nothing planned', 'Jita: Diagnostic Tatara (R16), 1 of 2 planned'],
+                'more_count' => (int) ($data['more_count'] ?? 0),
+                'total' => (int) ($data['total'] ?? 2),
+                'target' => (int) ($data['target'] ?? 1),
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
             ])),
             'next_extraction_planned' => $ns->sendNextExtractionPlanned(array_merge($data, [
@@ -4003,12 +4286,17 @@ class DiagnosticController extends Controller
             'event_started' => 'Mining Event Started',
             'event_completed' => 'Mining Event Completed',
             'price_provider' => 'Price Provider Trouble',
+            'moon_scan_missing' => 'Moon Scan Missing (moons with no scan)',
             'moon_ready' => 'Moon Extraction Ready',
             'jackpot_detected' => 'Jackpot Detected',
             'moon_chunk_unstable' => 'Moon Chunk Unstable (capital safety)',
             'extraction_started' => 'Extraction Started (new chunk)',
             'next_extraction_planned' => 'Next Extraction Planned (planner nudge)',
             'schedule_mismatch' => 'Moon Scheduled Off-Plan (planner mismatch)',
+            'refinery_gone' => 'Refinery Gone (planned pulls removed)',
+            'extraction_cancelled' => 'Moon Extraction Cancelled',
+            'moon_not_rescheduled' => 'Moon Not Rescheduled (reminder)',
+            'schedule_needs_filling' => 'Moons Need Planning (one list)',
             'metenox_cargo_full' => 'Metenox Cargo Bay Full (yield-stopping)',
             'extraction_at_risk' => 'Extraction at Risk (fuel / attack / reinforced)',
             'extraction_lost' => 'Extraction Lost (structure destroyed)',
@@ -4180,6 +4468,12 @@ class DiagnosticController extends Controller
             'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
             'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
             'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+            'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+            'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+            'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+            'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+            'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+            'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
             'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
             default => NotificationService::TYPE_CUSTOM,
         };
@@ -4388,6 +4682,12 @@ class DiagnosticController extends Controller
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
                 'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+                'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+                'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+                'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+                'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+                'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+                'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -4665,6 +4965,12 @@ class DiagnosticController extends Controller
                 'extraction_started' => NotificationService::TYPE_EXTRACTION_STARTED,
                 'next_extraction_planned' => NotificationService::TYPE_NEXT_EXTRACTION_PLANNED,
                 'schedule_mismatch' => NotificationService::TYPE_SCHEDULE_MISMATCH,
+                'refinery_gone' => NotificationService::TYPE_REFINERY_GONE,
+                'extraction_cancelled' => NotificationService::TYPE_EXTRACTION_CANCELLED,
+                'moon_not_rescheduled' => NotificationService::TYPE_MOON_NOT_RESCHEDULED,
+                'schedule_needs_filling' => NotificationService::TYPE_SCHEDULE_NEEDS_FILLING,
+                'price_provider' => NotificationService::TYPE_PRICE_PROVIDER,
+                'moon_scan_missing' => NotificationService::TYPE_MOON_SCAN_MISSING,
                 'metenox_cargo_full' => NotificationService::TYPE_METENOX_CARGO_FULL,
                 default => NotificationService::TYPE_CUSTOM,
             };
@@ -4843,6 +5149,53 @@ class DiagnosticController extends Controller
                 'actual_arrival_time' => now()->addDays(7)->subHours(3)->format('Y-m-d H:i') . ' EVE',
                 'offset_hours' => 3.0,
                 'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'refinery_gone' => [
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'system_name' => 'Perimeter',
+                'reason' => 'Unanchored, as reported by the game',
+                'missing_since' => now()->subHours(26)->format('Y-m-d H:i'),
+                'pulls_removed' => 6,
+                'blueprints' => 'Standard fortnight, Mon Wed Fri',
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'extraction_cancelled' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'cancelled_by' => 'Diagnostic Director',
+                'chunk_arrival_time' => now()->addDays(4)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'moon_not_rescheduled' => [
+                'moon_name' => $request->input('test_moon_name', 'Perimeter I - Moon 1'),
+                'structure_name' => $request->input('test_structure_name', 'Athanor - Test Moon'),
+                'arrived_at' => now()->subHours(50)->format('Y-m-d H:i'),
+                'hours_since' => 50,
+                'next_planned' => now()->addHours(10)->format('Y-m-d H:i'),
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'schedule_needs_filling' => [
+                'refineries' => ['Perimeter: Athanor - Test Moon (R32), nothing planned', 'Jita: Tatara - Test Moon (R16), 1 of 2 planned'],
+                'more_count' => 0,
+                'total' => 2,
+                'target' => 1,
+                'planner_url' => rtrim(config('app.url', ''), '/') . '/mining-manager/moon/planner',
+                'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
+            ],
+            'moon_scan_missing' => [
+                'moons' => [
+                    'Perimeter: ' . $request->input('test_moon_name', 'Perimeter I - Moon 1') . ' (' . $request->input('test_structure_name', 'Athanor - Test Moon') . '), chunk due ' . now()->addDays(5)->format('Y-m-d H:i') . ' EVE, no value yet',
+                    'Jita: Jita IV - Moon 4 (Tatara - Test Moon), 2 pulls planned, next ' . now()->addDays(9)->format('Y-m-d H:i') . ' EVE',
+                ],
+                'more_count' => 0,
+                'total' => 2,
+                'reminder' => false,
+                'moons_url' => rtrim(config('app.url', ''), '/') . '/tools/moons',
                 'corporation_id' => (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0),
             ],
             'metenox_cargo_full' => [

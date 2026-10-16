@@ -15,7 +15,6 @@ use MiningManager\Services\ReprocessingRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-use Seat\Eveapi\Models\Character\CharacterInfo;
 use MiningManager\Services\OreClassifier;
 
 class TaxCalculationService
@@ -28,7 +27,7 @@ class TaxCalculationService
     protected $settingsService;
 
     /**
-     * Draws down credit held from earlier overpayments.
+     * Draws down credit held from earlier payments.
      *
      * @var PaymentAllocationService
      */
@@ -271,6 +270,18 @@ class TaxCalculationService
                         }
                     }
 
+                    // The exemption threshold is checked against the combined
+                    // total too, before the minimum. Checked per character, a
+                    // player could spread their mining over alts that each
+                    // stayed under it and pay nothing at all.
+                    if ($combinedTaxAmount > 0) {
+                        $exemptions = $this->settingsService->getExemptions();
+                        if ($exemptions['enabled'] && $combinedTaxAmount < $exemptions['threshold']) {
+                            Log::debug("Mining Manager: Main character {$mainCharacterId} exempt from tax (combined tax below threshold: {$combinedTaxAmount} < {$exemptions['threshold']})");
+                            $combinedTaxAmount = 0;
+                        }
+                    }
+
                     // Apply minimum tax to the combined total (not per-character)
                     if ($combinedTaxAmount > 0) {
                         $paymentSettings = $this->settingsService->getPaymentSettings();
@@ -296,9 +307,10 @@ class TaxCalculationService
 
                     // Create notes explaining the breakdown
                     $notes = "Accumulated tax from " . count($taxBreakdown) . " character(s):\n";
+                    $names = app(\MiningManager\Services\Character\CharacterNames::class);
+                    $names->lookUpNow(array_column($taxBreakdown, 'character_id'));
                     foreach ($taxBreakdown as $item) {
-                        $charInfo = CharacterInfo::find($item['character_id']);
-                        $charName = $charInfo ? $charInfo->name : "Character {$item['character_id']}";
+                        $charName = $names->nameOrId($item['character_id']);
                         $notes .= "- {$charName}: " . number_format($item['tax_amount'], 2) . " ISK\n";
                     }
 
@@ -512,10 +524,12 @@ class TaxCalculationService
      * @param int $characterId
      * @param Carbon $startDate
      * @param Carbon $endDate
-     * @param bool $skipMinimum When true, skip minimum tax (used in accumulated mode where minimum applies to combined total)
+     * @param bool $accumulating When true, this character is one part of an account's bill: the
+     *                           exemption threshold and the minimum are left to calculateTaxes(),
+     *                           which applies both to the combined total
      * @return float
      */
-    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $skipMinimum = false): float
+    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $accumulating = false): float
     {
         // Read from daily summaries — the single source of truth for tax
         $totalTax = (float) MiningLedgerDailySummary::where('character_id', $characterId)
@@ -526,6 +540,10 @@ class TaxCalculationService
             return 0;
         }
 
+        if ($accumulating) {
+            return round($totalTax, 2);
+        }
+
         // Check exemption threshold FIRST (before minimum tax)
         $exemptions = $this->settingsService->getExemptions();
         if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
@@ -533,25 +551,62 @@ class TaxCalculationService
             return 0;
         }
 
-        // Apply minimum tax only in individual mode (not when accumulating)
-        if (!$skipMinimum) {
-            $paymentSettings = $this->settingsService->getPaymentSettings();
-            $minimumAmount = (float) ($paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000));
-            $minimumBehavior = $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt');
+        $paymentSettings = $this->settingsService->getPaymentSettings();
+        $minimumAmount = (float) ($paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000));
+        $minimumBehavior = $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt');
 
-            if ($minimumAmount > 0 && $totalTax > 0 && $totalTax < $minimumAmount) {
-                if ($minimumBehavior === 'enforce') {
-                    Log::debug("Mining Manager: Raising tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
-                    $totalTax = $minimumAmount;
-                } else {
-                    // 'exempt' — no tax below minimum
-                    Log::debug("Mining Manager: Character {$characterId} tax below minimum ({$totalTax} < {$minimumAmount}), exempting");
-                    $totalTax = 0;
-                }
+        if ($minimumAmount > 0 && $totalTax > 0 && $totalTax < $minimumAmount) {
+            if ($minimumBehavior === 'enforce') {
+                Log::debug("Mining Manager: Raising tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
+                $totalTax = $minimumAmount;
+            } else {
+                // 'exempt' — no tax below minimum
+                Log::debug("Mining Manager: Character {$characterId} tax below minimum ({$totalTax} < {$minimumAmount}), exempting");
+                $totalTax = 0;
             }
         }
 
         return round($totalTax, 2);
+    }
+
+    /**
+     * A character's tax for a period beside its account's, before the
+     * exemption threshold and the minimum.
+     *
+     * The bill adds up every character grouped under one main and applies
+     * both thresholds to that total, so the account figure is the one they
+     * are checked against. Grouped the same way calculateTaxes() groups.
+     *
+     * @return array{character_tax: float, account_tax: float, account_characters: int}
+     */
+    public function accountTaxBeforeThresholds(int $characterId, Carbon $startDate, Carbon $endDate): array
+    {
+        $userId = DB::table('refresh_tokens')->where('character_id', $characterId)->value('user_id');
+
+        $accountCharacterIds = $userId
+            ? DB::table('refresh_tokens')->where('user_id', $userId)->pluck('character_id')
+            : collect([$characterId]);
+
+        $group = [$characterId];
+
+        foreach ($this->groupCharactersByMain($accountCharacterIds) as $members) {
+            if (in_array($characterId, $members)) {
+                $group = $members;
+                break;
+            }
+        }
+
+        $accountTax = 0.0;
+
+        foreach ($group as $memberId) {
+            $accountTax += $this->calculateCharacterTax((int) $memberId, $startDate, $endDate, true);
+        }
+
+        return [
+            'character_tax' => $this->calculateCharacterTax($characterId, $startDate, $endDate, true),
+            'account_tax' => round($accountTax, 2),
+            'account_characters' => count($group),
+        ];
     }
 
     /**
@@ -930,11 +985,11 @@ class TaxCalculationService
      *
      * @param int $characterId
      * @param int $typeId
-     * @param int $solarSystemId
+     * @param int|null $solarSystemId Null on ledger rows ESI left without a system
      * @param string $date Date in 'Y-m-d' format
      * @return string
      */
-    private function getCorpMoonCacheKey(int $characterId, int $typeId, int $solarSystemId, string $date): string
+    private function getCorpMoonCacheKey(int $characterId, int $typeId, ?int $solarSystemId, string $date): string
     {
         return "{$characterId}_{$typeId}_{$solarSystemId}_{$date}";
     }
@@ -948,12 +1003,19 @@ class TaxCalculationService
      *
      * @param int $characterId
      * @param int $typeId
-     * @param int $solarSystemId
+     * @param int|null $solarSystemId Null on ledger rows ESI left without a system
      * @param string $date Date in 'Y-m-d' format
      * @return bool True if mined from corp moon, false otherwise
      */
-    private function checkIfCorpMoon(int $characterId, int $typeId, int $solarSystemId, string $date): bool
+    private function checkIfCorpMoon(int $characterId, int $typeId, ?int $solarSystemId, string $date): bool
     {
+        // Without a system there is nothing to match against the observer
+        // table, so this can't be confirmed as a corp moon. Treat it the
+        // same as a miss (don't tax), matching the catch-all below.
+        if ($solarSystemId === null) {
+            return false;
+        }
+
         try {
             // Query the corporation mining observer data
             // This table is populated by SeAT from ESI API and ONLY contains
@@ -1011,7 +1073,9 @@ class TaxCalculationService
         $paymentSettings = $this->settingsService->getPaymentSettings();
         $esiGraceHours = (int) ($paymentSettings['grace_period_hours'] ?? 24);
 
-        $overdueThreshold = Carbon::now()->subHours($esiGraceHours);
+        // Paying on the due date is on time, so a buffer shorter than a day
+        // must not make a bill late before its due date is over.
+        $overdueThreshold = Carbon::now()->subHours($esiGraceHours)->min(Carbon::today());
 
         $updated = MiningTax::where('status', 'unpaid')
             ->where(function ($q) use ($overdueThreshold) {

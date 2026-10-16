@@ -5,6 +5,7 @@ namespace MiningManager\Services\Moon;
 use Illuminate\Support\Facades\DB;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\ReprocessingRegistry;
+use MiningManager\Services\TypeIdRegistry;
 
 /**
  * Values moon ore from the price cache alone.
@@ -52,6 +53,21 @@ class MoonValuation
      */
     protected $unpricedMaterials = [];
 
+    /**
+     * @var array<int, array<int, int>> ore type => [material type => quantity per portion]
+     */
+    protected $yields = [];
+
+    /**
+     * @var array<int, int> ore type => units in one reprocessing portion
+     */
+    protected $portions = [];
+
+    /**
+     * @var array<int, float> ISK per unit of a reprocessed material
+     */
+    protected $materialPrices = [];
+
     public function __construct(SettingsManagerService $settings)
     {
         $this->settings = $settings;
@@ -94,6 +110,14 @@ class MoonValuation
 
         foreach ($typeIds as $typeId) {
             $this->prepared[$typeId] = true;
+            $this->yields[$typeId] = $minerals[$typeId] ?? [];
+            $this->portions[$typeId] = $portionSizes[$typeId] ?? 100;
+
+            foreach ($this->yields[$typeId] as $materialId => $quantity) {
+                if (isset($prices[(int) $materialId])) {
+                    $this->materialPrices[(int) $materialId] = $prices[(int) $materialId];
+                }
+            }
 
             if (isset($prices[$typeId])) {
                 $this->orePrices[$typeId] = $prices[$typeId];
@@ -142,16 +166,22 @@ class MoonValuation
     /**
      * Value one extraction.
      *
+     * A yield rig's bonus, in percent, scales the volume. Only the simulator
+     * passes one: Find Moons and the quality ratings value the moon itself,
+     * and a rig belongs to the refinery, not the moon.
+     *
      * @param array<int, float> $ores ore type => share of the moon, 0.46 for 46%
      * @param int $days extraction length
+     * @param float $yieldBonus a Moon Drilling Efficiency or Proficiency rig's bonus, 2.4 for +2.4%
      * @return array{share: float, rate: int, volume: int, raw: float, refined: float, ores: array, unpriced: string[], unpriced_materials: string[]}
      */
-    public function value(array $ores, int $days): array
+    public function value(array $ores, int $days, float $yieldBonus = 0.0): array
     {
         $this->prepare(array_keys($ores));
 
         $share = (float) array_sum($ores);
-        $volume = MoonChunkModel::volume($share, $days);
+        $yieldFactor = 1 + max(0.0, $yieldBonus) / 100;
+        $volume = (int) round(MoonChunkModel::volume($share, $days) * $yieldFactor);
 
         $lines = [];
         $raw = 0.0;
@@ -199,13 +229,84 @@ class MoonValuation
 
         return [
             'share' => $share,
-            'rate' => MoonChunkModel::ratePerHour($share),
+            'rate' => (int) round(MoonChunkModel::ratePerHour($share) * $yieldFactor),
             'volume' => $volume,
             'raw' => $raw,
             'refined' => $refined,
             'ores' => $lines,
             'unpriced' => $unpriced,
             'unpriced_materials' => array_values($unpricedMaterials),
+        ];
+    }
+
+    /**
+     * What a Metenox Moon Drill on this moon would put in its bay over $days.
+     *
+     * The drill takes ore out at the same rate as a refinery's extraction and
+     * reprocesses it on the spot at 40%, and only the moon materials are kept:
+     * the standard minerals moon ore also holds never reach the bay. No rig
+     * fits a Metenox, so there is no yield bonus.
+     *
+     * @param array<int, float> $ores ore type => share of the moon, 0.46 for 46%
+     * @return array{volume: int, value: float, materials: array, unpriced: string[]}
+     */
+    public function metenox(array $ores, int $days): array
+    {
+        $this->prepare(array_keys($ores));
+
+        $volume = MoonChunkModel::volume((float) array_sum($ores), $days);
+        $keep = array_flip(TypeIdRegistry::getAllMoonMaterials());
+
+        $amounts = [];
+        foreach ($ores as $typeId => $oreShare) {
+            $typeId = (int) $typeId;
+            if (!isset($this->unitVolumes[$typeId])) {
+                continue;
+            }
+
+            $portions = floor($volume * $oreShare / $this->unitVolumes[$typeId]) / ($this->portions[$typeId] ?? 100);
+
+            foreach ($this->yields[$typeId] ?? [] as $materialId => $perPortion) {
+                if (isset($keep[(int) $materialId])) {
+                    $amounts[(int) $materialId] = ($amounts[(int) $materialId] ?? 0.0)
+                        + $portions * $perPortion * MetenoxCargoService::REPROCESSING_YIELD;
+                }
+            }
+        }
+
+        $names = [];
+        foreach ($this->loadTypes(array_keys($amounts)) as $type) {
+            $names[(int) $type->typeID] = (string) $type->typeName;
+        }
+
+        $materials = [];
+        $value = 0.0;
+        $unpriced = [];
+        foreach ($amounts as $materialId => $amount) {
+            $quantity = (int) floor($amount);
+            $price = $this->materialPrices[$materialId] ?? null;
+            if ($price === null) {
+                $unpriced[] = $names[$materialId] ?? ('Type ' . $materialId);
+            }
+
+            $lineValue = $quantity * ($price ?? 0.0);
+            $value += $lineValue;
+            $materials[] = [
+                'type_id' => $materialId,
+                'name' => $names[$materialId] ?? ('Type ' . $materialId),
+                'quantity' => $quantity,
+                'unit_price' => $price ?? 0.0,
+                'value' => $lineValue,
+            ];
+        }
+
+        usort($materials, fn ($a, $b) => $b['value'] <=> $a['value']);
+
+        return [
+            'volume' => $volume,
+            'value' => $value,
+            'materials' => $materials,
+            'unpriced' => $unpriced,
         ];
     }
 

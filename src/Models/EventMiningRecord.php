@@ -2,6 +2,7 @@
 
 namespace MiningManager\Models;
 
+use MiningManager\Models\Concerns\HasCharacterName;
 use Illuminate\Database\Eloquent\Model;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Sde\InvType;
@@ -20,6 +21,8 @@ use Seat\Eveapi\Models\Sde\MapDenormalize;
  */
 class EventMiningRecord extends Model
 {
+    use HasCharacterName;
+
     /**
      * @var string
      */

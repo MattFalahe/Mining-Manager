@@ -52,11 +52,14 @@ return [
                 'permission' => 'mining-manager.director',
             ],
             [
+                // The planner, its blueprints and the Extraction Simulator.
+                // Somebody with the simulator but not the planner, a Moon
+                // Finder for one, is sent on to it from the planner's page.
                 'name'       => 'Moon Planner',
                 'label'      => 'mining-manager::menu.moon_planner',
                 'icon'       => 'fas fa-calendar-alt',
                 'route'      => 'mining-manager.moon.planner',
-                'permission' => ['mining-manager.moon_manager', 'mining-manager.director'],
+                'permission' => ['mining-manager.moon_manager', 'mining-manager.director', 'mining-manager.moon_finder', 'mining-manager.admin'],
             ],
             [
                 'name'       => 'Analytics',

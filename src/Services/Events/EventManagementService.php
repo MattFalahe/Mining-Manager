@@ -454,7 +454,6 @@ class EventManagementService
     public function getEventLeaderboard(int $eventId, int $limit = 10)
     {
         return EventParticipant::where('event_id', $eventId)
-            ->with('character')
             ->orderByDesc('quantity_mined')
             ->limit($limit)
             ->get();
@@ -659,7 +658,7 @@ class EventManagementService
             'statistics' => $this->getEventStatistics($eventId),
             'participants' => $event->participants->map(function ($participant) {
                 return [
-                    'character' => $participant->character->name ?? 'Unknown',
+                    'character' => $participant->character_name,
                     'quantity_mined' => $participant->quantity_mined,
                     'joined_at' => $participant->joined_at?->toIso8601String(),
                 ];

@@ -2,6 +2,7 @@
 <h4>
     <i class="fas fa-tachometer-alt"></i>
     Dashboard Settings
+    <span class="badge badge-success ml-2">Global</span>
 </h4>
 <hr>
 
@@ -55,39 +56,38 @@
 
             {{-- Corporation Selection (shown when 'specific' is selected) --}}
             <div id="corporation_selection_container" style="display: none;">
-                <div class="form-group">
-                    <label for="dashboard_leaderboard_corporation_ids">
-                        <i class="fas fa-building"></i> Select Corporations
-                    </label>
-                    <select name="dashboard_leaderboard_corporation_ids[]"
-                            id="dashboard_leaderboard_corporation_ids"
-                            class="form-control"
-                            multiple
-                            size="5">
-                        @php
-                            $selectedCorps = json_decode(($settings['dashboard']['dashboard_leaderboard_corporation_ids'] ?? '[]'), true);
-                        @endphp
-                        @foreach($corporations as $corp)
-                        <option value="{{ $corp->corporation_id }}"
-                                {{ in_array($corp->corporation_id, $selectedCorps) ? 'selected' : '' }}>
-                            [{{ $corp->ticker }}] {{ $corp->name }}
-                        </option>
-                        @endforeach
-                    </select>
-                    <small class="form-text text-muted">
-                        Hold Ctrl (Cmd on Mac) to select multiple corporations. Only miners from these corporations will appear in the leaderboard.
-                    </small>
-                </div>
+                @if(empty($leaderboardCorporations))
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        Nothing to pick yet: no member corporation (the moon owner, or one with its own settings) has any mining in the last 12 months.
+                    </div>
+                @else
+                    <div class="form-group">
+                        <label for="dashboard_leaderboard_corporation_ids">
+                            <i class="fas fa-building"></i> Select Corporations
+                        </label>
+                        <select name="dashboard_leaderboard_corporation_ids[]"
+                                id="dashboard_leaderboard_corporation_ids"
+                                class="form-control"
+                                multiple
+                                size="5">
+                            @foreach($leaderboardCorporations as $corporationId => $corp)
+                            <option value="{{ $corporationId }}" {{ $corp['picked'] ? 'selected' : '' }}>
+                                {{ $corp['label'] }} ({{ $corp['miners'] }} {{ $corp['miners'] === 1 ? 'miner' : 'miners' }})
+                            </option>
+                            @endforeach
+                        </select>
+                        <small class="form-text text-muted">
+                            Hold Ctrl (Cmd on Mac) to select multiple corporations. Only miners from these corporations will appear in the leaderboard.
+                        </small>
+                    </div>
 
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i>
-                    <strong>Note:</strong> The following corporations have mining activity:
-                    <ul class="mb-0 mt-2">
-                        <li>Brothers of Tyr (98186730)</li>
-                        <li>Cosmos Collective (98664079)</li>
-                        <li>Mercurialis Inc. (144534752)</li>
-                    </ul>
-                </div>
+                    <p class="text-muted small mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        Listed: member corporations (the moon owner and those with their own settings) with the number of their characters who mined in the last 12 months.
+                        Miners from any other corporation count as guests and never appear on the leaderboard.
+                    </p>
+                @endif
             </div>
         </div>
     </div>

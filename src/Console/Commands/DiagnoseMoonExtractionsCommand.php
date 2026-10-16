@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Seat\Eveapi\Models\Corporation\CorporationStructure;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Moon\RefineryService;
 
 class DiagnoseMoonExtractionsCommand extends Command
 {
@@ -149,7 +150,12 @@ class DiagnoseMoonExtractionsCommand extends Command
 
         $refineries = CorporationStructure::whereIn('type_id', [35835, 35836])->get();
         
-        $this->line("  Found {$refineries->count()} refineries (Athanor: 35835, Tatara: 35836)");
+        $drills = DB::table('corporation_structure_services')
+            ->whereIn('structure_id', $refineries->pluck('structure_id')->all())
+            ->where('name', RefineryService::MOON_DRILL_SERVICE)
+            ->pluck('state', 'structure_id');
+
+        $this->line("  Found {$refineries->count()} refineries (Athanor: 35835, Tatara: 35836), {$drills->count()} with a moon drill fitted");
 
         if ($refineries->count() > 0) {
             foreach ($refineries as $refinery) {
@@ -158,7 +164,37 @@ class DiagnoseMoonExtractionsCommand extends Command
                 $this->line("      Structure ID: {$refinery->structure_id}");
                 $this->line("      Corporation ID: {$refinery->corporation_id}");
                 $this->line("      Type ID: {$refinery->type_id}");
+
+                // The Moon Planner and its reminders leave out a refinery with
+                // no drill fitted, so this is the first thing to check when one
+                // is missing from them.
+                $drill = $drills->get($refinery->structure_id);
+                if ($drill === null) {
+                    $this->warn('      ⚠ No moon drill fitted, so the Moon Planner leaves it out');
+                } else {
+                    $this->info("      ✓ Moon drill fitted ({$drill})");
+                }
                 
+                // Moon rigs in its rig slots, and the rig its latest chunk was
+                // timed with, which is what decides that chunk's mining window.
+                $refineryService = app(RefineryService::class);
+                $structureId = (int) $refinery->structure_id;
+                if ($refineryService->assetsVisible([$structureId])[$structureId] ?? false) {
+                    $rigs = array_column($refineryService->fittedRigSummary([$structureId])[$structureId]['rigs'], 'name');
+                    $this->line('      Moon rigs: ' . ($rigs ? implode(', ', $rigs) : 'none fitted'));
+                } else {
+                    $this->line('      Moon rigs: SeAT cannot see this refinery\'s assets');
+                }
+                $latest = MoonExtraction::where('structure_id', $structureId)
+                    ->whereNotNull('natural_decay_time')
+                    ->orderByDesc('chunk_arrival_time')
+                    ->first();
+                if ($latest) {
+                    $tier = $latest->timerRigTier();
+                    $this->line('      Latest chunk timed with: ' . ($tier ? 'a Tech ' . ($tier === 1 ? 'I' : 'II') . ' timer rig' : 'no timer rig')
+                        . ', ' . $latest->getReadyDurationHours() . 'h mining window');
+                }
+
                 // Check if we have extraction data for this structure
                 $extractionCount = MoonExtraction::where('structure_id', $refinery->structure_id)->count();
                 if ($extractionCount > 0) {

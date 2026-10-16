@@ -5,12 +5,19 @@ use Illuminate\Support\Facades\Route;
 Route::group([
     'namespace' => 'MiningManager\Http\Controllers',
     'prefix' => 'mining-manager',
-    'middleware' => ['web', 'auth', 'locale'],
+    'middleware' => ['web', 'auth', 'locale', \MiningManager\Http\Middleware\PendingCharactersHeader::class],
 ], function () {
 
     // =====================================================================
     // MEMBER ROUTES - View own data, join events, view moon schedules
     // =====================================================================
+
+    // Whether characters a page showed as in progress have been looked up yet
+    Route::get('/characters/pending', [
+        'as' => 'mining-manager.characters.pending',
+        'uses' => 'CharacterLookupController@pending',
+        'middleware' => 'can:mining-manager.member',
+    ]);
 
     // Dashboard Routes
     Route::group(['prefix' => 'dashboard'], function () {
@@ -478,6 +485,9 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
+        // The Extraction Simulator, in the Moon Planner section, needs
+        // Director, Admin, Moon Manager or Moon Finder, like Find Moons below.
+        // The OR cannot be one can: middleware, so MoonController checks it.
         Route::get('/calculator', [
             'as' => 'mining-manager.moon.calculator',
             'uses' => 'MoonController@calculator',
@@ -496,9 +506,8 @@ Route::group([
             'middleware' => 'can:mining-manager.member',
         ]);
 
-        // Find Moons needs Director, Moon Manager or Moon Finder. The OR
-        // cannot be one can: middleware, so MoonController checks it. Literal
-        // paths, registered before the /{id} catch-all below.
+        // Find Moons, under the simulator's rule and checked the same way.
+        // Literal paths, registered before the /{id} catch-all below.
         Route::get('/finder/locations', [
             'as' => 'mining-manager.moon.finder.locations',
             'uses' => 'MoonController@finderLocations',
@@ -585,6 +594,18 @@ Route::group([
             'uses' => 'MoonPlannerController@autoFill',
         ]);
 
+        // Next Extraction Planned again, for every refinery whose chunk has
+        // arrived with nothing started since: the list first, then the send.
+        Route::get('/planner/next-pull-notices', [
+            'as' => 'mining-manager.moon.planner.next-pull-notices',
+            'uses' => 'MoonPlannerController@nextPullNotices',
+        ]);
+
+        Route::post('/planner/next-pull-notices', [
+            'as' => 'mining-manager.moon.planner.next-pull-notices.send',
+            'uses' => 'MoonPlannerController@sendNextPullNotices',
+        ]);
+
         Route::post('/planner', [
             'as' => 'mining-manager.moon.planner.store',
             'uses' => 'MoonPlannerController@store',
@@ -610,6 +631,50 @@ Route::group([
         Route::delete('/planner/{id}', [
             'as' => 'mining-manager.moon.planner.destroy',
             'uses' => 'MoonPlannerController@destroy',
+        ]);
+
+        // A refinery's last pull, and taking that back.
+        Route::post('/planner/final', [
+            'as' => 'mining-manager.moon.planner.final',
+            'uses' => 'MoonPlannerController@markFinal',
+        ]);
+
+        Route::post('/planner/resume', [
+            'as' => 'mining-manager.moon.planner.resume',
+            'uses' => 'MoonPlannerController@resume',
+        ]);
+
+        // Blueprints: the repeating patterns the planner can be filled from.
+        // Same gate as the planner, enforced in the controller, and the same
+        // reason for sitting above the `/{id}` catch-all.
+        Route::get('/blueprints', [
+            'as' => 'mining-manager.moon.blueprints',
+            'uses' => 'MoonBlueprintController@index',
+        ]);
+
+        Route::post('/blueprints', [
+            'as' => 'mining-manager.moon.blueprints.store',
+            'uses' => 'MoonBlueprintController@store',
+        ]);
+
+        Route::post('/blueprints/{id}/preview', [
+            'as' => 'mining-manager.moon.blueprints.preview',
+            'uses' => 'MoonBlueprintController@preview',
+        ]);
+
+        Route::post('/blueprints/{id}/apply', [
+            'as' => 'mining-manager.moon.blueprints.apply',
+            'uses' => 'MoonBlueprintController@apply',
+        ]);
+
+        Route::post('/blueprints/prune', [
+            'as' => 'mining-manager.moon.blueprints.prune',
+            'uses' => 'MoonBlueprintController@prune',
+        ]);
+
+        Route::delete('/blueprints/{id}', [
+            'as' => 'mining-manager.moon.blueprints.destroy',
+            'uses' => 'MoonBlueprintController@destroy',
         ]);
 
         Route::get('/{id}', [

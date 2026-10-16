@@ -3,6 +3,7 @@
 namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
+use MiningManager\Console\Commands\Concerns\RunsWithinABudget;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Tax\TaxCalculationService;
@@ -30,6 +31,17 @@ use Illuminate\Support\Facades\Log;
  */
 class UpdateLedgerPricesCommand extends Command
 {
+    use RunsWithinABudget;
+
+    /**
+     * How long a re-pricing run may spend on the ledger.
+     *
+     * Every row costs a valuation plus a couple of lookups, so --all-unpriced
+     * over a few years of mining runs for a long time. Nothing here is written
+     * in halves, so stopping leaves the untouched rows exactly as they were.
+     */
+    public const REPRICE_BUDGET_SECONDS = 1200;
+
     protected $signature = 'mining-manager:update-ledger-prices
                             {--days=1 : Number of days back to re-price (default: today only)}
                             {--all-unpriced : Re-price ALL entries with total_value = 0, regardless of date}
@@ -40,8 +52,8 @@ class UpdateLedgerPricesCommand extends Command
 
     public function handle()
     {
-        $lock = Cache::lock('mining-manager:update-ledger-prices', 600);
-        if (!$lock->get()) {
+        $lock = $this->lockForBudget('mining-manager:update-ledger-prices', self::REPRICE_BUDGET_SECONDS);
+        if (!$lock) {
             $this->warn('Another instance of this command is already running. Skipping.');
             return self::SUCCESS;
         }
@@ -132,12 +144,26 @@ class UpdateLedgerPricesCommand extends Command
         $updated = 0;
         $errors = 0;
         $skipped = 0;
+        $ranOutOfTime = false;
         $affectedPairs = collect(); // Track character_id + date pairs for daily summary regeneration
 
-        $query->chunk(500, function ($entries) use (
+        // Keyed paging, not offsets. The loop writes total_value, which is part
+        // of what the query selects on, so with offsets the result set shrinks
+        // underneath the paging and the run stops with most of the work still
+        // to do, having reported success.
+        $query->chunkById(500, function ($entries) use (
             $valuationService, $taxService, $settingsService, $force,
-            &$updated, &$errors, &$skipped, &$affectedPairs, $bar
+            &$updated, &$errors, &$skipped, &$affectedPairs, &$ranOutOfTime, $bar
         ) {
+        // Stopping part way leaves the rows we did not reach exactly as they
+        // were, which is the state they were already in, so a short run costs
+        // nothing but a later one.
+        if ($this->budgetSpent()) {
+            $ranOutOfTime = true;
+
+            return false;
+        }
+
         foreach ($entries as $entry) {
             try {
                 $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
@@ -224,6 +250,15 @@ class UpdateLedgerPricesCommand extends Command
                 ['❌ Errors', $errors],
             ]
         );
+
+        if ($ranOutOfTime) {
+            $this->warn('Stopped after ' . round(self::REPRICE_BUDGET_SECONDS / 60)
+                . ' minutes with entries still to do. Run it again to carry on.');
+            Log::warning('Mining Manager: ledger re-pricing ran out of time', [
+                'updated' => $updated,
+                'budget_seconds' => self::REPRICE_BUDGET_SECONDS,
+            ]);
+        }
 
         // Regenerate daily summaries for affected character+date pairs
         if ($affectedPairs->isNotEmpty()) {

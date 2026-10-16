@@ -2,288 +2,83 @@
 
 namespace MiningManager\Services\Character;
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-
 /**
- * External Character Service
- * 
- * Fetches character and corporation information from external APIs
- * for characters not registered in SeAT.
- * 
- * APIs used:
- * - ESI (EVE Swagger Interface) - Primary source
- * - zKillboard - Fallback for character info
- * - EVEWho - Fallback for corporation info
+ * Character and corporation details from outside SeAT, for background work.
+ *
+ * The lookups themselves, ESI with EVEWho and zKillboard behind it, live in
+ * AffiliationResolutionService, which keeps every answer for pages to read.
+ * Each method here looks a character up when nothing is stored yet, so it
+ * calls out: nothing that builds a page should use it.
  */
 class ExternalCharacterService
 {
-    /**
-     * Get character name from external APIs
-     *
-     * @param int $characterId
-     * @return string|null
-     */
+    protected AffiliationResolutionService $resolver;
+
+    public function __construct(AffiliationResolutionService $resolver)
+    {
+        $this->resolver = $resolver;
+    }
+
     public function getCharacterName(int $characterId): ?string
     {
-        $cacheKey = "external_character_name_{$characterId}";
-        
-        return Cache::remember($cacheKey, 86400, function () use ($characterId) {
-            // Try ESI first (official API)
-            $name = $this->getCharacterNameFromESI($characterId);
-            if ($name) {
-                return $name;
-            }
-            
-            // Fallback to zKillboard
-            $name = $this->getCharacterNameFromZKill($characterId);
-            if ($name) {
-                return $name;
-            }
-            
-            return null;
-        });
+        return $this->lookup($characterId)->character_name ?? null;
     }
 
-    /**
-     * Get corporation ID for a character from external APIs
-     *
-     * @param int $characterId
-     * @return int|null
-     */
     public function getCharacterCorporationId(int $characterId): ?int
     {
-        $cacheKey = "external_character_corp_{$characterId}";
-        
-        return Cache::remember($cacheKey, 3600, function () use ($characterId) {
-            // Try ESI first
-            $corpId = $this->getCharacterCorporationFromESI($characterId);
-            if ($corpId) {
-                return $corpId;
-            }
-            
-            // Fallback to EVEWho
-            $corpId = $this->getCharacterCorporationFromEVEWho($characterId);
-            if ($corpId) {
-                return $corpId;
-            }
-            
-            return null;
-        });
+        $corporationId = $this->lookup($characterId)->corporation_id ?? null;
+
+        return $corporationId ? (int) $corporationId : null;
     }
 
-    /**
-     * Get corporation name from external APIs
-     *
-     * @param int $corporationId
-     * @return string|null
-     */
     public function getCorporationName(int $corporationId): ?string
     {
-        $cacheKey = "external_corporation_name_{$corporationId}";
-        
-        return Cache::remember($cacheKey, 86400, function () use ($corporationId) {
-            // Try ESI first
-            $name = $this->getCorporationNameFromESI($corporationId);
-            if ($name) {
-                return $name;
-            }
-            
-            // Fallback to EVEWho
-            $name = $this->getCorporationNameFromEVEWho($corporationId);
-            if ($name) {
-                return $name;
-            }
-            
-            return null;
-        });
+        return $this->resolver->lookUpCorporationName($corporationId);
     }
 
     /**
-     * Get complete character information (name + corporation)
-     *
-     * @param int $characterId
-     * @return array ['name' => string, 'corporation_id' => int, 'corporation_name' => string, 'is_registered' => false]
+     * @return array{name: string, corporation_id: ?int, corporation_name: string, is_registered: bool}
      */
     public function getCharacterInfo(int $characterId): array
     {
-        $name = $this->getCharacterName($characterId);
-        $corpId = $this->getCharacterCorporationId($characterId);
-        $corpName = $corpId ? $this->getCorporationName($corpId) : null;
-        
+        $row = $this->lookup($characterId);
+
         return [
-            'name' => $name ?? "Character {$characterId}",
-            'corporation_id' => $corpId,
-            'corporation_name' => $corpName ?? 'Unknown Corporation',
+            'name' => ($row->character_name ?? null) ?: "Character {$characterId}",
+            'corporation_id' => !empty($row->corporation_id) ? (int) $row->corporation_id : null,
+            'corporation_name' => ($row->corporation_name ?? null) ?: 'Unknown Corporation',
             'is_registered' => false,
         ];
     }
 
-    // ==================== ESI API METHODS ====================
-
     /**
-     * Get full character data from ESI with caching.
-     * Both name and corporation lookups share this single endpoint call.
-     *
-     * @param int $characterId
-     * @return array|null
-     */
-    private function getCharacterFromESI(int $characterId): ?array
-    {
-        $cacheKey = "mining_manager_esi_character_{$characterId}";
-
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($characterId) {
-            try {
-                $response = Http::timeout(5)
-                    ->get("https://esi.evetech.net/latest/characters/{$characterId}/");
-
-                if ($response->successful()) {
-                    return $response->json();
-                }
-            } catch (\Exception $e) {
-                Log::debug("ExternalCharacterService: Failed to get character data from ESI", [
-                    'character_id' => $characterId,
-                    'error' => $e->getMessage()
-                ]);
-            }
-
-            return null;
-        });
-    }
-
-    /**
-     * Get character name from ESI
-     */
-    private function getCharacterNameFromESI(int $characterId): ?string
-    {
-        $data = $this->getCharacterFromESI($characterId);
-
-        return $data['name'] ?? null;
-    }
-
-    /**
-     * Get character corporation from ESI
-     */
-    private function getCharacterCorporationFromESI(int $characterId): ?int
-    {
-        $data = $this->getCharacterFromESI($characterId);
-
-        return $data['corporation_id'] ?? null;
-    }
-
-    /**
-     * Get corporation name from ESI
-     */
-    private function getCorporationNameFromESI(int $corporationId): ?string
-    {
-        try {
-            $response = Http::timeout(5)
-                ->get("https://esi.evetech.net/latest/corporations/{$corporationId}/");
-            
-            if ($response->successful()) {
-                return $response->json()['name'] ?? null;
-            }
-        } catch (\Exception $e) {
-            Log::debug("ExternalCharacterService: Failed to get corporation name from ESI", [
-                'corporation_id' => $corporationId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        return null;
-    }
-
-    // ==================== ZKILLBOARD API METHODS ====================
-
-    /**
-     * Get character name from zKillboard
-     */
-    private function getCharacterNameFromZKill(int $characterId): ?string
-    {
-        try {
-            $response = Http::timeout(5)
-                ->withHeaders([
-                    'User-Agent' => 'SeAT Mining Manager Plugin'
-                ])
-                ->get("https://zkillboard.com/api/characterID/{$characterId}/");
-            
-            if ($response->successful()) {
-                $data = $response->json();
-                if (isset($data[0]['characterName'])) {
-                    return $data[0]['characterName'];
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("ExternalCharacterService: Failed to get character name from zKillboard", [
-                'character_id' => $characterId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        return null;
-    }
-
-    // ==================== EVEWHO API METHODS ====================
-
-    /**
-     * Get character corporation from EVEWho
-     */
-    private function getCharacterCorporationFromEVEWho(int $characterId): ?int
-    {
-        try {
-            $response = Http::timeout(5)
-                ->get("https://evewho.com/api/character/{$characterId}");
-            
-            if ($response->successful()) {
-                return $response->json()['corporation_id'] ?? null;
-            }
-        } catch (\Exception $e) {
-            Log::debug("ExternalCharacterService: Failed to get character from EVEWho", [
-                'character_id' => $characterId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        return null;
-    }
-
-    /**
-     * Get corporation name from EVEWho
-     */
-    private function getCorporationNameFromEVEWho(int $corporationId): ?string
-    {
-        try {
-            $response = Http::timeout(5)
-                ->get("https://evewho.com/api/corporation/{$corporationId}");
-            
-            if ($response->successful()) {
-                return $response->json()['name'] ?? null;
-            }
-        } catch (\Exception $e) {
-            Log::debug("ExternalCharacterService: Failed to get corporation from EVEWho", [
-                'corporation_id' => $corporationId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        return null;
-    }
-
-    /**
-     * Clear cache for a specific character
+     * Look the character up again on the next background run.
      */
     public function clearCharacterCache(int $characterId): void
     {
-        Cache::forget("external_character_name_{$characterId}");
-        Cache::forget("external_character_corp_{$characterId}");
+        $this->resolver->forget($characterId);
     }
 
     /**
-     * Clear cache for a specific corporation
+     * Corporation names are read from SeAT's tables and the stored lookups,
+     * so there is nothing of ours to clear.
      */
     public function clearCorporationCache(int $corporationId): void
     {
-        Cache::forget("external_corporation_name_{$corporationId}");
+    }
+
+    /**
+     * What is stored for the character, looked up there and then if nothing is.
+     */
+    private function lookup(int $characterId): ?object
+    {
+        $row = $this->resolver->known([$characterId])[$characterId] ?? null;
+
+        if ($row === null) {
+            $this->resolver->resolve([$characterId]);
+            $row = $this->resolver->known([$characterId])[$characterId] ?? null;
+        }
+
+        return $row;
     }
 }

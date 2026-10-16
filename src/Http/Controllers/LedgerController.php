@@ -9,7 +9,6 @@ use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningTax;
 use MiningManager\Models\Setting;
-use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Eveapi\Models\Industry\CharacterMining;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
@@ -75,7 +74,7 @@ class LedgerController extends Controller
         $perPage = $request->get('per_page', 50);
 
         // Build query with eager loading
-        $query = MiningLedger::with(['character', 'affiliation', 'solarSystem', 'type'])
+        $query = MiningLedger::with(['affiliation', 'solarSystem', 'type'])
             ->whereBetween('date', [$dateFrom, $dateTo]);
 
         // Apply filters
@@ -83,15 +82,10 @@ class LedgerController extends Controller
             $query->where('character_id', $characterId);
         }
 
-        // Corporation filter
+        // Corporation filter: who mines for it, as every page counts it, so its
+        // members SeAT has no record of are listed too.
         if ($corporationId) {
-            $query->whereHas('character', function($q) use ($corporationId) {
-                $q->whereIn('character_id', function($subQuery) use ($corporationId) {
-                    $subQuery->select('character_id')
-                        ->from('character_affiliations')
-                        ->where('corporation_id', $corporationId);
-                });
-            });
+            $query->whereIn('character_id', app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId));
         }
 
         if ($oreType) {
@@ -285,7 +279,7 @@ class LedgerController extends Controller
         }
 
         // Build query for user's characters with eager loading
-        $query = MiningLedger::with(['character', 'solarSystem', 'type'])
+        $query = MiningLedger::with(['solarSystem', 'type'])
             ->whereIn('character_id', $userCharacters)
             ->whereBetween('date', [$dateFrom, $dateTo]);
 
@@ -320,7 +314,7 @@ class LedgerController extends Controller
         $monthlyComparison = $this->getMonthlyComparisonData($userCharacters, $characterId);
 
         // Get recent activity for the table
-        $recentActivity = MiningLedger::with(['character', 'solarSystem', 'type'])
+        $recentActivity = MiningLedger::with(['solarSystem', 'type'])
             ->whereIn('character_id', $userCharacters)
             ->whereBetween('date', [$dateFrom, $dateTo])
             ->when($characterId && $userCharacters->contains($characterId), fn($q) => $q->where('character_id', $characterId))
@@ -445,10 +439,12 @@ class LedgerController extends Controller
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
-        // Tax paid from mining_taxes (for selected date range)
+        // Tax paid from mining_taxes (for selected date range): everything
+        // paid, part payments included, on the same bills as the owed figure
+        // below, so the outstanding figure compares like with like.
         $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
             ->whereBetween('month', [$startDate, $endDate])
-            ->where('status', 'paid')
+            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
             ->sum('amount_paid');
 
         // Tax owed from mining_taxes (authoritative, for selected date range)
@@ -457,7 +453,9 @@ class LedgerController extends Controller
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
             ->sum('amount_owed');
 
-        // Estimated tax: try daily summaries first, then raw ledger, then estimate from value
+        // Estimated tax: daily summaries first, then the raw ledger. When both
+        // say nothing is due, nothing is: mining can be untaxed (exempt, a 0%
+        // rate), and a guess at the ore rate would show tax nobody is billed.
         $estimatedTax = (float) ($agg->total_tax ?? 0);
 
         if ($estimatedTax <= 0) {
@@ -466,13 +464,6 @@ class LedgerController extends Controller
                 ->whereBetween('date', [$startDate, $endDate])
                 ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
                 ->sum('tax_amount');
-        }
-
-        if ($estimatedTax <= 0 && $totalValue > 0) {
-            // Last resort: estimate from total_value × configured default tax rate
-            $taxRates = $this->settingsService->getTaxRates();
-            $defaultRate = (float) ($taxRates['ore'] ?? 10.0);
-            $estimatedTax = $totalValue * ($defaultRate / 100);
         }
 
         // Use authoritative tax_owed if available, otherwise fall back to estimated
@@ -663,7 +654,11 @@ class LedgerController extends Controller
     }
 
     /**
-     * Calculate the player's rank among all miners for the period.
+     * Calculate the player's rank among their corporation's miners for the
+     * period, account against account: another player's characters are added
+     * up together the way this player's are, and a miner with no SeAT account
+     * stands alone. The corporation is the main character's, its miners the
+     * ones the dashboard counts.
      *
      * @param \Illuminate\Support\Collection $characterIds
      * @param string $startDate
@@ -672,7 +667,9 @@ class LedgerController extends Controller
      */
     protected function calculateCorpRank($characterIds, string $startDate, string $endDate): ?int
     {
-        $myTotal = (float) MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+        $mine = array_map('intval', is_array($characterIds) ? $characterIds : $characterIds->toArray());
+
+        $myTotal = (float) MiningLedgerDailySummary::whereIn('character_id', $mine)
             ->whereBetween('date', [$startDate, $endDate])
             ->sum('total_value');
 
@@ -680,15 +677,41 @@ class LedgerController extends Controller
             return null;
         }
 
-        // Count distinct characters with a higher total value using daily summaries
-        $higherCount = MiningLedgerDailySummary::whereBetween('date', [$startDate, $endDate])
+        $mainId = auth()->user()->main_character_id ?: ($mine[0] ?? null);
+        $corporationId = $mainId
+            ? DB::table('character_affiliations')->where('character_id', $mainId)->value('corporation_id')
+            : null;
+
+        if (!$corporationId) {
+            return null;
+        }
+
+        $others = array_values(array_diff(
+            app(\MiningManager\Services\Character\CorporationMembers::class)->characterIds((int) $corporationId),
+            $mine
+        ));
+
+        if (!$others) {
+            return 1;
+        }
+
+        $totals = MiningLedgerDailySummary::whereIn('character_id', $others)
+            ->whereBetween('date', [$startDate, $endDate])
             ->select('character_id', DB::raw('SUM(total_value) as char_total'))
             ->groupBy('character_id')
-            ->havingRaw('SUM(total_value) > ?', [$myTotal])
-            ->get()
-            ->count();
+            ->pluck('char_total', 'character_id');
 
-        return $higherCount + 1;
+        $accountOf = DB::table('refresh_tokens')
+            ->whereIn('character_id', $others)
+            ->pluck('user_id', 'character_id');
+
+        $accounts = [];
+        foreach ($totals as $characterId => $total) {
+            $account = isset($accountOf[$characterId]) ? 'user:' . $accountOf[$characterId] : 'character:' . $characterId;
+            $accounts[$account] = ($accounts[$account] ?? 0) + (float) $total;
+        }
+
+        return 1 + count(array_filter($accounts, fn ($total) => $total > $myTotal));
     }
 
     /**
@@ -703,8 +726,11 @@ class LedgerController extends Controller
         $labels = [];
         $values = [];
 
-        // Single batch query from daily summaries for all 6 months
-        $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
+        // Single batch query from daily summaries for all 6 months. Months are
+        // stepped from the 1st: from the 29th to the 31st, subMonths() runs
+        // over into the next month, showing one month twice and skipping
+        // another.
+        $sixMonthsAgo = now()->startOfMonth()->subMonths(5);
         $monthlyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->where('date', '>=', $sixMonthsAgo)
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
@@ -714,7 +740,7 @@ class LedgerController extends Controller
             ->keyBy('month_key');
 
         for ($i = 5; $i >= 0; $i--) {
-            $month = now()->subMonths($i);
+            $month = now()->startOfMonth()->subMonths($i);
             $monthKey = $month->format('Y-m');
             $value = $monthlyData->get($monthKey)->total ?? 0;
 
@@ -756,11 +782,12 @@ class LedgerController extends Controller
 
         $grandTotal = $entries->sum('total_value');
 
-        return $entries->map(function ($entry) use ($grandTotal, $volumes) {
-            $charInfo = CharacterInfo::find($entry->character_id);
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)->many($entries->pluck('character_id'));
+
+        return $entries->map(function ($entry) use ($grandTotal, $volumes, $names) {
             return [
                 'character_id' => $entry->character_id,
-                'name' => $charInfo ? $charInfo->name : "Character {$entry->character_id}",
+                'name' => $names[(int) $entry->character_id]['name'] ?? "Character {$entry->character_id}",
                 'total_value' => (float) $entry->total_value,
                 'quantity' => (float) $entry->quantity,
                 'total_volume_m3' => (float) ($volumes->get($entry->character_id) ?? 0),
@@ -900,7 +927,7 @@ class LedgerController extends Controller
             return $this->refuseDataExport($request);
         }
 
-        $query = MiningLedger::with(['character', 'type', 'solarSystem']);
+        $query = MiningLedger::with(['type', 'solarSystem']);
 
         // Apply filters if provided
         if ($request->has('character_id') && $request->input('character_id')) {
@@ -952,11 +979,12 @@ class LedgerController extends Controller
                 'Tax Amount',
             ]);
 
-            $query->chunkByIdDesc(500, function ($entries) use ($handle) {
+            $names = app(\MiningManager\Services\Character\CharacterNames::class);
+            $query->chunkByIdDesc(500, function ($entries) use ($handle, $names) {
                 foreach ($entries as $entry) {
                     fputcsv($handle, [
                         Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
-                        $entry->character->name ?? 'Unknown',
+                        $names->nameOrId($entry->character_id),
                         $entry->type->name ?? 'Unknown',
                         $entry->solarSystem->name ?? 'Unknown',
                         number_format($entry->quantity, 2),
@@ -990,7 +1018,7 @@ class LedgerController extends Controller
         $characterIds = auth()->user()->characters->pluck('character_id');
 
         // Query only for user's characters
-        $query = MiningLedger::with(['character', 'type', 'solarSystem'])
+        $query = MiningLedger::with(['type', 'solarSystem'])
             ->whereIn('character_id', $characterIds);
 
         // Apply date filters if provided
@@ -1021,11 +1049,12 @@ class LedgerController extends Controller
                 'Tax Amount',
             ]);
 
-            $query->chunkByIdDesc(500, function ($entries) use ($handle) {
+            $names = app(\MiningManager\Services\Character\CharacterNames::class);
+            $query->chunkByIdDesc(500, function ($entries) use ($handle, $names) {
                 foreach ($entries as $entry) {
                     fputcsv($handle, [
                         Carbon::parse($entry->date)->format('Y-m-d H:i:s'),
-                        $entry->character->name ?? 'Unknown',
+                        $names->nameOrId($entry->character_id),
                         $entry->type->name ?? 'Unknown',
                         $entry->solarSystem->name ?? 'Unknown',
                         number_format($entry->quantity, 2),
@@ -1164,10 +1193,10 @@ class LedgerController extends Controller
             case 'character_name':
                 $summaries = $sortDir === 'asc'
                     ? $summaries->sortBy(function($s) {
-                        return $s->character_info['name'] ?? $s->character->name ?? 'Unknown';
+                        return $s->character_info['name'] ?? $s->character_name;
                     })
                     : $summaries->sortByDesc(function($s) {
-                        return $s->character_info['name'] ?? $s->character->name ?? 'Unknown';
+                        return $s->character_info['name'] ?? $s->character_name;
                     });
                 break;
 
@@ -1268,7 +1297,7 @@ class LedgerController extends Controller
         }
 
         // Get all mining entries for these characters with pagination
-        $entries = MiningLedger::with(['solarSystem', 'type', 'character'])
+        $entries = MiningLedger::with(['solarSystem', 'type'])
             ->whereIn('character_id', $characterIds)
             ->whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)

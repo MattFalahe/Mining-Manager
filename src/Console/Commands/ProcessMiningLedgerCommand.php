@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MoonExtraction;
+use MiningManager\Services\Moon\MoonDrillingRigs;
 use MiningManager\Models\CorporationObserverMining;
 use MiningManager\Services\Pricing\PriceProviderService;
 use MiningManager\Services\Pricing\OreValuationService;
@@ -483,77 +484,12 @@ class ProcessMiningLedgerCommand extends Command
                 $this->checkForJackpotOres($jackpotCheckEntries);
             }
 
-            // Clean up orphaned character-imported entries where observer data exists
-            // Character ESI combines all mining of a type in a system, so orphans
-            // may contain both corp and non-corp quantities mixed together.
-            if ($processed > 0 || $updated > 0) {
-                $this->line('');
-                $this->info('🔗 Cleaning up character-imported entries with matching observer data...');
-
-                $cleaned = 0;
-                $adjusted = 0;
-                try {
-                    $valuationSvc = app(OreValuationService::class);
-
-                    MiningLedger::whereNull('corporation_id')
-                        ->whereNull('observer_id')
-                        ->where('is_moon_ore', true)
-                        ->where('date', '>=', $cutoffDate->toDateString())
-                        ->chunk(500, function ($orphans) use ($valuationSvc, &$cleaned, &$adjusted, &$billedSkips) {
-                            foreach ($orphans as $orphan) {
-                                // Sum all observer quantities for same character+date+type
-                                $observerQty = MiningLedger::where('character_id', $orphan->character_id)
-                                    ->whereDate('date', $orphan->date)
-                                    ->where('type_id', $orphan->type_id)
-                                    ->whereNotNull('observer_id')
-                                    ->sum('quantity');
-
-                                if ($observerQty <= 0) {
-                                    continue;
-                                }
-
-                                if (InvoiceCoverage::coversRow((int) $orphan->character_id, $orphan->date)) {
-                                    $billedSkips++;
-                                    Log::info('Mining Manager: left an orphaned ledger row alone, an issued invoice covers it', [
-                                        'character_id' => $orphan->character_id,
-                                        'date' => (string) $orphan->date,
-                                        'type_id' => $orphan->type_id,
-                                    ]);
-                                    continue;
-                                }
-
-                                $remainder = $orphan->quantity - $observerQty;
-                                if ($remainder <= 0) {
-                                    $orphan->delete();
-                                    $cleaned++;
-                                } else {
-                                    // Keep remainder as non-corp mining
-                                    $remainderValues = $valuationSvc->calculateOreValue($orphan->type_id, $remainder);
-                                    $orphan->update([
-                                        'quantity' => $remainder,
-                                        'unit_price' => $remainderValues['unit_price'] ?? 0,
-                                        'ore_value' => $remainderValues['ore_value'] ?? 0,
-                                        'mineral_value' => $remainderValues['mineral_value'] ?? 0,
-                                        'total_value' => $remainderValues['total_value'] ?? 0,
-                                        'tax_rate' => 0,
-                                        'tax_amount' => 0,
-                                        'processed_at' => Carbon::now(),
-                                    ]);
-                                    $adjusted++;
-                                }
-                            }
-                        });
-
-                    if ($cleaned > 0 || $adjusted > 0) {
-                        $this->info("   Removed {$cleaned} duplicates, adjusted {$adjusted} entries (kept non-corp remainder).");
-                    } else {
-                        $this->info("   No orphaned entries to clean up.");
-                    }
-                } catch (\Exception $e) {
-                    $this->warn("   ⚠️  Backfill failed: {$e->getMessage()}");
-                    Log::warning('Mining Manager: Corporation ID backfill failed', ['error' => $e->getMessage()]);
-                }
-            }
+            // No second pass over personal rows here, on purpose. A personal
+            // row is reduced once, above, the first time it meets an observer
+            // row, and one exactly matching our own observer is cleared each
+            // night by PersonalMiningReconciler. Taking the observer quantity
+            // off again on every run removed the part of a pilot's mining that
+            // came off somebody else's moon.
 
             // Auto-generate daily summaries for all dates that were touched
             if ($processed > 0 || $updated > 0) {
@@ -714,8 +650,8 @@ class ProcessMiningLedgerCommand extends Command
      *                              fired its own notification when submitted.
      *
      * Window matching (BUG FIX 2026-04-24): uses the plugin's full mining-
-     * window expiry (MoonExtraction::getExpiryTime() = fractured_at + 50h,
-     * with chunk_arrival + 53h fallback). The previous implementation used
+     * window expiry (MoonExtraction::getExpiryTime(): fracture + the chunk's
+     * mining window + the 2h tail). The previous implementation used
      * natural_decay_time which is the auto-fracture mark (~3h after chunk
      * arrival), so the lookup missed essentially every chunk where mining
      * happened on a day other than chunk-arrival day — including all the
@@ -746,11 +682,11 @@ class ProcessMiningLedgerCommand extends Command
                 // Find extraction for this structure whose mining window
                 // includes the entry's date.
                 //
-                // Loose SQL bound: chunk_arrival within the last 56h of the
-                // entry date (max possible window is ~53h: chunk_arrival
-                // + 3h auto-fracture + 48h ready + 2h unstable). Tight PHP
-                // filter then uses the model's getExpiryTime() helper for
-                // the canonical lifecycle-aware end-of-window check.
+                // Loose SQL bound: chunk_arrival within the longest a chunk can
+                // last before the entry date, rig included. Tight PHP filter
+                // then uses the model's getExpiryTime() helper for the
+                // canonical lifecycle-aware end-of-window check.
+                $lookback = MoonDrillingRigs::LONGEST_CHUNK_HOURS + 2;
                 //
                 // Match BOTH paths in one query:
                 //   - is_jackpot=false                    → auto-detect
@@ -778,7 +714,7 @@ class ProcessMiningLedgerCommand extends Command
 
                 $candidates = MoonExtraction::where('structure_id', $observerId)
                     ->where('chunk_arrival_time', '<=', $entryDate->copy()->endOfDay())
-                    ->where('chunk_arrival_time', '>=', $entryDate->copy()->subHours(56)->startOfDay())
+                    ->where('chunk_arrival_time', '>=', $entryDate->copy()->subHours($lookback)->startOfDay())
                     ->whereNotIn('status', ['cancelled', 'expired'])
                     ->where(function ($q) {
                         $q->where('is_jackpot', false)
@@ -801,7 +737,7 @@ class ProcessMiningLedgerCommand extends Command
                     // matching MoonExtraction. Run a broader query to figure out
                     // WHY the match failed so the operator can correct the
                     // underlying state issue (most common: extraction not yet
-                    // imported, chunk arrived outside the 56h window, or the
+                    // imported, chunk arrived outside the look-back window, or the
                     // chunk is already flagged + verified).
                     $diag = MoonExtraction::where('structure_id', $observerId)
                         ->orderByDesc('chunk_arrival_time')
@@ -820,15 +756,15 @@ class ProcessMiningLedgerCommand extends Command
                                 => "already flagged + verified jackpot — no re-broadcast",
                             $latest->is_jackpot && $latest->jackpot_verified === false
                                 => "previously marked as not-jackpot via DetectJackpotsCommand — run --rerun-failed if this is wrong",
-                            ($entryDate->copy()->subHours(56)->startOfDay()->gt($latest->chunk_arrival_time))
-                                => "latest chunk_arrival ({$latest->chunk_arrival_time}) is older than 56h window from entry date ({$entryDate->toDateString()})",
+                            ($entryDate->copy()->subHours($lookback)->startOfDay()->gt($latest->chunk_arrival_time))
+                                => "latest chunk_arrival ({$latest->chunk_arrival_time}) is older than the {$lookback}h window from entry date ({$entryDate->toDateString()})",
                             default => "no extraction within active mining window for this entry date",
                         };
                         $this->warn("  ⚠️  Jackpot ores at structure {$observerId} but no auto-detect match: {$reason}");
                         Log::info("ProcessMiningLedgerCommand: jackpot ores at structure {$observerId} but no match — {$reason}", [
                             'observer_id' => $observerId,
                             'entry_date' => $entryDate->toIso8601String(),
-                            'window_start' => $entryDate->copy()->subHours(56)->startOfDay()->toIso8601String(),
+                            'window_start' => $entryDate->copy()->subHours($lookback)->startOfDay()->toIso8601String(),
                             'window_end' => $entryDate->copy()->endOfDay()->toIso8601String(),
                             'latest_extraction' => $latest?->only(['id', 'chunk_arrival_time', 'status', 'is_jackpot', 'jackpot_verified']),
                         ]);
@@ -880,7 +816,9 @@ class ProcessMiningLedgerCommand extends Command
 
                 // First miner who mined jackpot ore
                 $firstEntry = $entries->first();
-                $detectedBy = $firstEntry->character_name ?? "Character {$firstEntry->character_id}";
+                $names = app(\MiningManager\Services\Character\CharacterNames::class);
+                $names->lookUpNow([$firstEntry->character_id]);
+                $detectedBy = $names->nameOrId($firstEntry->character_id);
 
                 // Build the same ore-summary format used by moon_ready
                 // notifications. Since a jackpot chunk has +100% variants

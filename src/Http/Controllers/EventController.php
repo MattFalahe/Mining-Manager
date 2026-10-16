@@ -217,11 +217,10 @@ class EventController extends Controller
     public function show($id)
     {
         try {
-            $event = MiningEvent::with(['participants.character', 'creator'])->findOrFail($id);
+            $event = MiningEvent::with(['participants', 'creator'])->findOrFail($id);
 
             // Get participants sorted by quantity mined
             $participants = $event->participants()
-                ->with('character')
                 ->orderBy('quantity_mined', 'desc')
                 ->get();
 
@@ -967,9 +966,10 @@ class EventController extends Controller
             ]);
         }
         
-        // Method 3: Direct database query (most reliable fallback)
+        // Method 3: Direct database query. SeAT 5 links a character to its
+        // user in refresh_tokens; character_infos has no user_id.
         try {
-            $characterIds = DB::table('character_infos')
+            $characterIds = DB::table('refresh_tokens')
                 ->where('user_id', $user->id)
                 ->pluck('character_id')
                 ->toArray();

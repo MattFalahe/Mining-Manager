@@ -24,12 +24,6 @@ return [
         'division' => 'financial',
     ],
 
-    'director' => [
-        'label' => 'mining-manager::permissions.director_label',
-        'description' => 'mining-manager::permissions.director_description',
-        'division' => 'financial',
-    ],
-
     // Standalone capability (NOT a tier) — grants access to the Moon
     // Extraction Planner. Directors/admins reach the planner too (the routes
     // accept moon_manager OR director), but this ability lets a corp delegate
@@ -46,6 +40,14 @@ return [
     'moon_finder' => [
         'label' => 'mining-manager::permissions.moon_finder_label',
         'description' => 'mining-manager::permissions.moon_finder_description',
+        'division' => 'financial',
+    ],
+
+    // SeAT's role page lists these in this order, so the two tiers that
+    // reach furthest come last, after the capabilities they include.
+    'director' => [
+        'label' => 'mining-manager::permissions.director_label',
+        'description' => 'mining-manager::permissions.director_description',
         'division' => 'financial',
     ],
 

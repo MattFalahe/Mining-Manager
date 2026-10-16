@@ -749,6 +749,30 @@ class TypeIdRegistry
     ];
 
     // ============================================
+    // OBJECTIVE ORE
+    // ============================================
+
+    /**
+     * Ore that exists only to be handed in.
+     *
+     * EVE publishes these with full flavour text, but they carry no market
+     * group, so they cannot be sold, and no reprocessing output, so they
+     * cannot be refined. There is no route to a value for them and there never
+     * will be. A mission or a site asks you to mine a fixed quantity and take
+     * it somewhere, and that is the whole of their purpose.
+     *
+     * Kept apart from EVENT_ORES because this is permanent content rather than
+     * a limited-time event, and from MUTANITE_ORES because Mutanite does at
+     * least sell to NPC buyers. OreClassifier::ignoredTypeIds() reads this list.
+     *
+     * The wider 28617-28630 block is the same kind of thing and is still
+     * counted, at zero, on purpose. See the Help section on the ore categories.
+     */
+    const OBJECTIVE_ORES = [
+        28626,  // Zuthrine (Mercoxit group, deep core flavour, sells and refines nowhere)
+    ];
+
+    // ============================================
     // AGGREGATE GETTERS
     // ============================================
 

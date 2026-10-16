@@ -88,10 +88,10 @@ class SendTaxRemindersCommand extends Command
         $overdueOnly = $this->option('overdue-only');
         $daysOverdue = $this->option('days-overdue');
 
-        // Refresh tax statuses BEFORE selecting reminder targets. Without this,
-        // status only flips unpaid→overdue when CalculateMonthlyTaxesCommand
-        // runs (once per month), so newly-past-due taxes stayed marked
-        // 'unpaid' for weeks and got the wrong notification flavor.
+        // Refresh tax statuses BEFORE selecting reminder targets.
+        // CalculateMonthlyTaxesCommand does this earlier each day; doing it
+        // again here catches bills whose lag buffer has run out since, so
+        // they get the overdue wording rather than the unpaid one.
         // updateOverdueTaxes() respects the ESI Wallet Lag Buffer
         // (payment.grace_period_hours, default 24h) so legitimate payers
         // don't get false-positive overdue alerts while ESI is still
@@ -131,7 +131,7 @@ class SendTaxRemindersCommand extends Command
         // went quiet. Harmless when partial payments barely worked; now that
         // instalments, cascades and account balance all produce them, a partly
         // paid invoice is a normal state rather than an oddity.
-        $query = MiningTax::whereIn('status', ['unpaid', 'overdue', 'partial'])
+        $query = MiningTax::outstanding()
             ->where('amount_owed', '>', 0);
 
         if ($overdueOnly) {
@@ -189,9 +189,7 @@ class SendTaxRemindersCommand extends Command
                 // What is still owed, not what was originally charged. Summing
                 // amount_owed chases a member for money they have already paid
                 // on a partly settled invoice.
-                $totalOwed = round($taxes->sum(
-                    fn ($t) => max(0, (float) $t->amount_owed - (float) ($t->amount_paid ?? 0))
-                ), 2);
+                $totalOwed = round($taxes->sum(fn ($t) => $t->getRemainingBalance()), 2);
                 $taxCount = $taxes->count();
 
                 // Nothing left to ask for; the statuses just have not caught up.

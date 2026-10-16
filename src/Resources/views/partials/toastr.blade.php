@@ -117,3 +117,6 @@
 })();
 </script>
 @endpush
+
+{{-- Any page that tells the reader things also says which characters are still being looked up. --}}
+@include('mining-manager::partials.character-lookup')

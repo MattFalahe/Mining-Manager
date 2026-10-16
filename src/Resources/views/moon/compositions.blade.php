@@ -34,11 +34,6 @@
                     <i class="fas fa-chart-bar"></i> {{ trans('mining-manager::menu.moon_compositions') }}
                 </a>
             </li>
-            <li class="nav-item">
-                <a class="nav-link {{ Request::is('*/moon/calculator') ? 'active' : '' }}" href="{{ route('mining-manager.moon.calculator') }}">
-                    <i class="fas fa-flask"></i> {{ trans('mining-manager::menu.moon_value_calculator') }}
-                </a>
-            </li>
             @can('mining-manager.director')
             <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/moon/metenox-cargo') ? 'active' : '' }}" href="{{ route('mining-manager.moon.metenox-cargo') }}">

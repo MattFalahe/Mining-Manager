@@ -87,14 +87,15 @@ final class MoonNotificationCharacter
     }
 
     /**
-     * SeAT's own tables only. The alert should not hang on a call to ESI just
-     * to put a name to an id.
+     * SeAT's own tables, then what the plugin's lookups already hold. The alert
+     * should not hang on a call to ESI just to put a name to an id.
      */
     private static function lookupName(int $id): ?string
     {
         try {
             return DB::table('character_infos')->where('character_id', $id)->value('name')
-                ?? DB::table('universe_names')->where('entity_id', $id)->value('name');
+                ?? DB::table('universe_names')->where('entity_id', $id)->value('name')
+                ?? (app(\MiningManager\Services\Character\AffiliationResolutionService::class)->known([$id])[$id]->character_name ?? null);
         } catch (\Throwable $e) {
             return null;
         }
