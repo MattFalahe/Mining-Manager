@@ -698,10 +698,12 @@ class LedgerController extends Controller
     {
         // Get month parameter or default to current month
         $month = $request->get('month', now()->format('Y-m'));
-        $corporationId = $request->get('corporation_id');
         $groupByMain = $request->get('group_by_main', true); // Default to grouped view
         $sortBy = $request->get('sort_by', 'total_value'); // Default sort column
         $sortDir = $request->get('sort_dir', 'desc'); // Default sort direction
+        $scope = $request->get('scope') === LedgerSummaryService::SCOPE_MOONS
+            ? LedgerSummaryService::SCOPE_MOONS
+            : LedgerSummaryService::SCOPE_MEMBERS;
 
         // Validate month format
         try {
@@ -711,16 +713,27 @@ class LedgerController extends Controller
             $month = $monthDate->format('Y-m');
         }
 
+        $isDirector = auth()->user()->can('mining-manager.director');
+
+        // The corporation filter is a director's: a member only ever sees their
+        // own rows. The moons view opens on the Moon Owner Corporation, and an
+        // empty choice there means every refinery the install observes.
+        $corporationId = $isDirector && $request->filled('corporation_id')
+            ? (int) $request->input('corporation_id')
+            : null;
+        if ($scope === LedgerSummaryService::SCOPE_MOONS && !($isDirector && $request->has('corporation_id'))) {
+            $corporationId = $this->settingsService->getTaxProgramCorporationId();
+        }
+
         // Get enhanced monthly summaries (includes ore types and systems)
-        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId);
+        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId, $scope);
 
         // Group by main character if requested
         if ($groupByMain) {
-            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId);
+            $summaries = $this->summaryService->groupByMainCharacter($summaries, $corporationId, $scope);
         }
 
         // Filter to user's own characters for non-directors (members see only their own)
-        $isDirector = auth()->user()->can('mining-manager.director');
         if (!$isDirector) {
             $userCharacterIds = auth()->user()->characters->pluck('character_id')->toArray();
             $summaries = $summaries->filter(function ($summary) use ($userCharacterIds) {
@@ -754,34 +767,72 @@ class LedgerController extends Controller
             'ice_value' => $summaries->sum('ice_value'),
             'gas_value' => $summaries->sum('gas_value'),
         ];
-
-        // Get corporations for filter dropdown
-        $corporations = DB::table('corporation_infos')
-            ->whereIn('corporation_id', function($query) use ($monthDate) {
-                $query->select('corporation_id')
-                    ->from('mining_ledger')
-                    ->whereYear('date', $monthDate->year)
-                    ->whereMonth('date', $monthDate->month)
-                    ->whereNotNull('corporation_id')
-                    ->distinct();
-            })
-            ->select('corporation_id', 'name', 'ticker')
-            ->orderBy('name')
-            ->get();
+        foreach (LedgerSummaryService::MOON_CLASSES as $class) {
+            $totals["moon_{$class}_value"] = $summaries->sum("moon_{$class}_value");
+        }
 
         return view('mining-manager::ledger.summary', [
             'summaries' => $summaries,
             'totals' => $totals,
             'month' => $month,
             'monthDate' => $monthDate,
-            'corporations' => $corporations,
+            'corporations' => $isDirector ? $this->summaryCorporations($monthDate, $scope, $corporationId) : collect(),
             'selectedCorporationId' => $corporationId,
             'isCurrentMonth' => $monthDate->isSameMonth(now()),
+            'fromFinalized' => $this->summaryService->usesFinalizedSummaries($month, $scope),
+            'scope' => $scope,
+            'moonClasses' => LedgerSummaryService::MOON_CLASSES,
             'groupByMain' => $groupByMain,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'isDirector' => $isDirector,
         ]);
+    }
+
+    /**
+     * The corporations the summary's filter offers.
+     *
+     * Members' mining offers the corporations this install looks after. The
+     * moons view offers the owners of refineries whose observers recorded
+     * mining that month, and always the Moon Owner Corporation it opens on.
+     * Names come from wherever the plugin knows them, so a corporation SeAT
+     * never loaded still reads right.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    protected function summaryCorporations(Carbon $monthDate, string $scope, ?int $selected)
+    {
+        if ($scope === LedgerSummaryService::SCOPE_MOONS) {
+            $ids = MiningLedger::whereYear('date', $monthDate->year)
+                ->whereMonth('date', $monthDate->month)
+                ->whereNotNull('observer_id')
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->all();
+            $ids[] = $this->settingsService->getTaxProgramCorporationId();
+        } else {
+            $ids = $this->settingsService->getHomeCorporationIds();
+        }
+
+        $ids[] = $selected;
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+
+        if (!$ids) {
+            return collect();
+        }
+
+        $names = app(\MiningManager\Services\Character\CharacterNames::class)->corporationNames($ids);
+        $tickers = DB::table('corporation_infos')->whereIn('corporation_id', $ids)->pluck('ticker', 'corporation_id');
+
+        return collect($ids)
+            ->map(fn ($id) => (object) [
+                'corporation_id' => $id,
+                'name' => $names[$id] ?? "Corporation {$id}",
+                'ticker' => $tickers[$id] ?? null,
+            ])
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     /**

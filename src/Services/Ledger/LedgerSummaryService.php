@@ -15,9 +15,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Services\Tax\InvoiceCoverage;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Character\CorporationMembers;
 
 class LedgerSummaryService
 {
+    /** The Mining Summary's two questions: what a corporation's miners mined... */
+    public const SCOPE_MEMBERS = 'members';
+
+    /** ...and what came off a corporation's refineries. */
+    public const SCOPE_MOONS = 'moons';
+
+    /** Moon ore classes, as the ledger stamps them (moon_r4 to moon_r64). */
+    public const MOON_CLASSES = ['r4', 'r8', 'r16', 'r32', 'r64'];
+
     /**
      * Settings manager for tax rate lookups.
      *
@@ -789,32 +799,57 @@ class LedgerSummaryService
     /**
      * Get monthly summaries with fallback to live calculation
      *
+     * Members scope answers "what did this corporation's miners mine", every
+     * ore wherever they mined it, with a corporation's members counted the way
+     * the dashboard and Analytics count them. Moons scope answers "what came
+     * off this corporation's refineries", whoever mined it.
+     *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
      * @return \Illuminate\Support\Collection
      */
-    public function getMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
-        $isCurrentMonth = $monthDate->isSameMonth(now());
 
-        // If it's the current month, always calculate live
-        if ($isCurrentMonth) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+        if ($scope !== self::SCOPE_MOONS) {
+            $characterIds = $this->memberCharacterIds($corporationId);
+
+            if ($characterIds === []) {
+                return collect();
+            }
+
+            // A finalized month row covers everything one character mined, so
+            // the members of a corporation are simply the rows of its members.
+            if ($this->usesFinalizedSummaries($month, $scope)) {
+                $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
+                    ->finalized()
+                    ->when($characterIds !== null, fn ($query) => $query->whereIn('character_id', $characterIds))
+                    ->get();
+
+                return $this->attachEventDiscounts($summaries, $monthDate);
+            }
         }
 
-        // For past months, try to get finalized summaries first
-        $summaries = MiningLedgerMonthlySummary::forMonth($monthDate)
-            ->forCorporation($corporationId)
-            ->finalized()
-            ->get();
+        return $this->calculateLiveMonthlySummaries($month, $corporationId, $scope);
+    }
 
-        // If no finalized summaries exist, calculate live
-        if ($summaries->isEmpty()) {
-            return $this->calculateLiveMonthlySummaries($month, $corporationId);
+    /**
+     * Whether a month's summaries come from the finalized monthly rows.
+     *
+     * Only the members scope can use them: they hold each character's whole
+     * month, and cannot say which part of it came off whose refinery.
+     */
+    public function usesFinalizedSummaries(string $month, string $scope = self::SCOPE_MEMBERS): bool
+    {
+        $monthDate = Carbon::parse($month)->startOfMonth();
+
+        if ($scope === self::SCOPE_MOONS || $monthDate->isSameMonth(now())) {
+            return false;
         }
 
-        return $summaries;
+        return MiningLedgerMonthlySummary::forMonth($monthDate)->finalized()->exists();
     }
 
     /**
@@ -822,23 +857,25 @@ class LedgerSummaryService
      *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
      * @return \Illuminate\Support\Collection
      */
-    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null)
+    protected function calculateLiveMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
-        $query = MiningLedger::whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month);
-
-        if ($corporationId) {
-            $query->where('corporation_id', $corporationId);
+        $moonClassValues = '';
+        if ($scope === self::SCOPE_MOONS) {
+            foreach (self::MOON_CLASSES as $class) {
+                $moonClassValues .= ",\n                SUM(CASE WHEN ore_category = 'moon_{$class}' THEN total_value ELSE 0 END) as moon_{$class}_value";
+            }
         }
 
         // Group by character_id only — a character's total should be aggregated
         // across all corporations they mined at. Use MAX(corporation_id) to pick
         // the primary corporation for display purposes.
-        $summaries = $query->selectRaw('
+        $summaries = $this->scopedLedger($monthDate, $corporationId, $scope)
+            ->selectRaw('
                 character_id,
                 MAX(corporation_id) as corporation_id,
                 SUM(quantity) as total_quantity,
@@ -848,15 +885,27 @@ class LedgerSummaryService
                 SUM(CASE WHEN is_gas = 1 THEN total_value ELSE 0 END) as gas_value,
                 SUM(CASE WHEN is_abyssal = 1 THEN total_value ELSE 0 END) as abyssal_ore_value,
                 SUM(CASE WHEN is_triglavian = 1 THEN total_value ELSE 0 END) as triglavian_ore_value,
-                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value
+                SUM(CASE WHEN is_moon_ore = 0 AND is_ice = 0 AND is_gas = 0 AND is_abyssal = 0 AND is_triglavian = 0 THEN total_value ELSE 0 END) as regular_ore_value' . $moonClassValues . '
             ')
             ->groupBy('character_id')
             ->get();
+
+        // Tax belongs to a character's whole month, so it only means something
+        // next to the members view. The moons view covers part of a month and
+        // shows no tax.
+        if ($scope === self::SCOPE_MOONS) {
+            $summaries->each(function ($summary) {
+                $summary->total_tax = 0;
+            });
+
+            return $summaries;
+        }
 
         // Get total_tax from daily summaries (single source of truth) instead of
         // the stale mining_ledger.tax_amount column
         $dailySummaryTax = MiningLedgerDailySummary::whereYear('date', $monthDate->year)
             ->whereMonth('date', $monthDate->month)
+            ->whereIn('character_id', $summaries->pluck('character_id')->all())
             ->selectRaw('character_id, SUM(total_tax) as total_tax')
             ->groupBy('character_id')
             ->pluck('total_tax', 'character_id');
@@ -864,6 +913,73 @@ class LedgerSummaryService
         // Merge daily summary tax into each character's monthly summary
         $summaries->each(function ($summary) use ($dailySummaryTax) {
             $summary->total_tax = (float) ($dailySummaryTax->get($summary->character_id) ?? 0);
+        });
+
+        return $this->attachEventDiscounts($summaries, $monthDate);
+    }
+
+    /**
+     * The month's ledger rows a scope covers.
+     *
+     * The moons scope reads only what a refinery's observer recorded. Personal
+     * mining is left out of it, since nothing in it says whose moon it came off.
+     */
+    protected function scopedLedger(Carbon $monthDate, ?int $corporationId, string $scope)
+    {
+        $query = MiningLedger::whereYear('mining_ledger.date', $monthDate->year)
+            ->whereMonth('mining_ledger.date', $monthDate->month);
+
+        if ($scope === self::SCOPE_MOONS) {
+            $query->whereNotNull('mining_ledger.observer_id');
+
+            if ($corporationId) {
+                $query->where('mining_ledger.corporation_id', $corporationId);
+            }
+
+            return $query;
+        }
+
+        $characterIds = $this->memberCharacterIds($corporationId);
+        if ($characterIds !== null) {
+            $query->whereIn('mining_ledger.character_id', $characterIds);
+        }
+
+        return $query;
+    }
+
+    /**
+     * A corporation's miners, as every page that filters by one counts them,
+     * or null for everyone.
+     *
+     * @return array<int, int>|null
+     */
+    protected function memberCharacterIds(?int $corporationId): ?array
+    {
+        return $corporationId ? app(CorporationMembers::class)->characterIds($corporationId) : null;
+    }
+
+    /**
+     * Add what event modifiers took off each character's tax in the month,
+     * which the Total Tax card shows beside the tax it is already part of.
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @return \Illuminate\Support\Collection
+     */
+    protected function attachEventDiscounts($summaries, Carbon $monthDate)
+    {
+        if ($summaries->isEmpty()) {
+            return $summaries;
+        }
+
+        $discounts = MiningLedgerDailySummary::whereYear('date', $monthDate->year)
+            ->whereMonth('date', $monthDate->month)
+            ->whereIn('character_id', $summaries->pluck('character_id')->all())
+            ->selectRaw('character_id, SUM(event_discount_total) as event_discount_total')
+            ->groupBy('character_id')
+            ->pluck('event_discount_total', 'character_id');
+
+        $summaries->each(function ($summary) use ($discounts) {
+            $summary->event_discount_total = (float) ($discounts->get($summary->character_id) ?? 0);
         });
 
         return $summaries;
@@ -969,14 +1085,15 @@ class LedgerSummaryService
      *
      * @param string $month YYYY-MM format
      * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
      * @return \Illuminate\Support\Collection
      */
-    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null)
+    public function getEnhancedMonthlySummaries(string $month, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS)
     {
         $monthDate = Carbon::parse($month)->startOfMonth();
 
         // Get base summaries
-        $summaries = $this->getMonthlySummaries($month, $corporationId);
+        $summaries = $this->getMonthlySummaries($month, $corporationId, $scope);
 
         if ($summaries->isEmpty()) {
             return $summaries;
@@ -985,10 +1102,14 @@ class LedgerSummaryService
         // Collect all character IDs once
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
 
+        // The ore, volume and system columns cover the same rows as the value
+        // beside them: a member's whole month, or what one refinery owner's
+        // observers recorded.
+        $rows = fn () => $this->scopedLedger($monthDate, $scope === self::SCOPE_MOONS ? $corporationId : null, $scope)
+            ->whereIn('mining_ledger.character_id', $characterIds);
+
         // --- BATCH QUERY 1: Get all ore type_ids for all characters in one query ---
-        $allOreTypes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allOreTypes = $rows()
             ->select('character_id', 'type_id')
             ->distinct()
             ->get()
@@ -996,18 +1117,14 @@ class LedgerSummaryService
             ->map(fn($group) => $group->pluck('type_id')->toArray());
 
         // --- BATCH QUERY 2: Get total volume (m³) for all characters in one query ---
-        $allVolumes = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allVolumes = $rows()
             ->join('invTypes', 'mining_ledger.type_id', '=', 'invTypes.typeID')
-            ->selectRaw('character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
-            ->groupBy('character_id')
+            ->selectRaw('mining_ledger.character_id, SUM(mining_ledger.quantity * invTypes.volume) as total_volume_m3')
+            ->groupBy('mining_ledger.character_id')
             ->pluck('total_volume_m3', 'character_id');
 
         // --- BATCH QUERY 3: Get all system data for all characters in one query ---
-        $allSystemData = MiningLedger::whereIn('character_id', $characterIds)
-            ->whereYear('date', $monthDate->year)
-            ->whereMonth('date', $monthDate->month)
+        $allSystemData = $rows()
             ->select('character_id', 'solar_system_id', DB::raw('SUM(total_value) as system_value'))
             ->groupBy('character_id', 'solar_system_id')
             ->get()
@@ -1081,9 +1198,11 @@ class LedgerSummaryService
      * Uses SeAT v5 structure (refresh_tokens table for character-user mapping)
      *
      * @param \Illuminate\Support\Collection $summaries
+     * @param int|null $corporationId
+     * @param string $scope self::SCOPE_MEMBERS or self::SCOPE_MOONS
      * @return \Illuminate\Support\Collection
      */
-    public function groupByMainCharacter($summaries, ?int $corporationId = null)
+    public function groupByMainCharacter($summaries, ?int $corporationId = null, string $scope = self::SCOPE_MEMBERS)
     {
         // Get all character IDs from mining data
         $characterIds = $summaries->pluck('character_id')->unique()->toArray();
@@ -1096,10 +1215,15 @@ class LedgerSummaryService
             ->pluck('user_id', 'character_id');
 
         // Also fetch ALL registered users for the corporation(s) so main accounts
-        // with zero mining still appear in the summary
-        $corpIds = $corporationId
-            ? [$corporationId]
-            : $summaries->pluck('corporation_id')->filter()->unique()->toArray();
+        // with zero mining still appear in the summary. Members scope only: in
+        // the moons scope the corporation owns the refinery, and its members who
+        // never mined there are not missing from anything.
+        $corpIds = [];
+        if ($scope !== self::SCOPE_MOONS) {
+            $corpIds = $corporationId
+                ? [$corporationId]
+                : $this->settingsService->getHomeCorporationIds();
+        }
 
         if (!empty($corpIds)) {
             // Find all character_ids affiliated with these corporations
@@ -1174,6 +1298,10 @@ class LedgerSummaryService
                 $emptySummary->gas_value = 0;
                 $emptySummary->abyssal_ore_value = 0;
                 $emptySummary->triglavian_ore_value = 0;
+                $emptySummary->event_discount_total = 0;
+                foreach (self::MOON_CLASSES as $class) {
+                    $emptySummary->{"moon_{$class}_value"} = 0;
+                }
                 $emptySummary->total_volume_m3 = 0;
                 $emptySummary->alt_characters = collect();
                 $emptySummary->alt_count = 0;
@@ -1218,6 +1346,10 @@ class LedgerSummaryService
             $mainSummary->gas_value = $userSummaries->sum('gas_value');
             $mainSummary->abyssal_ore_value = $userSummaries->sum('abyssal_ore_value');
             $mainSummary->triglavian_ore_value = $userSummaries->sum('triglavian_ore_value');
+            $mainSummary->event_discount_total = $userSummaries->sum('event_discount_total');
+            foreach (self::MOON_CLASSES as $class) {
+                $mainSummary->{"moon_{$class}_value"} = $userSummaries->sum("moon_{$class}_value");
+            }
 
             // Merge ore types from all characters
             $allOreTypes = $userSummaries->pluck('ore_type_ids')->flatten()->unique()->values();
