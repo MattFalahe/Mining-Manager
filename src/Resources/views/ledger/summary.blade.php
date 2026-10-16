@@ -121,7 +121,26 @@
                     </h3>
                 </div>
                 <div class="card-body">
+                    {{-- Two questions, one page: what a corporation's miners mined, or what came off its refineries --}}
+                    @php
+                        $moonsScope = $scope === \MiningManager\Services\Ledger\LedgerSummaryService::SCOPE_MOONS;
+                    @endphp
+                    <div class="btn-group mb-2" role="group">
+                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'members', 'month' => $month, 'group_by_main' => $groupByMain ? 1 : 0]) }}"
+                           class="btn btn-sm {{ $moonsScope ? 'btn-outline-secondary' : 'btn-primary' }}">
+                            <i class="fas fa-users"></i> {{ trans('mining-manager::ledger.scope_members') }}
+                        </a>
+                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'moons', 'month' => $month, 'group_by_main' => $groupByMain ? 1 : 0]) }}"
+                           class="btn btn-sm {{ $moonsScope ? 'btn-primary' : 'btn-outline-secondary' }}">
+                            <i class="fas fa-moon"></i> {{ trans('mining-manager::ledger.scope_moons') }}
+                        </a>
+                    </div>
+                    <p class="text-muted small mb-3">
+                        {{ $moonsScope ? trans('mining-manager::ledger.scope_moons_hint') : trans('mining-manager::ledger.scope_members_hint') }}
+                    </p>
+
                     <form method="GET" action="{{ route('mining-manager.ledger.summary') }}" id="filterForm">
+                        <input type="hidden" name="scope" value="{{ $scope }}">
                         <div class="row">
                             {{-- Month Selector --}}
                             <div class="col-md-3">
@@ -131,20 +150,22 @@
                                 </div>
                             </div>
 
-                            {{-- Corporation Filter --}}
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="corporation_id">{{ trans('mining-manager::ledger.corporation') }}</label>
-                                    <select class="form-control" id="corporation_id" name="corporation_id">
-                                        <option value="">{{ trans('mining-manager::ledger.all_corporations') }}</option>
-                                        @foreach($corporations as $corp)
-                                            <option value="{{ $corp->corporation_id }}" {{ $selectedCorporationId == $corp->corporation_id ? 'selected' : '' }}>
-                                                [{{ $corp->ticker }}] {{ $corp->name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
+                            {{-- Corporation Filter: a member only ever sees their own rows, so it is a director's --}}
+                            @if($isDirector)
+                                <div class="col-md-3">
+                                    <div class="form-group">
+                                        <label for="corporation_id">{{ $moonsScope ? trans('mining-manager::ledger.refinery_owner') : trans('mining-manager::ledger.corporation') }}</label>
+                                        <select class="form-control" id="corporation_id" name="corporation_id">
+                                            <option value="">{{ $moonsScope ? trans('mining-manager::ledger.all_refineries') : trans('mining-manager::ledger.all_corporations') }}</option>
+                                            @foreach($corporations as $corp)
+                                                <option value="{{ $corp->corporation_id }}" {{ $selectedCorporationId == $corp->corporation_id ? 'selected' : '' }}>
+                                                    {{ $corp->ticker ? '[' . $corp->ticker . '] ' : '' }}{{ $corp->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 </div>
-                            </div>
+                            @endif
 
                             {{-- Group by Main Toggle --}}
                             <div class="col-md-3">
@@ -181,13 +202,17 @@
                     <h3 class="card-title">
                         <i class="fas fa-chart-bar"></i>
                         {{ trans('mining-manager::ledger.summary_statistics') }} - {{ $monthDate->format('F Y') }}
-                        @if(!$isCurrentMonth)
+                        @if($isCurrentMonth)
+                            <span class="badge badge-warning ml-2">
+                                <i class="fas fa-clock"></i> {{ trans('mining-manager::ledger.live') }}
+                            </span>
+                        @elseif($fromFinalized)
                             <span class="badge badge-success ml-2">
                                 <i class="fas fa-check-circle"></i> {{ trans('mining-manager::ledger.finalized') }}
                             </span>
                         @else
-                            <span class="badge badge-warning ml-2">
-                                <i class="fas fa-clock"></i> {{ trans('mining-manager::ledger.live') }}
+                            <span class="badge badge-secondary ml-2">
+                                <i class="fas fa-database"></i> {{ trans('mining-manager::ledger.from_ledger') }}
                             </span>
                         @endif
                     </h3>
@@ -208,7 +233,8 @@
                             </div>
                         </div>
 
-                        {{-- Total Tax --}}
+                        {{-- Total Tax: a character's tax covers their whole month, so the moons view leaves it out --}}
+                        @if(!$moonsScope)
                         <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-warning">
                                 <span class="info-box-icon">
@@ -227,6 +253,7 @@
                                 </div>
                             </div>
                         </div>
+                        @endif
 
                         {{-- Total Quantity --}}
                         <div class="col-lg col-md-6">
@@ -270,6 +297,24 @@
                             </div>
                         </div>
                     </div>
+
+                    {{-- Moon ore by class, each with its share of the value above --}}
+                    @if($moonsScope)
+                        <div class="mt-2">
+                            <strong class="mr-3">{{ trans('mining-manager::ledger.moon_ore_by_class') }}</strong>
+                            @foreach($moonClasses as $moonClass)
+                                @php
+                                    $classValue = (float) ($totals['moon_' . $moonClass . '_value'] ?? 0);
+                                    $classShare = $totals['total_value'] > 0 ? $classValue / $totals['total_value'] * 100 : 0;
+                                @endphp
+                                <span class="mr-3 text-nowrap">
+                                    <span class="badge {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($moonClass) }}">{{ strtoupper($moonClass) }}</span>
+                                    {{ number_format($classValue, 0) }} ISK
+                                    <small class="text-muted">({{ number_format($classShare, 1) }}%)</small>
+                                </span>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -383,7 +428,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="text-center">
+                                    <td colspan="7" class="text-center">
                                         <em>{{ trans('mining-manager::ledger.no_mining_data') }}</em>
                                     </td>
                                 </tr>

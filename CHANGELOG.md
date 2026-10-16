@@ -8,6 +8,11 @@ All notable changes to Mining Manager will be documented in this file.
 
 ### Mining Ledger
 
+- Fixed: **a member's own mining vanished from the Mining Summary when a corporation was picked.** The filter matched the corporation that owned the structure the mining happened at, and personal mining has none, so it only ever showed under All Corporations, beside a Total Tax that still covered each miner's whole month. **Members' mining** now counts a corporation's miners the same way as the dashboard and Analytics, every ore wherever they mined it, so the value, Total Tax and the ore, volume and system columns all cover the same mining. Past months still come from the finalized summaries, filtered to those miners.
+- **Our moons**, a second view of the Mining Summary: the moon ore a corporation's refineries recorded, by miner, guests included, with how much of it was R4 to R64. It opens on your Moon Owner Corporation, and directors can pick another refinery owner or all of them. Personal mining is not in it, since nothing in it says whose moon it came off, and it shows no tax, since a bill covers a member's whole month. Based on an idea from [Nauclerus](https://github.com/Nauclerus) in [#7](https://github.com/MattFalahe/Mining-Manager/pull/7).
+- The corporation filter on the Mining Summary is shown to directors only. Members see their own mining either way.
+- Fixed: **the event discount under Total Tax never showed** on the Mining Summary. Only the daily summaries keep it, and the page never read them for it.
+- A past month the Mining Summary works out from the ledger, which the Our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 
 ## [2.0.5] — 2026-10-18 — The Ecosystem Era: Rotations and Rigs
