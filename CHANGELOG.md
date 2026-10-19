@@ -15,6 +15,14 @@ All notable changes to Mining Manager will be documented in this file.
 - A past month the Mining Summary works out from the ledger, which the Our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 
+### Moon Extractions
+
+- A cancelled extraction's moon rig record is no longer refreshed every two hours until the time its chunk would have arrived. The chunk never comes, so the record stays as it was when the cancellation was picked up.
+
+### Scheduled Commands
+
+- An old scheduled `verify-payments` run without `--auto-match`, left behind on installs that ran a version from before 1.0.0, is removed on update. It only reported what it would match, and it held the lock the real matching run needs five minutes later.
+
 ## [2.0.5] — 2026-10-19 — The Ecosystem Era: Rotations and Rigs
 
 Moon pulls, planned rather than placed one at a time. A blueprint lays a whole rotation over the planner, the planner warns when two pulls on one refinery are too close, marks a refinery's final pull before it moves, and says when a drill has been left idle or a moon has nothing planned. A refinery's moon rigs now set its chunks' mining window and yield wherever the plugin times or values a chunk, and a chunk's value is settled when it fractures. Around that: a banner on the Mining Dashboard for tax still owed, part-paid bills that keep their payment steps, a fallback price provider, miners SeAT does not know named and counted on every page, and a run of notification switches that now save.

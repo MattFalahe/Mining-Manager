@@ -370,6 +370,9 @@ class ScheduleSeeder extends AbstractScheduleSeeder
         return [
             'mining-manager:scan-corporation-contracts', // Removed: contract-based taxing replaced by wallet transfers
             'mining-manager:update-daily-summaries --today-only', // Removed: process-ledger now auto-generates daily summaries
+            // Pre-release installs kept this one beside the --auto-match entry. It only
+            // reported, and it held the lock the matching run needs five minutes later.
+            'mining-manager:verify-payments',
         ];
     }
 }
