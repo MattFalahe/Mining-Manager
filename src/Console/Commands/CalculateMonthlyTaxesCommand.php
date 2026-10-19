@@ -16,7 +16,7 @@ class CalculateMonthlyTaxesCommand extends Command
                             {--month= : Month to calculate (YYYY-MM format, monthly period only)}
                             {--period-start= : Period start date (YYYY-MM-DD, for any period type)}
                             {--period-type= : Override period type (monthly|biweekly; "weekly" is accepted but silently maps to monthly — legacy)}
-                            {--character_id= : Calculate for specific character}
+                            {--character_id= : Calculate one character\'s account (its main and alts)}
                             {--corporation_id= : Calculate for specific structure-owner corporation}
                             {--recalculate : Recalculate existing tax records}
                             {--force : Run even if today is not a period boundary}';
@@ -104,11 +104,26 @@ class CalculateMonthlyTaxesCommand extends Command
         $this->info("Calculating {$periodType} taxes for: {$periodLabel} ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})");
 
         if ($characterId = $this->option('character_id')) {
-            $this->info("Calculating for character ID: {$characterId}");
+            // A bill covers an account, so this is the character's main and alts,
+            // worked out exactly as the run over everyone would.
+            $this->info("Calculating for the account of character ID: {$characterId}");
 
             try {
-                $taxAmount = $this->taxService->recalculateTax((int) $characterId, $startDate);
-                $this->info("Calculated tax for character {$characterId}: " . number_format($taxAmount, 2) . " ISK");
+                $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, $recalculate, 'Manual: console', (int) $characterId);
+
+                $this->info("Calculated: {$results['count']} tax record(s), total " . number_format($results['total'], 2) . " ISK");
+
+                if ($results['count'] === 0 && !$recalculate) {
+                    $this->line('An account that already has a bill for this period is only worked out again with --recalculate.');
+                }
+
+                foreach ($results['errors'] ?? [] as $error) {
+                    $this->error("  Character {$error['character_id']}: {$error['error']}");
+                }
+
+                if (!empty($results['errors'])) {
+                    return Command::FAILURE;
+                }
             } catch (\Exception $e) {
                 $this->error("Error calculating tax for character {$characterId}: {$e->getMessage()}");
                 return Command::FAILURE;

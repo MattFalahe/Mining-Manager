@@ -845,20 +845,23 @@ class TaxController extends Controller
                     continue;
                 }
 
-                if ($characterId) {
-                    $taxAmount = $this->taxService->recalculateTax((int) $characterId, $startDate);
-                    $totalCount += $taxAmount > 0 ? 1 : 0;
-                    $totalAmount += $taxAmount;
-                } else {
-                    $results = $this->taxService->calculateTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
-                    $totalCount += $results['count'];
-                    $totalAmount += $results['total'];
-                    $allErrors = array_merge($allErrors, $results['errors'] ?? []);
-                }
+                // A character picked means that character's account, worked out
+                // the same way as everyone's: a bill covers a main and its alts.
+                $results = $this->taxService->calculateTaxes(
+                    $startDate,
+                    $endDate,
+                    $periodType,
+                    $recalculate,
+                    $triggeredBy,
+                    $characterId ? (int) $characterId : null
+                );
+                $totalCount += $results['count'];
+                $totalAmount += $results['total'];
+                $allErrors = array_merge($allErrors, $results['errors'] ?? []);
             }
 
             $results = [
-                'method' => $characterId ? 'individual' : ($periodType === 'monthly' ? 'accumulated' : "accumulated ({$periodType})"),
+                'method' => $characterId ? 'one account' : ($periodType === 'monthly' ? 'accumulated' : "accumulated ({$periodType})"),
                 'count' => $totalCount,
                 'total' => $totalAmount,
                 'errors' => $allErrors,

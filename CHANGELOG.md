@@ -15,6 +15,10 @@ All notable changes to Mining Manager will be documented in this file.
 - A past month the Mining Summary works out from the ledger, which the Our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 
+### Tax Calculation
+
+- Fixed: **working out one character's tax used the calendar month and that character alone.** Calculate Taxes with a character picked, and `calculate-taxes --character_id`, added up the whole month for that one character, applied the thresholds to that figure, and looked for the bill starting on the 1st. On fortnightly periods the second half's bill was never looked at and the first half's could be offered the whole month's tax, and a main's figure left out their alts. It now works out the account the character belongs to, main and alts, for the period asked, exactly as the nightly calculation does: an issued invoice is left as it stands, and an account with no bill for that period yet gets one, as the nightly run would have made it. `--character_id` also follows `--recalculate` now, so an existing bill is only worked out again when asked.
+
 ### Moon Extractions
 
 - A cancelled extraction's moon rig record is no longer refreshed every two hours until the time its chunk would have arrived. The chunk never comes, so the record stays as it was when the cancellation was picked up.

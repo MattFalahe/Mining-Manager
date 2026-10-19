@@ -120,9 +120,11 @@ class TaxCalculationService
      * @param string $periodType 'monthly', 'biweekly', or 'weekly'
      * @param bool $recalculate
      * @param string|null $triggeredBy
+     * @param int|null $onlyAccountOf Work out just this character's account (its main and alts),
+     *                                exactly as the run over everyone would bill it
      * @return array
      */
-    public function calculateTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
+    public function calculateTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null, ?int $onlyAccountOf = null): array
     {
         // Check if any corporation is configured for tax calculation
         if ($this->settingsService->getActiveCorporation() === null) {
@@ -150,7 +152,7 @@ class TaxCalculationService
         $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
         Log::info("Mining Manager: Starting {$periodType} tax calculation for {$periodLabel}" . ($triggeredBy ? " (triggered by: {$triggeredBy})" : ''));
 
-        return $this->calculateAccumulatedTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy);
+        return $this->calculateAccumulatedTaxes($startDate, $endDate, $periodType, $recalculate, $triggeredBy, $onlyAccountOf);
     }
 
     /**
@@ -178,9 +180,10 @@ class TaxCalculationService
      * @param string $periodType
      * @param bool $recalculate
      * @param string|null $triggeredBy
+     * @param int|null $onlyAccountOf
      * @return array
      */
-    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null): array
+    private function calculateAccumulatedTaxes(Carbon $startDate, Carbon $endDate, string $periodType = 'monthly', bool $recalculate = false, ?string $triggeredBy = null, ?int $onlyAccountOf = null): array
     {
         // Get all characters who should be taxed this period:
         // 1. Characters with entries from Moon Owner Corp's observer (moon mining)
@@ -212,6 +215,12 @@ class TaxCalculationService
 
         $characters = $query->distinct('character_id')
             ->pluck('character_id');
+
+        // One account only: its characters still have to pass the selection
+        // above, so its bill comes out exactly as the run over everyone makes it.
+        if ($onlyAccountOf !== null) {
+            $characters = $characters->intersect($this->accountCharacterIds($onlyAccountOf))->values();
+        }
 
         // Group characters by main character (user)
         $groupedByMain = $this->groupCharactersByMain($characters);
@@ -259,7 +268,7 @@ class TaxCalculationService
                     $taxBreakdown = [];
 
                     foreach ($characterIds as $characterId) {
-                        $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate, true);
+                        $characterTax = $this->calculateCharacterTax($characterId, $startDate, $endDate);
                         $combinedTaxAmount += $characterTax;
 
                         if ($characterTax > 0) {
@@ -315,8 +324,8 @@ class TaxCalculationService
                     }
 
                     if ($existingTax) {
-                        // Same rule as recalculateTax: once a payment code has
-                        // gone out or money has arrived, the invoice stands.
+                        // Once a payment code has gone out or money has
+                        // arrived, the invoice stands.
                         $frozenReason = $this->invoiceFreezeReason($existingTax);
 
                         if ($frozenReason !== null) {
@@ -519,54 +528,40 @@ class TaxCalculationService
     }
 
     /**
-     * Calculate tax for a single character using daily summaries as source of truth.
+     * One character's share of a period's tax, from the daily summaries.
+     *
+     * A bill covers an account, so the exemption threshold and the minimum
+     * are not applied here: calculateAccumulatedTaxes() applies both to the
+     * account's combined total.
      *
      * @param int $characterId
      * @param Carbon $startDate
      * @param Carbon $endDate
-     * @param bool $accumulating When true, this character is one part of an account's bill: the
-     *                           exemption threshold and the minimum are left to calculateTaxes(),
-     *                           which applies both to the combined total
      * @return float
      */
-    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate, bool $accumulating = false): float
+    private function calculateCharacterTax(int $characterId, Carbon $startDate, Carbon $endDate): float
     {
         // Read from daily summaries — the single source of truth for tax
         $totalTax = (float) MiningLedgerDailySummary::where('character_id', $characterId)
             ->whereBetween('date', [$startDate, $endDate])
             ->sum('total_tax');
 
-        if ($totalTax <= 0) {
-            return 0;
-        }
+        return $totalTax > 0 ? round($totalTax, 2) : 0;
+    }
 
-        if ($accumulating) {
-            return round($totalTax, 2);
-        }
+    /**
+     * Every character on the account a character belongs to: its SeAT user's
+     * characters, or the character alone when it has no user.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    private function accountCharacterIds(int $characterId)
+    {
+        $userId = DB::table('refresh_tokens')->where('character_id', $characterId)->value('user_id');
 
-        // Check exemption threshold FIRST (before minimum tax)
-        $exemptions = $this->settingsService->getExemptions();
-        if ($exemptions['enabled'] && $totalTax < $exemptions['threshold']) {
-            Log::debug("Mining Manager: Character {$characterId} exempt from tax (tax below threshold: {$totalTax} < {$exemptions['threshold']})");
-            return 0;
-        }
-
-        $paymentSettings = $this->settingsService->getPaymentSettings();
-        $minimumAmount = (float) ($paymentSettings['minimum_tax_amount'] ?? config('mining-manager.tax_payment.minimum_tax_amount', 1000000));
-        $minimumBehavior = $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt');
-
-        if ($minimumAmount > 0 && $totalTax > 0 && $totalTax < $minimumAmount) {
-            if ($minimumBehavior === 'enforce') {
-                Log::debug("Mining Manager: Raising tax for character {$characterId} to minimum ({$totalTax} -> {$minimumAmount})");
-                $totalTax = $minimumAmount;
-            } else {
-                // 'exempt' — no tax below minimum
-                Log::debug("Mining Manager: Character {$characterId} tax below minimum ({$totalTax} < {$minimumAmount}), exempting");
-                $totalTax = 0;
-            }
-        }
-
-        return round($totalTax, 2);
+        return $userId
+            ? DB::table('refresh_tokens')->where('user_id', $userId)->pluck('character_id')
+            : collect([$characterId]);
     }
 
     /**
@@ -581,15 +576,9 @@ class TaxCalculationService
      */
     public function accountTaxBeforeThresholds(int $characterId, Carbon $startDate, Carbon $endDate): array
     {
-        $userId = DB::table('refresh_tokens')->where('character_id', $characterId)->value('user_id');
-
-        $accountCharacterIds = $userId
-            ? DB::table('refresh_tokens')->where('user_id', $userId)->pluck('character_id')
-            : collect([$characterId]);
-
         $group = [$characterId];
 
-        foreach ($this->groupCharactersByMain($accountCharacterIds) as $members) {
+        foreach ($this->groupCharactersByMain($this->accountCharacterIds($characterId)) as $members) {
             if (in_array($characterId, $members)) {
                 $group = $members;
                 break;
@@ -599,11 +588,11 @@ class TaxCalculationService
         $accountTax = 0.0;
 
         foreach ($group as $memberId) {
-            $accountTax += $this->calculateCharacterTax((int) $memberId, $startDate, $endDate, true);
+            $accountTax += $this->calculateCharacterTax((int) $memberId, $startDate, $endDate);
         }
 
         return [
-            'character_tax' => $this->calculateCharacterTax($characterId, $startDate, $endDate, true),
+            'character_tax' => $this->calculateCharacterTax($characterId, $startDate, $endDate),
             'account_tax' => round($accountTax, 2),
             'account_characters' => count($group),
         ];
@@ -1137,52 +1126,6 @@ class TaxCalculationService
             ->exists();
 
         return $hasCode ? 'tax code issued' : null;
-    }
-
-    public function recalculateTax(int $characterId, Carbon $month): float
-    {
-        $startDate = $month->copy()->startOfMonth();
-        $endDate = $month->copy()->endOfMonth();
-
-        $taxAmount = $this->calculateCharacterTax($characterId, $startDate, $endDate);
-
-        // Try period_start first, fall back to month for pre-migration records
-        $tax = MiningTax::where('character_id', $characterId)
-            ->where('period_start', $startDate->format('Y-m-d'))
-            ->first();
-
-        if (!$tax) {
-            $tax = MiningTax::where('character_id', $characterId)
-                ->where('month', $startDate->format('Y-m-01'))
-                ->first();
-        }
-
-        if ($tax) {
-            // An invoice that has been issued is a record of what somebody was
-            // asked to pay. Once a payment code exists, or money has landed
-            // against it, the amount stops being a derived figure and becomes a
-            // fact, so recalculation reports the new number without writing it.
-            $frozenReason = $this->invoiceFreezeReason($tax);
-
-            if ($frozenReason !== null) {
-                Log::info('Mining Manager: skipped recalculating an issued tax record', [
-                    'mining_tax_id' => $tax->id,
-                    'character_id'  => $characterId,
-                    'reason'        => $frozenReason,
-                    'stored'        => (float) $tax->amount_owed,
-                    'recalculated'  => round($taxAmount),
-                ]);
-
-                return (float) $tax->amount_owed;
-            }
-
-            $tax->update([
-                'amount_owed' => round($taxAmount),
-                'calculated_at' => Carbon::now(),
-            ]);
-        }
-
-        return $taxAmount;
     }
 
     /**
