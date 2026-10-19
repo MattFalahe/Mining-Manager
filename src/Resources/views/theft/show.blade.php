@@ -156,6 +156,7 @@
                         <thead>
                             <tr>
                                 <th>Date</th>
+                                <th>Character</th>
                                 <th>Ore Type</th>
                                 <th class="text-right">Quantity</th>
                                 <th class="text-right">Value</th>
@@ -165,23 +166,24 @@
                         <tbody>
                             @foreach($miningHistory as $record)
                             <tr>
-                                <td>{{ $record->date->format('Y-m-d H:i') }}</td>
+                                <td>{{ $record->date->format('Y-m-d') }}</td>
+                                <td>{{ $record->character_name }}</td>
                                 <td>
                                     <img src="https://images.evetech.net/types/{{ $record->type_id }}/icon?size=32"
                                          style="width: 32px; height: 32px; margin-right: 5px;">
                                     {{ $record->type->typeName ?? 'Unknown' }}
                                 </td>
                                 <td class="text-right">{{ number_format($record->quantity, 0) }}</td>
-                                <td class="text-right">{{ number_format($record->value, 2) }} ISK</td>
-                                <td>{{ $record->solar_system_name ?? 'Unknown' }}</td>
+                                <td class="text-right">{{ number_format($record->total_value, 2) }} ISK</td>
+                                <td>{{ $record->system_name }}</td>
                             </tr>
                             @endforeach
                         </tbody>
                         <tfoot>
                             <tr class="bg-dark">
-                                <td colspan="2"><strong>Total</strong></td>
+                                <td colspan="3"><strong>Total</strong></td>
                                 <td class="text-right"><strong>{{ number_format($miningHistory->sum('quantity'), 0) }}</strong></td>
-                                <td class="text-right"><strong>{{ number_format($miningHistory->sum('value'), 2) }} ISK</strong></td>
+                                <td class="text-right"><strong>{{ number_format($miningHistory->sum('total_value'), 2) }} ISK</strong></td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -190,7 +192,7 @@
                     <div class="text-center p-5">
                         <i class="fas fa-info-circle fa-3x text-info mb-3"></i>
                         <h4>No Mining History Available</h4>
-                        <p class="text-muted">No mining records found for this character during the incident period.</p>
+                        <p class="text-muted">None of this player's characters outside our corporations mined moon ore at the moon owner's refineries during the incident period.</p>
                     </div>
                     @endif
                 </div>

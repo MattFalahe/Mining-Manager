@@ -573,6 +573,17 @@
             </h5>
         </div>
         <div class="card-body">
+            {{-- Billing carries on with guest mining off, so the rates stay
+                 live and are not greyed out. --}}
+            @unless($settings->allow_guest_mining ?? true)
+            <div class="alert alert-warning">
+                <i class="fas fa-ban mr-1"></i>
+                <strong>Guest mining is switched off.</strong>
+                Guests are still billed at these rates, and any moon ore a guest mines at the moon
+                owner's refineries opens a theft incident. Switch it back on under
+                Settings &rarr; Features &rarr; Allow Guest Mining.
+            </div>
+            @endunless
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
                 <strong>What are Guest Miners?</strong>

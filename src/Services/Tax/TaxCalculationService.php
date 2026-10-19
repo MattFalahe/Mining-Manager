@@ -1046,9 +1046,9 @@ class TaxCalculationService
      *    visible in ESI for up to 24h. Flipping status before the buffer
      *    elapses would cause false "overdue" notifications to legitimate
      *    payers.
-     *  - `grace_period_days` (default 7) is a DIFFERENT concern used by
-     *    TheftDetectionService — it controls when an unpaid/overdue tax
-     *    escalates to a theft incident. Applying it here made the UI
+     *  - `grace_period_days` (default 7) is a DIFFERENT concern: it
+     *    lengthens how long payment codes stay valid, and dates bills saved
+     *    before due dates were stored. Applying it here made the UI
      *    show "UNPAID" for a week past the due date, contradicting the
      *    red "N days ago" display next to the due date on the same page.
      *  - Historical behaviour subtracted BOTH buffers, so a tax due

@@ -2690,13 +2690,16 @@ class DiagnosticController extends Controller
     }
 
     /**
-     * Theft detection diagnostic - test detection logic and statistics
+     * Theft detection diagnostic: the rules in force, who the next run would
+     * take off the list, and why one character would or would not be
+     * flagged. Records nothing; only the daily run opens and closes incidents.
      */
     public function theftDiagnostic(Request $request)
     {
         try {
             $characterId = (int) $request->input('character_id');
             $theftService = app(\MiningManager\Services\Theft\TheftDetectionService::class);
+            $rules = $theftService->rules();
 
             // Overall statistics
             $stats = $theftService->getStatistics();
@@ -2704,67 +2707,30 @@ class DiagnosticController extends Controller
             // Unresolved incidents summary
             $unresolved = $theftService->getUnresolvedIncidents();
 
-            // Characters who have paid
+            // Players the next run takes off the list
             $paidCharacters = [];
             try {
-                $paid = $theftService->checkForPaidTaxes();
-                $paidCharacters = $paid->map(fn($i) => [
-                    'character_id' => $i->character_id, 'character_name' => $i->character_name, 'status' => $i->status,
-                ])->take(10)->toArray();
+                $paidCharacters = $theftService->paidUpIncidents()->map(fn($i) => [
+                    'character_id' => $i->character_id, 'character_name' => $i->getCharacterName(), 'status' => $i->status,
+                ])->take(10)->values()->toArray();
             } catch (\Exception $e) {
                 $paidCharacters = ['error' => $e->getMessage()];
             }
 
-            // Character-specific analysis
-            $characterAnalysis = null;
-            if ($characterId) {
-                $moonOwnerCorpId = (int) $this->settingsService->getSetting('general.moon_owner_corporation_id', 0);
-
-                $isExternal = $theftService->isExternalMiner($characterId, $moonOwnerCorpId);
-
-                // Get their mining on moon structures
-                $moonMining = DB::table('corporation_industry_mining_observer_data as m')
-                    ->join('corporation_industry_mining_observers as o', 'm.observer_id', '=', 'o.observer_id')
-                    ->where('m.character_id', $characterId)
-                    ->where('m.last_updated', '>=', now()->subDays(30))
-                    ->select('m.type_id', DB::raw('SUM(m.quantity) as total_qty'), DB::raw('MAX(m.last_updated) as last_seen'))
-                    ->groupBy('m.type_id')
-                    ->get();
-
-                $totalValue = 0;
-                $moonOreEntries = [];
-                foreach ($moonMining as $entry) {
-                    $typeName = DB::table('invTypes')->where('typeID', $entry->type_id)->value('typeName') ?? "Type {$entry->type_id}";
-                    $isMoonOre = \MiningManager\Services\TypeIdRegistry::isMoonOre($entry->type_id);
-                    if ($isMoonOre) {
-                        $moonOreEntries[] = ['type_id' => $entry->type_id, 'name' => $typeName, 'quantity' => $entry->total_qty, 'last_seen' => $entry->last_seen];
-                    }
-                }
-
-                // Check existing incidents
-                $existingIncident = \MiningManager\Models\TheftIncident::where('character_id', $characterId)
-                    ->whereIn('status', ['detected', 'investigating', 'active'])
-                    ->first();
-
-                $characterAnalysis = [
-                    'character_id' => $characterId,
-                    'character_name' => DB::table('character_infos')->where('character_id', $characterId)->value('name') ?? "Unknown ({$characterId})",
-                    'is_external_miner' => $isExternal,
-                    'moon_ore_mined_30d' => $moonOreEntries,
-                    'existing_incident' => $existingIncident ? [
-                        'id' => $existingIncident->id, 'status' => $existingIncident->status, 'severity' => $existingIncident->severity,
-                        'ore_value' => $existingIncident->ore_value, 'tax_owed' => $existingIncident->tax_owed,
-                    ] : null,
-                ];
-            }
-
             return response()->json([
                 'success' => true,
+                'rules' => [
+                    'moon_owner_set' => (bool) $rules['moon_owner'],
+                    'home_corporations' => count($rules['home']),
+                    'overdue_days' => $rules['overdue_days'],
+                    'guests_allowed' => $rules['guests_allowed'],
+                    'guests_off_since' => $rules['guests_off_since']?->toDateString(),
+                ],
                 'statistics' => $stats,
                 'unresolved_count' => $unresolved->count(),
                 'unresolved_by_severity' => $unresolved->groupBy('severity')->map->count()->toArray(),
                 'paid_characters' => $paidCharacters,
-                'character_analysis' => $characterAnalysis,
+                'character_analysis' => $characterId ? $theftService->explainCharacter($characterId, $rules) : null,
             ]);
 
         } catch (\Exception $e) {

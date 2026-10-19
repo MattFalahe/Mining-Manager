@@ -4,19 +4,17 @@ namespace MiningManager\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use MiningManager\Models\TheftIncident;
 use MiningManager\Services\Theft\TheftDetectionService;
 use MiningManager\Services\Notification\TheftNotificationService;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Command to detect moon ore theft incidents
  *
- * Identifies characters who:
- * - Mined moon ore
- * - Have unpaid/overdue taxes
- * - Grace period has passed
- * - Are not corp members or not registered
+ * Moon ore mined at the moon owner's refineries by characters outside every
+ * configured corporation, while a bill on their account is more than the
+ * allowed days overdue, or while guest mining is switched off.
  */
 class DetectMoonTheftCommand extends Command
 {
@@ -26,15 +24,15 @@ class DetectMoonTheftCommand extends Command
      * @var string
      */
     protected $signature = 'mining-manager:detect-theft
-                            {--days=15 : Number of days to look back for mining activity}
-                            {--notify : Send notifications for detected thefts}';
+                            {--days=15 : How far back a new incident may reach, in days}
+                            {--notify : Send notifications for new incidents}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Detect moon ore theft incidents based on unpaid taxes and mining activity';
+    protected $description = 'Detect moon ore theft: outsiders mining our moons with tax long overdue, or while guest mining is off';
 
     /**
      * @var TheftDetectionService
@@ -86,102 +84,37 @@ class DetectMoonTheftCommand extends Command
             $this->info('Starting Moon Theft Detection...');
             $this->line('');
 
-            // Get options
-            $days = (int) $this->option('days');
-            $notify = $this->option('notify');
-
-            // Calculate date range
-            $endDate = Carbon::now();
-            $startDate = Carbon::now()->subDays($days);
-
-            $this->info("Analyzing mining activity from {$startDate->toDateString()} to {$endDate->toDateString()}");
-            $this->line('');
-
             try {
-                // Run regular theft detection first
-                $results = $this->detectionService->detectThefts($startDate, $endDate);
+                $rules = $this->detectionService->rules();
+                $this->displayRules($rules);
 
-                // Check for errors
+                $results = $this->detectionService->detectThefts((int) $this->option('days'), $rules);
+
                 if (isset($results['error'])) {
                     $this->error('Error: ' . $results['error']);
                     Log::error('DetectMoonTheftCommand: ' . $results['error']);
-                    return 1;
+                    return Command::FAILURE;
                 }
 
-                // Check if any characters on theft list have now paid their taxes
-                $this->line('');
-                $this->info('Checking for paid taxes...');
-                $paidCharacters = $this->detectionService->checkForPaidTaxes();
+                $this->displayTheftListReport($results);
 
-                // Display theft list management report
-                $this->line('');
-                $this->displayTheftListReport($results, $paidCharacters);
+                foreach ($results['incidents'] as $incident) {
+                    $this->announce($incident);
+                }
 
-                // Run active theft detection
-                $this->line('');
-                $this->info('Checking for active thefts in progress...');
-                $activeTheftResults = $this->detectionService->detectActiveThefts();
-
-                // Display enhanced report
-                $this->line('');
-                $this->displayEnhancedReport($results, $activeTheftResults);
-
-                // Detect tax delinquents (characters with 2+ overdue bills)
-                $this->line('');
-                $this->info('Checking for tax delinquents...');
-                $delinquentResults = $this->detectionService->detectTaxDelinquents();
-                $this->displayDelinquentReport($delinquentResults);
-
-                // Get statistics
-                $stats = $this->detectionService->getStatistics();
-                $this->line('');
-                $this->displayStatistics($stats);
-
-                // Notification handling
-                if ($notify) {
+                if ($this->option('notify') && $results['incidents']->isNotEmpty()) {
                     $this->line('');
                     $this->info('Sending notifications...');
-                    $notificationsSent = 0;
-
-                    // Send notifications for newly detected thefts
-                    if (isset($results['incidents']) && count($results['incidents']) > 0) {
-                        foreach ($results['incidents'] as $incidentResult) {
-                            if (($incidentResult['incident_created'] ?? false) && isset($incidentResult['incident'])) {
-                                $incident = $incidentResult['incident'];
-                                if ($incident->severity === 'critical') {
-                                    $this->notificationService->notifyCriticalTheft($incident);
-                                } else {
-                                    $this->notificationService->notifyTheftDetected($incident);
-                                }
-                                $notificationsSent++;
-                            }
-                        }
-                        if ($notificationsSent > 0) {
-                            $this->comment("Sent {$notificationsSent} new theft detection notifications");
-                        }
-                    }
-
-                    // Send notifications for active thefts
-                    if ($activeTheftResults['count'] > 0) {
-                        foreach ($activeTheftResults['active_thefts'] as $activeTheft) {
-                            $this->notificationService->notifyActiveTheft(
-                                $activeTheft['incident'],
-                                $activeTheft['new_value']
-                            );
-                        }
-                        $this->comment("Sent {$activeTheftResults['count']} active theft notifications");
-                    }
+                    $this->notify($results['incidents']);
                 }
 
-                // Log success
-                Log::info('DetectMoonTheftCommand: Completed successfully', array_merge($results, [
-                    'active_thefts' => $activeTheftResults['count']
-                ]));
+                $this->line('');
+                $this->displayStatistics($this->detectionService->getStatistics());
 
                 $this->line('');
                 $this->info('Theft detection completed successfully!');
 
-                return 0;
+                return Command::SUCCESS;
 
             } catch (\Exception $e) {
                 $this->error('An error occurred during theft detection:');
@@ -190,7 +123,7 @@ class DetectMoonTheftCommand extends Command
                     'message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
-                return 1;
+                return Command::FAILURE;
             }
         } finally {
             $lock->release();
@@ -198,155 +131,111 @@ class DetectMoonTheftCommand extends Command
     }
 
     /**
+     * Say what the run checks against, so a surprising result can be traced
+     * to a setting.
+     *
+     * @param array $rules
+     */
+    protected function displayRules(array $rules)
+    {
+        $this->line("Days overdue before theft: {$rules['overdue_days']}");
+        $this->line('Guest mining: ' . ($rules['guests_allowed']
+            ? 'allowed'
+            : 'switched off on ' . $rules['guests_off_since']->toDateString()));
+        $this->line('');
+    }
+
+    /**
      * Display theft list management report
      *
      * @param array $results
-     * @param \Illuminate\Support\Collection $paidCharacters
      */
-    protected function displayTheftListReport(array $results, $paidCharacters)
+    protected function displayTheftListReport(array $results)
     {
-        $this->line('');
         $this->line('<fg=cyan>📊 Theft List Management</>');
         $this->line('<fg=cyan>========================</>');
 
-        if ($results['new_incidents'] > 0) {
-            $this->line("✓ Added to theft list: <fg=yellow>{$results['new_incidents']}</> new characters");
+        $this->line("✓ Open incidents with new mining counted: <fg=yellow>{$results['counted']}</>");
+
+        $this->line("✓ Removed from theft list: <fg=green>{$results['removed']->count()}</> (nothing overdue)");
+        foreach ($results['removed'] as $incident) {
+            $this->line("   • {$incident->getCharacterName()}");
         }
 
-        if ($paidCharacters->count() > 0) {
-            $this->line("✓ Removed from theft list: <fg=green>{$paidCharacters->count()}</> (taxes paid)");
-            foreach ($paidCharacters as $incident) {
-                $this->line("   • {$incident->character_name}");
-            }
-        } else {
-            $this->line("✓ Removed from theft list: <fg=green>0</> (taxes paid)");
+        $this->line("✓ Added to theft list: <fg=yellow>{$results['new_incidents']}</>");
+        foreach ($results['incidents'] as $incident) {
+            $this->line(sprintf(
+                '   • %s, %s ISK mined, %s',
+                $incident->getCharacterName(),
+                number_format((float) $incident->ore_value, 0),
+                $incident->severity
+            ));
         }
 
-        $currentTheftListCount = \MiningManager\Models\TheftIncident::onTheftList()->count();
-        $this->line("📋 Current theft list: <fg=cyan>{$currentTheftListCount}</> characters");
-        $this->line('');
-        $this->line("💡 Active monitoring will check these {$currentTheftListCount} characters every 6 hours");
+        $currentTheftListCount = TheftIncident::onTheftList()->count();
+        $this->line("📋 Current theft list: <fg=cyan>{$currentTheftListCount}</> incidents");
     }
 
     /**
-     * Display enhanced detection report
+     * Tell other plugins through Manager Core. Topics adds the publisher and
+     * the idempotency key (theft_detected:{incident_id}).
      *
-     * @param array $results
-     * @param array $activeTheftResults
+     * @param TheftIncident $incident
      */
-    protected function displayEnhancedReport(array $results, array $activeTheftResults)
+    protected function announce(TheftIncident $incident)
     {
-        $this->line('');
-        $this->line('<fg=cyan>🔍 Moon Theft Detection Report</>');
-        $this->line('<fg=cyan>================================</>');
-        $this->line("✓ Scanned last {$this->option('days')} days of mining activity");
-        $this->line('');
-
-        $this->info('📊 Results:');
-        $this->line("  • New theft incidents: <fg=yellow>{$results['new_incidents']}</>");
-
-        if ($results['new_incidents'] > 0) {
-            $stats = $this->detectionService->getStatistics();
-            $newCritical = $stats['incidents_by_severity']['critical'] ?? 0;
-            $newHigh = $stats['incidents_by_severity']['high'] ?? 0;
-
-            if ($newCritical > 0) {
-                $this->line("    - <fg=red>Critical: {$newCritical}</>");
-            }
-            if ($newHigh > 0) {
-                $this->line("    - <fg=yellow>High: {$newHigh}</>");
-            }
-        }
-
-        $this->line('');
-
-        // Display active thefts prominently
-        if ($activeTheftResults['count'] > 0) {
-            $this->line('<fg=red>⚠️  ACTIVE THEFTS IN PROGRESS: ' . $activeTheftResults['count'] . '</>');
-
-            foreach ($activeTheftResults['active_thefts'] as $activeTheft) {
-                $incident = $activeTheft['incident'];
-                $newValue = $activeTheft['new_value'];
-                $totalValue = $incident->ore_value;
-
-                $occurrence = $this->getOccurrenceSuffix($incident->activity_count);
-
-                $this->line("  - <fg=red>{$incident->character_name}</> continues mining ({$occurrence}) - " .
-                           number_format($totalValue / 1000000, 0) . 'M ISK total');
-            }
-            $this->line('');
-        } else {
-            $this->line('<fg=green>✓ No active thefts detected - all incidents are being monitored</>');
-            $this->line('');
-        }
-
-        // Display total value at risk
-        $stats = $this->detectionService->getStatistics();
-        $totalValue = $stats['total_value_at_risk'];
-        $this->line("💰 Total value at risk: <fg=yellow>" . number_format($totalValue / 1000000000, 2) . "B ISK</>");
-    }
-
-    /**
-     * Get occurrence suffix for activity count
-     *
-     * @param int $count
-     * @return string
-     */
-    protected function getOccurrenceSuffix(int $count): string
-    {
-        if ($count == 1) {
-            return '1st occurrence';
-        } elseif ($count == 2) {
-            return '2nd occurrence';
-        } elseif ($count == 3) {
-            return '3rd occurrence';
-        } else {
-            return "{$count}th occurrence";
-        }
-    }
-
-    /**
-     * Display tax delinquent detection report
-     *
-     * @param array $results
-     */
-    protected function displayDelinquentReport(array $results)
-    {
-        if ($results['total_delinquents'] === 0) {
-            $this->line('<fg=green>✓ No tax delinquents found</>');
+        if (!class_exists(\ManagerCore\Topics::class)) {
             return;
         }
 
-        $this->line("<fg=yellow>⚠ Tax Delinquents: {$results['total_delinquents']} characters with 2+ overdue bills</>");
-        if ($results['created'] > 0) {
-            $this->line("  • Added to theft list: <fg=yellow>{$results['created']}</>");
-        }
-        if ($results['updated'] > 0) {
-            $this->line("  • Updated existing incidents: <fg=cyan>{$results['updated']}</>");
-        }
-        if ($results['skipped'] > 0) {
-            $this->line("  • Already on theft list: <fg=gray>{$results['skipped']}</>");
+        try {
+            \ManagerCore\Topics::publish('mining.theft_detected', [
+                'incident_id'    => $incident->id,
+                'character_id'   => $incident->character_id,
+                'severity'       => $incident->severity,
+                'tax_owed'       => (float) $incident->tax_owed,
+                'ore_value'      => (float) $incident->ore_value,
+                'quantity_mined' => $incident->quantity_mined,
+                'period_start'   => $incident->mining_date_from?->toDateString(),
+                'period_end'     => $incident->mining_date_to?->toDateString(),
+                'reason'         => $incident->mining_tax_id ? 'overdue_tax' : 'guest_mining_off',
+                'corporation_id' => null, // visibility scoping
+                'role_id'        => null,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('DetectMoonTheftCommand: Failed to publish theft incident', [
+                'incident_id' => $incident->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
     /**
-     * Display detection results (legacy method for backward compatibility)
+     * One notification per new incident, the critical alert for critical ones.
      *
-     * @param array $results
+     * @param \Illuminate\Support\Collection $incidents
      */
-    protected function displayResults(array $results)
+    protected function notify($incidents)
     {
-        $this->info('Detection Results:');
-        $this->line('==================');
+        $sent = 0;
 
-        $headers = ['Metric', 'Count'];
-        $rows = [
-            ['Total Incidents Detected', $results['incidents_detected']],
-            ['New Incidents', $results['new_incidents']],
-            ['Updated Incidents', $results['updated_incidents']],
-        ];
+        foreach ($incidents as $incident) {
+            try {
+                if ($incident->severity === 'critical') {
+                    $this->notificationService->notifyCriticalTheft($incident);
+                } else {
+                    $this->notificationService->notifyTheftDetected($incident);
+                }
+                $sent++;
+            } catch (\Exception $e) {
+                Log::error('DetectMoonTheftCommand: Failed to send notification', [
+                    'incident_id' => $incident->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
-        $this->table($headers, $rows);
+        $this->comment("Sent {$sent} new theft detection notifications");
     }
 
     /**

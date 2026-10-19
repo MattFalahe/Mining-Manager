@@ -59,15 +59,17 @@
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
         <h4 class="alert-heading">
             <i class="fas fa-exclamation-triangle"></i>
-            {{ trans('mining-manager::ledger.active_miners') }} - {{ trans('mining-manager::taxes.overdue') }}
+            Active Thefts
         </h4>
         <p>
-            <strong>{{ $activeTheftsCount }}</strong> {{ trans('mining-manager::taxes.all_unpaid_members') }}
+            <strong>{{ $activeTheftsCount }}</strong>
+            {{ $activeTheftsCount === 1 ? 'player on the theft list has' : 'players on the theft list have' }}
+            been seen mining our moons again since being listed.
         </p>
         <hr>
         <p class="mb-0">
             <a href="{{ route('mining-manager.theft.index', ['active_only' => 1]) }}" class="btn btn-danger">
-                <i class="fas fa-search"></i> {{ trans('mining-manager::taxes.view_details') }}
+                <i class="fas fa-search"></i> Show Them
             </a>
         </p>
         <button type="button" class="close" data-dismiss="alert" aria-label="Close">

@@ -222,11 +222,14 @@ class ScheduleSeeder extends AbstractScheduleSeeder
                 'ping_before' => null,
                 'ping_after' => null,
             ],
-            // Detect moon theft - runs twice monthly (1st and 15th at 1 AM)
+            // Detect moon theft - runs daily, after the night's tax run has marked
+            // bills overdue and the ledger has the previous day's mining.
             // (Full scan: manages theft list, adds/removes characters based on tax status)
+            // A different command string from the old twice-monthly entry, which
+            // the seeder would otherwise keep with its old timing.
             [
-                'command' => 'mining-manager:detect-theft --notify',
-                'expression' => '0 1 1,15 * *',
+                'command' => 'mining-manager:detect-theft --notify --days=15',
+                'expression' => '40 3 * * *',
                 'allow_overlap' => false,
                 'allow_maintenance' => false,
                 'ping_before' => null,
@@ -373,6 +376,8 @@ class ScheduleSeeder extends AbstractScheduleSeeder
             // Pre-release installs kept this one beside the --auto-match entry. It only
             // reported, and it held the lock the matching run needs five minutes later.
             'mining-manager:verify-payments',
+            // The twice-monthly theft scan, replaced by the daily entry above.
+            'mining-manager:detect-theft --notify',
         ];
     }
 }

@@ -279,6 +279,9 @@ class SettingsManagerService
             // out. The canonical read for runtime gating is getFeatureFlags().
             'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
 
+            // Same, so the guest rates card can say guest mining is off.
+            'allow_guest_mining' => (bool) $this->getSettingForCorporation('features.allow_guest_mining', null, true),
+
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.
             // Guards the token-payment loophole: 1m against a 1b invoice is
@@ -1440,6 +1443,10 @@ class SettingsManagerService
             // Moon mining
             'enable_moon_tracking' => (bool) $this->getSetting('features.enable_moon_tracking', true),
 
+            // Theft detection. Global, as the scan runs once for the moon owner.
+            'allow_guest_mining' => (bool) $this->getSettingForCorporation('features.allow_guest_mining', null, true),
+            'theft_overdue_days' => (int) $this->getSettingForCorporation('features.theft_overdue_days', null, 15),
+
             // Permissions & access
             'allow_public_stats' => (bool) $this->getSetting('features.allow_public_stats', false),
             'allow_member_leaderboard' => (bool) $this->getSetting('features.allow_member_leaderboard', true),
@@ -1477,8 +1484,10 @@ class SettingsManagerService
                 // Upfront payments is global, for the same reason the keyword
                 // is. The wallet matcher runs as one corporation, the moon
                 // owner, so a flag saved against any other corporation is never
-                // consulted: the box would tick and nothing would change.
-                if ($key === 'enable_upfront_payments') {
+                // consulted: the box would tick and nothing would change. The
+                // theft settings are global for the same reason: one scan, run
+                // for the moon owner.
+                if (in_array($key, ['enable_upfront_payments', 'allow_guest_mining', 'theft_overdue_days'], true)) {
                     $savedContext = $this->activeCorporationId;
                     $this->activeCorporationId = null;
                     $this->updateSetting("features.{$key}", $value, $type);

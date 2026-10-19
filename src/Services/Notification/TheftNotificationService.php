@@ -56,6 +56,7 @@ class TheftNotificationService
 
         $this->notificationService->sendTheftDetected($incident, [
             'incident_url' => route('mining-manager.theft.show', $incident->id),
+            'reason' => $incident->notes,
         ]);
 
         return true;
@@ -83,6 +84,7 @@ class TheftNotificationService
 
         $this->notificationService->sendCriticalTheft($incident, [
             'incident_url' => route('mining-manager.theft.show', $incident->id),
+            'reason' => $incident->notes,
         ]);
 
         return true;
@@ -165,27 +167,29 @@ class TheftNotificationService
      * PRIORITY: IMMEDIATE — character continues mining with unpaid taxes.
      *
      * @param TheftIncident $incident
-     * @param float $newMiningValue Value of new mining since incident created
+     * @param float $newMiningValue What the player has mined so far on $miningDate
+     * @param string|null $miningDate The day the mining was recorded for (Y-m-d)
      * @return void
      */
-    public function notifyActiveTheft(TheftIncident $incident, float $newMiningValue): void
+    public function notifyActiveTheft(TheftIncident $incident, float $newMiningValue, ?string $miningDate = null): void
     {
         Log::warning('ACTIVE THEFT IN PROGRESS', [
             'character_id' => $incident->character_id,
             'character_name' => $incident->character_name,
-            'original_value' => $incident->ore_value - $newMiningValue,
-            'new_value' => $newMiningValue,
-            'total_value' => $incident->ore_value,
+            'mining_date' => $miningDate,
+            'mined_that_day' => $newMiningValue,
+            'counted_value' => $incident->ore_value,
             'activity_count' => $incident->activity_count,
             'incident_id' => $incident->id,
             'last_activity' => $incident->last_activity_at ? $incident->last_activity_at->toDateTimeString() : 'N/A',
         ]);
 
-        $this->notificationService->sendActiveTheft($incident, [
+        $this->notificationService->sendActiveTheft($incident, array_filter([
             'incident_url' => route('mining-manager.theft.show', $incident->id),
             'new_mining_value' => $newMiningValue,
+            'mining_date' => $miningDate,
             'last_activity' => $incident->last_activity_at ? $incident->last_activity_at->format('Y-m-d H:i:s') : 'N/A',
-        ]);
+        ], fn ($value) => $value !== null));
     }
 
     /**

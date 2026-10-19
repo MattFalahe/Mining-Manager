@@ -206,7 +206,7 @@ return [
     // Moon Mining
     'moon_mining' => 'Moon Mining',
     'enable_moon_tracking' => 'Enable Moon Tracking',
-    'enable_moon_tracking_help' => 'Track moon mining extractions',
+    'enable_moon_tracking_help' => 'Track moon mining extractions. Theft detection only runs while this is on.',
 
     // Permissions & Access
     'permissions_access' => 'Permissions & Access',

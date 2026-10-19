@@ -411,7 +411,7 @@
             <div class="form-group">
                 <label for="grace_period_days">
                     <i class="fas fa-calendar-times"></i>
-                    Grace Period Before Overdue
+                    Payment Code Grace Period
                 </label>
                 <div class="input-group">
                     <input type="number"
@@ -426,7 +426,11 @@
                     </div>
                 </div>
                 <small class="form-text text-muted">
-                    Number of days after tax deadline before marking tax as overdue. Default: 7 days
+                    Extra days a payment code stays valid, on top of the standard 30. Bills saved before
+                    due dates were recorded also take their due date from it: the end of the period plus
+                    these days. It does not decide when a bill turns overdue (its due date, plus the ESI
+                    Wallet Lag Buffer) or when mining counts as theft (Features &rarr; Days Overdue Before
+                    Theft). Default: 7 days
                 </small>
             </div>
         </div>

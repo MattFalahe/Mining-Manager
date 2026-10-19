@@ -1749,7 +1749,14 @@
                 <div class="card card-dark">
                     <div class="card-header"><h3 class="card-title"><i class="fas fa-user-secret"></i> Theft Detection Diagnostic</h3></div>
                     <div class="card-body">
-                        <p>Test theft detection logic, external miner identification, and severity calculations. Leave Character ID empty for overall statistics.</p>
+                        <div class="diag-tab-intro">
+                            <p>
+                                <strong>What this tab does:</strong> Shows the theft rules in force and who the
+                                next daily run would take off the list. Give a Character ID to see whether their
+                                mining would open an incident, and why. Nothing is recorded here: only the daily
+                                run opens and closes incidents.
+                            </p>
+                        </div>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
@@ -4198,8 +4205,15 @@ function runTheftDiagnostic() {
         const unresolvedCount = data.unresolved_count || 0;
         const unresolvedBySev = data.unresolved_by_severity || {};
         const severityColors = { low: 'info', medium: 'warning', high: 'danger', critical: 'danger' };
+        const rules = data.rules || {};
+        const guestRule = rules.guests_allowed ? 'allowed' : `switched off on ${rules.guests_off_since}`;
         html += `<div class="provider-test-result ${unresolvedCount > 0 ? 'warning' : 'success'}">
             <h5><i class="fas fa-user-secret"></i> Theft Detection Overview</h5>
+            <div class="row mb-2">
+                <div class="col-md-4"><strong>Days overdue before theft:</strong> ${fmtNum(rules.overdue_days)}</div>
+                <div class="col-md-4"><strong>Guest mining:</strong> ${guestRule}</div>
+                <div class="col-md-4"><strong>Moon owner set:</strong> ${rules.moon_owner_set ? 'Yes' : '<span class="text-danger">No, nothing is checked</span>'}</div>
+            </div>
             <div class="row mb-2">
                 <div class="col-md-4"><strong>Unresolved Incidents:</strong> <span class="text-danger">${fmtNum(unresolvedCount)}</span></div>
                 <div class="col-md-8"><strong>By Severity:</strong>
@@ -4219,11 +4233,11 @@ function runTheftDiagnostic() {
         }
         html += '</div>';
 
-        // Paid characters list - controller returns [{character_id, character_name, status}]
+        // Players the next run takes off the list - controller returns [{character_id, character_name, status}]
         const paidChars = data.paid_characters || [];
         if (Array.isArray(paidChars) && paidChars.length > 0) {
             html += `<div class="provider-test-result success" style="margin-top: 10px;">
-                <h5><i class="fas fa-check-circle"></i> Paid Characters (${paidChars.length})</h5>
+                <h5><i class="fas fa-check-circle"></i> Nothing Overdue Any More, Off the List on the Next Run (${paidChars.length})</h5>
                 <table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
                     <thead><tr><th>Character</th><th>Character ID</th><th>Status</th></tr></thead><tbody>`;
             paidChars.forEach(c => {
@@ -4241,7 +4255,8 @@ function runTheftDiagnostic() {
             </div>`;
         }
 
-        // Character analysis - controller returns {character_id, character_name, is_external_miner, moon_ore_mined_30d[], existing_incident}
+        // Character analysis - controller returns {character_name, corporation_name, is_external_miner, player_characters,
+        // overdue_bills, bills_past_theft_line, moon_ore_mined_30d[], existing_incident, verdict}
         if (data.character_analysis) {
             const ca = data.character_analysis;
             const isExternal = ca.is_external_miner || false;
@@ -4249,13 +4264,19 @@ function runTheftDiagnostic() {
             const existingIncident = ca.existing_incident;
             html += `<div class="provider-test-result ${isExternal ? 'error' : 'success'}" style="margin-top: 10px;">
                 <h5><i class="fas fa-user-check"></i> Character Analysis: ${ca.character_name || 'ID: ' + charId}</h5>
+                <p class="mb-2"><strong>Next run:</strong> ${ca.verdict || 'N/A'}</p>
                 <div class="row mb-2">
-                    <div class="col-md-4"><strong>External Miner:</strong> <span class="badge badge-${isExternal ? 'danger' : 'success'}">${isExternal ? 'YES' : 'NO'}</span></div>
-                    <div class="col-md-4"><strong>Moon Ores Mined (30d):</strong> ${moonOres.length} types</div>
+                    <div class="col-md-4"><strong>Corporation:</strong> ${ca.corporation_name || 'Not placed yet'}</div>
+                    <div class="col-md-4"><strong>Outside Our Corporations:</strong> <span class="badge badge-${isExternal ? 'danger' : 'success'}">${isExternal ? 'YES' : 'NO'}</span></div>
+                    <div class="col-md-4"><strong>Characters on the Account:</strong> ${fmtNum(ca.player_characters)}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-md-4"><strong>Overdue Bills:</strong> ${fmtNum(ca.overdue_bills)} (${fmtNum(ca.bills_past_theft_line)} past the theft line)</div>
+                    <div class="col-md-4"><strong>Moon Ores Mined Here (30d):</strong> ${moonOres.length} types</div>
                     <div class="col-md-4"><strong>Existing Incident:</strong> <span class="badge badge-${existingIncident ? 'warning' : 'success'}">${existingIncident ? 'YES' : 'NO'}</span></div>
                 </div>`;
             if (moonOres.length > 0) {
-                html += `<h6 class="mt-2">Moon Ore Mining (Last 30 Days)</h6>
+                html += `<h6 class="mt-2">Moon Ore Mined at the Moon Owner's Refineries (Last 30 Days)</h6>
                     <table class="table table-sm table-dark table-striped" style="font-size: 0.85em;">
                     <thead><tr><th>Ore</th><th class="text-right">Quantity</th><th>Last Seen</th></tr></thead><tbody>`;
                 moonOres.forEach(ore => {

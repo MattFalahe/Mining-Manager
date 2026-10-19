@@ -1293,6 +1293,7 @@ class SettingsController extends Controller
             // Number inputs
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
             'tax_record_retention_days' => 'required|integer|min:90|max:3650',
+            'theft_overdue_days' => 'required|integer|min:0|max:365',
 
             // Checkboxes (nullable because unchecked = not sent)
             'enable_tax_tracking' => 'nullable|boolean',
@@ -1302,6 +1303,7 @@ class SettingsController extends Controller
             'enable_events' => 'nullable|boolean',
             'allow_event_creation' => 'nullable|boolean',
             'enable_moon_tracking' => 'nullable|boolean',
+            'allow_guest_mining' => 'nullable|boolean',
             'allow_public_stats' => 'nullable|boolean',
             'allow_member_leaderboard' => 'nullable|boolean',
             'show_character_names' => 'nullable|boolean',
@@ -1338,6 +1340,8 @@ class SettingsController extends Controller
 
                 // Moon mining
                 'enable_moon_tracking' => $request->has('enable_moon_tracking'),
+                'allow_guest_mining' => $request->has('allow_guest_mining'),
+                'theft_overdue_days' => (int) $data['theft_overdue_days'],
 
                 // Permissions & access
                 'allow_public_stats' => $request->has('allow_public_stats'),

@@ -424,6 +424,28 @@ class TheftIncident extends Model
     }
 
     /**
+     * Add whole days of mining to the incident, counted through $through.
+     *
+     * @param int $quantity
+     * @param float $value
+     * @param Carbon $through The last day now counted
+     * @return void
+     */
+    public function addCountedMining(int $quantity, float $value, Carbon $through): void
+    {
+        self::where('id', $this->id)->update([
+            'mining_date_to' => $through->toDateString(),
+            'severity' => $this->calculateSeverity($this->ore_value + $value),
+        ]);
+        self::where('id', $this->id)->incrementEach([
+            'quantity_mined' => $quantity,
+            'ore_value' => $value,
+        ]);
+
+        $this->refresh();
+    }
+
+    /**
      * Calculate severity based on ore value and tax owed.
      * Uses max(taxOwed, oreValue) to match TheftDetectionService logic.
      *

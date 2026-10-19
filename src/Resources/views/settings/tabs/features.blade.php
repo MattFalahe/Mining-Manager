@@ -157,6 +157,56 @@
                     {{ trans('mining-manager::settings.enable_moon_tracking_help') }}
                 </small>
             </div>
+
+            <div class="custom-control custom-switch mb-3">
+                <input type="checkbox"
+                       class="custom-control-input"
+                       id="allow_guest_mining"
+                       name="allow_guest_mining"
+                       value="1"
+                       {{ old('allow_guest_mining', $settings->allow_guest_mining ?? true) ? 'checked' : '' }}>
+                <label class="custom-control-label" for="allow_guest_mining">
+                    <i class="fas fa-user-friends"></i>
+                    <strong>Allow Guest Mining</strong>
+                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                </label>
+                <small class="form-text text-muted">
+                    Guests are characters outside every configured corporation. On by default: guests
+                    mine your moons, are billed at the guest rates, and only an unpaid bill left too
+                    long counts as theft. Switched off, they are still billed at the guest rates, and any
+                    moon ore a guest mines at the moon owner's refineries from the day after opens a
+                    theft incident.
+                </small>
+            </div>
+
+            <div class="form-group mb-0">
+                <label for="theft_overdue_days">
+                    <i class="fas fa-user-secret"></i>
+                    <strong>Days Overdue Before Theft</strong>
+                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
+                </label>
+                <div class="input-group" style="max-width: 220px;">
+                    <input type="number"
+                           class="form-control @error('theft_overdue_days') is-invalid @enderror"
+                           id="theft_overdue_days"
+                           name="theft_overdue_days"
+                           value="{{ old('theft_overdue_days', $settings->theft_overdue_days ?? 15) }}"
+                           min="0"
+                           max="365"
+                           required>
+                    <div class="input-group-append">
+                        <span class="input-group-text">Days</span>
+                    </div>
+                </div>
+                <small class="form-text text-muted">
+                    A guest mining your moons counts as theft once a bill on their account is more than
+                    this many days past its due date and still unpaid. Members are never flagged; their
+                    overdue bills are for the reminders and the outstanding digest. Default: 15 days.
+                </small>
+                @error('theft_overdue_days')
+                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                @enderror
+            </div>
         </div>
     </div>
 

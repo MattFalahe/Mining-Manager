@@ -2,11 +2,13 @@
 
 namespace MiningManager\Services\Theft;
 
-use MiningManager\Models\TheftIncident;
+use MiningManager\Models\MiningLedger;
 use MiningManager\Models\MiningTax;
-use MiningManager\Services\Character\CharacterInfoService;
+use MiningManager\Models\Setting;
+use MiningManager\Models\TheftIncident;
+use MiningManager\Services\Character\CharacterNames;
 use MiningManager\Services\Configuration\SettingsManagerService;
-use MiningManager\Services\TypeIdRegistry;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -14,258 +16,317 @@ use Carbon\Carbon;
 /**
  * Theft Detection Service
  *
- * Detects moon ore theft by identifying characters who:
- * 1. Mined moon ore from corporation_industry_mining_observer_data
- * 2. Have unpaid/overdue taxes
- * 3. Grace period has passed
- * 4. Are NOT registered in SeAT OR are not members of moon owner corporation
+ * Moon ore mined at the moon owner's refineries by a character outside every
+ * configured corporation is theft when either a bill on the player's account
+ * is more than "Days Overdue Before Theft" past its due date and still unpaid,
+ * or guest mining is switched off. Members are never on the list: their
+ * overdue bills are chased by the reminders and the outstanding digest.
+ *
+ * A player is everyone on one SeAT account, or the character alone when SeAT
+ * has no account for it. A player has one incident open at a time, named after
+ * the character caught mining.
+ *
+ * Values come from the mining ledger, the same rows the bills are built from.
+ * Only whole days are added to an incident, each day once per player.
  */
 class TheftDetectionService
 {
-    protected $characterService;
-    protected $settingsService;
+    /** The day this version first counted mining into incidents. */
+    const COUNTING_FROM_KEY = 'theft.counting_from';
 
-    /**
-     * Moon ore group IDs in EVE Online
-     */
-    const MOON_ORE_GROUPS = [1884, 1920, 1921, 1922, 1923];
+    protected $settingsService;
+    protected $names;
 
     public function __construct(
-        CharacterInfoService $characterService,
-        SettingsManagerService $settingsService
+        SettingsManagerService $settingsService,
+        CharacterNames $names
     ) {
-        $this->characterService = $characterService;
         $this->settingsService = $settingsService;
+        $this->names = $names;
     }
 
     /**
-     * Detect thefts within a date range
+     * What a run checks against, from the settings. Every method that applies
+     * them also takes them, so other values can be tried without changing a
+     * setting.
      *
-     * @param Carbon|string $startDate
-     * @param Carbon|string $endDate
-     * @return array Statistics about detected incidents
+     * @return array{moon_owner: int|null, home: array<int, int>, overdue_days: int, guests_allowed: bool, guests_off_since: Carbon|null}
      */
-    public function detectThefts($startDate, $endDate): array
+    public function rules(): array
     {
-        $startDate = Carbon::parse($startDate)->startOfDay();
-        $endDate = Carbon::parse($endDate)->endOfDay();
+        $flags = $this->settingsService->getFeatureFlags();
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null, 0);
+        $guestsAllowed = (bool) ($flags['allow_guest_mining'] ?? true);
 
-        Log::info('TheftDetectionService: Starting theft detection', [
-            'start_date' => $startDate->toDateString(),
-            'end_date' => $endDate->toDateString()
-        ]);
+        $home = array_map('intval', $this->settingsService->getHomeCorporationIds());
+        if (!$home && $moonOwner) {
+            $home = [$moonOwner];
+        }
 
-        // Get moon owner corporation ID from settings
-        $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
+        return [
+            'moon_owner' => $moonOwner ?: null,
+            'home' => $home,
+            'overdue_days' => max(0, (int) ($flags['theft_overdue_days'] ?? 15)),
+            'guests_allowed' => $guestsAllowed,
+            'guests_off_since' => $guestsAllowed ? null : $this->guestsOffSince(),
+        ];
+    }
 
-        if (!$moonOwnerCorpId) {
+    /**
+     * The daily run: add the last whole days of mining to the incidents that
+     * are open, take players with nothing overdue off the list, then open
+     * incidents for new theft. Running it twice in a day changes nothing.
+     *
+     * @param int $lookbackDays How far back a new incident may reach
+     * @return array{counted: int, removed: Collection, incidents: Collection, new_incidents: int, error?: string}
+     */
+    public function detectThefts(int $lookbackDays = 15, ?array $rules = null): array
+    {
+        $rules = $rules ?? $this->rules();
+
+        $result = [
+            'counted' => 0,
+            'removed' => collect(),
+            'incidents' => collect(),
+            'new_incidents' => 0,
+        ];
+
+        if (!$rules['moon_owner']) {
             Log::warning('TheftDetectionService: No moon owner corporation configured');
-            return [
-                'incidents_detected' => 0,
-                'new_incidents' => 0,
-                'updated_incidents' => 0,
-                'error' => 'No moon owner corporation configured in settings'
-            ];
+
+            return $result + ['error' => 'No moon owner corporation configured in settings'];
         }
 
-        // Get all moon ore type IDs
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
+        $observers = $this->ownerObservers($rules['moon_owner']);
+        $today = Carbon::today();
 
-        if (empty($moonOreTypeIds)) {
-            Log::warning('TheftDetectionService: No moon ore type IDs found');
-            return [
-                'incidents_detected' => 0,
-                'new_incidents' => 0,
-                'updated_incidents' => 0,
-                'error' => 'No moon ore type IDs found in database'
-            ];
+        $result['counted'] = $this->countOpenIncidents($rules, $observers, $today);
+        $result['removed'] = $this->removePaidUp();
+        $result['incidents'] = $this->openNewIncidents($rules, $observers, $today, max(1, $lookbackDays));
+        $result['new_incidents'] = $result['incidents']->count();
+
+        Log::info('TheftDetectionService: Completed theft detection', [
+            'counted' => $result['counted'],
+            'removed' => $result['removed']->count(),
+            'new_incidents' => $result['new_incidents'],
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Players on the list whose outside characters the ledger has recorded
+     * mining for in the last $hours, each marked active once per check.
+     *
+     * The ledger keeps a running total per day, so what is reported is the
+     * day's mining so far. It is added to the incident by the daily run once
+     * the day is over.
+     *
+     * @return Collection of ['incident' => TheftIncident, 'new_value' => float, 'mining_date' => string]
+     */
+    public function monitorActiveThefts(int $hours = 6, ?array $rules = null): Collection
+    {
+        $rules = $rules ?? $this->rules();
+        $active = collect();
+
+        $observers = $rules['moon_owner'] ? $this->ownerObservers($rules['moon_owner']) : [];
+        if (!$observers) {
+            return $active;
         }
 
-        Log::info('TheftDetectionService: Found moon ore type IDs', [
-            'count' => count($moonOreTypeIds)
-        ]);
+        $since = now()->subHours(max(1, $hours));
+        $today = Carbon::today();
 
-        // Query corporation_industry_mining_observer_data for moon mining
-        $miningData = DB::table('corporation_industry_mining_observer_data')
-            ->whereBetween('last_updated', [$startDate, $endDate])
-            ->whereIn('type_id', $moonOreTypeIds)
-            ->select('character_id', 'type_id', 'quantity', 'last_updated')
-            ->get();
+        // A recalculation stamps old days with the same time, so only
+        // yesterday and today can count as mining again.
+        $earliestDay = $today->copy()->subDay()->toDateString();
 
-        Log::info('TheftDetectionService: Found mining records', [
-            'count' => $miningData->count()
-        ]);
+        foreach ($this->openIncidentsByPlayer() as $player) {
+            if (!$this->theftApplies($player['members'], $rules, $today)) {
+                continue;
+            }
 
-        // Group by character
-        $characterMining = $miningData->groupBy('character_id');
+            $outsiders = array_keys($this->outsiders($player['members'], $rules['home']));
+            if (!$outsiders) {
+                continue;
+            }
 
-        $newIncidents = 0;
-        $updatedIncidents = 0;
-        $totalIncidents = 0;
+            $latest = $this->ledger($outsiders, $observers)
+                ->where('processed_at', '>=', $since)
+                ->where('date', '>=', $earliestDay)
+                ->max('date');
 
-        foreach ($characterMining as $characterId => $records) {
-            try {
-                $result = $this->analyzeCharacterMining($characterId, $startDate, $endDate, $moonOwnerCorpId);
+            if (!$latest) {
+                continue;
+            }
 
-                if ($result['incident_created']) {
-                    $newIncidents++;
-                    $totalIncidents++;
-                } elseif ($result['incident_updated']) {
-                    $updatedIncidents++;
-                    $totalIncidents++;
+            $day = Carbon::parse($latest)->toDateString();
+            $value = (float) $this->ledger($outsiders, $observers)
+                ->where('date', $day)
+                ->sum('total_value');
+
+            $incident = $player['incidents']->first();
+            $incident->markAsActiveTheft(0);
+
+            $active->push([
+                'incident' => $incident,
+                'new_value' => $value,
+                'mining_date' => $day,
+            ]);
+
+            Log::warning('ACTIVE THEFT IN PROGRESS', [
+                'incident_id' => $incident->id,
+                'character_id' => $incident->character_id,
+                'mining_date' => $day,
+                'mined_that_day' => $value,
+                'activity_count' => $incident->activity_count,
+            ]);
+        }
+
+        return $active;
+    }
+
+    /**
+     * Incidents raised over a bill whose player now has nothing overdue: the
+     * ones the next run takes off the list. Reads only.
+     *
+     * Incidents raised because guest mining was off are not among them.
+     * Paying the bill does not undo mining that was not allowed, so a director
+     * resolves those.
+     */
+    public function paidUpIncidents(): Collection
+    {
+        $paidUp = collect();
+
+        foreach ($this->openIncidentsByPlayer() as $player) {
+            $stillOverdue = $this->unpaidBills($player['members'])
+                ->contains(fn ($bill) => $bill->isOverdue());
+
+            if ($stillOverdue) {
+                continue;
+            }
+
+            foreach ($player['incidents'] as $incident) {
+                if ($incident->mining_tax_id !== null) {
+                    $paidUp->push($incident);
                 }
-            } catch (\Exception $e) {
-                Log::error('TheftDetectionService: Failed to analyze character', [
-                    'character_id' => $characterId,
-                    'error' => $e->getMessage()
-                ]);
             }
         }
 
-        Log::info('TheftDetectionService: Completed theft detection', [
-            'total_incidents' => $totalIncidents,
-            'new_incidents' => $newIncidents,
-            'updated_incidents' => $updatedIncidents
-        ]);
-
-        return [
-            'incidents_detected' => $totalIncidents,
-            'new_incidents' => $newIncidents,
-            'updated_incidents' => $updatedIncidents
-        ];
+        return $paidUp;
     }
 
     /**
-     * Analyze mining activity for a specific character
-     *
-     * @param int $characterId
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @param int $moonOwnerCorpId
-     * @return array ['incident_created' => bool, 'incident_updated' => bool, 'incident' => TheftIncident|null]
+     * The ledger rows behind an incident: moon ore at the moon owner's
+     * refineries by the player's outside characters, over its mining dates.
      */
-    public function analyzeCharacterMining(int $characterId, Carbon $startDate, Carbon $endDate, int $moonOwnerCorpId): array
+    public function incidentMining(TheftIncident $incident, ?array $rules = null): Collection
     {
-        // Get character information
-        $characterInfo = $this->characterService->getCharacterInfo($characterId);
+        $rules = $rules ?? $this->rules();
 
-        // Check if character is external miner (not registered OR not corp member)
-        $isExternal = $this->isExternalMiner($characterId, $moonOwnerCorpId, $characterInfo);
-
-        // If character is a corp member, they're not a thief
-        if (!$isExternal) {
-            return ['incident_created' => false, 'incident_updated' => false, 'incident' => null];
+        if (!$rules['moon_owner'] || !$incident->mining_date_from || !$incident->mining_date_to) {
+            return collect();
         }
 
-        // Check for unpaid/overdue taxes, and part-paid ones raised since the
-        // part-payment cutover
-        $unpaidTaxes = MiningTax::where('character_id', $characterId)
-            ->unpaidForTheft()
-            ->where(function($query) use ($startDate, $endDate) {
-                $query->whereBetween('month', [$startDate->copy()->startOfMonth(), $endDate->copy()->endOfMonth()])
-                      ->orWhere('month', '<', $startDate->copy()->startOfMonth());
-            })
+        $observers = $this->ownerObservers($rules['moon_owner']);
+        $members = $this->players([$incident->character_id])[(int) $incident->character_id];
+        $outsiders = array_keys($this->outsiders($members, $rules['home']));
+
+        if (!$observers || !$outsiders) {
+            return collect();
+        }
+
+        return MiningLedger::whereIn('character_id', $outsiders)
+            ->whereIn('observer_id', $observers)
+            ->where('is_moon_ore', true)
+            ->whereBetween('date', [
+                $incident->mining_date_from->toDateString(),
+                $incident->mining_date_to->toDateString(),
+            ])
+            ->with(['type', 'solarSystem'])
+            ->orderBy('date', 'desc')
             ->get();
+    }
 
-        // Check if any taxes are overdue (grace period passed)
-        $overdueTaxes = $unpaidTaxes->filter(function($tax) {
-            return $tax->isOverdue();
-        });
+    /**
+     * Why the next run would or would not open an incident over this
+     * character, for the Diagnostic page. Reads only.
+     */
+    public function explainCharacter(int $characterId, ?array $rules = null): array
+    {
+        $rules = $rules ?? $this->rules();
+        $today = Carbon::today();
 
-        if ($overdueTaxes->isEmpty()) {
-            // No overdue taxes, not a theft incident
-            return ['incident_created' => false, 'incident_updated' => false, 'incident' => null];
-        }
+        $info = $this->names->info($characterId);
+        $members = $this->players([$characterId])[$characterId];
+        $outsiders = $this->outsiders($members, $rules['home']);
+        $observers = $rules['moon_owner'] ? $this->ownerObservers($rules['moon_owner']) : [];
 
-        // Get mining data for this character
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
+        $bills = $this->unpaidBills($members);
+        $overdue = $bills->filter(fn ($bill) => $bill->isOverdue());
+        $pastLine = $bills->filter(fn ($bill) => $this->theftLine($bill, $rules['overdue_days'])->lt($today));
 
-        $miningRecords = DB::table('corporation_industry_mining_observer_data')
-            ->where('character_id', $characterId)
-            ->whereBetween('last_updated', [$startDate, $endDate])
-            ->whereIn('type_id', $moonOreTypeIds)
-            ->get();
-
-        if ($miningRecords->isEmpty()) {
-            return ['incident_created' => false, 'incident_updated' => false, 'incident' => null];
-        }
-
-        // Calculate total ore value and quantity
-        $totalQuantity = $miningRecords->sum('quantity');
-        $oreValue = $this->calculateOreValue($miningRecords);
-
-        // Calculate total tax owed
-        $totalTaxOwed = $overdueTaxes->sum(function($tax) {
-            return $tax->getRemainingBalance();
-        });
-
-        // Determine severity
-        $severity = $this->calculateSeverity($totalTaxOwed, $oreValue);
-
-        // Check if incident already exists for this character and period
-        $existingIncident = TheftIncident::where('character_id', $characterId)
-            ->where('mining_date_from', $startDate->toDateString())
-            ->where('mining_date_to', $endDate->toDateString())
+        $open = TheftIncident::onTheftList()
+            ->whereIn('character_id', $members)
+            ->orderByDesc('id')
             ->first();
 
-        if ($existingIncident) {
-            // Update existing incident
-            $updated = $this->updateIncident($existingIncident, [
-                'ore_value' => $oreValue,
-                'tax_owed' => $totalTaxOwed,
-                'quantity_mined' => $totalQuantity,
-                'severity' => $severity,
-            ]);
+        $mined = $observers
+            ? $this->ledger([$characterId], $observers)
+                ->where('date', '>=', $today->copy()->subDays(30)->toDateString())
+                ->groupBy('type_id')
+                ->get(['type_id', DB::raw('SUM(quantity) as quantity'), DB::raw('MAX(date) as last_seen')])
+            : collect();
 
-            return ['incident_created' => false, 'incident_updated' => $updated, 'incident' => $existingIncident];
+        $typeNames = $mined->isEmpty() ? collect() : DB::table('invTypes')
+            ->whereIn('typeID', $mined->pluck('type_id'))
+            ->pluck('typeName', 'typeID');
+
+        $days = $rules['overdue_days'];
+
+        if (!$rules['moon_owner']) {
+            $verdict = 'No moon owner corporation is set, so nothing is checked.';
+        } elseif (!isset($outsiders[$characterId])) {
+            $verdict = (int) $info['corporation_id'] > 0
+                ? 'In a configured corporation, so mining here is never theft.'
+                : 'Not placed in a corporation yet, so left out until the lookup places them.';
+        } elseif ($open) {
+            $verdict = "Already on the theft list (incident #{$open->id}). The daily run adds to it.";
+        } elseif ($pastLine->isNotEmpty()) {
+            $line = $pastLine->map(fn ($bill) => $this->theftLine($bill, $days))->min();
+            $verdict = "{$pastLine->count()} bill(s) more than {$days} days overdue: mining at our refineries after {$line->toDateString()} opens an incident on the next run.";
+        } elseif (!$rules['guests_allowed']) {
+            $verdict = "Guest mining is switched off: mining at our refineries after {$rules['guests_off_since']->toDateString()} opens an incident on the next run.";
+        } elseif ($overdue->isNotEmpty()) {
+            $line = $overdue->map(fn ($bill) => $this->theftLine($bill, $days))->min();
+            $verdict = "Overdue, but not more than {$days} days yet. Mining after {$line->toDateString()} is theft if the bill is still unpaid then.";
+        } else {
+            $verdict = 'Outside our corporations with nothing overdue: a guest, billed at guest rates.';
         }
 
-        // Create new incident
-        $incidentData = [
+        return [
             'character_id' => $characterId,
-            'character_name' => $characterInfo['name'],
-            'corporation_id' => $characterInfo['corporation_id'],
-            'mining_tax_id' => $overdueTaxes->first()->id,
-            'incident_date' => Carbon::now(),
-            'mining_date_from' => $startDate->toDateString(),
-            'mining_date_to' => $endDate->toDateString(),
-            'ore_value' => $oreValue,
-            'tax_owed' => $totalTaxOwed,
-            'quantity_mined' => $totalQuantity,
-            'status' => 'detected',
-            'severity' => $severity,
-            'on_theft_list' => true,
+            'character_name' => $info['name'],
+            'corporation_name' => $info['corporation_name'] ?? null,
+            'is_external_miner' => isset($outsiders[$characterId]),
+            'player_characters' => count($members),
+            'overdue_bills' => $overdue->count(),
+            'bills_past_theft_line' => $pastLine->count(),
+            'moon_ore_mined_30d' => $mined->map(fn ($row) => [
+                'type_id' => (int) $row->type_id,
+                'name' => $typeNames[$row->type_id] ?? "Type {$row->type_id}",
+                'quantity' => (int) $row->quantity,
+                'last_seen' => $row->last_seen,
+            ])->values()->all(),
+            'existing_incident' => $open ? [
+                'id' => $open->id,
+                'status' => $open->status,
+                'severity' => $open->severity,
+                'ore_value' => $open->ore_value,
+                'tax_owed' => $open->tax_owed,
+            ] : null,
+            'verdict' => $verdict,
         ];
-
-        $incident = $this->createIncident($incidentData);
-
-        Log::info('TheftDetectionService: Created theft incident', [
-            'incident_id' => $incident->id,
-            'character_id' => $characterId,
-            'severity' => $severity,
-            'tax_owed' => $totalTaxOwed
-        ]);
-
-        // B1b: announce on the cross-plugin event bus so Discord Pings,
-        // HR Manager, and other subscribers can react to theft incidents.
-        // Topics handles publisher attribution + idempotency_key composition
-        // (theft_detected:{incident_id}). Standalone-safe via class_exists.
-        if (class_exists(\ManagerCore\Topics::class)) {
-            \ManagerCore\Topics::publish('mining.theft_detected', [
-                'incident_id'    => $incident->id,
-                'character_id'   => $characterId,
-                'severity'       => $severity,
-                'tax_owed'       => $totalTaxOwed,
-                'ore_value'      => $oreValue,
-                'quantity_mined' => $totalQuantity,
-                'period_start'   => $startDate->toDateString(),
-                'period_end'     => $endDate->toDateString(),
-                'corporation_id' => null, // visibility scoping
-                'role_id'        => null,
-            ]);
-        }
-
-        return ['incident_created' => true, 'incident_updated' => false, 'incident' => $incident];
     }
 
     /**
@@ -305,20 +366,6 @@ class TheftDetectionService
     }
 
     /**
-     * Update an existing theft incident
-     *
-     * @param TheftIncident $incident
-     * @param array $data
-     * @return bool
-     */
-    protected function updateIncident(TheftIncident $incident, array $data): bool
-    {
-        return DB::transaction(function() use ($incident, $data) {
-            return $incident->update($data);
-        });
-    }
-
-    /**
      * Get all unresolved theft incidents
      *
      * @return \Illuminate\Database\Eloquent\Collection
@@ -330,465 +377,6 @@ class TheftDetectionService
             ->orderByRaw("FIELD(severity, 'critical', 'high', 'medium', 'low')")
             ->orderBy('incident_date', 'desc')
             ->get();
-    }
-
-    /**
-     * Check if a character is an external miner (guest or unregistered)
-     *
-     * @param int $characterId
-     * @param int $moonOwnerCorpId
-     * @param array|null $characterInfo
-     * @return bool
-     */
-    public function isExternalMiner(int $characterId, int $moonOwnerCorpId, ?array $characterInfo = null): bool
-    {
-        if (!$characterInfo) {
-            $characterInfo = $this->characterService->getCharacterInfo($characterId);
-        }
-
-        // If character is not registered in SeAT, they're external
-        if (!$characterInfo['is_registered']) {
-            return true;
-        }
-
-        // If character is not a member of any configured corporation, they're external
-        // Uses all configured corps (not just moon owner) so holding corp setups work
-        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
-        if (!empty($homeCorporationIds)) {
-            return !in_array((int) $characterInfo['corporation_id'], $homeCorporationIds, true);
-        }
-
-        // Fallback: compare against moon owner corporation
-        if ($characterInfo['corporation_id'] != $moonOwnerCorpId) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Get all moon ore type IDs from the database
-     *
-     * @return array
-     */
-    protected function getMoonOreTypeIds(): array
-    {
-        try {
-            // Query invTypes table for moon ore group IDs
-            $typeIds = DB::table('invTypes')
-                ->whereIn('groupID', self::MOON_ORE_GROUPS)
-                ->pluck('typeID')
-                ->toArray();
-
-            return $typeIds;
-        } catch (\Exception $e) {
-            Log::error('TheftDetectionService: Failed to get moon ore type IDs', [
-                'error' => $e->getMessage()
-            ]);
-
-            // Fallback to TypeIdRegistry if available
-            try {
-                $allMoonOres = TypeIdRegistry::getAllMoonOres();
-                $compressedMoonOres = TypeIdRegistry::getAllCompressedMoonOres();
-                return array_merge($allMoonOres, $compressedMoonOres);
-            } catch (\Exception $e2) {
-                Log::error('TheftDetectionService: TypeIdRegistry also failed', [
-                    'error' => $e2->getMessage()
-                ]);
-                return [];
-            }
-        }
-    }
-
-    /**
-     * Calculate the total value of mined ore
-     *
-     * @param \Illuminate\Support\Collection $miningRecords
-     * @return float
-     */
-    protected function calculateOreValue($miningRecords): float
-    {
-        $totalValue = 0;
-
-        try {
-            // Get price data from database
-            foreach ($miningRecords as $record) {
-                $price = $this->getOrePrice($record->type_id);
-                $value = $record->quantity * $price;
-                $totalValue += $value;
-            }
-        } catch (\Exception $e) {
-            Log::warning('TheftDetectionService: Failed to calculate ore value', [
-                'error' => $e->getMessage()
-            ]);
-        }
-
-        return $totalValue;
-    }
-
-    /**
-     * Get the price for an ore type
-     *
-     * @param int $typeId
-     * @return float
-     */
-    protected function getOrePrice(int $typeId): float
-    {
-        try {
-            // Get from our price cache if available (uses cached_at, not updated_at)
-            $priceType = $this->settingsService->getSetting('pricing.price_type', 'sell');
-
-            // The cached price however old it is: an aging market price is
-            // closer to what the ore is worth than SeAT's averages, which are
-            // only for a type that has never had a price.
-            $column = \MiningManager\Services\Pricing\PriceProviderService::cachedPriceColumn($priceType);
-            $cached = (float) DB::table('mining_price_cache')
-                ->where('type_id', $typeId)
-                ->where($column, '>', 0)
-                ->orderByDesc('cached_at')
-                ->value($column);
-
-            if ($cached > 0) {
-                return $cached;
-            }
-
-            // CCP's average price as the last resort. Its adjusted price is an
-            // industry cost basis and can be far from any market.
-            return (float) (DB::table('market_prices')
-                ->where('type_id', $typeId)
-                ->value('average_price') ?? 0);
-        } catch (\Exception $e) {
-            Log::warning('TheftDetectionService: Failed to get ore price', [
-                'type_id' => $typeId,
-                'error' => $e->getMessage()
-            ]);
-            return 0;
-        }
-    }
-
-    /**
-     * Detect active thefts (characters continuing to mine with unpaid taxes)
-     *
-     * @return array ['active_thefts' => Collection, 'count' => int, 'total_new_value' => float]
-     */
-    public function detectActiveThefts(): array
-    {
-        Log::info('TheftDetectionService: Starting active theft detection');
-
-        // Get all unresolved theft incidents
-        $unresolvedIncidents = TheftIncident::whereIn('status', ['detected', 'investigating'])
-            ->get();
-
-        if ($unresolvedIncidents->isEmpty()) {
-            Log::info('TheftDetectionService: No unresolved incidents to check');
-            return [
-                'active_thefts' => collect([]),
-                'count' => 0,
-                'total_new_value' => 0
-            ];
-        }
-
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
-        if (empty($moonOreTypeIds)) {
-            Log::warning('TheftDetectionService: No moon ore type IDs found for active theft detection');
-            return [
-                'active_thefts' => collect([]),
-                'count' => 0,
-                'total_new_value' => 0
-            ];
-        }
-
-        $activeThefts = collect([]);
-        $totalNewValue = 0;
-
-        foreach ($unresolvedIncidents as $incident) {
-            try {
-                // Query for new mining activity since last check (not since creation, to avoid double-counting)
-                $checkFrom = $incident->last_activity_at ?? $incident->created_at;
-                $newMiningRecords = DB::table('corporation_industry_mining_observer_data')
-                    ->where('character_id', $incident->character_id)
-                    ->where('last_updated', '>', $checkFrom)
-                    ->whereIn('type_id', $moonOreTypeIds)
-                    ->get();
-
-                if ($newMiningRecords->isEmpty()) {
-                    continue;
-                }
-
-                // Calculate value of new mining
-                $newMiningValue = $this->calculateOreValue($newMiningRecords);
-
-                if ($newMiningValue > 0) {
-                    // Mark as active theft and update incident
-                    $incident->markAsActiveTheft($newMiningValue);
-
-                    $activeThefts->push([
-                        'incident' => $incident,
-                        'new_value' => $newMiningValue,
-                        'new_quantity' => $newMiningRecords->sum('quantity')
-                    ]);
-
-                    $totalNewValue += $newMiningValue;
-
-                    Log::info('TheftDetectionService: Active theft detected', [
-                        'incident_id' => $incident->id,
-                        'character_id' => $incident->character_id,
-                        'character_name' => $incident->character_name,
-                        'activity_count' => $incident->activity_count,
-                        'new_value' => $newMiningValue,
-                        'total_value' => $incident->ore_value
-                    ]);
-                }
-            } catch (\Exception $e) {
-                Log::error('TheftDetectionService: Failed to check incident for active theft', [
-                    'incident_id' => $incident->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        Log::info('TheftDetectionService: Completed active theft detection', [
-            'active_thefts_found' => $activeThefts->count(),
-            'total_new_value' => $totalNewValue
-        ]);
-
-        return [
-            'active_thefts' => $activeThefts,
-            'count' => $activeThefts->count(),
-            'total_new_value' => $totalNewValue
-        ];
-    }
-
-    /**
-     * Check if characters on theft list have paid their taxes
-     * Remove them from active monitoring if taxes are paid
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    public function checkForPaidTaxes()
-    {
-        $paidIncidents = collect();
-
-        // Get all incidents currently on theft list
-        $activeIncidents = TheftIncident::onTheftList()->get();
-
-        foreach ($activeIncidents as $incident) {
-            // Check if character has paid taxes for the relevant period. A bill
-            // with a token payment on it is not paid, so a part-paid one keeps
-            // the incident open (for bills raised since the cutover).
-            $unpaidTaxes = MiningTax::where('character_id', $incident->character_id)
-                ->where('month', '>=', $incident->mining_date_from)
-                ->where('month', '<=', $incident->mining_date_to)
-                ->unpaidForTheft()
-                ->exists();
-
-            if (!$unpaidTaxes) {
-                // All taxes paid - remove from theft list
-                $incident->removeFromList();
-                $paidIncidents->push($incident);
-
-                Log::info('Character removed from theft list (taxes paid)', [
-                    'character_id' => $incident->character_id,
-                    'character_name' => $incident->character_name,
-                    'incident_id' => $incident->id,
-                ]);
-            }
-        }
-
-        return $paidIncidents;
-    }
-
-    /**
-     * Monitor characters on theft list for continued mining
-     * Only checks characters already flagged - much faster than full scan
-     *
-     * @param int $hours - Check last N hours
-     * @return \Illuminate\Support\Collection - Active thefts detected
-     */
-    public function monitorActiveThefts(int $hours = 6)
-    {
-        $activeThefts = collect();
-        $checkFrom = now()->subHours($hours);
-
-        // Get characters on theft list
-        $incidents = TheftIncident::onTheftList()->get();
-
-        if ($incidents->isEmpty()) {
-            return $activeThefts;
-        }
-
-        $characterIds = $incidents->pluck('character_id')->toArray();
-
-        // Get moon ore type IDs
-        $moonOreTypeIds = $this->getMoonOreTypeIds();
-
-        if (empty($moonOreTypeIds)) {
-            Log::warning('TheftDetectionService: No moon ore type IDs found for active theft monitoring');
-            return $activeThefts;
-        }
-
-        // Query ONLY these characters in mining observer data
-        // Use sell_price from mining_price_cache (cached_at for freshness check)
-        $recentMining = DB::table('corporation_industry_mining_observer_data as mining')
-            ->select(
-                'mining.character_id',
-                DB::raw('SUM(mining.quantity * COALESCE(prices.sell_price, 0)) as total_value'),
-                DB::raw('SUM(mining.quantity) as total_quantity'),
-                DB::raw('MAX(mining.last_updated) as last_activity')
-            )
-            ->leftJoin('invTypes as types', 'mining.type_id', '=', 'types.typeID')
-            ->leftJoin('mining_price_cache as prices', function($join) {
-                $join->on('mining.type_id', '=', 'prices.type_id')
-                     ->where('prices.cached_at', '>', DB::raw('NOW() - INTERVAL 7 DAY'));
-            })
-            ->whereIn('mining.character_id', $characterIds)
-            ->where('mining.last_updated', '>=', $checkFrom)
-            ->whereIn('types.groupID', self::MOON_ORE_GROUPS)
-            ->groupBy('mining.character_id')
-            ->get();
-
-        // Check each incident for new mining
-        foreach ($incidents as $incident) {
-            $mining = $recentMining->firstWhere('character_id', $incident->character_id);
-
-            if ($mining && $mining->total_value > 0) {
-                // Character is actively mining with unpaid taxes!
-                $incident->markAsActiveTheft($mining->total_value);
-                $activeThefts->push([
-                    'incident' => $incident,
-                    'new_value' => $mining->total_value,
-                    'quantity' => $mining->total_quantity,
-                    'last_activity' => $mining->last_activity,
-                ]);
-
-                Log::warning('ACTIVE THEFT IN PROGRESS', [
-                    'character_id' => $incident->character_id,
-                    'character_name' => $incident->character_name,
-                    'new_value' => $mining->total_value,
-                    'total_value' => $incident->ore_value,
-                    'activity_count' => $incident->activity_count,
-                ]);
-            }
-        }
-
-        return $activeThefts;
-    }
-
-    /**
-     * Detect tax delinquents — characters with 2+ overdue tax bills.
-     * These are flagged on the theft list regardless of whether they are
-     * corp members or external miners.
-     *
-     * @param int $minOverdue Minimum number of overdue bills to trigger (default 2)
-     * @return array Statistics about delinquent detection
-     */
-    public function detectTaxDelinquents(int $minOverdue = 2): array
-    {
-        $created = 0;
-        $updated = 0;
-        $skipped = 0;
-
-        // Find characters with N+ overdue tax records
-        $delinquents = MiningTax::where('status', 'overdue')
-            ->select('character_id', DB::raw('COUNT(*) as overdue_count'), DB::raw('SUM(amount_owed) as total_owed'))
-            ->groupBy('character_id')
-            ->having('overdue_count', '>=', $minOverdue)
-            ->get();
-
-        foreach ($delinquents as $delinquent) {
-            try {
-                // Get character info
-                $characterInfo = $this->characterService->getCharacterInfo($delinquent->character_id);
-                $characterName = $characterInfo['name'] ?? 'Unknown';
-                $corporationId = $characterInfo['corporation_id'] ?? null;
-
-                // Get the overdue tax records for date range
-                $overdueTaxes = MiningTax::where('character_id', $delinquent->character_id)
-                    ->where('status', 'overdue')
-                    ->orderBy('period_start')
-                    ->get();
-
-                $earliestPeriod = $overdueTaxes->min('period_start') ?? $overdueTaxes->min('month');
-                $latestPeriod = $overdueTaxes->max('period_end') ?? $overdueTaxes->max('month');
-
-                // Check if an unresolved delinquency incident already exists
-                $existing = TheftIncident::where('character_id', $delinquent->character_id)
-                    ->where('notes', 'LIKE', '%Tax delinquent%')
-                    ->unresolved()
-                    ->first();
-
-                $severity = $this->calculateSeverity($delinquent->total_owed, 0);
-
-                if ($existing) {
-                    // Update existing incident with latest totals
-                    $this->updateIncident($existing, [
-                        'tax_owed' => $delinquent->total_owed,
-                        'severity' => $severity,
-                        'mining_date_to' => $latestPeriod,
-                        'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
-                                   number_format($delinquent->total_owed, 0) . " ISK",
-                    ]);
-                    $updated++;
-                } else {
-                    // Check if there's a removed_paid incident we should reactivate
-                    $removedIncident = TheftIncident::where('character_id', $delinquent->character_id)
-                        ->where('notes', 'LIKE', '%Tax delinquent%')
-                        ->where('status', 'removed_paid')
-                        ->first();
-
-                    if ($removedIncident) {
-                        $removedIncident->addToList();
-                        $this->updateIncident($removedIncident, [
-                            'tax_owed' => $delinquent->total_owed,
-                            'severity' => $severity,
-                            'mining_date_to' => $latestPeriod,
-                            'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
-                                       number_format($delinquent->total_owed, 0) . " ISK",
-                        ]);
-                        $updated++;
-                    } else {
-                        // Create new incident
-                        $this->createIncident([
-                            'character_id' => $delinquent->character_id,
-                            'character_name' => $characterName,
-                            'corporation_id' => $corporationId,
-                            'mining_tax_id' => $overdueTaxes->first()->id,
-                            'incident_date' => Carbon::now(),
-                            'mining_date_from' => $earliestPeriod,
-                            'mining_date_to' => $latestPeriod,
-                            'ore_value' => 0,
-                            'tax_owed' => $delinquent->total_owed,
-                            'quantity_mined' => 0,
-                            'status' => 'detected',
-                            'severity' => $severity,
-                            'on_theft_list' => true,
-                            'notes' => "Tax delinquent: {$delinquent->overdue_count} overdue bills totalling " .
-                                       number_format($delinquent->total_owed, 0) . " ISK",
-                        ]);
-                        $created++;
-                    }
-                }
-
-                Log::info("TheftDetectionService: Tax delinquent flagged", [
-                    'character_id' => $delinquent->character_id,
-                    'character_name' => $characterName,
-                    'overdue_count' => $delinquent->overdue_count,
-                    'total_owed' => $delinquent->total_owed,
-                ]);
-            } catch (\Exception $e) {
-                Log::error("TheftDetectionService: Failed to process delinquent {$delinquent->character_id}", [
-                    'error' => $e->getMessage(),
-                ]);
-                $skipped++;
-            }
-        }
-
-        return [
-            'total_delinquents' => $delinquents->count(),
-            'created' => $created,
-            'updated' => $updated,
-            'skipped' => $skipped,
-        ];
     }
 
     /**
@@ -819,5 +407,437 @@ class TheftDetectionService
                 'false_alarm' => TheftIncident::byStatus('false_alarm')->count(),
             ],
         ];
+    }
+
+    /**
+     * Add the whole days mined since each open incident was last counted.
+     * Only while the mining is still theft: a player who has paid down to
+     * bills inside the allowed days is mining as a guest again.
+     */
+    protected function countOpenIncidents(array $rules, array $observers, Carbon $today): int
+    {
+        if (!$observers) {
+            return 0;
+        }
+
+        // Incidents raised before this version gain mining only from the day
+        // it first ran, so upgrading never adds older mining to them.
+        $countingFrom = $this->countingFrom();
+        $counted = 0;
+
+        foreach ($this->openIncidentsByPlayer() as $player) {
+            if (!$this->theftApplies($player['members'], $rules, $today)) {
+                continue;
+            }
+
+            $outsiders = array_keys($this->outsiders($player['members'], $rules['home']));
+            if (!$outsiders) {
+                continue;
+            }
+
+            $incident = $player['incidents']->first();
+            $countedTo = $incident->mining_date_to
+                ? $incident->mining_date_to->copy()->startOfDay()
+                : $incident->incident_date->copy()->startOfDay();
+
+            $rows = $this->dailyMining($outsiders, $observers, $countedTo->max($countingFrom->copy()->subDay()), $today);
+            if ($rows->isEmpty()) {
+                continue;
+            }
+
+            $incident->addCountedMining(
+                (int) $rows->sum('quantity'),
+                (float) $rows->sum('value'),
+                Carbon::parse($rows->max('date'))
+            );
+            $counted++;
+        }
+
+        return $counted;
+    }
+
+    /**
+     * Take players off the list once nothing on their account is overdue.
+     */
+    protected function removePaidUp(): Collection
+    {
+        $removed = $this->paidUpIncidents();
+
+        foreach ($removed as $incident) {
+            $incident->removeFromList();
+
+            Log::info('Character removed from theft list (taxes paid)', [
+                'character_id' => $incident->character_id,
+                'character_name' => $incident->character_name,
+                'incident_id' => $incident->id,
+            ]);
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Open an incident for each player whose outside characters mined here
+     * in the last $lookbackDays while it was theft, unless one is open.
+     */
+    protected function openNewIncidents(array $rules, array $observers, Carbon $today, int $lookbackDays): Collection
+    {
+        $created = collect();
+        if (!$observers) {
+            return $created;
+        }
+
+        $windowStart = $today->copy()->subDays($lookbackDays);
+
+        $miners = $this->ledger(null, $observers)
+            ->where('date', '>=', $windowStart->toDateString())
+            ->where('date', '<', $today->toDateString())
+            ->distinct()
+            ->pluck('character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $outsiders = $this->outsiders($miners, $rules['home']);
+        if (!$outsiders) {
+            return $created;
+        }
+
+        $listed = TheftIncident::onTheftList()
+            ->pluck('character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $done = [];
+        foreach ($this->players(array_keys($outsiders)) as $members) {
+            $player = min($members);
+            if (isset($done[$player]) || array_intersect($members, $listed)) {
+                continue;
+            }
+            $done[$player] = true;
+
+            try {
+                $incident = $this->openIncident($members, $rules, $observers, $today, $windowStart);
+                if ($incident) {
+                    $created->push($incident);
+                }
+            } catch (\Exception $e) {
+                Log::error('TheftDetectionService: Failed to check player', [
+                    'character_ids' => $members,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $created;
+    }
+
+    /**
+     * The incident for one player, or null when none of their mining in the
+     * window was theft.
+     */
+    protected function openIncident(array $members, array $rules, array $observers, Carbon $today, Carbon $windowStart): ?TheftIncident
+    {
+        $outsiders = $this->outsiders($members, $rules['home']);
+        if (!$outsiders) {
+            return null;
+        }
+
+        // A day already counted on an earlier incident is never counted again.
+        $after = $windowStart->copy()->subDay();
+        $lastCounted = TheftIncident::whereIn('character_id', $members)->max('mining_date_to');
+        if ($lastCounted) {
+            $after = $after->max(Carbon::parse($lastCounted)->startOfDay());
+        }
+
+        $days = $rules['overdue_days'];
+        $pastLine = $this->unpaidBills($members)
+            ->filter(fn ($bill) => $this->theftLine($bill, $days)->lt($today))
+            ->sortBy(fn ($bill) => $this->theftLine($bill, $days)->timestamp)
+            ->values();
+
+        $rows = collect();
+        $reason = null;
+
+        if ($pastLine->isNotEmpty()) {
+            $line = $this->theftLine($pastLine->first(), $days);
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($line), $today);
+            $reason = $rows->isNotEmpty() ? 'overdue' : null;
+        }
+
+        if (!$reason && !$rules['guests_allowed']) {
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($rules['guests_off_since']), $today);
+            $reason = $rows->isNotEmpty() ? 'guests_off' : null;
+        }
+
+        if (!$reason) {
+            return null;
+        }
+
+        // Named after whoever mined the most.
+        $characterId = (int) $rows->groupBy('character_id')
+            ->map(fn ($characterRows) => $characterRows->sum('value'))
+            ->sortDesc()
+            ->keys()
+            ->first();
+
+        // Kept for good and sent out, so worth a lookup if nobody has one yet.
+        $this->names->lookUpNow([$characterId]);
+        $info = $this->names->info($characterId);
+
+        $oreValue = round((float) $rows->sum('value'), 2);
+        $taxOwed = $reason === 'overdue'
+            ? round((float) $pastLine->sum(fn ($bill) => $bill->getRemainingBalance()), 2)
+            : 0.0;
+
+        $notes = $reason === 'overdue'
+            ? sprintf(
+                'Mined our moons with %d bill(s) more than %d days overdue, %s ISK left to pay.',
+                $pastLine->count(),
+                $days,
+                number_format($taxOwed, 0)
+            )
+            : 'Mined our moons while guest mining was switched off.';
+
+        $dates = $rows->pluck('date')->map(fn ($date) => Carbon::parse($date)->toDateString());
+
+        $incident = $this->createIncident([
+            'character_id' => $characterId,
+            'character_name' => $info['named'] ? $info['name'] : null,
+            'corporation_id' => $outsiders[$characterId],
+            'mining_tax_id' => $reason === 'overdue' ? $pastLine->first()->id : null,
+            'incident_date' => Carbon::now(),
+            'mining_date_from' => $dates->min(),
+            'mining_date_to' => $dates->max(),
+            'ore_value' => $oreValue,
+            'tax_owed' => $taxOwed,
+            'quantity_mined' => (int) $rows->sum('quantity'),
+            'status' => 'detected',
+            'severity' => $this->calculateSeverity($taxOwed, $oreValue),
+            'on_theft_list' => true,
+            'notes' => $notes,
+        ]);
+
+        Log::info('TheftDetectionService: Created theft incident', [
+            'incident_id' => $incident->id,
+            'character_id' => $characterId,
+            'reason' => $reason,
+            'severity' => $incident->severity,
+            'tax_owed' => $taxOwed,
+        ]);
+
+        return $incident;
+    }
+
+    /**
+     * Whether this player's outside characters mining here is theft today:
+     * guest mining is off, or a bill on the account is past its theft line.
+     */
+    protected function theftApplies(array $members, array $rules, Carbon $today): bool
+    {
+        if (!$rules['guests_allowed']) {
+            return true;
+        }
+
+        return $this->unpaidBills($members)
+            ->contains(fn ($bill) => $this->theftLine($bill, $rules['overdue_days'])->lt($today));
+    }
+
+    /**
+     * The last day mining against this bill is still allowed: its due date
+     * plus the days overdue allowed. Mining after it is theft.
+     */
+    protected function theftLine(MiningTax $bill, int $days): Carbon
+    {
+        return $bill->effectiveDueDate()->copy()->startOfDay()->addDays($days);
+    }
+
+    /**
+     * Bills on these characters that theft treats as unpaid.
+     */
+    protected function unpaidBills(array $characterIds): Collection
+    {
+        return MiningTax::whereIn('character_id', $characterIds)
+            ->unpaidForTheft()
+            ->get();
+    }
+
+    /**
+     * Open incidents grouped by player, newest first within each. The newest
+     * carries any new count, so a player listed twice before this version is
+     * only counted and alerted once.
+     *
+     * @return array<int, array{members: array<int, int>, incidents: Collection}>
+     */
+    protected function openIncidentsByPlayer(): array
+    {
+        $incidents = TheftIncident::onTheftList()->orderByDesc('id')->get();
+        if ($incidents->isEmpty()) {
+            return [];
+        }
+
+        $players = $this->players($incidents->pluck('character_id')->all());
+
+        $grouped = [];
+        foreach ($incidents as $incident) {
+            $members = $players[(int) $incident->character_id];
+            $player = min($members);
+
+            $grouped[$player] ??= ['members' => $members, 'incidents' => collect()];
+            $grouped[$player]['incidents']->push($incident);
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Each character's player: everyone on the same SeAT account, or the
+     * character alone when SeAT has no account for it. The same grouping the
+     * bills use, so an account's bills are found whichever character holds them.
+     *
+     * @param array<int, int|string> $characterIds
+     * @return array<int, array<int, int>> character_id => the player's character ids
+     */
+    protected function players(array $characterIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $characterIds)));
+
+        $users = [];
+        foreach (array_chunk($ids, 1000) as $chunk) {
+            foreach (DB::table('refresh_tokens')->whereIn('character_id', $chunk)->get(['character_id', 'user_id']) as $row) {
+                $users[(int) $row->character_id] = (int) $row->user_id;
+            }
+        }
+
+        $byUser = [];
+        foreach (array_chunk(array_values(array_unique($users)), 1000) as $chunk) {
+            foreach (DB::table('refresh_tokens')->whereIn('user_id', $chunk)->get(['character_id', 'user_id']) as $row) {
+                $byUser[(int) $row->user_id][] = (int) $row->character_id;
+            }
+        }
+
+        $players = [];
+        foreach ($ids as $id) {
+            $players[$id] = isset($users[$id])
+                ? array_values(array_unique($byUser[$users[$id]] ?? [$id]))
+                : [$id];
+        }
+
+        return $players;
+    }
+
+    /**
+     * Of these characters, the ones placed in a corporation outside the home
+     * ones, with that corporation: SeAT's affiliation first, the plugin's
+     * lookups for characters SeAT has none for. A character nobody has placed
+     * yet is left out, as an unregistered member is far likelier than a
+     * stranger and the lookup places them soon enough.
+     *
+     * @return array<int, int> character_id => corporation_id
+     */
+    protected function outsiders(array $characterIds, array $home): array
+    {
+        $this->names->preload($characterIds);
+
+        $outside = [];
+        foreach ($characterIds as $id) {
+            $corporationId = (int) ($this->names->info($id)['corporation_id'] ?? 0);
+
+            if ($corporationId > 0 && !in_array($corporationId, $home, true)) {
+                $outside[(int) $id] = $corporationId;
+            }
+        }
+
+        return $outside;
+    }
+
+    /**
+     * The moon owner's refineries. Tax only covers mining at these, so theft
+     * only does too.
+     *
+     * @return array<int, int>
+     */
+    protected function ownerObservers(int $moonOwner): array
+    {
+        return DB::table('corporation_industry_mining_observers')
+            ->where('corporation_id', $moonOwner)
+            ->pluck('observer_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Moon ore in the ledger mined at these refineries, by these characters
+     * or by anyone.
+     */
+    protected function ledger(?array $characterIds, array $observers)
+    {
+        return DB::table('mining_ledger')
+            ->whereNull('deleted_at')
+            ->whereIn('observer_id', $observers)
+            ->where('is_moon_ore', true)
+            ->when($characterIds !== null, fn ($query) => $query->whereIn('character_id', $characterIds));
+    }
+
+    /**
+     * Moon ore these characters mined at these refineries on the days after
+     * $after and before $before, a row per character and day.
+     */
+    protected function dailyMining(array $characterIds, array $observers, Carbon $after, Carbon $before): Collection
+    {
+        if (!$characterIds || !$observers) {
+            return collect();
+        }
+
+        return $this->ledger($characterIds, $observers)
+            ->where('date', '>', $after->toDateString())
+            ->where('date', '<', $before->toDateString())
+            ->groupBy('character_id', 'date')
+            ->orderBy('date')
+            ->get([
+                'character_id',
+                'date',
+                DB::raw('SUM(quantity) as quantity'),
+                DB::raw('SUM(total_value) as value'),
+            ]);
+    }
+
+    /**
+     * The day guest mining was switched off. The setting only changes when
+     * someone flips it, so its last change is that day, and mining from the
+     * next day on counts.
+     */
+    protected function guestsOffSince(): Carbon
+    {
+        $changed = Setting::where('key', 'features.allow_guest_mining')
+            ->whereNull('corporation_id')
+            ->value('updated_at');
+
+        return $changed ? Carbon::parse($changed)->startOfDay() : Carbon::today();
+    }
+
+    /**
+     * The day this version first counted mining, recorded on its first run.
+     */
+    protected function countingFrom(): Carbon
+    {
+        $stored = Setting::where('key', self::COUNTING_FROM_KEY)
+            ->whereNull('corporation_id')
+            ->orderBy('id')
+            ->value('value');
+
+        if ($stored) {
+            try {
+                return Carbon::parse($stored)->startOfDay();
+            } catch (\Throwable $e) {
+                Log::warning('TheftDetectionService: ' . self::COUNTING_FROM_KEY . ' unreadable, counting from today', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $today = Carbon::today();
+        Setting::setValue(self::COUNTING_FROM_KEY, $today->toDateString(), 'string', null);
+
+        return $today;
     }
 }

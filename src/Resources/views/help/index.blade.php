@@ -1799,6 +1799,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </h3>
                     <p>{{ trans('mining-manager::help.guest_mining_desc') }}</p>
                     <p>{{ trans('mining-manager::help.guest_rates_config') }}</p>
+                    <p>{{ trans('mining-manager::help.guest_mining_switch') }}</p>
 
                     <div class="warning-box">
                         <i class="fas fa-exclamation-triangle"></i>
@@ -3968,6 +3969,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li>{{ trans('mining-manager::help.theft_step_1') }}</li>
                         <li>{{ trans('mining-manager::help.theft_step_2') }}</li>
                         <li>{{ trans('mining-manager::help.theft_step_3') }}</li>
+                        <li>{{ trans('mining-manager::help.theft_step_4') }}</li>
                     </ol>
 
                     <h4>{{ trans('mining-manager::help.theft_commands') }}</h4>
@@ -4257,8 +4259,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:monitor-active-thefts</code></td>
                                     <td><span class="badge badge-info">{{ trans('mining-manager::help.schedule_6hours') }}</span></td>
-                                    <td>Fast check: monitors characters already on the theft list for continued mining activity.<br>
-                                        <small class="text-muted">Options: <code>--hours=6</code> lookback period, <code>--notify</code> send notifications</small>
+                                    <td>Fast check: sends an Active Theft alert when a player already on the theft list mines again.<br>
+                                        <small class="text-muted">Options: <code>--hours=6</code> how far back to look for newly recorded mining, <code>--notify</code> send notifications</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -4305,9 +4307,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-theft</code></td>
-                                    <td><span class="badge badge-warning">{{ trans('mining-manager::help.schedule_twice_monthly') }}</span></td>
-                                    <td>Full scan: detect unauthorized moon mining by non-corporation members with overdue taxes.<br>
-                                        <small class="text-muted">Options: <code>--days=15</code> lookback period, <code>--notify</code> send notifications for detected thefts</small>
+                                    <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 3:40 AM</td>
+                                    <td>Full scan: adds the previous day's mining to open incidents, takes players with nothing overdue off the list, and opens incidents for guests mining with tax too long overdue, or at all while guest mining is switched off.<br>
+                                        <small class="text-muted">Options: <code>--days=15</code> how far back a new incident may reach, <code>--notify</code> send notifications for new incidents</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -4568,7 +4570,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:detect-theft --days=30 --notify</code></td>
-                                    <td>Run theft detection for last 30 days and send notifications</td>
+                                    <td>Run theft detection, letting new incidents reach back 30 days, and send notifications for them</td>
                                 </tr>
                                 <tr>
                                     <td><code>mining-manager:send-reminders --dry-run</code></td>
