@@ -18,26 +18,44 @@ class BackupDataCommand extends Command
     protected $description = 'Backup all Mining Manager plugin data to JSON files for migration, disaster recovery, or server transfer';
 
     /**
-     * All plugin-owned tables in dependency order (restore order matters for FKs)
+     * Every table the plugin's migrations create, related ones together.
+     * Restore turns foreign key checks off while it runs, so the order is for
+     * whoever reads the backup, not for the constraints. A table added by a
+     * new migration belongs here too, or backups quietly leave it out.
      */
     private const PLUGIN_TABLES = [
         'mining_manager_settings',
         'webhook_configurations',
         'mining_events',
         'event_participants',
+        'event_mining_records',
         'moon_extractions',
         'moon_extraction_history',
+        'moon_extraction_event_log',
+        'moon_extraction_plans',
+        'moon_extraction_plan_audits',
+        'mining_manager_moon_rotations',
+        'mining_manager_moon_rotation_slots',
+        'mining_manager_refinery_alerts',
+        'mining_manager_moon_scan_alerts',
+        'mining_manager_moon_claims',
+        'mining_manager_moon_watchlist',
+        'metenox_cargo_alert_state',
         'mining_ledger',
         'mining_ledger_daily_summaries',
         'mining_ledger_monthly_summaries',
         'mining_taxes',
         'mining_tax_codes',
         'tax_invoices',
+        'mining_manager_payment_credits',
+        'mining_manager_payment_allocations',
+        'mining_manager_payment_refunds',
         'mining_reports',
         'report_schedules',
         'mining_notification_log',
         'monthly_statistics',
         'mining_price_cache',
+        'mining_manager_character_affiliations',
         'theft_incidents',
         'mining_manager_dismissed_transactions',
         'mining_manager_processed_transactions',
@@ -89,7 +107,7 @@ class BackupDataCommand extends Command
 
         $manifest = [
             'plugin' => 'mining-manager',
-            'version' => 'dev-5.0',
+            'version' => $this->pluginVersion(),
             'created_at' => Carbon::now()->toIso8601String(),
             'seat_version' => config('seat.version', 'unknown'),
             'tables' => [],
@@ -115,7 +133,7 @@ class BackupDataCommand extends Command
                 fwrite($handle, "[\n");
 
                 $first = true;
-                DB::table($table)->orderBy('id')->chunk(1000, function ($rows) use ($handle, &$first) {
+                $write = function ($rows) use ($handle, &$first) {
                     foreach ($rows as $row) {
                         if (!$first) {
                             fwrite($handle, ",\n");
@@ -123,7 +141,15 @@ class BackupDataCommand extends Command
                         fwrite($handle, json_encode((array) $row, JSON_UNESCAPED_UNICODE));
                         $first = false;
                     }
-                });
+                };
+
+                // chunk() pages by a column, and the few tables keyed on
+                // something other than id are small enough to read in one go.
+                if (Schema::hasColumn($table, 'id')) {
+                    DB::table($table)->orderBy('id')->chunk(1000, $write);
+                } else {
+                    $write(DB::table($table)->get());
+                }
 
                 fwrite($handle, "\n]");
                 fclose($handle);
@@ -149,28 +175,6 @@ class BackupDataCommand extends Command
         $bar->finish();
         $this->info('');
         $this->info('');
-
-        // Handle tables without an 'id' column (notification_log, dismissed_transactions, etc.)
-        // The chunk above uses orderBy('id') which fails for tables without id
-        // Re-process any that failed due to missing id column
-        foreach ($manifest['tables'] as $table => $info) {
-            if (($info['status'] ?? '') === 'error' && str_contains($info['error'] ?? '', 'id')) {
-                try {
-                    $rows = DB::table($table)->get();
-                    $filePath = $backupPath . '/' . $table . '.json';
-                    file_put_contents($filePath, $rows->map(fn($r) => (array) $r)->toJson(JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-                    $manifest['tables'][$table] = [
-                        'rows' => $rows->count(),
-                        'file' => $table . '.json',
-                        'size_bytes' => filesize($filePath),
-                        'status' => 'ok',
-                    ];
-                    $totalRows += $rows->count();
-                } catch (\Exception $e) {
-                    // Keep the original error
-                }
-            }
-        }
 
         $manifest['total_rows'] = $totalRows;
 
@@ -214,6 +218,24 @@ class BackupDataCommand extends Command
         ]);
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * The installed version as Composer resolved it: a tag such as 2.0.5, or
+     * the branch on an install that tracks one. Only a label in the manifest.
+     */
+    private function pluginVersion(): string
+    {
+        try {
+            if (class_exists(\Composer\InstalledVersions::class)
+                && \Composer\InstalledVersions::isInstalled('mattfalahe/mining-manager')) {
+                return (string) \Composer\InstalledVersions::getPrettyVersion('mattfalahe/mining-manager');
+            }
+        } catch (\Throwable $e) {
+            // Fall through to unknown; nothing reads this back.
+        }
+
+        return 'unknown';
     }
 
     private function getTableList(): array
