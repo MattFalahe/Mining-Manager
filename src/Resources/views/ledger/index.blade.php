@@ -25,6 +25,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {{ Request::is('*/ledger/moon-summary') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.moon-summary') }}">
+                    <i class="fas fa-moon"></i> {{ trans('mining-manager::ledger.moon_mining_summary') }}
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {{ Request::is('*/ledger/reprocessing') ? 'active' : '' }}" href="{{ route('mining-manager.ledger.reprocessing') }}">
                     <i class="fas fa-recycle"></i> {{ trans('mining-manager::ledger.reprocessing_calculator') }}
                 </a>
