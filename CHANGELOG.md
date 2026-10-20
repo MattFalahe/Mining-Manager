@@ -30,6 +30,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 - **Biweekly installs see the current tax period on the dashboards.** The member dashboard and both tabs of the director dashboard show a **Current Tax Period** card above Current Month, with the same boxes for the half of the month we are in. On the corporation tab, Tax Collected for a period not billed yet says when its bills go out. Monthly installs see no change, since the card would only repeat the month.
 - The tax box on the dashboards is called **Estimated Tax** on both, since it is the tax on the mining shown, worked out every day. The director's personal tab called it Tax Owed, and the member dashboard Tax ISK.
+- Fixed: **the mining tax banner at the top of the dashboards was barely readable on light themes.** It was a faint tint over the page with light text on it. It is now a panel of its own, red once a bill is late and amber before, that reads the same on any SeAT theme.
 
 ### Tax Calculation
 

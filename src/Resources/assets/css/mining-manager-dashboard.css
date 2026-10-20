@@ -490,46 +490,78 @@
 
 /* ============================================
    Alert Boxes
-   ============================================ */
+   ============================================
+   Opaque, like the notices below and the dark cards around them. A tint over
+   the page let a light theme's background through, and the light text on it
+   all but vanished. Custom themes force text colours with !important, so the
+   colours here carry it too. */
 .mining-dashboard .alert-mm,
 .mining-manager-wrapper .alert-mm {
     border-radius: var(--mm-radius-md);
     padding: var(--mm-spacing-md);
     margin-bottom: var(--mm-spacing-lg);
-    border-left: 4px solid;
+    border: 1px solid var(--mm-border) !important;
+    border-left: 4px solid !important;
+    background-color: #1f2833 !important;
+    color: #e5e7eb !important;
 }
 
 .mining-dashboard .alert-mm-info,
 .mining-manager-wrapper .alert-mm-info {
-    background-color: rgba(23, 162, 184, 0.15);
-    border-left-color: var(--mm-info);
-    color: var(--mm-text-light);
+    border-color: rgba(23, 162, 184, 0.45) !important;
+    border-left-color: var(--mm-info) !important;
 }
 
 .mining-dashboard .alert-mm-success,
 .mining-manager-wrapper .alert-mm-success {
-    background-color: rgba(40, 167, 69, 0.15);
-    border-left-color: var(--mm-success);
-    color: var(--mm-text-light);
+    background-color: #1d2b25 !important;
+    border-color: rgba(40, 167, 69, 0.45) !important;
+    border-left-color: var(--mm-success) !important;
 }
 
 .mining-dashboard .alert-mm-warning,
 .mining-manager-wrapper .alert-mm-warning {
-    background-color: rgba(255, 193, 7, 0.15);
-    border-left-color: var(--mm-warning);
-    color: var(--mm-text-light);
+    background-color: #322a12 !important;
+    border-color: rgba(255, 193, 7, 0.45) !important;
+    border-left-color: var(--mm-warning) !important;
+    color: #fdf3d3 !important;
 }
 
 .mining-dashboard .alert-mm-danger,
 .mining-manager-wrapper .alert-mm-danger {
-    background-color: rgba(220, 53, 69, 0.15);
-    border-left-color: var(--mm-danger);
-    color: var(--mm-text-light);
+    background-color: #3a1a20 !important;
+    border-color: rgba(220, 53, 69, 0.55) !important;
+    border-left-color: var(--mm-danger) !important;
+    color: #fde2e5 !important;
+}
+
+.mining-dashboard .alert-mm div,
+.mining-dashboard .alert-mm p,
+.mining-dashboard .alert-mm small,
+.mining-manager-wrapper .alert-mm div,
+.mining-manager-wrapper .alert-mm p,
+.mining-manager-wrapper .alert-mm small {
+    color: inherit !important;
+}
+
+.mining-dashboard .alert-mm strong,
+.mining-manager-wrapper .alert-mm strong {
+    color: #ffffff !important;
 }
 
 .mining-dashboard .alert-mm i,
 .mining-manager-wrapper .alert-mm i {
     margin-right: var(--mm-spacing-sm);
+}
+
+.mining-dashboard .alert-mm-warning strong i,
+.mining-manager-wrapper .alert-mm-warning strong i {
+    color: var(--mm-warning) !important;
+}
+
+.mining-dashboard .alert-mm-danger strong i,
+.mining-manager-wrapper .alert-mm-danger strong i {
+    color: #ff6b7a !important;
 }
 
 /* ============================================
