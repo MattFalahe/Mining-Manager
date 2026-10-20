@@ -10,6 +10,10 @@
 
 @section('full')
 @include('mining-manager::partials.toastr')
+@php
+    $percent = fn ($rate) => rtrim(rtrim(number_format((float) $rate, 2), '0'), '.') . '%';
+    $breakdownTax = (float) ($breakdown['tax'] ?? 0);
+@endphp
 <div class="mining-manager-wrapper mining-dashboard taxes-details-page">
 
 @include('mining-manager::taxes.partials.tab-navigation')
@@ -140,9 +144,10 @@
                             <div class="info-box bg-gradient-primary">
                                 <span class="info-box-icon"><i class="fas fa-calculator"></i></span>
                                 <div class="info-box-content">
-                                    <span class="info-box-text">{{ trans('mining-manager::taxes.total_mined_value') }}</span>
-                                    <span class="info-box-number">{{ number_format($miningTotal ?? 0, 0) }}</span>
+                                    <span class="info-box-text">{{ trans('mining-manager::taxes.taxed_value') }}</span>
+                                    <span class="info-box-number">{{ number_format($breakdown['taxed_value'] ?? 0, 0) }}</span>
                                     <small>ISK</small>
+                                    <small class="d-block">{{ trans('mining-manager::taxes.of_mined', ['amount' => number_format($miningTotal ?? 0, 0)]) }}</small>
                                 </div>
                             </div>
                         </div>
@@ -251,7 +256,101 @@
         </div>
     </div>
 
-    {{-- Mining Breakdown --}}
+    {{-- What the bill taxed, by kind of ore with moon ore by rarity --}}
+    <div class="row">
+        <div class="col-12">
+            <div class="card card-dark">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-layer-group mr-1"></i> {{ trans('mining-manager::taxes.tax_by_category') }}</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">{{ trans('mining-manager::taxes.tax_by_category_hint') }}</p>
+                    @if(empty($breakdown['kinds']))
+                        <p class="text-muted mb-0">{{ trans('mining-manager::taxes.nothing_taxed') }}</p>
+                    @else
+                    <div class="table-responsive">
+                        <table class="table table-dark table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>{{ trans('mining-manager::taxes.category') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.tax_rate') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.taxed_value') }}</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.tax_amount') }}</th>
+                                    <th class="text-right" style="width: 18%;">{{ trans('mining-manager::taxes.share_of_tax') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($breakdown['kinds'] as $kind)
+                                    {{-- Moon ore gets a line of its own, with its rarities under it --}}
+                                    @if($kind['kind'] === 'moon')
+                                        @php
+                                            $kindShare = $breakdownTax > 0 ? $kind['tax'] / $breakdownTax * 100 : 0;
+                                        @endphp
+                                        <tr class="font-weight-bold">
+                                            <td>{{ trans('mining-manager::ledger.moon_ore') }}</td>
+                                            <td></td>
+                                            <td class="text-right">{{ number_format($kind['value'], 0) }} ISK</td>
+                                            <td class="text-right">{{ number_format($kind['tax'], 0) }} ISK</td>
+                                            <td class="text-right">{{ number_format($kindShare, 1) }}%</td>
+                                        </tr>
+                                    @endif
+                                    @foreach($kind['classes'] as $row)
+                                        @php
+                                            $rowShare = $breakdownTax > 0 ? $row['tax'] / $breakdownTax * 100 : 0;
+                                        @endphp
+                                        <tr>
+                                            <td class="{{ $kind['kind'] === 'moon' ? 'pl-4' : '' }}">
+                                                @include('mining-manager::partials.ore-class-badge', ['oreClass' => $row['class']])
+                                                <small class="d-block text-muted">{{ implode(', ', $row['ores']) }}</small>
+                                            </td>
+                                            <td class="text-right">{{ $percent($row['rate']) }}</td>
+                                            <td class="text-right">{{ number_format($row['value'], 0) }} ISK</td>
+                                            <td class="text-right">
+                                                {{ number_format($row['tax'], 0) }} ISK
+                                                @if($row['discount'] >= 1)
+                                                    <small class="d-block text-success">{{ trans('mining-manager::taxes.event_discount_amount', ['amount' => number_format($row['discount'], 0)]) }}</small>
+                                                @endif
+                                            </td>
+                                            <td class="text-right">
+                                                {{ number_format($rowShare, 1) }}%
+                                                <div class="progress mt-1" style="height: 4px;">
+                                                    <div class="progress-bar bg-info" role="progressbar" style="width: {{ number_format($rowShare, 1, '.', '') }}%;"></div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                @endforeach
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="2">{{ trans('mining-manager::taxes.total') }}</th>
+                                    <th class="text-right">{{ number_format($breakdown['taxed_value'], 0) }} ISK</th>
+                                    <th class="text-right">{{ number_format($breakdownTax, 0) }} ISK</th>
+                                    <th class="text-right">100%</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    @endif
+
+                    {{-- The rows come from the daily figures; say so when they and the bill part ways --}}
+                    @if(abs((float) $tax->amount_owed - $breakdownTax) >= 1)
+                        <div class="mm-notice mm-notice-secondary mt-3 mb-0">
+                            <p class="mb-0">
+                                <i class="fas fa-info-circle"></i>
+                                {{ trans('mining-manager::taxes.breakdown_differs', ['billed' => number_format((float) $tax->amount_owed, 0), 'rows' => number_format($breakdownTax, 0)]) }}
+                                @foreach($breakdownNotes ?? [] as $breakdownNote)
+                                    {{ $breakdownNote }}
+                                @endforeach
+                            </p>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Mining Breakdown: only what was taxed --}}
     <div class="row">
         <div class="col-12">
             <div class="card card-dark">
@@ -259,65 +358,49 @@
                     <h3 class="card-title">{{ trans('mining-manager::taxes.mining_breakdown') }}</h3>
                 </div>
                 <div class="card-body">
+                    <p class="text-muted small">{{ trans('mining-manager::taxes.mining_breakdown_hint') }}</p>
                     <div class="table-responsive">
                         <table class="table table-dark table-striped" id="breakdownTable">
                             <thead>
                                 <tr>
-                                    @if(($taxCalculationMethod ?? 'individually') === 'accumulated')
-                                    <th>Character</th>
-                                    @endif
+                                    <th>{{ trans('mining-manager::taxes.character') }}</th>
                                     <th>{{ trans('mining-manager::taxes.ore_type') }}</th>
-                                    <th>Category</th>
+                                    <th>{{ trans('mining-manager::taxes.category') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.quantity') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.total_value') }}</th>
-                                    <th class="text-right">Tax Rate</th>
+                                    <th class="text-right">{{ trans('mining-manager::taxes.tax_rate') }}</th>
                                     <th class="text-right">{{ trans('mining-manager::taxes.tax_amount') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @forelse($miningBreakdown ?? [] as $ore)
                                 <tr>
-                                    @if(($taxCalculationMethod ?? 'individually') === 'accumulated')
-                                    <td>{{ $ore['character_name'] ?? '' }}</td>
-                                    @endif
-                                    <td>
-                                        {{ $ore['type_name'] ?? 'Unknown' }}
-                                        @if(!empty($ore['rarity']))
-                                            <span class="badge {{ \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($ore['rarity']) }}">
-                                                {{ strtoupper($ore['rarity']) }}
-                                            </span>
+                                    <td>{{ $ore['character_name'] }}</td>
+                                    <td>{{ $ore['name'] }}</td>
+                                    <td data-order="{{ $ore['class'] }}">@include('mining-manager::partials.ore-class-badge', ['oreClass' => $ore['class']])</td>
+                                    <td class="text-right" data-order="{{ $ore['quantity'] }}">{{ number_format($ore['quantity'], 0) }}</td>
+                                    <td class="text-right" data-order="{{ $ore['value'] }}">{{ number_format($ore['value'], 0) }} ISK</td>
+                                    <td class="text-right" data-order="{{ $ore['rate'] }}">{{ $percent($ore['rate']) }}</td>
+                                    <td class="text-right" data-order="{{ $ore['tax'] }}">
+                                        {{ number_format($ore['tax'], 0) }} ISK
+                                        @if($ore['discount'] >= 1)
+                                            <small class="d-block text-success">{{ trans('mining-manager::taxes.event_discount_amount', ['amount' => number_format($ore['discount'], 0)]) }}</small>
                                         @endif
                                     </td>
-                                    <td><small class="text-muted">{{ ucfirst(str_replace('_', ' ', $ore['category'] ?? 'ore')) }}</small></td>
-                                    <td class="text-right" data-order="{{ $ore['quantity'] ?? 0 }}">{{ number_format($ore['quantity'] ?? 0, 0) }}</td>
-                                    <td class="text-right" data-order="{{ $ore['total_value'] ?? 0 }}">{{ number_format($ore['total_value'] ?? 0, 0) }} ISK</td>
-                                    <td class="text-right" data-order="{{ $ore['tax_rate'] ?? 0 }}">
-                                        {{ number_format($ore['tax_rate'] ?? 0, 1) }}%
-                                        @if(($ore['event_modifier'] ?? 0) != 0)
-                                            <br><small class="text-{{ $ore['event_modifier'] < 0 ? 'success' : 'danger' }}">
-                                                ({{ $ore['event_modifier'] > 0 ? '+' : '' }}{{ $ore['event_modifier'] }}% event)
-                                            </small>
-                                        @endif
-                                    </td>
-                                    <td class="text-right" data-order="{{ $ore['tax_amount'] ?? 0 }}">{{ number_format($ore['tax_amount'] ?? 0, 0) }} ISK</td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="{{ ($taxCalculationMethod ?? 'individually') === 'accumulated' ? 7 : 6 }}" class="text-center text-muted">{{ trans('mining-manager::taxes.no_breakdown') }}</td>
+                                    <td colspan="7" class="text-center text-muted">{{ trans('mining-manager::taxes.nothing_taxed') }}</td>
                                 </tr>
                                 @endforelse
                             </tbody>
                             @if(!empty($miningBreakdown))
                             <tfoot class="bg-secondary">
                                 <tr>
-                                    @if(($taxCalculationMethod ?? 'individually') === 'accumulated')
+                                    <td colspan="4"><strong>{{ trans('mining-manager::taxes.total') }}</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($breakdown['taxed_value'], 0) }} ISK</strong></td>
                                     <td></td>
-                                    @endif
-                                    <td colspan="2"><strong>Total</strong></td>
-                                    <td></td>
-                                    <td class="text-right"><strong>{{ number_format(collect($miningBreakdown)->sum('total_value'), 0) }} ISK</strong></td>
-                                    <td></td>
-                                    <td class="text-right"><strong>{{ number_format(collect($miningBreakdown)->sum('tax_amount'), 0) }} ISK</strong></td>
+                                    <td class="text-right"><strong>{{ number_format($breakdownTax, 0) }} ISK</strong></td>
                                 </tr>
                             </tfoot>
                             @endif
@@ -355,7 +438,7 @@ $(document).ready(function() {
             pageLength: 25,
             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
             ordering: true,
-            order: [[{{ ($taxCalculationMethod ?? 'individually') === 'accumulated' ? 5 : 4 }}, 'desc']],
+            order: [[6, 'desc']],
             info: true,
             searching: true,
             autoWidth: false,
@@ -366,7 +449,7 @@ $(document).ready(function() {
                 emptyTable: "No mining data available"
             },
             columnDefs: [
-                { targets: [{{ ($taxCalculationMethod ?? 'individually') === 'accumulated' ? '3,4,5,6' : '2,3,4,5' }}], type: 'num-fmt' }
+                { targets: [3, 4, 5, 6], type: 'num' }
             ],
             dom: '<"row"<"col-sm-6"l><"col-sm-6"f>>rtip'
         });

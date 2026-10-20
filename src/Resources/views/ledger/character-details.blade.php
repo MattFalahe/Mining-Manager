@@ -26,25 +26,6 @@
 
 @section('full')
 @php
-    // Each kind of ore as the tax settings name it, moon ore in its rarity's colour.
-    $oreBadge = function (string $class) {
-        if (str_starts_with($class, 'moon')) {
-            $rarity = substr($class, 5);
-
-            return [
-                $rarity !== '' ? \MiningManager\Services\Moon\MoonOreHelper::rarityBadgeClass($rarity) : 'badge-warning',
-                trim(trans('mining-manager::ledger.moon_ore') . ' ' . strtoupper($rarity)),
-            ];
-        }
-
-        return match ($class) {
-            'ice' => ['badge-info', trans('mining-manager::ledger.ice')],
-            'gas' => ['badge-success', trans('mining-manager::ledger.gas')],
-            'abyssal' => ['badge-danger', trans('mining-manager::ledger.abyssal')],
-            'triglavian' => ['badge-dark', trans('mining-manager::ledger.triglavian')],
-            default => ['badge-secondary', trans('mining-manager::ledger.regular_ore')],
-        };
-    };
     $percent = fn ($rate) => rtrim(rtrim(number_format((float) $rate, 2), '0'), '.') . '%';
     $sortIcon = fn (string $column) => 'fas fa-sort' . ($sortBy === $column ? ($sortDir === 'asc' ? '-up' : '-down') . ' active' : '') . ' sort-icon' . ($sortBy === $column ? ' active' : '');
 @endphp
@@ -262,12 +243,9 @@
                                     </thead>
                                     <tbody>
                                         @forelse($taxedGroups as $group)
-                                            @php
-                                                [$badgeClass, $badgeLabel] = $oreBadge($group['class']);
-                                            @endphp
                                             <tr>
                                                 <td>
-                                                    <span class="badge {{ $badgeClass }}">{{ $badgeLabel }}</span>
+                                                    @include('mining-manager::partials.ore-class-badge', ['oreClass' => $group['class']])
                                                     <small class="d-block text-muted">{{ implode(', ', $group['ores']) }}</small>
                                                 </td>
                                                 <td class="text-right">{{ $percent($group['rate']) }}</td>
@@ -310,11 +288,8 @@
                                     </thead>
                                     <tbody>
                                         @forelse($untaxedGroups as $group)
-                                            @php
-                                                [$badgeClass, $badgeLabel] = $oreBadge($group['kind']);
-                                            @endphp
                                             <tr>
-                                                <td><span class="badge {{ $badgeClass }}">{{ $badgeLabel }}</span></td>
+                                                <td>@include('mining-manager::partials.ore-class-badge', ['oreClass' => $group['kind']])</td>
                                                 <td>
                                                     {{ trans('mining-manager::ledger.tax_reason_' . $group['reason']) }}
                                                     <small class="d-block text-muted">{{ trans('mining-manager::ledger.tax_reason_' . $group['reason'] . '_help') }}</small>
@@ -395,7 +370,6 @@
                             @forelse($entries as $entry)
                                 @php
                                     $tax = $taxes[$entry->id];
-                                    [$badgeClass, $badgeLabel] = $oreBadge($tax['class']);
                                 @endphp
                                 <tr>
                                     <td>{{ $entry->date->format('Y-m-d') }}</td>
@@ -415,7 +389,7 @@
                                              style="width: 24px; height: 24px; vertical-align: middle; margin-right: 5px;"
                                              alt="">
                                         {{ $entry->type->typeName ?? 'Unknown Ore' }}
-                                        <span class="badge {{ $badgeClass }}">{{ $badgeLabel }}</span>
+                                        @include('mining-manager::partials.ore-class-badge', ['oreClass' => $tax['class']])
                                     </td>
                                     <td class="text-right">{{ number_format($entry->quantity, 0) }}</td>
                                     <td class="text-right">{{ number_format($entry->quantity * ($entry->type->volume ?? 0), 2) }} m³</td>

@@ -496,4 +496,22 @@ return [
     'banner_many_bills' => ':amount ISK to pay across :count bills. The oldest is for :period, due :due.',
     'banner_part_paid' => 'Part paid: :paid ISK of the :owed ISK billed has already been received.',
     'banner_pay_now' => 'Pay now',
+
+    // An invoice's breakdown: only what it taxed
+    'taxed_value' => 'Taxed Value',
+    'of_mined' => 'of :amount ISK mined in the period',
+    'tax_by_category' => 'Tax by category',
+    'tax_by_category_hint' => 'What this bill taxed, by kind of ore with moon ore by rarity. Only mining that carried tax is counted, at the rate it was taxed at.',
+    'mining_breakdown_hint' => 'Only the mining this bill taxed, by character and ore.',
+    'category' => 'Category',
+    'tax_rate' => 'Tax Rate',
+    'share_of_tax' => 'Share of tax',
+    'total' => 'Total',
+    'nothing_taxed' => 'Nothing in this period carried tax.',
+    'event_discount_amount' => 'Event discount: :amount ISK',
+    'breakdown_differs' => 'This bill is :billed ISK, and the mining below comes to :rows ISK.',
+    'breakdown_raised_to_minimum' => 'It was raised to the minimum tax of :minimum ISK.',
+    'breakdown_adjusted' => 'It was adjusted by hand, as its notes say.',
+    'breakdown_early' => 'It was worked out on :date, before its period ended, so mining after that is not on it.',
+    'breakdown_rebuilt' => 'Some of its days were worked out again after it went out, at the rates set then, and a bill keeps what it was issued for.',
 ];

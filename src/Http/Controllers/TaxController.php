@@ -2492,55 +2492,68 @@ class TaxController extends Controller
         $startDate = $tax->period_start ? Carbon::parse($tax->period_start) : Carbon::parse($tax->month)->startOfMonth();
         $endDate = $tax->period_end ? Carbon::parse($tax->period_end) : Carbon::parse($tax->month)->endOfMonth();
 
-        $miningBreakdown = [];
-        $miningTotal = 0;
+        // A bill covers the owner's account, so the breakdown reads every
+        // character on it, not the viewer's.
+        $characterIds = [$tax->character_id];
+        try {
+            $ownerUserId = DB::table('refresh_tokens')
+                ->where('character_id', $tax->character_id)
+                ->value('user_id');
 
-        if ($taxCalculationMethod === 'accumulated') {
-            // In accumulated mode, get breakdown for all alts in the account
-            // Resolve the tax OWNER's characters (not the viewer's) for correct breakdown
+            if ($ownerUserId) {
+                $ownerUser = \Seat\Web\Models\User::find($ownerUserId);
+                if ($ownerUser) {
+                    $characterIds = $ownerUser->characters->pluck('character_id')->toArray();
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug("Mining Manager: Could not resolve tax owner's characters: " . $e->getMessage());
+        }
+
+        if (empty($characterIds)) {
             $characterIds = [$tax->character_id];
-            try {
-                $ownerUserId = DB::table('refresh_tokens')
-                    ->where('character_id', $tax->character_id)
-                    ->value('user_id');
+        }
 
-                if ($ownerUserId) {
-                    $ownerUser = \Seat\Web\Models\User::find($ownerUserId);
-                    if ($ownerUser) {
-                        $characterIds = $ownerUser->characters->pluck('character_id')->toArray();
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("Mining Manager: Could not resolve tax owner's characters: " . $e->getMessage());
+        // A character with a bill of its own for the same period, raised
+        // before it was grouped with this account, belongs to that bill.
+        $billedApart = MiningTax::where('id', '!=', $tax->id)
+            ->whereIn('character_id', $characterIds)
+            ->whereRaw('COALESCE(period_start, month) = ?', [$startDate->toDateString()])
+            ->pluck('character_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $characterIds = array_values(array_diff(array_map('intval', $characterIds), $billedApart)) ?: [(int) $tax->character_id];
+
+        // Only the mining the bill taxed: by character and ore, and by kind
+        // of ore with moon ore by rarity.
+        $breakdown = $this->taxService->taxedBreakdown($characterIds, $startDate, $endDate);
+        $names = app(\MiningManager\Services\Character\CharacterNames::class);
+        $names->preload(array_column($breakdown['rows'], 'character_id'));
+        $miningBreakdown = array_map(
+            fn ($row) => $row + ['character_name' => $names->nameOrId($row['character_id'])],
+            $breakdown['rows']
+        );
+        $miningTotal = $breakdown['mined_value'];
+
+        // When the rows do not add up to the bill, say why where we can tell.
+        $breakdownNotes = [];
+        $billed = (float) $tax->amount_owed;
+        if (abs($billed - $breakdown['tax']) >= 1) {
+            $minimum = (float) ($this->settingsService->getPaymentSettings()['minimum_tax_amount'] ?? 0);
+            if ($minimum > 0
+                && abs($billed - $minimum) < 1
+                && $breakdown['daily_tax'] < $minimum
+                && $this->settingsService->getSetting('payment.minimum_tax_behavior', 'exempt') === 'enforce') {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_raised_to_minimum', ['minimum' => number_format($minimum, 0)]);
             }
-
-            if (empty($characterIds)) {
-                $characterIds = [$tax->character_id];
+            if (str_contains((string) $tax->notes, ' - Adjustment: ')) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_adjusted');
             }
-
-            foreach ($characterIds as $charId) {
-                try {
-                    $breakdown = $this->taxService->getTaxBreakdown($charId, $startDate, $endDate);
-                    if (!empty($breakdown['breakdown'])) {
-                        $charInfo = $this->characterInfoService->getCharacterInfo($charId);
-                        foreach ($breakdown['breakdown'] as $ore) {
-                            $miningBreakdown[] = [
-                                'character_name' => $charInfo['name'] ?? "Character {$charId}",
-                                'type_name' => $ore['name'],
-                                'category' => $ore['category'],
-                                'rarity' => $ore['rarity'],
-                                'quantity' => $ore['quantity'],
-                                'total_value' => $ore['value'],
-                                'tax_rate' => $ore['effective_rate'],
-                                'tax_amount' => $ore['tax'],
-                                'event_modifier' => $ore['event_modifier'],
-                            ];
-                        }
-                        $miningTotal += $breakdown['total_value'];
-                    }
-                } catch (\Exception $e) {
-                    Log::debug("Mining Manager: Error getting breakdown for char {$charId}: " . $e->getMessage());
-                }
+            if ($tax->calculated_at && Carbon::parse($tax->calculated_at)->lt($endDate->copy()->endOfDay())) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_early', ['date' => Carbon::parse($tax->calculated_at)->format('M j, Y')]);
+            }
+            if (abs($breakdown['daily_tax'] - $breakdown['tax']) >= 1) {
+                $breakdownNotes[] = trans('mining-manager::taxes.breakdown_rebuilt');
             }
         }
 
@@ -2550,6 +2563,8 @@ class TaxController extends Controller
             'tax',
             'miningBreakdown',
             'miningTotal',
+            'breakdown',
+            'breakdownNotes',
             'taxCalculationMethod',
             'isAdmin',
             'isDirector',

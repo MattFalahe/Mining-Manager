@@ -1205,6 +1205,107 @@ class TaxCalculationService
     }
 
     /**
+     * What a bill taxed, from the daily summaries it was worked out from:
+     * each character's taxed ores, and the same mining by kind of ore with
+     * moon ore by rarity.
+     *
+     * Only entries that carried tax count, at the rate they were taxed at,
+     * with any event discount beside them. A day already billed keeps its
+     * billed total while its per-ore figures follow the rates of the last
+     * time it was built, so both totals are returned for the page to compare.
+     *
+     * @param array<int, int|string> $characterIds
+     * @return array{rows: array, kinds: array, taxed_value: float, tax: float, discount: float, mined_value: float, daily_tax: float}
+     */
+    public function taxedBreakdown(array $characterIds, Carbon $startDate, Carbon $endDate): array
+    {
+        $rows = [];
+        $kinds = [];
+        $minedValue = 0.0;
+        $dailyTax = 0.0;
+
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->get(['character_id', 'total_value', 'total_tax', 'ore_types']);
+
+        foreach ($summaries as $summary) {
+            $minedValue += (float) $summary->total_value;
+            $dailyTax += (float) $summary->total_tax;
+
+            foreach ((array) $summary->ore_types as $ore) {
+                $tax = (float) ($ore['estimated_tax'] ?? 0);
+                if (empty($ore['is_taxable']) || $tax <= 0) {
+                    continue;
+                }
+
+                $typeId = (int) ($ore['type_id'] ?? 0);
+                $class = $typeId > 0 ? OreClassifier::category($typeId) : (string) ($ore['category'] ?? 'ore');
+                $kind = str_starts_with($class, 'moon') ? 'moon' : $class;
+                $rate = (float) ($ore['tax_rate'] ?? 0);
+                $value = (float) ($ore['total_value'] ?? 0);
+                $discount = (float) ($ore['event_discount_amount'] ?? 0);
+                $name = $ore['ore_name'] ?? "Type {$typeId}";
+
+                $rowKey = $summary->character_id . '|' . $typeId . '|' . $rate;
+                $rows[$rowKey] ??= [
+                    'character_id' => (int) $summary->character_id,
+                    'type_id' => $typeId,
+                    'name' => $name,
+                    'class' => $class,
+                    'rate' => $rate,
+                    'quantity' => 0.0,
+                    'value' => 0.0,
+                    'tax' => 0.0,
+                    'discount' => 0.0,
+                ];
+                $rows[$rowKey]['quantity'] += (float) ($ore['quantity'] ?? 0);
+                $rows[$rowKey]['value'] += $value;
+                $rows[$rowKey]['tax'] += $tax;
+                $rows[$rowKey]['discount'] += $discount;
+
+                $classKey = $class . '|' . $rate;
+                $kinds[$kind][$classKey] ??= ['class' => $class, 'rate' => $rate, 'value' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'ores' => []];
+                $kinds[$kind][$classKey]['value'] += $value;
+                $kinds[$kind][$classKey]['tax'] += $tax;
+                $kinds[$kind][$classKey]['discount'] += $discount;
+                $kinds[$kind][$classKey]['ores'][$typeId] = $name;
+            }
+        }
+
+        // Moon ore first, by rarity, then the rest in the order the tax
+        // settings list them.
+        $kindOrder = array_flip(['moon', 'ore', 'ice', 'gas', 'abyssal', 'triglavian']);
+        $classOrder = array_flip(['moon_r4', 'moon_r8', 'moon_r16', 'moon_r32', 'moon_r64', 'moon']);
+        uksort($kinds, fn ($a, $b) => ($kindOrder[$a] ?? 99) <=> ($kindOrder[$b] ?? 99));
+
+        $grouped = [];
+        foreach ($kinds as $kind => $classes) {
+            $classes = array_values($classes);
+            usort($classes, fn ($a, $b) => [$classOrder[$a['class']] ?? 99, $a['rate']] <=> [$classOrder[$b['class']] ?? 99, $b['rate']]);
+            $grouped[] = [
+                'kind' => $kind,
+                'value' => array_sum(array_column($classes, 'value')),
+                'tax' => array_sum(array_column($classes, 'tax')),
+                'discount' => array_sum(array_column($classes, 'discount')),
+                'classes' => $classes,
+            ];
+        }
+
+        $rows = array_values($rows);
+        usort($rows, fn ($a, $b) => $b['tax'] <=> $a['tax']);
+
+        return [
+            'rows' => $rows,
+            'kinds' => $grouped,
+            'taxed_value' => array_sum(array_column($rows, 'value')),
+            'tax' => array_sum(array_column($rows, 'tax')),
+            'discount' => array_sum(array_column($rows, 'discount')),
+            'mined_value' => $minedValue,
+            'daily_tax' => $dailyTax,
+        ];
+    }
+
+    /**
      * Get ore name from type_id.
      * 
      * @param int $typeId
