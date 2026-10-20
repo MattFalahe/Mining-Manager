@@ -728,8 +728,8 @@ class LedgerController extends Controller
             $corporationId = $this->settingsService->getTaxProgramCorporationId();
         }
 
-        // Members' mining can be narrowed the way the Performance Charts are.
-        // The moons view is moon ore off our refineries already.
+        // All mining can be narrowed the way the Performance Charts are. The
+        // moons view is moon ore off our refineries already.
         $ore = (string) $request->get('ore', 'all');
         if ($scope === LedgerSummaryService::SCOPE_MOONS || !array_key_exists($ore, LedgerSummaryService::ORE_FILTERS)) {
             $ore = 'all';
@@ -932,7 +932,7 @@ class LedgerController extends Controller
     /**
      * The corporations the summary's filter offers.
      *
-     * Members' mining offers the corporations this install looks after. The
+     * All mining offers the corporations this install looks after. The
      * moons view offers the owners of refineries whose observers recorded
      * mining that month, and always the Moon Owner Corporation it opens on.
      * Names come from wherever the plugin knows them, so a corporation SeAT

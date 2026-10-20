@@ -137,6 +137,8 @@
                             'triglavian' => trans('mining-manager::ledger.triglavian'),
                         ];
                         $periodLabel = $periodNav['label'] ?? $monthDate->format('F Y');
+                        // A member only ever sees their own characters, so their hint speaks to them.
+                        $scopeHint = ($moonsScope ? 'scope_moons_hint' : 'scope_members_hint') . ($isDirector ? '' : '_own');
                     @endphp
                     <div class="btn-group mb-2" role="group">
                         <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'members'] + $scopeParams) }}"
@@ -149,7 +151,7 @@
                         </a>
                     </div>
                     <p class="text-muted small mb-3">
-                        {{ $moonsScope ? trans('mining-manager::ledger.scope_moons_hint') : trans('mining-manager::ledger.scope_members_hint') }}
+                        {{ trans('mining-manager::ledger.' . $scopeHint) }}
                     </p>
 
                     {{-- Biweekly installs bill each half of the month on its own --}}
