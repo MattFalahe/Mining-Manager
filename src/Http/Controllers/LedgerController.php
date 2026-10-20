@@ -398,6 +398,16 @@ class LedgerController extends Controller
             ->limit(10)
             ->get();
 
+        // Everything past the top ten as one slice, so each slice is a share of
+        // all the mining in the period rather than of the top ten.
+        $topOreLabels = $topOres->pluck('name')->toArray();
+        $topOreData = $topOres->pluck('value')->map(fn ($value) => (float) $value)->toArray();
+        $otherOres = (float) ($baseQuery())->sum('total_value') - array_sum($topOreData);
+        if ($otherOres >= 1) {
+            $topOreLabels[] = trans('mining-manager::ledger.other_ores');
+            $topOreData[] = round($otherOres, 2);
+        }
+
         return [
             'daily' => [
                 'labels' => $dailyData->pluck('date')->map(fn($d) => Carbon::parse($d)->format('M d'))->toArray(),
@@ -407,8 +417,8 @@ class LedgerController extends Controller
                     ->all(),
             ],
             'topOres' => [
-                'labels' => $topOres->pluck('name')->toArray(),
-                'data' => $topOres->pluck('value')->toArray(),
+                'labels' => $topOreLabels,
+                'data' => $topOreData,
             ],
         ];
     }

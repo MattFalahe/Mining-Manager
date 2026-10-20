@@ -356,6 +356,12 @@
                         <i class="fas fa-chart-pie"></i>
                         {{ trans('mining-manager::ledger.ore_distribution') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" role="group" id="distributionModeSwitch">
+                            <button type="button" class="btn btn-primary" data-mode="ore">{{ trans('mining-manager::ledger.distribution_by_ore') }}</button>
+                            <button type="button" class="btn btn-outline-secondary" data-mode="type">{{ trans('mining-manager::ledger.trend_by_type') }}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container" style="position: relative; height: 300px;">
@@ -650,77 +656,115 @@ function trendConfig(mode) {
     };
 }
 
-let trendMode = 'total';
-try {
-    if (localStorage.getItem('mm.myMining.trendMode') === 'type') {
-        trendMode = 'type';
-    }
-} catch (e) {}
-
-let trendChart = new Chart(trendCtx, trendConfig(trendMode));
-
-function markTrendMode(mode) {
-    document.querySelectorAll('#trendModeSwitch [data-mode]').forEach(function (button) {
-        const active = button.dataset.mode === mode;
-        button.classList.toggle('btn-primary', active);
-        button.classList.toggle('btn-outline-secondary', !active);
-    });
-}
-markTrendMode(trendMode);
-
-document.querySelectorAll('#trendModeSwitch [data-mode]').forEach(function (button) {
-    button.addEventListener('click', function () {
-        if (button.dataset.mode === trendMode) {
-            return;
-        }
-        trendMode = button.dataset.mode;
-        trendChart.destroy();
-        trendChart = new Chart(trendCtx, trendConfig(trendMode));
-        markTrendMode(trendMode);
-        try {
-            localStorage.setItem('mm.myMining.trendMode', trendMode);
-        } catch (e) {}
-    });
-});
-
-// Ore Distribution Chart
+// Ore Distribution Chart: the top ores by value, or the same mining by kind
+// of ore, from the same figures as the trend chart's By type.
 const distributionCtx = document.getElementById('oreDistributionChart').getContext('2d');
-const distributionChart = new Chart(distributionCtx, {
-    type: 'doughnut',
-    data: {
-        labels: @json($oreDistribution['labels'] ?? []),
-        datasets: [{
-            data: @json($oreDistribution['values'] ?? []),
-            backgroundColor: [
-                'rgba(0, 210, 255, 0.8)',
-                'rgba(255, 0, 132, 0.8)',
-                'rgba(161, 198, 60, 0.8)',
-                'rgba(255, 159, 64, 0.8)',
-                'rgba(255, 205, 86, 0.8)',
-                'rgba(75, 192, 192, 0.8)',
-            ]
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { 
-                position: 'right',
-                labels: { color: '#fff' }
-            },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        const value = context.parsed;
-                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                        const percentage = ((value / total) * 100).toFixed(1);
-                        return context.label + ': ' + value.toLocaleString() + ' ISK (' + percentage + '%)';
+const distributionOreLabels = @json($oreDistribution['labels'] ?? []);
+const distributionOreValues = (@json($oreDistribution['values'] ?? [])).map(Number);
+const distributionOreColors = [
+    'rgba(0, 210, 255, 0.8)',
+    'rgba(255, 0, 132, 0.8)',
+    'rgba(161, 198, 60, 0.8)',
+    'rgba(255, 159, 64, 0.8)',
+    'rgba(255, 205, 86, 0.8)',
+    'rgba(75, 192, 192, 0.8)'
+];
+
+function distributionConfig(mode) {
+    // Everything past the top ten is one grey slice, set apart from the ores.
+    const otherOres = @json(trans('mining-manager::ledger.other_ores'));
+    let labels = distributionOreLabels;
+    let values = distributionOreValues;
+    let colors = distributionOreLabels.map(function (label, index) {
+        return label === otherOres ? 'rgba(108, 117, 125, 0.8)' : distributionOreColors[index % distributionOreColors.length];
+    });
+
+    if (mode === 'type') {
+        const kinds = trendTypes
+            .map(function (type) {
+                const total = (trendByType[type.key] || []).reduce(function (sum, value) { return sum + Number(value); }, 0);
+                return { type: type, total: total };
+            })
+            .filter(function (kind) { return kind.total > 0; });
+
+        labels = kinds.map(function (kind) { return kind.type.label; });
+        values = kinds.map(function (kind) { return kind.total; });
+        colors = kinds.map(function (kind) { return 'rgba(' + kind.type.rgb + ', 0.8)'; });
+    }
+
+    return {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{ data: values, backgroundColor: colors }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#fff' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce(function (sum, item) { return sum + item; }, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                            return context.label + ': ' + value.toLocaleString() + ' ISK (' + percentage + '%)';
+                        }
                     }
                 }
             }
         }
-    }
+    };
+}
+
+// A two-way switch over a chart: marks the button picked, rebuilds the chart
+// that way and remembers the choice in this browser.
+function chartSwitch(selector, storageKey, defaultMode, build) {
+    const buttons = document.querySelectorAll(selector + ' [data-mode]');
+    const modes = Array.prototype.map.call(buttons, function (button) { return button.dataset.mode; });
+    let mode = defaultMode;
+    try {
+        const saved = localStorage.getItem(storageKey);
+        if (modes.indexOf(saved) !== -1) {
+            mode = saved;
+        }
+    } catch (e) {}
+
+    let chart = build(mode);
+    const mark = function () {
+        buttons.forEach(function (button) {
+            const active = button.dataset.mode === mode;
+            button.classList.toggle('btn-primary', active);
+            button.classList.toggle('btn-outline-secondary', !active);
+        });
+    };
+    mark();
+
+    buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (button.dataset.mode === mode) {
+                return;
+            }
+            mode = button.dataset.mode;
+            chart.destroy();
+            chart = build(mode);
+            mark();
+            try {
+                localStorage.setItem(storageKey, mode);
+            } catch (e) {}
+        });
+    });
+}
+
+chartSwitch('#trendModeSwitch', 'mm.myMining.trendMode', 'total', function (mode) {
+    return new Chart(trendCtx, trendConfig(mode));
+});
+chartSwitch('#distributionModeSwitch', 'mm.myMining.distributionMode', 'ore', function (mode) {
+    return new Chart(distributionCtx, distributionConfig(mode));
 });
 
 // Monthly Comparison Chart

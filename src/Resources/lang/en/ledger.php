@@ -305,6 +305,8 @@ return [
     'daily_value' => 'Daily Value',
     'trend_total' => 'Total',
     'trend_by_type' => 'By type',
+    'distribution_by_ore' => 'By ore',
+    'other_ores' => 'Other ores',
     'monthly_value' => 'Monthly Value',
 
     // Delete actions
@@ -330,7 +332,7 @@ return [
 
     // Chart Info Notes
     'note_mining_trend' => 'The value of what you mined each day over the period picked above. By type splits each day into moon ore, regular ore, ice, gas, abyssal and triglavian.',
-    'note_ore_distribution' => 'Breakdown of ore types you mined, by ISK value.',
+    'note_ore_distribution' => 'What you mined over the period picked above, by ISK value: your top ten ores and the rest as Other ores, or By type for moon ore, regular ore, ice, gas, abyssal and triglavian.',
     'note_monthly_comparison' => 'Side-by-side comparison of your mining across recent months.',
 
     // Reprocessing: names invTypes could not place
