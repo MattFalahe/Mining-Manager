@@ -70,21 +70,37 @@ class LedgerController extends Controller
                 'dateTo' => now()->format('Y-m-d'),
                 'characterId' => null,
                 'features' => $this->settingsService->getFeatureFlags(),
+                'period' => 'period',
+                'rangeLabel' => null,
+                'billedOn' => null,
                 'message' => trans('mining-manager::ledger.no_characters'),
             ]);
         }
 
-        // Get date range — support period shortcuts (week, month, year, all)
-        $period = $request->get('period', 'month');
+        // The tax period we are in, the one before it, or a rolling window.
+        // The tax periods line up with the bills, so the page opens on this one.
+        $period = $request->get('period', 'period');
         $dateFrom = $request->get('date_from');
         $dateTo = $request->get('date_to', now()->format('Y-m-d'));
         $characterId = $request->get('character_id');
 
-        // If no explicit date_from, calculate from period
+        $periodHelper = app(TaxPeriodHelper::class);
+        $periodType = $periodHelper->getConfiguredPeriodType();
+        [$periodStart, $periodEnd] = $periodHelper->getPeriodBounds(now(), $periodType);
+
         if (!$dateFrom) {
             switch ($period) {
+                case 'last_period':
+                    // The period holding the day before this one began.
+                    [$lastStart, $lastEnd] = $periodHelper->getPeriodBounds($periodStart->copy()->subDay(), $periodType);
+                    $dateFrom = $lastStart->format('Y-m-d');
+                    $dateTo = $lastEnd->format('Y-m-d');
+                    break;
                 case 'week':
-                    $dateFrom = now()->subWeek()->format('Y-m-d');
+                    $dateFrom = now()->subDays(6)->format('Y-m-d');
+                    break;
+                case 'month':
+                    $dateFrom = now()->subDays(29)->format('Y-m-d');
                     break;
                 case 'year':
                     $dateFrom = now()->subYear()->format('Y-m-d');
@@ -92,12 +108,28 @@ class LedgerController extends Controller
                 case 'all':
                     $dateFrom = '2003-01-01'; // EVE Online launch date
                     break;
-                case 'month':
+                case 'period':
                 default:
-                    $dateFrom = now()->subMonth()->format('Y-m-d');
+                    $period = 'period';
+                    $dateFrom = $periodStart->format('Y-m-d');
+                    $dateTo = $periodEnd->format('Y-m-d');
                     break;
             }
         }
+
+        $taxPeriodShown = in_array($period, ['period', 'last_period'], true) && !$request->filled('date_from');
+        $rangeLabel = match (true) {
+            $taxPeriodShown => $periodHelper->formatPeriod(Carbon::parse($dateFrom), Carbon::parse($dateTo), $periodType),
+            $period === 'all' && !$request->filled('date_from') => trans('mining-manager::ledger.all_time'),
+            default => Carbon::parse($dateFrom)->format('M j, Y') . ' - ' . Carbon::parse($dateTo)->format('M j, Y'),
+        };
+
+        // A tax period's bills go out on the nightly run two days after it
+        // ends. Only said when the run is switched on to send them.
+        $features = $this->settingsService->getFeatureFlags();
+        $billedOn = $taxPeriodShown && ($features['auto_calculate_taxes'] ?? true)
+            ? Carbon::parse($dateTo)->addDays(2)->setTime(2, 15)
+            : null;
 
         // Build query for user's characters with eager loading
         $query = MiningLedger::with(['solarSystem', 'type'])
@@ -151,10 +183,11 @@ class LedgerController extends Controller
         $charactersInfo = $this->characterInfoService->getBatchCharacterInfo($userCharacters->toArray());
         $characters = collect($charactersInfo)->sortBy('name');
 
-        $features = $this->settingsService->getFeatureFlags();
-
         return view('mining-manager::ledger.my-mining', compact(
             'features',
+            'period',
+            'rangeLabel',
+            'billedOn',
             'ledgerEntries',
             'stats',
             'trendData',
@@ -239,19 +272,20 @@ class LedgerController extends Controller
         // Best single day by value (from daily summaries)
         $bestDayValue = (float) ($agg->best_day_value ?? 0);
 
-        // Tax paid from mining_taxes (for selected date range): everything
-        // paid, part payments included, on the same bills as the owed figure
-        // below, so the outstanding figure compares like with like.
-        $paidTaxAmount = MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate, $endDate])
+        // The bills that cover any of the days shown, each counted whole, as
+        // it was billed. A bill's month is only the month it falls in, which a
+        // rolling window can start after while still taking in the bill's
+        // days. Bills from before periods were stored cover their month.
+        $bills = MiningTax::whereIn('character_id', $characterIds)
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->sum('amount_paid');
+            ->where('status', '!=', 'waived')
+            ->whereRaw('COALESCE(period_start, month) <= ?', [$endDate])
+            ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$startDate])
+            ->get();
 
-        // Tax owed from mining_taxes (authoritative, for selected date range)
-        $taxOwed = (float) MiningTax::whereIn('character_id', $characterIds)
-            ->whereBetween('month', [$startDate, $endDate])
-            ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->sum('amount_owed');
+        $taxBilled = (float) $bills->sum('amount_owed');
+        $paidTaxAmount = (float) $bills->sum('amount_paid');
+        $leftToPay = (float) $bills->sum(fn ($bill) => $bill->getRemainingBalance());
 
         // Estimated tax: daily summaries first, then the raw ledger. When both
         // say nothing is due, nothing is: mining can be untaxed (exempt, a 0%
@@ -266,9 +300,6 @@ class LedgerController extends Controller
                 ->sum('tax_amount');
         }
 
-        // Use authoritative tax_owed if available, otherwise fall back to estimated
-        $effectiveTaxOwed = $taxOwed > 0 ? $taxOwed : $estimatedTax;
-
         // All-time event tax savings — every discount the user has accrued
         // from event participation, across all events the daily summaries
         // have seen. Cheap one-column sum from mining_ledger_daily_summaries.
@@ -280,19 +311,45 @@ class LedgerController extends Controller
             'total_quantity' => $totalQuantity,
             'total_value' => $totalValue,
             'total_volume' => $totalVolume,
-            'total_sessions' => $activeDays,
             'active_days' => $activeDays,
             'best_day_value' => $bestDayValue,
             'daily_average' => $activeDays > 0 ? round($totalValue / $activeDays, 0) : 0,
             'estimated_tax_this_month' => $estimatedTax,
-            'total_tax_owed' => $effectiveTaxOwed,
+            'total_tax_billed' => $taxBilled,
             'total_tax_paid' => $paidTaxAmount,
-            'tax_outstanding' => max(0, $effectiveTaxOwed - $paidTaxAmount),
+            'tax_outstanding' => $leftToPay,
+            'bills_covering' => $bills->count(),
+            'next_payment' => $this->nextPayment($characterIds),
             'event_discount_total' => (float) ($agg->event_discount_total ?? 0),
             'event_savings_all_time' => $eventSavingsAllTime,
             'mining_days' => $activeDays,
             'favorite_ore' => $this->getFavoriteOre($characterIds, $startDate, $endDate, $specificCharacterId),
             'corp_rank' => $this->calculateCorpRank($characterIds, $startDate, $endDate),
+        ];
+    }
+
+    /**
+     * What the account has to pay next, whatever period the page shows: the
+     * overdue bills when there are any, otherwise the next one coming due.
+     *
+     * @param \Illuminate\Support\Collection $characterIds
+     * @return array{overdue_count: int, overdue_amount: float, next: MiningTax|null}
+     */
+    protected function nextPayment($characterIds): array
+    {
+        $open = MiningTax::whereIn('character_id', $characterIds)
+            ->outstanding()
+            ->get()
+            ->filter(fn ($bill) => $bill->getRemainingBalance() > 0);
+
+        $overdue = $open->filter(fn ($bill) => $bill->isOverdue());
+
+        return [
+            'overdue_count' => $overdue->count(),
+            'overdue_amount' => (float) $overdue->sum(fn ($bill) => $bill->getRemainingBalance()),
+            'next' => $open->reject(fn ($bill) => $bill->isOverdue())
+                ->sortBy(fn ($bill) => $bill->effectiveDueDate()->getTimestamp())
+                ->first(),
         ];
     }
 
@@ -400,14 +457,16 @@ class LedgerController extends Controller
         return [
             'total_quantity' => 0,
             'total_value' => 0,
-            'total_sessions' => 0,
+
             'active_days' => 0,
             'best_day_value' => 0,
             'daily_average' => 0,
             'estimated_tax_this_month' => 0,
-            'total_tax_owed' => 0,
+            'total_tax_billed' => 0,
             'total_tax_paid' => 0,
             'tax_outstanding' => 0,
+            'bills_covering' => 0,
+            'next_payment' => ['overdue_count' => 0, 'overdue_amount' => 0.0, 'next' => null],
             'event_discount_total' => 0,
             'event_savings_all_time' => 0,
             'mining_days' => 0,

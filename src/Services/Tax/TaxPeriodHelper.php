@@ -256,7 +256,7 @@ class TaxPeriodHelper
 
         return match ($this->normaliseLegacyWeekly($periodType)) {
             'biweekly' => $this->getPreviousCompletedBiweekly($now),
-            default => $this->getPeriodBounds($now->copy()->subMonth(), 'monthly'),
+            default => $this->getPeriodBounds($now->copy()->subMonthNoOverflow(), 'monthly'),
         };
     }
 

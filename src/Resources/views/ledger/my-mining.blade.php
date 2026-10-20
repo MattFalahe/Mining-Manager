@@ -42,14 +42,27 @@
                     <h3 class="card-title">
                         <i class="fas fa-chart-pie"></i>
                         {{ trans('mining-manager::ledger.your_mining_summary') }}
+                        @if(!empty($rangeLabel))
+                            <span class="badge badge-secondary ml-2">{{ $rangeLabel }}</span>
+                        @endif
                     </h3>
                     <div class="card-tools">
-                        @php $activePeriod = request('period', 'month'); @endphp
+                        {{-- The tax periods line up with the bills; the rest are rolling windows ending today --}}
+                        @php
+                            $activePeriod = $period ?? request('period', 'period');
+                            $periodButtons = [
+                                'period' => trans('mining-manager::ledger.this_period'),
+                                'last_period' => trans('mining-manager::ledger.last_period'),
+                                'week' => trans('mining-manager::ledger.last_7_days'),
+                                'month' => trans('mining-manager::ledger.last_30_days'),
+                                'year' => trans('mining-manager::ledger.last_12_months'),
+                                'all' => trans('mining-manager::ledger.all_time'),
+                            ];
+                        @endphp
                         <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'week' ? 'active' : '' }}" onclick="changePeriod('week')">{{ trans('mining-manager::ledger.week') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'month' ? 'active' : '' }}" onclick="changePeriod('month')">{{ trans('mining-manager::ledger.month') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'year' ? 'active' : '' }}" onclick="changePeriod('year')">{{ trans('mining-manager::ledger.year') }}</button>
-                            <button type="button" class="btn btn-sm btn-primary {{ $activePeriod === 'all' ? 'active' : '' }}" onclick="changePeriod('all')">{{ trans('mining-manager::ledger.all_time') }}</button>
+                            @foreach($periodButtons as $periodKey => $periodName)
+                                <button type="button" class="btn btn-sm {{ $activePeriod === $periodKey ? 'btn-primary' : 'btn-outline-secondary' }}" onclick="changePeriod('{{ $periodKey }}')">{{ $periodName }}</button>
+                            @endforeach
                         </div>
                     </div>
                 </div>
@@ -148,7 +161,13 @@
                         </div>
                     </div>
 
-                    {{-- TAX STATUS ROW --}}
+                    {{-- TAX STATUS ROW: the estimate is the mining shown, paid and
+                         left to pay are the bills covering those days, and the
+                         last tile is what to pay next whatever the period. --}}
+                    @php
+                        $billsShown = $stats['bills_covering'] ?? 0;
+                        $nextPayment = $stats['next_payment'] ?? ['overdue_count' => 0, 'overdue_amount' => 0, 'next' => null];
+                    @endphp
                     <div class="row mt-3">
                         {{-- Estimated Tax, for the period picked above --}}
                         <div class="col-lg-3 col-md-6">
@@ -168,7 +187,12 @@
                             <div class="small-box bg-gradient-success">
                                 <div class="inner">
                                     <h3>{{ number_format($stats['total_tax_paid'] ?? 0, 0) }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.tax_paid') }} (ISK)</p>
+                                    <p>
+                                        {{ trans('mining-manager::ledger.tax_paid') }} (ISK)
+                                        @if($billsShown > 0)
+                                            <br><small>{{ trans('mining-manager::ledger.of_billed', ['amount' => number_format($stats['total_tax_billed'] ?? 0, 0)]) }}</small>
+                                        @endif
+                                    </p>
                                 </div>
                                 <div class="icon">
                                     <i class="fas fa-check-circle"></i>
@@ -180,8 +204,19 @@
                         <div class="col-lg-3 col-md-6">
                             <div class="small-box {{ ($stats['tax_outstanding'] ?? 0) > 0 ? 'bg-gradient-warning' : 'bg-gradient-success' }}">
                                 <div class="inner">
-                                    <h3>{{ number_format($stats['tax_outstanding'] ?? 0, 0) }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.tax_outstanding') }} (ISK)</p>
+                                    @if($billsShown > 0)
+                                        <h3>{{ number_format($stats['tax_outstanding'] ?? 0, 0) }}</h3>
+                                        <p>
+                                            {{ trans('mining-manager::ledger.tax_outstanding') }} (ISK)
+                                            <br><small>{{ trans_choice('mining-manager::ledger.bills_covering', $billsShown, ['count' => $billsShown]) }}</small>
+                                        </p>
+                                    @elseif(($stats['estimated_tax_this_month'] ?? 0) > 0 && $billedOn && $billedOn->isFuture())
+                                        <h3>{{ trans('mining-manager::ledger.not_billed_yet') }}</h3>
+                                        <p>{{ trans('mining-manager::ledger.bills_go_out', ['date' => $billedOn->format('M j')]) }}</p>
+                                    @else
+                                        <h3>0</h3>
+                                        <p>{{ trans('mining-manager::ledger.no_bill_for_days') }}</p>
+                                    @endif
                                 </div>
                                 <div class="icon">
                                     <i class="fas fa-balance-scale"></i>
@@ -189,17 +224,45 @@
                             </div>
                         </div>
 
-                        {{-- Sessions, for the period picked above --}}
+                        {{-- What to pay next, whatever the period above: overdue first --}}
                         <div class="col-lg-3 col-md-6">
-                            <div class="small-box bg-gradient-info">
-                                <div class="inner">
-                                    <h3>{{ $stats['total_sessions'] ?? 0 }}</h3>
-                                    <p>{{ trans('mining-manager::ledger.mining_sessions_this_month') }}</p>
+                            @if($nextPayment['overdue_count'] > 0)
+                                <div class="small-box bg-gradient-danger">
+                                    <div class="inner">
+                                        <h3>{{ number_format($nextPayment['overdue_amount'], 0) }}</h3>
+                                        <p>{{ trans_choice('mining-manager::ledger.overdue_bills', $nextPayment['overdue_count'], ['count' => $nextPayment['overdue_count']]) }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </div>
+                                    <a href="{{ route('mining-manager.taxes.my-taxes') }}" class="small-box-footer">
+                                        {{ trans('mining-manager::ledger.view_my_taxes') }} <i class="fas fa-arrow-circle-right"></i>
+                                    </a>
                                 </div>
-                                <div class="icon">
-                                    <i class="fas fa-calendar-day"></i>
+                            @elseif($nextPayment['next'])
+                                <div class="small-box bg-gradient-info">
+                                    <div class="inner">
+                                        <h3>{{ number_format($nextPayment['next']->getRemainingBalance(), 0) }}</h3>
+                                        <p>{{ trans('mining-manager::ledger.next_payment_due', ['date' => $nextPayment['next']->effectiveDueDate()->format('M j'), 'countdown' => $nextPayment['next']->dueCountdown()]) }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-calendar-day"></i>
+                                    </div>
+                                    <a href="{{ route('mining-manager.taxes.my-taxes') }}" class="small-box-footer">
+                                        {{ trans('mining-manager::ledger.view_my_taxes') }} <i class="fas fa-arrow-circle-right"></i>
+                                    </a>
                                 </div>
-                            </div>
+                            @else
+                                <div class="small-box bg-gradient-success">
+                                    <div class="inner">
+                                        <h3>0</h3>
+                                        <p>{{ trans('mining-manager::ledger.nothing_to_pay') }}</p>
+                                    </div>
+                                    <div class="icon">
+                                        <i class="fas fa-check-circle"></i>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
 
