@@ -21,6 +21,11 @@ All notable changes to Mining Manager will be documented in this file.
 - A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
 - **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
 
+### Dashboard
+
+- **Biweekly installs see the current tax period on the dashboards.** The member dashboard and both tabs of the director dashboard show a **Current Tax Period** card above Current Month, with the same boxes for the half of the month we are in. On the corporation tab, Tax Collected for a period not billed yet says when its bills go out. Monthly installs see no change, since the card would only repeat the month.
+- The tax box on the dashboards is called **Estimated Tax** on both, since it is the tax on the mining shown, worked out every day. The director's personal tab called it Tax Owed, and the member dashboard Tax ISK.
+
 ### Tax Calculation
 
 - Fixed: **working out one character's tax used the calendar month and that character alone.** Calculate Taxes with a character picked, and `calculate-taxes --character_id`, added up the whole month for that one character, applied the thresholds to that figure, and looked for the bill starting on the 1st. On fortnightly periods the second half's bill was never looked at and the first half's could be offered the whole month's tax, and a main's figure left out their alts. It now works out the account the character belongs to, main and alts, for the period asked, exactly as the nightly calculation does: an issued invoice is left as it stands, and an account with no bill for that period yet gets one, as the nightly run would have made it. `--character_id` also follows `--recalculate` now, so an existing bill is only worked out again when asked.

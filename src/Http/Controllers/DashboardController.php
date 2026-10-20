@@ -80,13 +80,16 @@ class DashboardController extends Controller
         // Last 12 months period
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        // Cache key based on user ID and current month
-        $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod();
+
+        // Cache key based on user ID, current month and, on biweekly, the half
+        $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
         // Cache dashboard data for 30 minutes (1800 seconds)
-        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user, $periodStart) {
             // === CURRENT MONTH STATISTICS ===
             $currentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+            $currentPeriodStats = $periodStart ? $this->getMemberCurrentMonthStats($characterIds, $periodStart, $currentMonthEnd) : null;
 
             // === LAST 12 MONTHS STATISTICS ===
             $last12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
@@ -117,6 +120,7 @@ class DashboardController extends Controller
 
             return [
                 'currentMonthStats' => $currentMonthStats,
+                'currentPeriodStats' => $currentPeriodStats,
                 'last12MonthsStats' => $last12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -135,6 +139,7 @@ class DashboardController extends Controller
         });
 
         $dashboardData['taxBanner'] = $this->taxBanner($user);
+        $dashboardData['currentPeriodLabel'] = $periodLabel;
 
         return view('mining-manager::dashboard.member', $dashboardData);
     }
@@ -163,11 +168,13 @@ class DashboardController extends Controller
 
         // Only compute Personal tab data server-side.
         // Corporation tab data is loaded via AJAX when user clicks the tab.
-        $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod();
+        $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
-        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user) {
+        $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user, $periodStart) {
             // === PERSONAL STATISTICS (Director's own mining) ===
             $personalCurrentMonthStats = $this->getMemberCurrentMonthStats($characterIds, $currentMonthStart, $currentMonthEnd);
+            $personalCurrentPeriodStats = $periodStart ? $this->getMemberCurrentMonthStats($characterIds, $periodStart, $currentMonthEnd) : null;
             $personalLast12MonthsStats = $this->getMemberLast12MonthsStats($characterIds, $last12MonthsStart);
 
             // Personal rankings
@@ -196,6 +203,7 @@ class DashboardController extends Controller
 
             return [
                 'personalCurrentMonthStats' => $personalCurrentMonthStats,
+                'personalCurrentPeriodStats' => $personalCurrentPeriodStats,
                 'personalLast12MonthsStats' => $personalLast12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -217,6 +225,7 @@ class DashboardController extends Controller
         $dashboardData['corpTabUrl'] = route('mining-manager.dashboard.tab.corporation');
         $dashboardData['guestTabUrl'] = route('mining-manager.dashboard.tab.guest-miners');
         $dashboardData['taxBanner'] = $this->taxBanner(auth()->user());
+        $dashboardData['currentPeriodLabel'] = $periodLabel;
 
         return view('mining-manager::dashboard.combined-director', $dashboardData);
     }
@@ -235,10 +244,12 @@ class DashboardController extends Controller
         $currentMonthEnd = Carbon::now();
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m');
+        [$periodStart, $periodEnd, $periodLabel] = $this->currentTaxPeriod();
+        $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
-        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart) {
+        $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $periodStart, $periodEnd, $periodLabel) {
             $corpCurrentMonthStats = $this->getDirectorCurrentMonthStats($corporationId, $currentMonthStart, $currentMonthEnd);
+            $corpCurrentPeriodStats = $periodStart ? $this->getDirectorPeriodStats($corporationId, $periodStart, $periodEnd) : null;
             $corpLast12MonthsStats = $this->getDirectorLast12MonthsStats($corporationId, $last12MonthsStart);
 
             // Last 12 months rankings (matches the stats section above)
@@ -257,6 +268,8 @@ class DashboardController extends Controller
 
             return [
                 'corpCurrentMonthStats' => $corpCurrentMonthStats,
+                'corpCurrentPeriodStats' => $corpCurrentPeriodStats,
+                'currentPeriodLabel' => $periodLabel,
                 'corpLast12MonthsStats' => $corpLast12MonthsStats,
                 'topMiners12mAllOre' => $topMiners12mAllOre,
                 'topMiners12mMoonOre' => $topMiners12mMoonOre,
@@ -752,6 +765,48 @@ class DashboardController extends Controller
             'tax_collected' => $taxCollected,
             'active_miners' => $activeMiners,
         ];
+    }
+
+    /**
+     * The tax period we are in when it is shorter than the month: [start,
+     * end, label] on a biweekly install, nulls on a monthly one, where a
+     * period card would only repeat the month.
+     *
+     * @return array{0: Carbon|null, 1: Carbon|null, 2: string|null}
+     */
+    private function currentTaxPeriod(): array
+    {
+        $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
+
+        if ($periodHelper->getConfiguredPeriodType() !== 'biweekly') {
+            return [null, null, null];
+        }
+
+        [$start, $end] = $periodHelper->getPeriodBounds(Carbon::now(), 'biweekly');
+
+        return [$start, $end, $periodHelper->formatPeriod($start, $end, 'biweekly')];
+    }
+
+    /**
+     * The corporation's mining in a tax period, with what has been collected
+     * on the bills covering it. A period not billed yet has no bills, and
+     * says when they go out, two days after it ends.
+     */
+    private function getDirectorPeriodStats($corporationId, Carbon $start, Carbon $end): array
+    {
+        $stats = $this->getDirectorCurrentMonthStats($corporationId, $start, Carbon::now()->min($end));
+
+        $bills = MiningTax::whereIn('character_id', $this->getCorporationCharacterIds($corporationId))
+            ->where('status', '!=', 'waived')
+            ->whereRaw('COALESCE(period_start, month) <= ?', [$end->toDateString()])
+            ->whereRaw('COALESCE(period_end, LAST_DAY(month)) >= ?', [$start->toDateString()])
+            ->get(['amount_paid']);
+
+        $stats['tax_collected'] = (float) $bills->sum('amount_paid');
+        $stats['bills_covering'] = $bills->count();
+        $stats['bills_go_out'] = $end->copy()->addDays(2)->format('M j');
+
+        return $stats;
     }
 
     /**

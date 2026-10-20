@@ -8,6 +8,10 @@ return [
     // Common
     'live' => 'Live',
     'current_month_stats' => 'Current Month Statistics',
+    'current_period_stats' => 'Current Tax Period',
+    'estimated_tax' => 'Estimated Tax',
+    'not_billed_yet' => 'Not billed yet',
+    'bills_go_out' => 'Bills go out on :date',
     'last_12_months_stats' => 'Last 12 Months Statistics',
     'last_12_months' => 'Last 12 Months',
     'this_month' => 'This Month',
