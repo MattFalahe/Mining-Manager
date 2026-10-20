@@ -504,7 +504,7 @@
                                                 'characterId' => $summary->character_id,
                                                 'month' => $month,
                                                 'include_alts' => $groupByMain ? '1' : '0'
-                                            ]) }}"
+                                            ] + ($biweekly ? ['half' => $half] : [])) }}"
                                            class="btn btn-sm btn-primary">
                                             <i class="fas fa-eye"></i> {{ trans('mining-manager::ledger.view_details') }}
                                         </a>

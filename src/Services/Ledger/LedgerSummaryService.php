@@ -1111,6 +1111,105 @@ class LedgerSummaryService
     }
 
     /**
+     * The tax on each ledger row, read from the daily summaries the bills are
+     * built from.
+     *
+     * A day's breakdown is built under the settings that tax that mining: the
+     * Moon Owner Corporation's for its refineries, the miner's own
+     * corporation's for everything else, and guest rates for a miner outside
+     * the corporations this install looks after. Each row takes its share of
+     * its ore's tax that day, so a day's rows add up to the day, and a row the
+     * breakdown leaves out says why.
+     *
+     * @param iterable<MiningLedger> $rows
+     * @return array<int, array{class: string, taxed: bool, rate: float, tax: float, discount: float, reason: string|null}> row id => figures
+     */
+    public function rowTaxes(iterable $rows): array
+    {
+        $rows = collect($rows);
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $dayOf = fn ($date) => Carbon::parse($date)->toDateString();
+        $moonOwnerCorpId = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $characterIds = $rows->pluck('character_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $dates = $rows->map(fn ($row) => $dayOf($row->date));
+
+        // character|date => type id => that ore's entries in the day's breakdown
+        $days = [];
+        $summaries = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
+            ->whereBetween('date', [$dates->min(), $dates->max()])
+            ->get(['character_id', 'date', 'ore_types']);
+        foreach ($summaries as $summary) {
+            $key = $summary->character_id . '|' . $dayOf($summary->date);
+            $days[$key] = [];
+            foreach ((array) $summary->ore_types as $entry) {
+                $days[$key][(int) ($entry['type_id'] ?? 0)][] = $entry;
+            }
+        }
+
+        // Personal mining is only taxed for members of the corporations this
+        // install looks after, as the breakdown decides it.
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        $corporations = DB::table('character_affiliations')
+            ->whereIn('character_id', $characterIds)
+            ->pluck('corporation_id', 'character_id');
+        $taxedMember = function ($characterId) use ($corporations, $homeCorporationIds) {
+            $corporationId = (int) ($corporations[$characterId] ?? 0);
+
+            return $corporationId > 0 && (!$homeCorporationIds || in_array($corporationId, $homeCorporationIds, true));
+        };
+
+        // Moon ore in a personal ledger is taxed once our refinery reports it,
+        // and reports that come in late are matched this many days back.
+        $stillReporting = Carbon::today()->subDays(PersonalMiningReconciler::DEFAULT_DAYS)->toDateString();
+
+        $figures = [];
+        foreach ($rows as $row) {
+            $typeId = (int) $row->type_id;
+            $day = $dayOf($row->date);
+            $refinery = $row->corporation_id !== null ? (int) $row->corporation_id : null;
+            $figure = ['class' => OreClassifier::category($typeId), 'taxed' => false, 'rate' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'reason' => null];
+
+            if ($refinery !== null && $refinery !== $moonOwnerCorpId) {
+                $figure['reason'] = 'other_refinery';
+            } elseif ($refinery === null && TypeIdRegistry::isMoonOre($typeId)) {
+                $figure['reason'] = $day >= $stillReporting ? 'moon_waiting' : 'moon_elsewhere';
+            } elseif ($refinery === null && !$taxedMember((int) $row->character_id)) {
+                $figure['reason'] = 'not_member';
+            } elseif ($row->processed_at === null || empty($days[$row->character_id . '|' . $day][$typeId])) {
+                $figure['reason'] = 'not_counted';
+            } else {
+                // Our refinery's entry is the only one for a moon ore that can
+                // carry tax, since moon ore from a personal ledger never does.
+                $taxable = array_filter(
+                    $days[$row->character_id . '|' . $day][$typeId],
+                    fn ($entry) => !empty($entry['is_taxable'])
+                );
+                $value = array_sum(array_map(fn ($entry) => (float) ($entry['total_value'] ?? 0), $taxable));
+                $share = $value > 0 ? (float) $row->total_value / $value : 0.0;
+                $rate = $taxable ? (float) (reset($taxable)['tax_rate'] ?? 0) : 0.0;
+
+                if (!$taxable) {
+                    $figure['reason'] = 'settings';
+                } elseif ($rate <= 0) {
+                    $figure['reason'] = 'zero_rate';
+                } else {
+                    $figure['taxed'] = true;
+                    $figure['rate'] = $rate;
+                    $figure['tax'] = round($share * array_sum(array_map(fn ($entry) => (float) ($entry['estimated_tax'] ?? 0), $taxable)), 2);
+                    $figure['discount'] = round($share * array_sum(array_map(fn ($entry) => (float) ($entry['event_discount_amount'] ?? 0), $taxable)), 2);
+                }
+            }
+
+            $figures[(int) $row->id] = $figure;
+        }
+
+        return $figures;
+    }
+
+    /**
      * Get daily summaries for a character in a specific month.
      *
      * For the current month, reads stored summaries (which contain rich
