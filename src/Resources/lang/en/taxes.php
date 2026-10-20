@@ -265,6 +265,7 @@ return [
     'auto_match_complete' => 'Auto-matching completed',
     'auto_match_error' => 'An error occurred during auto-matching',
     'payments_verified' => 'Payments verified successfully',
+    'verification_error' => 'An error occurred while checking payments',
 
     // Tax Code Management
     'no_unpaid_taxes_for_codes' => 'No unpaid taxes found to generate codes for',

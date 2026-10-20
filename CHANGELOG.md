@@ -41,6 +41,7 @@ All notable changes to Mining Manager will be documented in this file.
 
 - **An invoice shows only what it taxed.** The Mining Breakdown on a bill's page lists the mining that carried tax, character by character and ore by ore, at the rate it was taxed at, where it used to list everything mined in the period, untaxed ore included. A new **Tax by category** card adds it up by kind of ore, moon ore by rarity from R4 to R64, with each one's share of the bill. The first box reads **Taxed Value**, with what was mined in the period under it. When the rows and the bill disagree, the page says by how much and, where it can tell, why: the minimum tax, an adjustment made by hand, a bill worked out before its period ended, or days worked out again after it went out.
 - Fixed: **an invoice's breakdown could disagree with the bill.** It merged an ore's taxed and untaxed mining into one line, at the rate of whichever came first, so a taxed ore could read 0%, and it counted every character on the account, even one with a bill of its own for the same period.
+- Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
 
 ### Theft Detection
 
