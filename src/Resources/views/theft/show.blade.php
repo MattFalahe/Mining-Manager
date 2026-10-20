@@ -4,7 +4,7 @@
 @section('page_header', 'Theft Incident Details')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 @endpush
 
 @section('full')
@@ -127,7 +127,7 @@
                         <div class="col-md-6">
                             <h5><i class="fas fa-info-circle"></i> Additional Information</h5>
                             @if($incident->notes)
-                            <div class="callout callout-info">
+                            <div class="mm-notice">
                                 <h6>Notes:</h6>
                                 <p>{{ $incident->notes }}</p>
                             </div>

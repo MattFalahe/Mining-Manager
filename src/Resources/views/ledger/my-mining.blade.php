@@ -4,7 +4,7 @@
 @section('page_header', trans_choice('mining-manager::ledger.mining_ledger', 2))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 @endpush
 
 @section('full')
@@ -208,7 +208,7 @@
                     <div class="row mt-2">
                         @if(($stats['event_discount_total'] ?? 0) > 0)
                         <div class="col-md-8">
-                            <div class="callout callout-success">
+                            <div class="mm-notice mm-notice-success">
                                 <h5><i class="fas fa-gift text-warning"></i> Event Discount Applied</h5>
                                 <p class="mb-0">
                                     You saved <strong>{{ number_format($stats['event_discount_total'], 0) }} ISK</strong>
@@ -247,7 +247,7 @@
                     @if(($stats['estimated_tax_this_month'] ?? 0) > 0)
                     <div class="row mt-2">
                         <div class="col-12">
-                            <div class="callout callout-info">
+                            <div class="mm-notice">
                                 <h5><i class="fas fa-info-circle"></i> {{ trans('mining-manager::ledger.about_estimated_tax') }}</h5>
                                 <p class="mb-0">{{ trans('mining-manager::ledger.estimated_tax_notice') }}</p>
                             </div>
@@ -269,6 +269,12 @@
                         <i class="fas fa-chart-line"></i>
                         {{ trans('mining-manager::ledger.mining_trend') }}
                     </h3>
+                    <div class="card-tools">
+                        <div class="btn-group btn-group-sm" role="group" id="trendModeSwitch">
+                            <button type="button" class="btn btn-primary" data-mode="total">{{ trans('mining-manager::ledger.trend_total') }}</button>
+                            <button type="button" class="btn btn-outline-secondary" data-mode="type">{{ trans('mining-manager::ledger.trend_by_type') }}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="chart-container" style="position: relative; height: 300px;">
@@ -486,55 +492,132 @@ function exportPersonalData() {
     window.location.href = '{{ route("mining-manager.ledger.export-personal") }}';
 }
 
-// Mining Trend Chart
+// Mining Trend Chart: the value of each day, or each day split by kind of
+// ore, stacked. The switch is remembered in this browser.
 const trendCtx = document.getElementById('miningTrendChart').getContext('2d');
-const trendChart = new Chart(trendCtx, {
-    type: 'line',
-    data: {
-        labels: @json($trendData['labels'] ?? []),
-        datasets: [{
-            label: '{{ trans("mining-manager::ledger.daily_value") }}',
-            data: @json($trendData['values'] ?? []),
+const trendLabels = @json($trendData['labels'] ?? []);
+const trendTotal = (@json($trendData['values'] ?? [])).map(Number);
+const trendByType = @json($trendData['by_type'] ?? []);
+const trendTypes = [
+    { key: 'moon', label: @json(trans('mining-manager::ledger.moon_ore')), rgb: '255, 0, 132' },
+    { key: 'ore', label: @json(trans('mining-manager::ledger.regular_ore')), rgb: '161, 198, 60' },
+    { key: 'ice', label: @json(trans('mining-manager::ledger.ice')), rgb: '0, 210, 255' },
+    { key: 'gas', label: @json(trans('mining-manager::ledger.gas')), rgb: '255, 159, 64' },
+    { key: 'abyssal', label: @json(trans('mining-manager::ledger.abyssal')), rgb: '255, 205, 86' },
+    { key: 'triglavian', label: @json(trans('mining-manager::ledger.triglavian')), rgb: '220, 53, 69' }
+];
+
+function trendConfig(mode) {
+    const byType = mode === 'type';
+
+    // Kinds of ore never mined in the period stay out of the legend.
+    const datasets = byType
+        ? trendTypes
+            .map(function (type) {
+                return { type: type, values: (trendByType[type.key] || []).map(Number) };
+            })
+            .filter(function (series) {
+                return series.values.some(function (value) { return value > 0; });
+            })
+            .map(function (series) {
+                return {
+                    label: series.type.label,
+                    data: series.values,
+                    backgroundColor: 'rgba(' + series.type.rgb + ', 0.75)',
+                    borderColor: 'rgba(' + series.type.rgb + ', 1)',
+                    borderWidth: 1
+                };
+            })
+        : [{
+            label: @json(trans('mining-manager::ledger.daily_value')),
+            data: trendTotal,
             borderColor: 'rgba(0, 210, 255, 1)',
             backgroundColor: 'rgba(0, 210, 255, 0.1)',
             borderWidth: 2,
             fill: true,
             tension: 0.4
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { 
-                display: true,
-                labels: { color: '#fff' }
-            },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' ISK';
+        }];
+
+    return {
+        type: byType ? 'bar' : 'line',
+        data: { labels: trendLabels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#fff' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + ' ISK';
+                        },
+                        footer: function(items) {
+                            if (!byType || items.length < 2) {
+                                return '';
+                            }
+                            const total = items.reduce(function (sum, item) { return sum + item.parsed.y; }, 0);
+                            return @json(trans('mining-manager::ledger.trend_total')) + ': ' + total.toLocaleString() + ' ISK';
+                        }
                     }
                 }
-            }
-        },
-        scales: {
-            x: {
-                ticks: { color: '#fff' },
-                grid: { color: '#444' }
             },
-            y: {
-                beginAtZero: true,
-                ticks: { 
-                    color: '#fff',
-                    callback: function(value) {
-                        return value.toLocaleString();
-                    }
+            scales: {
+                x: {
+                    stacked: byType,
+                    ticks: { color: '#fff' },
+                    grid: { color: '#444' }
                 },
-                grid: { color: '#444' }
+                y: {
+                    stacked: byType,
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#fff',
+                        callback: function(value) {
+                            return value.toLocaleString();
+                        }
+                    },
+                    grid: { color: '#444' }
+                }
             }
         }
+    };
+}
+
+let trendMode = 'total';
+try {
+    if (localStorage.getItem('mm.myMining.trendMode') === 'type') {
+        trendMode = 'type';
     }
+} catch (e) {}
+
+let trendChart = new Chart(trendCtx, trendConfig(trendMode));
+
+function markTrendMode(mode) {
+    document.querySelectorAll('#trendModeSwitch [data-mode]').forEach(function (button) {
+        const active = button.dataset.mode === mode;
+        button.classList.toggle('btn-primary', active);
+        button.classList.toggle('btn-outline-secondary', !active);
+    });
+}
+markTrendMode(trendMode);
+
+document.querySelectorAll('#trendModeSwitch [data-mode]').forEach(function (button) {
+    button.addEventListener('click', function () {
+        if (button.dataset.mode === trendMode) {
+            return;
+        }
+        trendMode = button.dataset.mode;
+        trendChart.destroy();
+        trendChart = new Chart(trendCtx, trendConfig(trendMode));
+        markTrendMode(trendMode);
+        try {
+            localStorage.setItem('mm.myMining.trendMode', trendMode);
+        } catch (e) {}
+    });
 });
 
 // Ore Distribution Chart

@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::settings.settings'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 <style>
     .settings-wrapper {
         display: flex;

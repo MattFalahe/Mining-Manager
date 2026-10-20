@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::taxes.tax_details') . ' - ' . ($tax->character_info['name'] ?? $tax->character_name))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 @include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
@@ -170,7 +170,7 @@
                     </div>
 
                     @if($tax->status === 'paid')
-                    <div class="callout callout-success">
+                    <div class="mm-notice mm-notice-success">
                         <h5><i class="fas fa-check-circle"></i> {{ trans('mining-manager::taxes.payment_confirmed') }}</h5>
                         <p>{{ trans('mining-manager::taxes.paid_on') }}: {{ $tax->paid_at ? \Carbon\Carbon::parse($tax->paid_at)->format('F d, Y') : 'N/A' }}</p>
                     </div>
@@ -179,7 +179,7 @@
                     {{-- An invoice that arrives already part-paid looks like an
                          error unless we say where the money came from. --}}
                     @if(($creditApplied ?? 0) > 0)
-                    <div class="callout callout-info">
+                    <div class="mm-notice">
                         <h5><i class="fas fa-piggy-bank"></i> {{ trans('mining-manager::taxes.account_balance') }}</h5>
                         <p class="mb-0">
                             @if($creditApplied >= (float) $tax->amount_owed)
@@ -193,7 +193,7 @@
 
                     {{-- Triggered By --}}
                     @if($tax->triggered_by)
-                    <div class="callout callout-secondary">
+                    <div class="mm-notice mm-notice-secondary">
                         <h5><i class="fas fa-user-clock"></i> Triggered By</h5>
                         <p class="mb-0">{{ $tax->triggered_by }} &mdash; {{ $tax->calculated_at ? \Carbon\Carbon::parse($tax->calculated_at)->format('F d, Y H:i') : '' }}</p>
                     </div>
@@ -201,9 +201,9 @@
 
                     {{-- Notes (shows alt breakdown for accumulated taxes) --}}
                     @if($tax->notes)
-                    <div class="callout callout-info">
+                    <div class="mm-notice">
                         <h5><i class="fas fa-info-circle"></i> Notes</h5>
-                        <pre class="mb-0" style="color: #ccc; background: transparent; border: none; padding: 0;">{{ $tax->notes }}</pre>
+                        <pre class="mb-0">{{ $tax->notes }}</pre>
                     </div>
                     @endif
                 </div>

@@ -60,7 +60,7 @@ class LedgerController extends Controller
             return view('mining-manager::ledger.my-mining', [
                 'ledgerEntries' => collect(),
                 'stats' => $this->getEmptyStats(),
-                'trendData' => ['labels' => [], 'values' => []],
+                'trendData' => ['labels' => [], 'values' => [], 'by_type' => []],
                 'oreDistribution' => ['labels' => [], 'values' => []],
                 'monthlyComparison' => ['labels' => [], 'values' => []],
                 'recentActivity' => collect(),
@@ -127,6 +127,7 @@ class LedgerController extends Controller
         $trendData = [
             'labels' => $rawChartData['daily']['labels'],
             'values' => $rawChartData['daily']['data'],
+            'by_type' => $rawChartData['daily']['by_type'],
         ];
         $oreDistribution = [
             'labels' => $rawChartData['topOres']['labels'],
@@ -311,11 +312,22 @@ class LedgerController extends Controller
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId));
 
-        // Daily mining value from pre-computed daily summaries
+        // Daily mining value from pre-computed daily summaries, with each
+        // day split by kind of ore for the chart's By type view. The kinds
+        // add up to the day's value.
         $dailyData = MiningLedgerDailySummary::whereIn('character_id', $characterIds)
             ->whereBetween('date', [$startDate, $endDate])
             ->when($specificCharacterId, fn($q) => $q->where('character_id', $specificCharacterId))
-            ->selectRaw('date, SUM(total_value) as value')
+            ->selectRaw('
+                date,
+                SUM(total_value) as value,
+                SUM(moon_ore_value) as moon,
+                SUM(regular_ore_value) as ore,
+                SUM(ice_value) as ice,
+                SUM(gas_value) as gas,
+                SUM(abyssal_ore_value) as abyssal,
+                SUM(triglavian_ore_value) as triglavian
+            ')
             ->groupBy('date')
             ->orderBy('date')
             ->get();
@@ -333,6 +345,9 @@ class LedgerController extends Controller
             'daily' => [
                 'labels' => $dailyData->pluck('date')->map(fn($d) => Carbon::parse($d)->format('M d'))->toArray(),
                 'data' => $dailyData->pluck('value')->toArray(),
+                'by_type' => collect(['moon', 'ore', 'ice', 'gas', 'abyssal', 'triglavian'])
+                    ->mapWithKeys(fn ($type) => [$type => $dailyData->pluck($type)->map(fn ($value) => (float) $value)->all()])
+                    ->all(),
             ],
             'topOres' => [
                 'labels' => $topOres->pluck('name')->toArray(),

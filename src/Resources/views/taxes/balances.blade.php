@@ -4,7 +4,7 @@
 @section('page_header', trans('mining-manager::menu.tax_management'))
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 @include('mining-manager::taxes.partials.datatables-styles')
 @endpush
 
@@ -70,7 +70,7 @@
 
     <div class="row">
         <div class="col-12">
-            <div class="callout callout-info">
+            <div class="mm-notice">
                 <p class="mb-0">{{ trans('mining-manager::taxes.balance_explained') }}</p>
             </div>
         </div>

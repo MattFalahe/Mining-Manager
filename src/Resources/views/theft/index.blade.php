@@ -4,7 +4,7 @@
 @section('page_header', 'Moon Theft Detection')
 
 @push('head')
-<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ asset('vendor/mining-manager/css/mining-manager-dashboard.css') }}?v=9">
 <style>
 .theft-detection-wrapper {
     padding: 15px;

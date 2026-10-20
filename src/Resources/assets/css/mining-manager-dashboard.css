@@ -533,6 +533,100 @@
 }
 
 /* ============================================
+   Notices
+   ============================================
+   An opaque panel with colours of its own, rather than a tint over whatever
+   sits behind it, so a notice reads the same on any SeAT theme, light or
+   dark. AdminLTE's callout is white, and the plugin's light text all but
+   vanished on it. Custom themes force colours on headings, paragraphs and
+   links with !important, so these carry it too. */
+.mining-dashboard .mm-notice,
+.mining-manager-wrapper .mm-notice {
+    background-color: #1f2833 !important;
+    border: 1px solid var(--mm-border) !important;
+    border-left: 4px solid var(--mm-info) !important;
+    border-radius: var(--mm-radius-md);
+    padding: var(--mm-spacing-md) var(--mm-spacing-lg);
+    margin-bottom: var(--mm-spacing-md);
+    color: #e5e7eb !important;
+}
+
+.mining-dashboard .mm-notice-success,
+.mining-manager-wrapper .mm-notice-success {
+    background-color: #1d2b25 !important;
+    border-left-color: var(--mm-success) !important;
+}
+
+.mining-dashboard .mm-notice-secondary,
+.mining-manager-wrapper .mm-notice-secondary {
+    background-color: var(--mm-dark-card) !important;
+    border-left-color: #6c757d !important;
+}
+
+.mining-dashboard .mm-notice h5,
+.mining-dashboard .mm-notice h6,
+.mining-manager-wrapper .mm-notice h5,
+.mining-manager-wrapper .mm-notice h6 {
+    color: #f9fafb !important;
+    font-weight: 600;
+    margin-bottom: var(--mm-spacing-xs);
+}
+
+.mining-dashboard .mm-notice p,
+.mining-dashboard .mm-notice li,
+.mining-dashboard .mm-notice pre,
+.mining-manager-wrapper .mm-notice p,
+.mining-manager-wrapper .mm-notice li,
+.mining-manager-wrapper .mm-notice pre {
+    color: #e5e7eb !important;
+}
+
+.mining-dashboard .mm-notice small,
+.mining-dashboard .mm-notice .text-muted,
+.mining-manager-wrapper .mm-notice small,
+.mining-manager-wrapper .mm-notice .text-muted {
+    color: #cbd5e1 !important;
+}
+
+.mining-dashboard .mm-notice strong,
+.mining-manager-wrapper .mm-notice strong {
+    color: #ffffff !important;
+}
+
+.mining-dashboard .mm-notice a,
+.mining-manager-wrapper .mm-notice a {
+    color: #7dd3fc !important;
+    text-decoration: underline;
+}
+
+.mining-dashboard .mm-notice pre,
+.mining-manager-wrapper .mm-notice pre {
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+/* An icon given a colour of its own, like the gold gift, keeps it. */
+.mining-dashboard .mm-notice h5 i:not([class*="text-"]),
+.mining-dashboard .mm-notice h6 i:not([class*="text-"]),
+.mining-manager-wrapper .mm-notice h5 i:not([class*="text-"]),
+.mining-manager-wrapper .mm-notice h6 i:not([class*="text-"]) {
+    color: var(--mm-info) !important;
+}
+
+.mining-dashboard .mm-notice-success h5 i:not([class*="text-"]),
+.mining-manager-wrapper .mm-notice-success h5 i:not([class*="text-"]) {
+    color: var(--mm-success) !important;
+}
+
+.mining-dashboard .mm-notice-secondary h5 i:not([class*="text-"]),
+.mining-manager-wrapper .mm-notice-secondary h5 i:not([class*="text-"]) {
+    color: var(--mm-text-muted) !important;
+}
+
+/* ============================================
    Progress Bars
    ============================================ */
 .mining-dashboard .progress-mm,
