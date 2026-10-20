@@ -56,7 +56,7 @@ return [
     // Overview Section - Core Features
     'core_features' => 'Core Features',
     'feature_ledger' => 'Mining Ledger',
-    'feature_ledger_desc' => 'Track all mining with volume, quantity and ISK value per character. The Mining Summary shows a month two ways: everything a corporation\'s miners mined, wherever they mined it, or the moon ore its refineries recorded, guests included and split by class.',
+    'feature_ledger_desc' => 'Track all mining with volume, quantity and ISK value per character. The Mining Summary shows a month two ways: everything a corporation\'s miners mined, wherever they mined it, or the moon ore its refineries recorded, guests included and split by class. Members\' mining can be narrowed to one kind of ore or to where moon ore came from, and on biweekly tax the page shows one half of the month at a time, or the whole month with each half\'s tax.',
     'feature_tax' => 'Tax Management',
     'feature_tax_desc' => 'Calculate and collect mining taxes with configurable rates, tax codes, wallet verification, and accumulated mode for alt grouping.',
     'feature_moon' => 'Moon Mining',

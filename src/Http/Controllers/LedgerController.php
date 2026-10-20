@@ -10,6 +10,9 @@ use MiningManager\Models\MiningPriceCache;
 use MiningManager\Models\MiningTax;
 use MiningManager\Services\Character\CharacterInfoService;
 use MiningManager\Services\Ledger\LedgerSummaryService;
+use MiningManager\Services\Analytics\ChartFilter;
+use MiningManager\Services\Tax\ClassificationEpoch;
+use MiningManager\Services\Tax\TaxPeriodHelper;
 use MiningManager\Services\Pricing\OreValuationService;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use MiningManager\Services\TypeIdRegistry;
@@ -725,8 +728,34 @@ class LedgerController extends Controller
             $corporationId = $this->settingsService->getTaxProgramCorporationId();
         }
 
+        // Members' mining can be narrowed the way the Performance Charts are.
+        // The moons view is moon ore off our refineries already.
+        $ore = (string) $request->get('ore', 'all');
+        if ($scope === LedgerSummaryService::SCOPE_MOONS || !array_key_exists($ore, LedgerSummaryService::ORE_FILTERS)) {
+            $ore = 'all';
+        }
+        [$moonSource, $oreCategory] = LedgerSummaryService::ORE_FILTERS[$ore];
+        $filter = new ChartFilter(
+            $moonSource,
+            $oreCategory,
+            [],
+            (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null
+        );
+
+        // A biweekly install bills each half of the month on its own, so the
+        // page shows one half or the whole month. It opens on the half we are
+        // in, and on the whole month for any month gone by.
+        $periodHelper = app(TaxPeriodHelper::class);
+        $biweekly = $periodHelper->getConfiguredPeriodType() === 'biweekly';
+        $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
+        $half = (string) $request->get('half', '');
+        if (!$biweekly || !in_array($half, ['1', '2', 'month'], true)) {
+            $half = $biweekly && $monthDate->isSameMonth(now()) ? (now()->day <= 14 ? '1' : '2') : 'month';
+        }
+        $period = $half === 'month' ? null : $halves[(int) $half - 1];
+
         // Get enhanced monthly summaries (includes ore types and systems)
-        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId, $scope);
+        $summaries = $this->summaryService->getEnhancedMonthlySummaries($month, $corporationId, $scope, $period, $filter);
 
         // Group by main character if requested
         if ($groupByMain) {
@@ -771,6 +800,33 @@ class LedgerController extends Controller
             $totals["moon_{$class}_value"] = $summaries->sum("moon_{$class}_value");
         }
 
+        // Each half of a biweekly month is its own bill, so the whole month
+        // shows each half's tax, and the total is the two added together. A
+        // finalized month's own tax figure was taken when the month closed,
+        // and a day rebuilt after that, such as unbilled mining at a rate
+        // changed since, moves the halves but not that figure.
+        $halfTaxes = [];
+        if ($half === 'month' && $halves && $scope !== LedgerSummaryService::SCOPE_MOONS) {
+            $shownIds = $this->summaryCharacterIds($summaries);
+            foreach ($halves as [$start, $end]) {
+                $figures = $this->summaryService->periodTax($shownIds, $start, $end, $filter);
+                $halfTaxes[] = [
+                    'label' => $periodHelper->formatPeriod($start, $end, 'biweekly'),
+                    'tax' => array_sum(array_column($figures, 'tax')),
+                ];
+            }
+            $totals['total_tax'] = array_sum(array_column($halfTaxes, 'tax'));
+        }
+
+        // Slices that read the ledger's ore flags say when the flags were
+        // corrected, as the Performance Charts do, when the days shown reach
+        // back before it.
+        $periodStart = $period ? $period[0] : $monthDate;
+        $classificationCutover = $filter->dependsOnClassification() ? ClassificationEpoch::get() : null;
+        if ($classificationCutover && $periodStart->copy()->startOfDay()->gte($classificationCutover->copy()->startOfDay())) {
+            $classificationCutover = null;
+        }
+
         return view('mining-manager::ledger.summary', [
             'summaries' => $summaries,
             'totals' => $totals,
@@ -779,14 +835,98 @@ class LedgerController extends Controller
             'corporations' => $isDirector ? $this->summaryCorporations($monthDate, $scope, $corporationId) : collect(),
             'selectedCorporationId' => $corporationId,
             'isCurrentMonth' => $monthDate->isSameMonth(now()),
-            'fromFinalized' => $this->summaryService->usesFinalizedSummaries($month, $scope),
+            'fromFinalized' => $this->summaryService->usesFinalizedSummaries($month, $scope, $period, $filter),
             'scope' => $scope,
             'moonClasses' => LedgerSummaryService::MOON_CLASSES,
             'groupByMain' => $groupByMain,
             'sortBy' => $sortBy,
             'sortDir' => $sortDir,
             'isDirector' => $isDirector,
+            'ore' => $ore,
+            'filter' => $filter,
+            'classificationCutover' => $classificationCutover,
+            'biweekly' => $biweekly,
+            'half' => $half,
+            'periodNav' => $biweekly ? $this->summaryPeriodNav($request, $monthDate, $half, $halves, $periodHelper) : null,
+            'halfTaxes' => $halfTaxes,
         ]);
+    }
+
+    /**
+     * Every character a summary page shows, alts included.
+     *
+     * @param \Illuminate\Support\Collection $summaries
+     * @return array<int, int>
+     */
+    protected function summaryCharacterIds($summaries): array
+    {
+        $ids = [];
+        foreach ($summaries as $summary) {
+            $ids[] = (int) $summary->character_id;
+            foreach ($summary->alt_characters ?? [] as $alt) {
+                $ids[] = (int) $alt->character_id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * Links for a biweekly install's period switch: a step back or forward,
+     * by half while a half is shown and by month while the whole month is,
+     * and the two halves and whole month of the month shown. Nothing links
+     * to a period that has not started.
+     *
+     * @param array $halves The month's two [start, end] periods
+     * @return array{label: string, prev: string|null, next: string|null, choices: array<int, array{label: string, url: string|null, active: bool}>}
+     */
+    protected function summaryPeriodNav(Request $request, Carbon $monthDate, string $half, array $halves, TaxPeriodHelper $periodHelper): array
+    {
+        $keep = array_filter(
+            $request->only(['scope', 'corporation_id', 'group_by_main', 'ore', 'sort_by', 'sort_dir']),
+            fn ($value) => $value !== null
+        );
+        $link = fn (Carbon $month, string $h) => route('mining-manager.ledger.summary', $keep + [
+            'month' => $month->format('Y-m'),
+            'half' => $h,
+        ]);
+        $started = fn (Carbon $start) => $start->copy()->startOfDay()->lte(now());
+
+        $previousMonth = $monthDate->copy()->subMonthNoOverflow()->startOfMonth();
+        $nextMonth = $monthDate->copy()->addMonthNoOverflow()->startOfMonth();
+
+        if ($half === 'month') {
+            $label = $monthDate->format('F Y');
+            $prev = $link($previousMonth, 'month');
+            $next = $started($nextMonth) ? $link($nextMonth, 'month') : null;
+        } else {
+            [$start, $end] = $halves[(int) $half - 1];
+            $label = $periodHelper->formatPeriod($start, $end, 'biweekly');
+
+            if ($half === '1') {
+                $prev = $link($previousMonth, '2');
+                $next = $started($halves[1][0]) ? $link($monthDate, '2') : null;
+            } else {
+                $prev = $link($monthDate, '1');
+                $next = $started($nextMonth) ? $link($nextMonth, '1') : null;
+            }
+        }
+
+        $choices = [];
+        foreach ($halves as $index => [$start, $end]) {
+            $choices[] = [
+                'label' => $start->format('jS') . '-' . $end->format('jS'),
+                'url' => $started($start) ? $link($monthDate, (string) ($index + 1)) : null,
+                'active' => $half === (string) ($index + 1),
+            ];
+        }
+        $choices[] = [
+            'label' => trans('mining-manager::ledger.whole_month'),
+            'url' => $link($monthDate, 'month'),
+            'active' => $half === 'month',
+        ];
+
+        return compact('label', 'prev', 'next', 'choices');
     }
 
     /**

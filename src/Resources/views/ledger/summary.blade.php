@@ -124,13 +124,26 @@
                     {{-- Two questions, one page: what a corporation's miners mined, or what came off its refineries --}}
                     @php
                         $moonsScope = $scope === \MiningManager\Services\Ledger\LedgerSummaryService::SCOPE_MOONS;
+                        $scopeParams = ['month' => $month, 'group_by_main' => $groupByMain ? 1 : 0] + ($biweekly ? ['half' => $half] : []);
+                        $oreLabels = [
+                            'all' => trans('mining-manager::ledger.ore_all'),
+                            'my_moons' => trans('mining-manager::ledger.ore_my_moons'),
+                            'other_moons' => trans('mining-manager::ledger.ore_other_moons'),
+                            'any_moons' => trans('mining-manager::ledger.ore_any_moons'),
+                            'ore' => trans('mining-manager::ledger.regular_ore'),
+                            'ice' => trans('mining-manager::ledger.ice'),
+                            'gas' => trans('mining-manager::ledger.gas'),
+                            'abyssal' => trans('mining-manager::ledger.abyssal'),
+                            'triglavian' => trans('mining-manager::ledger.triglavian'),
+                        ];
+                        $periodLabel = $periodNav['label'] ?? $monthDate->format('F Y');
                     @endphp
                     <div class="btn-group mb-2" role="group">
-                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'members', 'month' => $month, 'group_by_main' => $groupByMain ? 1 : 0]) }}"
+                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'members'] + $scopeParams) }}"
                            class="btn btn-sm {{ $moonsScope ? 'btn-outline-secondary' : 'btn-primary' }}">
                             <i class="fas fa-users"></i> {{ trans('mining-manager::ledger.scope_members') }}
                         </a>
-                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'moons', 'month' => $month, 'group_by_main' => $groupByMain ? 1 : 0]) }}"
+                        <a href="{{ route('mining-manager.ledger.summary', ['scope' => 'moons'] + $scopeParams) }}"
                            class="btn btn-sm {{ $moonsScope ? 'btn-primary' : 'btn-outline-secondary' }}">
                             <i class="fas fa-moon"></i> {{ trans('mining-manager::ledger.scope_moons') }}
                         </a>
@@ -139,11 +152,42 @@
                         {{ $moonsScope ? trans('mining-manager::ledger.scope_moons_hint') : trans('mining-manager::ledger.scope_members_hint') }}
                     </p>
 
+                    {{-- Biweekly installs bill each half of the month on its own --}}
+                    @if($periodNav)
+                        <div class="d-flex flex-wrap align-items-center mb-3">
+                            <div class="btn-group btn-group-sm mr-2 mb-1" role="group" aria-label="{{ trans('mining-manager::ledger.period') }}">
+                                @if($periodNav['prev'])
+                                    <a href="{{ $periodNav['prev'] }}" class="btn btn-outline-secondary" title="{{ trans('mining-manager::ledger.previous_period') }}"><i class="fas fa-chevron-left"></i></a>
+                                @else
+                                    <span class="btn btn-outline-secondary disabled"><i class="fas fa-chevron-left"></i></span>
+                                @endif
+                                <span class="btn btn-secondary disabled">{{ $periodNav['label'] }}</span>
+                                @if($periodNav['next'])
+                                    <a href="{{ $periodNav['next'] }}" class="btn btn-outline-secondary" title="{{ trans('mining-manager::ledger.next_period') }}"><i class="fas fa-chevron-right"></i></a>
+                                @else
+                                    <span class="btn btn-outline-secondary disabled"><i class="fas fa-chevron-right"></i></span>
+                                @endif
+                            </div>
+                            <div class="btn-group btn-group-sm mb-1" role="group">
+                                @foreach($periodNav['choices'] as $choice)
+                                    @if($choice['url'])
+                                        <a href="{{ $choice['url'] }}" class="btn {{ $choice['active'] ? 'btn-primary' : 'btn-outline-secondary' }}">{{ $choice['label'] }}</a>
+                                    @else
+                                        <span class="btn btn-outline-secondary disabled">{{ $choice['label'] }}</span>
+                                    @endif
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
                     <form method="GET" action="{{ route('mining-manager.ledger.summary') }}" id="filterForm">
                         <input type="hidden" name="scope" value="{{ $scope }}">
+                        @if($biweekly)
+                            <input type="hidden" name="half" id="half" value="{{ $half }}">
+                        @endif
                         <div class="row">
                             {{-- Month Selector --}}
-                            <div class="col-md-3">
+                            <div class="col-lg col-md-6">
                                 <div class="form-group">
                                     <label for="month">{{ trans('mining-manager::ledger.month') }}</label>
                                     <input type="month" class="form-control" id="month" name="month" value="{{ $month }}" required>
@@ -152,7 +196,7 @@
 
                             {{-- Corporation Filter: a member only ever sees their own rows, so it is a director's --}}
                             @if($isDirector)
-                                <div class="col-md-3">
+                                <div class="col-lg col-md-6">
                                     <div class="form-group">
                                         <label for="corporation_id">{{ $moonsScope ? trans('mining-manager::ledger.refinery_owner') : trans('mining-manager::ledger.corporation') }}</label>
                                         <select class="form-control" id="corporation_id" name="corporation_id">
@@ -167,8 +211,22 @@
                                 </div>
                             @endif
 
+                            {{-- Ore: the slices the Performance Charts offer; the moons view is moon ore already --}}
+                            @unless($moonsScope)
+                                <div class="col-lg col-md-6">
+                                    <div class="form-group">
+                                        <label for="ore">{{ trans('mining-manager::ledger.ore_filter') }}</label>
+                                        <select class="form-control" id="ore" name="ore">
+                                            @foreach($oreLabels as $oreKey => $oreLabel)
+                                                <option value="{{ $oreKey }}" {{ $ore === $oreKey ? 'selected' : '' }}>{{ $oreLabel }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                            @endunless
+
                             {{-- Group by Main Toggle --}}
-                            <div class="col-md-3">
+                            <div class="col-lg col-md-6">
                                 <div class="form-group">
                                     <label for="group_by_main">{{ trans('mining-manager::ledger.view_mode') }}</label>
                                     <select class="form-control" id="group_by_main" name="group_by_main">
@@ -179,7 +237,7 @@
                             </div>
 
                             {{-- Apply Button --}}
-                            <div class="col-md-3">
+                            <div class="col-lg col-md-6">
                                 <div class="form-group">
                                     <label>&nbsp;</label>
                                     <button type="submit" class="btn btn-primary btn-block">
@@ -201,7 +259,12 @@
                 <div class="card-header">
                     <h3 class="card-title">
                         <i class="fas fa-chart-bar"></i>
-                        {{ trans('mining-manager::ledger.summary_statistics') }} - {{ $monthDate->format('F Y') }}
+                        {{ trans('mining-manager::ledger.summary_statistics') }} - {{ $periodLabel }}
+                        @if($ore !== 'all')
+                            <span class="badge badge-info ml-2">
+                                <i class="fas fa-filter"></i> {{ $oreLabels[$ore] }}
+                            </span>
+                        @endif
                         @if($isCurrentMonth)
                             <span class="badge badge-warning ml-2">
                                 <i class="fas fa-clock"></i> {{ trans('mining-manager::ledger.live') }}
@@ -218,6 +281,17 @@
                     </h3>
                 </div>
                 <div class="card-body">
+                    @if($ore === 'other_moons')
+                        <div class="alert alert-info py-2">
+                            <i class="fas fa-info-circle"></i> {{ trans('mining-manager::analytics.other_moons_inferred') }}
+                        </div>
+                    @endif
+                    @if($classificationCutover)
+                        <div class="alert alert-info py-2">
+                            <i class="fas fa-clock"></i>
+                            {{ trans('mining-manager::analytics.classification_cutover_note', ['date' => $classificationCutover->format('j M Y')]) }}
+                        </div>
+                    @endif
                     <div class="row">
                         {{-- Total Value --}}
                         <div class="col-lg col-md-6">
@@ -233,7 +307,7 @@
                             </div>
                         </div>
 
-                        {{-- Total Tax: a character's tax covers their whole month, so the moons view leaves it out --}}
+                        {{-- Total Tax: a bill covers all of a character's mining, so the moons view leaves it out --}}
                         @if(!$moonsScope)
                         <div class="col-lg col-md-6">
                             <div class="info-box bg-gradient-warning">
@@ -244,8 +318,16 @@
                                     <span class="info-box-text">{{ trans('mining-manager::ledger.total_tax') }}</span>
                                     <span class="info-box-number">{{ number_format($totals['total_tax'], 0) }}</span>
                                     <small>ISK</small>
+                                    @if($ore === 'other_moons')
+                                        <small class="d-block text-light">{{ trans('mining-manager::ledger.other_moons_untaxed') }}</small>
+                                    @elseif($ore !== 'all')
+                                        <small class="d-block text-light">{{ trans('mining-manager::ledger.tax_on_slice', ['slice' => $oreLabels[$ore]]) }}</small>
+                                    @endif
+                                    @foreach($halfTaxes as $halfTax)
+                                        <small class="d-block text-light">{{ $halfTax['label'] }}: {{ number_format($halfTax['tax'], 0) }} ISK</small>
+                                    @endforeach
                                     @if(!empty($totals['event_discount_total']) && $totals['event_discount_total'] > 0)
-                                        <small class="d-block text-light" title="ISK waived this month due to active event modifiers. Already included in total_tax — shown here for transparency.">
+                                        <small class="d-block text-light" title="ISK waived over these days by event modifiers. Already taken off the tax above, shown here so it can be seen.">
                                             <i class="fas fa-gift"></i>
                                             incl. &minus;{{ number_format($totals['event_discount_total'], 0) }} ISK event discount
                                         </small>
@@ -454,6 +536,15 @@
 
 @push('javascript')
 <script>
+// A different month opens on its own default period, not the half picked
+// for the month before.
+document.getElementById('month').addEventListener('change', function () {
+    const half = document.getElementById('half');
+    if (half) {
+        half.value = '';
+    }
+});
+
 function sortTable(column) {
     const currentSort = '{{ $sortBy }}';
     const currentDir = '{{ $sortDir }}';
