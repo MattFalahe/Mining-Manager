@@ -7,6 +7,7 @@ use MiningManager\Models\MiningTax;
 use MiningManager\Models\Setting;
 use MiningManager\Models\TheftIncident;
 use MiningManager\Services\Character\CharacterNames;
+use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -36,13 +37,16 @@ class TheftDetectionService
 
     protected $settingsService;
     protected $names;
+    protected $onDate;
 
     public function __construct(
         SettingsManagerService $settingsService,
-        CharacterNames $names
+        CharacterNames $names,
+        CorporationOnDate $onDate
     ) {
         $this->settingsService = $settingsService;
         $this->names = $names;
+        $this->onDate = $onDate;
     }
 
     /**
@@ -151,19 +155,28 @@ class TheftDetectionService
                 continue;
             }
 
-            $latest = $this->ledger($outsiders, $observers)
-                ->where('processed_at', '>=', $since)
-                ->where('date', '>=', $earliestDay)
-                ->max('date');
+            $recent = $this->onOutsideDays(
+                $this->ledger($outsiders, $observers)
+                    ->where('date', '>=', $earliestDay)
+                    ->groupBy('character_id', 'date')
+                    ->get([
+                        'character_id',
+                        'date',
+                        DB::raw('MAX(processed_at) as processed_at'),
+                        DB::raw('SUM(total_value) as value'),
+                    ]),
+                $rules['home']
+            );
+            $fresh = $recent->filter(fn ($row) => $row->processed_at && Carbon::parse($row->processed_at)->gte($since));
 
-            if (!$latest) {
+            if ($fresh->isEmpty()) {
                 continue;
             }
 
-            $day = Carbon::parse($latest)->toDateString();
-            $value = (float) $this->ledger($outsiders, $observers)
-                ->where('date', $day)
-                ->sum('total_value');
+            $day = Carbon::parse($fresh->max('date'))->toDateString();
+            $value = (float) $recent
+                ->filter(fn ($row) => Carbon::parse($row->date)->toDateString() === $day)
+                ->sum('value');
 
             $incident = $player['incidents']->first();
             $incident->markAsActiveTheft(0);
@@ -236,16 +249,19 @@ class TheftDetectionService
             return collect();
         }
 
-        return MiningLedger::whereIn('character_id', $outsiders)
-            ->whereIn('observer_id', $observers)
-            ->where('is_moon_ore', true)
-            ->whereBetween('date', [
-                $incident->mining_date_from->toDateString(),
-                $incident->mining_date_to->toDateString(),
-            ])
-            ->with(['type', 'solarSystem'])
-            ->orderBy('date', 'desc')
-            ->get();
+        return $this->onOutsideDays(
+            MiningLedger::whereIn('character_id', $outsiders)
+                ->whereIn('observer_id', $observers)
+                ->where('is_moon_ore', true)
+                ->whereBetween('date', [
+                    $incident->mining_date_from->toDateString(),
+                    $incident->mining_date_to->toDateString(),
+                ])
+                ->with(['type', 'solarSystem'])
+                ->orderBy('date', 'desc')
+                ->get(),
+            $rules['home']
+        );
     }
 
     /**
@@ -440,7 +456,7 @@ class TheftDetectionService
                 ? $incident->mining_date_to->copy()->startOfDay()
                 : $incident->incident_date->copy()->startOfDay();
 
-            $rows = $this->dailyMining($outsiders, $observers, $countedTo->max($countingFrom->copy()->subDay()), $today);
+            $rows = $this->dailyMining($outsiders, $observers, $countedTo->max($countingFrom->copy()->subDay()), $today, $rules['home']);
             if ($rows->isEmpty()) {
                 continue;
             }
@@ -560,12 +576,12 @@ class TheftDetectionService
 
         if ($pastLine->isNotEmpty()) {
             $line = $this->theftLine($pastLine->first(), $days);
-            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($line), $today);
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($line), $today, $rules['home']);
             $reason = $rows->isNotEmpty() ? 'overdue' : null;
         }
 
         if (!$reason && !$rules['guests_allowed']) {
-            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($rules['guests_off_since']), $today);
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($rules['guests_off_since']), $today, $rules['home']);
             $reason = $rows->isNotEmpty() ? 'guests_off' : null;
         }
 
@@ -782,23 +798,41 @@ class TheftDetectionService
      * Moon ore these characters mined at these refineries on the days after
      * $after and before $before, a row per character and day.
      */
-    protected function dailyMining(array $characterIds, array $observers, Carbon $after, Carbon $before): Collection
+    protected function dailyMining(array $characterIds, array $observers, Carbon $after, Carbon $before, array $home): Collection
     {
         if (!$characterIds || !$observers) {
             return collect();
         }
 
-        return $this->ledger($characterIds, $observers)
-            ->where('date', '>', $after->toDateString())
-            ->where('date', '<', $before->toDateString())
-            ->groupBy('character_id', 'date')
-            ->orderBy('date')
-            ->get([
-                'character_id',
-                'date',
-                DB::raw('SUM(quantity) as quantity'),
-                DB::raw('SUM(total_value) as value'),
-            ]);
+        return $this->onOutsideDays(
+            $this->ledger($characterIds, $observers)
+                ->where('date', '>', $after->toDateString())
+                ->where('date', '<', $before->toDateString())
+                ->groupBy('character_id', 'date')
+                ->orderBy('date')
+                ->get([
+                    'character_id',
+                    'date',
+                    DB::raw('SUM(quantity) as quantity'),
+                    DB::raw('SUM(total_value) as value'),
+                ]),
+            $home
+        );
+    }
+
+    /**
+     * The rows mined on a day the character was outside the home
+     * corporations. A member who leaves keeps a member's record for the days
+     * they mined as one: neither guest mining being off nor a bill they still
+     * owe makes those days theft.
+     */
+    protected function onOutsideDays(Collection $rows, array $home): Collection
+    {
+        return $rows->filter(function ($row) use ($home) {
+            $corporationId = (int) $this->onDate->forDay((int) $row->character_id, $row->date, $home);
+
+            return $corporationId > 0 && !in_array($corporationId, $home, true);
+        })->values();
     }
 
     /**
