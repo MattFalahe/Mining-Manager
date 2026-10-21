@@ -1552,7 +1552,7 @@ class MoonController extends Controller
      *
      * Scope model (2026-05-27 admin-picker rev):
      *   - Director (mining-manager.director, non-admin): locked to the
-     *     **Moon Owner Corporation** (Settings → General →
+     *     **Moon Owner Corporation** (Settings → Setup →
      *     `general.moon_owner_corporation_id`). Matches the Past
      *     Extractions table convention and the scanner notification
      *     scope, so what they see = what gets alerted.

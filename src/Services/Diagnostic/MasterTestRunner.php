@@ -486,7 +486,7 @@ class MasterTestRunner
                 'Tax program corporation configured',
                 'settings',
                 'No tax program corporation set — moon owner-scoped queries will not filter',
-                ['hint' => 'Set general.moon_owner_corporation_id in Settings → General']
+                ['hint' => 'Set general.moon_owner_corporation_id in Settings → Setup']
             );
         }
 

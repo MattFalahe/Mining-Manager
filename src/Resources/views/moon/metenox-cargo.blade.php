@@ -344,7 +344,7 @@
             </p>
             <p class="mb-0">
                 Fix it: <a href="{{ route('mining-manager.settings.index') }}" class="btn btn-sm btn-warning">
-                    <i class="fas fa-cog"></i> Open Settings → General
+                    <i class="fas fa-cog"></i> Open Settings → Setup
                 </a> and set the Moon Owner Corporation.
             </p>
         </div>

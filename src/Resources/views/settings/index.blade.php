@@ -128,36 +128,6 @@
     </div>
     @endif
 
-    {{-- Corporation Context Indicator --}}
-    @if(isset($corporationId) && $corporationId)
-        @php
-            $selectedCorp = $corporations->firstWhere('corporation_id', $corporationId);
-        @endphp
-        <div class="alert alert-info d-flex align-items-center justify-content-between mb-3" style="border-left: 4px solid #17a2b8;">
-            <div>
-                <h5 class="mb-1">
-                    <i class="fas fa-building"></i>
-                    Editing Corporation-Specific Tax Settings
-                </h5>
-                <p class="mb-0">
-                    @if($selectedCorp)
-                        <strong>[{{ $selectedCorp->ticker }}] {{ $selectedCorp->name }}</strong>
-                    @else
-                        Corporation ID: {{ $corporationId }}
-                    @endif
-                    @if($isFirstTimeSetup ?? false)
-                        <span class="badge badge-warning ml-2">First Time Setup</span>
-                    @elseif($hasCustomSettings ?? false)
-                        <span class="badge badge-success ml-2">Custom Settings Active</span>
-                    @endif
-                </p>
-            </div>
-            <a href="{{ route('mining-manager.settings.index') }}" class="btn btn-outline-light btn-sm">
-                <i class="fas fa-globe"></i> Switch to Global
-            </a>
-        </div>
-    @endif
-
     <div class="settings-wrapper">
         {{-- Sidebar --}}
         <div class="settings-sidebar">
@@ -179,53 +149,14 @@
                         @include('mining-manager::settings.tabs.profiles')
                     </div>
 
-                    {{-- General Settings Tab --}}
-                    <div id="general-settings" class="settings-section">
-                        @include('mining-manager::settings.tabs.general', [
-                            'settings' => (object)$settings['general'],
-                            'corporations' => $corporations,
-                            'selectedCorporationId' => $corporationId ?? null
-                        ])
+                    {{-- Billing --}}
+                    <div id="billing" class="settings-section">
+                        @include('mining-manager::settings.tabs.billing')
                     </div>
 
-                    {{-- Tax Rates Tab --}}
-                    <div id="tax-rates" class="settings-section">
-                        @php
-                            // Flatten moon ore nested array for easier form access
-                            $taxRatesFlattened = $settings['tax_rates'];
-                            if (isset($taxRatesFlattened['moon_ore']) && is_array($taxRatesFlattened['moon_ore'])) {
-                                foreach ($taxRatesFlattened['moon_ore'] as $rarity => $rate) {
-                                    $taxRatesFlattened['moon_ore_' . $rarity] = $rate;
-                                }
-                                unset($taxRatesFlattened['moon_ore']);
-                            }
-
-                            // Remap tax_selector keys to match form field names
-                            // getTaxSelector() returns 'ore','ice','gas','abyssal_ore','triglavian_ore'
-                            // but the form uses 'tax_regular_ore','tax_ice','tax_gas','tax_abyssal_ore','tax_triglavian_ore'
-                            $taxSelectorMapped = [
-                                'tax_regular_ore' => $settings['tax_selector']['ore'] ?? true,
-                                'tax_ice' => $settings['tax_selector']['ice'] ?? true,
-                                'tax_gas' => $settings['tax_selector']['gas'] ?? false,
-                                'tax_abyssal_ore' => $settings['tax_selector']['abyssal_ore'] ?? false,
-                                'tax_triglavian_ore' => $settings['tax_selector']['triglavian_ore'] ?? false,
-                                // Moon ore flags keep their original names (template uses these directly)
-                                'all_moon_ore' => $settings['tax_selector']['all_moon_ore'] ?? true,
-                                'only_corp_moon_ore' => $settings['tax_selector']['only_corp_moon_ore'] ?? false,
-                                'no_moon_ore' => $settings['tax_selector']['no_moon_ore'] ?? false,
-                            ];
-
-                            // Merge all tax-related settings
-                            $taxSettings = array_merge(
-                                $taxRatesFlattened,
-                                $taxSelectorMapped,
-                                $settings['exemptions']
-                            );
-                        @endphp
-                        @include('mining-manager::settings.tabs.tax_rates', [
-                            'settings' => (object)$taxSettings,
-                            'selectedCorporationId' => $corporationId ?? null
-                        ])
+                    {{-- Payments --}}
+                    <div id="payments" class="settings-section">
+                        @include('mining-manager::settings.tabs.payments')
                     </div>
 
                     {{-- Pricing Tab --}}
@@ -272,7 +203,6 @@
                         @include('mining-manager::settings.tabs.dashboard', [
                             'settings' => $settings,
                             'leaderboardCorporations' => $leaderboardCorporations ?? [],
-                            'selectedCorporationId' => $corporationId ?? null
                         ])
                     </div>
 
@@ -518,24 +448,6 @@ $(document).ready(function() {
         var $link = $('#exportSettingsLink');
         var base = $link.attr('href').split('?')[0];
         $link.attr('href', this.checked ? base + '?include_webhooks=1' : base);
-    });
-
-    // Corporation switching functionality
-    $('#switchCorporationBtn').on('click', function() {
-        const corporationId = $('#corporation_id').val();
-
-        if (!corporationId) {
-            alert('Please select a corporation first.');
-            return;
-        }
-
-        // Redirect to settings page with corporation_id parameter
-        window.location.href = '{{ route("mining-manager.settings.index") }}?corporation_id=' + corporationId;
-    });
-
-    // Update hidden field when corporation changes
-    $('#corporation_id').on('change', function() {
-        $('#selected_corporation_id').val($(this).val());
     });
 
     // Tab switching

@@ -107,25 +107,9 @@ class SettingsController extends Controller
      */
     public function index(Request $request)
     {
-        // Get corporation ID from request (if switching corporations)
-        $corporationId = $request->input('corporation_id');
-
-        // If corporation_id provided, set it as active context
-        if ($corporationId) {
-            $this->settingsService->setActiveCorporation((int)$corporationId);
-        }
-
-        // Check if corporation has custom settings
-        $hasCustomSettings = false;
-        $isFirstTimeSetup = false;
-        if ($corporationId) {
-            $hasCustomSettings = $this->settingsService->corporationHasCustomSettings((int)$corporationId);
-            $isFirstTimeSetup = !$hasCustomSettings;
-        }
-
-        // Get all current settings (will use corporation context if set)
         $settings = [
             'general' => $this->settingsService->getGeneralSettings(),
+            'payments' => $this->settingsService->getPaymentSettings(),
             'tax_rates' => $this->settingsService->getTaxRates(),
             'tax_selector' => $this->settingsService->getTaxSelector(),
             'exemptions' => $this->settingsService->getExemptions(),
@@ -149,9 +133,7 @@ class SettingsController extends Controller
         $overdueDays = (int) ($this->settingsService->getFeatureFlags()['theft_overdue_days'] ?? 15);
 
         // Get webhooks for the settings page
-        $webhooks = \MiningManager\Models\WebhookConfiguration::when($corporationId, function ($query) use ($corporationId) {
-            return $query->forCorporation($corporationId);
-        })->get();
+        $webhooks = \MiningManager\Models\WebhookConfiguration::all();
 
         // Corps available for per-webhook routing — tax program corp + any
         // corp with plugin settings. Used by the webhook create/edit modal's
@@ -189,9 +171,6 @@ class SettingsController extends Controller
         return view('mining-manager::settings.index', compact(
             'settings',
             'corporations',
-            'corporationId',
-            'hasCustomSettings',
-            'isFirstTimeSetup',
             'webhooks',
             'webhookCorporations',
             'walletDivisions',
@@ -246,6 +225,121 @@ class SettingsController extends Controller
         }
 
         return $profiles;
+    }
+
+    /**
+     * Save the Billing page.
+     */
+    public function updateBilling(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'exemption_enabled' => 'nullable|boolean',
+            'exemption_threshold' => 'required|numeric|min:0',
+            'minimum_tax_amount' => 'required|numeric|min:0',
+            'minimum_tax_behavior' => 'required|in:exempt,enforce',
+            'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
+            'payment_grace_period_hours' => 'required|integer|min:1|max:168',
+            'payment_overdue_paid_threshold_pct' => 'required|numeric|min:0|max:100',
+            'send_tax_reminders' => 'nullable|boolean',
+            'tax_reminder_days' => 'required|integer|min:1|max:30',
+            'tax_code_length' => 'required|integer|in:6,8,10,12',
+            'grace_period_days' => 'required|integer|min:0|max:365',
+            'tax_code_expiration_buffer' => 'required|integer|min:0|max:365',
+            'auto_generate_tax_codes' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#billing')
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $data = $validator->validated();
+        $save = fn (string $key, $value, string $type) => $this->settingsService->updateGlobalSetting($key, $value, $type);
+
+        DB::transaction(function () use ($data, $request, $save) {
+            $save('exemptions.enabled', $request->boolean('exemption_enabled'), 'boolean');
+            $save('exemptions.threshold', (float) $data['exemption_threshold'], 'float');
+            $save('payment.minimum_tax_amount', (float) $data['minimum_tax_amount'], 'float');
+            $save('payment.minimum_tax_behavior', $data['minimum_tax_behavior'], 'string');
+            $save('tax_rates.tax_payment_deadline_days', (int) $data['tax_payment_deadline_days'], 'integer');
+            $save('payment.grace_period_hours', (int) $data['payment_grace_period_hours'], 'integer');
+            $save('payment.overdue_paid_threshold_pct', (float) $data['payment_overdue_paid_threshold_pct'], 'float');
+            $save('tax_rates.send_tax_reminders', $request->boolean('send_tax_reminders'), 'boolean');
+            $save('tax_rates.tax_reminder_days', (int) $data['tax_reminder_days'], 'integer');
+            $save('tax_rates.tax_code_length', (int) $data['tax_code_length'], 'integer');
+            $save('exemptions.grace_period_days', (int) $data['grace_period_days'], 'integer');
+            $save('tax_rates.tax_code_expiration_buffer', (int) $data['tax_code_expiration_buffer'], 'integer');
+            $save('tax_rates.auto_generate_tax_codes', $request->boolean('auto_generate_tax_codes'), 'boolean');
+        });
+
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#billing')
+            ->with('success', 'Billing saved.');
+    }
+
+    /**
+     * Save the Payments page.
+     */
+    public function updatePayments(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'tax_wallet_division' => 'required|integer|min:1|max:7',
+            'payment_match_tolerance' => 'required|integer|min:0|max:100000000',
+            'payment_auto_match_payments' => 'nullable|boolean',
+            'payment_accept_alt_characters' => 'nullable|boolean',
+            'payment_cascade_remainder' => 'nullable|boolean',
+            'payment_hold_surplus_as_credit' => 'nullable|boolean',
+            'enable_upfront_payments' => 'nullable|boolean',
+            'payment_upfront_keyword' => 'nullable|string|max:32',
+            'payment_refund_keyword' => 'nullable|string|max:32',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#payments')
+                ->withErrors($validator)
+                ->withInput();
+        }
+
+        $data = $validator->validated();
+        $upfront = trim((string) ($data['payment_upfront_keyword'] ?? ''));
+        $refund = trim((string) ($data['payment_refund_keyword'] ?? ''));
+
+        // Codes and both keywords are read from the same transfer reason. If
+        // one contains another, a payment could read as either, and which one
+        // won would depend on matching order: nothing anyone could diagnose.
+        $taken = $this->settingsService->taxCodePrefixes();
+        foreach (array_filter(['upfront payment' => $upfront, 'refund' => $refund]) as $which => $keyword) {
+            $others = $which === 'refund' ? array_merge($taken, array_filter([$upfront])) : $taken;
+
+            foreach ($others as $other) {
+                if (stripos($keyword, $other) !== false || stripos($other, $keyword) !== false) {
+                    return redirect(route('mining-manager.settings.index') . '#payments')
+                        ->withInput()
+                        ->with('error', "The {$which} keyword {$keyword} overlaps {$other}. Both are read from the transfer reason, so pick something clearly different.");
+                }
+            }
+        }
+
+        $save = fn (string $key, $value, string $type) => $this->settingsService->updateGlobalSetting($key, $value, $type);
+
+        DB::transaction(function () use ($data, $request, $save, $upfront, $refund) {
+            $save('tax_rates.tax_wallet_division', (int) $data['tax_wallet_division'], 'integer');
+            $save('payment.match_tolerance', (int) $data['payment_match_tolerance'], 'integer');
+            $save('payment.auto_match_payments', $request->boolean('payment_auto_match_payments'), 'boolean');
+            $save('payment.accept_alt_characters', $request->boolean('payment_accept_alt_characters'), 'boolean');
+            $save('payment.cascade_remainder', $request->boolean('payment_cascade_remainder'), 'boolean');
+            $save('payment.hold_surplus_as_credit', $request->boolean('payment_hold_surplus_as_credit'), 'boolean');
+            $save('features.enable_upfront_payments', $request->boolean('enable_upfront_payments'), 'boolean');
+            $save('payment.upfront_keyword', $upfront, 'string');
+            $save('payment.refund_keyword', $refund, 'string');
+        });
+
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#payments')
+            ->with('success', 'Payments saved.');
     }
 
     /**
@@ -475,59 +569,6 @@ class SettingsController extends Controller
     }
 
     /**
-     * Display configured corporations page
-     *
-     * @return \Illuminate\View\View
-     */
-    public function configuredCorporations()
-    {
-        $configuredCorpIds = $this->settingsService->getAllCorporations()->pluck('corporation_id');
-
-        // Get corporation details
-        $corporations = CorporationInfo::whereIn('corporation_id', $configuredCorpIds)
-            ->get()
-            ->map(function ($corp) {
-                // Get key settings for this corporation
-                $this->settingsService->setActiveCorporation($corp->corporation_id);
-
-                $taxRates = $this->settingsService->getTaxRates();
-                $taxSelector = $this->settingsService->getTaxSelector();
-
-                return [
-                    'corporation_id' => $corp->corporation_id,
-                    'name' => $corp->name,
-                    'ticker' => $corp->ticker,
-                    'member_count' => $corp->member_count,
-                    'settings_count' => DB::table('mining_manager_settings')
-                        ->where('corporation_id', $corp->corporation_id)
-                        ->count(),
-                    // Moon ore tax rates by rarity
-                    'moon_ore_r64_tax' => $taxRates['moon_ore']['r64'] ?? 0,
-                    'moon_ore_r32_tax' => $taxRates['moon_ore']['r32'] ?? 0,
-                    'moon_ore_r16_tax' => $taxRates['moon_ore']['r16'] ?? 0,
-                    'moon_ore_r8_tax' => $taxRates['moon_ore']['r8'] ?? 0,
-                    'moon_ore_r4_tax' => $taxRates['moon_ore']['r4'] ?? 0,
-                    // Regular ore type tax rates
-                    'ore_tax' => $taxRates['ore'] ?? 0,
-                    'ice_tax' => $taxRates['ice'] ?? 0,
-                    'gas_tax' => $taxRates['gas'] ?? 0,
-                    'abyssal_ore_tax' => $taxRates['abyssal_ore'] ?? 0,
-                    'triglavian_ore_tax' => $taxRates['triglavian_ore'] ?? 0,
-                    // Tax selectors
-                    'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
-                    'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
-                    'tax_regular_ore' => $taxSelector['ore'] ?? false,
-                    'tax_ice' => $taxSelector['ice'] ?? false,
-                    'tax_gas' => $taxSelector['gas'] ?? false,
-                    'tax_abyssal_ore' => $taxSelector['abyssal_ore'] ?? false,
-                    'tax_triglavian_ore' => $taxSelector['triglavian_ore'] ?? false,
-                ];
-            });
-
-        return view('mining-manager::settings.configured_corporations', compact('corporations'));
-    }
-
-    /**
      * Corporations the General tab offers for the moon owner and the
      * corporation context: every player corporation a registered character is
      * in, plus any corporation that already has its own settings or owns the
@@ -700,178 +741,6 @@ class SettingsController extends Controller
             return $divisions;
         } catch (\Exception $e) {
             return $defaultNames;
-        }
-    }
-
-    /**
-     * Update general settings
-     * UPDATED: Now handles corporation_id from dropdown selection
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateGeneral(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            // Corporation Settings
-            'corporation_id' => 'nullable|integer|exists:corporation_infos,corporation_id',
-            'corporation_name' => 'nullable|string|max:255',
-            'corporation_ticker' => 'nullable|string|max:5',
-            'moon_owner_corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
-
-            // Note: timezone, date_format, time_format removed - always uses UTC for consistency
-
-            // Display Settings
-            'currency_decimals' => 'required|integer|min:0|max:8',
-            'items_per_page' => 'required|integer|min:10|max:100',
-            'compact_mode' => 'nullable|boolean',
-            'show_character_portraits' => 'nullable|boolean',
-
-            // Payment Settings
-            'payment_match_tolerance' => 'nullable|integer|min:0|max:100000000',
-            'payment_grace_period_hours' => 'nullable|integer|min:1|max:168',
-            'payment_auto_match_payments' => 'nullable|boolean',
-            'payment_accept_alt_characters' => 'nullable|boolean',
-            'payment_cascade_remainder' => 'nullable|boolean',
-            'payment_hold_surplus_as_credit' => 'nullable|boolean',
-            'payment_upfront_keyword' => 'nullable|string|max:32',
-            'payment_refund_keyword' => 'nullable|string|max:32',
-            'payment_overdue_paid_threshold_pct' => 'nullable|numeric|min:0|max:100',
-
-            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
-            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
-            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_triglavian_ore_tax' => 'nullable|numeric|min:0|max:100',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput()
-                ->with('error', 'Validation failed. Please check your inputs.');
-        }
-
-        try {
-            $data = $validator->validated();
-
-            // Set corporation context if provided
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // If corporation_id is provided, fetch the name and ticker from SeAT
-            if (isset($data['corporation_id']) && $data['corporation_id']) {
-                $corporation = CorporationInfo::find($data['corporation_id']);
-                if ($corporation) {
-                    $data['corporation_name'] = $corporation->name;
-                    $data['corporation_ticker'] = $corporation->ticker;
-                }
-            }
-
-            // Convert boolean checkboxes (unchecked = not sent)
-            $data['compact_mode'] = $request->has('compact_mode');
-            $data['show_character_portraits'] = $request->has('show_character_portraits');
-            // payment_auto_match_payments uses the payment_* → payment.*
-            // mapping in updateGeneralSettings(). A checkbox is unchecked
-            // when the form omits the field; we must persist false in
-            // that case (otherwise the operator can never turn auto-match
-            // off — the listener default is true).
-            $data['payment_auto_match_payments'] = $request->has('payment_auto_match_payments');
-            // Same checkbox-unchecked-must-persist-false logic as above:
-            // the WalletTransferService default is true, so the only way
-            // to switch to strict per-character matching is to actually
-            // persist the false value.
-            $data['payment_accept_alt_characters'] = $request->has('payment_accept_alt_characters');
-            // Both default to true in getPaymentSettings(), so an unchecked box
-            // has to be persisted as false or it can never be turned off.
-            $data['payment_cascade_remainder'] = $request->has('payment_cascade_remainder');
-            $data['payment_hold_surplus_as_credit'] = $request->has('payment_hold_surplus_as_credit');
-
-            // The upfront keyword and the tax code prefix are both matched
-            // against the same reason field. If one contains the other, a
-            // payment could read as either and the behaviour would depend on
-            // matching order, which is not something an operator could ever
-            // diagnose from the outside. Refuse the ambiguity instead.
-            //
-            // Only touch the stored keyword when the field was actually on the
-            // form. It is rendered disabled while the feature is off, and a
-            // disabled input is not submitted, so an absent key means "not
-            // offered" rather than "cleared". Writing an empty string here would
-            // wipe a configured keyword every time somebody saved the General
-            // tab with upfront payments switched off, and they would find it
-            // gone when they switched the feature back on. has() rather than
-            // filled(), so deliberately emptying the box still turns it off.
-            // Null when the field was not on the form, which happens whenever
-            // upfront payments are off. The refund guard below reads it and
-            // falls back to what is stored.
-            $upfrontKeyword = null;
-
-            if ($request->has('payment_upfront_keyword')) {
-                $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
-
-                if ($upfrontKeyword !== '') {
-                    foreach ($this->settingsService->taxCodePrefixes() as $taxPrefix) {
-                        if (stripos($upfrontKeyword, $taxPrefix) !== false
-                            || stripos($taxPrefix, $upfrontKeyword) !== false) {
-                            return redirect()->back()
-                                ->withInput()
-                                ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
-                        }
-                    }
-                }
-
-                $data['payment_upfront_keyword'] = $upfrontKeyword;
-            } else {
-                unset($data['payment_upfront_keyword']);
-            }
-
-            // The refund keyword is read from the same field as the other two,
-            // so it has to be distinguishable from both. An overlap would make
-            // a transfer readable as more than one thing and the behaviour
-            // would depend on matching order, which nobody could diagnose from
-            // the outside.
-            if ($request->has('payment_refund_keyword')) {
-                $refundKeyword = trim((string) $data['payment_refund_keyword']);
-
-                if ($refundKeyword !== '') {
-                    $upfront = trim((string) ($upfrontKeyword ?? ($this->settingsService->getPaymentSettings()['upfront_keyword'] ?? '')));
-
-                    foreach (array_filter(array_merge($this->settingsService->taxCodePrefixes(), [$upfront])) as $other) {
-                        if (stripos($refundKeyword, $other) !== false || stripos($other, $refundKeyword) !== false) {
-                            return redirect()->back()
-                                ->withInput()
-                                ->with('error', "The refund keyword cannot overlap {$other}. Both are read from the transfer reason, so an overlap would make a payment readable as either. Pick something clearly different, for example MM-REFUND.");
-                        }
-                    }
-                }
-
-                $data['payment_refund_keyword'] = $refundKeyword;
-            } else {
-                unset($data['payment_refund_keyword']);
-            }
-            $this->settingsService->updateGeneralSettings($data);
-            $this->clearSettingsCache();
-
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
-                ->with('success', 'General settings updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating settings: ' . $e->getMessage());
         }
     }
 
@@ -1121,142 +990,6 @@ class SettingsController extends Controller
     }
 
     /**
-     * Update tax rates
-     * COMPLETELY REWRITTEN: Now handles moon ore rarity rates and all new field names
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateTaxRates(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            // Moon Ore Rarity Tax Rates
-            'moon_ore_r64' => 'required|numeric|min:0|max:100',
-            'moon_ore_r32' => 'required|numeric|min:0|max:100',
-            'moon_ore_r16' => 'required|numeric|min:0|max:100',
-            'moon_ore_r8' => 'required|numeric|min:0|max:100',
-            'moon_ore_r4' => 'required|numeric|min:0|max:100',
-
-            // Regular Ore Type Tax Rates
-            'ore_tax' => 'required|numeric|min:0|max:100',
-            'ice_tax' => 'required|numeric|min:0|max:100',
-            'gas_tax' => 'required|numeric|min:0|max:100',
-            'abyssal_ore_tax' => 'required|numeric|min:0|max:100',
-            'triglavian_ore_tax' => 'required|numeric|min:0|max:100',
-
-            // Guest Miner Tax Settings — moved to General Settings tab.
-            // Kept as nullable for backward compatibility if submitted from legacy forms.
-            'guest_moon_ore_r64' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r32' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r16' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r8' => 'nullable|numeric|min:0|max:100',
-            'guest_moon_ore_r4' => 'nullable|numeric|min:0|max:100',
-            'guest_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_ice_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_gas_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_abyssal_ore_tax' => 'nullable|numeric|min:0|max:100',
-            'guest_triglavian_ore_tax' => 'nullable|numeric|min:0|max:100',
-
-            // Tax Exemption Settings
-            'exemption_enabled' => 'nullable|boolean',
-            'exemption_threshold' => 'required|numeric|min:0',
-            'minimum_tax_amount' => 'required|numeric|min:0',
-            'minimum_tax_behavior' => 'required|in:exempt,enforce',
-            'grace_period_days' => 'required|integer|min:0|max:365',
-
-            // Tax Selector - Moon Ore (radio button group)
-            'moon_ore_taxing' => 'required|in:all,corp,none',
-
-            // Tax Selector - Other Ore Types (checkboxes)
-            'tax_regular_ore' => 'nullable|boolean',
-            'tax_ice' => 'nullable|boolean',
-            'tax_gas' => 'nullable|boolean',
-            'tax_abyssal_ore' => 'nullable|boolean',
-            'tax_triglavian_ore' => 'nullable|boolean',
-
-            // Tax Payment Method
-            'tax_payment_method' => 'required|in:wallet',
-            'tax_wallet_division' => 'required|integer|min:1|max:7',
-
-            // Tax Code Settings
-            'tax_code_prefix' => 'required|string|max:10',
-            'tax_code_length' => 'required|integer|min:4|max:20',
-            'auto_generate_tax_codes' => 'nullable|boolean',
-
-            // Tax Period Settings — weekly removed in v1.0.3+ (historical rows
-            // still render via MiningTax::formatted_period, but no new weekly
-            // rows can be created).
-            'tax_calculation_period' => 'required|in:monthly,biweekly',
-            'tax_payment_deadline_days' => 'required|integer|min:1|max:90',
-            'send_tax_reminders' => 'nullable|boolean',
-            'tax_reminder_days' => 'required|integer|min:1|max:30',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput()
-                ->with('error', 'Validation failed. Please check your inputs.');
-        }
-
-        try {
-            $data = $validator->validated();
-
-            // Set corporation context if provided. Saving a corporation's tax
-            // rates is what configures it, as it always has been: its members
-            // become members, taxed by the profile being saved.
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->addConfiguredCorporation((int) $corporationId);
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // Convert moon_ore_taxing radio button to boolean flags
-            $moonOreSelector = $data['moon_ore_taxing'];
-            $data['all_moon_ore'] = ($moonOreSelector === 'all');
-            $data['only_corp_moon_ore'] = ($moonOreSelector === 'corp');
-            $data['no_moon_ore'] = ($moonOreSelector === 'none');
-
-            // Convert ore type checkboxes to booleans (unchecked = not sent)
-            $data['tax_regular_ore'] = $request->has('tax_regular_ore');
-            $data['tax_ice'] = $request->has('tax_ice');
-            $data['tax_gas'] = $request->has('tax_gas');
-            $data['tax_abyssal_ore'] = $request->has('tax_abyssal_ore');
-            $data['tax_triglavian_ore'] = $request->has('tax_triglavian_ore');
-
-            // Convert exemption_enabled checkbox
-            $data['exemption_enabled'] = $request->has('exemption_enabled');
-
-            // Convert other checkboxes
-            $data['auto_generate_tax_codes'] = $request->has('auto_generate_tax_codes');
-            $data['send_tax_reminders'] = $request->has('send_tax_reminders');
-
-            // Pass through the "apply period change immediately" override flag.
-            // When unchecked (default), the settings service queues any
-            // tax_calculation_period change to the first of next month
-            // to avoid mid-period collisions on mining_taxes rows.
-            $data['tax_calculation_period_apply_now'] = $request->has('tax_calculation_period_apply_now');
-
-            // Update all settings via service
-            $this->settingsService->updateTaxRates($data);
-            $this->clearSettingsCache();
-
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
-                ->with('success', 'Tax rates updated successfully');
-        } catch (\Exception $e) {
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Error updating tax rates: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Update pricing settings
      *
      * @param Request $request
@@ -1443,15 +1176,7 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
-            // Set corporation context if provided
-            $corporationId = $request->input('selected_corporation_id');
-            if ($corporationId) {
-                $this->settingsService->setActiveCorporation((int)$corporationId);
-            }
-
-            // The dashboard reads one install-wide filter, so it is saved as one
-            // whichever corporation the page is set to. A copy saved under a
-            // corporation is never read once a global one exists.
+            // The dashboard reads one install-wide filter, so it is saved as one.
             $this->settingsService->updateGlobalSetting(
                 'dashboard_leaderboard_corporation_filter',
                 $data['dashboard_leaderboard_corporation_filter']
@@ -1474,13 +1199,7 @@ class SettingsController extends Controller
             // dashboard keeps showing the old filter until they run out.
             DashboardController::clearDashboardCache();
 
-            // Redirect back with corporation_id to maintain context
-            $redirectUrl = route('mining-manager.settings.index');
-            if ($corporationId) {
-                $redirectUrl .= '?corporation_id=' . $corporationId;
-            }
-
-            return redirect($redirectUrl)
+            return redirect(route('mining-manager.settings.index') . '#dashboard')
                 ->with('success', 'Dashboard settings updated successfully');
         } catch (\Exception $e) {
             return redirect()->back()
@@ -1511,7 +1230,6 @@ class SettingsController extends Controller
             'enable_events' => 'nullable|boolean',
             'allow_event_creation' => 'nullable|boolean',
             'enable_moon_tracking' => 'nullable|boolean',
-            'allow_guest_mining' => 'nullable|boolean',
             'allow_public_stats' => 'nullable|boolean',
             'allow_member_leaderboard' => 'nullable|boolean',
             'show_character_names' => 'nullable|boolean',
@@ -1520,7 +1238,6 @@ class SettingsController extends Controller
             'auto_calculate_taxes' => 'nullable|boolean',
             'auto_generate_invoices' => 'nullable|boolean',
             'verify_wallet_transactions' => 'nullable|boolean',
-            'enable_upfront_payments' => 'nullable|boolean',
             'auto_cleanup_old_data' => 'nullable|boolean',
         ]);
 
@@ -1548,7 +1265,6 @@ class SettingsController extends Controller
 
                 // Moon mining
                 'enable_moon_tracking' => $request->has('enable_moon_tracking'),
-                'allow_guest_mining' => $request->has('allow_guest_mining'),
                 'theft_overdue_days' => (int) $data['theft_overdue_days'],
 
                 // Permissions & access
@@ -1562,7 +1278,6 @@ class SettingsController extends Controller
                 'auto_calculate_taxes' => $request->has('auto_calculate_taxes'),
                 'auto_generate_invoices' => $request->has('auto_generate_invoices'),
                 'verify_wallet_transactions' => $request->has('verify_wallet_transactions'),
-                'enable_upfront_payments' => $request->has('enable_upfront_payments'),
 
                 // Data retention
                 'ledger_retention_days' => $data['ledger_retention_days'],

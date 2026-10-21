@@ -928,15 +928,15 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/general', [
-            'as' => 'mining-manager.settings.update-general',
-            'uses' => 'SettingsController@updateGeneral',
+        Route::post('/billing', [
+            'as' => 'mining-manager.settings.update-billing',
+            'uses' => 'SettingsController@updateBilling',
             'middleware' => 'can:mining-manager.admin',
         ]);
 
-        Route::post('/tax-rates', [
-            'as' => 'mining-manager.settings.update-tax-rates',
-            'uses' => 'SettingsController@updateTaxRates',
+        Route::post('/payments', [
+            'as' => 'mining-manager.settings.update-payments',
+            'uses' => 'SettingsController@updatePayments',
             'middleware' => 'can:mining-manager.admin',
         ]);
 
@@ -1046,12 +1046,6 @@ Route::group([
         'middleware' => 'can:mining-manager.view',
     ]);
 
-    // Configured Corporations Route - Admin
-    Route::get('/configured-corporations', [
-        'as' => 'mining-manager.settings.configured-corporations',
-        'uses' => 'SettingsController@configuredCorporations',
-        'middleware' => 'can:mining-manager.admin',
-    ]);
 
     // Diagnostic Routes - Admin only
     Route::group(['prefix' => 'diagnostic'], function () {

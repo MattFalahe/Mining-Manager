@@ -15,10 +15,6 @@
     @csrf
     @method('POST')
 
-    {{-- Hidden field for corporation context --}}
-    @if(isset($selectedCorporationId) && $selectedCorporationId)
-    <input type="hidden" name="selected_corporation_id" value="{{ $selectedCorporationId }}">
-    @endif
 
     {{-- Leaderboard Corporation Filter --}}
     <div class="card bg-dark mb-4">

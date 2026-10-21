@@ -264,7 +264,7 @@ class DiagnosticController extends Controller
             'status'  => $moonOwner ? 'ok' : 'warn',
             'message' => $moonOwner
                 ? "Planner scoped to corporation {$moonOwner}."
-                : 'Not set — the planner page shows an empty state. Configure it in Settings → General.',
+                : 'Not set — the planner page shows an empty state. Set it in Settings → Setup.',
         ];
 
         // 6. Manager Core fast-poll registration. This is the wiring that fails

@@ -96,7 +96,7 @@ class TaxPeriodHelper
         // Legacy auto-heal: convert any stored 'weekly' active value to 'monthly'.
         if ($active === 'weekly') {
             $write('tax_rates.tax_calculation_period', 'monthly');
-            Log::warning('Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly". Weekly tax periods were removed because ISO weeks straddle calendar-month boundaries, causing double-tax and chart-aggregation issues. Switch to biweekly via Settings → Tax Rates if you need sub-monthly granularity. Historical weekly tax rows remain visible in Tax History.');
+            Log::warning('Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly". Weekly tax periods were removed because ISO weeks straddle calendar-month boundaries, causing double-tax and chart-aggregation issues. Switch to twice a month under Settings → Tax profiles if you need sub-monthly granularity. Historical weekly tax rows remain visible in Tax History.');
             return 'monthly';
         }
 

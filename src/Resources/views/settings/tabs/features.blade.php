@@ -158,27 +158,6 @@
                 </small>
             </div>
 
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox"
-                       class="custom-control-input"
-                       id="allow_guest_mining"
-                       name="allow_guest_mining"
-                       value="1"
-                       {{ old('allow_guest_mining', $settings->allow_guest_mining ?? true) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="allow_guest_mining">
-                    <i class="fas fa-user-friends"></i>
-                    <strong>Allow Guest Mining</strong>
-                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
-                </label>
-                <small class="form-text text-muted">
-                    Guests are characters outside every configured corporation. On by default: guests
-                    mine your moons, are billed at the guest rates, and only an unpaid bill left too
-                    long counts as theft. Switched off, they are still billed at the guest rates, and any
-                    moon ore a guest mines at the moon owner's refineries from the day after opens a
-                    theft incident.
-                </small>
-            </div>
-
             <div class="form-group mb-0">
                 <label for="theft_overdue_days">
                     <i class="fas fa-user-secret"></i>
@@ -365,30 +344,6 @@
                 </small>
             </div>
 
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox"
-                       class="custom-control-input"
-                       id="enable_upfront_payments"
-                       name="enable_upfront_payments"
-                       value="1"
-                       {{ old('enable_upfront_payments', $settings->enable_upfront_payments ?? false) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="enable_upfront_payments">
-                    <i class="fas fa-hand-holding-usd"></i>
-                    <strong>Upfront Payments</strong>
-                    {{-- The corporation selector at the top of the page does not
-                         govern this one. Say so where the switch is, rather than
-                         letting somebody set it per corporation and wonder why
-                         nothing changed. --}}
-                    <span class="badge badge-info ml-1">{{ trans('mining-manager::settings.applies_to_all_corporations') }}</span>
-                </label>
-                <small class="form-text text-muted">
-                    Lets members pay before being invoiced by putting a standing keyword
-                    in the transfer reason. The payment settles whatever they already owe,
-                    oldest first, and the rest becomes account balance against future
-                    invoices. Off by default. The keyword itself is set under
-                    General &rarr; Payment Settings.
-                </small>
-            </div>
         </div>
     </div>
 
