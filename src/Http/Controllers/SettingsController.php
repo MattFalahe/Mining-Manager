@@ -270,11 +270,7 @@ class SettingsController extends Controller
      */
     public function configuredCorporations()
     {
-        // Get all corporation IDs that have custom settings
-        $configuredCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
+        $configuredCorpIds = $this->settingsService->getAllCorporations()->pluck('corporation_id');
 
         // Get corporation details
         $corporations = CorporationInfo::whereIn('corporation_id', $configuredCorpIds)

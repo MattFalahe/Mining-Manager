@@ -28,6 +28,13 @@ class SettingsManagerService
     protected $activeCorporationId = null;
 
     /**
+     * Whether settings are in tax profiles, once known to be. See
+     * usesTaxProfiles().
+     */
+    private static bool $taxProfiles = false;
+    private static int $taxProfilesCheckedAt = 0;
+
+    /**
      * Set the active corporation context
      *
      * @deprecated Use getSettingForCorporation() instead to avoid singleton state mutation.
@@ -51,14 +58,45 @@ class SettingsManagerService
     }
 
     /**
-     * Check if a corporation has custom settings
+     * Whether a corporation has settings of its own: a place on the
+     * configured list once settings are in tax profiles, any row before that.
      *
      * @param int $corporationId
      * @return bool
      */
     public function corporationHasCustomSettings(int $corporationId): bool
     {
+        if ($this->usesTaxProfiles()) {
+            return $this->isConfiguredCorporation($corporationId);
+        }
+
         return Setting::where('corporation_id', $corporationId)->exists();
+    }
+
+    /**
+     * Whether this install's settings have been carried into tax profiles.
+     *
+     * Until the update's migration has run, everything reads and writes as it
+     * always did. A queue worker can start on the new code before that
+     * migration finishes, so a "no" is asked again after a while. A "yes"
+     * stays.
+     */
+    public function usesTaxProfiles(): bool
+    {
+        if (!self::$taxProfiles && time() - self::$taxProfilesCheckedAt >= 30) {
+            self::$taxProfilesCheckedAt = time();
+
+            try {
+                self::$taxProfiles = DB::table('mining_manager_settings')
+                    ->where('key', SettingsTransfer::DONE_KEY)
+                    ->whereNull('corporation_id')
+                    ->exists();
+            } catch (\Throwable $e) {
+                self::$taxProfiles = false;
+            }
+        }
+
+        return self::$taxProfiles;
     }
 
     /**
@@ -1733,46 +1771,68 @@ class SettingsManagerService
     }
 
     /**
-     * Get all "home" corporation IDs — configured corporations + moon owner corp.
-     * Characters belonging to any of these are considered corp members.
-     * Characters from any other corporation are considered guest miners.
+     * The corporations whose members are members here: the configured
+     * corporations, and always the Moon Owner. Everyone else is a non-member,
+     * taxed by the Global profile.
+     *
+     * Once settings are in tax profiles the list is a setting of its own, so a
+     * corporation joins or leaves it only when someone adds or removes it.
+     * Before that, any corporation with a settings row counted, even one that
+     * only had a stray row written by a background job, and that is the list
+     * the transfer copied.
      *
      * @return array<int>
      */
     public function getHomeCorporationIds(): array
     {
-        // Get configured corporations (from "Switch Corporation Context" list)
-        $configuredCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id')
-            ->map(fn($id) => (int) $id)
-            ->toArray();
+        if ($this->usesTaxProfiles()) {
+            $configuredCorpIds = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        } else {
+            $configuredCorpIds = DB::table('mining_manager_settings')
+                ->whereNotNull('corporation_id')
+                ->distinct()
+                ->pluck('corporation_id')
+                ->map(fn($id) => (int) $id)
+                ->toArray();
+        }
 
-        // Also include moon owner corporation (structure/moon holding corp)
-        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
+        $moonOwnerCorpId = (int) $this->getSettingForCorporation('general.moon_owner_corporation_id', null);
         if ($moonOwnerCorpId) {
-            $configuredCorpIds[] = (int) $moonOwnerCorpId;
+            $configuredCorpIds[] = $moonOwnerCorpId;
         }
 
         return array_values(array_unique($configuredCorpIds));
     }
 
     /**
-     * Get all corporations that have settings configured
+     * Whether a corporation's members are members here.
+     */
+    public function isConfiguredCorporation(int $corporationId): bool
+    {
+        return in_array($corporationId, $this->getHomeCorporationIds(), true);
+    }
+
+    /**
+     * The configured corporations, by name.
      *
      * @return \Illuminate\Support\Collection
      */
     public function getAllCorporations()
     {
-        return DB::table('corporation_infos')
-            ->whereIn('corporation_id', function($query) {
+        $query = DB::table('corporation_infos');
+
+        if ($this->usesTaxProfiles()) {
+            $query->whereIn('corporation_id', $this->getHomeCorporationIds());
+        } else {
+            $query->whereIn('corporation_id', function ($query) {
                 $query->select('corporation_id')
                     ->from('mining_manager_settings')
                     ->whereNotNull('corporation_id')
                     ->distinct();
-            })
-            ->select('corporation_id', 'name', 'ticker')
+            });
+        }
+
+        return $query->select('corporation_id', 'name', 'ticker')
             ->orderBy('name')
             ->get();
     }
