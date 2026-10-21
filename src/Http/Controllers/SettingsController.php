@@ -993,9 +993,12 @@ class SettingsController extends Controller
         try {
             $data = $validator->validated();
 
-            // Set corporation context if provided
+            // Set corporation context if provided. Saving a corporation's tax
+            // rates is what configures it, as it always has been: its members
+            // become members, taxed by the profile being saved.
             $corporationId = $request->input('selected_corporation_id');
             if ($corporationId) {
+                $this->settingsService->addConfiguredCorporation((int) $corporationId);
                 $this->settingsService->setActiveCorporation((int)$corporationId);
             }
 

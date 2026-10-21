@@ -35,6 +35,15 @@ class SettingsManagerService
     private static int $taxProfilesCheckedAt = 0;
 
     /**
+     * The configured corporations for a few seconds, as [until, ids]. Every
+     * profile setting read asks for them, and rebuilding a day's tax reads
+     * dozens of those per ore.
+     *
+     * @var array{0: float, 1: array<int>}|null
+     */
+    private ?array $homeCorporations = null;
+
+    /**
      * Set the active corporation context
      *
      * @deprecated Use getSettingForCorporation() instead to avoid singleton state mutation.
@@ -100,8 +109,7 @@ class SettingsManagerService
     }
 
     /**
-     * Get a setting value with fallback to config
-     * Now supports corporation-specific settings
+     * Get a setting as the active corporation, with fallback to config.
      *
      * @param string $key
      * @param mixed $default
@@ -109,19 +117,7 @@ class SettingsManagerService
      */
     public function getSetting(string $key, $default = null)
     {
-        $cacheKey = self::CACHE_PREFIX . ($this->activeCorporationId ?? 'global') . '_' . $key;
-
-        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default) {
-            $setting = Setting::getValue($key, null, $this->activeCorporationId);
-
-            if ($setting !== null) {
-                return $setting;
-            }
-
-            // Fallback to config
-            $configKey = 'mining-manager.' . $key;
-            return config($configKey, $default);
-        });
+        return $this->getSettingForCorporation($key, $this->activeCorporationId, $default);
     }
 
     /**
@@ -134,10 +130,13 @@ class SettingsManagerService
      */
     public function getSettingForCorporation(string $key, ?int $corporationId, $default = null)
     {
+        [$corporationId, $exact] = $this->placeFor($key, $corporationId);
         $cacheKey = self::CACHE_PREFIX . ($corporationId ?? 'global') . '_' . $key;
 
-        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default, $corporationId) {
-            $setting = Setting::getValue($key, null, $corporationId);
+        return Cache::remember($cacheKey, self::CACHE_DURATION, function () use ($key, $default, $corporationId, $exact) {
+            $setting = $exact
+                ? Setting::valueAt($key, $corporationId)
+                : Setting::getValue($key, null, $corporationId);
 
             if ($setting !== null) {
                 return $setting;
@@ -146,6 +145,42 @@ class SettingsManagerService
             $configKey = 'mining-manager.' . $key;
             return config($configKey, $default);
         });
+    }
+
+    /**
+     * Where a setting is read and written, as [corporation, exactly there].
+     *
+     * Before tax profiles a key could have a global row and a row per
+     * corporation, a read fell back from one to the other, and which copy
+     * counted depended on the corporation the caller happened to be acting
+     * as. Once settings are in tax profiles the registry decides instead:
+     *
+     * - an install-wide setting, or one of the plugin's own records, is the
+     *   global row whoever asks;
+     * - a profile setting is the corporation's own profile when it is
+     *   configured, and the Global profile otherwise, because everyone outside
+     *   the configured corporations is taxed by Global;
+     * - a key being retired, or one the registry does not know, is read the
+     *   way it always was until the release that removes it.
+     *
+     * Profiles never fall back to Global: a configured corporation that has
+     * no value for a key gets the default, not the non-members' setting.
+     */
+    private function placeFor(string $key, ?int $corporationId): array
+    {
+        if (!$this->usesTaxProfiles()) {
+            return [$corporationId, false];
+        }
+
+        switch (SettingsRegistry::scope($key)) {
+            case SettingsRegistry::INSTALL:
+            case SettingsRegistry::STATE:
+                return [null, true];
+            case SettingsRegistry::PROFILE:
+                return [$corporationId && $this->isConfiguredCorporation($corporationId) ? $corporationId : null, true];
+            default:
+                return [$corporationId, false];
+        }
     }
 
     /**
@@ -191,14 +226,19 @@ class SettingsManagerService
             $type = $this->detectType($value);
         }
 
+        // Written where it is read, so a value saved as one corporation can
+        // never land in a copy that nothing reads.
+        [$corporationId] = $this->placeFor($key, $this->activeCorporationId);
+        $this->homeCorporations = null;
+
         // Clear cache BEFORE writing — if another process reads between our
         // DB write and a post-write cache clear, it would populate the cache
         // with the old value (a second's worth of stale reads). Clearing
         // before write means the worst case is a cache miss that re-reads
         // fresh from DB.
         $globalCacheKey = self::CACHE_PREFIX . 'global_' . $key;
-        $corpCacheKey = $this->activeCorporationId
-            ? self::CACHE_PREFIX . $this->activeCorporationId . '_' . $key
+        $corpCacheKey = $corporationId
+            ? self::CACHE_PREFIX . $corporationId . '_' . $key
             : null;
 
         Cache::forget($globalCacheKey);
@@ -206,7 +246,7 @@ class SettingsManagerService
             Cache::forget($corpCacheKey);
         }
 
-        Setting::setValue($key, $value, $type, $this->activeCorporationId);
+        Setting::setValue($key, $value, $type, $corporationId);
 
         // Clear again AFTER the write as belt-and-suspenders — covers the
         // (unlikely) case where another process read+cached during the
@@ -222,7 +262,7 @@ class SettingsManagerService
         // request. The controller-level batch-complete log line is what
         // operators actually want to see at info; per-key writes are
         // diagnostic-only.
-        $corpContext = $this->activeCorporationId ? " (Corp ID: {$this->activeCorporationId})" : " (Global)";
+        $corpContext = $corporationId ? " (Corp ID: {$corporationId})" : " (Global)";
         Log::debug("Mining Manager: Setting updated - {$key}{$corpContext}");
     }
 
@@ -1609,10 +1649,19 @@ class SettingsManagerService
      */
     public function exportSettings(bool $includeWebhooks = false): array
     {
+        $profiles = $this->usesTaxProfiles();
+
         $settings = Setting::query()
             ->orderBy('corporation_id')
             ->orderBy('key')
             ->get()
+            // The plugin's own records, such as cutover dates, belong to the
+            // install that wrote them, and a copy of an install-wide setting
+            // saved under a corporation is one nothing reads.
+            ->reject(fn ($setting) => $profiles && (
+                SettingsRegistry::scope($setting->key) === SettingsRegistry::STATE
+                || (SettingsRegistry::scope($setting->key) === SettingsRegistry::INSTALL && $setting->corporation_id !== null)
+            ))
             ->map(function ($setting) {
                 return [
                     'key' => $setting->key,
@@ -1628,7 +1677,9 @@ class SettingsManagerService
         $export = [
             'exported_at' => now()->toDateTimeString(),
             'version' => config('mining-manager.version', '1.0.0'),
-            'format' => 2,
+            // 3: settings in tax profiles. The same keys mean different things
+            // in a file from before them, so the two do not mix.
+            'format' => $profiles ? 3 : 2,
             'settings' => $settings,
         ];
 
@@ -1682,6 +1733,14 @@ class SettingsManagerService
 
         $rows = $data['settings'];
         $legacy = !array_is_list($rows);
+        $profiles = $this->usesTaxProfiles();
+
+        // In a file from before tax profiles the global moon rates are what
+        // members paid. Here they are what non-members pay, so importing one
+        // would quietly charge the wrong people.
+        if ($profiles && ($legacy || (int) ($data['format'] ?? 0) < 3)) {
+            throw new \Exception('This file was exported before settings moved into tax profiles, so its values would land in the wrong places. Export again from an install on this version, or set the profiles by hand.');
+        }
 
         $imported = 0;
         $skipped = 0;
@@ -1705,6 +1764,36 @@ class SettingsManagerService
                     if (!is_array($row) || !isset($row['key'])) {
                         $skipped++;
                         continue;
+                    }
+
+                    if ($profiles) {
+                        $scope = SettingsRegistry::scope($row['key']);
+
+                        if ($scope === SettingsRegistry::STATE
+                            || ($scope === SettingsRegistry::INSTALL && !empty($row['corporation_id']))) {
+                            $skipped++;
+                            continue;
+                        }
+
+                        // Adds to the corporations configured here rather
+                        // than replacing them, like the rest of an import.
+                        if ($row['key'] === SettingsTransfer::CONFIGURED_KEY) {
+                            $list = is_array($row['value'] ?? null) ? $row['value'] : json_decode((string) ($row['value'] ?? ''), true);
+                            foreach ((array) $list as $corporationId) {
+                                if ((int) $corporationId > 0) {
+                                    $this->addConfiguredCorporation((int) $corporationId);
+                                }
+                            }
+
+                            $imported++;
+                            continue;
+                        }
+
+                        // A corporation with a profile in the file is a
+                        // configured one, here as it was there.
+                        if ($scope === SettingsRegistry::PROFILE && !empty($row['corporation_id'])) {
+                            $this->addConfiguredCorporation((int) $row['corporation_id']);
+                        }
                     }
 
                     // Write in the row's own context, not the caller's.
@@ -1785,6 +1874,10 @@ class SettingsManagerService
      */
     public function getHomeCorporationIds(): array
     {
+        if ($this->homeCorporations !== null && $this->homeCorporations[0] > microtime(true)) {
+            return $this->homeCorporations[1];
+        }
+
         if ($this->usesTaxProfiles()) {
             $configuredCorpIds = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
         } else {
@@ -1801,7 +1894,10 @@ class SettingsManagerService
             $configuredCorpIds[] = $moonOwnerCorpId;
         }
 
-        return array_values(array_unique($configuredCorpIds));
+        $configuredCorpIds = array_values(array_unique($configuredCorpIds));
+        $this->homeCorporations = [microtime(true) + 5, $configuredCorpIds];
+
+        return $configuredCorpIds;
     }
 
     /**
@@ -1810,6 +1906,26 @@ class SettingsManagerService
     public function isConfiguredCorporation(int $corporationId): bool
     {
         return in_array($corporationId, $this->getHomeCorporationIds(), true);
+    }
+
+    /**
+     * Put a corporation on the configured list, so its members are members
+     * here and its own profile taxes them. Before settings are in tax
+     * profiles a corporation is configured by having settings, so there is
+     * nothing to add.
+     */
+    public function addConfiguredCorporation(int $corporationId): void
+    {
+        if (!$this->usesTaxProfiles() || $this->isConfiguredCorporation($corporationId)) {
+            return;
+        }
+
+        $ids = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+        $ids[] = $corporationId;
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+
+        $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, $ids, 'json');
     }
 
     /**
