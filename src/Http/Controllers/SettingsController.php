@@ -132,6 +132,15 @@ class SettingsController extends Controller
             ->values();
         $overdueDays = (int) ($this->settingsService->getFeatureFlags()['theft_overdue_days'] ?? 15);
 
+        $transferReport = app(SettingsTransfer::class)->storedReport();
+        $reportCorporations = $transferReport
+            ? CorporationInfo::whereIn('corporation_id', array_merge(
+                $transferReport['configured'] ?? [],
+                array_column($transferReport['writes'] ?? [], 'corporation_id'),
+                array_column($transferReport['superseded'] ?? [], 'corporation_id')
+            ))->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id')
+            : collect();
+
         // Get webhooks for the settings page
         $webhooks = \MiningManager\Models\WebhookConfiguration::all();
 
@@ -184,7 +193,9 @@ class SettingsController extends Controller
             'profiles',
             'addableCorporations',
             'usesTaxProfiles',
-            'overdueDays'
+            'overdueDays',
+            'transferReport',
+            'reportCorporations'
         ));
     }
 

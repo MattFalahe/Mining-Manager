@@ -112,9 +112,9 @@
             <li class="nav-item">
                 <a href="#"
                    class="nav-link"
-                   data-tab="advanced">
-                    <i class="fas fa-cogs"></i>
-                    {{ trans('mining-manager::settings.advanced') }}
+                   data-tab="maintenance">
+                    <i class="fas fa-tools"></i>
+                    Maintenance
                 </a>
             </li>
             <li class="nav-item">

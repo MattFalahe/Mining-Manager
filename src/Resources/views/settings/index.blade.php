@@ -206,13 +206,15 @@
                         ])
                     </div>
 
-                    {{-- Advanced Settings --}}
-                    <div id="advanced" class="settings-section">
+                    {{-- Maintenance --}}
+                    <div id="maintenance" class="settings-section">
                         <h4>
-                            <i class="fas fa-cogs"></i>
-                            {{ trans('mining-manager::settings.advanced_settings') }}
+                            <i class="fas fa-tools"></i>
+                            Maintenance
                         </h4>
                         <hr>
+
+                        @include('mining-manager::settings.partials._transfer_report')
 
                         <div class="warning-banner">
                             <i class="fas fa-exclamation-triangle"></i>

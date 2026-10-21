@@ -1469,14 +1469,21 @@ class SettingsManagerService
         DB::beginTransaction();
 
         try {
-            // Get all setting keys before truncating so we can clear their cache entries
-            $settingKeys = Setting::pluck('key')->toArray();
+            // The plugin's own records are not settings: cutover dates, the
+            // record of the move into tax profiles, when an alert last went
+            // out. Losing them would reopen questions the plugin has already
+            // settled, such as which bills follow the old rules, so a reset
+            // leaves them alone.
+            $records = SettingsRegistry::keys(SettingsRegistry::STATE);
+
+            $settingKeys = Setting::whereNotIn('key', $records)->pluck('key')->unique()->toArray();
             $corporationIds = Setting::whereNotNull('corporation_id')
                 ->distinct()
                 ->pluck('corporation_id')
                 ->toArray();
 
-            Setting::truncate();
+            Setting::whereNotIn('key', $records)->delete();
+            $this->homeCorporations = null;
 
             // Clear only mining-manager cache keys (not the entire application cache)
             foreach ($settingKeys as $key) {
