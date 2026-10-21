@@ -37,6 +37,10 @@ use Illuminate\Support\Facades\Log;
  * - non-members are kept out by Global moon rates of 100%, so "Allow Guest
  *   Mining" switched off becomes those rates, and rates already at 100% now
  *   flag a theft as soon as the mining arrives.
+ *
+ * Migration 000038 runs this for every install that upgrades, whenever it
+ * upgrades, so the rules here have to keep describing how the plugin read its
+ * settings before tax profiles.
  */
 class SettingsTransfer
 {
@@ -307,12 +311,20 @@ class SettingsTransfer
         });
 
         // A read as any corporation may have cached the global copy it fell
-        // back to, so every context goes.
-        $contexts = array_merge(['global'], $plan['configured']);
-        foreach (array_unique(array_column($plan['writes'], 'key')) as $key) {
-            foreach ($contexts as $context) {
-                Cache::forget(SettingsManagerService::CACHE_PREFIX . $context . '_' . $key);
+        // back to, so every context goes. The cache only holds a value for a
+        // minute, so a cache that cannot be reached is no reason to fail the
+        // migration this runs in.
+        try {
+            $contexts = array_merge(['global'], $plan['configured']);
+            foreach (array_unique(array_column($plan['writes'], 'key')) as $key) {
+                foreach ($contexts as $context) {
+                    Cache::forget(SettingsManagerService::CACHE_PREFIX . $context . '_' . $key);
+                }
             }
+        } catch (\Throwable $e) {
+            Log::warning('Mining Manager: settings transferred, but the settings cache could not be cleared', [
+                'error' => $e->getMessage(),
+            ]);
         }
 
         Log::info('Mining Manager: settings transferred into tax profiles', [
@@ -513,8 +525,11 @@ class SettingsTransfer
         $this->rows = [];
         $this->firstRows = [];
 
+        // The unique index lets a key have more than one global row, because
+        // MySQL counts NULLs as distinct. The setting model reads the oldest
+        // of them, so that is the one kept here.
         foreach (DB::table(self::TABLE)->orderBy('id')->get(['id', 'key', 'value', 'type', 'corporation_id', 'updated_at']) as $row) {
-            $this->rows[$row->key][$row->corporation_id === null ? 'global' : (int) $row->corporation_id] = $row;
+            $this->rows[$row->key][$row->corporation_id === null ? 'global' : (int) $row->corporation_id] ??= $row;
         }
     }
 
