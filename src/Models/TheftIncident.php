@@ -446,6 +446,20 @@ class TheftIncident extends Model
     }
 
     /**
+     * Replace the counted mining with a fresh count of the same days.
+     */
+    public function recount(int $quantity, float $value): void
+    {
+        self::where('id', $this->id)->update([
+            'quantity_mined' => $quantity,
+            'ore_value' => $value,
+            'severity' => $this->calculateSeverity($value),
+        ]);
+
+        $this->refresh();
+    }
+
+    /**
      * Calculate severity based on ore value and tax owed.
      * Uses max(taxOwed, oreValue) to match TheftDetectionService logic.
      *

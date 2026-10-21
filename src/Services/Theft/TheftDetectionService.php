@@ -229,6 +229,28 @@ class TheftDetectionService
     }
 
     /**
+     * Open incidents for non-members' mining as soon as a refinery import
+     * brings it in, today's included, where non-members may not mine. The
+     * nightly run still counts the finished days; this only means nobody
+     * waits until then to hear of it.
+     */
+    public function checkAfterImport(): Collection
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return collect();
+        }
+
+        $rules = $this->rules();
+        if ($rules['guests_allowed'] || !$rules['moon_owner']) {
+            return collect();
+        }
+
+        $today = Carbon::today();
+
+        return $this->openNewIncidents($rules, $this->ownerObservers($rules['moon_owner']), $today, 1, $today->copy()->addDay());
+    }
+
+    /**
      * The incidents the next run takes off the list. Reads only.
      *
      * One raised over a bill goes once its player has nothing overdue. One
@@ -509,6 +531,22 @@ class TheftDetectionService
             }
 
             $incident = $player['incidents']->first();
+
+            // Opened by the check after an import, an incident can have
+            // counted its last day while it was still being mined. Its days
+            // are counted again from the ledger, so that one ends up whole.
+            if ($incident->mining_date_from && $incident->mining_date_to
+                && $incident->incident_date->toDateString() === $incident->mining_date_to->toDateString()) {
+                $whole = $this->dailyMining(
+                    $outsiders,
+                    $observers,
+                    $incident->mining_date_from->copy()->subDay(),
+                    $incident->mining_date_to->copy()->addDay(),
+                    $rules['home']
+                );
+                $incident->recount((int) $whole->sum('quantity'), (float) $whole->sum('value'));
+            }
+
             $countedTo = $incident->mining_date_to
                 ? $incident->mining_date_to->copy()->startOfDay()
                 : $incident->incident_date->copy()->startOfDay();
@@ -553,7 +591,7 @@ class TheftDetectionService
      * Open an incident for each player whose outside characters mined here
      * in the last $lookbackDays while it was theft, unless one is open.
      */
-    protected function openNewIncidents(array $rules, array $observers, Carbon $today, int $lookbackDays): Collection
+    protected function openNewIncidents(array $rules, array $observers, Carbon $today, int $lookbackDays, ?Carbon $minedBefore = null): Collection
     {
         $created = collect();
         if (!$observers) {
@@ -561,10 +599,11 @@ class TheftDetectionService
         }
 
         $windowStart = $today->copy()->subDays($lookbackDays);
+        $minedBefore ??= $today;
 
         $miners = $this->ledger(null, $observers)
             ->where('date', '>=', $windowStart->toDateString())
-            ->where('date', '<', $today->toDateString())
+            ->where('date', '<', $minedBefore->toDateString())
             ->distinct()
             ->pluck('character_id')
             ->map(fn ($id) => (int) $id)
@@ -589,7 +628,7 @@ class TheftDetectionService
             $done[$player] = true;
 
             try {
-                $incident = $this->openIncident($members, $rules, $observers, $today, $windowStart);
+                $incident = $this->openIncident($members, $rules, $observers, $today, $windowStart, $minedBefore);
                 if ($incident) {
                     $created->push($incident);
                 }
@@ -608,8 +647,10 @@ class TheftDetectionService
      * The incident for one player, or null when none of their mining in the
      * window was theft.
      */
-    protected function openIncident(array $members, array $rules, array $observers, Carbon $today, Carbon $windowStart): ?TheftIncident
+    protected function openIncident(array $members, array $rules, array $observers, Carbon $today, Carbon $windowStart, ?Carbon $minedBefore = null): ?TheftIncident
     {
+        $minedBefore ??= $today;
+
         $outsiders = $this->outsiders($members, $rules['home']);
         if (!$outsiders) {
             return null;
@@ -633,12 +674,12 @@ class TheftDetectionService
 
         if ($pastLine->isNotEmpty()) {
             $line = $this->theftLine($pastLine->first(), $days);
-            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($line), $today, $rules['home']);
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($line), $minedBefore, $rules['home']);
             $reason = $rows->isNotEmpty() ? 'overdue' : null;
         }
 
         if (!$reason && !$rules['guests_allowed']) {
-            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($rules['guests_off_since']), $today, $rules['home']);
+            $rows = $this->dailyMining(array_keys($outsiders), $observers, $after->copy()->max($rules['guests_off_since']), $minedBefore, $rules['home']);
             $reason = $rows->isNotEmpty() ? 'guests_off' : null;
         }
 

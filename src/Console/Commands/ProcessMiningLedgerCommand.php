@@ -517,6 +517,25 @@ class ProcessMiningLedgerCommand extends Command
                     $this->warn("   ⚠️  Daily summary update failed: {$e->getMessage()}");
                     Log::warning('Mining Manager: Auto daily summary update failed', ['error' => $e->getMessage()]);
                 }
+
+                // Where non-members may not mine, their mining is theft the
+                // moment it is imported, not on the next nightly run.
+                try {
+                    $opened = app(\MiningManager\Services\Theft\TheftDetectionService::class)->checkAfterImport();
+                    $notifier = app(\MiningManager\Services\Notification\TheftNotificationService::class);
+
+                    foreach ($opened as $incident) {
+                        $incident->severity === 'critical'
+                            ? $notifier->notifyCriticalTheft($incident)
+                            : $notifier->notifyTheftDetected($incident);
+                    }
+
+                    if ($opened->isNotEmpty()) {
+                        $this->info("   Opened {$opened->count()} theft incident(s) for non-members mining here.");
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Mining Manager: theft check after the import failed', ['error' => $e->getMessage()]);
+                }
             }
 
             // Clear dashboard cache so new data shows immediately
