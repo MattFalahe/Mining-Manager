@@ -2,6 +2,7 @@
 
 namespace MiningManager\Services\Configuration;
 
+use Carbon\Carbon;
 use MiningManager\Models\Setting;
 use MiningManager\Models\WebhookConfiguration;
 use Illuminate\Support\Facades\Cache;
@@ -106,6 +107,26 @@ class SettingsManagerService
         }
 
         return self::$taxProfiles;
+    }
+
+    /**
+     * The first mining day taxed by tax profiles: the day after settings
+     * moved into them, so nothing mined before the update is taxed under
+     * rules it was not mined under. Null until they have moved.
+     */
+    public function profilesTaxFrom(): ?Carbon
+    {
+        if (!$this->usesTaxProfiles()) {
+            return null;
+        }
+
+        $movedAt = $this->getSettingForCorporation(SettingsTransfer::DONE_KEY, null);
+
+        try {
+            return $movedAt ? Carbon::parse($movedAt)->startOfDay()->addDay() : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -698,23 +719,7 @@ class SettingsManagerService
      */
     public function getTaxRates(): array
     {
-        return [
-            // Moon ore tax rates by rarity (percentage)
-            'moon_ore' => [
-                'r64' => $this->getSetting('tax_rates.moon_ore.r64', config('mining-manager.tax_rates.moon_ore.r64', 15.0)),
-                'r32' => $this->getSetting('tax_rates.moon_ore.r32', config('mining-manager.tax_rates.moon_ore.r32', 12.0)),
-                'r16' => $this->getSetting('tax_rates.moon_ore.r16', config('mining-manager.tax_rates.moon_ore.r16', 10.0)),
-                'r8' => $this->getSetting('tax_rates.moon_ore.r8', config('mining-manager.tax_rates.moon_ore.r8', 8.0)),
-                'r4' => $this->getSetting('tax_rates.moon_ore.r4', config('mining-manager.tax_rates.moon_ore.r4', 5.0)),
-            ],
-
-            // Regular ore type tax rates (percentage)
-            'ice' => $this->getSetting('tax_rates.ice', config('mining-manager.tax_rates.ice', 10.0)),
-            'ore' => $this->getSetting('tax_rates.ore', config('mining-manager.tax_rates.ore', 10.0)),
-            'gas' => $this->getSetting('tax_rates.gas', config('mining-manager.tax_rates.gas', 10.0)),
-            'abyssal_ore' => $this->getSetting('tax_rates.abyssal_ore', config('mining-manager.tax_rates.abyssal_ore', 15.0)),
-            'triglavian_ore' => $this->getSetting('tax_rates.triglavian_ore', config('mining-manager.tax_rates.triglavian_ore', 10.0)),
-
+        return array_merge($this->taxRatesFor($this->activeCorporationId), [
             // Mining event bonuses (percentage reduction)
             'event_bonus' => $this->getSetting('tax_rates.event_bonus', config('mining-manager.tax_rates.event_bonus', 2.0)),
 
@@ -734,6 +739,36 @@ class SettingsManagerService
             'tax_payment_deadline_days' => $this->getSetting('tax_rates.tax_payment_deadline_days', 7),
             'send_tax_reminders' => $this->getSetting('tax_rates.send_tax_reminders', true),
             'tax_reminder_days' => $this->getSetting('tax_rates.tax_reminder_days', 3),
+        ]);
+    }
+
+    /**
+     * The rates of the profile that taxes a corporation's members: its own
+     * when it is configured, Global otherwise. Read without moving the active
+     * corporation, so a caller can hold several profiles at once.
+     *
+     * @return array{moon_ore: array<string, mixed>, ice: mixed, ore: mixed, gas: mixed, abyssal_ore: mixed, triglavian_ore: mixed}
+     */
+    public function taxRatesFor(?int $corporationId): array
+    {
+        $rate = fn (string $key, float $default) => $this->getSettingForCorporation("tax_rates.{$key}", $corporationId, config("mining-manager.tax_rates.{$key}", $default));
+
+        return [
+            // Moon ore tax rates by rarity (percentage)
+            'moon_ore' => [
+                'r64' => $rate('moon_ore.r64', 15.0),
+                'r32' => $rate('moon_ore.r32', 12.0),
+                'r16' => $rate('moon_ore.r16', 10.0),
+                'r8' => $rate('moon_ore.r8', 8.0),
+                'r4' => $rate('moon_ore.r4', 5.0),
+            ],
+
+            // Regular ore type tax rates (percentage)
+            'ice' => $rate('ice', 10.0),
+            'ore' => $rate('ore', 10.0),
+            'gas' => $rate('gas', 10.0),
+            'abyssal_ore' => $rate('abyssal_ore', 15.0),
+            'triglavian_ore' => $rate('triglavian_ore', 10.0),
         ];
     }
 
@@ -1032,18 +1067,31 @@ class SettingsManagerService
      */
     public function getTaxSelector(): array
     {
+        return $this->taxSelectorFor($this->activeCorporationId);
+    }
+
+    /**
+     * What the profile that taxes a corporation's members taxes, read like
+     * taxRatesFor().
+     *
+     * @return array<string, mixed>
+     */
+    public function taxSelectorFor(?int $corporationId): array
+    {
+        $taxes = fn (string $key, bool $default) => $this->getSettingForCorporation("tax_selector.{$key}", $corporationId, $default);
+
         return [
             // Moon ore selector (mutually exclusive)
-            'all_moon_ore' => $this->getSetting('tax_selector.all_moon_ore', true),
-            'only_corp_moon_ore' => $this->getSetting('tax_selector.only_corp_moon_ore', false),
-            'no_moon_ore' => $this->getSetting('tax_selector.no_moon_ore', false),
+            'all_moon_ore' => $taxes('all_moon_ore', true),
+            'only_corp_moon_ore' => $taxes('only_corp_moon_ore', false),
+            'no_moon_ore' => $taxes('no_moon_ore', false),
 
             // Other ore types (independent checkboxes)
-            'ore' => $this->getSetting('tax_selector.ore', true),
-            'ice' => $this->getSetting('tax_selector.ice', true),
-            'gas' => $this->getSetting('tax_selector.gas', false),
-            'abyssal_ore' => $this->getSetting('tax_selector.abyssal_ore', false),
-            'triglavian_ore' => $this->getSetting('tax_selector.triglavian_ore', false),
+            'ore' => $taxes('ore', true),
+            'ice' => $taxes('ice', true),
+            'gas' => $taxes('gas', false),
+            'abyssal_ore' => $taxes('abyssal_ore', false),
+            'triglavian_ore' => $taxes('triglavian_ore', false),
         ];
     }
 

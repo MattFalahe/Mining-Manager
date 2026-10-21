@@ -32,6 +32,13 @@ use MiningManager\Services\Tax\InvoiceCoverage;
  * subtracting again on a later pass would take the same observer quantity off
  * twice and destroy a legitimate remainder, which is what the version this
  * replaces did on the second day.
+ *
+ * Until settings moved into tax profiles only our own observer was matched,
+ * because other corporations' refineries were never taxed and a personal copy
+ * of their report did no harm. From the day after, a profile that taxes all
+ * moon ore taxes those refineries and the personal ledger alike, so a copy
+ * left behind would be charged twice. From that day other corporations'
+ * observers are matched as well, by the same exact rule.
  */
 class PersonalMiningReconciler
 {
@@ -97,6 +104,7 @@ class PersonalMiningReconciler
         // mined would lose whatever they mine afterwards somewhere else.
         $until = Carbon::yesterday()->endOfDay();
         $since = Carbon::today()->subDays(max(1, $days))->startOfDay();
+        $profilesFrom = $this->settings->profilesTaxFrom();
 
         $touched = [];
 
@@ -111,13 +119,12 @@ class PersonalMiningReconciler
                     ->whereColumn('o.character_id', 'mining_ledger.character_id')
                     ->whereColumn('o.date', 'mining_ledger.date')
                     ->whereColumn('o.type_id', 'mining_ledger.type_id')
-                    ->whereNotNull('o.observer_id')
-                    ->where('o.corporation_id', $moonOwnerCorpId);
+                    ->whereNotNull('o.observer_id');
             })
             // Paged by id, because the loop deletes rows this very query
             // selects on and offset paging would walk straight past the ones
             // that shuffle back.
-            ->chunkById(500, function ($rows) use (&$result, &$touched, $dryRun, $moonOwnerCorpId) {
+            ->chunkById(500, function ($rows) use (&$result, &$touched, $dryRun, $moonOwnerCorpId, $profilesFrom) {
                 foreach ($rows as $row) {
                     $result['examined']++;
 
@@ -128,7 +135,7 @@ class PersonalMiningReconciler
                         continue;
                     }
 
-                    if ((int) $row->quantity !== $this->observerTotal($row, $moonOwnerCorpId)) {
+                    if (!$this->coveredByObservers($row, $moonOwnerCorpId, $profilesFrom)) {
                         continue;
                     }
 
@@ -180,17 +187,34 @@ class PersonalMiningReconciler
     }
 
     /**
-     * What our own refinery already accounts for, for the same pilot, ore and
-     * day. Other corporations' observers are not ours to match against.
+     * Whether observers already account for every unit in a personal row:
+     * exactly our own refinery's total on any day, and from the day mining is
+     * taxed by profiles also exactly one other corporation's total, or all
+     * of the observers' together.
      */
-    protected function observerTotal(MiningLedger $row, int $moonOwnerCorpId): int
+    protected function coveredByObservers(MiningLedger $row, int $moonOwnerCorpId, ?Carbon $profilesFrom): bool
     {
-        return (int) MiningLedger::where('character_id', $row->character_id)
+        $totals = MiningLedger::where('character_id', $row->character_id)
             ->whereDate('date', $row->date)
             ->where('type_id', $row->type_id)
             ->whereNotNull('observer_id')
-            ->where('corporation_id', $moonOwnerCorpId)
-            ->sum('quantity');
+            ->selectRaw('corporation_id, SUM(quantity) as quantity')
+            ->groupBy('corporation_id')
+            ->pluck('quantity', 'corporation_id')
+            ->map(fn ($quantity) => (int) $quantity)
+            ->all();
+
+        $quantity = (int) $row->quantity;
+
+        if ($quantity === ($totals[$moonOwnerCorpId] ?? 0)) {
+            return true;
+        }
+
+        if ($profilesFrom === null || Carbon::parse($row->date)->lt($profilesFrom)) {
+            return false;
+        }
+
+        return in_array($quantity, $totals, true) || $quantity === array_sum($totals);
     }
 
     /**

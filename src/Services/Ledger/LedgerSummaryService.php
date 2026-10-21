@@ -246,6 +246,15 @@ class LedgerSummaryService
         // often those days are rebuilt afterwards.
         $characterCorpId = app(CorporationOnDate::class)->forDay($characterId, $dateCarbon, $homeCorporationIds);
 
+        // From the day after settings moved into tax profiles, a day is taxed
+        // by the profile of the corporation the pilot was in that day. Days
+        // before it keep the rule they were taxed under, however often they
+        // are rebuilt.
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+        $rule = $profilesFrom !== null && $dateCarbon->gte($profilesFrom)
+            ? $this->profileRule($characterCorpId ? (int) $characterCorpId : null, $homeCorporationIds, $moonOwnerCorpId ? (int) $moonOwnerCorpId : null)
+            : null;
+
         // Get corporation_id for the summary — prefer Moon Owner Corp if entries exist
         $corporationId = (clone $baseQuery)
             ->whereNotNull('corporation_id')
@@ -299,44 +308,47 @@ class LedgerSummaryService
                 : null;
 
             $entryCorporationId = $entry->corporation_id;
+            $source = $this->sourceOf(
+                $entryCorporationId !== null ? (int) $entryCorporationId : null,
+                $moonOwnerCorpId ? (int) $moonOwnerCorpId : null
+            );
 
-            // ================================================================
-            // Corporation filtering: only process relevant entries
-            // ================================================================
-            if ($entryCorporationId !== null) {
-                // Observer data — ONLY process from Moon Owner Corp's structures
+            if ($rule !== null) {
+                if ($this->profileLeavesOut($rule, $source) !== null) {
+                    continue;
+                }
+
+                $isTaxable = $this->selectorTaxes($rule['selector'], $typeId, $entryCorporationId, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->rateIn($rule['rates'], $typeId) : 0;
+            } elseif ($entryCorporationId !== null) {
+                // Before tax profiles: observer data only from the Moon Owner's
+                // structures, all of it taxed as the Moon Owner taxes it.
                 if ((int) $entryCorporationId !== (int) ($moonOwnerCorpId ?? 0)) {
                     continue; // Skip entries from other corps' observers (e.g. Mount Othrys)
                 }
-                // Moon observer entry: use Moon Owner Corp context for settings
                 if ($moonOwnerCorpId) {
                     $this->settingsService->setActiveCorporation((int) $moonOwnerCorpId);
                 }
+
+                $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
             } else {
-                // Character ledger entry (NULL corporation_id)
-                // Only tax if the character belongs to a configured corporation
+                // Before tax profiles: a personal ledger is taxed only for a
+                // member of a configured corporation, as their corporation
+                // taxes it, and never for moon ore, which waits for our
+                // refinery's report.
                 if (!$characterCorpId || (
                     !empty($homeCorporationIds)
                     && !in_array((int) $characterCorpId, $homeCorporationIds, true)
                 )) {
                     continue; // Character not in SeAT or not in any configured corp — skip
                 }
-                // Use character's own corp context for rates
                 $this->settingsService->setActiveCorporation((int) $characterCorpId);
-            }
 
-            // Determine taxability based on ore type and tax selector settings
-            if ($entryCorporationId !== null) {
-                // Moon observer entry — use shouldTaxType (handles only_corp_moon_ore etc.)
-                $isTaxable = $this->shouldTaxType($typeId, $entryCorporationId, $moonOwnerCorpId);
-            } else {
-                // Character ledger — moon ore without observer data is not taxable yet
-                // (it will become taxable when observer data arrives and reconciliation runs)
-                // Non-moon ore types are taxable based on tax selector
                 $isTaxable = !TypeIdRegistry::isMoonOre($typeId)
                     && $this->shouldTaxType($typeId, null, $moonOwnerCorpId);
+                $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
             }
-            $baseTaxRate = $isTaxable ? $this->getTaxRateForType($typeId, $characterCorpId) : 0;
 
             // Phase 2 per-row attribution: look up how much of this (char, date, type)
             // mining is event-qualified via event_mining_records. The event modifier
@@ -396,6 +408,7 @@ class LedgerSummaryService
                 'ore_name' => $oreName,
                 'category' => $category,
                 'moon_rarity' => $moonRarity,
+                'source' => $source,
                 'quantity' => (float) $quantity,
                 'unit_price' => round($unitPrice, 2),
                 'total_value' => round((float) $value, 2),
@@ -486,6 +499,101 @@ class LedgerSummaryService
                 'is_finalized' => $isFinalized,
             ]
         );
+    }
+
+    /**
+     * Where a slice of mining came from: our refinery, somebody else's, or
+     * the pilot's own ledger.
+     */
+    protected function sourceOf(?int $refineryCorporationId, ?int $moonOwnerCorpId): string
+    {
+        if ($refineryCorporationId === null) {
+            return 'personal';
+        }
+
+        return $moonOwnerCorpId !== null && $refineryCorporationId === $moonOwnerCorpId ? 'ours' : 'other';
+    }
+
+    /**
+     * Who taxes a pilot's mining on a day taxed by profiles, and with what.
+     *
+     * - A member of a configured corporation is taxed by its own profile: at
+     *   our refineries, for their own mining, and at other corporations'
+     *   refineries as well when the profile taxes all moon ore.
+     * - Anyone else is taxed by the Global profile, at our refineries only.
+     * - A pilot whose corporation is not known yet is taxed at our
+     *   refineries as a member of the Moon Owner, rather than at the
+     *   non-members' rate on the strength of a lookup that has not finished.
+     *   The rest of their mining waits until it has.
+     * - With no corporation configured at all, Global taxes everyone.
+     *
+     * @param array<int> $home
+     * @return array{member: bool, profile: int|null, rates: array, selector: array, moon: string, owner: int|null}
+     */
+    protected function profileRule(?int $corporationId, array $home, ?int $moonOwnerCorpId): array
+    {
+        if (!$home) {
+            $member = $corporationId !== null;
+            $profile = null;
+        } elseif ($corporationId === null) {
+            $member = false;
+            $profile = $moonOwnerCorpId;
+        } else {
+            $member = in_array($corporationId, $home, true);
+            $profile = $member ? $corporationId : null;
+        }
+
+        $selector = $this->settingsService->taxSelectorFor($profile);
+
+        return [
+            'member' => $member,
+            'profile' => $profile,
+            'rates' => $this->settingsService->taxRatesFor($profile),
+            'selector' => $selector,
+            'moon' => $this->moonChoice($selector),
+            'owner' => $moonOwnerCorpId,
+        ];
+    }
+
+    /**
+     * Why a profile leaves a slice of mining out of the day, or null when it
+     * counts. The reasons are the ones the character ledger shows.
+     */
+    protected function profileLeavesOut(array $rule, string $source): ?string
+    {
+        if ($source === 'ours') {
+            return null;
+        }
+
+        if (!$rule['member']) {
+            return $source === 'personal' ? 'not_member' : 'other_refinery';
+        }
+
+        // Somebody else's refinery is taxed only by a profile that taxes all
+        // moon ore, and only once there is a refinery of ours to tell theirs
+        // apart from.
+        if ($source === 'other' && ($rule['moon'] !== 'all' || $rule['owner'] === null)) {
+            return 'other_refinery';
+        }
+
+        return null;
+    }
+
+    /**
+     * The moon ore a selector taxes: 'all', 'ours' for only the Moon Owner's
+     * refineries, or 'none', decided the way selectorTaxes() decides it.
+     */
+    protected function moonChoice(array $selector): string
+    {
+        if (!empty($selector['no_moon_ore'])) {
+            return 'none';
+        }
+
+        if (!empty($selector['only_corp_moon_ore'])) {
+            return 'ours';
+        }
+
+        return ($selector['all_moon_ore'] ?? true) ? 'all' : 'none';
     }
 
     /**
@@ -601,8 +709,14 @@ class LedgerSummaryService
      */
     public function getTaxRateForType(int $typeId, ?int $characterCorpId = null): float
     {
-        $taxRates = $this->settingsService->getTaxRatesForCorporation($characterCorpId);
+        return $this->rateIn($this->settingsService->getTaxRatesForCorporation($characterCorpId), $typeId);
+    }
 
+    /**
+     * An ore's rate in a table of rates shaped like getTaxRates().
+     */
+    protected function rateIn(array $taxRates, int $typeId): float
+    {
         if (TypeIdRegistry::isMoonOre($typeId)) {
             $rarity = TypeIdRegistry::getMoonOreRarity($typeId);
             if ($rarity) {
@@ -644,8 +758,15 @@ class LedgerSummaryService
      */
     public function shouldTaxType(int $typeId, ?int $entryCorporationId = null, ?int $moonOwnerCorpId = null): bool
     {
-        $taxSelector = $this->settingsService->getTaxSelector();
+        return $this->selectorTaxes($this->settingsService->getTaxSelector(), $typeId, $entryCorporationId, $moonOwnerCorpId);
+    }
 
+    /**
+     * Whether a selector shaped like getTaxSelector() taxes an ore mined at
+     * the given refinery, or in a personal ledger when there is none.
+     */
+    protected function selectorTaxes(array $taxSelector, int $typeId, $entryCorporationId, $moonOwnerCorpId): bool
+    {
         if (TypeIdRegistry::isMoonOre($typeId)) {
             if (!empty($taxSelector['no_moon_ore'])) {
                 return false;
@@ -1016,24 +1137,23 @@ class LedgerSummaryService
      * Each character's tax over these days, and the event discount inside it,
      * from the daily summaries the bills are built from.
      *
-     * For a slice of the ore it adds up each day's per-ore breakdown. Moon ore
-     * is only ever taxed where the moon owner's refineries recorded it, so the
-     * moon slices that include those refineries all read the same tax, and
-     * other moons read none. A day an invoice covers keeps the tax it was
-     * billed at as its total, while its breakdown follows the rates of the
-     * day it was last built, so a slice can stray from the bill once rates
-     * have changed.
+     * For a slice of the ore it adds up each day's per-ore breakdown, which
+     * says where each entry was mined: our refineries are "my moons", other
+     * refineries and personal ledgers are other moons. A day an invoice
+     * covers keeps the tax it was billed at as its total, while its breakdown
+     * follows the rates of the day it was last built, so a slice can stray
+     * from the bill once rates have changed.
      *
      * @param array<int, int|string> $characterIds
      * @return array<int, array{tax: float, discount: float}> character_id => figures
      */
     public function periodTax(array $characterIds, Carbon $from, Carbon $to, ?ChartFilter $filter = null): array
     {
-        $kinds = $this->taxedKinds($filter ?? ChartFilter::none());
+        $counts = $this->taxedSlice($filter ?? ChartFilter::none());
         $ids = array_values(array_unique(array_map('intval', $characterIds)));
         $figures = [];
 
-        if (!$ids || $kinds === []) {
+        if (!$ids) {
             return $figures;
         }
 
@@ -1041,7 +1161,7 @@ class LedgerSummaryService
             $days = MiningLedgerDailySummary::whereIn('character_id', $chunk)
                 ->whereBetween('date', [$from->toDateString(), $to->toDateString()]);
 
-            if ($kinds === null) {
+            if ($counts === null) {
                 $rows = $days->selectRaw('character_id, SUM(total_tax) as tax, SUM(event_discount_total) as discount')
                     ->groupBy('character_id')
                     ->get();
@@ -1058,7 +1178,7 @@ class LedgerSummaryService
                 $figures[$id] ??= ['tax' => 0.0, 'discount' => 0.0];
 
                 foreach ((array) $day->ore_types as $entry) {
-                    if (in_array($this->oreKind((string) ($entry['category'] ?? '')), $kinds, true)) {
+                    if ($counts((array) $entry)) {
                         $figures[$id]['tax'] += (float) ($entry['estimated_tax'] ?? 0);
                         $figures[$id]['discount'] += (float) ($entry['event_discount_amount'] ?? 0);
                     }
@@ -1070,26 +1190,45 @@ class LedgerSummaryService
     }
 
     /**
-     * The kinds of ore whose tax a slice counts: null for every kind, none at
-     * all for other moons.
+     * Which entries of a day's breakdown a slice counts the tax of, or null
+     * for all of them.
      *
-     * @return array<int, string>|null
+     * A breakdown built before entries said where they were mined only ever
+     * taxed moon ore at the moon owner's refineries, so its moon tax is all
+     * "my moons" and none of it other moons.
      */
-    protected function taxedKinds(ChartFilter $filter): ?array
+    protected function taxedSlice(ChartFilter $filter): ?\Closure
     {
-        if ($filter->moonSource() === ChartFilter::MOON_OTHER) {
-            return [];
+        $moonSource = $filter->moonSource();
+        $category = $filter->oreCategory();
+
+        if ($moonSource === ChartFilter::MOON_ALL && $category === null) {
+            return null;
         }
 
-        $kinds = in_array($filter->moonSource(), [ChartFilter::MOON_MINE, ChartFilter::MOON_ANY], true) ? ['moon'] : null;
+        return function (array $entry) use ($moonSource, $category): bool {
+            $kind = $this->oreKind((string) ($entry['category'] ?? ''));
 
-        if ($filter->oreCategory() !== null) {
-            $kinds = $kinds === null
-                ? [$filter->oreCategory()]
-                : array_values(array_intersect($kinds, [$filter->oreCategory()]));
-        }
+            if ($category !== null && $kind !== $category) {
+                return false;
+            }
 
-        return $kinds;
+            if ($moonSource === ChartFilter::MOON_ALL) {
+                return true;
+            }
+
+            if ($kind !== 'moon') {
+                return false;
+            }
+
+            $source = $entry['source'] ?? 'ours';
+
+            return match ($moonSource) {
+                ChartFilter::MOON_MINE => $source === 'ours',
+                ChartFilter::MOON_OTHER => $source !== 'ours',
+                default => true,
+            };
+        };
     }
 
     /**
@@ -1112,11 +1251,13 @@ class LedgerSummaryService
      * The tax on each ledger row, read from the daily summaries the bills are
      * built from.
      *
-     * A day's breakdown is built under the settings that tax that mining: the
-     * Moon Owner Corporation's for its refineries, the miner's own
-     * corporation's for everything else, and guest rates for a miner outside
-     * the corporations this install looks after. Each row takes its share of
-     * its ore's tax that day, so a day's rows add up to the day, and a row the
+     * A day's breakdown is built under the rule that taxes that day. Before
+     * settings moved into tax profiles: the Moon Owner Corporation's settings
+     * for its refineries, the miner's own corporation's for everything else,
+     * and guest rates for a miner outside the corporations this install looks
+     * after. From the day after: the profile of the corporation the miner was
+     * in that day. Each row takes its share of the tax on its ore from the
+     * same place that day, so a day's rows add up to the day, and a row the
      * breakdown leaves out says why.
      *
      * @param iterable<MiningLedger> $rows
@@ -1147,15 +1288,21 @@ class LedgerSummaryService
             }
         }
 
-        // Personal mining is only taxed for members of the corporations this
-        // install looks after, on the day they mined, as the breakdown decides it.
+        // Who taxes a day turns on the corporation the miner was in that day.
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
         $onDate = app(CorporationOnDate::class);
-        $taxedMember = function (int $characterId, string $day) use ($onDate, $homeCorporationIds) {
-            $corporationId = (int) $onDate->forDay($characterId, $day, $homeCorporationIds);
+        $corporationOn = fn (int $characterId, string $day) => ((int) $onDate->forDay($characterId, $day, $homeCorporationIds)) ?: null;
 
-            return $corporationId > 0 && (!$homeCorporationIds || in_array($corporationId, $homeCorporationIds, true));
+        // Before tax profiles, personal mining is only taxed for members of the
+        // corporations this install looks after.
+        $taxedMember = function (int $characterId, string $day) use ($corporationOn, $homeCorporationIds) {
+            $corporationId = $corporationOn($characterId, $day);
+
+            return $corporationId !== null && (!$homeCorporationIds || in_array($corporationId, $homeCorporationIds, true));
         };
+
+        $profilesFrom = $this->settingsService->profilesTaxFrom()?->toDateString();
+        $rules = [];
 
         // Moon ore in a personal ledger is taxed once our refinery reports it,
         // and reports that come in late are matched this many days back.
@@ -1166,21 +1313,48 @@ class LedgerSummaryService
             $typeId = (int) $row->type_id;
             $day = $dayOf($row->date);
             $refinery = $row->corporation_id !== null ? (int) $row->corporation_id : null;
+            $source = $this->sourceOf($refinery, $moonOwnerCorpId);
+            $moon = TypeIdRegistry::isMoonOre($typeId);
             $figure = ['class' => OreClassifier::category($typeId), 'taxed' => false, 'rate' => 0.0, 'tax' => 0.0, 'discount' => 0.0, 'reason' => null];
 
-            if ($refinery !== null && $refinery !== $moonOwnerCorpId) {
-                $figure['reason'] = 'other_refinery';
-            } elseif ($refinery === null && TypeIdRegistry::isMoonOre($typeId)) {
-                $figure['reason'] = $day >= $stillReporting ? 'moon_waiting' : 'moon_elsewhere';
-            } elseif ($refinery === null && !$taxedMember((int) $row->character_id, $day)) {
-                $figure['reason'] = 'not_member';
-            } elseif ($row->processed_at === null || empty($days[$row->character_id . '|' . $day][$typeId])) {
+            if ($profilesFrom !== null && $day >= $profilesFrom) {
+                $rule = $rules[$row->character_id . '|' . $day] ??= $this->profileRule(
+                    $corporationOn((int) $row->character_id, $day),
+                    $homeCorporationIds,
+                    $moonOwnerCorpId
+                );
+                $reason = $this->profileLeavesOut($rule, $source);
+
+                // A profile that taxes only our refineries' moon ore leaves
+                // moon ore in a personal ledger to their report, as before.
+                if ($reason === null && $source === 'personal' && $moon && $rule['moon'] === 'ours') {
+                    $reason = $day >= $stillReporting ? 'moon_waiting' : 'moon_elsewhere';
+                }
+            } elseif ($source === 'other') {
+                $reason = 'other_refinery';
+            } elseif ($source === 'personal' && $moon) {
+                $reason = $day >= $stillReporting ? 'moon_waiting' : 'moon_elsewhere';
+            } elseif ($source === 'personal' && !$taxedMember((int) $row->character_id, $day)) {
+                $reason = 'not_member';
+            } else {
+                $reason = null;
+            }
+
+            // The day's entries for this ore from the same place. A breakdown
+            // built before entries said where they were mined is matched on
+            // the ore alone.
+            $entries = $days[$row->character_id . '|' . $day][$typeId] ?? [];
+            if ($entries && array_key_exists('source', $entries[0])) {
+                $entries = array_values(array_filter($entries, fn ($entry) => ($entry['source'] ?? null) === $source));
+            }
+
+            if ($reason !== null) {
+                $figure['reason'] = $reason;
+            } elseif ($row->processed_at === null || !$entries) {
                 $figure['reason'] = 'not_counted';
             } else {
-                // Our refinery's entry is the only one for a moon ore that can
-                // carry tax, since moon ore from a personal ledger never does.
                 $taxable = array_filter(
-                    $days[$row->character_id . '|' . $day][$typeId],
+                    $entries,
                     fn ($entry) => !empty($entry['is_taxable'])
                 );
                 $value = array_sum(array_map(fn ($entry) => (float) ($entry['total_value'] ?? 0), $taxable));
