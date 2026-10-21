@@ -30,6 +30,7 @@ final class SettingsRegistry
     private const SCOPES = [
         // Setup
         'general.moon_owner_corporation_id' => self::INSTALL,
+        'general.configured_corporations' => self::INSTALL,
 
         // Tax profiles: what is taxed and at what rate, how often bills go out,
         // and the prefix on their payment codes
@@ -158,6 +159,8 @@ final class SettingsRegistry
         'notifications.slack_legacy_last_success_at' => self::STATE,
         'notifications.slack_legacy_last_failure_at' => self::STATE,
         'notifications.slack_legacy_last_error' => self::STATE,
+        'settings.transferred_at' => self::STATE,
+        'settings.transfer_report' => self::STATE,
 
         // Replaced by the Global profile, which taxes everyone whose
         // corporation is not configured
