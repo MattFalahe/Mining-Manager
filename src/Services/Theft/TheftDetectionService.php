@@ -9,6 +9,7 @@ use MiningManager\Models\TheftIncident;
 use MiningManager\Services\Character\CharacterNames;
 use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Configuration\SettingsTransfer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -60,7 +61,9 @@ class TheftDetectionService
     {
         $flags = $this->settingsService->getFeatureFlags();
         $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null, 0);
-        $guestsAllowed = (bool) ($flags['allow_guest_mining'] ?? true);
+        [$guestsAllowed, $offSince] = $this->settingsService->usesTaxProfiles()
+            ? $this->nonMembersRule()
+            : [(bool) ($flags['allow_guest_mining'] ?? true), null];
 
         $home = array_map('intval', $this->settingsService->getHomeCorporationIds());
         if (!$home && $moonOwner) {
@@ -72,8 +75,34 @@ class TheftDetectionService
             'home' => $home,
             'overdue_days' => max(0, (int) ($flags['theft_overdue_days'] ?? 15)),
             'guests_allowed' => $guestsAllowed,
-            'guests_off_since' => $guestsAllowed ? null : $this->guestsOffSince(),
+            'guests_off_since' => $guestsAllowed ? null : ($offSince ?? $this->guestsOffSince()),
         ];
+    }
+
+    /**
+     * Whether non-members may mine here under tax profiles, and since when
+     * they may not.
+     *
+     * Global moon rates of 100% for every rarity are how they are kept out.
+     * The rates change only when someone changes them, so the newest of
+     * them is the day the last one reached 100%, and mining from the next
+     * day on counts, as it did from the old switch.
+     *
+     * @return array{0: bool, 1: Carbon|null}
+     */
+    protected function nonMembersRule(): array
+    {
+        $rates = $this->settingsService->taxRatesFor(null)['moon_ore'];
+
+        if (min(array_map('floatval', $rates)) < 100) {
+            return [true, null];
+        }
+
+        $changed = Setting::whereIn('key', array_map(fn (string $rarity) => "tax_rates.moon_ore.{$rarity}", array_keys($rates)))
+            ->whereNull('corporation_id')
+            ->max('updated_at');
+
+        return [false, $changed ? Carbon::parse($changed)->startOfDay() : Carbon::today()];
     }
 
     /**
@@ -200,12 +229,13 @@ class TheftDetectionService
     }
 
     /**
-     * Incidents raised over a bill whose player now has nothing overdue: the
-     * ones the next run takes off the list. Reads only.
+     * The incidents the next run takes off the list. Reads only.
      *
-     * Incidents raised because guest mining was off are not among them.
-     * Paying the bill does not undo mining that was not allowed, so a director
-     * resolves those.
+     * One raised over a bill goes once its player has nothing overdue. One
+     * raised because non-members may not mine goes once all of its mining has
+     * been billed and the bills paid, from the day settings moved into tax
+     * profiles. One raised before that, when guest mining was switched off,
+     * waits for a director as it always did: paying was never part of it.
      */
     public function paidUpIncidents(): Collection
     {
@@ -215,18 +245,41 @@ class TheftDetectionService
             $stillOverdue = $this->unpaidBills($player['members'])
                 ->contains(fn ($bill) => $bill->isOverdue());
 
-            if ($stillOverdue) {
-                continue;
-            }
-
             foreach ($player['incidents'] as $incident) {
-                if ($incident->mining_tax_id !== null) {
+                if ($incident->mining_tax_id !== null ? !$stillOverdue : $this->notAllowedSettled($incident, $player['members'])) {
                     $paidUp->push($incident);
                 }
             }
         }
 
         return $paidUp;
+    }
+
+    /**
+     * Whether mining that was not allowed has been settled: every day of the
+     * incident is on a bill, and none of those bills is unpaid.
+     */
+    protected function notAllowedSettled(TheftIncident $incident, array $members): bool
+    {
+        $movedAt = $this->settingsService->getSettingForCorporation(SettingsTransfer::DONE_KEY, null);
+
+        if (!$movedAt || !$incident->mining_date_from || !$incident->mining_date_to
+            || $incident->incident_date->lt(Carbon::parse($movedAt))) {
+            return false;
+        }
+
+        $from = $incident->mining_date_from->toDateString();
+        $to = $incident->mining_date_to->toDateString();
+        $bills = MiningTax::whereIn('character_id', $members)
+            ->whereDate('period_end', '>=', $from)
+            ->whereRaw('COALESCE(period_start, month) <= ?', [$to]);
+
+        $billedTo = (clone $bills)->max('period_end');
+        if (!$billedTo || Carbon::parse($billedTo)->toDateString() < $to) {
+            return false;
+        }
+
+        return !(clone $bills)->unpaidForTheft()->exists();
     }
 
     /**
@@ -312,12 +365,16 @@ class TheftDetectionService
             $line = $pastLine->map(fn ($bill) => $this->theftLine($bill, $days))->min();
             $verdict = "{$pastLine->count()} bill(s) more than {$days} days overdue: mining at our refineries after {$line->toDateString()} opens an incident on the next run.";
         } elseif (!$rules['guests_allowed']) {
-            $verdict = "Guest mining is switched off: mining at our refineries after {$rules['guests_off_since']->toDateString()} opens an incident on the next run.";
+            $verdict = $this->settingsService->usesTaxProfiles()
+                ? "Non-members may not mine here, as the Global moon rates are 100%: mining at our refineries after {$rules['guests_off_since']->toDateString()} opens an incident on the next run, and paying the bill for it closes it."
+                : "Guest mining is switched off: mining at our refineries after {$rules['guests_off_since']->toDateString()} opens an incident on the next run.";
         } elseif ($overdue->isNotEmpty()) {
             $line = $overdue->map(fn ($bill) => $this->theftLine($bill, $days))->min();
             $verdict = "Overdue, but not more than {$days} days yet. Mining after {$line->toDateString()} is theft if the bill is still unpaid then.";
         } else {
-            $verdict = 'Outside our corporations with nothing overdue: a guest, billed at guest rates.';
+            $verdict = $this->settingsService->usesTaxProfiles()
+                ? 'Outside our corporations with nothing overdue: a non-member, billed by the Global profile.'
+                : 'Outside our corporations with nothing overdue: a guest, billed at guest rates.';
         }
 
         return [
@@ -612,7 +669,9 @@ class TheftDetectionService
                 $days,
                 number_format($taxOwed, 0)
             )
-            : 'Mined our moons while guest mining was switched off.';
+            : ($this->settingsService->usesTaxProfiles()
+                ? 'Mined our moons while non-members may not: the Global moon rates are 100%.'
+                : 'Mined our moons while guest mining was switched off.');
 
         $dates = $rows->pluck('date')->map(fn ($date) => Carbon::parse($date)->toDateString());
 
