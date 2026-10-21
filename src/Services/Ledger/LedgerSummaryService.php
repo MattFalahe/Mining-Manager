@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 use MiningManager\Services\Tax\InvoiceCoverage;
 use MiningManager\Services\OreClassifier;
 use MiningManager\Services\Character\CorporationMembers;
+use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Analytics\ChartFilter;
 
 class LedgerSummaryService
@@ -224,16 +225,6 @@ class LedgerSummaryService
             );
         }
 
-        // Get the character's current corporation ID. The corporation_id
-        // column was dropped from character_infos in SeAT 2019 — the current
-        // affiliation lives in character_affiliations now. Reading it from
-        // CharacterInfo directly would silently return null and break both
-        // guest-mining detection and the Phase 2 event corp-scope filter.
-        $characterCorpId = DB::table('character_affiliations')
-            ->where('character_id', $characterId)
-            ->value('corporation_id');
-        $characterCorpId = $characterCorpId ? (int) $characterCorpId : null;
-
         // Moon Owner Corporation is a GLOBAL setting (not corp-context dependent).
         // Read it directly to avoid dependency on active corporation context.
         $moonOwnerCorpId = $this->settingsService->getSettingForCorporation(
@@ -247,6 +238,13 @@ class LedgerSummaryService
 
         // Get list of configured corporations (for character ledger tax filtering)
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+
+        // The corporation the character was in that day, not the one they are
+        // in now. It decides member or guest rates, whether personal mining is
+        // taxed at all, and which corporation's events apply, so a member who
+        // leaves keeps a member's tax on the days they mined as one, however
+        // often those days are rebuilt afterwards.
+        $characterCorpId = app(CorporationOnDate::class)->forDay($characterId, $dateCarbon, $homeCorporationIds);
 
         // Get corporation_id for the summary — prefer Moon Owner Corp if entries exist
         $corporationId = (clone $baseQuery)
@@ -1150,13 +1148,11 @@ class LedgerSummaryService
         }
 
         // Personal mining is only taxed for members of the corporations this
-        // install looks after, as the breakdown decides it.
+        // install looks after, on the day they mined, as the breakdown decides it.
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
-        $corporations = DB::table('character_affiliations')
-            ->whereIn('character_id', $characterIds)
-            ->pluck('corporation_id', 'character_id');
-        $taxedMember = function ($characterId) use ($corporations, $homeCorporationIds) {
-            $corporationId = (int) ($corporations[$characterId] ?? 0);
+        $onDate = app(CorporationOnDate::class);
+        $taxedMember = function (int $characterId, string $day) use ($onDate, $homeCorporationIds) {
+            $corporationId = (int) $onDate->forDay($characterId, $day, $homeCorporationIds);
 
             return $corporationId > 0 && (!$homeCorporationIds || in_array($corporationId, $homeCorporationIds, true));
         };
@@ -1176,7 +1172,7 @@ class LedgerSummaryService
                 $figure['reason'] = 'other_refinery';
             } elseif ($refinery === null && TypeIdRegistry::isMoonOre($typeId)) {
                 $figure['reason'] = $day >= $stillReporting ? 'moon_waiting' : 'moon_elsewhere';
-            } elseif ($refinery === null && !$taxedMember((int) $row->character_id)) {
+            } elseif ($refinery === null && !$taxedMember((int) $row->character_id, $day)) {
                 $figure['reason'] = 'not_member';
             } elseif ($row->processed_at === null || empty($days[$row->character_id . '|' . $day][$typeId])) {
                 $figure['reason'] = 'not_counted';
