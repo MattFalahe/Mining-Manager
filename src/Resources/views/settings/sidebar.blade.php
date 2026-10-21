@@ -7,13 +7,34 @@
     </div>
     <div class="card-body p-0">
         <ul class="nav nav-pills flex-column">
-            {{-- Global Settings Section --}}
-            <li class="nav-header px-3 py-2 text-muted small text-uppercase" style="background: rgba(40, 167, 69, 0.1); border-left: 3px solid #28a745;">
-                <i class="fas fa-globe"></i> Global Settings
+            {{-- Tax profiles --}}
+            <li class="nav-header px-3 py-2 text-muted small text-uppercase" style="background: rgba(23, 162, 184, 0.1); border-left: 3px solid #17a2b8;">
+                <i class="fas fa-percent"></i> Tax profiles
             </li>
             <li class="nav-item">
                 <a href="#"
                    class="nav-link active"
+                   data-tab="setup">
+                    <i class="fas fa-flag"></i>
+                    Setup
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
+                   data-tab="profiles">
+                    <i class="fas fa-percent"></i>
+                    Tax profiles
+                </a>
+            </li>
+
+            {{-- Global Settings Section --}}
+            <li class="nav-header px-3 py-2 text-muted small text-uppercase mt-2" style="background: rgba(40, 167, 69, 0.1); border-left: 3px solid #28a745;">
+                <i class="fas fa-globe"></i> Global Settings
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
                    data-tab="general-settings">
                     <i class="fas fa-sliders-h"></i>
                     {{ trans('mining-manager::settings.general') }}

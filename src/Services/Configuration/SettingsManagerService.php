@@ -873,6 +873,123 @@ class SettingsManagerService
     }
 
     /**
+     * Change a tax profile's billing period, the profile for a corporation's
+     * members as everywhere else.
+     *
+     * Queued to the first safe day unless asked for now: see
+     * TaxPeriodHelper::nextSafeEffectiveDate() for why that is day 3 of next
+     * month rather than day 1. Choosing the period already in force clears
+     * any queued change.
+     */
+    public function setPeriodFor(?int $corporationId, string $requested, bool $applyNow): void
+    {
+        // Defense in depth: weekly was removed as a selectable period
+        // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
+        // via a bypassed form), coerce to 'monthly' and log it. Prevents
+        // the legacy value from being re-introduced into the settings store.
+        if ($requested === 'weekly') {
+            Log::warning('Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.');
+            $requested = 'monthly';
+        }
+
+        $write = fn (string $key, $value) => $this->updateSettingForCorporation($key, $value, 'string', $corporationId);
+        $current = $this->getSettingForCorporation('tax_rates.tax_calculation_period', $corporationId, 'monthly');
+        $pending = $this->getSettingForCorporation('tax_rates.tax_calculation_period_pending', $corporationId);
+
+        // Asking again for a change already queued keeps its date. Queued
+        // afresh, a save between the 1st and the 3rd would push it a month.
+        if ($requested === $pending && !$applyNow) {
+            return;
+        }
+
+        if ($requested === $current) {
+            $write('tax_rates.tax_calculation_period_pending', null);
+            $write('tax_rates.tax_calculation_period_effective_from', null);
+        } elseif ($applyNow) {
+            $write('tax_rates.tax_calculation_period', $requested);
+            $write('tax_rates.tax_calculation_period_pending', null);
+            $write('tax_rates.tax_calculation_period_effective_from', null);
+        } else {
+            $effectiveFrom = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->nextSafeEffectiveDate()->toDateString();
+            $write('tax_rates.tax_calculation_period_pending', $requested);
+            $write('tax_rates.tax_calculation_period_effective_from', $effectiveFrom);
+        }
+    }
+
+    /**
+     * Save one tax profile from the Tax profiles page: Global when the
+     * corporation is null, else that configured corporation's own.
+     *
+     * @param array{prefix?: string, moon?: string, rates?: array<string, mixed>, taxed?: array<string, mixed>, period?: string} $values
+     */
+    public function saveProfile(?int $corporationId, array $values, bool $applyPeriodNow): void
+    {
+        $write = fn (string $key, $value, string $type) => $this->updateSettingForCorporation($key, $value, $type, $corporationId);
+
+        if (isset($values['prefix'])) {
+            $write('tax_rates.tax_code_prefix', $values['prefix'], 'string');
+        }
+
+        if (isset($values['moon'])) {
+            $write('tax_selector.all_moon_ore', $values['moon'] === 'all', 'boolean');
+            $write('tax_selector.only_corp_moon_ore', $values['moon'] === 'ours', 'boolean');
+            $write('tax_selector.no_moon_ore', $values['moon'] === 'none', 'boolean');
+        }
+
+        foreach ($values['rates'] ?? [] as $key => $rate) {
+            $write("tax_rates.{$key}", (float) $rate, 'float');
+        }
+
+        foreach ($values['taxed'] ?? [] as $key => $taxed) {
+            $write("tax_selector.{$key}", (bool) $taxed, 'boolean');
+        }
+
+        if (isset($values['period'])) {
+            $this->setPeriodFor($corporationId, $values['period'], $applyPeriodNow);
+        }
+    }
+
+    /**
+     * Configure a corporation: put it on the list with a profile of its own,
+     * a copy of another profile (Global when none is named), so it starts
+     * out taxed as that one is rather than at the defaults.
+     */
+    public function configureCorporation(int $corporationId, ?int $copyFrom): void
+    {
+        foreach (SettingsRegistry::keys(SettingsRegistry::PROFILE) as $key) {
+            $query = Setting::where('key', $key);
+            $copyFrom ? $query->where('corporation_id', $copyFrom) : $query->whereNull('corporation_id');
+            $source = $query->first();
+
+            if ($source === null) {
+                continue;
+            }
+
+            Cache::forget(self::CACHE_PREFIX . $corporationId . '_' . $key);
+            Setting::updateOrCreate(
+                ['key' => $key, 'corporation_id' => $corporationId],
+                ['value' => $source->value, 'type' => $source->type]
+            );
+            Cache::forget(self::CACHE_PREFIX . $corporationId . '_' . $key);
+        }
+
+        $this->addConfiguredCorporation($corporationId);
+    }
+
+    /**
+     * Take a corporation off the configured list. From then on its members
+     * are non-members, taxed by Global. Its profile stays where it is, so
+     * nothing is lost if it is added back, though adding it copies afresh.
+     * The Moon Owner is always configured and cannot be taken off.
+     */
+    public function removeConfiguredCorporation(int $corporationId): void
+    {
+        $ids = array_map('intval', (array) $this->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+
+        $this->updateGlobalSetting(SettingsTransfer::CONFIGURED_KEY, array_values(array_diff($ids, [$corporationId])), 'json');
+    }
+
+    /**
      * Update tax rates
      * COMPLETELY REWRITTEN: Now handles all form fields including moon ore rarities,
      * exemptions, tax selectors, and all other settings
@@ -1019,44 +1136,7 @@ class SettingsManagerService
             // existing taxes) uses the tax_calculation_period_apply_now flag.
             // That bypasses the queue and writes directly to the active slot.
             if (isset($rates['tax_calculation_period'])) {
-                $requested = $rates['tax_calculation_period'];
-
-                // Defense in depth: weekly was removed as a selectable period
-                // type in v1.0.3+. If a caller somehow passes 'weekly' (e.g.
-                // via a direct updateTaxRates() call or a bypassed form),
-                // coerce to 'monthly' and log it. Prevents the legacy value
-                // from being re-introduced into the settings store.
-                if ($requested === 'weekly') {
-                    \Illuminate\Support\Facades\Log::warning(
-                        'Mining Manager: Attempted to set tax_calculation_period to deprecated "weekly"; coerced to "monthly". Use biweekly for sub-monthly periods.'
-                    );
-                    $requested = 'monthly';
-                }
-
-                $currentActive = $this->getSetting('tax_rates.tax_calculation_period', 'monthly');
-                $applyNow = !empty($rates['tax_calculation_period_apply_now']);
-
-                if ($requested === $currentActive) {
-                    // No-op — also clear any stale pending queue.
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
-                } elseif ($applyNow) {
-                    // Power-user override: change takes effect immediately.
-                    $this->updateSetting('tax_rates.tax_calculation_period', $requested, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', null, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', null, 'string');
-                } else {
-                    // Queue with a lookahead effective date that lets the old
-                    // scheme finish calculating the current month before the
-                    // new scheme takes over. See TaxPeriodHelper::nextSafeEffectiveDate
-                    // for the rationale — TL;DR: day 3 of next month, not day 1,
-                    // because day 2 is when both biweekly and monthly schedule
-                    // their previous-period calcs.
-                    $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
-                    $effectiveFrom = $periodHelper->nextSafeEffectiveDate()->toDateString();
-                    $this->updateSetting('tax_rates.tax_calculation_period_pending', $requested, 'string');
-                    $this->updateSetting('tax_rates.tax_calculation_period_effective_from', $effectiveFrom, 'string');
-                }
+                $this->setPeriodFor($this->activeCorporationId, $rates['tax_calculation_period'], !empty($rates['tax_calculation_period_apply_now']));
             }
             if (isset($rates['tax_payment_deadline_days'])) {
                 $this->updateSetting('tax_rates.tax_payment_deadline_days', $rates['tax_payment_deadline_days'], 'integer');

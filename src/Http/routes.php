@@ -904,6 +904,30 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/setup', [
+            'as' => 'mining-manager.settings.update-setup',
+            'uses' => 'SettingsController@updateSetup',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/corporations/add', [
+            'as' => 'mining-manager.settings.corporations.add',
+            'uses' => 'SettingsController@addCorporation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/corporations/remove', [
+            'as' => 'mining-manager.settings.corporations.remove',
+            'uses' => 'SettingsController@removeCorporation',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
+        Route::post('/profiles', [
+            'as' => 'mining-manager.settings.update-profiles',
+            'uses' => 'SettingsController@updateProfiles',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/general', [
             'as' => 'mining-manager.settings.update-general',
             'uses' => 'SettingsController@updateGeneral',

@@ -169,8 +169,18 @@
             <div class="card card-dark">
                 <div class="card-body">
 
+                    {{-- Setup --}}
+                    <div id="setup" class="settings-section active">
+                        @include('mining-manager::settings.tabs.setup')
+                    </div>
+
+                    {{-- Tax profiles --}}
+                    <div id="profiles" class="settings-section">
+                        @include('mining-manager::settings.tabs.profiles')
+                    </div>
+
                     {{-- General Settings Tab --}}
-                    <div id="general-settings" class="settings-section active">
+                    <div id="general-settings" class="settings-section">
                         @include('mining-manager::settings.tabs.general', [
                             'settings' => (object)$settings['general'],
                             'corporations' => $corporations,

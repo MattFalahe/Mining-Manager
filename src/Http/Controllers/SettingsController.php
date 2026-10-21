@@ -5,7 +5,9 @@ namespace MiningManager\Http\Controllers;
 use Illuminate\Http\Request;
 use Seat\Web\Http\Controllers\Controller;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Configuration\SettingsTransfer;
 use MiningManager\Services\DiscordRoleResolver;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -139,6 +141,13 @@ class SettingsController extends Controller
         // Get available corporations from SeAT
         $corporations = $this->getAvailableCorporations();
 
+        $usesTaxProfiles = $this->settingsService->usesTaxProfiles();
+        $profiles = $this->taxProfiles();
+        $addableCorporations = $corporations
+            ->reject(fn ($corporation) => $this->settingsService->isConfiguredCorporation((int) $corporation->corporation_id))
+            ->values();
+        $overdueDays = (int) ($this->settingsService->getFeatureFlags()['theft_overdue_days'] ?? 15);
+
         // Get webhooks for the settings page
         $webhooks = \MiningManager\Models\WebhookConfiguration::when($corporationId, function ($query) use ($corporationId) {
             return $query->forCorporation($corporationId);
@@ -192,8 +201,210 @@ class SettingsController extends Controller
             'roleProviderAvailable',
             'roleProviderLabel',
             'taxedCorporations',
-            'leaderboardCorporations'
+            'leaderboardCorporations',
+            'profiles',
+            'addableCorporations',
+            'usesTaxProfiles',
+            'overdueDays'
         ));
+    }
+
+    /**
+     * Every tax profile and what it holds, for the Tax profiles page: Global
+     * first, then the Moon Owner, then the rest by name.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function taxProfiles(): array
+    {
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $ids = $this->settingsService->usesTaxProfiles() ? $this->settingsService->getHomeCorporationIds() : [];
+        $names = CorporationInfo::whereIn('corporation_id', $ids)->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id');
+
+        usort($ids, fn (int $a, int $b) => [$a !== $moonOwner, strcasecmp($names[$a]->name ?? '', $names[$b]->name ?? '')]
+            <=> [$b !== $moonOwner, strcasecmp($names[$b]->name ?? '', $names[$a]->name ?? '')]);
+
+        $profiles = [];
+        foreach (array_merge([null], $ids) as $id) {
+            $read = fn (string $key, $default = null) => $this->settingsService->getSettingForCorporation($key, $id, $default);
+            $selector = $this->settingsService->taxSelectorFor($id);
+
+            $profiles[] = [
+                'key' => $id ?? 'global',
+                'corporation_id' => $id,
+                'name' => $id === null ? 'Global' : ($names[$id]->name ?? "Corporation {$id}"),
+                'ticker' => $id === null ? null : ($names[$id]->ticker ?? null),
+                'moon_owner' => $id !== null && $id === $moonOwner,
+                'period' => $read('tax_rates.tax_calculation_period', 'monthly'),
+                'pending' => $read('tax_rates.tax_calculation_period_pending'),
+                'pending_from' => $read('tax_rates.tax_calculation_period_effective_from'),
+                'prefix' => $read('tax_rates.tax_code_prefix', 'TAX-'),
+                'rates' => $this->settingsService->taxRatesFor($id),
+                'selector' => $selector,
+                'moon' => !empty($selector['no_moon_ore']) ? 'none' : (!empty($selector['only_corp_moon_ore']) ? 'ours' : (($selector['all_moon_ore'] ?? true) ? 'all' : 'none')),
+            ];
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * Save the Setup page's Moon Owner Corporation.
+     */
+    public function updateSetup(Request $request)
+    {
+        $validated = $request->validate([
+            'moon_owner_corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
+        ]);
+
+        $new = (int) $validated['moon_owner_corporation_id'];
+        $old = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+
+        if ($new !== $old) {
+            // A Moon Owner is always configured. One that was not yet starts
+            // with the outgoing Moon Owner's profile, not the defaults, so
+            // its members' tax does not change with the switch.
+            $stored = array_map('intval', (array) $this->settingsService->getSettingForCorporation(SettingsTransfer::CONFIGURED_KEY, null, []));
+            if ($this->settingsService->usesTaxProfiles() && !in_array($new, $stored, true)) {
+                $this->settingsService->configureCorporation($new, $old);
+            }
+
+            $this->settingsService->updateGlobalSetting('general.moon_owner_corporation_id', $new, 'integer');
+            $this->clearSettingsCache();
+        }
+
+        return redirect(route('mining-manager.settings.index') . '#setup')
+            ->with('success', 'Moon Owner Corporation saved.');
+    }
+
+    /**
+     * Configure a corporation, starting from a copy of the Moon Owner's
+     * profile.
+     */
+    public function addCorporation(Request $request)
+    {
+        $validated = $request->validate([
+            'corporation_id' => 'required|integer|exists:corporation_infos,corporation_id',
+        ]);
+        $id = (int) $validated['corporation_id'];
+        $name = CorporationInfo::find($id)->name ?? "Corporation {$id}";
+
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('error', 'Settings have not moved into tax profiles yet. The plugin\'s migrations do that when it updates.');
+        }
+
+        if ($this->settingsService->isConfiguredCorporation($id)) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('success', "{$name} is already configured.");
+        }
+
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $this->settingsService->configureCorporation($id, $moonOwner);
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#profiles')
+            ->with('success', "{$name} is configured. Its members are taxed by its own profile, a copy of the Moon Owner's, from now on. Change it under Tax profiles.");
+    }
+
+    /**
+     * Stop treating a corporation's members as members.
+     */
+    public function removeCorporation(Request $request)
+    {
+        $validated = $request->validate([
+            'corporation_id' => 'required|integer',
+        ]);
+        $id = (int) $validated['corporation_id'];
+        $name = CorporationInfo::find($id)->name ?? "Corporation {$id}";
+
+        if ($id === ((int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null))) {
+            return redirect(route('mining-manager.settings.index') . '#setup')
+                ->with('error', 'The Moon Owner Corporation is always configured. Choose another Moon Owner first.');
+        }
+
+        $this->settingsService->removeConfiguredCorporation($id);
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#setup')
+            ->with('success', "{$name} is no longer configured. From now on its members are non-members, taxed by the Global profile.");
+    }
+
+    /**
+     * Save the Tax profiles page: every profile at once.
+     */
+    public function updateProfiles(Request $request)
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return redirect(route('mining-manager.settings.index') . '#profiles')
+                ->with('error', 'Settings have not moved into tax profiles yet. The plugin\'s migrations do that when it updates.');
+        }
+
+        $keys = array_merge(['global'], array_map('strval', $this->settingsService->getHomeCorporationIds()));
+        $others = ['ore', 'ice', 'gas', 'abyssal_ore', 'triglavian_ore'];
+
+        $rules = ['apply_period_now' => 'nullable|boolean'];
+        foreach ($keys as $key) {
+            $rules["profiles.{$key}.period"] = 'required|in:monthly,biweekly';
+            $rules["profiles.{$key}.prefix"] = 'required|string|max:10';
+            $rules["profiles.{$key}.moon"] = 'required|in:all,ours,none';
+            foreach (['r4', 'r8', 'r16', 'r32', 'r64'] as $rarity) {
+                $rules["profiles.{$key}.rates.moon_ore.{$rarity}"] = 'required|numeric|min:0|max:100';
+            }
+            foreach ($others as $other) {
+                $rules["profiles.{$key}.rates.{$other}"] = 'nullable|numeric|min:0|max:100';
+            }
+        }
+
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            return redirect(route('mining-manager.settings.index') . '#profiles')
+                ->withErrors($validator)
+                ->withInput();
+        }
+        $validated = $validator->validated();
+
+        // The keywords are read from the same transfer reason as the codes.
+        $payments = $this->settingsService->getPaymentSettings();
+        $keywords = array_filter([trim((string) ($payments['upfront_keyword'] ?? '')), trim((string) ($payments['refund_keyword'] ?? ''))]);
+        foreach ($validated['profiles'] ?? [] as $values) {
+            $prefix = trim((string) $values['prefix']);
+            foreach ($keywords as $keyword) {
+                if (stripos($prefix, $keyword) !== false || stripos($keyword, $prefix) !== false) {
+                    return redirect(route('mining-manager.settings.index') . '#profiles')
+                        ->withInput()
+                        ->with('error', "The tax code prefix {$prefix} overlaps the payment keyword {$keyword}. Both are read from the transfer reason, so pick a prefix clearly different from it.");
+                }
+            }
+        }
+
+        DB::transaction(function () use ($validated, $request, $others) {
+            foreach ($validated['profiles'] ?? [] as $key => $values) {
+                $rates = Arr::dot($values['rates'] ?? []);
+
+                // An ore whose rate was not on the form, as Global's are not
+                // while corporations are configured, keeps what it had.
+                $taxed = [];
+                foreach ($others as $other) {
+                    if (array_key_exists($other, $rates)) {
+                        $taxed[$other] = $request->boolean("profiles.{$key}.taxed.{$other}");
+                    }
+                }
+
+                $this->settingsService->saveProfile($key === 'global' ? null : (int) $key, [
+                    'prefix' => trim((string) $values['prefix']),
+                    'moon' => $values['moon'],
+                    'rates' => array_filter($rates, fn ($rate) => $rate !== null && $rate !== ''),
+                    'taxed' => $taxed,
+                    'period' => $values['period'],
+                ], $request->boolean('apply_period_now'));
+            }
+        });
+
+        $this->clearSettingsCache();
+
+        return redirect(route('mining-manager.settings.index') . '#profiles')
+            ->with('success', 'Tax profiles saved.');
     }
 
     /**
