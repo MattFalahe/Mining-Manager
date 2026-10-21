@@ -390,12 +390,8 @@ class SettingsManagerService
             // Global for the same reason the other is: one wallet, one keyword.
             'refund_keyword' => trim((string) $this->getSettingForCorporation('payment.refund_keyword', null, 'MM-REFUND')),
 
-            // Surfaced here purely so the General tab can grey the keyword box
-            // out. The canonical read for runtime gating is getFeatureFlags().
+            // The canonical read for runtime gating is getFeatureFlags().
             'enable_upfront_payments' => (bool) $this->getSettingForCorporation('features.enable_upfront_payments', null, false),
-
-            // Same, so the guest rates card can say guest mining is off.
-            'allow_guest_mining' => (bool) $this->getSettingForCorporation('features.allow_guest_mining', null, true),
 
             // An invoice past its due date is treated as overdue for
             // notification purposes unless this much of it is already paid.
@@ -406,42 +402,7 @@ class SettingsManagerService
             // the old behaviour where any payment at all softened the tone.
             'overdue_paid_threshold_pct' => (float) $this->getSetting('payment.overdue_paid_threshold_pct', 95),
 
-            // Notification settings have moved to the dedicated Notifications tab
-            // See getNotificationSettings() for the new per-channel configuration
-
-            // Guest Miner Tax Rates (global, tied to Moon Owner Corporation)
-            // Read with Moon Owner Corp context since that's where they're stored
-            'guest_moon_ore_r64' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r64'),
-            'guest_moon_ore_r32' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r32'),
-            'guest_moon_ore_r16' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r16'),
-            'guest_moon_ore_r8' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r8'),
-            'guest_moon_ore_r4' => $this->getGuestRateSetting('guest_tax_rates.moon_ore.r4'),
-            'guest_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.ore'),
-            'guest_ice_tax' => $this->getGuestRateSetting('guest_tax_rates.ice'),
-            'guest_gas_tax' => $this->getGuestRateSetting('guest_tax_rates.gas'),
-            'guest_abyssal_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.abyssal_ore'),
-            'guest_triglavian_ore_tax' => $this->getGuestRateSetting('guest_tax_rates.triglavian_ore'),
         ];
-    }
-
-    /**
-     * Read a guest tax rate setting using Moon Owner Corp context.
-     *
-     * Guest rates are always stored under the Moon Owner Corporation's
-     * settings context, regardless of which corporation is currently active.
-     *
-     * @param string $key
-     * @return float
-     */
-    private function getGuestRateSetting(string $key): float
-    {
-        $moonOwnerCorpId = $this->getSetting('general.moon_owner_corporation_id');
-        if (!$moonOwnerCorpId) {
-            return 0;
-        }
-
-        $value = $this->getSettingForCorporation($key, (int) $moonOwnerCorpId);
-        return $value !== null ? (float) $value : 0;
     }
 
     /**
@@ -716,6 +677,13 @@ class SettingsManagerService
         // If the character belongs to any configured corporation, use corp member rates
         if (in_array((int) $characterCorporationId, $homeCorporationIds, true)) {
             return $corpTaxRates;
+        }
+
+        // Under tax profiles everyone outside the configured corporations is
+        // taxed by Global, which took the guest rates over when settings
+        // moved into profiles. The guest rows below are only read before then.
+        if ($this->usesTaxProfiles()) {
+            return array_merge($corpTaxRates, $this->taxRatesFor(null));
         }
 
         // Character is a guest miner — guest rates from Moon Owner Corp config
