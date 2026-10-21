@@ -72,6 +72,7 @@ class UpdateLedgerPricesCommand extends Command
         $valuationService = app(OreValuationService::class);
         $taxService = app(TaxCalculationService::class);
         $settingsService = app(SettingsManagerService::class);
+        $summaries = app(LedgerSummaryService::class);
 
         // Build query
         $query = MiningLedger::query();
@@ -152,7 +153,7 @@ class UpdateLedgerPricesCommand extends Command
         // underneath the paging and the run stops with most of the work still
         // to do, having reported success.
         $query->chunkById(500, function ($entries) use (
-            $valuationService, $taxService, $settingsService, $force,
+            $valuationService, $taxService, $settingsService, $summaries, $force,
             &$updated, &$errors, &$skipped, &$affectedPairs, &$ranOutOfTime, $bar
         ) {
         // Stopping part way leaves the rows we did not reach exactly as they
@@ -201,7 +202,14 @@ class UpdateLedgerPricesCommand extends Command
                 } else {
                     // Pass the row: the only_corp_moon_ore rule needs to know
                     // which moon the ore came from, and we have it here.
-                    $taxRate = $taxService->getTaxRateForOre(
+                    // The rate the daily summaries charge it, on a day taxed
+                    // by profiles. Earlier days keep the rate worked out here.
+                    $taxRate = $summaries->profileRateFor(
+                        (int) $entry->character_id,
+                        $entry->date,
+                        (int) $entry->type_id,
+                        $entryCorpId ? (int) $entryCorpId : null
+                    ) ?? $taxService->getTaxRateForOre(
                         $entry->type_id,
                         $characterCorpId,
                         $entry

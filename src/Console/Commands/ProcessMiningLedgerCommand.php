@@ -170,10 +170,11 @@ class ProcessMiningLedgerCommand extends Command
         // queue workers (Laravel's persistent worker reuses the process
         // across many jobs sequentially).
         $previousActiveCorp = $settingsService->getActiveCorporation();
+        $summaries = app(\MiningManager\Services\Ledger\LedgerSummaryService::class);
         try {
             // Process entries in chunks, grouped by observer within each chunk
             $query->orderBy('observer_id')->chunk(500, function ($chunk) use (
-                $settingsService, $recalculate, $cutoffDate,
+                $settingsService, $summaries, $recalculate, $cutoffDate,
                 &$processed, &$updated, &$skipped, &$errors,
                 &$uniqueObserverIds, &$uniqueCharacterIds, &$totalQuantity,
                 &$touchedPairsMap, &$jackpotCheckEntries, &$billedSkips, &$lateArrivals,
@@ -242,8 +243,14 @@ class ProcessMiningLedgerCommand extends Command
                     $isTriglavian = TypeIdRegistry::isTriglavianOre($entry->type_id);
                     $oreCategory = $this->classifyOreCategory($entry->type_id);
 
-                    // Get tax rate from this structure owner's corporation settings
-                    $taxRate = $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $isTriglavian, $taxSelector, $structureCorpId);
+                    // The rate the daily summaries charge this row. Days taxed
+                    // before tax profiles keep the structure owner's settings.
+                    $taxRate = $summaries->profileRateFor(
+                        (int) $entry->character_id,
+                        Carbon::parse($entry->last_updated),
+                        (int) $entry->type_id,
+                        $structureCorpId ? (int) $structureCorpId : null
+                    ) ?? $this->getTaxRateFromSettings($settingsService, $entry->type_id, $isMoonOre, $isIce, $isGas, $isAbyssal, $isTriglavian, $taxSelector, $structureCorpId);
                     $taxAmount = $totalValue * ($taxRate / 100);
 
                     // Prepare data

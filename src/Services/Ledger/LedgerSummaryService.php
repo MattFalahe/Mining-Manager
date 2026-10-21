@@ -502,6 +502,37 @@ class LedgerSummaryService
     }
 
     /**
+     * The rate the daily summaries charge one ledger row on a day taxed by
+     * profiles, 0 when they leave it untaxed. Null for a day taxed before
+     * profiles: its row keeps the rate the importers always gave it, so no
+     * row from before the update is stamped differently.
+     *
+     * The ledger's own rate is shown, never billed. This keeps what it shows
+     * in line with what the bill charges.
+     */
+    public function profileRateFor(int $characterId, $date, int $typeId, ?int $refineryCorporationId): ?float
+    {
+        $day = Carbon::parse($date)->startOfDay();
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+
+        if ($profilesFrom === null || $day->lt($profilesFrom)) {
+            return null;
+        }
+
+        $moonOwnerCorpId = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
+        $corporationId = app(CorporationOnDate::class)->forDay($characterId, $day, $homeCorporationIds);
+        $rule = $this->profileRule($corporationId ? (int) $corporationId : null, $homeCorporationIds, $moonOwnerCorpId);
+
+        if ($this->profileLeavesOut($rule, $this->sourceOf($refineryCorporationId, $moonOwnerCorpId)) !== null
+            || !$this->selectorTaxes($rule['selector'], $typeId, $refineryCorporationId, $moonOwnerCorpId)) {
+            return 0.0;
+        }
+
+        return $this->rateIn($rule['rates'], $typeId);
+    }
+
+    /**
      * Where a slice of mining came from: our refinery, somebody else's, or
      * the pilot's own ledger.
      */
