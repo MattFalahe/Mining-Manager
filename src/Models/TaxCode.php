@@ -187,10 +187,15 @@ class TaxCode extends Model
             ->whereNotNull('prefix')
             ->pluck('prefix');
 
+        // Longest first. With a prefix per tax profile one can begin another,
+        // and the pattern has nothing after the code to stop a short prefix
+        // reading part of a long one as the code.
         $prefixes = collect([$currentPrefix])
             ->merge($storedPrefixes)
             ->unique()
-            ->filter();
+            ->filter()
+            ->sortByDesc(fn ($prefix) => strlen($prefix))
+            ->values();
 
         // Collect all code lengths to try: current setting + actual lengths of active codes
         $currentLength = self::getCodeLength();

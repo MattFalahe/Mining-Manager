@@ -67,8 +67,6 @@ class CalculateMonthlyTaxesCommand extends Command
             return Command::SUCCESS;
         }
 
-        // Determine period type from option or settings
-        $periodType = $this->option('period-type') ?? $this->periodHelper->getConfiguredPeriodType();
         $recalculate = (bool) $this->option('recalculate');
         $force = (bool) $this->option('force');
 
@@ -78,28 +76,54 @@ class CalculateMonthlyTaxesCommand extends Command
             $this->info("Using corporation context: {$corporationId}");
         }
 
-        // Determine the period to calculate
+        // Each run is a period type and the period it bills.
+        $runs = [];
+
         if ($this->option('period-start')) {
             // Explicit period start date provided
+            $periodType = $this->option('period-type') ?? $this->periodHelper->getConfiguredPeriodType();
             $periodDate = Carbon::parse($this->option('period-start'));
-            [$startDate, $endDate] = $this->periodHelper->getPeriodBounds($periodDate, $periodType);
+            $runs[] = [$periodType, ...$this->periodHelper->getPeriodBounds($periodDate, $periodType)];
         } elseif ($this->option('month')) {
             // Legacy --month option (always monthly)
             $month = Carbon::parse($this->option('month') . '-01');
-            $startDate = $month->copy()->startOfMonth();
-            $endDate = $month->copy()->endOfMonth();
-            $periodType = 'monthly';
+            $runs[] = ['monthly', $month->copy()->startOfMonth(), $month->copy()->endOfMonth()];
         } else {
-            // Automatic: calculate the previous completed period
-            // But only if today is a period boundary (or --force is used)
-            if (!$force && !$this->periodHelper->shouldCalculateToday($periodType)) {
-                $this->info("Today is not a {$periodType} boundary. Skipping. Use --force to override.");
-                return Command::SUCCESS;
+            // Automatic: the previous completed period of every billing period
+            // the tax profiles use, on the days it falls due. A run for one
+            // period bills only the accounts on it.
+            $periodTypes = $this->option('period-type')
+                ? [$this->option('period-type')]
+                : $this->periodHelper->periodTypesInUse();
+
+            foreach ($periodTypes as $periodType) {
+                if ($force || $this->periodHelper->shouldCalculateToday($periodType)) {
+                    $runs[] = [$periodType, ...$this->periodHelper->getPreviousCompletedPeriod($periodType)];
+                }
             }
 
-            [$startDate, $endDate] = $this->periodHelper->getPreviousCompletedPeriod($periodType);
+            if (!$runs) {
+                $this->info('Today is not a ' . implode(' or ', $periodTypes) . ' boundary. Skipping. Use --force to override.');
+                return Command::SUCCESS;
+            }
         }
 
+        $failed = false;
+        foreach ($runs as [$periodType, $startDate, $endDate]) {
+            $failed = !$this->calculatePeriod($periodType, $startDate, $endDate, $recalculate) || $failed;
+        }
+
+        return $failed ? Command::FAILURE : Command::SUCCESS;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Bill one period, for every account on it or for one account.
+     */
+    private function calculatePeriod(string $periodType, Carbon $startDate, Carbon $endDate, bool $recalculate): bool
+    {
         $periodLabel = $this->periodHelper->formatPeriod($startDate, $endDate, $periodType);
         $this->info("Calculating {$periodType} taxes for: {$periodLabel} ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})");
 
@@ -122,11 +146,11 @@ class CalculateMonthlyTaxesCommand extends Command
                 }
 
                 if (!empty($results['errors'])) {
-                    return Command::FAILURE;
+                    return false;
                 }
             } catch (\Exception $e) {
                 $this->error("Error calculating tax for character {$characterId}: {$e->getMessage()}");
-                return Command::FAILURE;
+                return false;
             }
         } else {
             try {
@@ -177,13 +201,10 @@ class CalculateMonthlyTaxesCommand extends Command
                 }
             } catch (\Exception $e) {
                 $this->error("Tax calculation failed: {$e->getMessage()}");
-                return Command::FAILURE;
+                return false;
             }
         }
 
-        return Command::SUCCESS;
-        } finally {
-            $lock->release();
-        }
+        return true;
     }
 }

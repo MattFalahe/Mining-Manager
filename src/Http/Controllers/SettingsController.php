@@ -607,14 +607,13 @@ class SettingsController extends Controller
                 $upfrontKeyword = trim((string) $data['payment_upfront_keyword']);
 
                 if ($upfrontKeyword !== '') {
-                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
-
-                    if ($taxPrefix !== ''
-                        && (stripos($upfrontKeyword, $taxPrefix) !== false
-                            || stripos($taxPrefix, $upfrontKeyword) !== false)) {
-                        return redirect()->back()
-                            ->withInput()
-                            ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                    foreach ($this->settingsService->taxCodePrefixes() as $taxPrefix) {
+                        if (stripos($upfrontKeyword, $taxPrefix) !== false
+                            || stripos($taxPrefix, $upfrontKeyword) !== false) {
+                            return redirect()->back()
+                                ->withInput()
+                                ->with('error', "The upfront payment keyword cannot overlap the tax code prefix ({$taxPrefix}). Pick something clearly different, for example MM-UPFRONT.");
+                        }
                     }
                 }
 
@@ -632,10 +631,9 @@ class SettingsController extends Controller
                 $refundKeyword = trim((string) $data['payment_refund_keyword']);
 
                 if ($refundKeyword !== '') {
-                    $taxPrefix = trim((string) \MiningManager\Models\TaxCode::getPrefix());
                     $upfront = trim((string) ($upfrontKeyword ?? ($this->settingsService->getPaymentSettings()['upfront_keyword'] ?? '')));
 
-                    foreach (array_filter([$taxPrefix, $upfront]) as $other) {
+                    foreach (array_filter(array_merge($this->settingsService->taxCodePrefixes(), [$upfront])) as $other) {
                         if (stripos($refundKeyword, $other) !== false || stripos($other, $refundKeyword) !== false) {
                             return redirect()->back()
                                 ->withInput()

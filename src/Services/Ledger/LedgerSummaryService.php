@@ -563,16 +563,10 @@ class LedgerSummaryService
      */
     protected function profileRule(?int $corporationId, array $home, ?int $moonOwnerCorpId): array
     {
-        if (!$home) {
-            $member = $corporationId !== null;
-            $profile = null;
-        } elseif ($corporationId === null) {
-            $member = false;
-            $profile = $moonOwnerCorpId;
-        } else {
-            $member = in_array($corporationId, $home, true);
-            $profile = $member ? $corporationId : null;
-        }
+        $member = $home
+            ? $corporationId !== null && in_array($corporationId, $home, true)
+            : $corporationId !== null;
+        $profile = $this->settingsService->profileFor($corporationId);
 
         $selector = $this->settingsService->taxSelectorFor($profile);
 

@@ -216,6 +216,20 @@ class TaxCalculationService
         $characters = $query->distinct('character_id')
             ->pluck('character_id');
 
+        // From the day mining is taxed by profiles, a member can owe tax on
+        // mining the selection above does not look at, such as another
+        // corporation's refinery under a profile that taxes all moon ore.
+        // The daily summaries say who owes tax on those days.
+        $profilesFrom = $this->settingsService->profilesTaxFrom();
+        if ($profilesFrom !== null && $profilesFrom->lte($endDate)) {
+            $characters = $characters->merge(
+                MiningLedgerDailySummary::whereBetween('date', [$startDate->copy()->max($profilesFrom)->toDateString(), $endDate->toDateString()])
+                    ->where('total_tax', '>', 0)
+                    ->distinct()
+                    ->pluck('character_id')
+            )->map(fn ($id) => (int) $id)->unique()->values();
+        }
+
         // One account only: its characters still have to pass the selection
         // above, so its bill comes out exactly as the run over everyone makes it.
         if ($onlyAccountOf !== null) {
@@ -236,7 +250,16 @@ class TaxCalculationService
         $totalTaxAmount = 0;
         $errors = [];
 
+        $profiles = $this->settingsService->usesTaxProfiles();
+
         foreach ($groupedByMain as $mainCharacterId => $characterIds) {
+            // Each account is billed on its own profile's period. A run for
+            // another period leaves it alone, so a monthly run can never fold
+            // a fortnightly account's first half into a month.
+            if ($profiles && $periodHelper->periodTypeFor($periodHelper->accountProfile((int) $mainCharacterId, $startDate)) !== $periodType) {
+                continue;
+            }
+
             try {
                 DB::transaction(function () use ($mainCharacterId, $characterIds, $startDate, $endDate, $calendarMonth, $periodType, $dueDate, $recalculate, $triggeredBy, &$calculated, &$totalTaxAmount) {
                     // Check if tax already exists for this character + period

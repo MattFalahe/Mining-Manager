@@ -205,6 +205,22 @@ class SettingsManagerService
     }
 
     /**
+     * Update a setting as a given corporation without leaving the active
+     * corporation changed, the way getSettingForCorporation() reads one.
+     */
+    public function updateSettingForCorporation(string $key, $value, ?string $type, ?int $corporationId): void
+    {
+        $previous = $this->activeCorporationId;
+
+        try {
+            $this->activeCorporationId = $corporationId;
+            $this->updateSetting($key, $value, $type);
+        } finally {
+            $this->activeCorporationId = $previous;
+        }
+    }
+
+    /**
      * Update or create a setting that belongs to the install rather than to a
      * corporation.
      *
@@ -1946,6 +1962,56 @@ class SettingsManagerService
         $this->homeCorporations = [microtime(true) + 5, $configuredCorpIds];
 
         return $configuredCorpIds;
+    }
+
+    /**
+     * The tax profile for a corporation's members: its own when it is
+     * configured, Global (null) when it is not. A pilot whose corporation is
+     * not known yet counts as the Moon Owner's, rather than being charged the
+     * non-members' rates on the strength of a lookup that has not finished.
+     * With nothing configured at all there is only Global.
+     */
+    public function profileFor(?int $corporationId): ?int
+    {
+        $home = $this->getHomeCorporationIds();
+
+        if (!$home) {
+            return null;
+        }
+
+        if ($corporationId === null) {
+            return (int) $this->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        }
+
+        return in_array($corporationId, $home, true) ? $corporationId : null;
+    }
+
+    /**
+     * Every tax profile: Global first, as null, then each configured
+     * corporation's.
+     *
+     * @return array<int, int|null>
+     */
+    public function taxProfiles(): array
+    {
+        return array_merge([null], $this->usesTaxProfiles() ? $this->getHomeCorporationIds() : []);
+    }
+
+    /**
+     * Every prefix a payment code can be made with. One per profile once
+     * settings are in tax profiles, so anything else matched against the
+     * same transfer reason has to stay clear of all of them.
+     *
+     * @return array<int, string>
+     */
+    public function taxCodePrefixes(): array
+    {
+        $prefixes = array_map(
+            fn (?int $profile) => trim((string) $this->getSettingForCorporation('tax_rates.tax_code_prefix', $profile, 'TAX-')),
+            $this->taxProfiles()
+        );
+
+        return array_values(array_unique(array_filter($prefixes)));
     }
 
     /**

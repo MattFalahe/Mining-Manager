@@ -4,6 +4,7 @@ namespace MiningManager\Services\Tax;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
 
 class TaxPeriodHelper
@@ -46,10 +47,24 @@ class TaxPeriodHelper
      */
     public function getConfiguredPeriodType(): string
     {
-        $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
-        $pending = $rates['tax_calculation_period_pending'] ?? null;
-        $effectiveFrom = $rates['tax_calculation_period_effective_from'] ?? null;
+        return $this->periodTypeFor($this->settingsService->getActiveCorporation());
+    }
+
+    /**
+     * The billing period of the tax profile for a corporation's members, its
+     * own when configured and Global when not, as getConfiguredPeriodType()
+     * describes it. A queued change is promoted for that profile alone.
+     *
+     * @return string 'monthly' or 'biweekly'
+     */
+    public function periodTypeFor(?int $corporationId): string
+    {
+        $read = fn (string $key, $default) => $this->settingsService->getSettingForCorporation($key, $corporationId, $default);
+        $write = fn (string $key, $value) => $this->settingsService->updateSettingForCorporation($key, $value, 'string', $corporationId);
+
+        $active = $read('tax_rates.tax_calculation_period', 'monthly');
+        $pending = $read('tax_rates.tax_calculation_period_pending', null);
+        $effectiveFrom = $read('tax_rates.tax_calculation_period_effective_from', null);
 
         if ($pending && $effectiveFrom) {
             try {
@@ -58,21 +73,9 @@ class TaxPeriodHelper
                     // Auto-heal if somehow a pending 'weekly' value was stored.
                     $promoted = $this->normaliseLegacyWeekly($pending);
 
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period',
-                        $promoted,
-                        'string'
-                    );
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period_pending',
-                        null,
-                        'string'
-                    );
-                    $this->settingsService->updateSetting(
-                        'tax_rates.tax_calculation_period_effective_from',
-                        null,
-                        'string'
-                    );
+                    $write('tax_rates.tax_calculation_period', $promoted);
+                    $write('tax_rates.tax_calculation_period_pending', null);
+                    $write('tax_rates.tax_calculation_period_effective_from', null);
 
                     Log::info(sprintf(
                         'Mining Manager: Tax calculation period promoted %s → %s (effective %s, promoted on %s)',
@@ -92,16 +95,46 @@ class TaxPeriodHelper
 
         // Legacy auto-heal: convert any stored 'weekly' active value to 'monthly'.
         if ($active === 'weekly') {
-            $this->settingsService->updateSetting(
-                'tax_rates.tax_calculation_period',
-                'monthly',
-                'string'
-            );
+            $write('tax_rates.tax_calculation_period', 'monthly');
             Log::warning('Mining Manager: Auto-migrated tax_calculation_period from deprecated "weekly" to "monthly". Weekly tax periods were removed because ISO weeks straddle calendar-month boundaries, causing double-tax and chart-aggregation issues. Switch to biweekly via Settings → Tax Rates if you need sub-monthly granularity. Historical weekly tax rows remain visible in Tax History.');
             return 'monthly';
         }
 
         return $active;
+    }
+
+    /**
+     * Every billing period the tax profiles use, so a run on a period
+     * boundary can bill each of them. Before tax profiles there is one.
+     *
+     * @return array<int, string>
+     */
+    public function periodTypesInUse(): array
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return [$this->getConfiguredPeriodType()];
+        }
+
+        return array_values(array_unique(array_map(
+            fn (?int $profile) => $this->periodTypeFor($profile),
+            $this->settingsService->taxProfiles()
+        )));
+    }
+
+    /**
+     * The tax profile whose billing period and code prefix an account's bills
+     * use: the profile of its main character's corporation on the first of
+     * the month, so an account never changes period halfway through one.
+     */
+    public function accountProfile(int $mainCharacterId, Carbon $periodStart): ?int
+    {
+        $corporationId = app(CorporationOnDate::class)->forDay(
+            $mainCharacterId,
+            $periodStart->copy()->startOfMonth(),
+            $this->settingsService->getHomeCorporationIds()
+        );
+
+        return $this->settingsService->profileFor($corporationId ? (int) $corporationId : null);
     }
 
     /**
