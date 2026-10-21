@@ -245,7 +245,7 @@
                                             <i class="fas fa-building"></i> Corp Members
                                         </option>
                                         <option value="guest" {{ request('miner_type') == 'guest' ? 'selected' : '' }}>
-                                            <i class="fas fa-user-friends"></i> Guest Miners
+                                            <i class="fas fa-user-friends"></i> Non-member Miners
                                         </option>
                                     </select>
                                 </div>

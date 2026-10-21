@@ -228,7 +228,7 @@ return [
     // Miner type breakdown
     'miner_type_breakdown' => 'Miner Type Breakdown',
     'corp_members' => 'Corp Members',
-    'guest_miners' => 'Guest Miners',
+    'guest_miners' => 'Non-member Miners',
     'corporation_member' => 'Corporation Member',
     'guest_miner' => 'Guest Miner',
     'isk_owed' => 'ISK Owed',

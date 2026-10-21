@@ -70,8 +70,7 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" id="guest-miners-tab" data-toggle="pill" href="#guest-miners" role="tab" aria-controls="guest-miners" aria-selected="false">
-                                <i class="fas fa-user-friends"></i> Guest Miners
-                                <span class="badge badge-secondary ml-2">Guests</span>
+                                <i class="fas fa-user-friends"></i> Non-member Miners
                             </a>
                         </li>
                     </ul>
@@ -681,7 +680,7 @@
                                     // that means both H1 and H2 tax rows contribute to the
                                     // same month bar — which is correct, but worth calling
                                     // out so directors know what they're seeing.
-                                    $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+                                    $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner();
                                 @endphp
                                 <div class="row">
                                     <div class="col-lg-6">
@@ -729,7 +728,7 @@
                                 <div class="spinner-border text-info" role="status" style="width: 3rem; height: 3rem;">
                                     <span class="sr-only">Loading...</span>
                                 </div>
-                                <p class="text-muted mt-3">Loading guest miner data...</p>
+                                <p class="text-muted mt-3">Loading non-member miners...</p>
                             </div>
                             <div id="guest-tab-content" style="display: none;">
 
@@ -760,7 +759,7 @@
                                             <div class="card-header">
                                                 <h3 class="card-title">
                                                     <i class="fas fa-user-friends"></i>
-                                                    Guest Miners — Non-Corp Pilots at Your Structures
+                                                    Non-member Miners at Your Refineries
                                                 </h3>
                                             </div>
                                             <div class="card-body">
@@ -769,7 +768,7 @@
                                                         <div class="info-box bg-gradient-info">
                                                             <span class="info-box-icon"><i class="fas fa-users"></i></span>
                                                             <div class="info-box-content">
-                                                                <span class="info-box-text">GUEST MINERS</span>
+                                                                <span class="info-box-text">NON-MEMBER MINERS</span>
                                                                 <span class="info-box-number" id="guest-count">0</span>
                                                             </div>
                                                         </div>
@@ -812,7 +811,7 @@
                                     <div class="col-12">
                                         <div class="card card-dark">
                                             <div class="card-header">
-                                                <h3 class="card-title"><i class="fas fa-list"></i> Guest Miners</h3>
+                                                <h3 class="card-title"><i class="fas fa-list"></i> Non-member Miners</h3>
                                             </div>
                                             <div class="card-body table-responsive p-0">
                                                 <table class="table table-hover table-striped">
@@ -1350,7 +1349,7 @@ function loadGuestMinersData(month) {
 
             var miners = data.guestMiners || [];
             if (miners.length === 0) {
-                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No guest miners found for this month</td></tr>');
+                $tbody.append('<tr><td colspan="8" class="text-center text-muted">No non-member miners this month</td></tr>');
             } else {
                 for (var i = 0; i < miners.length; i++) {
                     var m = miners[i];
@@ -1384,7 +1383,7 @@ function loadGuestMinersData(month) {
         .fail(function() {
             $('#guest-tab-loading').html(
                 '<div class="alert alert-danger">' +
-                '<i class="fas fa-exclamation-triangle"></i> Failed to load guest miner data. ' +
+                '<i class="fas fa-exclamation-triangle"></i> Could not load the non-member miners. ' +
                 '<a href="#" onclick="location.reload()">Reload page</a></div>'
             );
         });

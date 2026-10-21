@@ -381,7 +381,7 @@ class TaxController extends Controller
         // represent. 'F Y' alone on the header is misleading when the
         // plugin is running biweekly or weekly.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForMoonOwner();
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
@@ -436,7 +436,7 @@ class TaxController extends Controller
 
         // Get configured period type
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForMoonOwner();
 
         // Get tracking data from daily summaries
         $liveTracking = $this->getLiveTrackingData();
@@ -769,32 +769,36 @@ class TaxController extends Controller
 
         try {
             $periodHelper = app(TaxPeriodHelper::class);
-            $periodType = $periodHelper->getConfiguredPeriodType();
             $recalculate = $validated['recalculate'] ?? false;
             $characterId = $validated['character_id'] ?? null;
             $confirmIncomplete = $validated['confirm_incomplete'] ?? false;
 
             $month = Carbon::parse($validated['month'])->startOfMonth();
 
-            // Get all periods within the selected month for the configured period type
-            // Monthly: 1 period, Biweekly: 2 periods, Weekly: 4-5 periods
-            if (!empty($validated['period_start'])) {
-                // Specific period requested
-                $periodDate = Carbon::parse($validated['period_start']);
-                $periods = [$periodHelper->getPeriodBounds($periodDate, $periodType)];
-            } else {
-                $periods = $periodHelper->getPeriodsInMonth($month, $periodType);
+            // Every billing period the tax profiles use, each with its periods
+            // in the month: monthly has one, twice a month two. A run for one
+            // period bills only the accounts on it.
+            $periodTypes = $periodHelper->periodTypesInUse();
+            $periods = [];
+            foreach ($periodTypes as $periodType) {
+                $bounds = !empty($validated['period_start'])
+                    ? [$periodHelper->getPeriodBounds(Carbon::parse($validated['period_start']), $periodType)]
+                    : $periodHelper->getPeriodsInMonth($month, $periodType);
+
+                foreach ($bounds as [$start, $end]) {
+                    $periods[] = [$start, $end, $periodType];
+                }
             }
 
             // Check for incomplete/future periods
-            $lastPeriodEnd = end($periods)[1];
-            $firstPeriodStart = $periods[0][0];
+            $lastPeriodEnd = collect($periods)->max(fn ($period) => $period[1]);
+            $firstPeriodStart = collect($periods)->min(fn ($period) => $period[0]);
             $monthLabel = $month->format('F Y');
 
             if (!$periodHelper->isPeriodComplete($lastPeriodEnd) && !$confirmIncomplete) {
                 $isFuture = $firstPeriodStart->gt(Carbon::now());
                 $periodCount = count($periods);
-                $periodDesc = $periodCount > 1 ? "{$periodCount} {$periodType} periods in {$monthLabel}" : $monthLabel;
+                $periodDesc = $periodCount > 1 ? "{$periodCount} periods in {$monthLabel}" : $monthLabel;
                 return response()->json([
                     'status' => 'incomplete_month',
                     'message' => $isFuture
@@ -817,7 +821,7 @@ class TaxController extends Controller
             }
             $this->setCorporationContext($corporationId);
 
-            Log::info("Mining Manager: Tax calculation triggered by {$triggeredBy} for {$monthLabel} ({$periodType}, " . count($periods) . " periods)");
+            Log::info("Mining Manager: Tax calculation triggered by {$triggeredBy} for {$monthLabel} (" . implode(', ', $periodTypes) . ', ' . count($periods) . ' periods)');
 
             // Recalculate mode: regenerate all daily summaries with current prices and tax rates
             if ($recalculate) {
@@ -830,11 +834,11 @@ class TaxController extends Controller
             $totalAmount = 0;
             $allErrors = [];
 
-            foreach ($periods as [$startDate, $endDate]) {
-                $periodLabel = $periodHelper->formatPeriod($startDate, $endDate, $periodType);
-
-                // Check if taxes already exist for this period
-                $existingQuery = MiningTax::where('period_start', $startDate->format('Y-m-d'));
+            foreach ($periods as [$startDate, $endDate, $periodType]) {
+                // A monthly bill and a first-half one start the same day, so a
+                // period counts as billed only by bills of its own kind.
+                $existingQuery = MiningTax::where('period_start', $startDate->format('Y-m-d'))
+                    ->where('period_type', $periodType);
                 if ($characterId) {
                     $existingQuery->where('character_id', $characterId);
                 }
@@ -861,7 +865,7 @@ class TaxController extends Controller
             }
 
             $results = [
-                'method' => $characterId ? 'one account' : ($periodType === 'monthly' ? 'accumulated' : "accumulated ({$periodType})"),
+                'method' => $characterId ? 'one account' : (count($periodTypes) === 1 && $periodTypes[0] === 'monthly' ? 'accumulated' : 'accumulated (' . implode(', ', $periodTypes) . ')'),
                 'count' => $totalCount,
                 'total' => $totalAmount,
                 'errors' => $allErrors,
@@ -1665,7 +1669,7 @@ class TaxController extends Controller
             // the view's period-aware labels render sensibly instead of
             // defaulting to "F Y".
             $periodHelperEmpty = app(TaxPeriodHelper::class);
-            $periodTypeEmpty = $periodHelperEmpty->getConfiguredPeriodType();
+            $periodTypeEmpty = $periodHelperEmpty->periodTypeForViewer();
             [$periodStartEmpty, $periodEndEmpty] = $periodHelperEmpty->getPeriodBounds(Carbon::now(), $periodTypeEmpty);
 
             return view('mining-manager::taxes.my-taxes', [
@@ -1759,7 +1763,7 @@ class TaxController extends Controller
         // target the precise period the user is currently accumulating tax
         // in via period_start / period_end.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForViewer();
         [$currentPeriodStart, $currentPeriodEnd] = $periodHelper->getPeriodBounds(Carbon::now(), $periodType);
         $currentPeriodLabel = $periodHelper->formatPeriod($currentPeriodStart, $currentPeriodEnd, $periodType);
 
@@ -1938,7 +1942,7 @@ class TaxController extends Controller
         // period (not the whole calendar month) so bi-weekly/weekly calls
         // get a meaningful slice.
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForViewer();
 
         if ($month) {
             $anchor = Carbon::parse($month);

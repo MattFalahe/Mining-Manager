@@ -3,6 +3,7 @@
 namespace MiningManager\Services\Tax;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use MiningManager\Services\Character\CorporationOnDate;
 use MiningManager\Services\Configuration\SettingsManagerService;
@@ -119,6 +120,49 @@ class TaxPeriodHelper
             fn (?int $profile) => $this->periodTypeFor($profile),
             $this->settingsService->taxProfiles()
         )));
+    }
+
+    /**
+     * The billing period the signed-in player's bills follow, from their own
+     * account's tax profile.
+     */
+    public function periodTypeForViewer(): string
+    {
+        $main = (int) (auth()->user()->main_character_id ?? 0);
+
+        return $main ? $this->periodTypeForCharacter($main) : $this->periodTypeForMoonOwner();
+    }
+
+    /**
+     * The billing period a character's bills follow: the profile of their
+     * account, decided by its main character. The configured period before
+     * tax profiles.
+     */
+    public function periodTypeForCharacter(int $characterId, ?Carbon $month = null): string
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->getConfiguredPeriodType();
+        }
+
+        $main = (int) DB::table('refresh_tokens as rt')
+            ->join('users as u', 'u.id', '=', 'rt.user_id')
+            ->where('rt.character_id', $characterId)
+            ->value('u.main_character_id');
+
+        return $this->periodTypeFor($this->accountProfile($main ?: $characterId, $month ?? Carbon::now()));
+    }
+
+    /**
+     * The Moon Owner's billing period, for pages about the whole tax program
+     * that need one. The configured period before tax profiles.
+     */
+    public function periodTypeForMoonOwner(): string
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->getConfiguredPeriodType();
+        }
+
+        return $this->periodTypeFor((int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null);
     }
 
     /**

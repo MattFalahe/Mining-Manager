@@ -375,7 +375,7 @@
         // H1 and H2 event discounts for each month — which is correct, but
         // worth flagging so miners don't wonder why a month has more than one
         // period's worth of savings.
-        $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->getConfiguredPeriodType();
+        $__chartPeriodType = app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForViewer();
     @endphp
     <div class="row">
         {{-- Mining Income Chart --}}

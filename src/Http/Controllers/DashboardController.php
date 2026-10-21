@@ -80,7 +80,7 @@ class DashboardController extends Controller
         // Last 12 months period
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        [$periodStart, , $periodLabel] = $this->currentTaxPeriod();
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForViewer());
 
         // Cache key based on user ID, current month and, on biweekly, the half
         $cacheKey = 'dashboard.member.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
@@ -168,7 +168,7 @@ class DashboardController extends Controller
 
         // Only compute Personal tab data server-side.
         // Corporation tab data is loaded via AJAX when user clicks the tab.
-        [$periodStart, , $periodLabel] = $this->currentTaxPeriod();
+        [$periodStart, , $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner());
         $personalCacheKey = 'dashboard.director.personal.' . $user->id . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
         $dashboardData = app(\MiningManager\Services\Character\CharacterNames::class)->remember($personalCacheKey, 300, function () use ($characterIds, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $user, $periodStart) {
@@ -244,7 +244,7 @@ class DashboardController extends Controller
         $currentMonthEnd = Carbon::now();
         $last12MonthsStart = Carbon::now()->subMonths(12)->startOfMonth();
 
-        [$periodStart, $periodEnd, $periodLabel] = $this->currentTaxPeriod();
+        [$periodStart, $periodEnd, $periodLabel] = $this->currentTaxPeriod(app(\MiningManager\Services\Tax\TaxPeriodHelper::class)->periodTypeForMoonOwner());
         $cacheKey = 'dashboard.corp-tab.' . $corporationId . '.' . $currentMonthStart->format('Y-m') . ($periodStart ? '.' . $periodStart->format('d') : '');
 
         $data = app(\MiningManager\Services\Character\CharacterNames::class)->remember($cacheKey, 300, function () use ($corporationId, $currentMonthStart, $currentMonthEnd, $last12MonthsStart, $periodStart, $periodEnd, $periodLabel) {
@@ -769,16 +769,16 @@ class DashboardController extends Controller
 
     /**
      * The tax period we are in when it is shorter than the month: [start,
-     * end, label] on a biweekly install, nulls on a monthly one, where a
-     * period card would only repeat the month.
+     * end, label] for a period billed twice a month, nulls for a monthly
+     * one, where a period card would only repeat the month.
      *
      * @return array{0: Carbon|null, 1: Carbon|null, 2: string|null}
      */
-    private function currentTaxPeriod(): array
+    private function currentTaxPeriod(string $periodType): array
     {
         $periodHelper = app(\MiningManager\Services\Tax\TaxPeriodHelper::class);
 
-        if ($periodHelper->getConfiguredPeriodType() !== 'biweekly') {
+        if ($periodType !== 'biweekly') {
             return [null, null, null];
         }
 

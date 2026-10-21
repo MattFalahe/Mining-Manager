@@ -86,7 +86,7 @@ class LedgerController extends Controller
         $characterId = $request->get('character_id');
 
         $periodHelper = app(TaxPeriodHelper::class);
-        $periodType = $periodHelper->getConfiguredPeriodType();
+        $periodType = $periodHelper->periodTypeForViewer();
         [$periodStart, $periodEnd] = $periodHelper->getPeriodBounds(now(), $periodType);
 
         if (!$dateFrom) {
@@ -831,7 +831,7 @@ class LedgerController extends Controller
         // page shows one half or the whole month. It opens on the half we are
         // in, and on the whole month for any month gone by.
         $periodHelper = app(TaxPeriodHelper::class);
-        $biweekly = $periodHelper->getConfiguredPeriodType() === 'biweekly';
+        $biweekly = $periodHelper->periodTypeForMoonOwner() === 'biweekly';
         $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
         $half = $this->shownHalf($request, $monthDate, $biweekly);
         $period = $half === 'month' ? null : $halves[(int) $half - 1];
@@ -1219,7 +1219,7 @@ class LedgerController extends Controller
         // A biweekly install bills each half of the month on its own, so the
         // page shows a half or the whole month, as the summary does.
         $periodHelper = app(TaxPeriodHelper::class);
-        $biweekly = $periodHelper->getConfiguredPeriodType() === 'biweekly';
+        $biweekly = $periodHelper->periodTypeForCharacter((int) $characterId, $monthDate) === 'biweekly';
         $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
         $half = $this->shownHalf($request, $monthDate, $biweekly);
         [$from, $to] = $half === 'month'
