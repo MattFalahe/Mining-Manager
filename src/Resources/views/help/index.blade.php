@@ -828,493 +828,91 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>{{ trans('mining-manager::help.welcome_desc') }}</p>
                 </div>
 
-                {{-- What's New in v2 is the picture of the whole major version, so it never
-                     names a point release. What the latest update changed goes in the Recent
+                {{-- What's New in v3 is the picture of the whole major version, so it never
+                     names a point release. What a later update changes goes in a Recent
                      changes box underneath, and the changelog keeps the full record. --}}
                 <div class="whats-new-box">
                     <h3>
-                        <i class="fas fa-puzzle-piece"></i>
-                        What's New in v2
-                        <span class="whats-new-tag">the ecosystem era</span>
+                        <i class="fas fa-percent"></i>
+                        What's New in v3
+                        <span class="whats-new-tag">tax profiles</span>
                     </h3>
                     <p>
-                        Version 2 makes Mining Manager one plugin in a family. It still does its whole job on
-                        its own: set your Moon Owner Corporation and tax rates, and the ledger, taxes, moon
-                        tracking and alerts all run with nothing else installed. When one of its neighbours is
-                        installed, it asks that plugin for what it does best rather than doing the same work
-                        twice.
+                        Version 3 changes how Mining Manager decides who pays what. Every setting either applies
+                        to the whole install or belongs to a tax profile, and the settings pages are laid out the
+                        same way, so what a page shows is what the plugin uses.
                     </p>
 
-                    <h4><i class="fas fa-plug"></i> Works alone, better with neighbours</h4>
+                    <h4><i class="fas fa-users"></i> A tax profile for each corporation, and Global for everyone else</h4>
                     <ul>
                         <li>
-                            <strong>Manager Core</strong> gives every plugin one place to set market pricing,
-                            and its ESI fast-poll spots a refinery starting an extraction in about two minutes.
-                            Moon chunks that are ready, going unstable or expired are published on its event
-                            bus for other plugins to use.
+                            A <strong>tax profile</strong> decides how often bills go out, the prefix on their
+                            payment codes, and what is taxed at which rate. Each corporation you configure has its
+                            own, and the <strong>Global</strong> profile taxes everyone else.
                         </li>
                         <li>
-                            <strong>Structure Manager</strong>, with Manager Core alongside it, reports trouble at
-                            your refineries. A refinery running an extraction that is low on fuel or reinforced
-                            raises <strong>Extraction At Risk</strong>, and one that is destroyed raises
-                            <strong>Extraction Lost</strong>, each with a link to its Structure Board.
+                            A day's mining is taxed by the profile of the corporation the pilot was in that day,
+                            and an account's bills follow the corporation of its main character, so one
+                            corporation can be billed monthly and another twice a month.
                         </li>
                         <li>
-                            Neither is required. Anything that depends on another plugin switches itself off
-                            when that plugin is missing.
+                            A configured corporation never falls back to Global. Adding one starts it with a copy
+                            of the Moon Owner's profile, to change from there.
                         </li>
                     </ul>
 
-                    <h4><i class="fas fa-calendar-check"></i> Moon pulls are coordinated, not controlled</h4>
+                    <h4><i class="fas fa-user-shield"></i> Global's moon rates decide what non-members may do</h4>
                     <ul>
                         <li>
-                            SeAT can only read the extractions a director starts in game. The
-                            <strong>Moon Planner</strong> is where the corporation agrees when each refinery
-                            should pull, so chunks do not land faster than your miners can clear them, and it
-                            flags a pull that was set off-plan.
+                            Non-members are taxed only for their mining at your refineries, never for their own
+                            mining elsewhere.
                         </li>
                         <li>
-                            A <strong>blueprint</strong> lays a whole rotation of pulls over the planner at once,
-                            and the planner warns rather than blocks when a pull lands too close to another.
+                            Between 0% and 100% they pay those rates, and a bill they leave unpaid too long counts
+                            as theft.
                         </li>
                         <li>
-                            The <strong>Moon Manager</strong> permission lets someone plan pulls and read Moon
-                            Analytics without being a director.
+                            At <strong>100%</strong> only your configured corporations may mine your moons. A
+                            non-member's mining there is billed in full and flagged as theft as soon as it is
+                            imported, and paying the bill closes the incident.
                         </li>
                         <li>
-                            Chunk arrivals, unstable warnings, extractions starting or cancelled, the next planned
-                            pull and off-plan pulls each have their own alert, so do a drill left idle, moons with
-                            nothing planned and a refinery that has gone, and a Metenox drill warns you when its
-                            bay is nearly full.
+                            At <strong>0%</strong> they mine for free, and theft detection cannot flag anyone who
+                            never owes anything.
                         </li>
                     </ul>
 
-                    <h4><i class="fas fa-hand-holding-usd"></i> A payment is money looking for an invoice</h4>
+                    <h4><i class="fas fa-sliders-h"></i> Settings say where they apply</h4>
                     <ul>
                         <li>
-                            A tax code in the transfer reason matches a payment straight away, and a director can
-                            assign one that has no code. Each transfer is claimed once, whatever it does not
-                            settle moves on to the next unpaid invoice, and anything left is held as account
-                            balance for that member.
+                            <strong>Setup</strong> holds the Moon Owner Corporation and the corporations you
+                            configure. <strong>Tax profiles</strong> shows every profile side by side.
+                            <strong>Billing</strong> and <strong>Payments</strong> hold everything else about bills
+                            and paying them, once for the whole install.
                         </li>
                         <li>
-                            Members can pay ahead and see their balance, and directors can give a balance back.
+                            There is no corporation switcher to set a value somewhere nothing reads it, and each
+                            switch on Features says what it does.
                         </li>
                     </ul>
 
-                    <h4><i class="fas fa-shield-alt"></i> What has been billed stays billed</h4>
+                    <h4><i class="fas fa-shield-alt"></i> Nothing set before is lost, and nothing taxed before changes</h4>
                     <ul>
                         <li>
-                            An invoice that has gone out is a record, not a calculation, and nothing recalculates
-                            it.
+                            When the plugin updated, every setting moved into place by itself, and a copy of every
+                            row as it was is kept. <strong>Settings, Maintenance</strong> shows what moved, why,
+                            and what works differently since.
                         </li>
                         <li>
-                            Changes to how ore is classified apply from the day you update, never to mining
-                            already in the ledger.
-                        </li>
-                        <li>
-                            Mining that reaches the ledger after its period was invoiced is recorded but not
-                            charged, and says so.
-                        </li>
-                    </ul>
-
-                    <h4><i class="fas fa-stethoscope"></i> You can see what it is doing</h4>
-                    <ul>
-                        <li>
-                            The <strong>Master Test</strong> on the Diagnostic page checks the whole install in
-                            one click, without changing anything.
-                        </li>
-                        <li>
-                            Times are kept in EVE time, and hovering over one shows it in your own timezone.
+                            Mining from before the update stays taxed the way it was, whatever works it out again,
+                            and every ore is valued one way: by the minerals it refines into, gas at its own price.
                         </li>
                     </ul>
                 </div>
 
-                {{-- Recent changes sits under What's New on purpose. That box is the v2 picture;
-                     this one is what the latest update changed that you can see on screen. Earlier
-                     updates of v2 stay folded away underneath until the next What's New is written. --}}
-                <div class="recent-changes-box">
-                    <h4><i class="fas fa-history"></i> In this update (2.0.5)</h4>
-                    <p>
-                        The changes in this release you will notice without going looking.
-                        <a href="https://github.com/MattFalahe/Mining-Manager/blob/main/CHANGELOG.md" target="_blank" rel="noopener">The changelog</a>
-                        has the complete record.
-                    </p>
-                    <h5>Check your notification settings</h5>
-                    <ul>
-                        <li>
-                            <strong>Some switches never saved, and now do.</strong> On the webhook form, Price
-                            Provider Trouble, Outstanding Mining Tax, Extraction at Risk and Extraction Lost were
-                            switched off by every save, so tick them again where you want them. Metenox Cargo Bay
-                            Full has its own switch now and goes nowhere until you tick it. Under Settings,
-                            Notifications, the master switch and role ping for Moon Chunk Unstable, Extraction at
-                            Risk and Extraction Lost save now, so set them again if you had changed them.
-                        </li>
-                    </ul>
-                    <h5>Moon Planner</h5>
-                    <ul>
-                        <li>
-                            <strong>Blueprints.</strong> A new tab beside the planner for a repeating pattern of
-                            pulls over one to eight weeks. Apply one from any date for as many cycles as you like,
-                            see every pull it would write before anything is saved, and let it take over the weeks
-                            it covers if you want. Editing a blueprint offers to carry the change to the pulls it
-                            already wrote.
-                        </li>
-                        <li>
-                            <strong>Pulls too close together.</strong> Two pulls on one refinery less than 7 days
-                            apart get a warning when one is placed or moved, a yellow mark on the calendar and a
-                            banner listing them. Auto-fill no longer places one that close. The spacing is under
-                            Settings, Notifications.
-                        </li>
-                        <li>
-                            <strong>Final pulls.</strong> Mark a refinery's last pull before it is moved or
-                            unanchored, and nothing more can be planned after it.
-                        </li>
-                        <li>
-                            <strong>Pulls planned more than 56 days ahead</strong> can still be planned. An extraction
-                            runs at most 56 days, so Next Extraction Planned says when such a pull can be started and
-                            posts again at that time, and Moon Not Rescheduled waits until then.
-                        </li>
-                        <li>
-                            <strong>Resend Next-Pull Notices</strong> sends Next Extraction Planned again for every
-                            refinery whose chunk has arrived and has not been started since, after showing you the list.
-                        </li>
-                        <li>
-                            <strong>The Extraction Simulator has moved here</strong>, beside the planner and Blueprints,
-                            and is for Directors, Admins, Moon Managers and Moon Finders. Members no longer see it;
-                            give Moon Finder to anyone who should keep it.
-                        </li>
-                        <li>
-                            <strong>Three new reminders</strong>, each off until you tick it on a webhook: Moon Not
-                            Rescheduled when a drill has sat idle since its chunk arrived, Moons Need Planning with
-                            every refinery short of planned pulls, and Moon Extraction Cancelled.
-                        </li>
-                        <li>
-                            <strong>A refinery that is gone loses its planned pulls by itself</strong>, once it has
-                            been missing for a day of sightings, and Refinery Gone says so. One that is unanchoring
-                            or has had its drill unfitted keeps its pulls under a yellow mark, and an Athanor or
-                            Tatara with no moon drill is no longer offered as a moon at all.
-                        </li>
-                    </ul>
-                    <h5>Moon extractions</h5>
-                    <ul>
-                        <li>
-                            <strong>Moon rigs count.</strong> A Stability or Proficiency rig's longer mining window
-                            is followed everywhere a chunk is timed, the extraction page shows the rigs behind a
-                            chunk and roughly what a yield rig added, and the simulator lets you try a fit.
-                        </li>
-                        <li>
-                            <strong>The extraction calendar shows three months at once</strong>, each chunk
-                            labelled with its moon's tier, on EVE time.
-                        </li>
-                        <li>
-                            <strong>A cancelled extraction leaves both calendars.</strong> A pull cancelled in game and
-                            started again shows once, on its real date.
-                        </li>
-                        <li>
-                            <strong>A chunk's value is settled when it fractures.</strong> It no longer changes with
-                            the market for the week after the belt is gone. See
-                            <a href="#moon-mining" data-section-link="moon-mining">What a chunk is worth</a>.
-                        </li>
-                        <li>
-                            <strong>A moon nobody has scanned still gets its ore and value</strong>, from the game's
-                            notices, with an amber banner on the extraction page asking for a scan. Moon Scan
-                            Missing lists those moons on a webhook.
-                        </li>
-                        <li>
-                            <strong>Refinery or Metenox.</strong> Directors and admins get a card under each
-                            simulation with what the moon would earn the corporation either way, less fuel, and the
-                            share of each chunk that has to be mined for a refinery to come out ahead. See
-                            <a href="#moon-mining" data-section-link="moon-mining">Extraction Simulator and Find Moons</a>.
-                        </li>
-                    </ul>
-                    <h5>Paying tax</h5>
-                    <ul>
-                        <li>
-                            <strong>A banner on the Mining Dashboard</strong> shows what a member still owes, when
-                            it is due and a Pay now button, until the bill is paid.
-                        </li>
-                        <li>
-                            <strong>Part-paid bills keep their payment steps</strong> on My Taxes and ask only for
-                            what is left, Tax Overview counts them, and a Left to Pay column does the subtraction.
-                            Part payments count in the dashboard's collected figures, My Mining's Tax Paid and the
-                            Wallet Verification cards too, and those cards say they cover the last 30 days.
-                        </li>
-                        <li>
-                            <strong>Paying on the due date is on time.</strong> A bill is late once its due date is
-                            over, not from its first minute.
-                        </li>
-                        <li>
-                            <strong>Manual Entry holds money for the next bill.</strong> A payment you take by hand
-                            before a bill exists pays off anything the member still owes and the rest waits on their
-                            balance for their next bill. It no longer asks for dates or makes a pre-paid record that the
-                            real bill then skipped or charged again.
-                        </li>
-                        <li>
-                            <strong>The exemption threshold counts a main and its alts together</strong>, as
-                            <a href="#tax-system" data-section-link="tax-system">Exemptions and Minimum Tax</a>
-                            describes. It was checked one character at a time, so mining spread over alts that each
-                            stayed under it paid nothing. Bills already issued are unchanged.
-                        </li>
-                    </ul>
-                    <h5>Notifications and pricing</h5>
-                    <ul>
-                        <li>
-                            <strong>Moon Chunk Unstable goes out again</strong>, two hours before a chunk turns unstable,
-                            and so does Extraction Started when Manager Core's fast-poll is not handling it. Both had
-                            only been checked in the minute after some chunk arrived, so they were mostly missed.
-                        </li>
-                        <li>
-                            <strong>Outstanding Mining Tax has its own card</strong> under Settings, Notifications,
-                            with a master switch, a role ping and a corporation filter for whose bills it lists.
-                        </li>
-                        <li>
-                            <strong>Plugin Health</strong> is a new group for alerts about the plugin itself: Price
-                            Provider Trouble and Moon Scan Missing.
-                        </li>
-                        <li>
-                            <strong>A fallback price provider.</strong> When your price provider fails outright,
-                            Fuzzwork, or the fallback you pick under Settings, Pricing, prices instead, and Price
-                            Provider Trouble says so.
-                        </li>
-                    </ul>
-                    <h5>Names, dashboard and analytics</h5>
-                    <ul>
-                        <li>
-                            <strong>Miners SeAT does not know are named on every page</strong>, looked up in the
-                            background. A name still being looked up reads <em>Character info in progress</em> and
-                            the page refreshes once it is in. On the dashboard they count as guests rather than
-                            members.
-                        </li>
-                        <li>
-                            <strong>Analytics counts every miner</strong>, and Moon Analytics counts a chunk's whole
-                            mining window, so earlier months can read higher than they did.
-                        </li>
-                        <li>
-                            <strong>The leaderboard's Show Specific Corporations Only setting works</strong>, on
-                            every top miners board. Its list under Settings, Dashboard holds your member
-                            corporations, each with how many of its characters mined in the last 12 months, and it
-                            is one setting for the whole install.
-                        </li>
-                        <li>
-                            <strong>Settings lists your corporations.</strong> The moon owner and corporation
-                            pickers on the General tab offer the corporations your registered characters are in,
-                            plus the moon owner and any with their own settings, instead of every corporation SeAT
-                            had ever loaded, or none at all.
-                        </li>
-                    </ul>
-                    <h5>Ore</h5>
-                    <ul>
-                        <li>
-                            <strong>Abyssal Ore and Triglavian Ore say what they hold</strong> on the rate fields
-                            and the Tax Selector, and the
-                            <a href="#tax-system" data-section-link="tax-system">Tax System</a> page explains which
-                            is which. Zuthrine is no longer imported.
-                        </li>
-                    </ul>
-
-                    <details>
-                        <summary>Earlier in v2: 2.0.4</summary>
-                    <h5>Payments and balances</h5>
-                    <ul>
-                        <li>
-                            <strong>Payments without a tax code can be assigned.</strong> Every waiting payment on
-                            Wallet Verification has an <em>Assign to invoice</em> button: point it at the invoice
-                            it was meant for, or hold it as account balance when the player owes nothing. What a
-                            payment does not settle moves on to their next unpaid invoice, anything left is held
-                            as balance and taken off future invoices, and each invoice lists every payment
-                            credited to it. Payments from before the update that carried a tax code stay out of
-                            the queue, with a <em>Show them anyway</em> toggle. The Sync, Auto-Match, Verify and
-                            Dismiss buttons on that page now work.
-                        </li>
-                        <li>
-                            <strong>Members can pay ahead and see their balance.</strong> With Upfront Payments
-                            switched on (Settings, Features), a transfer with the upfront keyword in its reason
-                            (<code>MM-UPFRONT</code> by default) pays before an invoice exists. The Balances tab
-                            shows directors everyone holding a balance and members their own, with the steps for
-                            paying ahead. My Taxes shows a member's balance, an invoice paid from balance says
-                            so, and reminders say how much balance already covered.
-                        </li>
-                        <li>
-                            <strong>Directors can give a balance back.</strong> <em>Refund</em> on the Balances tab
-                            takes the amount off the balance, then waits for the ISK to leave the corporation
-                            wallet. Send it in game with the refund keyword (<code>MM-REFUND</code> by default) in
-                            the reason and it confirms itself. <em>Mark as sent</em> closes one that will never
-                            match.
-                        </li>
-                    </ul>
-                    <h5>Tax pages and invoices</h5>
-                    <ul>
-                        <li>
-                            <strong>The payment steps were wrong.</strong> My Taxes and the member guide told
-                            members to pay from their wallet, which cannot send ISK to a corporation. Both now say
-                            to right-click the corporation's name in game and choose Give Money.
-                        </li>
-                        <li>
-                            <strong>Partly paid invoices are chased for what is left.</strong> Reminders ask for
-                            the outstanding amount rather than the whole invoice, a partly paid invoice past its
-                            due date shows as overdue, and the new <em>Outstanding Mining Tax</em> notification
-                            gives directors a weekly list of who still owes once invoices are past due. Bind it to
-                            a webhook to receive it.
-                        </li>
-                        <li>
-                            <strong>Tax pages sort the way you would expect.</strong> Tax Overview opens with
-                            overdue invoices first and sorts money and dates as numbers, Tax History lists the
-                            second half of a month above the first, and Calculate Taxes opens grouped by account.
-                            On the Tax Codes tab, admins can mark a leftover code as used, or delete it. Calculate
-                            Taxes no longer has a Regenerate Codes button: it did the same as Recalculate.
-                        </li>
-                        <li>
-                            <strong>What has been billed stays billed.</strong> Once an invoice has a payment code,
-                            money against it, or reads as paid, nothing recalculates its total. Mining that
-                            reaches the ledger after its period was invoiced is recorded but not taxed, with a
-                            note saying why. Ore the plugin has only now learned to recognise is classified from
-                            the update on, and mining already in the ledger keeps the category and rate it was
-                            billed on.
-                        </li>
-                    </ul>
-                    <h5>Mining and ore</h5>
-                    <ul>
-                        <li>
-                            <strong>Personal mining is counted in full.</strong> SeAT keeps a day mined in
-                            several sittings as several rows, and the import was keeping only the latest one.
-                            It now adds them up, so on an install that taxes belt, ice or gas mining, bills from
-                            this update on will be higher than before. The scheduled import reads the last two
-                            days by the date the mining happened, and mining SeAT saves later than that is not
-                            imported, so days already invoiced and summarised do not change. Anything older than
-                            the two days before the update keeps the quantities it had.
-                        </li>
-                        <li>
-                            <strong>Event ore, quest ore and Mutanite are left out.</strong> Tyranite, Nephrite,
-                            Volatile Ice and the other limited-time and mission ores, and Mutanite from Homefront
-                            Operations, are no longer imported, taxed or charted. Rows already in the ledger stay as
-                            they are. The Master Test lists any mined ore the registry does not recognise, and the
-                            <a href="#ore-classification" data-section-link="ore-classification">Ore Classification</a>
-                            page explains how it all works. The reprocessing calculator now lists any ore name it could
-                            not recognise
-                            instead of quietly dropping it, which usually means your static data is older than CCP's
-                            new ore names.
-                        </li>
-                    </ul>
-                    <h5>Extraction Simulator</h5>
-                    <ul>
-                        <li>
-                            <strong>Find Moons, and moon quality that means something.</strong> The Extraction
-                            Simulator can search every scanned moon by region, constellation, system, security,
-                            class, composition rules, value and quality, and points out better moons of the same
-                            class nearby. It is for directors, moon managers and the new Moon Finder permission.
-                            The <a href="#find-moons" data-section-link="find-moons">Find Moons</a> page walks
-                            through every filter.
-                            Quality now ranks a moon against the scanned moons of its own class instead of fixed ISK
-                            amounts, the simulator shows refined value next to ore value, and it prices from the
-                            cache instead of asking your price provider on every click.
-                        </li>
-                        <li>
-                            <strong>Moon ore share is a real number now.</strong> The column on Find Moons and the
-                            figure under the simulator added up every ore in the scan, regular asteroid ore included,
-                            so almost every moon read 100% and the <strong>moon ore at least</strong> filter never
-                            excluded anything. Both now count the moon ores only, so a moon that is half Veldspar
-                            reads 50%.
-                        </li>
-                        <li>
-                            <strong>Marking moons as yours, theirs, or worth a look.</strong> A result can be
-                            flagged as held by another corporation, with a note of who holds it, and added to a
-                            shared watchlist. Moons one of your own refineries still drills are marked
-                            automatically. Each of the three can be filtered on or hidden, a claim clears itself
-                            once you are the one drilling that moon, and a watched moon drops off the list when
-                            you put a refinery on it.
-                        </li>
-                        <li>
-                            <strong>The simulator says when it is not showing the figure tax uses.</strong> Which
-                            value leads and which one tax is worked out from are separate settings. When they
-                            differ, the simulation and Find Moons say so and offer a button to switch. A raw ore
-                            with no market price is named only when ore value is on screen, since raw ore mostly
-                            trades compressed or refined and its missing price does not touch the refined value.
-                        </li>
-                    </ul>
-                    <h5>Moon Planner</h5>
-                    <ul>
-                        <li>
-                            <strong>The Moon Planner.</strong> Placing a pull by hand saves, where it used to fail
-                            with a database error, and plans that read Unknown Moon now show their moon. A
-                            scheduling mismatch offers Realign and Ignore, each asking for a reason, where it used
-                            to offer Dismiss.
-                        </li>
-                    </ul>
-                    <h5>Notifications and webhooks</h5>
-                    <ul>
-                        <li>
-                            <strong>Moon alerts say more.</strong> Extraction Started names the pilot who started
-                            the extraction, and their main. Without Manager Core it holds the alert until the
-                            in-game notification reaches SeAT so it can do that, and sends it without the name if
-                            six hours pass first. Chunks fractured from now on show who fractured them, the three
-                            Moon Planner alerts carry the refinery, moon and time on Discord, and Moon Scheduled
-                            Off-Plan alerts are delivered, which they were not before.
-                        </li>
-                        <li>
-                            <strong>Check your webhooks after this update.</strong> Four alerts were on the
-                            webhook form but showed as off whenever a webhook was opened for editing, so saving
-                            that webhook for any other reason switched them off: the weekly outstanding tax
-                            digest, Price Provider Trouble, and the two cross-plugin extraction alerts. That is
-                            fixed, and the icons in the webhook list now cover every event, but anything
-                            switched off this way stays off until you switch it back on.
-                        </li>
-                    </ul>
-                    <h5>Pricing</h5>
-                    <ul>
-                        <li>
-                            <strong>Prices are fetched in bulk, and a failed lookup keeps the old price.</strong>
-                            A refresh used to ask Janice for one price at a time, hundreds of requests every four
-                            hours, and wrote a zero over a good price whenever one failed. It now asks for a
-                            hundred at a time, and a price that does not arrive leaves the cached one alone. A new
-                            <strong>Price Provider Trouble</strong> notification says so once when refreshes start
-                            failing and once when they work again; bind it to a webhook under Settings, Webhooks.
-                        </li>
-                        <li>
-                            <strong>Janice's split method now gives real prices.</strong> It used to read a price Janice
-                            never sends, so every split price came back as zero. If you price with Janice on split,
-                            expect real values from the first refresh after updating. Invoices already issued keep
-                            what they were billed.
-                        </li>
-                    </ul>
-                    <h5>Analytics and settings</h5>
-                    <ul>
-                        <li>
-                            <strong>Analytics opens on your own corporation.</strong> All Corporations is still in
-                            the dropdown. Performance Charts can be filtered by source (your moons, all moon ore,
-                            other moons), by ore and by player, and exports carry the same filters. The month
-                            picker on Moon Analytics works, and moon managers can open Moon Analytics.
-                        </li>
-                        <li>
-                            <strong>Allow Data Export works, and applies to everyone.</strong> Switched off under
-                            Settings, Features, it blocks every mining, tax, analytics, theft and report download
-                            for directors and admins as well. Your settings backup is not affected.
-                        </li>
-                        <li>
-                            <strong>One colour for each moon class.</strong> R4 to R64 were coloured three
-                            different ways, so the same moon could read gold on one page and grey on the next.
-                            Every page now uses the colours SeAT itself uses, and the plugin sets them rather
-                            than leaving them to your theme.
-                        </li>
-                    </ul>
-                    <h5>Diagnostics</h5>
-                    <ul>
-                        <li>
-                            <strong>Diagnostics stops crying wolf.</strong> Tax Trace warned about every ore on an
-                            install that only taxes one category, and Data Integrity counted the duplicate rows
-                            that cross-source dedup had already resolved. Both now speak only when something is
-                            actually wrong. The missing price check now follows how you value ore, so when you value
-                            by refined value it looks at refined materials and no longer raises raw ore, which often
-                            has no market at all. The price cache checks on Health Checks, the price cache tab and
-                            <code>diagnose-prices</code> warn only when the price provider is failing or refreshes have
-                            stopped writing prices, instead of calling every type with no market a failure. The Master
-                            Test gains a payment reconciliation check, one that
-                            finds invoices with no payment code for the member to quote, and one that warns when the
-                            simulator opens on a different value from the one tax is worked out from.
-                        </li>
-                    </ul>
-                    </details>
-                </div>
+                {{-- A Recent changes box goes here, under What's New, once v3 has an update of its
+                     own: what that update changed that you can see on screen. Earlier updates of v3
+                     fold away inside it, until the next What's New is written. --}}
 
                 {{-- What is Mining Manager? --}}
                 <div class="help-card">
