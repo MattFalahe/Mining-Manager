@@ -49,6 +49,7 @@
 @section('full')
 <div class="mining-dashboard combined-director-dashboard">
     @include('mining-manager::dashboard.partials._tax_banner')
+    @include('mining-manager::settings.partials._settings_moved_notice')
 
     {{-- TAB NAVIGATION --}}
     <div class="row">

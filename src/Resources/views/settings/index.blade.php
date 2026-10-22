@@ -128,6 +128,8 @@
     </div>
     @endif
 
+    @include('mining-manager::settings.partials._settings_moved_notice')
+
     <div class="settings-wrapper">
         {{-- Sidebar --}}
         <div class="settings-sidebar">

@@ -61,6 +61,7 @@ class NotificationService
     const TYPE_TAX_OUTSTANDING_DIGEST = 'tax_outstanding_digest';
     const TYPE_PRICE_PROVIDER = 'price_provider';
     const TYPE_MOON_SCAN_MISSING = 'moon_scan_missing';
+    const TYPE_SETTINGS_MOVED = 'settings_moved';
     const TYPE_EVENT_CREATED = 'event_created';
     const TYPE_EVENT_STARTED = 'event_started';
     const TYPE_EVENT_COMPLETED = 'event_completed';
@@ -324,6 +325,16 @@ class NotificationService
         }
 
         return $this->send(self::TYPE_MOON_SCAN_MISSING, [], $data);
+    }
+
+    /**
+     * The one message saying settings moved into tax profiles. Sent once, so
+     * it has no switch of its own: it goes where either Plugin Health alert
+     * goes. See SettingsMovedNotice.
+     */
+    public function sendSettingsMoved(array $data): array
+    {
+        return $this->send(self::TYPE_SETTINGS_MOVED, [], $data);
     }
 
     /**
@@ -1487,6 +1498,11 @@ class NotificationService
      */
     public function isTypeGloballyEnabled(string $type): bool
     {
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $this->isTypeGloballyEnabled(self::TYPE_PRICE_PROVIDER)
+                || $this->isTypeGloballyEnabled(self::TYPE_MOON_SCAN_MISSING);
+        }
+
         $enabledTypes = $this->settings->getSetting('notifications.enabled_types', []);
 
         // If no toggles have been saved yet, all types are enabled by default
@@ -1543,6 +1559,15 @@ class NotificationService
      */
     protected function isTypeEnabledForChannel(string $type, string $channel): bool
     {
+        // Never by EVE mail, which goes to characters, not to the people
+        // looking after the plugin.
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $channel === self::CHANNEL_DISCORD
+                || ($channel === self::CHANNEL_SLACK
+                    && ($this->isTypeEnabledForChannel(self::TYPE_PRICE_PROVIDER, $channel)
+                        || $this->isTypeEnabledForChannel(self::TYPE_MOON_SCAN_MISSING, $channel)));
+        }
+
         $typeKey = match ($type) {
             self::TYPE_TAX_GENERATED => 'tax_generated',
             self::TYPE_TAX_ANNOUNCEMENT => 'tax_announcement',
@@ -1609,6 +1634,13 @@ class NotificationService
      */
     public function reachesAnyone(string $type): bool
     {
+        // Has no webhook switch of its own, and asking the webhooks for a type
+        // they have no column for would find every one of them.
+        if ($type === self::TYPE_SETTINGS_MOVED) {
+            return $this->reachesAnyone(self::TYPE_PRICE_PROVIDER)
+                || $this->reachesAnyone(self::TYPE_MOON_SCAN_MISSING);
+        }
+
         if (!$this->isEnabled() || !$this->isTypeGloballyEnabled($type)) {
             return false;
         }
@@ -1733,6 +1765,7 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'tax_outstanding_digest',
             self::TYPE_PRICE_PROVIDER => 'price_provider',
             self::TYPE_MOON_SCAN_MISSING => 'moon_scan_missing',
+            self::TYPE_SETTINGS_MOVED => 'settings_moved',
             self::TYPE_EVENT_CREATED => 'event_created',
             self::TYPE_EVENT_STARTED => 'event_started',
             self::TYPE_EVENT_COMPLETED => 'event_completed',
@@ -1823,6 +1856,16 @@ class NotificationService
                 ? (int) $data['structure_corporation_id']
                 : null;
             $webhooks = $this->getMoonOwnerScopedWebhooks($eventType, $structureCorpId);
+        } elseif ($eventType === 'settings_moved') {
+            // No switch of its own: every webhook taking either Plugin Health
+            // alert, each once.
+            $webhooks = collect();
+            foreach ([self::TYPE_PRICE_PROVIDER, self::TYPE_MOON_SCAN_MISSING] as $healthType) {
+                if ($this->isTypeGloballyEnabled($healthType)) {
+                    $webhooks = $webhooks->merge($this->getMoonOwnerScopedWebhooks($healthType));
+                }
+            }
+            $webhooks = $webhooks->unique('id')->values();
         } else {
             $webhooks = $this->getMoonOwnerScopedWebhooks($eventType);
         }
@@ -2465,6 +2508,7 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 'warning',
             self::TYPE_PRICE_PROVIDER => 'warning',
             self::TYPE_MOON_SCAN_MISSING => '#E67E22',
+            self::TYPE_SETTINGS_MOVED => '#667EEA',
             self::TYPE_TAX_REMINDER => 'warning',
             self::TYPE_TAX_INVOICE => 'warning',
             self::TYPE_TAX_GENERATED => 'good',
@@ -2501,6 +2545,7 @@ class NotificationService
                     . (!empty($data['fallback_ok']) ? ". Prices come from " . $data['fallback'] . " meanwhile" : '')
                 : "Price provider " . ($data['provider'] ?? 'unknown') . " is answering again",
             self::TYPE_MOON_SCAN_MISSING => "🛰️ " . $this->moonScanTotalLine($data) . (!empty($data['description']) ? "\n" . $data['description'] : ''),
+            self::TYPE_SETTINGS_MOVED => "⚙️ Settings moved into tax profiles" . (!empty($data['description']) ? "\n" . $data['description'] : ''),
             self::TYPE_EVENT_CREATED => "New Event Created: {$data['event_name']}",
             self::TYPE_EVENT_STARTED => "Event Started: {$data['event_name']}",
             self::TYPE_EVENT_COMPLETED => "Event Completed: {$data['event_name']}",
@@ -2837,6 +2882,7 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => 15105570, // Amber - a summary, not an alarm
             self::TYPE_PRICE_PROVIDER => 15158332, // Red while it is failing; the title says which way it went
             self::TYPE_MOON_SCAN_MISSING => 0xE67E22, // Orange: valued from a fallback until somebody scans
+            self::TYPE_SETTINGS_MOVED => 0x667EEA, // Indigo: news about the plugin itself
             self::TYPE_TAX_REMINDER => 16776960, // Yellow
             self::TYPE_TAX_INVOICE => 16776960, // Yellow (action required, same as reminder)
             self::TYPE_TAX_GENERATED => 3447003, // Teal
@@ -2879,6 +2925,7 @@ class NotificationService
             self::TYPE_TAX_OUTSTANDING_DIGEST => '📋 Outstanding Mining Tax',
             self::TYPE_PRICE_PROVIDER => '💱 Price Provider',
             self::TYPE_MOON_SCAN_MISSING => '🛰️ Moon Scan Missing',
+            self::TYPE_SETTINGS_MOVED => '⚙️ Settings Moved Into Tax Profiles',
             self::TYPE_EVENT_CREATED => '📅 New Mining Event',
             self::TYPE_EVENT_STARTED => '🚀 Mining Event Started',
             self::TYPE_EVENT_COMPLETED => '🏁 Mining Event Completed',
@@ -3112,6 +3159,10 @@ class NotificationService
             ])),
             self::TYPE_SCHEDULE_NEEDS_FILLING => array_values(array_filter([
                 !empty($data['planner_url']) ? ['title' => 'Planner', 'value' => '<' . $data['planner_url'] . '|Open Moon Planner>', 'short' => false] : null,
+            ])),
+            self::TYPE_SETTINGS_MOVED => array_values(array_filter([
+                !empty($data['configured']) ? ['title' => 'Configured corporations', 'value' => $data['configured'], 'short' => false] : null,
+                !empty($data['report_url']) ? ['title' => 'Full report', 'value' => '<' . $data['report_url'] . '|Settings, Maintenance>', 'short' => false] : null,
             ])),
             self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
                 !empty($data['reminder']) ? ['title' => 'Reminder', 'value' => 'Daily, until each moon is scanned', 'short' => false] : null,
@@ -3461,6 +3512,10 @@ class NotificationService
             self::TYPE_SCHEDULE_NEEDS_FILLING => array_values(array_filter([
                 ['name' => '📊 Total', 'value' => $this->needsPlanningTotalLine($data), 'inline' => false],
                 !empty($data['planner_url']) ? ['name' => '🔗 Planner', 'value' => '[Open Moon Planner](' . $data['planner_url'] . ')', 'inline' => false] : null,
+            ])),
+            self::TYPE_SETTINGS_MOVED => array_values(array_filter([
+                !empty($data['configured']) ? ['name' => '🏢 Configured corporations', 'value' => $data['configured'], 'inline' => false] : null,
+                !empty($data['report_url']) ? ['name' => '🔗 Full report', 'value' => '[Settings, Maintenance](' . $data['report_url'] . ')', 'inline' => false] : null,
             ])),
             self::TYPE_MOON_SCAN_MISSING => array_values(array_filter([
                 ['name' => '📊 Total', 'value' => $this->moonScanTotalLine($data), 'inline' => false],

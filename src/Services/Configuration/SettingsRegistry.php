@@ -162,6 +162,8 @@ final class SettingsRegistry
         'settings.transferred_at' => self::STATE,
         'settings.transfer_report' => self::STATE,
         'settings.valuation_before_transfer' => self::STATE,
+        'settings.transfer_announced_at' => self::STATE,
+        'settings.transfer_announce_tries' => self::STATE,
 
         // Replaced by the Global profile, which taxes everyone whose
         // corporation is not configured

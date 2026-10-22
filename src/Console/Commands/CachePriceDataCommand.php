@@ -94,6 +94,10 @@ class CachePriceDataCommand extends Command
             return Command::SUCCESS;
         }
 
+        // The one message saying settings moved into tax profiles. Here
+        // because every install runs this refresh, every four hours.
+        app(\MiningManager\Services\Configuration\SettingsMovedNotice::class)->run();
+
         try {
             $this->info('Starting price cache update...');
 
