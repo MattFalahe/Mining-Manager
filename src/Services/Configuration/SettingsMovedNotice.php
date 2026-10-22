@@ -26,10 +26,10 @@ class SettingsMovedNotice
     public const TRIES_KEY = 'settings.transfer_announce_tries';
 
     /** Runs a send that reached nobody is tried on, four hours apart. */
-    private const TRIES = 6;
+    public const TRIES = 6;
 
     /** Days after the move that it is still news. */
-    private const DAYS = 14;
+    public const DAYS = 14;
 
     /**
      * Characters the effects may take in the message. Discord allows 4096 in

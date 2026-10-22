@@ -271,7 +271,7 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#settings-health" data-toggle="tab">
+                <a class="nav-link" href="#settings-health" data-toggle="tab" onclick="openSettingsHealth()">
                     <i class="fas fa-cogs"></i> Settings Health
                 </a>
             </li>
@@ -1076,22 +1076,23 @@
         <div class="tab-pane" id="settings-health">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> Lists every plugin setting group
-                    (General, Features, Tax Rates, Pricing, Payment, Notifications) with each
-                    value, its type, and where it comes from: saved in the database, set in
-                    config, or the built-in default. Also counts per-corporation overrides and
-                    settings left behind for corporations that no longer exist.
+                    <strong>What this tab does:</strong> Checks the settings the way the plugin reads
+                    them now that they live in tax profiles: which corporations are configured and
+                    which profile taxes whom, each profile's rates, moon ore choice, billing period and
+                    payment code prefix, and every row of the settings table against the place it
+                    belongs. Below the checks are every profile side by side, every install-wide
+                    setting, and the records the plugin keeps for itself.
                 </p>
                 <p>
-                    <strong>When to use:</strong> When a setting toggle "doesn't seem to do
-                    anything", when investigating why a notification didn't fire, or before
-                    upgrading to a new plugin version where setting keys may have changed.
+                    <strong>When to use:</strong> When someone is billed at a rate you did not expect,
+                    after adding or removing a corporation, after importing settings, or after an
+                    update that moves settings.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> A value showing <code>default</code> has never been
-                    saved, so it follows the shipped default and moves if that default does.
-                    Settings changes you make in the Settings UI are reflected here on the next
-                    tab click.
+                    <strong>Heads up:</strong> Read-only. Values show as stored, so a queued change of
+                    billing period stays queued here until billing applies it. A value marked
+                    <code>default</code> was never saved and reads the plugin's built-in default.
+                    Secrets only show whether they are set.
                 </p>
             </div>
             <div class="row">
@@ -1099,20 +1100,20 @@
                     <div class="card card-dark">
                         <div class="card-header">
                             <h3 class="card-title">
-                                <i class="fas fa-cogs"></i> Settings Health Check
+                                <i class="fas fa-cogs"></i> Settings Health
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>View all plugin settings, their sources (database, config, or default), and detect any issues like orphaned corporation settings.</p>
+                            <p>Runs when you open this tab. Run it again after changing a setting.</p>
 
                             <button type="button" class="btn btn-mm-primary" onclick="loadSettingsHealth()">
-                                <i class="fas fa-stethoscope"></i> <span id="settingsHealthBtnText">Run Health Check</span>
+                                <i class="fas fa-stethoscope"></i> <span id="settingsHealthBtnText">Run again</span>
                                 <span id="settingsHealthSpinner" class="spinner-border spinner-border-sm ml-2" style="display: none;"></span>
                             </button>
-
-                            <div id="settingsHealthResults" style="margin-top: 20px;"></div>
                         </div>
                     </div>
+
+                    <div id="settingsHealthResults"></div>
                 </div>
             </div>
         </div>
@@ -2545,8 +2546,41 @@ function warmCache() {
 }
 
 // ============================================================================
-// SETTINGS HEALTH CHECK
+// SETTINGS HEALTH
 // ============================================================================
+
+// The tab's link runs its onclick twice, once from the browser and once from
+// the tab switcher, so opening it loads the report only the first time.
+let settingsHealthOpened = false;
+
+function openSettingsHealth() {
+    if (settingsHealthOpened) {
+        return;
+    }
+    settingsHealthOpened = true;
+    loadSettingsHealth();
+}
+
+function settingsHealthEscape(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function settingsHealthBadge(status) {
+    const badges = {
+        ok: ['badge-success', 'check', 'OK'],
+        warn: ['badge-warning', 'exclamation-triangle', 'WARN'],
+        fail: ['badge-danger', 'times', 'FAIL'],
+        info: ['badge-info', 'info-circle', 'INFO'],
+    };
+    const [cls, icon, label] = badges[status] || badges.info;
+    return `<span class="badge ${cls}"><i class="fas fa-${icon}"></i> ${label}</span>`;
+}
 
 function loadSettingsHealth() {
     const resultsDiv = document.getElementById('settingsHealthResults');
@@ -2555,7 +2589,6 @@ function loadSettingsHealth() {
 
     btnText.textContent = 'Checking...';
     spinner.style.display = 'inline-block';
-    resultsDiv.innerHTML = '';
 
     const url = '{{ route("mining-manager.diagnostic.settings-health") }}';
     const relativeUrl = new URL(url, window.location.origin).pathname;
@@ -2563,56 +2596,201 @@ function loadSettingsHealth() {
     fetch(relativeUrl, { headers: { 'Accept': 'application/json' } })
     .then(response => response.json())
     .then(data => {
-        btnText.textContent = 'Run Health Check';
+        btnText.textContent = 'Run again';
         spinner.style.display = 'none';
-
-        if (data.success) {
-            let html = `<div class="provider-test-result success">
-                <h5><i class="fas fa-check-circle text-success"></i> Settings Health Report</h5>
-                <div class="row mb-3">
-                    <div class="col-md-3"><strong>DB Settings:</strong> ${data.summary.total_db_settings}</div>
-                    <div class="col-md-3"><strong>Global:</strong> ${data.summary.global_settings}</div>
-                    <div class="col-md-3"><strong>Corp Overrides:</strong> ${data.summary.corporation_overrides.length}</div>
-                    <div class="col-md-3"><strong>Orphaned:</strong> <span class="${data.summary.orphaned_settings > 0 ? 'text-danger' : ''}">${data.summary.orphaned_settings}</span></div>
-                </div>`;
-
-            if (data.issues.length > 0) {
-                html += '<div class="alert alert-warning">';
-                data.issues.forEach(issue => { html += `<p class="mb-0"><i class="fas fa-exclamation-triangle"></i> ${issue}</p>`; });
-                html += '</div>';
-            }
-
-            // Show each settings group
-            for (const [group, settings] of Object.entries(data.settings)) {
-                html += `<hr><h6><i class="fas fa-folder"></i> ${group}</h6><div style="max-height: 300px; overflow-y: auto;">`;
-                settings.forEach(s => {
-                    const sourceColor = s.source === 'database' ? 'text-success' : (s.source === 'config' ? 'text-info' : 'text-muted');
-                    const sourceIcon = s.source === 'database' ? 'fa-database' : (s.source === 'config' ? 'fa-file-code' : 'fa-cog');
-                    html += `<div class="price-item"><span><i class="fas ${sourceIcon} ${sourceColor}"></i> ${s.key}</span>
-                        <span><strong>${s.value !== null && s.value !== '' ? s.value : '<em>empty</em>'}</strong> <small class="${sourceColor}">[${s.source}]</small></span></div>`;
-                });
-                html += '</div>';
-            }
-
-            // Corporation overrides
-            if (data.summary.corporation_overrides.length > 0) {
-                html += '<hr><h6><i class="fas fa-building"></i> Corporation Overrides</h6>';
-                data.summary.corporation_overrides.forEach(corp => {
-                    html += `<div class="price-item"><span>${corp.corporation_name} (${corp.corporation_id})</span><span><strong>${corp.setting_count} settings</strong></span></div>`;
-                });
-            }
-
-            html += '</div>';
-            resultsDiv.innerHTML = html;
-        } else {
-            resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${data.error}</p></div>`;
-        }
+        resultsDiv.innerHTML = data.success
+            ? renderSettingsHealth(data.report)
+            : `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${settingsHealthEscape(data.error)}</p></div>`;
     })
     .catch(error => {
-        btnText.textContent = 'Run Health Check';
+        btnText.textContent = 'Run again';
         spinner.style.display = 'none';
-        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${error.message}</p></div>`;
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${settingsHealthEscape(error.message)}</p></div>`;
     });
+}
+
+function renderSettingsHealth(report) {
+    const esc = settingsHealthEscape;
+    const overall = {
+        ok: ['badge-success', 'check', 'ALL CLEAR'],
+        warn: ['badge-warning', 'exclamation-triangle', 'WARNINGS'],
+        fail: ['badge-danger', 'times', 'FAILURES'],
+    }[report.overall];
+    const counts = report.counts;
+
+    let html = `
+        <div class="card card-dark mt-3">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-chart-pie"></i> Summary</h3>
+                <div class="card-tools">
+                    <span class="badge ${overall[0]}"><i class="fas fa-${overall[1]}"></i> ${overall[2]}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 col-md-3"><h4 class="text-success">${counts.ok}</h4><small>OK</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-warning">${counts.warn}</h4><small>Warn</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-danger">${counts.fail}</h4><small>Fail</small></div>
+                    <div class="col-6 col-md-3"><h4 class="text-info">${counts.info}</h4><small>Info</small></div>
+                </div>
+            </div>
+        </div>`;
+
+    report.groups.forEach(group => {
+        html += `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas ${esc(group.icon)}"></i> ${esc(group.title)}</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">${esc(group.description)}</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">Status</th>
+                                <th style="width: 26%;">Check</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${group.checks.map(check => `
+                            <tr>
+                                <td>${settingsHealthBadge(check.status)}</td>
+                                <td><strong>${esc(check.label)}</strong></td>
+                                <td style="font-size: 0.88em;">${esc(check.message)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    if (report.profiles) {
+        html += renderSettingsHealthProfiles(report.profiles);
+    }
+    html += renderSettingsHealthInstall(report.install);
+    html += renderSettingsHealthRecords(report.records, report.report_url);
+
+    return html;
+}
+
+function renderSettingsHealthProfiles(profiles) {
+    const esc = settingsHealthEscape;
+    const span = profiles.columns.length + 1;
+    let anyUnused = false;
+
+    let rows = '';
+    profiles.sections.forEach(section => {
+        rows += `<tr><th colspan="${span}" class="text-uppercase small" style="background: rgba(102, 126, 234, 0.12);">${esc(section.title)}</th></tr>`;
+        section.rows.forEach(row => {
+            rows += `<tr><td>${esc(row.label)}<br><small class="text-muted">${row.keys.map(esc).join(', ')}</small></td>`;
+            row.cells.forEach(cell => {
+                if (cell.unused) {
+                    anyUnused = true;
+                    rows += `<td title="${esc(profiles.unused_note)}"><span style="opacity: 0.5;">${esc(cell.text)}</span> <small class="text-muted">not used</small></td>`;
+                } else {
+                    rows += `<td>${esc(cell.text)}${cell.saved === false ? ' <span class="badge badge-secondary">default</span>' : ''}</td>`;
+                }
+            });
+            rows += '</tr>';
+        });
+    });
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-columns"></i> Tax profiles side by side</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">What each profile holds, as billing reads it. A profile never falls back to Global: a value marked <span class="badge badge-secondary">default</span> was never saved for that profile and reads the built-in default.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Setting</th>
+                                ${profiles.columns.map(column => `<th>${esc(column.label)}<br><small class="text-muted">${esc(column.note)}</small></th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                ${anyUnused ? `<small class="text-muted d-block mt-2">${esc(profiles.unused_note)}</small>` : ''}
+            </div>
+        </div>`;
+}
+
+function renderSettingsHealthInstall(install) {
+    const esc = settingsHealthEscape;
+    const value = setting => {
+        if (setting.value === null) {
+            return '<em class="text-muted">not saved, and the page that uses it keeps its own default</em>';
+        }
+        return setting.value === '' ? '<em class="text-muted">empty</em>' : esc(setting.value);
+    };
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-sliders-h"></i> Install-wide settings</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">One value for the whole install, kept with no corporation, whoever reads it.</p>
+                <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Setting</th>
+                                <th>Value</th>
+                                <th style="width: 90px;">Stored</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${install.map(setting => `
+                            <tr>
+                                <td><code>${esc(setting.key)}</code></td>
+                                <td style="word-break: break-word;">${value(setting)}</td>
+                                <td>${setting.saved ? 'saved' : '<span class="badge badge-secondary">default</span>'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderSettingsHealthRecords(records, reportUrl) {
+    const esc = settingsHealthEscape;
+
+    return `
+        <div class="card card-dark">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-history"></i> Plugin records</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Dates and markers the plugin keeps for itself, never shown on the settings pages and never exported. The full report of the move into tax profiles is under <a href="${esc(reportUrl)}">Settings, Maintenance</a>.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-dark mb-0" style="font-size: 0.85em;">
+                        <thead>
+                            <tr>
+                                <th>Record</th>
+                                <th>Value</th>
+                                <th style="width: 170px;">Last written</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${records.map(record => `
+                            <tr>
+                                <td><code>${esc(record.key)}</code></td>
+                                <td style="word-break: break-word;">${record.value === null ? '<em class="text-muted">not set</em>' : esc(record.value)}</td>
+                                <td>${record.updated_at ? esc(record.updated_at) : '<em class="text-muted">never</em>'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
 }
 
 // ============================================================================

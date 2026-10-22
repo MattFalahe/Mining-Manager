@@ -1792,129 +1792,24 @@ class DiagnosticController extends Controller
     // ========================================================================
 
     /**
-     * Settings Health Check
-     * Shows all plugin settings with source (DB / config / default), flags mismatches
+     * Settings Health: who each tax profile taxes, what every profile holds,
+     * and each stored row checked against where the plugin reads it.
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function settingsHealth()
+    public function settingsHealth(\MiningManager\Services\Diagnostic\SettingsHealth $health)
     {
         try {
-            $results = [];
-
-            // Define all setting groups to check.
-            //
-            // Notifications was added in v2.0.1 so the new
-            // `notifications.metenox_cargo_full_threshold_pct` setting (and
-            // any future notification-level operator knobs) surface in
-            // Settings Health alongside the other groups.
-            $settingGroups = [
-                'General' => $this->settingsService->getGeneralSettings(),
-                // Feature switches decide whole areas, upfront payments and
-                // data export among them, so their source matters as much as
-                // any other setting's.
-                'Features' => $this->settingsService->getFeatureFlags(),
-                'Tax Rates' => $this->settingsService->getTaxRates(),
-                'Pricing' => $this->settingsService->getPricingSettings(),
-                'Payment' => $this->settingsService->getPaymentSettings(),
-                'Notifications' => method_exists($this->settingsService, 'getNotificationSettings')
-                    ? $this->settingsService->getNotificationSettings()
-                    : [],
-            ];
-
-            foreach ($settingGroups as $groupName => $settings) {
-                $groupResults = [];
-                foreach ($settings as $key => $value) {
-                    // Check source: DB vs config vs hardcoded
-                    $source = 'default';
-                    $dbValue = null;
-
-                    if (is_array($value)) {
-                        // Nested settings (e.g., tax_rates.moon_ore)
-                        foreach ($value as $subKey => $subValue) {
-                            $fullKey = $key . '.' . $subKey;
-                            $dbRecord = Setting::where('key', $fullKey)->first()
-                                ?? Setting::where('key', strtolower($groupName) . '.' . $fullKey)->first();
-
-                            $groupResults[] = [
-                                'key' => $fullKey,
-                                'value' => $subValue,
-                                'source' => $dbRecord ? 'database' : (config('mining-manager.' . $fullKey) !== null ? 'config' : 'default'),
-                                'type' => gettype($subValue),
-                            ];
-                        }
-                    } else {
-                        // Check multiple possible DB key paths for this setting
-                        // Payment settings read from tax_rates.* and payment.* namespaces
-                        $dbRecord = Setting::where('key', $key)->first()
-                            ?? Setting::where('key', strtolower($groupName) . '.' . $key)->first()
-                            ?? Setting::where('key', 'tax_rates.tax_' . $key)->first()
-                            ?? Setting::where('key', 'payment.' . $key)->first()
-                            ?? Setting::where('key', 'general.' . $key)->first();
-
-                        // Mask sensitive values
-                        $displayValue = $value;
-                        if (in_array($key, ['janice_api_key']) && !empty($value)) {
-                            $displayValue = '***' . substr($value, -4);
-                        }
-
-                        $groupResults[] = [
-                            'key' => $key,
-                            'value' => $displayValue,
-                            'source' => $dbRecord ? 'database' : (config('mining-manager.' . $key) !== null ? 'config' : 'default'),
-                            'type' => gettype($value),
-                        ];
-                    }
-                }
-                $results[$groupName] = $groupResults;
-            }
-
-            // Check for corporation-specific overrides
-            $corpOverrides = Setting::whereNotNull('corporation_id')
-                ->select('corporation_id', DB::raw('COUNT(*) as setting_count'))
-                ->groupBy('corporation_id')
-                ->get()
-                ->map(function ($row) {
-                    $corpName = DB::table('corporation_infos')
-                        ->where('corporation_id', $row->corporation_id)
-                        ->value('name');
-                    return [
-                        'corporation_id' => $row->corporation_id,
-                        'corporation_name' => $corpName ?? 'Unknown',
-                        'setting_count' => $row->setting_count,
-                    ];
-                });
-
-            // Check for orphaned settings (settings for corporations that no longer exist)
-            $orphanedSettings = Setting::whereNotNull('corporation_id')
-                ->whereNotIn('corporation_id', function ($query) {
-                    $query->select('corporation_id')->from('corporation_infos');
-                })
-                ->count();
-
-            // Total DB settings count
-            $totalDbSettings = Setting::count();
-            $globalSettings = Setting::whereNull('corporation_id')->count();
-
             return response()->json([
                 'success' => true,
-                'settings' => $results,
-                'summary' => [
-                    'total_db_settings' => $totalDbSettings,
-                    'global_settings' => $globalSettings,
-                    'corporation_overrides' => $corpOverrides,
-                    'orphaned_settings' => $orphanedSettings,
-                ],
-                'issues' => $orphanedSettings > 0
-                    ? ["{$orphanedSettings} orphaned setting(s) found for non-existent corporations"]
-                    : [],
+                'report' => $health->report(),
             ]);
-
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Settings health check failed', ['error' => $e->getMessage()]);
+
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
