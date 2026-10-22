@@ -635,7 +635,7 @@ return [
     'cli_initialize' => 'First-Time Setup Wizard',
     'cli_initialize_desc' => 'The initialize command is a guided setup wizard designed for first-time installations. It verifies your settings, populates current month data, and optionally backfills historical data. Run this once after installing Mining Manager and configuring your Moon Owner Corporation.',
     'cli_initialize_phase1' => 'Phase 1: Settings Verification',
-    'cli_initialize_phase1_desc' => 'Checks that essential settings are configured: Moon Owner Corporation (required), price provider, tax rates for configured corporations, and available ESI data. If Moon Owner Corporation is not set, the wizard will stop and ask you to configure it in Settings > General first.',
+    'cli_initialize_phase1_desc' => 'Checks that essential settings are configured: Moon Owner Corporation (required), price provider, the rates in every tax profile, and available ESI data. If Moon Owner Corporation is not set, the wizard stops and asks you to set it under Settings, Setup first.',
     'cli_initialize_phase2' => 'Phase 2: Current Month Data',
     'cli_initialize_phase2_desc' => 'Populates all mining data for the current month in the correct order:',
     'cli_initialize_step_prices' => 'Cache market prices from your configured provider',

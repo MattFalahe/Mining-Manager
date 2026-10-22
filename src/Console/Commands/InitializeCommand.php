@@ -118,8 +118,8 @@ class InitializeCommand extends Command
 
         $this->info('Next steps:');
         $this->line('  1. Open SeAT and navigate to Mining Manager from the sidebar');
-        $this->line('  2. Check Settings > General to verify your Moon Owner Corporation');
-        $this->line('  3. Check Settings > Tax Rates to configure per-corporation tax rates');
+        $this->line('  2. Check Settings > Setup for your Moon Owner Corporation and the corporations you tax');
+        $this->line('  3. Check Settings > Tax profiles for each profile\'s rates and billing period');
         $this->line('  4. Set up webhooks in Settings > Webhooks for Discord/Slack notifications');
         $this->line('  5. The scheduled tasks will keep everything updated automatically');
         $this->newLine();
@@ -149,7 +149,7 @@ class InitializeCommand extends Command
             $this->line("         ✅ Set to: {$corpName} ({$moonOwnerCorpId})");
         } else {
             $this->error('         ❌ Not configured!');
-            $issues[] = 'Moon Owner Corporation is not set. Go to Settings > General and select your corporation.';
+            $issues[] = 'Moon Owner Corporation is not set. Go to Settings > Setup and select your corporation.';
         }
 
         // Check 2: Price Provider
@@ -165,52 +165,50 @@ class InitializeCommand extends Command
             $this->warn('         ⚠️  Price cache is empty — will be populated during setup');
         }
 
-        // Check 3: Tax Rates
-        $this->info('  [3/4] Checking Tax Rates...');
-        $configuredCorps = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
+        // Check 3: Tax profiles, Global first, then each configured corporation
+        $this->info('  [3/4] Checking tax profiles...');
+        $anyRate = false;
+        foreach ($settingsService->taxProfiles() as $profile) {
+            $name = $profile === null
+                ? 'Global'
+                : (DB::table('corporation_infos')->where('corporation_id', $profile)->value('name') ?? "Corp #{$profile}");
+            $taxRates = $settingsService->taxRatesFor($profile);
+            $taxSelector = $settingsService->taxSelectorFor($profile);
 
-        if ($configuredCorps->isNotEmpty()) {
-            foreach ($configuredCorps as $corpId) {
-                $corpName = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name') ?? "Corp #{$corpId}";
-                $settingsService->setActiveCorporation((int) $corpId);
-                $taxRates = $settingsService->getTaxRates();
-                $taxSelector = $settingsService->getTaxSelector();
+            $moon = $taxRates['moon_ore'] ?? [];
+            $others = [
+                'Ore' => ['ore', $taxRates['ore'] ?? 0],
+                'Ice' => ['ice', $taxRates['ice'] ?? 0],
+                'Gas' => ['gas', $taxRates['gas'] ?? 0],
+                'Abyssal' => ['abyssal_ore', $taxRates['abyssal_ore'] ?? 0],
+                'Triglavian' => ['triglavian_ore', $taxRates['triglavian_ore'] ?? 0],
+            ];
 
-                $moonR64 = $taxRates['moon_ore']['r64'] ?? 0;
-                $moonR32 = $taxRates['moon_ore']['r32'] ?? 0;
-                $oreRate = $taxRates['ore'] ?? 0;
-                $iceRate = $taxRates['ice'] ?? 0;
-                $gasRate = $taxRates['gas'] ?? 0;
-                $abyssalRate = $taxRates['abyssal_ore'] ?? 0;
-                $triglavianRate = $taxRates['triglavian_ore'] ?? 0;
+            $this->line("         ✅ {$name}:");
+            $this->line('            Moon: R64=' . ($moon['r64'] ?? 0) . '% R32=' . ($moon['r32'] ?? 0) . '% R16=' . ($moon['r16'] ?? 0)
+                . '% R8=' . ($moon['r8'] ?? 0) . '% R4=' . ($moon['r4'] ?? 0) . '%');
 
-                $this->line("         ✅ {$corpName}:");
-                $this->line("            Moon: R64={$moonR64}% R32={$moonR32}% | Ore={$oreRate}% Ice={$iceRate}% Gas={$gasRate}% Abyssal={$abyssalRate}% Triglavian={$triglavianRate}%");
-
-                // Show what's being taxed
-                $taxedTypes = [];
-                $moonMode = ($taxSelector['all_moon_ore'] ?? false) ? 'All Moon' : (($taxSelector['only_corp_moon_ore'] ?? false) ? 'Corp Moon Only' : (($taxSelector['no_moon_ore'] ?? false) ? 'No Moon' : 'Default'));
-                $taxedTypes[] = "Moon: {$moonMode}";
-                if ($taxSelector['ore'] ?? false) $taxedTypes[] = 'Ore';
-                if ($taxSelector['ice'] ?? false) $taxedTypes[] = 'Ice';
-                if ($taxSelector['gas'] ?? false) $taxedTypes[] = 'Gas';
-                if ($taxSelector['abyssal_ore'] ?? false) $taxedTypes[] = 'Abyssal';
-                if ($taxSelector['triglavian_ore'] ?? false) $taxedTypes[] = 'Triglavian';
-                $this->line("            Taxing: " . implode(', ', $taxedTypes));
+            // The same order of precedence the tax calculation reads the
+            // moon ore choice in.
+            $moonChoice = !empty($taxSelector['no_moon_ore']) ? 'not taxed'
+                : (!empty($taxSelector['only_corp_moon_ore']) ? 'only at your refineries'
+                    : (($taxSelector['all_moon_ore'] ?? true) ? 'all moon ore' : 'not taxed'));
+            $taxed = ["Moon: {$moonChoice}"];
+            foreach ($others as $label => [$key, $rate]) {
+                if (!empty($taxSelector[$key])) {
+                    $taxed[] = "{$label} {$rate}%";
+                    $anyRate = $anyRate || $rate > 0;
+                }
             }
-            $settingsService->setActiveCorporation(null);
-        } else {
-            // Check global defaults
-            $r64 = $settingsService->getSetting('tax_rates.moon_ore.r64', 0);
-            if ($r64 > 0) {
-                $this->line("         ✅ Global defaults configured (R64={$r64}%)");
-            } else {
-                $this->warn('         ⚠️  No tax rates configured yet. You can set them in Settings > Tax Rates.');
-                $issues[] = 'Tax rates are at 0% — set your rates in Settings > Tax Rates before calculating taxes.';
+            if ($moonChoice !== 'not taxed' && max(array_merge([0], array_map('floatval', $moon))) > 0) {
+                $anyRate = true;
             }
+            $this->line('            Taxing: ' . implode(', ', $taxed));
+        }
+
+        if (!$anyRate) {
+            $this->warn('         ⚠️  No tax rates set yet. You can set them in Settings > Tax profiles.');
+            $issues[] = 'Tax rates are at 0%: set your rates in Settings > Tax profiles before calculating taxes.';
         }
 
         // Check 4: ESI Data
@@ -237,7 +235,7 @@ class InitializeCommand extends Command
             // Critical: Moon Owner Corp must be set
             if (!$moonOwnerCorpId) {
                 $this->error('  Moon Owner Corporation must be configured before running setup.');
-                $this->error('  Go to SeAT > Mining Manager > Settings > General and set it, then run this command again.');
+                $this->error('  Go to SeAT > Mining Manager > Settings > Setup and set it, then run this command again.');
                 return false;
             }
 
