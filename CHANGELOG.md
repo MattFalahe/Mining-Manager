@@ -72,6 +72,10 @@ All notable changes to Mining Manager will be documented in this file.
 - Fixed: **`backup-data` left out fifteen of the plugin's tables**, so a backup could not bring back payment allocations, balances held, refunds, the planner's pulls and their history, blueprints, moon claims and the watchlist, the plugin's character lookups, or what the alerts remember having said, which would send them all again. It now takes every table the plugin owns. Backups made before this update restore as before, without those tables.
 - Tables keyed on something other than an id are written in one go instead of failing part way through and being tried again, and the manifest records the installed version instead of `dev-5.0`.
 
+### Settings
+
+- Fixed: **importing a settings export saved every json setting as text.** The export carries those values as they are stored and the import encoded them a second time, so after an import they no longer read back as what was exported, the notification type switches and their options among them. An import now saves each one exactly as it was exported. Exports were always right, so files made before this update import correctly now.
+
 ### Scheduled Commands
 
 - An old scheduled `verify-payments` run without `--auto-match`, left behind on installs that ran a version from before 1.0.0, is removed on update. It only reported what it would match, and it held the lock the real matching run needs five minutes later.

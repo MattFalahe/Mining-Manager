@@ -1674,11 +1674,21 @@ class SettingsManagerService
                         ? ($row['corporation_id'] === null ? null : (int) $row['corporation_id'])
                         : null;
 
-                    $this->updateSetting(
-                        $row['key'],
-                        $row['value'] ?? null,
-                        $row['type'] ?? null
-                    );
+                    $value = $row['value'] ?? null;
+                    $type = $row['type'] ?? null;
+
+                    // The export carries a json value as the text it was stored
+                    // as, and saving that text would encode it a second time.
+                    // Decoded without assoc, so {} and an object keyed 0..n
+                    // come back exactly as they were stored.
+                    if (in_array($type, ['json', 'array'], true) && is_string($value)) {
+                        $decoded = json_decode($value);
+                        if (json_last_error() === JSON_ERROR_NONE) {
+                            $value = $decoded;
+                        }
+                    }
+
+                    $this->updateSetting($row['key'], $value, $type);
 
                     $imported++;
                 }
