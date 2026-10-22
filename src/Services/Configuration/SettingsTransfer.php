@@ -48,6 +48,12 @@ class SettingsTransfer
     public const REPORT_KEY = 'settings.transfer_report';
     public const CONFIGURED_KEY = 'general.configured_corporations';
 
+    /**
+     * How ore was valued before the transfer, kept only when it was not by
+     * refined minerals: mining from before tax profiles keeps that valuation.
+     */
+    public const VALUATION_KEY = 'settings.valuation_before_transfer';
+
     private const TABLE = 'mining_manager_settings';
 
     /** Never shown in a plan or a report. */
@@ -147,6 +153,8 @@ class SettingsTransfer
         $configured = $this->configured($moonOwner);
         $switch = $this->readGlobally('features.allow_guest_mining');
         $guestsAllowed = $switch ? (bool) $this->cast($switch) : true;
+        // Mining at the Moon Owner's refineries was valued as the Moon Owner.
+        $valuation = (string) ($this->cast($this->readAs('general.ore_valuation_method', $moonOwner)) ?: 'mineral_price');
 
         $writes = [];
         $kept = 0;
@@ -265,7 +273,7 @@ class SettingsTransfer
         }
 
         foreach (SettingsRegistry::keys(SettingsRegistry::STATE) as $key) {
-            if (in_array($key, [self::DONE_KEY, self::REPORT_KEY], true)) {
+            if (in_array($key, [self::DONE_KEY, self::REPORT_KEY, self::VALUATION_KEY], true)) {
                 continue;
             }
 
@@ -280,7 +288,8 @@ class SettingsTransfer
             'writes' => $writes,
             'kept' => $kept,
             'superseded' => $superseded,
-            'effects' => $this->effects($configured, $moonOwner, $guestsAllowed, $nonMembersPaid, $globalRates),
+            'valuation' => $valuation,
+            'effects' => $this->effects($configured, $moonOwner, $guestsAllowed, $nonMembersPaid, $globalRates, $valuation),
         ];
     }
 
@@ -300,6 +309,10 @@ class SettingsTransfer
 
             foreach ($plan['writes'] as $write) {
                 $this->put($write['key'], $write['corporation_id'], $write['to']['value'], $write['to']['type'], $now);
+            }
+
+            if ($plan['valuation'] !== 'mineral_price') {
+                $this->put(self::VALUATION_KEY, null, $plan['valuation'], 'string', $now);
             }
 
             $report = $this->report($plan, $now->toDateTimeString());
@@ -397,9 +410,10 @@ class SettingsTransfer
      * @param array<int, int> $configured
      * @param array<string, float> $nonMembersPaid rarity => the moon rate non-members paid
      * @param array<string, float> $globalRates rarity => the Global profile's moon rate after the transfer
+     * @param string $valuation how ore was valued before the transfer
      * @return array<int, string>
      */
-    private function effects(array $configured, ?int $moonOwner, bool $guestsAllowed, array $nonMembersPaid, array $globalRates): array
+    private function effects(array $configured, ?int $moonOwner, bool $guestsAllowed, array $nonMembersPaid, array $globalRates, string $valuation): array
     {
         $effects = [];
         $tickers = DB::table('corporation_infos')->whereIn('corporation_id', $configured)->pluck('ticker', 'corporation_id');
@@ -456,6 +470,10 @@ class SettingsTransfer
                 . ' Their mining at your refineries still flags a theft at once, and paying the bill now closes it.';
         } elseif ($globalRates && min($globalRates) >= 100) {
             $effects[] = "The Global profile's moon rates are all 100%, which now means non-members may not mine at your refineries: their mining there flags a theft as soon as it arrives, not once a bill is overdue, and paying the bill closes it.";
+        }
+
+        if ($valuation !== 'mineral_price') {
+            $effects[] = 'Ore was valued at its own market price. From the day after the update every ore is valued as the minerals it refines into, and gas at its own price. Mining from before then keeps the old valuation, even when it is priced again.';
         }
 
         return $effects;

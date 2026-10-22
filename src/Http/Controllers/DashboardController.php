@@ -2096,7 +2096,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * FIXED METHOD - Now uses OreValuationService to respect ore_valuation_method setting
+     * Value mining the way the ledger values it, through OreValuationService.
      */
     private function calculateTotalValue($miningData)
     {
@@ -2107,16 +2107,14 @@ class DashboardController extends Controller
         // Use OreValuationService for proper valuation
         $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
 
-        // Calculate total value using the configured valuation method
         return $miningData->sum(function($entry) use ($valuationService) {
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date ?? null]);
             return $values['total_value'];
         });
     }
 
     /**
-     * FIXED: Calculate entry value using OreValuationService
-     * Respects ore_valuation_method setting (ore_price vs mineral_price)
+     * Value one entry the way the ledger values it, through OreValuationService.
      * This is used by chart methods and performance calculations
      */
     private function calculateEntryValue($entry)
@@ -2125,7 +2123,7 @@ class DashboardController extends Controller
             // Use OreValuationService for proper valuation
             $valuationService = app(\MiningManager\Services\Pricing\OreValuationService::class);
 
-            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+            $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date ?? null]);
 
             return $values['total_value'];
         } catch (\Exception $e) {

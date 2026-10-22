@@ -161,6 +161,7 @@ final class SettingsRegistry
         'notifications.slack_legacy_last_error' => self::STATE,
         'settings.transferred_at' => self::STATE,
         'settings.transfer_report' => self::STATE,
+        'settings.valuation_before_transfer' => self::STATE,
 
         // Replaced by the Global profile, which taxes everyone whose
         // corporation is not configured

@@ -167,7 +167,7 @@ class UpdateLedgerPricesCommand extends Command
 
         foreach ($entries as $entry) {
             try {
-                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date]);
 
                 $newTotalValue = $values['total_value'] ?? 0;
 

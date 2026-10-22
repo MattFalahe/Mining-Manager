@@ -444,24 +444,7 @@
             <div class="info-banner mb-3">
                 <i class="fas fa-info-circle"></i>
                 <strong>Info:</strong>
-                Decides which value the Extraction Simulator and Find Moons lead with: what the ore reprocesses into at your refining efficiency, or what the raw ore is worth on the market. Raw moon ore barely trades, so a thin market can put a silly price on it, which is why refined value is the default. Both are always shown, and Find Moons can be switched per search with Value by. Mining taxes are not affected.
-            </div>
-
-            <div class="form-group">
-                <div class="custom-control custom-switch">
-                    <input type="checkbox" 
-                           class="custom-control-input" 
-                           id="use_refined_value"
-                           name="use_refined_value"
-                           value="1"
-                           {{ old('use_refined_value', $settings['pricing']['use_refined_value'] ?? false) ? 'checked' : '' }}>
-                    <label class="custom-control-label" for="use_refined_value">
-                        <strong>Use Refined Mineral Value</strong>
-                    </label>
-                </div>
-                <small class="form-text text-muted">
-                    Lead with refined value on the Extraction Simulator and Find Moons
-                </small>
+                Every ore is valued as the minerals it reprocesses into at this refining efficiency, for mining tax and on the Extraction Simulator and Find Moons alike. Raw moon ore barely trades, so a thin market can put a silly price on it, while what it reprocesses into holds steady. Gas cannot be reprocessed, so it is valued at its own market price. Find Moons can still show raw ore value for a search with Value by.
             </div>
 
             <div class="form-group">

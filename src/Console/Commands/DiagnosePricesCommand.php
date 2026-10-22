@@ -159,11 +159,6 @@ class DiagnosePricesCommand extends Command
                     $this->getStatusIcon(isset($pricingSettings['cache_duration']))
                 ],
                 [
-                    'Use Refined Value',
-                    $pricingSettings['use_refined_value'] ? 'Yes' : 'No',
-                    '📊'
-                ],
-                [
                     'Refining Efficiency',
                     ($pricingSettings['refining_efficiency'] ?? 'not set') . '%',
                     '⚙️'

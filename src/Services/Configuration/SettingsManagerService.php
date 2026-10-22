@@ -327,7 +327,6 @@ class SettingsManagerService
 
             // Ore Refining Settings (unified: reads from pricing.refining_efficiency)
             'ore_refining_rate' => $this->getSetting('pricing.refining_efficiency', config('mining-manager.pricing.refining_efficiency', 87.5)),
-            'ore_valuation_method' => $this->getSetting('general.ore_valuation_method', config('mining-manager.general.ore_valuation_method', 'mineral_price')),
             
             // Price Provider Settings
             'price_provider' => $this->getSetting('price_provider', config('mining-manager.general.price_provider', 'eve_market')),
@@ -1001,7 +1000,6 @@ class SettingsManagerService
             'manager_core_variant' => 'min',
 
             // Refining settings
-            'use_refined_value' => $this->getSetting('pricing.use_refined_value', config('mining-manager.pricing.use_refined_value', true)),
             'refining_efficiency' => $this->getSetting('pricing.refining_efficiency', 87.5),
         ];
     }

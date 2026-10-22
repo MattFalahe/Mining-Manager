@@ -198,13 +198,14 @@ class ImportCharacterMiningCommand extends Command
                             if ($billed) {
                                 $extraValues = $valuationService->calculateOreValue(
                                     $entry->type_id,
-                                    $entry->quantity - (int) $existing->quantity
+                                    $entry->quantity - (int) $existing->quantity,
+                                    ['mining_date' => $entry->date]
                                 );
                                 $existing->update(LateMining::growth($existing, $entry->quantity, $extraValues) + [
                                     'processed_at' => Carbon::now(),
                                 ]);
                             } else {
-                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date]);
                                 $existing->update([
                                     'quantity' => $entry->quantity,
                                     'unit_price' => $values['unit_price'] ?? 0,
@@ -234,7 +235,7 @@ class ImportCharacterMiningCommand extends Command
                 }
 
                 // Calculate values
-                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->date]);
 
                 // Classify ore
                 $isMoonOre = TypeIdRegistry::isMoonOre($entry->type_id);

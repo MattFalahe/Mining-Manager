@@ -102,7 +102,6 @@ class MasterTestRunner
             'checkNotificationSettingsLoadable',
             'checkFeatureFlagsLoadable',
             'checkActiveCorporationConfigured',
-            'checkValueShownMatchesTax',
 
             // Cross-plugin detection + integration
             'checkManagerCoreDetected',
@@ -390,35 +389,6 @@ class MasterTestRunner
     // SETTINGS CONSISTENCY
     // =================================================================
 
-    /**
-     * The simulator and Find Moons open on refined or ore value, and tax is
-     * worked out from one or the other. They are separate settings, so they can
-     * disagree, and when they do every simulation carries a warning that the
-     * figure on screen is not the one tax uses.
-     */
-    protected function checkValueShownMatchesTax(): array
-    {
-        $name = 'Moon value shown matches the value taxed';
-
-        $showsRefined = !empty($this->settingsService->getPricingSettings()['use_refined_value']);
-        // Same test OreValuationService makes: minerals, or else the ore.
-        $taxesRefined = ($this->settingsService->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price';
-
-        $shown = $showsRefined ? 'refined' : 'ore';
-        $taxed = $taxesRefined ? 'refined' : 'ore';
-
-        if ($showsRefined === $taxesRefined) {
-            return $this->pass($name, 'settings', "The simulator and Find Moons open on {$shown} value, the same figure tax is worked out from");
-        }
-
-        return $this->warn(
-            $name,
-            'settings',
-            "The simulator and Find Moons open on {$shown} value, but tax is worked out from {$taxed} value",
-            ['hint' => 'Every simulation warns that the figure on screen is not the one tax uses. Use Refined Mineral Value on the Pricing tab sets which value the pages open on.']
-        );
-    }
-
     protected function checkPricingSettingsLoadable(): array
     {
         $s = $this->settingsService->getPricingSettings();
@@ -428,7 +398,7 @@ class MasterTestRunner
             'price_provider', 'price_type', 'cache_duration', 'fallback_to_jita',
             'janice_market', 'janice_price_method',
             'manager_core_market', 'manager_core_variant',
-            'use_refined_value', 'refining_efficiency',
+            'refining_efficiency',
         ];
 
         $missing = [];

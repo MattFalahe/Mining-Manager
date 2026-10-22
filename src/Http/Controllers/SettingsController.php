@@ -1032,7 +1032,6 @@ class SettingsController extends Controller
             // makes sense for tax + payout (lowest sell = real buy price).
 
             // Refining settings
-            'use_refined_value' => 'nullable|boolean',
             'refining_efficiency' => 'required|numeric|min:0|max:100',
         ]);
 
@@ -1134,7 +1133,6 @@ class SettingsController extends Controller
                 'cache_duration' => $data['cache_duration'],
                 'fallback_to_jita' => $request->has('fallback_to_jita'),
                 // Refining settings
-                'use_refined_value' => $request->has('use_refined_value'),
                 'refining_efficiency' => $data['refining_efficiency'],
             ];
             if (isset($data['fallback_provider'])) {

@@ -1124,7 +1124,6 @@ class DiagnosticController extends Controller
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
                     'fallback_provider' => $this->describeFallbackSetting($pricingSettings['fallback_provider'] ?? 'fuzzwork'),
                     'cache_duration' => ($pricingSettings['cache_duration'] ?? 240) . ' minutes',
-                    'use_refined_value' => ($pricingSettings['use_refined_value'] ?? false) ? 'Yes' : 'No',
                     'refining_efficiency' => ($pricingSettings['refining_efficiency'] ?? 87.5) . '%',
                     'default_region_id' => $generalSettings['default_region_id'] ?? 10000002,
                 ]
@@ -2268,7 +2267,7 @@ class DiagnosticController extends Controller
                 'live_recalculation' => [
                     'settings_used' => [
                         'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
-                        'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                        'valuation_method' => $this->valuationService->valuationMethodFor(),
                         'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
                     ],
                     'tax_rates' => $taxRates,
@@ -3052,59 +3051,36 @@ class DiagnosticController extends Controller
 
             // 4. Mined ore that ends up valued short for want of a price
             //
-            // Which price matters depends on how ore is valued. By refined
-            // value, the default, an ore is worth what it reprocesses into, and
-            // its own raw price is never used: raw ore mostly has no market at
-            // all, since it is traded compressed or refined, so a raw ore with
-            // no price is the true state of the market rather than a fault.
-            // What undervalues a bill there is a refined material with no price.
-            // By ore price the raw price is what gets billed, so that is the one
-            // to watch.
+            // Ore is valued by what it reprocesses into, so its own raw price is
+            // never used: raw ore mostly has no market at all, since it is traded
+            // compressed or refined, so a raw ore with no price is the true state
+            // of the market rather than a fault. What undervalues a bill is a
+            // refined material with no price.
             //
-            // Either way only ore with reprocessing materials is considered.
-            // Something that reprocesses into nothing and has no market cannot
-            // be valued by any route, and saying so every day would be noise.
-            $valuationMethod = $this->settingsService->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price';
+            // Only ore with reprocessing materials is considered. Something that
+            // reprocesses into nothing and has no market cannot be valued by any
+            // route, and saying so every day would be noise.
             $since = Carbon::now()->subDays(30)->toDateString();
 
-            // Same test OreValuationService makes: minerals, or else the ore.
-            if ($valuationMethod !== 'mineral_price') {
-                $unpricedCount = DB::table('mining_price_cache as pc')
-                    ->join('mining_ledger as ml', 'ml.type_id', '=', 'pc.type_id')
-                    ->where('pc.sell_price', '<=', 0)
-                    ->where('pc.buy_price', '<=', 0)
-                    ->where('pc.average_price', '<=', 0)
-                    ->where('ml.date', '>=', $since)
-                    ->whereNull('ml.deleted_at')
-                    ->whereExists(function ($query) {
-                        $query->select(DB::raw(1))
-                            ->from('invTypeMaterials')
-                            ->whereColumn('invTypeMaterials.typeID', 'pc.type_id');
-                    })
-                    ->distinct()
-                    ->count('pc.type_id');
-                $unpricedMessage = 'Ore types mined in the last 30 days that the price provider has no price for, so they are valued at nothing';
-            } else {
-                $unpricedCount = DB::table('invTypeMaterials as m')
-                    ->whereIn('m.typeID', function ($query) use ($since) {
-                        $query->select('type_id')
-                            ->from('mining_ledger')
-                            ->where('date', '>=', $since)
-                            ->whereNull('deleted_at');
-                    })
-                    ->leftJoin('mining_price_cache as pc', 'pc.type_id', '=', 'm.materialTypeID')
-                    ->where(function ($query) {
-                        $query->whereNull('pc.type_id')
-                            ->orWhere(function ($zero) {
-                                $zero->where('pc.sell_price', '<=', 0)
-                                    ->where('pc.buy_price', '<=', 0)
-                                    ->where('pc.average_price', '<=', 0);
-                            });
-                    })
-                    ->distinct()
-                    ->count('m.materialTypeID');
-                $unpricedMessage = 'Refined materials that ore mined in the last 30 days breaks down into have no price, so that ore is valued short';
-            }
+            $unpricedCount = DB::table('invTypeMaterials as m')
+                ->whereIn('m.typeID', function ($query) use ($since) {
+                    $query->select('type_id')
+                        ->from('mining_ledger')
+                        ->where('date', '>=', $since)
+                        ->whereNull('deleted_at');
+                })
+                ->leftJoin('mining_price_cache as pc', 'pc.type_id', '=', 'm.materialTypeID')
+                ->where(function ($query) {
+                    $query->whereNull('pc.type_id')
+                        ->orWhere(function ($zero) {
+                            $zero->where('pc.sell_price', '<=', 0)
+                                ->where('pc.buy_price', '<=', 0)
+                                ->where('pc.average_price', '<=', 0);
+                        });
+                })
+                ->distinct()
+                ->count('m.materialTypeID');
+            $unpricedMessage = 'Refined materials that ore mined in the last 30 days breaks down into have no price, so that ore is valued short';
 
             if ($unpricedCount > 0) {
                 $issues[] = [
@@ -3399,9 +3375,8 @@ class DiagnosticController extends Controller
                 'result' => [
                     'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
                     'price_type' => $pricingSettings['price_type'] ?? 'sell',
-                    'use_refined_value' => $pricingSettings['use_refined_value'] ?? false,
                     'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
-                    'valuation_method' => $generalSettings['ore_valuation_method'] ?? 'mineral_price',
+                    'valuation_method' => $this->valuationService->valuationMethodFor(),
                 ],
             ];
 

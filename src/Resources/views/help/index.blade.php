@@ -3232,8 +3232,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <p>
                         <strong>Refined value leads.</strong> Raw moon ore barely trades, so one thin sell order
                         can put a silly price on a moon, while what the ore reprocesses into holds steady. Both
-                        figures are always shown and both are named, and <em>Use Refined Mineral Value</em> under
-                        Settings, Pricing decides which one leads.
+                        figures are always shown and both are named, and refined value leads, since it is also
+                        what mining tax is worked out on.
                     </p>
                     <p>
                         Prices come from the price cache that the scheduled price refresh keeps, never from a live

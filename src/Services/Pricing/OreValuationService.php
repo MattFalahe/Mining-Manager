@@ -2,9 +2,11 @@
 
 namespace MiningManager\Services\Pricing;
 
+use Carbon\Carbon;
 use MiningManager\Services\ReprocessingRegistry;
 use MiningManager\Services\TypeIdRegistry;
 use MiningManager\Services\Configuration\SettingsManagerService;
+use MiningManager\Services\Configuration\SettingsTransfer;
 use MiningManager\Models\MiningPriceCache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -12,12 +14,12 @@ use Illuminate\Support\Facades\DB;
 /**
  * Ore Valuation Service
  *
- * Calculates ore values using either raw ore prices or refined mineral prices
- * based on the configured valuation method.
+ * Values ore as the refined minerals it reprocesses into.
  *
  * Handles special cases:
  * - Gas cannot be refined (always uses raw ore price)
- * - Respects ore_valuation_method setting from UI/DB settings
+ * - Mining from before settings moved into tax profiles keeps the valuation
+ *   it had then, see valuationMethodFor()
  * - Applies refining efficiency from UI/DB settings
  *
  * Price Fallback Strategy:
@@ -54,11 +56,12 @@ class OreValuationService
     }
 
     /**
-     * Calculate ore value based on configured valuation method.
+     * Calculate ore value: what it refines into, or its own price for gas.
      *
      * @param int $typeId
      * @param int $quantity
-     * @param array $options Optional settings override
+     * @param array $options Optional settings override. mining_date is the day
+     *                       the ore was mined, today when not given.
      * @return array ['ore_value' => float, 'mineral_value' => float, 'total_value' => float, 'unit_price' => float]
      */
     public function calculateOreValue(int $typeId, int $quantity, array $options = []): array
@@ -67,8 +70,7 @@ class OreValuationService
         $generalSettings = $this->settingsService->getGeneralSettings();
         $pricingSettings = $this->settingsService->getPricingSettings();
 
-        $valuationMethod = $options['ore_valuation_method']
-            ?? $generalSettings['ore_valuation_method'] ?? 'mineral_price';
+        $valuationMethod = $this->valuationMethodFor($options['mining_date'] ?? null);
         $refiningRate = $options['ore_refining_rate']
             ?? floatval($pricingSettings['refining_efficiency'] ?? 87.5);
         $regionId = $options['default_region_id']
@@ -153,6 +155,31 @@ class OreValuationService
         }
 
         return $result;
+    }
+
+    /**
+     * How ore mined on a day is valued: 'mineral_price', what it refines into,
+     * for everything from the day tax profiles take over. An install that
+     * valued ore at its own market price before then keeps that for the days
+     * before, so pricing a row again never changes what a day was worth.
+     *
+     * @param mixed $miningDate the day the ore was mined, today when null
+     */
+    public function valuationMethodFor($miningDate = null): string
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return (string) ($this->settingsService->getSetting('general.ore_valuation_method', 'mineral_price') ?: 'mineral_price');
+        }
+
+        $before = $this->settingsService->getSettingForCorporation(SettingsTransfer::VALUATION_KEY, null);
+        if (!$before || $before === 'mineral_price') {
+            return 'mineral_price';
+        }
+
+        $from = $this->settingsService->profilesTaxFrom();
+        $day = $miningDate ? Carbon::parse($miningDate) : Carbon::now();
+
+        return $from && $day->lt($from) ? (string) $before : 'mineral_price';
     }
 
     /**

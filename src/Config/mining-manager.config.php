@@ -20,9 +20,6 @@ return [
         // Corporation ID (can be set via settings page)
         'corporation_id' => null,
 
-        // Ore valuation method: 'ore_price' or 'mineral_price'
-        'ore_valuation_method' => 'mineral_price',
-
         // Price provider: 'eve_market' or 'janice'
         'price_provider' => 'eve_market',
 
@@ -116,11 +113,6 @@ return [
 
         // Cache price data duration (minutes)
         'cache_duration' => 240,
-
-        // Which value the Extraction Simulator and Find Moons lead with. Raw
-        // moon ore barely trades, so its market price says less about a moon
-        // than what the ore reprocesses into.
-        'use_refined_value' => true,
 
         // Refining efficiency percentage (for refined value calculations)
         'refining_efficiency' => 87.5,

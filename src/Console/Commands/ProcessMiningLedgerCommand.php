@@ -228,7 +228,7 @@ class ProcessMiningLedgerCommand extends Command
 
                     // Calculate ore values using OreValuationService (daily session pricing)
                     $valuationService = app(OreValuationService::class);
-                    $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity);
+                    $values = $valuationService->calculateOreValue($entry->type_id, $entry->quantity, ['mining_date' => $entry->last_updated]);
 
                     $unitPrice = $values['unit_price'] ?? 0;
                     $oreValue = $values['ore_value'] ?? 0;
@@ -310,7 +310,8 @@ class ProcessMiningLedgerCommand extends Command
                         if ($entry->quantity > $existing->quantity) {
                             $extraValues = $valuationService->calculateOreValue(
                                 $entry->type_id,
-                                (int) $entry->quantity - (int) $existing->quantity
+                                (int) $entry->quantity - (int) $existing->quantity,
+                                ['mining_date' => $entry->last_updated]
                             );
                             $existing->update(LateMining::growth($existing, (int) $entry->quantity, $extraValues) + [
                                 'processed_at' => Carbon::now(),
@@ -394,7 +395,7 @@ class ProcessMiningLedgerCommand extends Command
                             } else {
                                 // Character mined more than observer shows — keep remainder as non-corp mining
                                 $valuationService = app(OreValuationService::class);
-                                $remainderValues = $valuationService->calculateOreValue($entry->type_id, $remainder);
+                                $remainderValues = $valuationService->calculateOreValue($entry->type_id, $remainder, ['mining_date' => $personalDupe->date]);
                                 $personalDupe->update([
                                     'quantity' => $remainder,
                                     'unit_price' => $remainderValues['unit_price'] ?? 0,

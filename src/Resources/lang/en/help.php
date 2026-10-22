@@ -76,7 +76,7 @@ return [
     // Quick Start Steps
     'quick_start_guide' => 'Quick Start Guide',
     'step_1_title' => 'Configure Settings',
-    'step_1_desc' => 'Navigate to Settings and configure your corporation, ore valuation method, price provider, and market hub region.',
+    'step_1_desc' => 'Navigate to Settings and configure your corporation, price provider, and market hub region.',
     'step_2_title' => 'Set Tax Rates',
     'step_2_desc' => 'Configure tax rates for different ore categories: moon ore by rarity (R64, R32, R16, R8, R4), regular ore, ice, gas, abyssal ore, and triglavian ore. Select which ore types to tax.',
     'step_3_title' => 'Configure Tax Payment',
@@ -715,7 +715,7 @@ return [
     'collect_setup_title' => 'One-Time Setup',
     'collect_setup_desc' => 'Before taxes can be collected, an admin needs to configure these settings:',
     'collect_setup_step_1' => 'Settings > Tax Rates — Set tax percentages for each ore type (moon R64-R4, regular ore, ice, gas). The tax selector controls which ore types are taxed.',
-    'collect_setup_step_2' => 'Settings > General — Set the moon owner corporation and payment settings. Settings > Pricing — Set the price provider, valuation method, and market region. These control how ore values are calculated.',
+    'collect_setup_step_2' => 'Settings > General — Set the moon owner corporation and payment settings. Settings > Pricing — Set the price provider and market region. These control how ore values are calculated.',
     'collect_setup_step_3' => 'Settings > Webhooks — Create webhook(s) for Discord/Slack notifications. Enable the tax-related toggles (Tax Generated, New Invoices Announcement, Tax Reminder, Tax Invoice, Tax Overdue) so members get notified, and Outstanding Mining Tax on a directors\' channel for the weekly list of who still owes.',
     'collect_setup_step_4' => 'Settings > Features — Make sure "Wallet Verification" and "Notifications" are enabled.',
 

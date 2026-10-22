@@ -796,12 +796,12 @@ class MoonController extends Controller
             'finderRegions' => $finder->regions(),
             'finderOres' => $finder->oreOptions(),
             'pricesUpdatedAt' => $valuation->pricesUpdatedAt(),
-            'defaultBasis' => !empty($settings->getPricingSettings()['use_refined_value']) ? 'refined' : 'ore',
-            // Which figure tax is actually worked out from. The page only
-            // decides which value it shows first, and that is a separate
-            // setting, so the two can disagree; when they do, the page says so.
-            // Same test OreValuationService makes: minerals, or else the ore.
-            'taxBasis' => ($settings->getGeneralSettings()['ore_valuation_method'] ?? 'mineral_price') === 'mineral_price' ? 'refined' : 'ore',
+            // Raw moon ore barely trades, so the page leads with what it
+            // refines into, which is also what tax is worked out on. Find Moons
+            // can still be switched to ore value per search, and the page says
+            // when the figure shown is not the one taxed.
+            'defaultBasis' => 'refined',
+            'taxBasis' => 'refined',
             'features' => $settings->getFeatureFlags(),
             'unscannedRefineryMoons' => $this->unscannedRefineryMoons($settings),
             'canSeeMoonIncome' => $this->canSeeMoonIncome(),
