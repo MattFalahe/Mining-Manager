@@ -1,3 +1,31 @@
+@php
+    // Pages by what they are for, in the order someone setting up the plugin
+    // needs them.
+    $groups = [
+        ['icon' => 'fas fa-coins', 'title' => 'Taxes', 'pages' => [
+            ['setup', 'fas fa-flag', 'Setup'],
+            ['profiles', 'fas fa-percent', 'Tax profiles'],
+            ['billing', 'fas fa-file-invoice-dollar', 'Billing'],
+            ['payments', 'fas fa-wallet', 'Payments'],
+        ]],
+        ['icon' => 'fas fa-moon', 'title' => 'Moons and prices', 'pages' => [
+            ['planner', 'fas fa-calendar-check', 'Moon Planner'],
+            ['pricing', 'fas fa-tags', trans('mining-manager::settings.pricing')],
+        ]],
+        ['icon' => 'fas fa-bell', 'title' => 'Alerts', 'pages' => [
+            ['webhooks', 'fas fa-satellite-dish', trans('mining-manager::settings.webhooks')],
+            ['notifications', 'fas fa-bell', 'Notifications'],
+            ['routing-map', 'fas fa-project-diagram', 'Routing Map'],
+        ]],
+        ['icon' => 'fas fa-puzzle-piece', 'title' => 'Plugin', 'pages' => [
+            ['features', 'fas fa-toggle-on', trans('mining-manager::settings.features')],
+            ['dashboard', 'fas fa-tachometer-alt', 'Dashboard'],
+            ['maintenance', 'fas fa-tools', 'Maintenance'],
+            ['help', 'fas fa-question-circle', trans('mining-manager::settings.help')],
+        ]],
+    ];
+@endphp
+
 <div class="card card-dark">
     <div class="card-header">
         <h3 class="card-title">
@@ -7,152 +35,36 @@
     </div>
     <div class="card-body p-0">
         <ul class="nav nav-pills flex-column">
-            {{-- Tax profiles --}}
-            <li class="nav-header px-3 py-2 text-muted small text-uppercase" style="background: rgba(23, 162, 184, 0.1); border-left: 3px solid #17a2b8;">
-                <i class="fas fa-percent"></i> Tax profiles
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link active"
-                   data-tab="setup">
-                    <i class="fas fa-flag"></i>
-                    Setup
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="profiles">
-                    <i class="fas fa-percent"></i>
-                    Tax profiles
-                </a>
-            </li>
-
-            {{-- Global Settings Section --}}
-            <li class="nav-header px-3 py-2 text-muted small text-uppercase mt-2" style="background: rgba(40, 167, 69, 0.1); border-left: 3px solid #28a745;">
-                <i class="fas fa-globe"></i> Global Settings
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="billing">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    Billing
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="payments">
-                    <i class="fas fa-wallet"></i>
-                    Payments
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="planner">
-                    <i class="fas fa-calendar-check"></i>
-                    Moon Planner
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="pricing">
-                    <i class="fas fa-tags"></i>
-                    {{ trans('mining-manager::settings.pricing') }}
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="features">
-                    <i class="fas fa-toggle-on"></i>
-                    {{ trans('mining-manager::settings.features') }}
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="webhooks">
-                    <i class="fas fa-satellite-dish"></i>
-                    {{ trans('mining-manager::settings.webhooks') }}
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="notifications">
-                    <i class="fas fa-bell"></i>
-                    Notifications
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="routing-map">
-                    <i class="fas fa-project-diagram"></i>
-                    Routing Map
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="dashboard">
-                    <i class="fas fa-tachometer-alt"></i>
-                    Dashboard
-                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
-                </a>
-            </li>
-
-            {{-- System Section --}}
-            <li class="nav-header px-3 py-2 text-muted small text-uppercase mt-2" style="background: rgba(108, 117, 125, 0.1); border-left: 3px solid #6c757d;">
-                <i class="fas fa-tools"></i> System
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="maintenance">
-                    <i class="fas fa-tools"></i>
-                    Maintenance
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="#"
-                   class="nav-link"
-                   data-tab="help">
-                    <i class="fas fa-question-circle"></i>
-                    {{ trans('mining-manager::settings.help') }}
-                </a>
-            </li>
+            @foreach($groups as $index => $group)
+                <li class="nav-header px-3 py-2 text-muted small text-uppercase {{ $index > 0 ? 'mt-2' : '' }}" style="background: rgba(102, 126, 234, 0.1); border-left: 3px solid #667eea;">
+                    <i class="{{ $group['icon'] }}"></i> {{ $group['title'] }}
+                </li>
+                @foreach($group['pages'] as [$tab, $icon, $label])
+                    <li class="nav-item">
+                        <a href="#" class="nav-link {{ $tab === 'setup' ? 'active' : '' }}" data-tab="{{ $tab }}">
+                            <i class="{{ $icon }}"></i>
+                            {{ $label }}
+                        </a>
+                    </li>
+                @endforeach
+            @endforeach
         </ul>
     </div>
 </div>
 
-{{-- Legend --}}
+{{-- What a value applies to. The one place it differs is the Tax profiles table, so it says so once here. --}}
 <div class="card card-dark mt-3">
     <div class="card-header py-2">
         <h6 class="card-title mb-0">
-            <i class="fas fa-info-circle"></i> Settings Legend
+            <i class="fas fa-info-circle"></i> How settings apply
         </h6>
     </div>
     <div class="card-body py-2">
-        <div class="d-flex align-items-center mb-1">
-            <span class="badge badge-success mr-2">G</span>
-            <small class="text-muted">Global - applies to all corporations</small>
-        </div>
-        <div class="d-flex align-items-center">
-            <span class="badge badge-info mr-2">C</span>
-            <small class="text-muted">Corp-specific - can differ per corporation</small>
-        </div>
+        <small class="text-muted d-block mb-1">
+            <strong>Tax profiles</strong> has a column for each corporation you tax, and one for everyone else, called Global.
+        </small>
+        <small class="text-muted d-block">
+            Every other page applies to the whole install, so a value is set once and used everywhere.
+        </small>
     </div>
 </div>

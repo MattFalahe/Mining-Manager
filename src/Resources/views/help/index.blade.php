@@ -3712,9 +3712,6 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h5><i class="fas fa-tags text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_pricing_desc') }}</p>
 
-                    <h5><i class="fas fa-toggle-on text-success"></i> {{ trans('mining-manager::help.settings_features') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_features_desc') }}</p>
-
                     <h5><i class="fas fa-satellite-dish text-info"></i> {{ trans('mining-manager::help.settings_webhooks') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_webhooks_desc') }}</p>
 
@@ -3723,6 +3720,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                     <h5><i class="fas fa-project-diagram text-info"></i> {{ trans('mining-manager::help.settings_routing_map') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_routing_map_desc') }}</p>
+
+                    <h5><i class="fas fa-toggle-on text-success"></i> {{ trans('mining-manager::help.settings_features') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_features_desc') }}</p>
 
                     <h5><i class="fas fa-tachometer-alt text-primary"></i> {{ trans('mining-manager::help.settings_dashboard') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_dashboard_desc') }}</p>
