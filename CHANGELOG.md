@@ -2,6 +2,56 @@
 
 All notable changes to Mining Manager will be documented in this file.
 
+## [3.0.0] (in preparation)
+
+**Forward-only.** On update, migration 000038 keeps a copy of every settings row in a new table, `mining_manager_settings_archive`, and moves your settings into tax profiles; 000039 then clears the rows nothing reads any more. Nobody has to set the plugin up again. Going back to 2.x means rolling both migrations back, which puts every row back from that copy.
+
+Settings move into **tax profiles**. A tax profile decides how often bills go out, the prefix on their payment codes, and what is taxed at which rate. Each configured corporation has one of its own, and the **Global** profile taxes everyone else. Everything else is set once for the whole install.
+
+### Tax Profiles
+
+- **One profile for each configured corporation, and Global for everyone else.** A day's mining is taxed by the profile of the corporation the pilot was in that day. An account's bills follow the profile of its main character's corporation on the first of the month: its billing period and the prefix on its payment codes. Monthly and twice-a-month profiles run side by side, and Calculate Taxes works out every period in use.
+- **A configured corporation never falls back to Global.** Adding one copies the Moon Owner's profile, and from then on its rates are its own. A corporation that had moon rates of its own before the update pays them at the Moon Owner's refineries from the day after it, where until now the Moon Owner's rates applied to everyone mining there. The move's report lists every change like this.
+- **Global replaces the guest rates.** It taxes non-members for their mining at your refineries only, never their own mining elsewhere. With no corporation configured it taxes everyone, for all of their mining, as before.
+- **Global moon rates of 100% keep non-members out.** Their mining at your refineries is billed at full price and flagged as theft as soon as it is imported, rather than once a bill is overdue, and paying the bill closes the incident. An install that had Allow Guest Mining switched off is moved to exactly this. At 0% non-members mine for free, and the page says so: theft detection cannot flag anyone who never owes anything.
+- **All moon ore means all of it.** A profile set to tax all moon ore now also taxes the moon ore its members mine away from your refineries, at other corporations' refineries SeAT tracks and in their own mining ledgers, from the day after the update. Only at your refineries works as before.
+- Days before the update stay taxed under the old rules, whatever works them out again, and a day already billed keeps what it was billed.
+
+### Settings
+
+- **New pages: Setup, Tax profiles, Billing, Payments and Maintenance.** Setup holds the Moon Owner Corporation and the list of configured corporations. Tax profiles shows every profile side by side: billing period, code prefix, what is taxed and at what rate. Billing has small amounts, due dates and reminders, and payment codes. Payments has wallet matching, paying more than a bill, upfront payments and refunds.
+- **General and Tax Rates are gone, and so is the corporation switcher.** A value saved while the switcher pointed at a corporation could be one nothing read. Every field now shows the value in use.
+- **Maintenance shows what the move did**: every value written and why, the copies the plugin stopped reading, and what changed in effect. `mining-manager:settings-transfer` prints the same.
+- **Features says what each switch does.** Several did less than their names suggested: Ledger Retention Period only ever trimmed archived moon extractions, and Enable Tax Tracking only hid the Calculate Taxes tab and the tax banner. Each is now named for what it does, with a line underneath saying so.
+- **Settings that did nothing are gone**: items per page, currency decimals, compact mode, character portraits, Allow Public Statistics, Tax Record Retention, the event bonus, the payment method and two moon settings.
+- Allow Guest Mining and the upfront payments switch have moved: the first into the Global profile's moon rates, the second onto Payments.
+
+### Ore Valuation
+
+- **Every ore is valued by the minerals it refines into, and gas at its own price.** That was already the default. The hidden setting that could value ore at its raw market price is gone, and so is Use Refined Mineral Value, which only chose the figure the Extraction Simulator and Find Moons showed first: they lead with refined value, which is what tax is worked out on. An install that valued ore at its own price keeps that for mining up to the day of the update, even when it is priced again.
+
+### Notifications
+
+- **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update.
+- The Discord ping test on the Diagnostic page follows each notification type's own ping settings.
+
+### Import and Export
+
+- **Settings files are format 3.** A file exported before the move is refused after it, since its global moon rates were what members paid and are now what non-members pay. Exports leave out the plugin's own records and copies nothing reads.
+
+### Backup and Restore
+
+- `backup-data` takes the settings archive table too.
+
+### Diagnostics
+
+- The Master Test no longer checks that the moon value shown matches the value taxed. They can no longer differ.
+
+### Schema
+
+- **000038** adds `mining_manager_settings_archive`, copies every settings row into it and moves the settings into tax profiles, in one transaction. Its `down()` puts every row back.
+- **000039** clears retired settings and copies of install-wide settings saved under a corporation, after archiving each row. Tax profile rows and keys the plugin does not know are left alone.
+
 ## [Unreleased]
 
 **Backwards compatible.** No migrations.
