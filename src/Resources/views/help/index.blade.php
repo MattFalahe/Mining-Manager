@@ -1158,7 +1158,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                             <li>On the first tax-page load or daily cron after upgrading, the <code>tax_calculation_period</code> setting is rewritten from <code>weekly</code> to <code>monthly</code> automatically. A warning line is written to the log explaining why.</li>
                             <li>Any <strong>historical</strong> <code>mining_taxes</code> rows with <code>period_type='weekly'</code> stay in the database forever. They remain visible in Tax History, Tax Details, My Taxes breakdown, and CSV exports &mdash; rendered with their original weekly labels (e.g. "Mar 3&ndash;9, 2026").</li>
                             <li>Going forward, the plugin writes only <code>monthly</code> or <code>biweekly</code> rows. No new weekly rows are created.</li>
-                            <li>If you want biweekly instead of monthly, open <em>Settings &rarr; Tax Rates</em> and change the dropdown. The switch will queue to day 3 of next month (safe cutover to avoid collisions with the auto-migrated monthly setting).</li>
+                            <li>If you want biweekly instead of monthly, open <em>Settings &rarr; Tax profiles</em> and change the profile's billing period. The switch will queue to day 3 of next month (safe cutover to avoid collisions with the auto-migrated monthly setting).</li>
                         </ol>
                         <p class="mb-0 text-muted small">
                             No database migration, no data loss, no downtime &mdash; the settings key-value store handles the legacy value at read time.
@@ -2512,8 +2512,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         The <strong>Metenox Cargo</strong> page (sidebar &rarr; Moon Extractions &rarr;
                         Metenox Cargo, or the tab on any moon page) shows what's currently sitting
                         in every Metenox Moon Drill's cargo bay owned by the
-                        <strong>Moon Owner Corporation</strong> (Settings &rarr; General &rarr;
-                        <code>moon_owner_corporation_id</code>). One card per drill, ore composition
+                        <strong>Moon Owner Corporation</strong> (Settings &rarr; Setup). One card per drill, ore composition
                         table with per-ore ISK valuation and percent-of-cargo bars, structure state
                         pill, and a last-polled timestamp so you know how fresh the data is.
                     </p>

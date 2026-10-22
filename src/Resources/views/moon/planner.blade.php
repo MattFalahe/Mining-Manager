@@ -89,7 +89,7 @@
             <i class="fas fa-exclamation-triangle mm-note-icon"></i>
             <span style="color:#f3f4f6;">
                 No <strong>Moon Owner Corporation</strong> is configured yet. Set one in
-                <a href="{{ route('mining-manager.settings.index') }}">Settings &rsaquo; General</a>
+                <a href="{{ route('mining-manager.settings.index') }}#setup">Settings &rsaquo; Setup</a>
                 so the planner knows which refineries to schedule.
             </span>
         </div>

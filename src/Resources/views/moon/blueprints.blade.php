@@ -128,7 +128,7 @@
         <div class="mm-note mm-note-warn">
             <i class="fas fa-exclamation-triangle"></i>
             No <strong>Moon Owner Corporation</strong> is configured yet. Set one in
-            <a href="{{ route('mining-manager.settings.index') }}">Settings &rsaquo; General</a>
+            <a href="{{ route('mining-manager.settings.index') }}#setup">Settings &rsaquo; Setup</a>
             so a blueprint knows which refineries it can use.
         </div>
     @else
