@@ -25,6 +25,7 @@ class BackupDataCommand extends Command
      */
     private const PLUGIN_TABLES = [
         'mining_manager_settings',
+        'mining_manager_settings_archive',
         'webhook_configurations',
         'mining_events',
         'event_participants',
