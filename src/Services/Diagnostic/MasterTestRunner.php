@@ -954,7 +954,7 @@ class MasterTestRunner
         $name = 'Personal mining import';
 
         if (!($this->settingsService->getFeatureFlags()['enable_ledger_tracking'] ?? true)) {
-            return $this->skip($name, 'import', 'Ledger tracking is switched off');
+            return $this->skip($name, 'import', 'Import Personal Mining is switched off');
         }
 
         if (!Schema::hasTable('character_minings')) {

@@ -178,9 +178,10 @@
                     </div>
                 </div>
                 <small class="form-text text-muted">
-                    A guest mining your moons counts as theft once a bill on their account is more than
-                    this many days past its due date and still unpaid. Members are never flagged; their
-                    overdue bills are for the reminders and the outstanding digest. Default: 15 days.
+                    A non-member mining at your refineries counts as theft once a bill on their account is
+                    more than this many days past its due date and still unpaid, or at once while the Global
+                    profile's moon rates are 100%. Members are never flagged; their overdue bills are for the
+                    reminders and the outstanding digest. Default: 15 days.
                 </small>
                 @error('theft_overdue_days')
                     <div class="invalid-feedback d-block">{{ $message }}</div>

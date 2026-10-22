@@ -164,14 +164,14 @@ return [
     
     // Core Features
     'core_features' => 'Core Features',
-    'enable_tax_tracking' => 'Enable Tax Tracking',
-    'enable_tax_tracking_help' => 'Track and calculate mining taxes',
-    'enable_ledger_tracking' => 'Enable Ledger Tracking',
-    'enable_ledger_tracking_help' => 'Track individual mining activities',
+    'enable_tax_tracking' => 'Calculate Taxes Tab and Tax Banner',
+    'enable_tax_tracking_help' => 'Shows admins the Calculate Taxes tab, and everyone the tax banner on the dashboards. Bills are still worked out on schedule while this is off: that is Auto-Calculate Taxes.',
+    'enable_ledger_tracking' => 'Import Personal Mining',
+    'enable_ledger_tracking_help' => 'Copies each member\'s own mining ledger from SeAT every half hour, so mining away from your refineries is counted and taxed. Off, only mining at your refineries comes in.',
     'enable_analytics' => 'Enable Analytics',
-    'enable_analytics_help' => 'Show analytics and performance metrics',
+    'enable_analytics_help' => 'Shows the Analytics page and keeps its monthly statistics up to date.',
     'enable_reports' => 'Enable Reports',
-    'enable_reports_help' => 'Allow report generation and exports',
+    'enable_reports_help' => 'Shows the Reports pages and runs the scheduled reports. Downloads follow Allow Data Export.',
     
     // Mining Events
     'mining_events' => 'Mining Events',
@@ -187,34 +187,34 @@ return [
 
     // Permissions & Access
     'permissions_access' => 'Permissions & Access',
-    'allow_member_leaderboard' => 'Allow Member Leaderboard',
-    'allow_member_leaderboard_help' => 'Display member mining leaderboards',
+    'allow_member_leaderboard' => 'Leaderboards on Analytics and Events',
+    'allow_member_leaderboard_help' => 'Shows the top miners on the Analytics page and on running events. The dashboards keep their own leaderboards, set on the Dashboard page.',
     'show_character_names' => 'Show Character Names',
-    'show_character_names_help' => 'Display full character names in public areas',
+    'show_character_names_help' => 'Names the miners on those leaderboards. Off, they show as Miner and a number.',
     'allow_export_data' => 'Allow Data Export',
     'allow_export_data_help' => 'Exporting is off for everyone when this is off, directors and admins included. Covers mining, tax, analytics, theft, report and moon downloads. Your settings backup is separate and always available.',
     'data_export_disabled' => 'Exporting is switched off. An administrator can turn it back on under Settings, Features, Allow Data Export.',
     
     // Automation & Processing
     'automation_processing' => 'Automation & Processing',
-    'auto_process_ledger' => 'Auto-Process Ledger',
-    'auto_process_ledger_help' => 'Automatically process mining ledger data',
+    'auto_process_ledger' => 'Import Refinery Mining',
+    'auto_process_ledger_help' => 'Reads the mining your refineries record into the plugin every half hour. Off, no refinery mining comes in, so moon ore mined at your refineries is neither taxed nor checked for theft.',
     'ledger_processing_interval' => 'Processing Interval',
     'ledger_processing_interval_help' => 'How often to process ledger data (in minutes). Note: Changing this value requires manually updating the scheduled task interval in SeAT\'s scheduler.',
     'auto_calculate_taxes' => 'Auto-Calculate Taxes',
-    'auto_calculate_taxes_help' => 'Automatically calculate taxes at end of period',
-    'auto_generate_invoices' => 'Auto-Generate Invoices',
-    'auto_generate_invoices_help' => 'Automatically create tax invoices',
-    'verify_wallet_transactions' => 'Verify Wallet Transactions',
-    'verify_wallet_transactions_help' => 'Automatically verify tax payments in wallet',
+    'auto_calculate_taxes_help' => 'Works out each tax period\'s bills in the nightly run once the period has ended. Off, nothing is billed until someone uses Calculate Taxes.',
+    'auto_generate_invoices' => 'Send Invoices',
+    'auto_generate_invoices_help' => 'Each night, tells every member with a new bill, through the Tax Invoice notification. Off, bills are still made, but members are not told about them this way.',
+    'verify_wallet_transactions' => 'Match Wallet Payments',
+    'verify_wallet_transactions_help' => 'Reads the corporation wallet every six hours and matches payments to bills, and shows the Wallet Verification tab. Off, payments are not matched until it is back on.',
     
     // Data Retention
-    'data_retention' => 'Data Retention',
-    'data_retention_warning' => 'Changing retention periods will not immediately delete old data. Run cleanup manually.',
-    'ledger_retention_days' => 'Ledger Retention Period',
-    'ledger_retention_days_help' => 'How long to keep mining ledger records',
-    'auto_cleanup_old_data' => 'Auto-Cleanup Old Data',
-    'auto_cleanup_old_data_help' => 'Automatically delete data older than retention period',
+    'data_retention' => 'Extraction History',
+    'data_retention_warning' => 'Only archived moon extractions are ever deleted here, and only with Auto-Cleanup on. Mining, tax and payment records are never deleted by these.',
+    'ledger_retention_days' => 'Keep Archived Extractions For',
+    'ledger_retention_days_help' => 'How long archived moon extractions are kept when Auto-Cleanup is on. Mining ledger records are not affected.',
+    'auto_cleanup_old_data' => 'Auto-Cleanup Archived Extractions',
+    'auto_cleanup_old_data_help' => 'Once a day, deletes archived moon extractions older than the period above. Nothing else is deleted.',
     
     // Advanced Settings
     'advanced_settings' => 'Advanced Settings',
