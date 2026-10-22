@@ -1326,8 +1326,8 @@ class MasterTestRunner
             return $this->warn(
                 $name,
                 'payments',
-                "Keyword {$keyword}, but Hold surplus as credit is off, so anything paid ahead beyond what a member owes is not held",
-                ['hint' => 'Turn on Hold surplus as credit under Settings, General, or a director has to assign the rest of each pay-ahead by hand.']
+                "Keyword {$keyword}, but keeping what is left over as credit is off, so anything paid ahead beyond what a member owes is not held",
+                ['hint' => 'Turn on Keep anything left over as credit against the next bill, under Settings, Payments, or a director has to assign the rest of each pay-ahead by hand.']
             );
         }
 

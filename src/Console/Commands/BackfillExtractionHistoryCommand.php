@@ -109,7 +109,7 @@ class BackfillExtractionHistoryCommand extends Command
         $moonOwnerCorpId = $settings->getTaxProgramCorporationId();
 
         if ($moonOwnerCorpId === null) {
-            $this->error("  Moon Owner Corporation is not configured. Set it in Settings > General before running backfill.");
+            $this->error("  Moon Owner Corporation is not configured. Set it in Settings > Setup before running backfill.");
             return Command::FAILURE;
         }
 
