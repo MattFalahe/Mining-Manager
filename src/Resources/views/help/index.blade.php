@@ -1516,7 +1516,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </div>
 
                     <h5 class="mt-3"><i class="fas fa-bolt text-warning"></i> Auto-match Wallet Payments</h5>
-                    <p>The "Auto-match wallet payments" toggle on Settings &rarr; General &rarr; Payment Settings controls how the wallet listener handles matched payments. When <strong>ON</strong> (default), the listener applies matched payments to taxes automatically as ESI wallet updates arrive — operators see paid taxes appear in real time without intervention. When <strong>OFF</strong>, matches are detected and listed on the Wallet Verification page but require manual confirmation before any tax row updates.</p>
+                    <p>The <em>Apply matched payments as soon as they are found</em> switch, under Settings, Payments, decides what happens to a payment once it is matched. On (the default), it is applied to the bill as the wallet data arrives, and paid bills show up without anyone doing anything. Off, matches are listed on the Wallet Verification page and wait for someone to confirm them before any bill changes.</p>
                     <p>Useful for installs that want a human-review step before any tax balance moves on the books — for example, multi-corp setups where the director wants to verify each match before crediting, or environments with strict audit requirements. Recommended for most installs to leave ON.</p>
                     <div class="info-box">
                         <i class="fas fa-shield-alt"></i>
@@ -1604,9 +1604,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                     <h4><i class="fas fa-hand-holding-usd"></i> Paying ahead</h4>
                     <p>
-                        With <em>Upfront Payments</em> switched on (Settings, Features), a member can pay
+                        With <em>Let members pay ahead of being billed</em> switched on (Settings, Payments), a member can pay
                         before being invoiced by putting a standing keyword in the transfer reason. The
-                        default is <code>MM-UPFRONT</code> and you can change it under Settings, General.
+                        default is <code>MM-UPFRONT</code> and you can change it under Settings, Payments.
                         Unlike a tax code it never expires and is the same for everyone, so it is safe to
                         put in the corp MOTD.
                     </p>
@@ -1651,7 +1651,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         The plugin cannot send ISK, so you make the transfer in game. The refund comes off the
                         balance as soon as you record it and reads <strong>Awaiting transfer</strong> until
                         the ISK is seen leaving the corporation wallet. Put the refund keyword
-                        (<code>MM-REFUND</code> by default, set under Settings, General) in the transfer
+                        (<code>MM-REFUND</code> by default, set under Settings, Payments) in the transfer
                         reason and it confirms itself as <strong>Sent</strong>. The keyword is what tells a
                         refund apart from an SRP payout of the same amount to the same person. Every wallet
                         division is checked, and with <em>Treat a player's characters as one account</em>
@@ -1676,7 +1676,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                     <p>
                         Two routes stay open, and it is worth knowing about both.
-                        <strong>Hold surplus as credit</strong> (Settings, General) is a separate
+                        <strong>Keep anything left over as credit against the next bill</strong> (Settings, Payments) is a separate
                         switch: with it on, somebody can still build up a balance by overpaying an
                         invoice, even with upfront payments off. Turn that off too if you want the
                         route closed completely. And a <strong>director can still bank a payment by
@@ -1894,8 +1894,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         </table>
                     </div>
                     <p>
-                        Rates are set per corporation under Settings, Tax Rates, where the tax selector also decides
-                        which categories are charged at all. Moon ore is decided first, so a moon rock counts as moon
+                        Rates are set per tax profile under Settings, Tax profiles, which also decides which kinds
+                        of ore each profile charges at all. Moon ore is decided first, so a moon rock counts as moon
                         ore whatever else it might also be.
                     </p>
                 </div>
@@ -3631,7 +3631,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Every miner counts, whether SeAT has a record of the character or not. One of your own
                         corporations means the same here as on the dashboard: its members SeAT knows, members only
                         the background lookups know, and anyone whose mining was recorded under it, less anyone
-                        known to be in another corporation. Pick a guest corporation and you get the characters
+                        known to be in another corporation. Pick a corporation of non-members and you get the characters
                         placed in it, by SeAT or by the lookups.
                     </p>
                     <p>On top of the dates and corporation, Performance Charts can be narrowed three ways:</p>
@@ -3695,18 +3695,25 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                     <h4>{{ trans('mining-manager::help.settings_tabs') }}</h4>
 
-                    <h4>{{ trans('mining-manager::help.settings_global_header') }}</h4>
+                    <h5><i class="fas fa-flag text-primary"></i> {{ trans('mining-manager::help.settings_setup') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_setup_desc') }}</p>
 
-                    <h5><i class="fas fa-sliders-h text-primary"></i> {{ trans('mining-manager::help.settings_general') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_general_desc') }}</p>
+                    <h5><i class="fas fa-percent text-danger"></i> {{ trans('mining-manager::help.settings_profiles') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_profiles_desc') }}</p>
 
-                    <h5><i class="fas fa-tag text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
+                    <h5><i class="fas fa-file-invoice-dollar text-warning"></i> {{ trans('mining-manager::help.settings_billing') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_billing_desc') }}</p>
+
+                    <h5><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.settings_payments') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_payments_desc') }}</p>
+
+                    <h5><i class="fas fa-tags text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_pricing_desc') }}</p>
 
                     <h5><i class="fas fa-toggle-on text-success"></i> {{ trans('mining-manager::help.settings_features') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_features_desc') }}</p>
 
-                    <h5><i class="fas fa-plug text-info"></i> {{ trans('mining-manager::help.settings_webhooks') }}</h5>
+                    <h5><i class="fas fa-satellite-dish text-info"></i> {{ trans('mining-manager::help.settings_webhooks') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_webhooks_desc') }}</p>
 
                     <h5><i class="fas fa-bell text-warning"></i> {{ trans('mining-manager::help.settings_notifications') }}</h5>
@@ -3718,15 +3725,8 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     <h5><i class="fas fa-tachometer-alt text-primary"></i> {{ trans('mining-manager::help.settings_dashboard') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_dashboard_desc') }}</p>
 
-                    <h4>{{ trans('mining-manager::help.settings_corp_header') }}</h4>
-
-                    <h5><i class="fas fa-percentage text-danger"></i> {{ trans('mining-manager::help.settings_tax_rates') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_tax_rates_desc') }}</p>
-
-                    <h4>{{ trans('mining-manager::help.settings_system_header') }}</h4>
-
-                    <h5><i class="fas fa-cogs text-warning"></i> {{ trans('mining-manager::help.settings_advanced') }}</h5>
-                    <p>{{ trans('mining-manager::help.settings_advanced_desc') }}</p>
+                    <h5><i class="fas fa-tools text-warning"></i> {{ trans('mining-manager::help.settings_maintenance') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_maintenance_desc') }}</p>
 
                     <h5><i class="fas fa-question-circle text-info"></i> {{ trans('mining-manager::help.settings_help') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_help_desc') }}</p>
@@ -3906,7 +3906,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                                 <tr>
                                     <td><code>mining-manager:detect-theft</code></td>
                                     <td><span class="badge badge-primary">{{ trans('mining-manager::help.schedule_daily') }}</span> 3:40 AM</td>
-                                    <td>Full scan: adds the previous day's mining to open incidents, takes players with nothing overdue off the list, and opens incidents for guests mining with tax too long overdue, or at all while guest mining is switched off.<br>
+                                    <td>Full scan: adds the previous day's mining to open incidents, takes players with nothing overdue off the list, and opens incidents for non-members mining with tax too long overdue, or at all while non-members may not mine.<br>
                                         <small class="text-muted">Options: <code>--days=15</code> how far back a new incident may reach, <code>--notify</code> send notifications for new incidents</small>
                                     </td>
                                 </tr>

@@ -249,7 +249,7 @@ return [
     'scope_members' => 'All mining',
     'scope_moons' => 'At our moons',
     'scope_members_hint' => "Everything a corporation's members mined, wherever they mined it, counted the same way as on the dashboard.",
-    'scope_moons_hint' => "Moon ore recorded by a corporation's refineries, by miner, guests included. Personal mining is not in it, since nothing in it says whose moon it came off.",
+    'scope_moons_hint' => "Moon ore recorded by a corporation's refineries, by miner, non-members included. Personal mining is not in it, since nothing in it says whose moon it came off.",
     'scope_members_hint_own' => 'Everything your characters mined, wherever you mined it.',
     'scope_moons_hint_own' => "Moon ore your characters mined at our refineries. Mining on other people's moons is not in it.",
     'refinery_owner' => 'Refinery owner',

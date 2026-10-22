@@ -56,7 +56,7 @@ return [
     // Overview Section - Core Features
     'core_features' => 'Core Features',
     'feature_ledger' => 'Mining Ledger',
-    'feature_ledger_desc' => 'Track all mining with volume, quantity and ISK value per character. The Mining Summary shows a month two ways: everything a corporation\'s miners mined, wherever they mined it, or the moon ore its refineries recorded, guests included and split by class. Members see only their own characters in both. All mining can be narrowed to one kind of ore or to where moon ore came from, and on biweekly tax the page shows one half of the month at a time, or the whole month with each half\'s tax.',
+    'feature_ledger_desc' => 'Track all mining with volume, quantity and ISK value per character. The Mining Summary shows a month two ways: everything a corporation\'s miners mined, wherever they mined it, or the moon ore its refineries recorded, non-members included and split by class. Members see only their own characters in both. All mining can be narrowed to one kind of ore or to where moon ore came from, and on biweekly tax the page shows one half of the month at a time, or the whole month with each half\'s tax.',
     'feature_tax' => 'Tax Management',
     'feature_tax_desc' => 'Calculate and collect mining taxes with configurable rates, tax codes, wallet verification, and accumulated mode for alt grouping.',
     'feature_moon' => 'Moon Mining',
@@ -75,12 +75,12 @@ return [
 
     // Quick Start Steps
     'quick_start_guide' => 'Quick Start Guide',
-    'step_1_title' => 'Configure Settings',
-    'step_1_desc' => 'Navigate to Settings and configure your corporation, price provider, and market hub region.',
-    'step_2_title' => 'Set Tax Rates',
-    'step_2_desc' => 'Configure tax rates for different ore categories: moon ore by rarity (R64, R32, R16, R8, R4), regular ore, ice, gas, abyssal ore, and triglavian ore. Select which ore types to tax.',
-    'step_3_title' => 'Configure Tax Payment',
-    'step_3_desc' => 'Set up wallet transfer payment settings including tax code prefix, grace period, reminder schedule, and minimum tax amount.',
+    'step_1_title' => 'Set Up Your Corporations',
+    'step_1_desc' => 'Under Settings, Setup, pick the Moon Owner Corporation, the one that owns your refineries, and add every other corporation whose members you tax. Under Pricing, choose a price provider and market.',
+    'step_2_title' => 'Set the Tax Profiles',
+    'step_2_desc' => 'Under Settings, Tax profiles, give each corporation and the Global profile a billing period, a payment code prefix and a rate for each kind of ore: moon ore by rarity (R64 to R4), ore, ice, gas, abyssal and triglavian ore. Untick what a profile should not tax.',
+    'step_3_title' => 'Set Billing and Payments',
+    'step_3_desc' => 'Settings, Billing has the exemption and minimum tax, due dates, reminders and payment codes. Settings, Payments has the wallet division payments arrive in and how they are matched to bills.',
     'step_4_title' => 'Grant Permissions',
     'step_4_desc' => 'Set up permissions for your members using SeAT\'s ACL system. Assign view, member, director, or admin roles as appropriate.',
     'step_5_title' => 'Start Mining',
@@ -153,7 +153,7 @@ return [
 
     // Tax Periods
     'tax_periods_title' => 'Tax Calculation Periods',
-    'tax_periods_desc' => 'Configure how often taxes are calculated in Settings > Tax Rates > Tax Calculation Period. Two period types are supported:',
+    'tax_periods_desc' => 'Each tax profile has its own billing period, set under Settings, Tax profiles. An account\'s bills follow the profile of its main character\'s corporation on the first of the month. Two period types are supported:',
     'tax_period_monthly' => 'Monthly — One tax bill per calendar month (1st to last day). Calculated on the 2nd of the following month.',
     'tax_period_biweekly' => 'Biweekly — Two tax bills per month: 1st-14th and 15th-end. Calculated on the 2nd and 16th.',
     // tax_period_weekly removed in v1.0.3. Historical rows with period_type='weekly' still render via MiningTax::formatted_period.
@@ -198,72 +198,72 @@ return [
     // ================================================================
     // Corporation Tax Model
     // ================================================================
-    'corp_tax_model_title' => 'Corporation Tax Model — How Corporations and Tax Rates Interact',
-    'corp_tax_model_intro' => 'Mining Manager uses two key settings to determine who gets taxed and at what rate. Understanding this model is essential for multi-corporation setups.',
+    'corp_tax_model_title' => 'Who Is Taxed, and by Which Profile',
+    'corp_tax_model_intro' => 'Two things decide who pays what: the Moon Owner Corporation, whose refineries are watched, and the tax profiles, one for each configured corporation plus Global for everyone else.',
 
-    'corp_model_moon_owner_title' => 'Moon/Structure Owner Corporation',
-    'corp_model_moon_owner_desc' => 'This is the corporation that owns the moon mining structures (configured in Settings > General). Only mining observer data from THIS corporation\'s structures is used for moon ore taxation. If someone else\'s corporation has a director in your SeAT, their observer data will flow into the database but will be completely ignored for tax purposes — you will never accidentally tax someone for mining on structures you don\'t own.',
+    'corp_model_moon_owner_title' => 'Moon Owner Corporation',
+    'corp_model_moon_owner_desc' => 'The corporation that owns your refineries and runs the tax program, set under Settings, Setup. Mining at its refineries is what non-members are taxed for and what theft detection watches. Mining SeAT records at other corporations\' refineries is only ever taxed for your own members, and only by a profile that taxes all moon ore.',
 
-    'corp_model_configured_title' => 'Configured Corporations (Switch Corporation Context)',
-    'corp_model_configured_desc' => 'A corporation picked under "Switch Corporation Context" gets its own tax rates once you save them. When a member of that corporation mines, they are taxed at their corporation\'s configured rates. Character ledger data (regular ore, ice, gas mined anywhere) is taxed based on which configured corporation the miner belongs to. If a character is not a member of any configured corporation, their character ledger mining is not taxed.',
+    'corp_model_configured_title' => 'Configured Corporations and Their Profiles',
+    'corp_model_configured_desc' => 'Each corporation on the Setup list has a tax profile of its own, and the Moon Owner is always on it. Its members are taxed by that profile, at its rates and on its billing period, for mining at your refineries and for their own mining anywhere else. Adding a corporation starts its profile as a copy of the Moon Owner\'s. Everyone in any other corporation is a non-member, taxed by the Global profile.',
 
     'corp_model_flow_title' => 'How Mining Entries Are Processed',
-    'corp_model_flow_desc' => 'Every mining entry in the database has a corporation_id field. Here is how the system decides what to do with each entry:',
+    'corp_model_flow_desc' => 'Every day of mining is placed by the corporation the pilot was in that day. Here is what happens to each kind of entry:',
 
     'corp_model_col_situation' => 'Situation',
     'corp_model_col_source' => 'Data Source',
     'corp_model_col_result' => 'Result',
 
-    'corp_model_row1_situation' => 'Corp A member mines on Moon Owner Corp\'s moon',
-    'corp_model_row1_source' => 'Observer (Moon Owner Corp)',
-    'corp_model_row1_result' => 'Taxed at Corp A\'s moon ore rates',
+    'corp_model_row1_situation' => 'A member of a configured corporation mines at the Moon Owner\'s refineries',
+    'corp_model_row1_source' => 'Observer (Moon Owner)',
+    'corp_model_row1_result' => 'Taxed by their corporation\'s profile',
 
-    'corp_model_row2_situation' => 'Guest miner (no configured corp) mines on Moon Owner Corp\'s moon',
-    'corp_model_row2_source' => 'Observer (Moon Owner Corp)',
-    'corp_model_row2_result' => 'Taxed at guest rates (0% = no tax)',
+    'corp_model_row2_situation' => 'A non-member mines at the Moon Owner\'s refineries',
+    'corp_model_row2_source' => 'Observer (Moon Owner)',
+    'corp_model_row2_result' => 'Taxed by the Global profile. At 100% they may not mine there: billed in full and flagged as theft',
 
-    'corp_model_row3_situation' => 'Anyone mines on another corp\'s moon (not Moon Owner)',
-    'corp_model_row3_source' => 'Observer (other corp)',
-    'corp_model_row3_result' => 'Skipped entirely — not your structure',
+    'corp_model_row3_situation' => 'A member mines moon ore away from the Moon Owner\'s refineries',
+    'corp_model_row3_source' => 'Another corporation\'s observer, or the character ledger',
+    'corp_model_row3_result' => 'Taxed only if their profile taxes all moon ore',
 
-    'corp_model_row4_situation' => 'Corp A member mines regular ore/ice/gas anywhere',
-    'corp_model_row4_source' => 'Character ledger (NULL corp)',
-    'corp_model_row4_result' => 'Taxed at Corp A\'s ore/ice/gas rates',
+    'corp_model_row4_situation' => 'A member mines ore, ice or gas anywhere',
+    'corp_model_row4_source' => 'Character ledger',
+    'corp_model_row4_result' => 'Taxed by their corporation\'s profile, for each kind it taxes',
 
-    'corp_model_row5_situation' => 'Non-configured character mines ore anywhere',
-    'corp_model_row5_source' => 'Character ledger (NULL corp)',
-    'corp_model_row5_result' => 'Skipped — not a member of any configured corp',
+    'corp_model_row5_situation' => 'A non-member mines anywhere else',
+    'corp_model_row5_source' => 'Character ledger, or another corporation\'s observer',
+    'corp_model_row5_result' => 'Not taxed while any corporation is configured',
 
     'corp_model_multicorp_title' => 'Multi-Corporation / Alliance Setup',
-    'corp_model_multicorp_desc' => 'You can configure multiple corporations with different tax rates. For example, in an alliance: Corp A at 10% moon tax and Corp B at 15% moon tax. When Corp A members mine on the Moon Owner Corporation\'s moon, they pay Corp A\'s rates. Corp B members on the same moon pay Corp B\'s rates. If Corp B also has their own moons and a director in SeAT, that observer data flows in but is never used for your tax calculations — only Moon Owner Corporation observer data matters.',
+    'corp_model_multicorp_desc' => 'Configure every corporation you tax, each with its own rates. In an alliance, with Corp A at 10% moon tax and Corp B at 15%, Corp A\'s members pay 10% for mining at the Moon Owner\'s refineries and Corp B\'s members pay 15% on the same moon. One corporation can be billed monthly and another twice a month, and each can have its own payment code prefix.',
 
-    'corp_model_observer_warning' => 'If a SeAT user has a director alt in another corporation, that corporation\'s mining observer data will be imported into your database. This is normal SeAT behavior. Mining Manager will ignore all observer data that does not come from your configured Moon Owner Corporation — those entries are skipped during daily summary generation and tax calculation.',
+    'corp_model_observer_warning' => 'If a SeAT user has a director alt in another corporation, that corporation\'s mining observer data comes into your database too. That is normal SeAT behaviour. Non-members are never taxed for it, and your members only for moon ore, by a profile set to tax all moon ore.',
 
     // Tax Rates and Categories
     'tax_rates_explained' => 'Tax Rates and Ore Categories',
-    'tax_rates_desc' => 'Tax rates are configured per-corporation in Settings > Tax Rates. Each ore category has its own rate:',
+    'tax_rates_desc' => 'Rates are set per tax profile under Settings, Tax profiles. Each kind of ore has its own rate:',
     'tax_rate_moon_ore' => 'Moon Ore — Separate rates for each rarity tier: R64, R32, R16, R8, R4. Higher rarity typically means higher tax.',
     'tax_rate_regular_ore' => 'Regular Ore — A single rate applied to all non-moon, non-ice, non-gas ores (Veldspar, Scordite, Plagioclase, etc.).',
     'tax_rate_ice' => 'Ice — Applied to all ice mining products.',
     'tax_rate_gas' => 'Gas — Applied to all gas cloud harvesting.',
-    'tax_rate_abyssal' => 'Abyssal Ore: Bezdnacine, Rakovene and Talassonite, every grade and compressed form. Nullsec and wormhole border ore, including Ore Prospecting Array escalations. Disabled by default in the Tax Selector.',
-    'tax_rate_triglavian' => 'Triglavian Ore: mission and site objective ore (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). None of it can be sold or reprocessed, so this rate never charges anything. Disabled by default in the Tax Selector.',
+    'tax_rate_abyssal' => 'Abyssal Ore: Bezdnacine, Rakovene and Talassonite, every grade and compressed form. Nullsec and wormhole border ore, including Ore Prospecting Array escalations. Not taxed by default.',
+    'tax_rate_triglavian' => 'Triglavian Ore: mission and site objective ore (Banidine, Augumene, Mercium, Lyavite, Pithix, Green Arisite, Oeryl, Geodite, Polygypsum). None of it can be sold or reprocessed, so this rate never charges anything. Not taxed by default.',
 
     // Tax Selector
-    'tax_selector_explained' => 'Tax Selector (What Gets Taxed)',
-    'tax_selector_desc' => 'The Tax Selector controls which ore categories are subject to taxation. Found in Settings > Tax Rates under "Tax Selector":',
-    'tax_selector_all_moon' => 'All Moon Ore — Tax all moon ore regardless of which structure it was mined from.',
-    'tax_selector_corp_moon' => 'Only Corp Moon Ore — Only tax moon ore mined from structures owned by your configured Moon Owner Corporation. Moon ore mined from other corporations\' structures is not taxed.',
-    'tax_selector_no_moon' => 'No Moon Ore — Disable moon ore taxation entirely.',
-    'tax_selector_toggles' => 'Individual toggles exist for regular ore, ice, gas, abyssal ore, and triglavian ore. Each can be independently enabled or disabled.',
+    'tax_selector_explained' => 'What Each Profile Taxes',
+    'tax_selector_desc' => 'Each profile chooses what it taxes, on the same page. Moon ore has three choices:',
+    'tax_selector_all_moon' => 'All moon ore: the moon ore your members mine anywhere SeAT can see it, at your refineries, at other corporations\' refineries SeAT tracks, and in their own mining ledgers.',
+    'tax_selector_corp_moon' => 'Only at your refineries: moon ore mined at the Moon Owner\'s refineries.',
+    'tax_selector_no_moon' => 'Not taxed: no moon ore at all.',
+    'tax_selector_toggles' => 'Ore, ice, gas, abyssal ore and triglavian ore each have a tick box beside their rate. The Global profile has nothing to set for them while any corporation is configured, since non-members are only taxed for their mining at your refineries.',
 
-    // Guest Mining
-    'guest_mining_explained' => 'Guest Mining and Guest Tax Rates',
-    'guest_mining_desc' => 'A "guest miner" is any character whose corporation is not in the list of configured ("home") corporations. The home corporation list includes all corporations with settings configured (any corp you have saved settings for under "Switch Corporation Context") plus the Moon Owner Corporation. Guest miners only appear via moon mining observer data: they are characters who mine on your Moon Owner Corporation\'s structures but are not members of any configured corporation.',
-    'guest_rates_config' => 'Guest tax rates are configured in Settings > General under "Guest Miner Tax Rates" and are always tied to the Moon Owner Corporation. These are global rates — they do not change when you switch corporation context. You can set different rates for each category (moon ore by rarity, regular ore, ice, gas, abyssal, triglavian).',
-    'guest_mining_switch' => 'Allow Guest Mining, under Settings, Features, decides whether guests may mine your moons at all. Switched off, guests are still billed at these rates, and any moon ore a guest mines at the moon owner\'s refineries from the next day on opens a theft incident.',
-    'guest_zero_rate' => 'Setting a guest rate to 0 means actual 0% tax (no tax charged). It does NOT fall back to the regular member rate. If you want guests to pay the same rate as members, enter the same percentage. If you want guests to mine for free, set it to 0.',
-    'guest_detection' => 'Guest detection happens automatically during daily summary generation by comparing each character\'s corporation ID against all configured corporations. Members of any configured corporation are taxed at that corporation\'s rates, not as guests. Guest miners\' character ledger data (non-moon mining) is not taxed — only their moon mining on your structures is subject to guest rates.',
+    // Non-members and the Global profile
+    'guest_mining_explained' => 'Non-Members and the Global Profile',
+    'guest_mining_desc' => 'A non-member is anyone whose corporation was not on the Setup list on the day they mined. With corporations configured, the Global profile taxes non-members for their mining at your refineries only, never for their own mining elsewhere. With none configured, Global taxes everyone, for all of their mining.',
+    'guest_rates_config' => 'Global\'s moon rates decide what non-members may do. Between 0% and 100% they pay those rates, and a bill they leave unpaid more than Days Overdue Before Theft (Settings, Features) counts as theft. The Tax profiles page says which of these applies.',
+    'guest_mining_switch' => 'At 100% for every rarity, only configured corporations may mine your moons. A non-member\'s mining there is billed in full and flagged as theft as soon as it is imported, and paying the bill closes the incident. This is what Allow Guest Mining switched off became.',
+    'guest_zero_rate' => 'At 0%, non-members mine for free. That is a real 0%, not "use the member rate", and theft detection cannot flag anyone who never owes anything.',
+    'guest_detection' => 'Each day of mining is placed by the corporation the pilot was in that day, from SeAT\'s corporation history, so someone who joins or leaves is taxed as a member for the days they were one.',
 
     // Event Tax Modifiers
     'event_modifiers_explained' => 'Mining Event Tax Modifiers',
@@ -319,9 +319,9 @@ return [
     'exemptions_explained' => 'Exemptions and Minimum Tax',
     'exemptions_desc' => 'Two thresholds control small tax amounts. They are evaluated in order during tax calculation:',
     'exemption_threshold' => 'Exemption Threshold',
-    'exemption_threshold_desc' => 'If an account\'s total calculated tax for the period, a main and its alts added together, is below this amount, it is exempt from tax entirely and no invoice is generated. This is useful for encouraging new players to try mining without being charged for very small amounts. Switch on Enable Tax Exemption Threshold in Settings > Tax Rates to use it. Default: 1,000,000 ISK, off until switched on.',
+    'exemption_threshold_desc' => 'If an account\'s total calculated tax for the period, a main and its alts added together, is below this amount, it is exempt from tax entirely and no invoice is generated. This is useful for encouraging new players to try mining without being charged for very small amounts. Tick Do not bill an account whose tax is below the exemption threshold, under Settings, Billing, to use it. Default: 1,000,000 ISK, off until switched on.',
     'minimum_tax' => 'Minimum Tax Amount',
-    'minimum_tax_desc' => 'If an account\'s tax is above the exemption threshold but below the minimum tax amount, the system applies one of two behaviors (configurable in Settings > Tax Rates):',
+    'minimum_tax_desc' => 'If an account\'s tax is above the exemption threshold but below the minimum tax amount, the system applies one of two behaviors (Below the minimum, under Settings, Billing):',
     'minimum_tax_behavior_exempt' => 'No tax (default) — The tax is treated as zero and no invoice is generated. The miner is not charged.',
     'minimum_tax_behavior_enforce' => 'Enforce minimum — The tax is raised to the minimum amount. The miner receives an invoice for the minimum regardless of their actual mining value.',
     'minimum_tax_default' => 'Default: 1,000,000 ISK with "No tax" behavior. Set the amount to 0 to disable minimum tax entirely.',
@@ -343,9 +343,9 @@ return [
     'tax_codes_desc' => 'Each member receives a unique tax code for each tax period. The code includes a configurable prefix followed by a random alphanumeric string.',
     'tax_codes_usage' => 'Your tax code looks like this:',
     'tax_code_example' => 'TAX-MINC-VX45XUQC (prefix "TAX-MINC-" + unique code)',
-    'tax_code_prefix_note' => 'The tax code prefix is configured in Settings > Tax Rates. The EVE transfer reason field has a 40-character limit, so keep the prefix short.',
+    'tax_code_prefix_note' => 'Each tax profile has its own payment code prefix, set under Settings, Tax profiles, and a code is made with the prefix of the profile its bill follows. The EVE transfer reason field has a 40-character limit, so keep the prefix short.',
     'tax_code_length_title' => 'Code Length',
-    'tax_code_length_desc' => 'The code length (excluding the prefix) can be configured in Settings > Tax Rates. Available options are 6, 8, 10, or 12 characters. The default is 8. Longer codes reduce the chance of accidental collisions but take more space in the EVE transfer reason field.',
+    'tax_code_length_desc' => 'The code length (excluding the prefix) is set under Settings, Billing, Payment codes. Available options are 6, 8, 10, or 12 characters. The default is 8. Longer codes reduce the chance of accidental collisions but take more space in the EVE transfer reason field.',
     'tax_code_length_change_title' => 'Changing Code Length',
     'tax_code_length_change_desc' => 'You can safely change the code length at any time. New tax codes will be generated with the new length, while existing unpaid tax codes with the old length will continue to match correctly. The system automatically detects all active code lengths and tries each when matching wallet transactions. Once all old-length codes are paid or expired, only the new length is used.',
     'tax_code_matching_title' => 'How Payment Matching Works',
@@ -432,12 +432,12 @@ return [
 
     // Theft Detection
     'theft_detection_guide' => 'Theft Detection Guide',
-    'theft_detection_intro' => 'Theft detection watches the moon ore mined at the Moon Owner Corporation\'s refineries by characters outside every configured corporation. Members are never flagged: their overdue bills are for the reminders and the outstanding digest.',
+    'theft_detection_intro' => 'Theft detection watches the moon ore mined at the Moon Owner Corporation\'s refineries by non-members, characters outside every configured corporation. Members are never flagged: their overdue bills are for the reminders and the outstanding digest.',
     'how_theft_detection_works' => 'How It Works',
-    'theft_step_1' => 'Every night the scan reads the mining ledger for moon ore mined at the moon owner\'s refineries by characters outside your corporations. A character not placed in any corporation yet is left out until the lookup places them.',
-    'theft_step_2' => 'That mining is theft when a bill on the player\'s account (the main and alts, or the character alone if SeAT does not know it) is more than Days Overdue Before Theft past its due date and still unpaid, or when Allow Guest Mining is switched off. Both are under Settings, Features.',
+    'theft_step_1' => 'Every night the scan reads the mining ledger for moon ore mined at the moon owner\'s refineries by non-members. A character not placed in any corporation yet is left out until the lookup places them. While non-members may not mine, the same check also runs after each refinery import.',
+    'theft_step_2' => 'That mining is theft when a bill on the player\'s account (the main and alts, or the character alone if SeAT does not know it) is more than Days Overdue Before Theft past its due date and still unpaid, or at once when the Global profile\'s moon rates are 100%, which means non-members may not mine. Days Overdue Before Theft is under Settings, Features, and the rates under Settings, Tax profiles.',
     'theft_step_3' => 'Each player has one incident open at a time, named after the character caught mining. Every night the previous day\'s mining is added to it, and the 6-hourly check sends an Active Theft alert when they mine again.',
-    'theft_step_4' => 'An incident comes off the list once nothing on the player\'s account is overdue. Incidents raised while guest mining was switched off stay until a director resolves them, as paying the bill does not undo the mining.',
+    'theft_step_4' => 'An incident comes off the list once nothing on the player\'s account is overdue. One raised while non-members may not mine closes once all the mining in it has been billed and paid. One raised before the update, while Allow Guest Mining was off, waits for a director to resolve it.',
     'theft_commands' => 'Theft Detection Commands',
     'theft_detect_desc' => 'Adds the previous day\'s mining to open incidents, takes players with nothing overdue off the list, and opens incidents for new theft. Runs daily.',
     'theft_monitor_desc' => 'Sends an Active Theft alert when a player on the list mines again. Runs every 6 hours.',
@@ -473,13 +473,18 @@ return [
 
     // Settings
     'settings_guide' => 'Settings Configuration Guide',
-    'settings_intro' => 'The settings page is organized into Global Settings (apply to all corporations), Corporation-Specific Settings (per-corp overrides), and System Settings. Admin permission is required to modify settings.',
-    'settings_tabs' => 'Settings Tabs',
+    'settings_intro' => 'Settings hold what applies to the whole install, and the tax profiles: one for each configured corporation, and Global for everyone else. Admin permission is required to change them.',
+    'settings_tabs' => 'Settings Pages',
+    'settings_setup' => 'Setup',
+    'settings_setup_desc' => 'The Moon Owner Corporation, the one that owns your refineries and runs the tax program, and the list of configured corporations. Adding one gives it a tax profile copied from the Moon Owner\'s, and removing one makes its members non-members from then on.',
+    'settings_profiles' => 'Tax profiles',
+    'settings_profiles_desc' => 'Every profile side by side, Global first: how often its bills go out, the prefix on its payment codes, what it taxes and at which rate. Above the Global column, a line says what its moon rates mean for non-members. A new billing period waits for the 3rd of next month unless you tick Change billing periods today.',
+    'settings_billing' => 'Billing',
+    'settings_billing_desc' => 'For the whole install: the exemption threshold and minimum tax, days to pay, the wallet delay allowance, when a part-paid bill counts as overdue, reminders, and how payment codes are made.',
+    'settings_payments' => 'Payments',
+    'settings_payments_desc' => 'The wallet division payments arrive in, the match tolerance, whether a match applies at once, whether a player\'s characters count as one account, what happens to money beyond a bill, and the upfront payment and refund keywords.',
 
     // Global Settings
-    'settings_global_header' => 'Global Settings',
-    'settings_general' => 'General',
-    'settings_general_desc' => 'Moon owner corporation, payment settings (match tolerance, grace period), and Guest Miner Tax Rates (global rates tied to Moon Owner Corporation — 0% means no tax).',
     'settings_pricing' => 'Pricing',
     'settings_pricing_desc' => 'Price provider (SeAT / Janice / Fuzzwork / Manager Core), price type (sell, buy, or average), refining efficiency for mineral price valuation, and cache duration. When Manager Core is the provider, the market + price-type lookup is centralized in MC (single source of truth) — the panel becomes a read-only status readout plus a "Configure pricing in Manager Core →" deep-link that lands you on MC\'s Pricing Preferences page with Mining Manager\'s row in view. MC routes the lookup through whichever provider is configured per market (Fuzzwork for hubs by default; Goonpraisal for the 7 pre-seeded nullsec markets) so changing your market in MC also switches the upstream silently. <strong>Per-plugin provider override</strong> on MC\'s Pricing Preferences page lets you route Mining Manager specifically through a different provider than the market\'s default (e.g. Janice for Jita tax accuracy) without affecting other plugins reading the same market. Fallback-to-Jita auto-fills any zero-priced types from Jita as a per-item safety net. The fallback price provider (Fuzzwork by default, Janice, Manager Core or none) prices instead when the provider fails outright, for the same market and price type, and the Price Provider Trouble notification says when that happens.',
     'settings_features' => 'Features',
@@ -489,19 +494,15 @@ return [
     'settings_notifications' => 'Notifications',
     'settings_notifications_desc' => 'Configure notification delivery settings. Each notification type has a card with its master switch and Discord role ping, user pinging for personal tax notifications (requires seat-connector), and the Outstanding Mining Tax card also chooses which corporations its digest covers. The same tab holds the Moon Planner timings (the minimum gap between moons, the spacing between pulls on one refinery, and the reminder hours), the Metenox bay threshold, Moon Scan Missing\'s daily reminder, and the Slack channel.',
     'settings_dashboard' => 'Dashboard',
-    'settings_dashboard_desc' => 'Choose which corporations the dashboard\'s Top Miners boards include: every corporation, or only the ones you pick. It is one setting for the whole install, whichever corporation the settings page is set to.',
+    'settings_dashboard_desc' => 'Choose which corporations the dashboard\'s Top Miners boards include: every corporation, or only the ones you pick. It is one setting for the whole install.',
     'settings_routing_map' => 'Notification Routing Map',
     'settings_routing_map_desc' => 'A read-only view of where each notification goes: which webhooks receive it and which role it pings. It warns about a notification that is switched on but reaches no webhook. Nothing on it can be changed; use the Webhooks and Notifications tabs for that.',
+    'settings_maintenance' => 'Maintenance',
+    'settings_maintenance_desc' => 'What the move into tax profiles did on this install, clearing the price cache, exporting and importing settings, and resetting them to defaults. A reset keeps the plugin\'s own records, such as cutover dates.',
 
     // Corporation-Specific Settings
-    'settings_corp_header' => 'Corporation-Specific Settings',
-    'settings_tax_rates' => 'Tax Rates',
-    'settings_tax_rates_desc' => 'Per-corporation tax configuration with three sections: Tax Rates (moon ore by rarity R64-R4, regular ore, ice, gas, abyssal, triglavian), Tax Selector (which ore types to include), and Exemptions (minimum thresholds). Switch corporation context to set different rates for each configured corporation. Guest Miner Tax Rates have moved to General Settings.',
 
     // System Settings
-    'settings_system_header' => 'System Settings',
-    'settings_advanced' => 'Advanced',
-    'settings_advanced_desc' => 'System maintenance tools: clear price cache, reset settings to defaults, export/import settings as JSON, and view system information. Use with caution — some actions cannot be undone.',
     'settings_help' => 'Help & Documentation',
     'settings_help_desc' => 'Quick access to this help page from within the settings panel.',
 
@@ -555,7 +556,7 @@ return [
     'faq_q7' => 'What is a jackpot extraction?',
     'faq_a7' => 'A jackpot chunk is made of the +100% variants of its ores (Shining Monazite rather than Monazite, for example), which reprocess to about twice the minerals, so the chunk is worth about twice as much. ESI does not say which chunks are jackpots, so the plugin finds them in the mining ledger once the ore is mined, or takes a member\'s report from the extraction page.',
     'faq_q8' => 'How does theft detection work?',
-    'faq_a8' => 'A guest mining your moons is put on the theft list when a bill on their account is more than Days Overdue Before Theft past its due date (15 by default), or at all when Allow Guest Mining is switched off. Members are never flagged.',
+    'faq_a8' => 'A non-member mining your moons is put on the theft list when a bill on their account is more than Days Overdue Before Theft past its due date (15 by default), or as soon as their mining is imported when the Global profile\'s moon rates are 100%. Members are never flagged.',
     'faq_q9' => 'How do mining events work?',
     'faq_a9' => 'Mining events are time-limited operations where participants earn bonus multipliers. The bonus reduces effective tax rates, incentivizing participation.',
     'faq_q10' => 'Is this compatible with other SeAT plugins?',
@@ -714,10 +715,10 @@ return [
 
     'collect_setup_title' => 'One-Time Setup',
     'collect_setup_desc' => 'Before taxes can be collected, an admin needs to configure these settings:',
-    'collect_setup_step_1' => 'Settings > Tax Rates — Set tax percentages for each ore type (moon R64-R4, regular ore, ice, gas). The tax selector controls which ore types are taxed.',
-    'collect_setup_step_2' => 'Settings > General — Set the moon owner corporation and payment settings. Settings > Pricing — Set the price provider and market region. These control how ore values are calculated.',
+    'collect_setup_step_1' => 'Settings, Setup: pick the Moon Owner Corporation and add every corporation whose members you tax.',
+    'collect_setup_step_2' => 'Settings, Tax profiles: give each profile its billing period, code prefix and rates, and choose what it taxes. Settings, Billing and Payments: due dates, reminders, the wallet division and how payments are matched. Settings, Pricing: the price provider and market, which decide what ore is worth.',
     'collect_setup_step_3' => 'Settings > Webhooks — Create webhook(s) for Discord/Slack notifications. Enable the tax-related toggles (Tax Generated, New Invoices Announcement, Tax Reminder, Tax Invoice, Tax Overdue) so members get notified, and Outstanding Mining Tax on a directors\' channel for the weekly list of who still owes.',
-    'collect_setup_step_4' => 'Settings > Features — Make sure "Wallet Verification" and "Notifications" are enabled.',
+    'collect_setup_step_4' => 'Settings, Features: make sure Match Wallet Payments and Send Invoices are on.',
 
     'collect_timeline_title' => 'The Tax Collection Timeline',
     'collect_timeline_desc' => 'Here is what happens each month (or period), step by step:',
@@ -728,7 +729,7 @@ return [
     'collect_step_5' => 'Members pay by sending ISK to the corp wallet with their tax code in the "Reason" field.',
     'collect_step_6' => 'Every 6 hours, the verify-payments command scans the corporation wallet journal and auto-matches payments using tax codes. Matched payments update the bill status.',
     'collect_step_7' => 'Daily at 10:00 AM, the send-reminders command checks for unpaid taxes approaching their due date and sends reminder notifications to those members.',
-    'collect_step_8' => 'Once the due date is over, an unpaid bill is marked "Overdue" (later if the ESI Wallet Lag Buffer under Settings, General is set above its default 24 hours, to give a payment made late on the due date time to reach SeAT). You can view all overdue taxes on the Tax Overview page and take action.',
+    'collect_step_8' => 'Once the due date is over, an unpaid bill is marked "Overdue" (later if the Wallet delay allowance under Settings, Billing is set above its default 24 hours, to give a payment made late on the due date time to reach SeAT). You can view all overdue taxes on the Tax Overview page and take action.',
 
     'collect_reminders_title' => 'Sending Reminders',
     'collect_reminders_desc' => 'There are three ways to remind members about unpaid taxes:',
