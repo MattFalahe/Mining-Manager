@@ -21,6 +21,27 @@ class SettingsManagerService
     const CACHE_PREFIX = 'mining_manager_settings_';
 
     /**
+     * The plugin's own records, kept in the settings table but not settings:
+     * cutover dates, and when an alert or digest last went out. A reset to
+     * defaults leaves them where they are.
+     */
+    private const RECORD_KEYS = [
+        'classification.epoch',
+        'payment.dedup_epoch',
+        'tax.part_payment_epoch',
+        'theft.counting_from',
+        'pricing.provider_status',
+        'payment.last_outstanding_digest_at',
+        'notifications.schedule_needs_filling_last_sent',
+        'notifications.moon_scan_missing_daily_last_sent',
+        'notifications.slack_legacy_success_count',
+        'notifications.slack_legacy_failure_count',
+        'notifications.slack_legacy_last_success_at',
+        'notifications.slack_legacy_last_failure_at',
+        'notifications.slack_legacy_last_error',
+    ];
+
+    /**
      * Active corporation ID for settings context
      *
      * @var int|null
@@ -1509,44 +1530,39 @@ class SettingsManagerService
     /**
      * Reset all settings to config defaults
      *
+     * The plugin's own records in the same table stay. Cutover dates decide
+     * what still follows the older rules, so losing them would reopen what is
+     * already settled.
+     *
      * @return void
      */
     public function resetToDefaults()
     {
-        DB::beginTransaction();
+        // Get all setting keys before deleting so we can clear their cache entries
+        $settingKeys = Setting::pluck('key')->toArray();
+        $corporationIds = Setting::whereNotNull('corporation_id')
+            ->distinct()
+            ->pluck('corporation_id')
+            ->toArray();
 
-        try {
-            // Get all setting keys before truncating so we can clear their cache entries
-            $settingKeys = Setting::pluck('key')->toArray();
-            $corporationIds = Setting::whereNotNull('corporation_id')
-                ->distinct()
-                ->pluck('corporation_id')
-                ->toArray();
+        Setting::whereNotIn('key', self::RECORD_KEYS)->delete();
 
-            Setting::truncate();
-
-            // Clear only mining-manager cache keys (not the entire application cache)
-            foreach ($settingKeys as $key) {
-                Cache::forget(self::CACHE_PREFIX . 'global_' . $key);
-                foreach ($corporationIds as $corpId) {
-                    Cache::forget(self::CACHE_PREFIX . $corpId . '_' . $key);
-                }
+        // Clear only mining-manager cache keys (not the entire application cache)
+        foreach ($settingKeys as $key) {
+            Cache::forget(self::CACHE_PREFIX . 'global_' . $key);
+            foreach ($corporationIds as $corpId) {
+                Cache::forget(self::CACHE_PREFIX . $corpId . '_' . $key);
             }
-
-            // Also try tag-based flush if cache driver supports it
-            try {
-                Cache::tags(['mining-manager'])->flush();
-            } catch (\Exception $cacheException) {
-                // File/database cache driver doesn't support tags - acceptable
-            }
-
-            Log::info('Mining Manager: All settings reset to defaults');
-
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
         }
+
+        // Also try tag-based flush if cache driver supports it
+        try {
+            Cache::tags(['mining-manager'])->flush();
+        } catch (\Exception $cacheException) {
+            // File/database cache driver doesn't support tags - acceptable
+        }
+
+        Log::info('Mining Manager: All settings reset to defaults');
     }
 
     /**

@@ -75,6 +75,7 @@ All notable changes to Mining Manager will be documented in this file.
 ### Settings
 
 - Fixed: **importing a settings export saved every json setting as text.** The export carries those values as they are stored and the import encoded them a second time, so after an import they no longer read back as what was exported, the notification type switches and their options among them. An import now saves each one exactly as it was exported. Exports were always right, so files made before this update import correctly now.
+- Fixed: **Reset to Defaults also wiped the plugin's own records** from the settings table: the cutover dates that keep the newer ore classes, wallet matching and part payments away from what came before them, and when the outstanding digest and other reminders last went out. After a reset a reprice could re-rate old mining under the newer ore classes, and the digest could go out again early. A reset now clears the settings and keeps those records.
 
 ### Scheduled Commands
 
