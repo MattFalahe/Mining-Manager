@@ -76,7 +76,7 @@
             @if(!empty($transferReport['superseded']))
                 <details>
                     <summary>Copies the plugin stopped reading ({{ count($transferReport['superseded']) }})</summary>
-                    <p class="text-muted mt-2 mb-2">Saved under one corporation for a setting that has one value for the whole install. They stay in the table, unused.</p>
+                    <p class="text-muted mt-2 mb-2">Saved under one corporation for a setting that has one value for the whole install, so nothing reads them.</p>
                     <div class="table-responsive">
                         <table class="table table-sm table-mm">
                             <thead>
@@ -95,6 +95,12 @@
                         </table>
                     </div>
                 </details>
+            @endif
+
+            @if(($retiredRows ?? 0) > 0)
+                <p class="mt-3 mb-0">
+                    Once settings were in tax profiles, {{ $retiredRows }} rows nothing reads any more were cleared from the settings table: retired settings, and copies saved under a corporation of settings that have one value for the whole install. A copy of each is kept in the <code>mining_manager_settings_archive</code> table.
+                </p>
             @endif
         @else
             <div class="alert alert-warning mb-0">

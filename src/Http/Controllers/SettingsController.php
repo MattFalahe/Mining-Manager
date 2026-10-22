@@ -140,6 +140,10 @@ class SettingsController extends Controller
                 array_column($transferReport['superseded'] ?? [], 'corporation_id')
             ))->get(['corporation_id', 'name', 'ticker'])->keyBy('corporation_id')
             : collect();
+        // The rows migration 000039 cleared once settings were in profiles.
+        $retiredRows = $transferReport && Schema::hasTable('mining_manager_settings_archive')
+            ? DB::table('mining_manager_settings_archive')->where('reason', 'retired_settings')->count()
+            : 0;
 
         // Get webhooks for the settings page
         $webhooks = \MiningManager\Models\WebhookConfiguration::all();
@@ -195,7 +199,8 @@ class SettingsController extends Controller
             'usesTaxProfiles',
             'overdueDays',
             'transferReport',
-            'reportCorporations'
+            'reportCorporations',
+            'retiredRows'
         ));
     }
 
