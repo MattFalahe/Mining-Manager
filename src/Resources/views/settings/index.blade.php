@@ -161,6 +161,13 @@
                         @include('mining-manager::settings.tabs.payments')
                     </div>
 
+                    {{-- Moon Planner --}}
+                    <div id="planner" class="settings-section">
+                        @include('mining-manager::settings.tabs.planner', [
+                            'notificationSettings' => $settings['notifications'] ?? [],
+                        ])
+                    </div>
+
                     {{-- Pricing Tab --}}
                     <div id="pricing" class="settings-section">
                         @include('mining-manager::settings.tabs.pricing', ['settings' => $settings])

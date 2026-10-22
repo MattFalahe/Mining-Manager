@@ -807,51 +807,6 @@ class SettingsController extends Controller
                 'min:50',
                 'max:99',
             ],
-            // Moon Extraction Planner minimum gap (hours). Bounded [1, 168]
-            // (1 week) — clusters tighter than an hour are nonsensical and a
-            // gap wider than a week defeats staggering on weekly cadences.
-            'min_extraction_gap_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:168',
-            ],
-            // How close two pulls on one refinery may be, entered in days and
-            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
-            // longest.
-            'min_refinery_spacing_days' => [
-                'nullable',
-                'numeric',
-                'min:6',
-                'max:56',
-            ],
-            // Moon Not Rescheduled: hours a drill sits idle after its chunk
-            // arrives before the reminder goes, and between repeats. Up to two
-            // weeks; past that the reminder has stopped being one.
-            'moon_not_rescheduled_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:336',
-            ],
-            'moon_not_rescheduled_repeat' => [
-                'nullable',
-                'boolean',
-            ],
-            // Moons Need Planning: how many pulls each refinery should have
-            // planned ahead, and how often the list goes out.
-            'planned_ahead_target' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:10',
-            ],
-            'schedule_needs_filling_hours' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:336',
-            ],
             'moon_scan_missing_daily' => [
                 'nullable',
                 'boolean',
@@ -930,38 +885,6 @@ class SettingsController extends Controller
                 ? (float) $thresholdInput
                 : 85;
 
-            // Moon Extraction Planner — minimum gap (hours) between arrivals.
-            $gapInput = $request->input('min_extraction_gap_hours');
-            $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
-                ? (int) $gapInput
-                : 24;
-
-            // Time between pulls on one refinery: days on the form, hours kept,
-            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
-            // at 17:00.
-            $spacingInput = $request->input('min_refinery_spacing_days');
-            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
-                ? (int) round((float) $spacingInput * 24)
-                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
-
-            // Moon Not Rescheduled reminder. The whole tab is one form, so an
-            // unticked repeat box is simply absent and reads as off.
-            $idleInput = $request->input('moon_not_rescheduled_hours');
-            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
-                ? (int) $idleInput
-                : 48;
-            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
-
-            // Moons Need Planning.
-            $targetInput = $request->input('planned_ahead_target');
-            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
-                ? (int) $targetInput
-                : 1;
-            $everyInput = $request->input('schedule_needs_filling_hours');
-            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
-                ? (int) $everyInput
-                : 24;
-
             // Moon Scan Missing goes once per new reason; the daily list on top
             // of that is opt-in.
             $data['moon_scan_missing_daily'] = $request->boolean('moon_scan_missing_daily');
@@ -983,6 +906,116 @@ class SettingsController extends Controller
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Error updating notification settings: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Save the Moon Planner page: how the planner spaces pulls, and when its
+     * reminders go out. The values keep their notifications.* keys from when
+     * they were part of the Notifications page.
+     */
+    public function updatePlanner(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            // Moon Extraction Planner minimum gap (hours). Bounded [1, 168]
+            // (1 week) — clusters tighter than an hour are nonsensical and a
+            // gap wider than a week defeats staggering on weekly cadences.
+            'min_extraction_gap_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:168',
+            ],
+            // How close two pulls on one refinery may be, entered in days and
+            // kept in hours. 6 is the shortest extraction EVE allows, 56 the
+            // longest.
+            'min_refinery_spacing_days' => [
+                'nullable',
+                'numeric',
+                'min:6',
+                'max:56',
+            ],
+            // Moon Not Rescheduled: hours a drill sits idle after its chunk
+            // arrives before the reminder goes, and between repeats. Up to two
+            // weeks; past that the reminder has stopped being one.
+            'moon_not_rescheduled_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+            'moon_not_rescheduled_repeat' => [
+                'nullable',
+                'boolean',
+            ],
+            // Moons Need Planning: how many pulls each refinery should have
+            // planned ahead, and how often the list goes out.
+            'planned_ahead_target' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:10',
+            ],
+            'schedule_needs_filling_hours' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:336',
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()
+                ->withErrors($validator)
+                ->withInput()
+                ->with('error', 'Validation failed. Please check your inputs.');
+        }
+
+        try {
+            $data = [];
+
+            // Minimum gap (hours) between two moons' arrivals.
+            $gapInput = $request->input('min_extraction_gap_hours');
+            $data['min_extraction_gap_hours'] = ($gapInput !== null && $gapInput !== '')
+                ? (int) $gapInput
+                : 24;
+
+            // Time between pulls on one refinery: days on the form, hours kept,
+            // so 7 days means a pull on the 1st at 17:00 is clear on the 8th
+            // at 17:00.
+            $spacingInput = $request->input('min_refinery_spacing_days');
+            $data['min_refinery_spacing_hours'] = ($spacingInput !== null && $spacingInput !== '')
+                ? (int) round((float) $spacingInput * 24)
+                : \MiningManager\Services\Moon\MoonPlannerService::DEFAULT_REFINERY_SPACING_HOURS;
+
+            // Moon Not Rescheduled reminder. The whole page is one form, so an
+            // unticked repeat box is simply absent and reads as off.
+            $idleInput = $request->input('moon_not_rescheduled_hours');
+            $data['moon_not_rescheduled_hours'] = ($idleInput !== null && $idleInput !== '')
+                ? (int) $idleInput
+                : 48;
+            $data['moon_not_rescheduled_repeat'] = $request->boolean('moon_not_rescheduled_repeat');
+
+            // Moons Need Planning.
+            $targetInput = $request->input('planned_ahead_target');
+            $data['planned_ahead_target'] = ($targetInput !== null && $targetInput !== '')
+                ? (int) $targetInput
+                : 1;
+            $everyInput = $request->input('schedule_needs_filling_hours');
+            $data['schedule_needs_filling_hours'] = ($everyInput !== null && $everyInput !== '')
+                ? (int) $everyInput
+                : 24;
+
+            $this->settingsService->updateNotificationSettings($data);
+            $this->clearSettingsCache();
+
+            return redirect()->route('mining-manager.settings.index')
+                ->with('success', 'Moon Planner settings updated successfully')
+                ->withFragment('planner');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error updating Moon Planner settings: ' . $e->getMessage());
         }
     }
 

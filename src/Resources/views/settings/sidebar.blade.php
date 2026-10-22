@@ -53,6 +53,15 @@
             <li class="nav-item">
                 <a href="#"
                    class="nav-link"
+                   data-tab="planner">
+                    <i class="fas fa-calendar-check"></i>
+                    Moon Planner
+                    <span class="badge badge-success badge-pill float-right" title="Global setting">G</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#"
+                   class="nav-link"
                    data-tab="pricing">
                     <i class="fas fa-tags"></i>
                     {{ trans('mining-manager::settings.pricing') }}

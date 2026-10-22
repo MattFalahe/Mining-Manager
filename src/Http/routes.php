@@ -958,6 +958,12 @@ Route::group([
             'middleware' => 'can:mining-manager.admin',
         ]);
 
+        Route::post('/planner', [
+            'as' => 'mining-manager.settings.update-planner',
+            'uses' => 'SettingsController@updatePlanner',
+            'middleware' => 'can:mining-manager.admin',
+        ]);
+
         Route::post('/notifications', [
             'as' => 'mining-manager.settings.update-notifications',
             'uses' => 'SettingsController@updateNotifications',

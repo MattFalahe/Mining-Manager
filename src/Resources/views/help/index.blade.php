@@ -3140,7 +3140,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                     <p>
                         If a pull lands within the <strong>minimum gap</strong> of another moon's arrival (24 hours by
-                        default, configurable at Settings &rarr; Notifications) you'll get a confirmation listing the
+                        default, configurable at Settings &rarr; Moon Planner) you'll get a confirmation listing the
                         moons it clashes with and how far apart they are. You can still go ahead &mdash; it's a
                         warning, not a block &mdash; but nothing gets saved past the gap without you agreeing to it.
                     </p>
@@ -3148,7 +3148,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         Pulls on the <strong>same refinery</strong> get their own check. An extraction takes at least
                         6 days, and the next one can only be started once the chunk is in, so two pulls on one
                         refinery closer together than the <strong>refinery spacing</strong> (7 days by default,
-                        arrival to arrival, at Settings &rarr; Notifications) are unlikely to both happen as planned.
+                        arrival to arrival, at Settings &rarr; Moon Planner) are unlikely to both happen as planned.
                         The same confirmation lists them, the blueprint preview marks them, and the planner shows a
                         <strong>Pulls too close together</strong> banner, with a yellow <strong>!</strong> on each
                         planned pull involved, however it got onto the calendar. Exactly the spacing apart is fine:
@@ -3236,7 +3236,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                     </p>
                     <p>
                         The hours, the repeat, how many pulls to plan ahead and how often the list goes are all under
-                        <strong>Settings, Notifications, Moon Planner Reminders</strong>.
+                        <strong>Settings, Moon Planner</strong>.
                     </p>
 
                     <h4><i class="fas fa-hourglass-start"></i> Pulls planned more than 56 days ahead</h4>
@@ -3706,6 +3706,9 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
 
                     <h5><i class="fas fa-wallet text-success"></i> {{ trans('mining-manager::help.settings_payments') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_payments_desc') }}</p>
+
+                    <h5><i class="fas fa-calendar-check text-primary"></i> {{ trans('mining-manager::help.settings_planner') }}</h5>
+                    <p>{{ trans('mining-manager::help.settings_planner_desc') }}</p>
 
                     <h5><i class="fas fa-tags text-danger"></i> {{ trans('mining-manager::help.settings_pricing') }}</h5>
                     <p>{{ trans('mining-manager::help.settings_pricing_desc') }}</p>
