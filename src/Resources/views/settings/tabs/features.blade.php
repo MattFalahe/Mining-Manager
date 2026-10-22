@@ -201,22 +201,6 @@
             <div class="custom-control custom-switch mb-3">
                 <input type="checkbox" 
                        class="custom-control-input" 
-                       id="allow_public_stats" 
-                       name="allow_public_stats" 
-                       value="1"
-                       {{ old('allow_public_stats', $settings->allow_public_stats ?? false) ? 'checked' : '' }}>
-                <label class="custom-control-label" for="allow_public_stats">
-                    <i class="fas fa-chart-pie"></i>
-                    <strong>{{ trans('mining-manager::settings.allow_public_stats') }}</strong>
-                </label>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.allow_public_stats_help') }}
-                </small>
-            </div>
-
-            <div class="custom-control custom-switch mb-3">
-                <input type="checkbox" 
-                       class="custom-control-input" 
                        id="allow_member_leaderboard" 
                        name="allow_member_leaderboard" 
                        value="1"
@@ -384,31 +368,6 @@
                 </div>
                 <small class="form-text text-muted">
                     {{ trans('mining-manager::settings.ledger_retention_days_help') }}
-                </small>
-            </div>
-
-            <div class="form-group">
-                <label for="tax_record_retention_days">
-                    <i class="fas fa-coins"></i>
-                    {{ trans('mining-manager::settings.tax_record_retention_days') }}
-                </label>
-                <div class="input-group">
-                    <input type="number" 
-                           class="form-control @error('tax_record_retention_days') is-invalid @enderror" 
-                           id="tax_record_retention_days" 
-                           name="tax_record_retention_days" 
-                           value="{{ old('tax_record_retention_days', $settings->tax_record_retention_days ?? 730) }}"
-                           min="90" 
-                           max="3650">
-                    <div class="input-group-append">
-                        <span class="input-group-text">{{ trans('mining-manager::settings.days') }}</span>
-                    </div>
-                    @error('tax_record_retention_days')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-                <small class="form-text text-muted">
-                    {{ trans('mining-manager::settings.tax_record_retention_days_help') }}
                 </small>
             </div>
 

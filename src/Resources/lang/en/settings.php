@@ -32,13 +32,7 @@ return [
     
     // Corporation Settings
     'corporation_settings' => 'Corporation Settings',
-    'corporation_name' => 'Corporation Name',
-    'corporation_name_placeholder' => 'Enter your corporation name',
-    'corporation_name_help' => 'The name of your corporation for display purposes',
-    'corporation_ticker' => 'Corporation Ticker',
-    'corporation_ticker_placeholder' => 'CORP',
-    'corporation_ticker_help' => 'Your corporation\'s ticker symbol (max 5 characters)',
-    
+
     // Time Settings
     'time_settings' => 'Time & Date Settings',
     'timezone' => 'Timezone',
@@ -48,17 +42,6 @@ return [
     'time_format' => 'Time Format',
     'time_format_help' => '12-hour or 24-hour time format',
     
-    // Display Settings
-    'display_settings' => 'Display Settings',
-    'items_per_page' => 'Items Per Page',
-    'items_per_page_help' => 'Number of items to display per page in tables',
-    'currency_decimals' => 'Currency Decimals',
-    'currency_decimals_help' => 'Number of decimal places for ISK values',
-    'show_character_portraits' => 'Show Character Portraits',
-    'show_character_portraits_help' => 'Display character portraits in tables and lists',
-    'compact_mode' => 'Compact Mode',
-    'compact_mode_help' => 'Use a more compact layout with less spacing',
-
     // Payment Settings
     'payment_settings' => 'Payment Settings',
     'payment_match_tolerance' => 'Payment Match Tolerance',
@@ -85,11 +68,7 @@ return [
     'mercoxit_tax_rate' => 'Mercoxit Tax Rate',
     'mercoxit_tax_rate_help' => 'Default tax percentage for mercoxit mining',
     
-    // Tax Payment Method
-    'tax_payment_method' => 'Tax Payment Method',
-    'payment_method' => 'Payment Method',
-    'wallet_method' => 'Direct ISK Transfer',
-    'wallet_method_desc' => 'Members send ISK directly to corporation wallet',
+    // Tax Payment
     'tax_wallet_division' => 'Tax Wallet Division',
     'master_wallet' => 'Master Wallet',
     'division_1' => 'Division 1',
@@ -200,8 +179,6 @@ return [
     'enable_events_help' => 'Allow creation and tracking of mining events',
     'allow_event_creation' => 'Allow Event Creation',
     'allow_event_creation_help' => 'Let directors create new mining events',
-    'event_bonus_multiplier' => 'Event Bonus Multiplier',
-    'event_bonus_multiplier_help' => 'Bonus multiplier for mining during events',
     
     // Moon Mining
     'moon_mining' => 'Moon Mining',
@@ -210,8 +187,6 @@ return [
 
     // Permissions & Access
     'permissions_access' => 'Permissions & Access',
-    'allow_public_stats' => 'Allow Public Statistics',
-    'allow_public_stats_help' => 'Show mining statistics publicly',
     'allow_member_leaderboard' => 'Allow Member Leaderboard',
     'allow_member_leaderboard_help' => 'Display member mining leaderboards',
     'show_character_names' => 'Show Character Names',
@@ -238,8 +213,6 @@ return [
     'data_retention_warning' => 'Changing retention periods will not immediately delete old data. Run cleanup manually.',
     'ledger_retention_days' => 'Ledger Retention Period',
     'ledger_retention_days_help' => 'How long to keep mining ledger records',
-    'tax_record_retention_days' => 'Tax Record Retention',
-    'tax_record_retention_days_help' => 'How long to keep tax records and invoices',
     'auto_cleanup_old_data' => 'Auto-Cleanup Old Data',
     'auto_cleanup_old_data_help' => 'Automatically delete data older than retention period',
     

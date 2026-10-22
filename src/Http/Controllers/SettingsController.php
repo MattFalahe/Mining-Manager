@@ -918,12 +918,6 @@ class SettingsController extends Controller
             }
             $data['slack_types'] = $slackTypes;
 
-            // Legacy discord pinging — derive from per-type settings
-            // If any tax type has ping_user enabled, consider pinging enabled
-            $data['discord_pinging_enabled'] = collect(['tax_reminder', 'tax_invoice', 'tax_overdue'])
-                ->contains(fn ($t) => $typeSettings[$t]['ping_user'] ?? false);
-            $data['discord_ping_show_amount'] = $typeSettings['tax_reminder']['show_amount'] ?? true;
-
             // Metenox cargo full threshold (default 85). Operator-configurable
             // via the input below the metenox_cargo_full type card.
             $thresholdInput = $request->input('metenox_cargo_full_threshold_pct');
@@ -1228,7 +1222,6 @@ class SettingsController extends Controller
         $validator = Validator::make($request->all(), [
             // Number inputs
             'ledger_retention_days' => 'required|integer|min:30|max:3650',
-            'tax_record_retention_days' => 'required|integer|min:90|max:3650',
             'theft_overdue_days' => 'required|integer|min:0|max:365',
 
             // Checkboxes (nullable because unchecked = not sent)
@@ -1239,7 +1232,6 @@ class SettingsController extends Controller
             'enable_events' => 'nullable|boolean',
             'allow_event_creation' => 'nullable|boolean',
             'enable_moon_tracking' => 'nullable|boolean',
-            'allow_public_stats' => 'nullable|boolean',
             'allow_member_leaderboard' => 'nullable|boolean',
             'show_character_names' => 'nullable|boolean',
             'allow_export_data' => 'nullable|boolean',
@@ -1277,7 +1269,6 @@ class SettingsController extends Controller
                 'theft_overdue_days' => (int) $data['theft_overdue_days'],
 
                 // Permissions & access
-                'allow_public_stats' => $request->has('allow_public_stats'),
                 'allow_member_leaderboard' => $request->has('allow_member_leaderboard'),
                 'show_character_names' => $request->has('show_character_names'),
                 'allow_export_data' => $request->has('allow_export_data'),
@@ -1290,7 +1281,6 @@ class SettingsController extends Controller
 
                 // Data retention
                 'ledger_retention_days' => $data['ledger_retention_days'],
-                'tax_record_retention_days' => $data['tax_record_retention_days'],
                 'auto_cleanup_old_data' => $request->has('auto_cleanup_old_data'),
             ];
 

@@ -1505,13 +1505,13 @@
                                     <div class="form-group" id="ntPingSection">
                                         <div class="custom-control custom-checkbox">
                                             <input type="checkbox" class="custom-control-input" id="ntTestPing"
-                                                   {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? 'checked' : '' }}>
+                                                   {{ $taxPingsOn ? 'checked' : '' }}>
                                             <label class="custom-control-label" for="ntTestPing">
                                                 <i class="fas fa-at text-info"></i> Test Discord Ping
                                             </label>
                                             <small class="form-text text-muted">
                                                 Mention target character in Discord (requires seat-connector).
-                                                {{ ($notificationSettings['discord_pinging_enabled'] ?? false) ? '(Currently enabled in settings)' : '(Currently disabled in settings — check to test anyway)' }}
+                                                {{ $taxPingsOn ? '(Currently enabled in settings)' : '(Currently disabled in settings — check to test anyway)' }}
                                             </small>
                                         </div>
                                     </div>

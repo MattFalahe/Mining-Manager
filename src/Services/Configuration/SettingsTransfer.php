@@ -80,6 +80,15 @@ class SettingsTransfer
         'tax_rates.auto_generate_tax_codes',
     ];
 
+    /**
+     * An older name a setting was read under when it had no copy of its own.
+     * The transfer carries such a copy across, so retiring the older name
+     * later loses nothing.
+     */
+    private const OLDER_NAMES = [
+        'tax_rates.tax_wallet_division' => 'payment.wallet_division',
+    ];
+
     private const PERIOD_KEYS = [
         'tax_rates.tax_calculation_period',
         'tax_rates.tax_calculation_period_pending',
@@ -267,8 +276,15 @@ class SettingsTransfer
 
             $asMoonOwner = in_array($key, self::READ_AS_MOON_OWNER, true);
             $source = $asMoonOwner ? $this->readAs($key, $moonOwner) : $this->readGlobally($key);
+            $reason = $asMoonOwner ? "the Moon Owner's copy, which billing and payments read" : 'the global copy, which the plugin read';
 
-            $target($key, null, $source, $asMoonOwner ? "the Moon Owner's copy, which billing and payments read" : 'the global copy, which the plugin read');
+            if ($source === null && isset(self::OLDER_NAMES[$key])) {
+                $older = self::OLDER_NAMES[$key];
+                $source = $asMoonOwner ? $this->readAs($older, $moonOwner) : $this->readGlobally($older);
+                $reason = "the copy under its older name {$older}, which the plugin read when this one had none";
+            }
+
+            $target($key, null, $source, $reason);
             $supersede($key, $source);
         }
 

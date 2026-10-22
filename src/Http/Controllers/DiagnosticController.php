@@ -131,6 +131,8 @@ class DiagnosticController extends Controller
 
         // Get notification settings for default values
         $notificationSettings = $this->settingsService->getNotificationSettings();
+        $taxPingsOn = collect(['tax_reminder', 'tax_invoice', 'tax_overdue'])
+            ->contains(fn ($type) => $notificationSettings['type_settings'][$type]['ping_user'] ?? false);
 
         // System Validation: Metenox Cargo Subsystem health probe (v2.0.1).
         // Server-side rendered so the operator sees results immediately when
@@ -147,6 +149,7 @@ class DiagnosticController extends Controller
             'webhooks',
             'seatCharacters',
             'notificationSettings',
+            'taxPingsOn',
             'metenoxValidation',
             'plannerValidation'
         ));
@@ -4652,7 +4655,7 @@ class DiagnosticController extends Controller
 
         // Check Discord pinging (tax types only — moon notifications don't ping individuals)
         $isTaxType = in_array($type, ['tax_reminder', 'tax_invoice', 'tax_overdue']);
-        $pingingEnabled = $settings['discord_pinging_enabled'] ?? false;
+        $pingingEnabled = (bool) ($settings['type_settings'][$type]['ping_user'] ?? false);
         $doPing = ($testPing || $pingingEnabled) && $isTaxType;
 
         if ($doPing) {
@@ -4686,7 +4689,7 @@ class DiagnosticController extends Controller
 
                     if ($discordId) {
                         $this->addLog($logs, 'ok', "Resolved Discord user ID: {$discordId}");
-                        $showAmount = $settings['discord_ping_show_amount'] ?? true;
+                        $showAmount = $settings['type_settings'][$type]['show_amount'] ?? true;
                         $mention = "<@{$discordId}>";
 
                         // Use production-matching action messages
@@ -4954,7 +4957,7 @@ class DiagnosticController extends Controller
         $daysOverdue = $request->input('test_days_overdue', 3);
 
         // Get show_amount setting and URLs to match production notifications
-        $showAmount = (bool) $this->settingsService->getSetting('notifications.discord_ping_show_amount', true);
+        $showAmount = (bool) ($this->settingsService->getNotificationSettings()['type_settings']['tax_reminder']['show_amount'] ?? true);
         $baseUrl = rtrim(config('app.url', ''), '/');
         $myTaxesUrl = $baseUrl . '/mining-manager/tax/my-taxes';
         $helpUrl = $baseUrl . '/mining-manager/help#how-to-pay';

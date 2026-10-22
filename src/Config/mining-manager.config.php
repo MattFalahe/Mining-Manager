@@ -17,9 +17,6 @@ return [
     |--------------------------------------------------------------------------
     */
     'general' => [
-        // Corporation ID (can be set via settings page)
-        'corporation_id' => null,
-
         // Price provider: 'eve_market' or 'janice'
         'price_provider' => 'eve_market',
 
@@ -130,14 +127,7 @@ return [
         // Estimated chunk size in cubic meters (m3)
         // Moon chunks typically range from 100,000 to 200,000 m3
         // Adjust based on your corporation's moon sizes
-        'estimated_chunk_size' => env('MOON_CHUNK_SIZE', 150000),
-
-        // Auto-calculate extraction values
-        'auto_calculate_values' => true,
-
-        // Include unscanned moons in reports
-        'show_unscanned_moons' => true,
-    ],
+        'estimated_chunk_size' => env('MOON_CHUNK_SIZE', 150000),    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -160,7 +150,6 @@ return [
         'enable_moon_tracking' => true,
 
         // Permissions & access
-        'allow_public_stats' => false,
         'allow_member_leaderboard' => true,
         'show_character_names' => true,
         'allow_export_data' => true,
@@ -173,7 +162,6 @@ return [
 
         // Data retention
         'ledger_retention_days' => 365,
-        'tax_record_retention_days' => 730,
         'auto_cleanup_old_data' => false,
     ],
 

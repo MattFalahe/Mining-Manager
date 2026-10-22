@@ -304,18 +304,13 @@ class SettingsManagerService
     }
 
     /**
-     * Get general settings
-     * UPDATED: Now includes corporation_id and all settings are database-first with config fallback
+     * Get general settings, database first with config as fallback
      *
      * @return array
      */
     public function getGeneralSettings(): array
     {
         return [
-            // Corporation Settings (from database, config as fallback)
-            'corporation_id' => $this->getSetting('general.corporation_id', config('mining-manager.general.corporation_id')),
-            'corporation_name' => $this->getSetting('general.corporation_name', ''),
-            'corporation_ticker' => $this->getSetting('general.corporation_ticker', ''),
             // NOTE: Despite the name, this is effectively the "Tax Program Corporation ID".
             // This corp owns the moons/structures AND runs the mining tax program.
             // All tax invoices, theft detection, moon notifications, and ledger tracking
@@ -341,12 +336,6 @@ class SettingsManagerService
             'timezone' => 'UTC',
             'date_format' => 'Y-m-d',
             'time_format' => 'H:i:s',
-
-            // Display Settings
-            'currency_decimals' => $this->getSetting('general.currency_decimals', 2),
-            'items_per_page' => $this->getSetting('general.items_per_page', 25),
-            'compact_mode' => $this->getSetting('general.compact_mode', false),
-            'show_character_portraits' => $this->getSetting('general.show_character_portraits', true),
 
             // Payment auto-match toggle. Surfaced here so the General settings
             // blade can render the checkbox's current state. The canonical
@@ -426,12 +415,6 @@ class SettingsManagerService
      */
     public function getPaymentSettings(): array
     {
-        // Primary source: tax_rates.tax_payment_method (set by UI)
-        // Fallback: payment.method (legacy path)
-        $method = $this->getSetting('tax_rates.tax_payment_method',
-            $this->getSetting('payment.method', 'wallet')
-        );
-
         $division = (int) $this->getSetting('tax_rates.tax_wallet_division',
             $this->getSetting('payment.wallet_division', 1)
         );
@@ -442,7 +425,8 @@ class SettingsManagerService
         }
 
         return [
-            'method' => $method,
+            // Wallet transfers are the only way to pay.
+            'method' => 'wallet',
             'wallet_division' => $division,
             'grace_period_hours' => $this->getSetting('payment.grace_period_hours', 24),
             'match_tolerance' => $this->getSetting('payment.match_tolerance', 100),
@@ -593,11 +577,7 @@ class SettingsManagerService
     public function getTaxRates(): array
     {
         return array_merge($this->taxRatesFor($this->activeCorporationId), [
-            // Mining event bonuses (percentage reduction)
-            'event_bonus' => $this->getSetting('tax_rates.event_bonus', config('mining-manager.tax_rates.event_bonus', 2.0)),
-
-            // Tax Payment Method
-            'tax_payment_method' => $this->getSetting('tax_rates.tax_payment_method', 'wallet'),
+            // Wallet division tax payments arrive in
             'tax_wallet_division' => $this->getSetting('tax_rates.tax_wallet_division', 1000),
 
             // Tax Code Settings
@@ -1093,8 +1073,6 @@ class SettingsManagerService
     {
         return [
             'estimated_chunk_size' => $this->getSetting('moon.estimated_chunk_size', config('mining-manager.moon.estimated_chunk_size', 150000)),
-            'auto_calculate_values' => $this->getSetting('moon.auto_calculate_values', config('mining-manager.moon.auto_calculate_values', true)),
-            'show_unscanned_moons' => $this->getSetting('moon.show_unscanned_moons', config('mining-manager.moon.show_unscanned_moons', true)),
         ];
     }
 
@@ -1202,10 +1180,6 @@ class SettingsManagerService
             'slack_legacy_last_success_at' => $this->getSetting('notifications.slack_legacy_last_success_at', null),
             'slack_legacy_last_failure_at' => $this->getSetting('notifications.slack_legacy_last_failure_at', null),
             'slack_legacy_last_error' => $this->getSetting('notifications.slack_legacy_last_error', ''),
-
-            // Legacy discord pinging (kept for backward compat during transition)
-            'discord_pinging_enabled' => (bool) $this->getSetting('notifications.discord_pinging_enabled', false),
-            'discord_ping_show_amount' => (bool) $this->getSetting('notifications.discord_ping_show_amount', true),
 
             // Metenox cargo-full notification threshold (default 85%, clamped
             // [50, 99] both client-side via the UI input + server-side in the
@@ -1367,7 +1341,6 @@ class SettingsManagerService
             'theft_overdue_days' => (int) $this->getSettingForCorporation('features.theft_overdue_days', null, 15),
 
             // Permissions & access
-            'allow_public_stats' => (bool) $this->getSetting('features.allow_public_stats', false),
             'allow_member_leaderboard' => (bool) $this->getSetting('features.allow_member_leaderboard', true),
             'show_character_names' => (bool) $this->getSetting('features.show_character_names', true),
             'allow_export_data' => (bool) $this->getSetting('features.allow_export_data', true),
@@ -1381,7 +1354,6 @@ class SettingsManagerService
 
             // Data retention
             'ledger_retention_days' => (int) $this->getSetting('features.ledger_retention_days', 365),
-            'tax_record_retention_days' => (int) $this->getSetting('features.tax_record_retention_days', 730),
             'auto_cleanup_old_data' => (bool) $this->getSetting('features.auto_cleanup_old_data', false),
         ];
     }
