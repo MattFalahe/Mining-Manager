@@ -1122,12 +1122,11 @@
         <div class="tab-pane" id="tax-trace">
             <div class="diag-tab-intro">
                 <p>
-                    <strong>What this tab does:</strong> The most powerful debugging surface.
-                    Takes a single character ID + month, walks the entire tax-calculation
-                    pipeline for that miner, and shows what each step does: raw
-                    <code>mining_ledger</code> rows in scope, daily summary aggregation, ore
-                    composition, applied tax rate(s), event participation and discount math,
-                    final invoice computation, payment matching.
+                    <strong>What this tab does:</strong> Takes one character and a month and shows
+                    how that account's tax was worked out: every stored daily summary with the tax
+                    profile that taxed the day, its ores, rates and event discounts, the same days
+                    built again now by the code billing uses, the month's bills, and anything that
+                    does not add up.
                 </p>
                 <p>
                     <strong>When to use:</strong> When a specific miner says "my tax is wrong",
@@ -1135,10 +1134,10 @@
                     Picks one row and explains every cent.
                 </p>
                 <p>
-                    <strong>Heads up:</strong> Read-only &mdash; the trace does not mutate any
-                    rows. It compares "what the system would calculate now" against "what's
-                    currently stored", so the explanation reflects current settings + tax rates,
-                    not historical ones. For pipeline-level debugging see Tax Pipeline.
+                    <strong>Heads up:</strong> Read-only. Days are built again without saving, with
+                    today's settings, so a difference shows exactly what a rebuild would change. Days
+                    from before settings moved into tax profiles are built by the rules from before.
+                    For pipeline-level debugging see Tax Pipeline.
                 </p>
             </div>
             <div class="row">
@@ -1150,7 +1149,7 @@
                             </h3>
                         </div>
                         <div class="card-body">
-                            <p>Full diagnostic: stored daily summaries, live recalculation with current prices, account/bill info, and mismatch detection.</p>
+                            <p>Stored daily summaries and who taxed each day, the same days built again now, the month's bills, and anything that does not add up.</p>
 
                             <div class="row">
                                 <div class="col-md-6">
@@ -2561,7 +2560,7 @@ function openSettingsHealth() {
     loadSettingsHealth();
 }
 
-function settingsHealthEscape(value) {
+function diagEscape(value) {
     if (value === null || value === undefined) return '';
     return String(value)
         .replace(/&/g, '&amp;')
@@ -2600,17 +2599,17 @@ function loadSettingsHealth() {
         spinner.style.display = 'none';
         resultsDiv.innerHTML = data.success
             ? renderSettingsHealth(data.report)
-            : `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${settingsHealthEscape(data.error)}</p></div>`;
+            : `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Failed</h5><p>${diagEscape(data.error)}</p></div>`;
     })
     .catch(error => {
         btnText.textContent = 'Run again';
         spinner.style.display = 'none';
-        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${settingsHealthEscape(error.message)}</p></div>`;
+        resultsDiv.innerHTML = `<div class="provider-test-result error"><h5><i class="fas fa-times-circle text-danger"></i> Request Failed</h5><p>${diagEscape(error.message)}</p></div>`;
     });
 }
 
 function renderSettingsHealth(report) {
-    const esc = settingsHealthEscape;
+    const esc = diagEscape;
     const overall = {
         ok: ['badge-success', 'check', 'ALL CLEAR'],
         warn: ['badge-warning', 'exclamation-triangle', 'WARNINGS'],
@@ -2677,7 +2676,7 @@ function renderSettingsHealth(report) {
 }
 
 function renderSettingsHealthProfiles(profiles) {
-    const esc = settingsHealthEscape;
+    const esc = diagEscape;
     const span = profiles.columns.length + 1;
     let anyUnused = false;
 
@@ -2722,7 +2721,7 @@ function renderSettingsHealthProfiles(profiles) {
 }
 
 function renderSettingsHealthInstall(install) {
-    const esc = settingsHealthEscape;
+    const esc = diagEscape;
     const value = setting => {
         if (setting.value === null) {
             return '<em class="text-muted">not saved, and the page that uses it keeps its own default</em>';
@@ -2761,7 +2760,7 @@ function renderSettingsHealthInstall(install) {
 }
 
 function renderSettingsHealthRecords(records, reportUrl) {
-    const esc = settingsHealthEscape;
+    const esc = diagEscape;
 
     return `
         <div class="card card-dark">
@@ -2839,7 +2838,12 @@ function runTaxTrace() {
         // SECTION 1: Character & Account Info
         // ================================================================
         const acc = data.account || {};
-        const bill = data.tax_bill;
+        const bills = data.tax_bills || [];
+        const names = {};
+        (acc.all_characters || []).forEach(c => { names[c.character_id] = c.name; });
+        names[data.character.id] = names[data.character.id] || data.character.name;
+        const charName = id => names[id] || ('Character ' + id);
+        const multiChar = (acc.all_character_ids || []).length > 1;
         const statusColors = { paid: 'success', unpaid: 'warning', overdue: 'danger', partial: 'info', waived: 'secondary' };
 
         html += `<div class="provider-test-result ${data.stored_summaries.totals.days_with_data > 0 ? 'success' : 'warning'}">
@@ -2873,27 +2877,30 @@ function runTaxTrace() {
             }
             html += `</div></div>`;
         } else {
-            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT (guest miner)</span></div></div>`;
+            html += `<div class="row mb-2"><div class="col-md-12"><span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Character not registered in SeAT</span></div></div>`;
         }
 
-        // Tax bill
-        if (bill) {
-            const statusColor = statusColors[bill.status] || 'secondary';
-            html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
-                <div class="col-md-3">
-                    <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
-                </div>
-                <div class="col-md-3">
-                    <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
-                </div>
-                <div class="col-md-3">
-                    <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
-                </div>
-                <div class="col-md-3">
-                    <strong>Due:</strong> ${bill.due_date || 'N/A'}
-                    ${bill.tax_code ? ' | <strong>Code:</strong> ' + bill.tax_code : ''}
-                </div>
-            </div>`;
+        // Tax bills: two for the month on a twice-monthly period
+        if (bills.length > 0) {
+            bills.forEach(bill => {
+                const statusColor = statusColors[bill.status] || 'secondary';
+                html += `<div class="row mb-2" style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; margin-top: 5px;">
+                    <div class="col-md-3">
+                        <strong>Tax Bill:</strong> <span class="badge badge-${statusColor}">${bill.status.toUpperCase()}</span>
+                        <br><small class="text-muted">${bill.period_start} to ${bill.period_end}</small>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Owed:</strong> ${fmtISK(bill.amount_owed)} ISK
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Paid:</strong> ${fmtISK(bill.amount_paid)} ISK
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Due:</strong> ${bill.due_date || 'N/A'}
+                        ${bill.tax_code ? ' | <strong>Code:</strong> ' + diagEscape(bill.tax_code) : ''}
+                    </div>
+                </div>`;
+            });
         } else {
             html += `<div class="row mb-2"><div class="col-md-12"><span class="text-muted"><i class="fas fa-info-circle"></i> No tax bill found for this period (taxes may not have been calculated yet)</span></div></div>`;
         }
@@ -2941,6 +2948,8 @@ function runTaxTrace() {
                     <div style="background: rgba(0,0,0,0.2); padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="document.getElementById('${dayId}').style.display = document.getElementById('${dayId}').style.display === 'none' ? 'block' : 'none'">
                         <span>
                             <i class="fas fa-calendar-day"></i> <strong>${day.date}</strong>
+                            ${multiChar ? '<span class="ml-2">' + diagEscape(charName(day.character_id)) + '</span>' : ''}
+                            <span class="badge badge-info ml-2" title="Who taxed this day">${diagEscape(day.taxed_by)}</span>
                             <span class="text-muted ml-2">${day.ore_count} ore types</span>
                             ${day.is_finalized ? '<span class="badge badge-success ml-2">FINALIZED</span>' : '<span class="badge badge-warning ml-2">PENDING</span>'}
                             ${hasWarnings ? '<span class="badge badge-danger ml-2"><i class="fas fa-exclamation-triangle"></i> ' + day.warnings.length + ' issues</span>' : ''}
@@ -3012,71 +3021,88 @@ function runTaxTrace() {
         html += `</div>`;
 
         // ================================================================
-        // SECTION 4: Live Recalculation
+        // SECTION 4: The same days built again now
         // ================================================================
-        const live = data.live_recalculation;
+        const rebuilt = data.rebuilt;
+        const changedDays = rebuilt.days.filter(day => Math.abs(day.difference) > 1);
+        const totalDiff = rebuilt.totals.rebuilt_tax - rebuilt.totals.stored_tax;
+        const diffColor = changedDays.length === 0 ? 'success' : (Math.abs(totalDiff) < 1000000 ? 'warning' : 'danger');
+        const sources = { ours: 'Our refinery', other: "Another corporation's refinery", personal: 'Personal ledger' };
+
         html += `<div class="provider-test-result" style="margin-top: 10px; border-left: 3px solid #17a2b8;">
-            <h5><i class="fas fa-sync-alt"></i> Live Recalculation <small class="text-muted">(current prices & rates)</small></h5>
+            <h5><i class="fas fa-sync-alt"></i> Built Again Now <small class="text-muted">(by the code billing uses, nothing saved)</small></h5>
+            <p>Each day built from the ledger again with today's settings. Values are the ledger's own, priced when each row was processed, so a difference here is exactly what rebuilding the day would change.</p>
             <div class="row mb-2">
-                <div class="col-md-3"><strong>Provider:</strong> ${live.settings_used.price_provider}</div>
-                <div class="col-md-3"><strong>Method:</strong> ${live.settings_used.valuation_method}</div>
-                <div class="col-md-3"><strong>Refining:</strong> ${live.settings_used.refining_efficiency}%</div>
-                <div class="col-md-3"><strong>Ledger Entries:</strong> ${live.totals.total_entries}</div>
-            </div>
-            <div class="row mb-2">
-                <div class="col-md-4"><strong>Total Value:</strong> ${fmtISK(live.totals.total_value)} ISK</div>
-                <div class="col-md-4"><strong>Total Tax:</strong> ${fmtISK(live.totals.total_tax)} ISK</div>
-                <div class="col-md-4"><strong>Effective Rate:</strong> ${live.totals.effective_rate}%</div>
+                <div class="col-md-3"><strong>Days:</strong> ${rebuilt.days.length}</div>
+                <div class="col-md-3"><strong>Stored Tax:</strong> ${fmtISK(rebuilt.totals.stored_tax)} ISK</div>
+                <div class="col-md-3"><strong>Rebuilt Tax:</strong> ${fmtISK(rebuilt.totals.rebuilt_tax)} ISK</div>
+                <div class="col-md-3"><strong>Difference:</strong>
+                    <span class="badge badge-${diffColor}" style="font-size: 0.9em;">${changedDays.length === 0 ? 'MATCH' : fmtISK(totalDiff) + ' ISK'}</span>
+                </div>
             </div>`;
 
-        // Comparison bar
-        if (stored.totals.days_with_data > 0) {
-            const diff = Math.abs(stored.totals.total_tax - live.totals.total_tax);
-            const diffPct = stored.totals.total_tax > 0 ? ((diff / stored.totals.total_tax) * 100).toFixed(1) : 0;
-            const diffColor = diff < 1 ? 'success' : (diff < 1000000 ? 'warning' : 'danger');
-            html += `<div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 4px; margin-bottom: 10px;">
-                <strong>Stored vs Live Difference:</strong>
-                <span class="badge badge-${diffColor}" style="font-size: 0.9em;">
-                    ${diff < 1 ? 'MATCH' : fmtISK(diff) + ' ISK (' + diffPct + '%)'}
-                </span>
-                ${diff >= 1 ? ' <small class="text-muted">Prices or rates may have changed since summaries were generated</small>' : ''}
-            </div>`;
-        }
+        if (changedDays.length > 0) {
+            html += `<table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
+                <thead><tr>
+                    <th>Date</th>
+                    ${multiChar ? '<th>Character</th>' : ''}
+                    <th>Taxed By</th>
+                    <th class="text-right">Stored Tax</th>
+                    <th class="text-right">Rebuilt Tax</th>
+                    <th class="text-right">Difference</th>
+                    <th></th>
+                </tr></thead><tbody>`;
 
-        // Collapsible live entries
-        if (live.entries && live.entries.length > 0) {
-            html += `<div style="margin-top: 5px;">
-                <a href="#" onclick="event.preventDefault(); document.getElementById('liveEntriesTable').style.display = document.getElementById('liveEntriesTable').style.display === 'none' ? 'block' : 'none'">
-                    <i class="fas fa-chevron-down"></i> Show ${live.entries.length} ledger entries
-                </a>
-                <div id="liveEntriesTable" style="display: none; max-height: 400px; overflow-y: auto; margin-top: 8px;">
-                    <table class="table table-sm table-dark table-striped" style="font-size: 0.85em; margin-bottom: 0;">
-                        <thead><tr>
-                            <th>Date</th>
-                            <th>Ore</th>
-                            <th class="text-right">Qty</th>
-                            <th class="text-right">Unit Price</th>
-                            <th class="text-right">Value</th>
-                            <th class="text-center">Rate</th>
-                            <th class="text-right">Tax</th>
-                        </tr></thead><tbody>`;
-
-            live.entries.forEach(e => {
-                const hasErr = e.pricing_error || e.unit_price == 0;
-                html += `<tr ${hasErr ? 'style="background: rgba(255,0,0,0.1);"' : ''}>
-                    <td>${e.date}</td>
-                    <td><i class="fas ${oreIcon(e.category)}"></i> ${e.type_name} <small class="text-muted">[${e.category}${e.rarity ? '/' + e.rarity : ''}]</small>
-                        ${e.pricing_error ? '<br><small class="text-danger"><i class="fas fa-times-circle"></i> ' + e.pricing_error + '</small>' : ''}
+            changedDays.forEach((day, idx) => {
+                const rowId = 'rebuiltDay_' + idx;
+                html += `<tr>
+                    <td>${day.date}</td>
+                    ${multiChar ? '<td>' + diagEscape(charName(day.character_id)) + '</td>' : ''}
+                    <td>${diagEscape(day.taxed_by)}</td>
+                    <td class="text-right">${day.stored ? fmtISK(day.stored_tax) : '<em class="text-muted">none stored</em>'}</td>
+                    <td class="text-right">${fmtISK(day.rebuilt_tax)}</td>
+                    <td class="text-right"><strong>${fmtISK(day.difference)}</strong></td>
+                    <td class="text-right">
+                        <a href="#" onclick="event.preventDefault(); const row = document.getElementById('${rowId}'); row.style.display = row.style.display === 'none' ? '' : 'none';">Ores</a>
                     </td>
-                    <td class="text-right">${fmtNum(e.quantity)}</td>
-                    <td class="text-right">${e.unit_price > 0 ? fmtISK(e.unit_price) : '<span class="text-danger">0.00</span>'}</td>
-                    <td class="text-right">${fmtISK(e.total_value)}</td>
-                    <td class="text-center">${e.tax_rate}%</td>
-                    <td class="text-right"><strong>${fmtISK(e.tax_amount)}</strong></td>
-                </tr>`;
+                </tr>
+                <tr id="${rowId}" style="display: none;"><td colspan="${multiChar ? 7 : 6}">`;
+
+                if (day.ores.length > 0) {
+                    html += `<table class="table table-sm table-dark mb-0" style="font-size: 0.95em;">
+                        <thead><tr>
+                            <th>Ore</th>
+                            <th>Mined At</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Value</th>
+                            <th class="text-center">Tax Rate</th>
+                            <th class="text-center">Eff. Rate</th>
+                            <th class="text-right">Est. Tax</th>
+                        </tr></thead><tbody>`;
+                    day.ores.forEach(ore => {
+                        html += `<tr>
+                            <td><i class="fas ${oreIcon(ore.category)}"></i> ${diagEscape(ore.ore_name || 'Type ' + ore.type_id)}
+                                <small class="text-muted">[${diagEscape(ore.category)}${ore.moon_rarity ? '/' + diagEscape(ore.moon_rarity) : ''}]</small>
+                            </td>
+                            <td>${diagEscape(sources[ore.source] || ore.source || '')}</td>
+                            <td class="text-right">${fmtNum(ore.quantity)}</td>
+                            <td class="text-right">${fmtISK(ore.total_value)}</td>
+                            <td class="text-center">${ore.is_taxable ? (ore.tax_rate || 0) + '%' : '<span class="badge badge-secondary">Exempt</span>'}</td>
+                            <td class="text-center">${ore.effective_rate || 0}%</td>
+                            <td class="text-right"><strong>${fmtISK(ore.estimated_tax)}</strong></td>
+                        </tr>`;
+                    });
+                    html += `</tbody></table>`;
+                } else {
+                    html += `<em class="text-muted">Nothing on this day counts towards tax when built again now.</em>`;
+                }
+
+                html += `</td></tr>`;
             });
 
-            html += `</tbody></table></div></div>`;
+            html += `</tbody></table>`;
+        } else if (rebuilt.days.length > 0) {
+            html += `<p class="mb-0"><i class="fas fa-check-circle text-success"></i> Every day builds again to the tax that is stored.</p>`;
         }
 
         html += `</div>`;

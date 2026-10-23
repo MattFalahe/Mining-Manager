@@ -20,6 +20,7 @@ use MiningManager\Services\Notification\NotificationService;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Http;
 use MiningManager\Services\OreClassifier;
+use MiningManager\Services\Diagnostic\TaxTraceDays;
 
 class DiagnosticController extends Controller
 {
@@ -1873,28 +1874,35 @@ class DiagnosticController extends Controller
             // Main account mapping: character -> refresh_tokens -> users -> main_character_id
             $accountInfo = $this->resolveAccountInfo($characterId);
 
-            // Tax bill for this month (uses main character ID since taxes are grouped by main)
+            // Every bill for the month, two on a twice-monthly period. Bills go
+            // to the account's main character.
             $billCharacterId = $accountInfo['main_character_id'] ?? $characterId;
-            $taxBill = MiningTax::where('character_id', $billCharacterId)
+            $taxBillData = MiningTax::where('character_id', $billCharacterId)
                 ->whereYear('month', $monthStart->year)
                 ->whereMonth('month', $monthStart->month)
-                ->first();
+                ->orderByRaw('COALESCE(period_start, month)')
+                ->get()
+                ->map(function (MiningTax $bill) {
+                    $taxCode = $bill->taxCodes()->latest()->first();
+                    $start = Carbon::parse($bill->period_start ?? $bill->month);
+                    $end = $bill->period_end ? Carbon::parse($bill->period_end) : $start->copy()->endOfMonth();
 
-            $taxBillData = null;
-            if ($taxBill) {
-                $taxCode = $taxBill->taxCodes()->latest()->first();
-                $taxBillData = [
-                    'id' => $taxBill->id,
-                    'character_id' => $taxBill->character_id,
-                    'amount_owed' => (float) $taxBill->amount_owed,
-                    'amount_paid' => (float) $taxBill->amount_paid,
-                    'status' => $taxBill->status,
-                    'due_date' => $taxBill->due_date ? $taxBill->due_date->format('Y-m-d') : null,
-                    'paid_at' => $taxBill->paid_at ? $taxBill->paid_at->format('Y-m-d H:i') : null,
-                    'tax_code' => $taxCode ? $taxCode->code : null,
-                    'period_type' => $taxBill->period_type ?? 'monthly',
-                ];
-            }
+                    return [
+                        'id' => $bill->id,
+                        'character_id' => $bill->character_id,
+                        'amount_owed' => (float) $bill->amount_owed,
+                        'amount_paid' => (float) $bill->amount_paid,
+                        'status' => $bill->status,
+                        'due_date' => $bill->due_date ? $bill->due_date->format('Y-m-d') : null,
+                        'paid_at' => $bill->paid_at ? $bill->paid_at->format('Y-m-d H:i') : null,
+                        'tax_code' => $taxCode ? $taxCode->code : null,
+                        'period_type' => $bill->period_type ?? 'monthly',
+                        'period_start' => $start->toDateString(),
+                        'period_end' => $end->toDateString(),
+                    ];
+                })
+                ->values()
+                ->all();
 
             // ================================================================
             // SECTION 2: Daily Summaries (Stored Data)
@@ -1912,11 +1920,12 @@ class DiagnosticController extends Controller
             $storedTotalTax = 0;
             $storedTotalQuantity = 0;
             $storedWarnings = [];
-            $taxSelector = $this->settingsService->getTaxSelector();
+            $traceDays = app(TaxTraceDays::class);
 
             foreach ($dailySummaries as $summary) {
                 $oreEntries = $summary->ore_types ?? [];
                 $dayWarnings = [];
+                $taxedBy = $traceDays->taxedBy((int) $summary->character_id, $summary->date);
 
                 // Check for issues in ore entries
                 foreach ($oreEntries as &$ore) {
@@ -1930,7 +1939,7 @@ class DiagnosticController extends Controller
                     // nothing under that same rule, and mining that arrives after
                     // its period was invoiced is left untaxed on purpose. Warning
                     // on all of those buried the one case worth reading.
-                    if ($this->taxedCategoryCameOutAtZero($ore, $taxSelector)) {
+                    if ($this->taxedCategoryCameOutAtZero($ore, $taxedBy['selector'])) {
                         $warnings[] = 'This category is taxed and has a rate, but this ore came out at 0%. Expected on moon ore from another corporation\'s moon, or on mining that reached the ledger after its period was invoiced.';
                     }
                     $ore['warnings'] = $warnings;
@@ -1949,6 +1958,8 @@ class DiagnosticController extends Controller
 
                 $storedDays[] = [
                     'date' => $summary->date->format('Y-m-d'),
+                    'character_id' => (int) $summary->character_id,
+                    'taxed_by' => $taxedBy['label'],
                     'total_quantity' => (float) $summary->total_quantity,
                     'total_value' => $dayValue,
                     'total_tax' => $dayTax,
@@ -1971,141 +1982,73 @@ class DiagnosticController extends Controller
             }
 
             // ================================================================
-            // SECTION 3: Live Recalculation (current prices/rates)
-            // Include all alts in the group for accumulated tax comparison
+            // SECTION 3: The same days built again now, by the code that builds
+            // them for billing, without saving
             // ================================================================
-            $entries = DB::table('mining_ledger')
-                ->whereIn('character_id', $allCharIds)
-                ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
-                ->orderBy('date')
-                ->get();
-
-            $taxRates = $this->settingsService->getTaxRates();
-            $pricingSettings = $this->settingsService->getPricingSettings();
-            $generalSettings = $this->settingsService->getGeneralSettings();
-
-            $liveResults = [];
-            $liveTotalTax = 0;
-            $liveTotalValue = 0;
-
-            foreach ($entries as $entry) {
-                $typeId = $entry->type_id;
-                $quantity = $entry->quantity;
-
-                $isMoonOre = TypeIdRegistry::isMoonOre($typeId);
-                $isIce = TypeIdRegistry::isIce($typeId);
-                $isGas = TypeIdRegistry::isGas($typeId);
-                $isRegularOre = TypeIdRegistry::isRegularOre($typeId);
-                $rarity = $isMoonOre ? TypeIdRegistry::getMoonOreRarity($typeId) : null;
-
-                $category = 'unknown';
-                if ($isMoonOre) $category = 'moon_ore';
-                elseif ($isIce) $category = 'ice';
-                elseif ($isGas) $category = 'gas';
-                elseif ($isRegularOre) $category = 'ore';
-
-                $taxRate = 0;
-                if ($isMoonOre && $rarity) {
-                    $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
-                } elseif ($isIce) {
-                    $taxRate = $taxRates['ice'] ?? 0;
-                } elseif ($isGas) {
-                    $taxRate = $taxRates['gas'] ?? 0;
-                } elseif ($isRegularOre) {
-                    $taxRate = $taxRates['ore'] ?? 0;
-                }
-
-                $oreValue = 0;
-                $unitPrice = 0;
-                $pricingError = null;
-                try {
-                    $unitPrice = $this->priceService->getPrice($typeId) ?? 0;
-                    $oreValue = $unitPrice * $quantity;
-                } catch (\Exception $e) {
-                    $pricingError = $e->getMessage();
-                }
-
-                $taxAmount = round($oreValue * ($taxRate / 100), 2);
-                $liveTotalTax += $taxAmount;
-                $liveTotalValue += $oreValue;
-
-                $typeName = DB::table('invTypes')
-                    ->where('typeID', $typeId)
-                    ->value('typeName') ?? "Type {$typeId}";
-
-                $liveResults[] = [
-                    'date' => $entry->date,
-                    'type_id' => $typeId,
-                    'type_name' => $typeName,
-                    'quantity' => $quantity,
-                    'category' => $category,
-                    'rarity' => $rarity,
-                    'tax_rate' => $taxRate,
-                    'unit_price' => round($unitPrice, 2),
-                    'total_value' => round($oreValue, 2),
-                    'tax_amount' => $taxAmount,
-                    'pricing_error' => $pricingError,
-                ];
-            }
+            $rebuilt = $traceDays->rebuild($allCharIds, $monthStart, $monthEnd, $dailySummaries);
 
             // ================================================================
             // SECTION 4: Mismatch Detection
             // ================================================================
             $mismatches = [];
 
-            // Compare stored summary total vs live recalculation
-            $storedVsLiveDiff = abs($storedTotalTax - $liveTotalTax);
-            if ($storedVsLiveDiff > 1) {
+            $changed = array_values(array_filter($rebuilt['days'], fn (array $day) => $day['stored'] && abs($day['difference']) > 1));
+            if ($changed) {
+                $changedBy = array_sum(array_column($changed, 'difference'));
+                $raised = count(array_filter($changed, fn (array $day) => $day['difference'] > 0));
+                $verb = $raised === count($changed) ? 'raise' : ($raised === 0 ? 'lower' : 'change');
+                $dates = array_values(array_unique(array_column($changed, 'date')));
                 $mismatches[] = [
-                    'type' => 'stored_vs_live',
-                    'severity' => $storedVsLiveDiff > 1000000 ? 'high' : 'medium',
+                    'type' => 'stored_vs_rebuilt',
+                    'severity' => abs($changedBy) > 1000000 ? 'high' : 'medium',
                     'message' => sprintf(
-                        'Daily summary total tax (%.2f ISK) differs from live recalculation (%.2f ISK) by %.2f ISK — prices or rates may have changed since summaries were generated',
-                        $storedTotalTax, $liveTotalTax, $storedVsLiveDiff
+                        'Building the daily summaries again now would %s the tax on %d %s by %s ISK in total (%s). Something they are built from has changed since: settings, mining that arrived late, or the prices on the ledger.',
+                        $verb,
+                        count($changed),
+                        count($changed) === 1 ? 'day' : 'days',
+                        number_format($verb === 'change' ? $changedBy : abs($changedBy), 2),
+                        implode(', ', array_slice($dates, 0, 5)) . (count($dates) > 5 ? ' and ' . (count($dates) - 5) . ' more' : '')
                     ),
                 ];
             }
 
-            // Compare stored total vs tax bill amount
-            if ($taxBill) {
-                // For the bill comparison, we need to check ALL characters under this account
-                $allCharIds = $accountInfo['all_character_ids'] ?? [$characterId];
-                $accountStoredTax = 0;
+            // Each bill against the summaries of its own period, for every
+            // character of the account.
+            foreach ($taxBillData as $bill) {
+                $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
+                    ->whereBetween('date', [$bill['period_start'], $bill['period_end']])
+                    ->sum('total_tax');
 
-                if (count($allCharIds) > 1) {
-                    // Sum daily summaries across all alts
-                    $accountStoredTax = (float) MiningLedgerDailySummary::whereIn('character_id', $allCharIds)
-                        ->whereBetween('date', [$monthStart->format('Y-m-d'), $monthEnd->format('Y-m-d')])
-                        ->sum('total_tax');
-                } else {
-                    $accountStoredTax = $storedTotalTax;
-                }
-
-                $billDiff = abs($accountStoredTax - (float) $taxBill->amount_owed);
+                $billDiff = abs($accountStoredTax - $bill['amount_owed']);
                 if ($billDiff > 1) {
                     $mismatches[] = [
                         'type' => 'summary_vs_bill',
                         'severity' => $billDiff > 1000000 ? 'high' : 'medium',
                         'message' => sprintf(
-                            'Account daily summaries total (%.2f ISK across %d characters) differs from tax bill amount (%.2f ISK) by %.2f ISK',
-                            $accountStoredTax, count($allCharIds), (float) $taxBill->amount_owed, $billDiff
+                            'The daily summaries for %s to %s add up to %s ISK across %d %s, and the bill for that period is %s ISK, %s ISK apart. The exemption threshold or the minimum bill can account for it.',
+                            $bill['period_start'],
+                            $bill['period_end'],
+                            number_format($accountStoredTax, 2),
+                            count($allCharIds),
+                            count($allCharIds) === 1 ? 'character' : 'characters',
+                            number_format($bill['amount_owed'], 2),
+                            number_format($billDiff, 2)
                         ),
                     ];
                 }
             }
 
-            // Check for days with mining ledger data but no daily summary
-            $ledgerDates = $entries->pluck('date')->unique()->values()->toArray();
-            $summaryDates = $dailySummaries->map(fn($s) => $s->date->format('Y-m-d'))->toArray();
-            $missingSummaryDates = array_diff($ledgerDates, $summaryDates);
+            $missingSummaryDates = array_values(array_unique(array_column(array_filter($rebuilt['days'], fn (array $day) => !$day['stored']), 'date')));
             if (!empty($missingSummaryDates)) {
                 $mismatches[] = [
                     'type' => 'missing_summaries',
                     'severity' => 'high',
                     'message' => sprintf(
-                        'Mining ledger has data for %d dates with no daily summary: %s — run calculate-taxes to regenerate',
+                        'The ledger has mining on %d %s with no daily summary: %s. mining-manager:update-daily-summaries --month=%s builds them.',
                         count($missingSummaryDates),
-                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? '...' : '')
+                        count($missingSummaryDates) === 1 ? 'day' : 'days',
+                        implode(', ', array_slice($missingSummaryDates, 0, 5)) . (count($missingSummaryDates) > 5 ? ' and ' . (count($missingSummaryDates) - 5) . ' more' : ''),
+                        $month
                     ),
                 ];
             }
@@ -2138,10 +2081,10 @@ class DiagnosticController extends Controller
                     'id' => $characterId,
                     'name' => $characterName,
                     'corporation_id' => $corporationId,
-                    'corporation_name' => $corporationName ?? 'Unknown (guest miner)',
+                    'corporation_name' => $corporationName ?? 'Not known yet',
                 ],
                 'account' => $accountInfo,
-                'tax_bill' => $taxBillData,
+                'tax_bills' => $taxBillData,
 
                 // Section 2: Stored Daily Summaries
                 'period' => [
@@ -2161,22 +2104,8 @@ class DiagnosticController extends Controller
                     'warnings' => $storedWarnings,
                 ],
 
-                // Section 3: Live Recalculation
-                'live_recalculation' => [
-                    'settings_used' => [
-                        'price_provider' => $pricingSettings['price_provider'] ?? 'seat',
-                        'valuation_method' => $this->valuationService->valuationMethodFor(),
-                        'refining_efficiency' => $pricingSettings['refining_efficiency'] ?? 87.5,
-                    ],
-                    'tax_rates' => $taxRates,
-                    'totals' => [
-                        'total_entries' => count($entries),
-                        'total_value' => round($liveTotalValue, 2),
-                        'total_tax' => round($liveTotalTax, 2),
-                        'effective_rate' => $liveTotalValue > 0 ? round(($liveTotalTax / $liveTotalValue) * 100, 2) : 0,
-                    ],
-                    'entries' => $liveResults,
-                ],
+                // Section 3: The same days built again now
+                'rebuilt' => $rebuilt,
 
                 // Section 4: Mismatches
                 'mismatches' => $mismatches,
