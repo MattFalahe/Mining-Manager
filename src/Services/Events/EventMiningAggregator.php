@@ -189,7 +189,7 @@ class EventMiningAggregator
     {
         // Honour the plugin's moon-ore tax scope setting so event data
         // reflects the same pool the tax engine operates on.
-        $taxSelector = $this->settingsService->getTaxSelector();
+        $taxSelector = $this->taxSelectorForEvent($event);
 
         if (!empty($taxSelector['no_moon_ore'])) {
             Log::debug("Mining Manager: EventMiningAggregator event {$event->id} — plugin has no_moon_ore set, skipping observer pass");
@@ -511,7 +511,7 @@ class EventMiningAggregator
      */
     private function filterCategoriesByTaxSettings(MiningEvent $event, array $categories): array
     {
-        $taxSelector = $this->settingsService->getTaxSelector();
+        $taxSelector = $this->taxSelectorForEvent($event);
 
         $map = [
             'ore' => 'ore',
@@ -553,6 +553,25 @@ class EventMiningAggregator
         }
 
         return $kept;
+    }
+
+    /**
+     * What the miners an event covers are taxed on, as one selector: the
+     * event corporation's profile, or for an event open to everyone, what
+     * any profile taxes. The daily summaries still charge each miner by
+     * their own profile; this only decides which mining is worth recording.
+     */
+    private function taxSelectorForEvent(MiningEvent $event): array
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            return $this->settingsService->getTaxSelector();
+        }
+
+        $profiles = $event->corporation_id !== null
+            ? [$this->settingsService->profileFor((int) $event->corporation_id)]
+            : $this->settingsService->taxProfiles();
+
+        return $this->settingsService->taxSelectorAcross($profiles);
     }
 
     /**

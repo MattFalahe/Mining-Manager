@@ -271,8 +271,8 @@ class EventController extends Controller
     /**
      * Build the corporation dropdown for event create/edit forms.
      *
-     * Scope: any corp that has MM settings configured + the moon owner
-     * corp. Optionally include a specific corp by ID (used by edit() so
+     * Scope: the configured corporations, the Moon Owner always among
+     * them. Optionally include a specific corp by ID (used by edit() so
      * an event tied to a corp that's no longer in the active set still
      * renders its current value correctly).
      *
@@ -286,25 +286,8 @@ class EventController extends Controller
      */
     protected function getEventDropdownCorporations(int $alwaysIncludeCorpId = 0)
     {
-        $corpIds = collect();
-
-        // Corps that have any MM setting persisted (per-corp tax rates,
-        // per-corp tax program corporation, etc.)
-        $settingsCorpIds = DB::table('mining_manager_settings')
-            ->whereNotNull('corporation_id')
-            ->distinct()
-            ->pluck('corporation_id');
-        $corpIds = $corpIds->merge($settingsCorpIds);
-
-        // Moon owner corp (single source of truth — separate setting,
-        // not a per-corp scope so it lives at corporation_id IS NULL).
-        $moonOwnerCorpId = (int) DB::table('mining_manager_settings')
-            ->whereNull('corporation_id')
-            ->where('key', 'general.moon_owner_corporation_id')
-            ->value('value');
-        if ($moonOwnerCorpId > 0) {
-            $corpIds->push($moonOwnerCorpId);
-        }
+        // The configured corporations, the Moon Owner always among them.
+        $corpIds = collect(app(\MiningManager\Services\Configuration\SettingsManagerService::class)->getHomeCorporationIds());
 
         // Optional pin (edit form's currently-assigned corp).
         if ($alwaysIncludeCorpId > 0) {
@@ -859,8 +842,12 @@ class EventController extends Controller
      */
     private function buildTaxCompatibilityMap(): array
     {
+        // Which corporation the event is for is picked on the form, so the
+        // warning covers what any tax profile taxes.
         $settingsService = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
-        $taxSelector = $settingsService->getTaxSelector();
+        $taxSelector = $settingsService->usesTaxProfiles()
+            ? $settingsService->taxSelectorAcross($settingsService->taxProfiles())
+            : $settingsService->getTaxSelector();
 
         $categoryTaxed = [
             'ore' => !empty($taxSelector['ore']),

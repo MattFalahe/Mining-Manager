@@ -871,6 +871,53 @@ class SettingsManagerService
     }
 
     /**
+     * What a set of tax profiles tax between them, as one selector: every
+     * category any of them taxes, and the widest moon ore choice among them.
+     * For work that covers several profiles' members at once, such as an
+     * event open to everyone, where each miner is still charged by their own
+     * profile.
+     *
+     * Global's ore, ice and gas count only while no corporation is
+     * configured: with corporations configured, non-members' own mining is
+     * never taxed.
+     *
+     * @param array<int, int|null> $profiles
+     * @return array<string, bool>
+     */
+    public function taxSelectorAcross(array $profiles): array
+    {
+        $configured = $this->usesTaxProfiles() && $this->getHomeCorporationIds();
+        $moon = 'none';
+        $others = ['ore' => false, 'ice' => false, 'gas' => false, 'abyssal_ore' => false, 'triglavian_ore' => false];
+
+        foreach ($profiles as $profile) {
+            $selector = $this->taxSelectorFor($profile);
+
+            // Decided as the tax calculation decides it: no moon ore wins,
+            // then only the Moon Owner's.
+            $choice = !empty($selector['no_moon_ore']) ? 'none'
+                : (!empty($selector['only_corp_moon_ore']) ? 'ours' : (($selector['all_moon_ore'] ?? true) ? 'all' : 'none'));
+            if ($choice === 'all' || ($choice === 'ours' && $moon === 'none')) {
+                $moon = $choice;
+            }
+
+            if ($profile === null && $configured) {
+                continue;
+            }
+
+            foreach ($others as $key => $taxed) {
+                $others[$key] = $taxed || !empty($selector[$key]);
+            }
+        }
+
+        return [
+            'all_moon_ore' => $moon === 'all',
+            'only_corp_moon_ore' => $moon === 'ours',
+            'no_moon_ore' => $moon === 'none',
+        ] + $others;
+    }
+
+    /**
      * Update tax selector
      *
      * @param array $selector
