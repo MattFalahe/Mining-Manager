@@ -4830,7 +4830,6 @@ class DiagnosticController extends Controller
                 'due_date' => $dueDate,
                 'corp_name' => $corpName,
                 'wallet_division' => $this->settingsService->getWalletDivisionName(),
-                'tax_code_prefix' => $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
                 'my_taxes_url' => $myTaxesUrl,
                 'help_url' => $helpUrl,
                 'collect_url' => $baseUrl . '/mining-manager/help#how-to-collect',

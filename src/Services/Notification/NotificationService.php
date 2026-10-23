@@ -410,7 +410,6 @@ class NotificationService
             'due_date' => $dueDate,
             'corp_name' => $corpName,
             'wallet_division' => $divisionName,
-            'tax_code_prefix' => $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-'),
             'my_taxes_url' => $this->getMyTaxesUrl(),
             'help_url' => $this->getHelpPayUrl(),
             'collect_url' => $this->getHelpCollectUrl(),
