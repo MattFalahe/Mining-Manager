@@ -32,7 +32,7 @@ class DetectMoonTheftCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Detect moon ore theft: outsiders mining our moons with tax long overdue, or while guest mining is off';
+    protected $description = 'Detect moon ore theft: non-members mining our moons with tax long overdue, or while they may not mine here';
 
     /**
      * @var TheftDetectionService
@@ -139,9 +139,9 @@ class DetectMoonTheftCommand extends Command
     protected function displayRules(array $rules)
     {
         $this->line("Days overdue before theft: {$rules['overdue_days']}");
-        $this->line('Guest mining: ' . ($rules['guests_allowed']
-            ? 'allowed'
-            : 'switched off on ' . $rules['guests_off_since']->toDateString()));
+        $this->line('Non-members: ' . ($rules['guests_allowed']
+            ? 'may mine, and are flagged once a bill is overdue'
+            : 'kept out since ' . $rules['guests_off_since']->toDateString() . ', flagged as soon as their mining arrives'));
         $this->line('');
     }
 

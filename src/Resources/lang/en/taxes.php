@@ -230,7 +230,7 @@ return [
     'corp_members' => 'Corp Members',
     'guest_miners' => 'Non-member Miners',
     'corporation_member' => 'Corporation Member',
-    'guest_miner' => 'Guest Miner',
+    'guest_miner' => 'Non-member',
     'isk_owed' => 'ISK Owed',
     'isk_paid' => 'ISK Paid',
 

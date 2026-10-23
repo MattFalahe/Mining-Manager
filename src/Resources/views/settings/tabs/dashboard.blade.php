@@ -80,8 +80,8 @@
 
                     <p class="text-muted small mb-0">
                         <i class="fas fa-info-circle"></i>
-                        Listed: member corporations (the moon owner and those with their own settings) with the number of their characters who mined in the last 12 months.
-                        Miners from any other corporation count as guests and never appear on the leaderboard.
+                        Listed: the configured corporations, the Moon Owner always among them, with the number of their characters who mined in the last 12 months.
+                        Miners from any other corporation are non-members and never appear on the leaderboard.
                     </p>
                 @endif
             </div>
