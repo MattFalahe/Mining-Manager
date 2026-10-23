@@ -10,12 +10,13 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 
 ### Tax Profiles
 
-- **One profile for each configured corporation, and Global for everyone else.** A day's mining is taxed by the profile of the corporation the pilot was in that day. An account's bills follow the profile of its main character's corporation on the first of the month: its billing period and the prefix on its payment codes. Monthly and twice-a-month profiles run side by side, and Calculate Taxes works out every period in use.
+- **One profile for each configured corporation, and Global for everyone else.** A day's mining is taxed by the profile of the corporation the pilot was in that day. An account's bills follow the profile of its main character's corporation on the first of the month: its billing period and the prefix on its payment codes. Monthly and twice-a-month profiles run side by side, and Calculate Taxes works out every period in use. So does `calculate-taxes --period-start` when no period type is given; its `--corporation_id` option changes nothing under tax profiles.
 - **A configured corporation never falls back to Global.** Adding one copies the Moon Owner's profile, and from then on its rates are its own. A corporation that had moon rates of its own before the update pays them at the Moon Owner's refineries from the day after it, where until now the Moon Owner's rates applied to everyone mining there. The move's report lists every change like this.
 - **Global replaces the guest rates.** It taxes non-members for their mining at your refineries only, never their own mining elsewhere. With no corporation configured it taxes everyone, for all of their mining, as before.
 - **Global moon rates of 100% keep non-members out.** Their mining at your refineries is billed at full price and flagged as theft as soon as it is imported, rather than once a bill is overdue, and paying the bill closes the incident. An install that had Allow Guest Mining switched off is moved to exactly this. At 0% non-members mine for free, and the page says so: theft detection cannot flag anyone who never owes anything.
 - **All moon ore means all of it.** A profile set to tax all moon ore now also taxes the moon ore its members mine away from your refineries, at other corporations' refineries SeAT tracks and in their own mining ledgers, from the day after the update. Only at your refineries works as before.
 - Days before the update stay taxed under the old rules, whatever works them out again, and a day already billed keeps what it was billed.
+- The banner on the tax pages about a queued change of billing period shows each player their own profile's change, and an admin every profile's.
 
 ### Settings
 
@@ -35,6 +36,10 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 - **One message says the move happened**, to the webhooks that take Price Provider Trouble or Moon Scan Missing, with what changed and a link to the report. It goes out once. Until it has, admins see the same on the settings page and the director dashboard, for two weeks after the update.
 - The Discord ping test on the Diagnostic page follows each notification type's own ping settings.
 
+### Events
+
+- **Event mining follows the profiles of the miners it covers.** A corporation's event counts what that corporation's profile taxes, and an event open to everyone counts what any profile taxes. Each miner's discount is still worked out by their own profile. The event form offers the configured corporations.
+
 ### Import and Export
 
 - **Settings files are format 3.** A file exported before the move is refused after it, since its global moon rates were what members paid and are now what non-members pay. Exports leave out the plugin's own records and copies nothing reads.
@@ -45,7 +50,15 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 
 ### Diagnostics
 
+- **Settings Health checks the new layout**: who each tax profile taxes, every profile's rates, moon ore choice, billing period and code prefix, and every row of the settings table against the place it is read from. It lists the profiles side by side, every install-wide setting and the records the plugin keeps for itself.
+- **Tax Trace shows who taxed each day** and builds the month's days again with the code billing uses, in place of the old recalculation at today's prices, so a difference is exactly what a rebuild would change. Each bill of the month is checked against its own period, both halves of a twice-a-month month included.
+- Health Checks lists the tax profiles, and the Valuation Test shows what each profile charges. The Master Test checks the Moon Owner, runs the Settings Health checks and matches the upfront keyword against every profile's code prefix.
 - The Master Test no longer checks that the moon value shown matches the value taxed. They can no longer differ.
+
+### Fixed
+
+- **The Tax Codes page showed each code with the prefix in the settings rather than the one it was made with.** Where the two differed, the copy button copied a code no payment would match. Codes made by hand on that page now keep their prefix as well.
+- **The Pricing page wrote an API key set in the environment into its source.** It now only checks whether one is set.
 
 ### Schema
 
