@@ -565,7 +565,8 @@ $(document).ready(function() {
     $('#price_provider').on('change', function() {
         if ($(this).val() === 'janice') {
             const apiKey = $('#janice_api_key').val().trim();
-            const envKey = '{{ config("mining-manager.general.price_provider_api_key") }}';
+            // Only whether a key is set in the environment, never the key.
+            const envKey = {{ config('mining-manager.general.price_provider_api_key') ? 'true' : 'false' }};
             
             if (!apiKey && !envKey) {
                 setTimeout(function() {
