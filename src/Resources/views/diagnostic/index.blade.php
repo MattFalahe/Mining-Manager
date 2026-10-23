@@ -1268,7 +1268,7 @@
             <div class="diag-tab-intro">
                 <p>
                     <strong>What this tab does:</strong> At-a-glance dashboard of the plugin's runtime
-                    state. Loads daily-summary freshness, multi-corp settings sanity, price-cache
+                    state. Loads daily-summary freshness, the tax profiles, price-cache
                     freshness, scheduled-job last activity, and row counts, including payment
                     allocations, held balances, pending refunds and planned moon pulls. All read-only.
                     Data is fetched fresh each time you click the tab (no caching).
@@ -1298,7 +1298,7 @@
 
                 {{-- Multi-Corp Settings --}}
                 <div class="card card-dark mb-3">
-                    <div class="card-header"><h3 class="card-title"><i class="fas fa-building"></i> Multi-Corporation Settings</h3></div>
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-building"></i> Tax Profiles</h3></div>
                     <div class="card-body" id="ss-multi-corp"></div>
                 </div>
 
@@ -3372,7 +3372,7 @@ function loadSystemStatus() {
     // Load each section independently — progressive loading
     var sections = [
         { key: 'daily_summaries', target: '#ss-daily-summaries', render: renderDailySummaries },
-        { key: 'multi_corp', target: '#ss-multi-corp', render: renderMultiCorp },
+        { key: 'multi_corp', target: '#ss-multi-corp', render: renderTaxProfiles },
         { key: 'price_cache', target: '#ss-price-cache', render: renderPriceCache },
         { key: 'scheduled_jobs', target: '#ss-jobs', render: renderJobs },
         { key: 'data_counts', target: '#ss-data-counts', render: renderDataCounts },
@@ -3403,32 +3403,37 @@ function renderDailySummaries(target, ds) {
     );
 }
 
-function renderMultiCorp(target, mc) {
+function renderTaxProfiles(target, mc) {
     var mcBadge = mc.status === 'healthy' ? 'success' : 'warning';
     var html = '<span class="badge badge-' + mcBadge + ' mb-2">' + (mc.status || 'unknown').toUpperCase() + '</span>' +
         '<table class="table table-sm table-dark">' +
+        '<tr><td>Settings in tax profiles</td><td>' + (mc.moved ? 'Since ' + diagEscape(mc.moved_at) + ' UTC' : '<span class="text-danger">Not yet: migration 000038 has not run</span>') + '</td></tr>' +
+        '<tr><td>Moon Owner</td><td>' + (mc.moon_owner ? diagEscape(mc.moon_owner) : '<span class="text-warning">Not set</span>') + '</td></tr>' +
         '<tr><td>Configured corporations</td><td><strong>' + (mc.configured_corporations || 0) + '</strong></td></tr>' +
-        '<tr><td>Moon owner corp ID</td><td>' + (mc.moon_owner_corporation_id || '<span class="text-warning">Not set</span>') + '</td></tr>' +
         '<tr><td>Manager Core</td><td>' + (mc.manager_core_installed ? '<span class="text-success">Installed</span>' : '<span class="text-muted">Not installed</span>') + '</td></tr>' +
         '</table>';
-    if (mc.corporation_details && mc.corporation_details.length > 0) {
-        var ck = '<i class="fas fa-check text-success"></i>';
-        var no = '<i class="fas fa-times text-muted"></i>';
-        html += '<h6 class="mt-3">Per-Corporation Tax Config</h6><table class="table table-sm table-dark" style="font-size:0.85em;">' +
-            '<thead><tr><th>Corporation</th><th>Ore Rate</th><th>Moon Rates</th><th>Moon Mode</th><th>Ore</th><th>Ice</th><th>Gas</th><th>Abyssal</th><th>Triglavian</th></tr></thead><tbody>';
-        mc.corporation_details.forEach(function(c) {
-            var moonMode = c.all_moon_ore ? 'All Moon' : (c.only_corp_moon_ore ? 'Corp Only' : (c.no_moon_ore ? 'None' : 'Default'));
-            html += '<tr><td>' + (c.corporation_name || c.corporation_id) + '</td>' +
-                '<td>' + (c.ore_rate || 0) + '%</td>' +
-                '<td>' + (c.has_moon_rates ? ck : no) + '</td>' +
-                '<td><span class="badge badge-' + (c.no_moon_ore ? 'danger' : 'info') + '">' + moonMode + '</span></td>' +
-                '<td>' + (c.ore_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.ice_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.gas_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.abyssal_taxed ? ck : no) + '</td>' +
-                '<td>' + (c.triglavian_taxed ? ck : no) + '</td></tr>';
+    if (mc.profiles && mc.profiles.length > 0) {
+        var moonChoices = { all: 'All moon ore', ours: 'Only at your refineries', none: 'Not taxed' };
+        var other = function (p, slot) {
+            if (p.others_unused) {
+                return '<span class="text-muted" title="Non-members\' own mining is never taxed">not used</span>';
+            }
+            return p[slot].taxed ? p[slot].rate + '%' : '<span class="text-muted">not taxed</span>';
+        };
+        html += '<h6 class="mt-3">Tax Profiles</h6><table class="table table-sm table-dark" style="font-size:0.85em;">' +
+            '<thead><tr><th>Profile</th><th>Taxes</th><th>Moon R4/R8/R16/R32/R64</th><th>Moon Ore</th><th>Ore</th><th>Ice</th><th>Gas</th><th>Abyssal</th><th>Triglavian</th></tr></thead><tbody>';
+        mc.profiles.forEach(function (p) {
+            html += '<tr><td>' + diagEscape(p.name) + '</td>' +
+                '<td>' + diagEscape(p.taxes) + '</td>' +
+                '<td>' + p.moon_rates.map(function (rate) { return rate + '%'; }).join(' / ') + '</td>' +
+                '<td><span class="badge badge-' + (p.moon_choice === 'none' ? 'danger' : 'info') + '">' + moonChoices[p.moon_choice] + '</span></td>' +
+                '<td>' + other(p, 'ore') + '</td>' +
+                '<td>' + other(p, 'ice') + '</td>' +
+                '<td>' + other(p, 'gas') + '</td>' +
+                '<td>' + other(p, 'abyssal') + '</td>' +
+                '<td>' + other(p, 'triglavian') + '</td></tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table><small class="text-muted">The Settings Health tab checks every profile in full.</small>';
     }
     $(target).html(html);
 }
@@ -4410,12 +4415,14 @@ function runTheftDiagnostic() {
         const unresolvedBySev = data.unresolved_by_severity || {};
         const severityColors = { low: 'info', medium: 'warning', high: 'danger', critical: 'danger' };
         const rules = data.rules || {};
-        const guestRule = rules.guests_allowed ? 'allowed' : `switched off on ${rules.guests_off_since}`;
+        const guestRule = rules.guests_allowed
+            ? 'may mine, and are flagged once a bill is overdue'
+            : `kept out since ${rules.guests_off_since}, flagged as soon as their mining arrives`;
         html += `<div class="provider-test-result ${unresolvedCount > 0 ? 'warning' : 'success'}">
             <h5><i class="fas fa-user-secret"></i> Theft Detection Overview</h5>
             <div class="row mb-2">
                 <div class="col-md-4"><strong>Days overdue before theft:</strong> ${fmtNum(rules.overdue_days)}</div>
-                <div class="col-md-4"><strong>Guest mining:</strong> ${guestRule}</div>
+                <div class="col-md-4"><strong>Non-members:</strong> ${guestRule}</div>
                 <div class="col-md-4"><strong>Moon owner set:</strong> ${rules.moon_owner_set ? 'Yes' : '<span class="text-danger">No, nothing is checked</span>'}</div>
             </div>
             <div class="row mb-2">

@@ -3177,8 +3177,6 @@ class DiagnosticController extends Controller
             // Load settings
             $pricingSettings = $this->settingsService->getPricingSettings();
             $generalSettings = $this->settingsService->getGeneralSettings();
-            $taxRates = $this->settingsService->getTaxRates();
-
             $steps = [];
 
             // Step 1: Ore identification
@@ -3246,34 +3244,47 @@ class DiagnosticController extends Controller
                 ],
             ];
 
-            // Step 5: Tax rate determination
-            $taxRate = 0;
-            $taxRateSource = '';
-            if ($isMoonOre && $rarity) {
-                $taxRate = $taxRates['moon_ore'][$rarity] ?? 0;
-                $taxRateSource = "moon_ore.{$rarity}";
-            } elseif ($isIce) {
-                $taxRate = $taxRates['ice'] ?? 0;
-                $taxRateSource = 'ice';
-            } elseif ($isGas) {
-                $taxRate = $taxRates['gas'] ?? 0;
-                $taxRateSource = 'gas';
-            } elseif ($isRegularOre) {
-                $taxRate = $taxRates['ore'] ?? 0;
-                $taxRateSource = 'ore';
-            }
+            // Step 5: what each tax profile charges on it. The figure up top is
+            // the Moon Owner's, which taxes its members at its refineries.
+            $rateKey = $isMoonOre && $rarity ? "moon_ore.{$rarity}" : ($isIce ? 'ice' : ($isGas ? 'gas' : ($isRegularOre ? 'ore' : null)));
+            $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+            $profiles = $this->settingsService->taxProfiles();
+            $configured = count($profiles) > 1;
+            $headline = in_array($moonOwner, $profiles, true) ? $moonOwner : null;
+            $tickers = DB::table('corporation_infos')->whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
 
-            $taxAmount = round($totalValue * ($taxRate / 100), 2);
+            $taxRate = 0;
+            $taxAmount = 0;
+            $byProfile = ['rate' => $rateKey ?? 'none, as the ore is not in a taxed category'];
+            foreach ($profiles as $profile) {
+                $selector = $this->settingsService->taxSelectorFor($profile);
+                $rate = $rateKey === null ? 0.0 : (float) data_get($this->settingsService->taxRatesFor($profile), $rateKey, 0);
+
+                if ($rateKey === null) {
+                    $taxed = false;
+                } elseif ($isMoonOre) {
+                    $taxed = empty($selector['no_moon_ore']) && (!empty($selector['only_corp_moon_ore']) || ($selector['all_moon_ore'] ?? true));
+                } else {
+                    // Non-members' own mining is never taxed.
+                    $taxed = !($profile === null && $configured) && !empty($selector[$rateKey]);
+                }
+
+                $amount = $taxed ? round($totalValue * ($rate / 100), 2) : 0;
+                $name = $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}");
+                $byProfile[$name . ($profile === $headline ? ' (shown above)' : '')] = $taxed
+                    ? "{$rate}% = " . number_format($amount, 2) . ' ISK'
+                    : 'not taxed';
+
+                if ($profile === $headline) {
+                    $taxRate = $taxed ? $rate : 0;
+                    $taxAmount = $amount;
+                }
+            }
 
             $steps[] = [
                 'step' => 5,
-                'action' => 'Tax Calculation',
-                'result' => [
-                    'tax_rate' => $taxRate,
-                    'tax_rate_source' => $taxRateSource,
-                    'tax_amount' => $taxAmount,
-                    'formula' => "total_value ({$totalValue}) x tax_rate ({$taxRate}%)",
-                ],
+                'action' => 'Tax by Profile',
+                'result' => $byProfile,
             ];
 
             // Step 6: Price modifier (if applicable)
@@ -3389,43 +3400,51 @@ class DiagnosticController extends Controller
 
     private function systemStatusMultiCorp(): array
     {
-        $corpStats = [];
-        $allCorps = $this->settingsService->getAllCorporations();
-        $corpStats['configured_corporations'] = $allCorps->count();
+        $moved = $this->settingsService->usesTaxProfiles();
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+        $configured = $moved ? $this->settingsService->getHomeCorporationIds() : [];
+        $names = DB::table('corporation_infos')
+            ->whereIn('corporation_id', array_filter(array_merge($configured, [$moonOwner])))
+            ->get(['corporation_id', 'name', 'ticker'])
+            ->keyBy('corporation_id');
+        $label = fn (int $id) => isset($names[$id]) ? "[{$names[$id]->ticker}] {$names[$id]->name}" : "Corporation {$id}";
 
-        $moonOwner = $this->settingsService->getSetting('general.moon_owner_corporation_id');
-        $corpStats['moon_owner_corporation_id'] = $moonOwner;
+        // Global, the Moon Owner, then the rest by name, as on the Tax
+        // profiles page.
+        $ordered = $configured;
+        usort($ordered, fn (int $a, int $b) => ($a === $moonOwner ? 0 : 1) <=> ($b === $moonOwner ? 0 : 1)
+            ?: strcasecmp($names[$a]->name ?? '', $names[$b]->name ?? ''));
 
-        $corpDetails = [];
-        foreach ($allCorps as $corp) {
-            $corpId = $corp->corporation_id;
-            $this->settingsService->setActiveCorporation((int) $corpId);
-            $taxRates = $this->settingsService->getTaxRatesForCorporation($corpId);
-            $taxSelector = $this->settingsService->getTaxSelector();
+        $profiles = [];
+        foreach (array_merge([null], $ordered) as $profile) {
+            $taxRates = $this->settingsService->taxRatesFor($profile);
+            $taxSelector = $this->settingsService->taxSelectorFor($profile);
 
-            $corpDetails[] = [
-                'corporation_id' => $corpId,
-                'corporation_name' => $corp->name ?? 'Unknown',
-                'has_ore_rate' => isset($taxRates['ore']) && $taxRates['ore'] > 0,
-                'has_moon_rates' => isset($taxRates['moon_ore']) && !empty($taxRates['moon_ore']),
-                'all_moon_ore' => $taxSelector['all_moon_ore'] ?? false,
-                'only_corp_moon_ore' => $taxSelector['only_corp_moon_ore'] ?? false,
-                'no_moon_ore' => $taxSelector['no_moon_ore'] ?? false,
-                'ore_taxed' => $taxSelector['ore'] ?? true,
-                'ice_taxed' => $taxSelector['ice'] ?? true,
-                'gas_taxed' => $taxSelector['gas'] ?? false,
-                'abyssal_taxed' => $taxSelector['abyssal_ore'] ?? false,
-                'triglavian_taxed' => $taxSelector['triglavian_ore'] ?? false,
-                'ore_rate' => $taxRates['ore'] ?? 0,
+            $profiles[] = [
+                'name' => $profile === null ? 'Global' : $label($profile),
+                'taxes' => $profile === null ? ($configured ? 'Non-members' : 'Everyone') : ($profile === $moonOwner ? 'Moon Owner members' : 'Its members'),
+                // Non-members' own mining is never taxed, only their mining
+                // at our refineries.
+                'others_unused' => $profile === null && !empty($configured),
+                'moon_rates' => collect(['r4', 'r8', 'r16', 'r32', 'r64'])->map(fn (string $rarity) => (float) ($taxRates['moon_ore'][$rarity] ?? 0))->all(),
+                'moon_choice' => !empty($taxSelector['no_moon_ore']) ? 'none' : (!empty($taxSelector['only_corp_moon_ore']) ? 'ours' : (($taxSelector['all_moon_ore'] ?? true) ? 'all' : 'none')),
+                'ore' => ['taxed' => (bool) ($taxSelector['ore'] ?? true), 'rate' => (float) ($taxRates['ore'] ?? 0)],
+                'ice' => ['taxed' => (bool) ($taxSelector['ice'] ?? true), 'rate' => (float) ($taxRates['ice'] ?? 0)],
+                'gas' => ['taxed' => (bool) ($taxSelector['gas'] ?? false), 'rate' => (float) ($taxRates['gas'] ?? 0)],
+                'abyssal' => ['taxed' => (bool) ($taxSelector['abyssal_ore'] ?? false), 'rate' => (float) ($taxRates['abyssal_ore'] ?? 0)],
+                'triglavian' => ['taxed' => (bool) ($taxSelector['triglavian_ore'] ?? false), 'rate' => (float) ($taxRates['triglavian_ore'] ?? 0)],
             ];
         }
-        $this->settingsService->setActiveCorporation(null);
 
-        $corpStats['corporation_details'] = $corpDetails;
-        $corpStats['status'] = $allCorps->count() > 0 || $moonOwner ? 'healthy' : 'warning';
-        $corpStats['manager_core_installed'] = \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled();
-
-        return $corpStats;
+        return [
+            'moved' => $moved,
+            'moved_at' => $moved ? $this->settingsService->getSettingForCorporation(\MiningManager\Services\Configuration\SettingsTransfer::DONE_KEY, null) : null,
+            'configured_corporations' => count($configured),
+            'moon_owner' => $moonOwner ? $label($moonOwner) : null,
+            'profiles' => $profiles,
+            'status' => $moved && $moonOwner ? 'healthy' : 'warning',
+            'manager_core_installed' => \MiningManager\Services\Pricing\PriceProviderService::isManagerCoreInstalled(),
+        ];
     }
 
     private function systemStatusPriceCache(): array
