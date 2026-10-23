@@ -17,7 +17,7 @@ class CalculateMonthlyTaxesCommand extends Command
                             {--period-start= : Period start date (YYYY-MM-DD, for any period type)}
                             {--period-type= : Override period type (monthly|biweekly; "weekly" is accepted but silently maps to monthly — legacy)}
                             {--character_id= : Calculate one character\'s account (its main and alts)}
-                            {--corporation_id= : Calculate for specific structure-owner corporation}
+                            {--corporation_id= : Before tax profiles: read settings as this structure-owner corporation}
                             {--recalculate : Recalculate existing tax records}
                             {--force : Run even if today is not a period boundary}';
 
@@ -72,18 +72,29 @@ class CalculateMonthlyTaxesCommand extends Command
 
         // If a specific corporation is provided, set it as active context
         if ($corporationId = $this->option('corporation_id')) {
-            $this->settingsService->setActiveCorporation((int) $corporationId);
-            $this->info("Using corporation context: {$corporationId}");
+            if ($this->settingsService->usesTaxProfiles()) {
+                $this->warn('Tax profiles decide every account\'s settings, so --corporation_id changes nothing.');
+            } else {
+                $this->settingsService->setActiveCorporation((int) $corporationId);
+                $this->info("Using corporation context: {$corporationId}");
+            }
         }
 
         // Each run is a period type and the period it bills.
         $runs = [];
 
         if ($this->option('period-start')) {
-            // Explicit period start date provided
-            $periodType = $this->option('period-type') ?? $this->periodHelper->getConfiguredPeriodType();
+            // Explicit period start date provided. Each tax profile bills on
+            // its own period, so with none named every period in use is
+            // billed for that date.
             $periodDate = Carbon::parse($this->option('period-start'));
-            $runs[] = [$periodType, ...$this->periodHelper->getPeriodBounds($periodDate, $periodType)];
+            $periodTypes = $this->option('period-type')
+                ? [$this->option('period-type')]
+                : $this->periodHelper->periodTypesInUse();
+
+            foreach ($periodTypes as $periodType) {
+                $runs[] = [$periodType, ...$this->periodHelper->getPeriodBounds($periodDate, $periodType)];
+            }
         } elseif ($this->option('month')) {
             // Legacy --month option (always monthly)
             $month = Carbon::parse($this->option('month') . '-01');
