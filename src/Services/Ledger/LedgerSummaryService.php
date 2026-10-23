@@ -191,6 +191,36 @@ class LedgerSummaryService
 
     protected function buildDailySummary(int $characterId, string $date): MiningLedgerDailySummary
     {
+        [$keys, $attributes] = $this->dailySummaryFor($characterId, $date);
+
+        return MiningLedgerDailySummary::updateOrCreate($keys, $attributes);
+    }
+
+    /**
+     * What a day's summary would hold if it were built now, without saving
+     * it: the same build generateDailySummary() makes, for Diagnostics to set
+     * beside what is stored.
+     *
+     * @return array<string, mixed> the summary's attributes
+     */
+    public function previewDailySummary(int $characterId, string $date): array
+    {
+        $callerContext = $this->settingsService->getActiveCorporation();
+
+        try {
+            return $this->dailySummaryFor($characterId, $date)[1];
+        } finally {
+            $this->settingsService->setActiveCorporation($callerContext);
+        }
+    }
+
+    /**
+     * A day's summary as [the row it belongs in, what it holds].
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    protected function dailySummaryFor(int $characterId, string $date): array
+    {
         $dateCarbon = Carbon::parse($date);
 
         // Only aggregate entries that have been processed (have prices calculated).
@@ -202,8 +232,8 @@ class LedgerSummaryService
         $hasData = (clone $baseQuery)->exists();
 
         if (!$hasData) {
-            // No processed mining data — create/update empty summary
-            return MiningLedgerDailySummary::updateOrCreate(
+            // No processed mining data: an empty summary
+            return [
                 [
                     'character_id' => $characterId,
                     'date' => $dateCarbon,
@@ -221,8 +251,8 @@ class LedgerSummaryService
                     'triglavian_ore_value' => 0,
                     'ore_types' => [],
                     'is_finalized' => !$dateCarbon->isSameMonth(now()),
-                ]
-            );
+                ],
+            ];
         }
 
         // Moon Owner Corporation is a GLOBAL setting (not corp-context dependent).
@@ -477,8 +507,7 @@ class LedgerSummaryService
             }
         }
 
-        // Create or update daily summary
-        return MiningLedgerDailySummary::updateOrCreate(
+        return [
             [
                 'character_id' => $characterId,
                 'date' => $dateCarbon,
@@ -497,8 +526,8 @@ class LedgerSummaryService
                 'triglavian_ore_value' => $triglavianOreValue,
                 'ore_types' => $oreBreakdown,
                 'is_finalized' => $isFinalized,
-            ]
-        );
+            ],
+        ];
     }
 
     /**
