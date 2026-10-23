@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Schema;
 use MiningManager\Models\MoonExtraction;
 use MiningManager\Models\WebhookConfiguration;
 use MiningManager\Integrations\MoonFastPollIntegration;
-use MiningManager\Models\TaxCode;
 use MiningManager\Services\Tax\ClassificationEpoch;
 use MiningManager\Services\OreClassifier;
 use MiningManager\Services\TypeIdRegistry;
@@ -101,7 +100,8 @@ class MasterTestRunner
             'checkPricingSettingsLoadable',
             'checkNotificationSettingsLoadable',
             'checkFeatureFlagsLoadable',
-            'checkActiveCorporationConfigured',
+            'checkMoonOwnerSet',
+            'checkSettingsHealth',
 
             // Cross-plugin detection + integration
             'checkManagerCoreDetected',
@@ -448,24 +448,56 @@ class MasterTestRunner
         return $this->pass('Feature flags loadable', 'settings', "{$on}/" . count($f) . " flags enabled");
     }
 
-    protected function checkActiveCorporationConfigured(): array
+    protected function checkMoonOwnerSet(): array
     {
         $corpId = $this->settingsService->getTaxProgramCorporationId();
         if (!$corpId) {
             return $this->warn(
-                'Tax program corporation configured',
+                'Moon Owner set',
                 'settings',
-                'No tax program corporation set — moon owner-scoped queries will not filter',
-                ['hint' => 'Set general.moon_owner_corporation_id in Settings → Setup']
+                'No Moon Owner corporation is set, so nothing that works for the Moon Owner has a corporation to work for',
+                ['hint' => 'Set it under Settings, Setup']
             );
         }
 
         $name = DB::table('corporation_infos')->where('corporation_id', $corpId)->value('name');
         return $this->pass(
-            'Tax program corporation configured',
+            'Moon Owner set',
             'settings',
-            $name ? "{$name} ({$corpId})" : "Corp ID {$corpId} (name not in SDE)"
+            $name ? "{$name} ({$corpId})" : "Corporation {$corpId}, which SeAT has no record of"
         );
+    }
+
+    /**
+     * The Settings Health tab's checks, summed up: where every setting is
+     * kept, and what each tax profile holds.
+     */
+    protected function checkSettingsHealth(): array
+    {
+        $name = 'Settings and tax profiles';
+        $report = app(SettingsHealth::class)->report();
+
+        $problems = [];
+        foreach ($report['groups'] as $group) {
+            foreach ($group['checks'] as $check) {
+                if (in_array($check['status'], ['warn', 'fail'], true)) {
+                    $problems[] = "{$check['label']}: {$check['message']}";
+                }
+            }
+        }
+
+        $counts = $report['counts'];
+        $summary = "{$counts['ok']} ok, {$counts['warn']} warnings, {$counts['fail']} failures";
+
+        if ($report['overall'] === 'fail') {
+            return $this->fail($name, 'settings', "{$summary}. The Settings Health tab has the detail", $problems);
+        }
+
+        if ($report['overall'] === 'warn') {
+            return $this->warn($name, 'settings', "{$summary}. The Settings Health tab has the detail", $problems);
+        }
+
+        return $this->pass($name, 'settings', $summary);
     }
 
     // =================================================================
@@ -1301,14 +1333,13 @@ class MasterTestRunner
             return $this->warn($name, 'payments', 'Switched on, but the keyword is empty, so no payment is recognised as paying ahead');
         }
 
-        $others = [
-            'tax code prefix' => trim((string) TaxCode::getPrefix()),
-            // An empty refund keyword falls back to the default at match time.
-            'refund keyword' => trim((string) ($payment['refund_keyword'] ?? '')) ?: 'MM-REFUND',
-        ];
+        // Every tax profile makes its codes with a prefix of its own.
+        $others = array_map(fn (string $prefix) => ['tax code prefix', $prefix], $this->settingsService->taxCodePrefixes());
+        // An empty refund keyword falls back to the default at match time.
+        $others[] = ['refund keyword', trim((string) ($payment['refund_keyword'] ?? '')) ?: 'MM-REFUND'];
 
         $clashes = [];
-        foreach ($others as $label => $other) {
+        foreach ($others as [$label, $other]) {
             if ($other !== '' && (stripos($keyword, $other) !== false || stripos($other, $keyword) !== false)) {
                 $clashes[] = "{$label} {$other}";
             }
