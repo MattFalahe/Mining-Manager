@@ -195,17 +195,86 @@ class TaxPeriodHelper
     /**
      * Return info about a queued period-type change, or null if none.
      *
-     * Used by the tax pages' yellow banner to surface the upcoming switch.
+     * Reads the active corporation's settings, so it means one thing only
+     * before tax profiles. The tax pages ask pendingPeriodChangesForViewer().
      *
      * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
      */
     public function getPendingPeriodChange(): ?array
     {
         $rates = $this->settingsService->getTaxRates();
-        $active = $rates['tax_calculation_period'] ?? 'monthly';
-        $pending = $rates['tax_calculation_period_pending'] ?? null;
-        $effectiveFrom = $rates['tax_calculation_period_effective_from'] ?? null;
 
+        return $this->queuedChange(
+            $rates['tax_calculation_period'] ?? 'monthly',
+            $rates['tax_calculation_period_pending'] ?? null,
+            $rates['tax_calculation_period_effective_from'] ?? null
+        );
+    }
+
+    /**
+     * The queued period changes the signed-in player should see on the tax
+     * pages: their own account's profile's, and every profile's for an admin,
+     * who queues them. An admin's are named after their profile.
+     *
+     * @return array<int, array{profile: string|null, current: string, pending: string, effective_from: \Carbon\Carbon}>
+     */
+    public function pendingPeriodChangesForViewer(): array
+    {
+        if (!$this->settingsService->usesTaxProfiles()) {
+            $change = $this->getPendingPeriodChange();
+
+            return $change ? [$change + ['profile' => null]] : [];
+        }
+
+        $user = auth()->user();
+        $admin = $user && $user->can('mining-manager.admin');
+        $moonOwner = (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+
+        if ($admin) {
+            $profiles = $this->settingsService->taxProfiles();
+        } else {
+            $main = (int) ($user->main_character_id ?? 0);
+            $profiles = [$main ? $this->accountProfile($main, Carbon::now()) : $moonOwner];
+        }
+
+        $tickers = DB::table('corporation_infos')->whereIn('corporation_id', array_filter($profiles))->pluck('ticker', 'corporation_id');
+
+        $changes = [];
+        foreach ($profiles as $profile) {
+            if ($change = $this->pendingPeriodChangeFor($profile)) {
+                $name = $profile === null ? 'Global' : (isset($tickers[$profile]) ? "[{$tickers[$profile]}]" : "Corporation {$profile}");
+                $changes[] = $change + ['profile' => $admin ? $name : null];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
+     * A tax profile's queued period change, or null when none is to come.
+     *
+     * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
+     */
+    public function pendingPeriodChangeFor(?int $profile): ?array
+    {
+        $read = fn (string $key, $default = null) => $this->settingsService->getSettingForCorporation($key, $profile, $default);
+
+        return $this->queuedChange(
+            (string) $read('tax_rates.tax_calculation_period', 'monthly'),
+            $read('tax_rates.tax_calculation_period_pending'),
+            $read('tax_rates.tax_calculation_period_effective_from')
+        );
+    }
+
+    /**
+     * A queued change as the banner shows it, or null when there is none to
+     * come: half a queue, a date already reached, or a change to the period
+     * already in use.
+     *
+     * @return array{current: string, pending: string, effective_from: \Carbon\Carbon}|null
+     */
+    private function queuedChange(string $active, $pending, $effectiveFrom): ?array
+    {
         if (!$pending || !$effectiveFrom) {
             return null;
         }
@@ -216,7 +285,7 @@ class TaxPeriodHelper
             return null;
         }
 
-        // Already passed — getConfiguredPeriodType() will promote on next call.
+        // Already passed: billing promotes it the next time it reads the period.
         if (Carbon::today()->gte($effectiveDate)) {
             return null;
         }
