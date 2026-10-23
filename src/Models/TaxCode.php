@@ -127,13 +127,17 @@ class TaxCode extends Model
      */
     public function getFullCode()
     {
-        // Use stored prefix if available, otherwise fall back to current setting
+        // The prefix the code was made with, stored on it.
         $prefix = $this->prefix ?? self::getPrefix();
         return $prefix . $this->code;
     }
 
     /**
-     * Get the configured tax code prefix from settings.
+     * The prefix of a code with none stored on it.
+     *
+     * Under tax profiles every profile makes its codes with a prefix of its
+     * own, and the code keeps it. One with none stored takes the Moon
+     * Owner's, the prefix every code was made with before tax profiles.
      *
      * @return string
      */
@@ -141,10 +145,34 @@ class TaxCode extends Model
     {
         try {
             $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+
+            if ($settings->usesTaxProfiles()) {
+                $moonOwner = (int) $settings->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null;
+
+                return (string) $settings->getSettingForCorporation('tax_rates.tax_code_prefix', $moonOwner, 'TAX-');
+            }
+
             $taxRates = $settings->getTaxRates();
             return $taxRates['tax_code_prefix'] ?? 'TAX-';
         } catch (\Exception $e) {
             return config('mining-manager.wallet.tax_code_prefix', 'TAX-');
+        }
+    }
+
+    /**
+     * Every prefix codes are made with now: one per tax profile, or the one
+     * prefix before tax profiles.
+     *
+     * @return array<int, string>
+     */
+    public static function currentPrefixes(): array
+    {
+        try {
+            $settings = app(\MiningManager\Services\Configuration\SettingsManagerService::class);
+
+            return $settings->usesTaxProfiles() ? $settings->taxCodePrefixes() : [self::getPrefix()];
+        } catch (\Exception $e) {
+            return [self::getPrefix()];
         }
     }
 
@@ -180,8 +208,8 @@ class TaxCode extends Model
             return null;
         }
 
-        // Collect all known prefixes: current setting + any stored in DB
-        $currentPrefix = self::getPrefix();
+        // Every prefix codes are made with now, and every prefix a code was
+        // ever stored with.
         $storedPrefixes = self::select('prefix')
             ->distinct()
             ->whereNotNull('prefix')
@@ -190,7 +218,7 @@ class TaxCode extends Model
         // Longest first. With a prefix per tax profile one can begin another,
         // and the pattern has nothing after the code to stop a short prefix
         // reading part of a long one as the code.
-        $prefixes = collect([$currentPrefix])
+        $prefixes = collect(self::currentPrefixes())
             ->merge($storedPrefixes)
             ->unique()
             ->filter()

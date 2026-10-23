@@ -74,7 +74,7 @@ class TaxCodeGeneratorService
      * The prefix a bill's code is made with: the one of its account's tax
      * profile, once settings are in profiles.
      */
-    protected function prefixFor(MiningTax $tax): string
+    public function prefixFor(MiningTax $tax): string
     {
         if (!$this->settings->usesTaxProfiles()) {
             return TaxCode::getPrefix();
@@ -106,18 +106,6 @@ class TaxCodeGeneratorService
         } while (TaxCode::where('code', $code)->exists());
 
         return $code;
-    }
-
-    /**
-     * Get full tax code with prefix.
-     *
-     * @param string $code
-     * @return string
-     */
-    public function getFullCode(string $code): string
-    {
-        $prefix = $this->settings->getSetting('tax_rates.tax_code_prefix', 'TAX-');
-        return $prefix . $code;
     }
 
     /**

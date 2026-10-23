@@ -2032,15 +2032,11 @@ class TaxController extends Controller
 
         $features = $this->getFeatureFlags();
 
-        // Get tax code prefix from settings for display
-        $taxCodePrefix = $this->settingsService->getSetting('tax_rates.tax_code_prefix', 'TAX-');
-
         return view('mining-manager::taxes.codes', compact(
             'taxCodes',
             'summary',
             'status',
             'search',
-            'taxCodePrefix',
             'isAdmin',
             'isDirector',
             'viewAll',
@@ -2969,6 +2965,7 @@ class TaxController extends Controller
             $taxCode->mining_tax_id = $validated['mining_tax_id'];
             $taxCode->character_id = $tax->character_id;
             $taxCode->code = $validated['code'] ?? $this->codeService->generateUniqueCode();
+            $taxCode->prefix = $this->codeService->prefixFor($tax);
             $taxCode->status = 'active';
             $taxCode->generated_at = Carbon::now();
             $taxCode->expires_at = isset($validated['expires_at'])
