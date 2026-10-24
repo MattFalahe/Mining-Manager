@@ -4,8 +4,6 @@ return [
     // Page Headers
     'settings' => 'Settings',
     'settings_menu' => 'Settings Menu',
-    'general' => 'General',
-    'tax_rates' => 'Tax Rates',
     'pricing' => 'Pricing',
     'features' => 'Features',
     'advanced' => 'Advanced',
@@ -17,146 +15,9 @@ return [
     'save_changes' => 'Save Changes',
     'reset_form' => 'Reset Form',
     'days' => 'days',
-    'hours' => 'hours',
-    'minutes' => 'minutes',
-    'never' => 'Never',
-    'updating' => 'Updating',
-    'update_now' => 'Update Now',
     
     // Validation
     'validation_errors' => 'Please fix the following errors',
-    
-    // General Settings
-    'general_settings' => 'General Settings',
-    'general_info' => 'Configure basic corporation settings, time zones, and display preferences.',
-    
-    // Corporation Settings
-    'corporation_settings' => 'Corporation Settings',
-
-    // Time Settings
-    'time_settings' => 'Time & Date Settings',
-    'timezone' => 'Timezone',
-    'timezone_help' => 'Default timezone for all timestamps and schedules',
-    'date_format' => 'Date Format',
-    'date_format_help' => 'How dates should be displayed throughout the system',
-    'time_format' => 'Time Format',
-    'time_format_help' => '12-hour or 24-hour time format',
-    
-    // Payment Settings
-    'payment_settings' => 'Payment Settings',
-    'payment_match_tolerance' => 'Payment Match Tolerance',
-    'payment_match_tolerance_help' => 'ISK tolerance when matching wallet payments to tax amounts. Default: 100 ISK',
-    'payment_grace_period' => 'ESI Wallet Lag Buffer',
-    'payment_grace_period_help' => 'Extra hours to wait before marking a tax as overdue, allowing ESI wallet data to arrive from CCP. EVE wallet journal entries can be delayed — this buffer prevents false "overdue" flags when a player has already paid but ESI hasn\'t delivered the data yet. Default: 24 hours',
-
-    // Notification Settings (moved to dedicated Notifications tab)
-    'notification_settings' => 'Notification Settings',
-    'notifications' => 'Notifications',
-    
-    // Tax Rate Settings
-    'tax_rate_settings' => 'Tax Rate Settings',
-    'tax_rate_info' => 'Configure default tax rates for different types of mining activities.',
-    'default_tax_rates' => 'Default Tax Rates',
-    'ore_tax_rate' => 'Ore Tax Rate',
-    'ore_tax_rate_help' => 'Default tax percentage for standard ore mining',
-    'ice_tax_rate' => 'Ice Tax Rate',
-    'ice_tax_rate_help' => 'Default tax percentage for ice harvesting',
-    'gas_tax_rate' => 'Gas Tax Rate',
-    'gas_tax_rate_help' => 'Default tax percentage for gas huffing',
-    'moon_tax_rate' => 'Moon Ore Tax Rate',
-    'moon_tax_rate_help' => 'Default tax percentage for moon ore mining',
-    'mercoxit_tax_rate' => 'Mercoxit Tax Rate',
-    'mercoxit_tax_rate_help' => 'Default tax percentage for mercoxit mining',
-    
-    // Tax Payment
-    'tax_wallet_division' => 'Tax Wallet Division',
-    'master_wallet' => 'Master Wallet',
-    'division_1' => 'Division 1',
-    'division_2' => 'Division 2',
-    'division_3' => 'Division 3',
-    'division_4' => 'Division 4',
-    'division_5' => 'Division 5',
-    'division_6' => 'Division 6',
-    'division_7' => 'Division 7',
-    'tax_wallet_division_help' => 'Which wallet division should receive tax payments',
-    
-    // Tax Code Settings
-    'tax_code_settings' => 'Tax Code Settings',
-    'tax_code_prefix' => 'Tax Code Prefix',
-    'tax_code_prefix_help' => 'Prefix for generated tax codes (e.g., TAX-)',
-    'tax_code_length' => 'Tax Code Length',
-    'tax_code_length_help' => 'Number of characters in generated tax codes',
-    'auto_generate_tax_codes' => 'Auto-Generate Tax Codes',
-    'auto_generate_tax_codes_help' => 'Automatically generate unique tax codes for members',
-    
-    // Tax Period Settings
-    'tax_period_settings' => 'Tax Period Settings',
-    'tax_calculation_period' => 'Tax Calculation Period',
-    'monthly' => 'Monthly',
-    'weekly' => 'Weekly',
-    'biweekly' => 'Bi-weekly',
-    'tax_calculation_period_help' => 'How often taxes are calculated',
-    'tax_payment_deadline' => 'Payment Deadline',
-    'tax_payment_deadline_help' => 'Number of days members have to pay taxes after calculation',
-    'send_tax_reminders' => 'Send Tax Reminders',
-    'send_tax_reminders_help' => 'Send reminder notifications before tax deadline',
-    'tax_reminder_days' => 'Reminder Days Before Deadline',
-    'tax_reminder_days_help' => 'Send reminders this many days before the deadline',
-    
-    // Pricing Settings
-    'pricing_settings' => 'Pricing Settings',
-    'pricing_info' => 'Configure price sources, market hubs, and pricing adjustments.',
-    
-    // Price Source Settings
-    'price_source_settings' => 'Price Source Settings',
-    'price_provider' => 'Price Provider',
-    'price_provider_help' => 'External service to use for market price data',
-    'price_type' => 'Price Type',
-    'sell_orders' => 'Sell Orders',
-    'buy_orders' => 'Buy Orders',
-    'average' => 'Average',
-    'price_type_help' => 'Which order type to use for pricing',
-    'price_percentile' => 'Price Percentile',
-    'minimum' => 'Minimum',
-    'maximum' => 'Maximum',
-    'median' => 'Median',
-    'percentile_5' => '5th Percentile',
-    'percentile_95' => '95th Percentile',
-    'price_percentile_help' => 'Statistical method for price calculation',
-    'market_hub' => 'Market Hub',
-    'market_hub_help' => 'Primary trade hub for price data',
-    
-    // Price Cache Settings
-    'price_cache_settings' => 'Price Cache Settings',
-    'price_cache_duration' => 'Cache Duration',
-    'price_cache_duration_help' => 'How long to cache price data before refreshing',
-    'auto_update_prices' => 'Auto-Update Prices',
-    'auto_update_prices_help' => 'Automatically refresh price data when cache expires',
-    'last_price_update' => 'Last Price Update',
-    'prices_updated' => 'Prices have been updated successfully',
-    'error_updating_prices' => 'Error updating prices',
-    
-    // Pricing Adjustments
-    'pricing_adjustments' => 'Pricing Adjustments',
-    'pricing_adjustment_warning' => 'Price adjustments affect all tax calculations. Use carefully.',
-    'price_adjustment' => 'Price Adjustment Percentage',
-    'price_adjustment_help' => 'Adjust all prices by this percentage (positive or negative)',
-    'minimum_ore_value' => 'Minimum Ore Value',
-    'minimum_ore_value_help' => 'Ignore ore below this total value (spam filter)',
-    'apply_refining_efficiency' => 'Apply Refining Efficiency',
-    'apply_refining_efficiency_help' => 'Calculate ore value based on refined minerals',
-    'refining_efficiency' => 'Refining Efficiency',
-    'refining_efficiency_help' => 'Average refining efficiency percentage',
-    
-    // Compressed Ore Pricing
-    'compressed_ore_pricing' => 'Compressed Ore Pricing',
-    'compressed_ore_pricing_method' => 'Pricing Method',
-    'refined_value' => 'Refined Value',
-    'refined_value_desc' => 'Calculate value based on refined minerals',
-    'market_value' => 'Market Value',
-    'market_value_desc' => 'Use direct market value of compressed ore',
-    'auto_detect_compressed' => 'Auto-Detect Compressed Ore',
-    'auto_detect_compressed_help' => 'Automatically identify compressed ore types',
     
     // Feature Settings
     'feature_settings' => 'Feature Settings',
@@ -200,7 +61,6 @@ return [
     'auto_process_ledger' => 'Import Refinery Mining',
     'auto_process_ledger_help' => 'Reads the mining your refineries record into the plugin every half hour. Off, no refinery mining comes in, so moon ore mined at your refineries is neither taxed nor checked for theft.',
     'ledger_processing_interval' => 'Processing Interval',
-    'ledger_processing_interval_help' => 'How often to process ledger data (in minutes). Note: Changing this value requires manually updating the scheduled task interval in SeAT\'s scheduler.',
     'auto_calculate_taxes' => 'Auto-Calculate Taxes',
     'auto_calculate_taxes_help' => 'Works out each tax period\'s bills in the nightly run once the period has ended. Off, nothing is billed until someone uses Calculate Taxes.',
     'auto_generate_invoices' => 'Send Invoices',
@@ -217,7 +77,6 @@ return [
     'auto_cleanup_old_data_help' => 'Once a day, deletes archived moon extractions older than the period above. Nothing else is deleted.',
     
     // Advanced Settings
-    'advanced_settings' => 'Advanced Settings',
     'advanced_warning' => 'These settings are for advanced users only. Incorrect settings may cause issues.',
     'export_settings' => 'Export Settings',
     'export_description' => 'Export every setting, including the ones each corporation has of its own, to a JSON file for backup or transfer.',
@@ -229,7 +88,6 @@ return [
     'import_description' => 'Import settings from a previously exported JSON file.',
     'choose_file' => 'Choose File',
     'import_now' => 'Import Settings',
-    'cache_management' => 'Cache Management',
     'cache_description' => 'Clear all cached data including prices, stats, and calculated values.',
     'clear_now' => 'Clear Cache',
     'confirm_clear_cache' => 'Are you sure you want to clear all cached data?',
@@ -272,10 +130,6 @@ return [
     'documentation_text' => 'For detailed documentation, examples, and troubleshooting, visit our GitHub repository.',
     'view_documentation' => 'View Documentation',
     
-    // Messages
-    'choose_payment_method' => 'Choose Payment Method',
-    'payment_method_description' => 'Select how members should pay their mining taxes.',
-    
     // Additional Settings Terms
     'clear_cache' => 'Clear Cache',
     'help_documentation' => 'Help & Documentation',
@@ -312,8 +166,6 @@ return [
     'webhook_corporation' => 'Assign to Corporation',
     'webhook_corporation_global' => 'Global (admin — sees all corps)',
     'webhook_corporation_help' => 'Which corporation should this webhook receive notifications for? "Global" receives everything. The Tax Program Corp receives everything regardless. A specific corp receives: moon/theft/broadcast tax for its own operations, plus individual tax reminders / invoices / overdue only for miners who belong to that corp. Use this to let each mining-group director see only their own members\' tax activity.',
-    'slack_webhook_help' => 'Go to Slack App Settings → Incoming Webhooks to get your webhook URL',
-    'custom_webhook_help' => 'Enter your custom webhook endpoint URL',
     'notify_on_events' => 'Notify On Events',
     'theft_detected' => 'Theft Detected',
     'critical_theft' => 'Critical Theft',
@@ -322,8 +174,6 @@ return [
 
     // Discord Settings
     'discord_settings' => 'Discord Settings',
-    'discord_role_id' => 'Discord Role ID',
-    'discord_role_id_help' => 'Enter a Discord role ID to ping when notifications are sent (enable Developer Mode in Discord, right-click role → Copy ID)',
     'discord_username' => 'Custom Username',
     'discord_username_help' => 'Override the webhook\'s username (optional)',
 
