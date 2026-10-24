@@ -8,15 +8,16 @@ All notable changes to Mining Manager will be documented in this file.
 
 Settings move into **tax profiles**. A tax profile decides how often bills go out, the prefix on their payment codes, and what is taxed at which rate. Each configured corporation has one of its own, and the **Global** profile taxes everyone else. Everything else is set once for the whole install.
 
+This release also brings tax periods to the ledger, My Mining and the dashboards, the tax on every row of a character's ledger, invoices that list only what they taxed, and theft detection that follows players rather than scans.
+
 ### Tax Profiles
 
 - **One profile for each configured corporation, and Global for everyone else.** A day's mining is taxed by the profile of the corporation the pilot was in that day. An account's bills follow the profile of its main character's corporation on the first of the month: its billing period and the prefix on its payment codes. Monthly and twice-a-month profiles run side by side, and Calculate Taxes works out every period in use. So does `calculate-taxes --period-start` when no period type is given; its `--corporation_id` option changes nothing under tax profiles.
 - **A configured corporation never falls back to Global.** Adding one copies the Moon Owner's profile, and from then on its rates are its own. A corporation that had moon rates of its own before the update pays them at the Moon Owner's refineries from the day after it, where until now the Moon Owner's rates applied to everyone mining there. The move's report lists every change like this.
 - **Global replaces the guest rates.** It taxes non-members for their mining at your refineries only, never their own mining elsewhere. With no corporation configured it taxes everyone, for all of their mining, as before.
-- **Global moon rates of 100% keep non-members out.** Their mining at your refineries is billed at full price and flagged as theft as soon as it is imported, rather than once a bill is overdue, and paying the bill closes the incident. An install that had Allow Guest Mining switched off is moved to exactly this. At 0% non-members mine for free, and the page says so: theft detection cannot flag anyone who never owes anything.
+- **Global moon rates of 100% keep non-members out.** Their mining at your refineries is billed at full price and flagged as theft as soon as it is imported, rather than once a bill is overdue, and paying the bill closes the incident. At 0% non-members mine for free, and the page says so: theft detection cannot flag anyone who never owes anything.
 - **All moon ore means all of it.** A profile set to tax all moon ore now also taxes the moon ore its members mine away from your refineries, at other corporations' refineries SeAT tracks and in their own mining ledgers, from the day after the update. Only at your refineries works as before.
 - Days before the update stay taxed under the old rules, whatever works them out again, and a day already billed keeps what it was billed.
-- The banner on the tax pages about a queued change of billing period shows each player their own profile's change, and an admin every profile's.
 
 ### Settings
 
@@ -25,11 +26,77 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 - **Maintenance shows what the move did**: every value written and why, the copies the plugin stopped reading, and what changed in effect. `mining-manager:settings-transfer` prints the same.
 - **Features says what each switch does.** Several did less than their names suggested: Ledger Retention Period only ever trimmed archived moon extractions, and Enable Tax Tracking only hid the Calculate Taxes tab and the tax banner. Each is now named for what it does, with a line underneath saying so.
 - **Settings that did nothing are gone**: items per page, currency decimals, compact mode, character portraits, Allow Public Statistics, Tax Record Retention, the event bonus, the payment method and two moon settings.
-- Allow Guest Mining and the upfront payments switch have moved: the first into the Global profile's moon rates, the second onto Payments.
+- The upfront payments switch has moved from Features onto Payments.
+- Fixed: **importing a settings export saved every json setting as text.** The export carries those values as they are stored and the import encoded them a second time, so after an import they no longer read back as what was exported, the notification type switches and their options among them. An import now saves each one exactly as it was exported.
+- Fixed: **Reset to Defaults also wiped the plugin's own records** from the settings table: the cutover dates that keep the newer ore classes, wallet matching and part payments away from what came before them, and when the outstanding digest and other reminders last went out. After a reset a reprice could re-rate old mining under the newer ore classes, and the digest could go out again early. A reset now clears the settings and keeps those records.
+- Fixed: **the Pricing page wrote an API key set in the environment into its source.** It now only checks whether one is set.
 
 ### Ore Valuation
 
 - **Every ore is valued by the minerals it refines into, and gas at its own price.** That was already the default. The hidden setting that could value ore at its raw market price is gone, and so is Use Refined Mineral Value, which only chose the figure the Extraction Simulator and Find Moons showed first: they lead with refined value, which is what tax is worked out on. An install that valued ore at its own price keeps that for mining up to the day of the update, even when it is priced again.
+
+### Mining Ledger
+
+- Fixed: **a member's own mining vanished from the Mining Summary when a corporation was picked.** The filter matched the corporation that owned the structure the mining happened at, and personal mining has none, so it only ever showed under All Corporations, beside a Total Tax that still covered each miner's whole month. The page now opens on **All mining**, which counts a corporation's miners the same way as the dashboard and Analytics, every ore wherever they mined it, so the value, Total Tax and the ore, volume and system columns all cover the same mining. Past months still come from the finalized summaries, filtered to those miners.
+- **At our moons**, a second view of the Mining Summary: the moon ore a corporation's refineries recorded, by miner, non-members included, with how much of it was R4 to R64. It opens on your Moon Owner Corporation, and directors can pick another refinery owner or all of them. Personal mining is not in it, since nothing in it says whose moon it came off, and it shows no tax, since a bill covers a member's whole month. Based on an idea from [Nauclerus](https://github.com/Nauclerus) in [#7](https://github.com/MattFalahe/Mining-Manager/pull/7).
+- The corporation filter on the Mining Summary is shown to directors only. Members see their own mining either way, and the line under the two views says so in their terms.
+- **An Ore filter on All mining**, with the slices the Analytics Performance Charts use: moon ore from our moons, other moons or all moons, regular ore, ice, gas, abyssal or triglavian. Total Tax follows the filter, worked out from each day's per-ore breakdown, so it reads the tax on that ore alone. Moon ore from other moons is never taxed, so that slice shows none. A filtered month is worked out from the ledger rather than the finalized summaries, which hold a month as one figure.
+- **On twice-a-month billing the Mining Summary shows a period at a time.** A switch above the filters steps back and forward a half month at a time, picks either half or the whole month, and never offers a period that has not started. The page opens on the half we are in, and a month gone by opens whole. The whole month shows each half's tax under Total Tax, and the total is the two added together, since each half is its own bill. On monthly billing nothing changes.
+- **My Mining follows your tax periods.** It opens on **This period**, with **Last period** beside it, both following your own tax profile, so halves of the month when it bills twice a month. The rolling windows are named for what they are: 7 days, 30 days and 12 months. Tax Paid and Tax Outstanding count the bills that cover the days shown, each counted whole, and a period with no bill yet says when its bill goes out instead of showing the estimate as owed. The last tile is what to pay next, whatever period is shown: the overdue total when anything is overdue, otherwise the next bill and when it is due. It replaces Sessions, which always said the same as Active Days.
+- Fixed: **Tax Paid and Tax Outstanding on My Mining only counted bills whose month started inside the period picked.** The last 30 days could leave out an overdue bill for the second half of the month before, and a week with no such bill showed that week's estimate as if it were owed.
+- **My Mining's Mining Trend can split each day by kind of ore.** A Total / By type switch above the chart stacks each day's moon ore, regular ore, ice, gas, abyssal and triglavian, and your browser remembers which you picked. The note under the chart now says what it shows: the value mined each day over the period picked, where it used to say quantity over a month.
+- **My Mining's Ore Distribution has the same switch.** By ore shows your top ten ores with the rest as one Other ores slice, so every slice is a share of everything you mined, and By type shows the same mining by kind of ore. Your browser remembers this one too.
+- Fixed: **the percentages in My Mining's Ore Distribution tooltips came out as NaN.** The values were added up as text, and they were only ever shares of the top ten ores.
+- **A character's ledger shows its tax.** Each row has the tax on it and the rate, from the same daily figures the bills are built from, so a row follows whatever taxed it: from the update on, the profile of the corporation the character was in that day, and Global for a character from outside. A **Tax on this mining** card lists what was taxed by kind of ore and rate, and what was not and why, such as ore the profile leaves out or moon ore still waiting for a refinery's report. **Taxed only** narrows the page to the taxed rows, and the Tax column sorts.
+- **The character ledger has the same periods as the rest of the ledger.** This month and Last month, with This period and Last period on twice-a-month billing, a step back and forward, and either half or the whole month. Opened from the Mining Summary it shows the period the summary was on, and its totals gain an Estimated Tax.
+- Fixed: **a main opened from the Mining Summary's every-character view brought their alts along.** The row was for that one character, and now the page is too.
+- Fixed: **notes on My Mining, Tax Balances, an invoice's page and a theft incident were barely readable on dark themes.** They used AdminLTE's white callout, on which the plugin's light text all but disappears. They now have a panel of their own that reads the same on any SeAT theme, light or dark.
+- Fixed: **the event discount under Total Tax never showed** on the Mining Summary. Only the daily summaries keep it, and the page never read them for it.
+- A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
+- **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
+
+### Dashboard
+
+- **On twice-a-month billing the dashboards show the current tax period.** The member dashboard and both tabs of the director dashboard show a **Current Tax Period** card above Current Month, with the same boxes for the half of the month we are in. On the corporation tab, Tax Collected for a period not billed yet says when its bills go out. On monthly billing nothing changes, since the card would only repeat the month.
+- The tax box on the dashboards is called **Estimated Tax** on both, since it is the tax on the mining shown, worked out every day. The director's personal tab called it Tax Owed, and the member dashboard Tax ISK.
+- Fixed: **the mining tax banner at the top of the dashboards was barely readable on light themes.** It was a faint tint over the page with light text on it. It is now a panel of its own, red once a bill is late and amber before, that reads the same on any SeAT theme.
+
+### Tax Calculation
+
+- Fixed: **working out one character's tax used the calendar month and that character alone.** Calculate Taxes with a character picked, and `calculate-taxes --character_id`, added up the whole month for that one character, applied the thresholds to that figure, and looked for the bill starting on the 1st. On fortnightly periods the second half's bill was never looked at and the first half's could be offered the whole month's tax, and a main's figure left out their alts. It now works out the account the character belongs to, main and alts, for the period asked, exactly as the nightly calculation does: an issued invoice is left as it stands, and an account with no bill for that period yet gets one, as the nightly run would have made it. `--character_id` also follows `--recalculate` now, so an existing bill is only worked out again when asked.
+- Fixed: **`calculate-taxes --force` run on the 29th to the 31st could bill the month it was run in** on a monthly install, when the month before was shorter, instead of that month before.
+- Fixed: **a member who left could be taxed at guest rates for mining done as a member.** The daily tax figures used the corporation a character is in when a day is worked out, so a day rebuilt after they left, by late refinery data or a reprice, was re-rated at guest rates, and a bill not sent yet would carry that. Each day is now taxed under the corporation the character was in that day, from SeAT's corporation history; on the day they move they count as a member. Bills already sent keep what they charged.
+
+### Tax pages
+
+- **An invoice shows only what it taxed.** The Mining Breakdown on a bill's page lists the mining that carried tax, character by character and ore by ore, at the rate it was taxed at, where it used to list everything mined in the period, untaxed ore included. A new **Tax by category** card adds it up by kind of ore, moon ore by rarity from R4 to R64, with each one's share of the bill. The first box reads **Taxed Value**, with what was mined in the period under it. When the rows and the bill disagree, the page says by how much and, where it can tell, why: the minimum tax, an adjustment made by hand, a bill worked out before its period ended, or days worked out again after it went out.
+- The banner on the tax pages about a queued change of billing period shows each player their own profile's change, and an admin every profile's.
+- Fixed: **an invoice's breakdown could disagree with the bill.** It merged an ore's taxed and untaxed mining into one line, at the rate of whichever came first, so a taxed ore could read 0%, and it counted every character on the account, even one with a bill of its own for the same period.
+- Fixed: **the Tax Codes page showed each code with the prefix in the settings rather than the one it was made with.** Where the two differed, the copy button copied a code no payment would match. Codes made by hand on that page now keep their prefix as well.
+- Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
+
+### Theft Detection
+
+- **Theft is a non-member mining your moons with a bill left unpaid too long, or at all while the Global profile keeps non-members out.** **Days Overdue Before Theft**, a new setting under Features, is how far past its due date a bill can be: 15 days by default, where before any overdue bill counted. Members are never flagged.
+- **One incident per player.** A player is a SeAT account, main and alts, or the character alone when SeAT does not know it. The incident is named after the character caught mining, and each night the previous day's mining is added to it, each day once.
+- **`detect-theft` runs every night** instead of on the 1st and 15th. The old schedule entry is replaced on update.
+- Members with two or more overdue bills are no longer put on the theft list as tax delinquents. Their overdue bills are for the reminders and the outstanding digest. Incidents already raised that way stay, and come off the list once nothing on the account is overdue.
+- Fixed: **notifications for new theft incidents were never sent.** `detect-theft --notify` looked for incidents the scan never handed back, so only Active Theft alerts ever went out. New incidents now send Theft Detected, or Critical Theft when critical, with the reason in the message.
+- Fixed: **every scan raised another incident for the same miner and took it off the list straight away.** Incidents were tied to the scan's own fifteen days, so each run opened a new one, and the paid check only looked for bills inside those days, so it found none and marked them paid. A player now keeps one incident until nothing on their account is overdue.
+- Fixed: **an alt mining while their main's bill was overdue was never caught.** Bills sit under the main and were looked up under the miner. They are now looked up across the whole account.
+- Fixed: **the 6-hourly check could not see new mining.** It compared the day the mining happened, which is only a date, with the last six hours. It now goes by when the ledger recorded the mining, and says what the player has mined that day so far.
+- Fixed: **characters SeAT has no record of were treated as outsiders** whatever their corporation, and mining at refineries the moon owner does not own was counted. Characters are now placed by corporation, SeAT's affiliation first and the plugin's lookups after, and only the moon owner's refineries are watched, the same ones tax covers. A character nobody has placed yet is left out until the lookup places them.
+- Fixed: **running the Theft Detection tab on the Diagnostic page took players off the theft list.** It now only reads: the rules in force, who the next run would take off the list, and for one character, whether their mining would open an incident and why.
+- Fixed: **an incident's mining history showed no value or location.** It now lists every character the incident counts.
+- Fixed: **a member who left could be put on the theft list for mining done as a member.** Theft judged all of a player's recent mining by the corporation they are in now, so leaving made the days before look like a non-member's. Only days mined from outside the member corporations count now, by the corporation the character was in that day.
+- The active thefts banner on the theft page says what it means: how many players on the list have been seen mining again.
+- The `mining.theft_detected` event sent to Manager Core carries a `reason`, `overdue_tax`, or `guest_mining_off` while non-members may not mine, and its period is the mining the incident counts.
+- Incidents raised before this update only gain mining from the day it first runs.
+- The **Grace Period Before Overdue** setting is now **Grace days**, on Billing, which says what it does: it lengthens how long payment codes stay valid, and dates bills saved before due dates were recorded. It never decided when a bill turns overdue or when mining counts as theft.
+
+### Moon Extractions
+
+- A cancelled extraction's moon rig record is no longer refreshed every two hours until the time its chunk would have arrived. The chunk never comes, so the record stays as it was when the cancellation was picked up.
 
 ### Notifications
 
@@ -46,7 +113,12 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 
 ### Backup and Restore
 
-- `backup-data` takes the settings archive table too.
+- Fixed: **`backup-data` left out fifteen of the plugin's tables**, so a backup could not bring back payment allocations, balances held, refunds, the planner's pulls and their history, blueprints, moon claims and the watchlist, the plugin's character lookups, or what the alerts remember having said, which would send them all again. It now takes every table the plugin owns, the new settings archive included. Backups made before this update restore as before, without those tables.
+- Tables keyed on something other than an id are written in one go instead of failing part way through and being tried again, and the manifest records the installed version instead of `dev-5.0`.
+
+### Scheduled Commands
+
+- An old scheduled `verify-payments` run without `--auto-match`, left behind on installs that ran a version from before 1.0.0, is removed on update. It only reported what it would match, and it held the lock the real matching run needs five minutes later.
 
 ### Diagnostics
 
@@ -55,94 +127,10 @@ Settings move into **tax profiles**. A tax profile decides how often bills go ou
 - Health Checks lists the tax profiles, and the Valuation Test shows what each profile charges. The Master Test checks the Moon Owner, runs the Settings Health checks and matches the upfront keyword against every profile's code prefix.
 - The Master Test no longer checks that the moon value shown matches the value taxed. They can no longer differ.
 
-### Fixed
-
-- **The Tax Codes page showed each code with the prefix in the settings rather than the one it was made with.** Where the two differed, the copy button copied a code no payment would match. Codes made by hand on that page now keep their prefix as well.
-- **The Pricing page wrote an API key set in the environment into its source.** It now only checks whether one is set.
-
 ### Schema
 
 - **000038** adds `mining_manager_settings_archive`, copies every settings row into it and moves the settings into tax profiles, in one transaction. Its `down()` puts every row back.
 - **000039** clears retired settings and copies of install-wide settings saved under a corporation, after archiving each row. Tax profile rows and keys the plugin does not know are left alone.
-
-## [Unreleased]
-
-**Backwards compatible.** No migrations.
-
-### Mining Ledger
-
-- Fixed: **a member's own mining vanished from the Mining Summary when a corporation was picked.** The filter matched the corporation that owned the structure the mining happened at, and personal mining has none, so it only ever showed under All Corporations, beside a Total Tax that still covered each miner's whole month. The page now opens on **All mining**, which counts a corporation's miners the same way as the dashboard and Analytics, every ore wherever they mined it, so the value, Total Tax and the ore, volume and system columns all cover the same mining. Past months still come from the finalized summaries, filtered to those miners.
-- **At our moons**, a second view of the Mining Summary: the moon ore a corporation's refineries recorded, by miner, guests included, with how much of it was R4 to R64. It opens on your Moon Owner Corporation, and directors can pick another refinery owner or all of them. Personal mining is not in it, since nothing in it says whose moon it came off, and it shows no tax, since a bill covers a member's whole month. Based on an idea from [Nauclerus](https://github.com/Nauclerus) in [#7](https://github.com/MattFalahe/Mining-Manager/pull/7).
-- The corporation filter on the Mining Summary is shown to directors only. Members see their own mining either way, and the line under the two views says so in their terms.
-- **An Ore filter on All mining**, with the slices the Analytics Performance Charts use: moon ore from our moons, other moons or all moons, regular ore, ice, gas, abyssal or triglavian. Total Tax follows the filter, worked out from each day's per-ore breakdown, so it reads the tax on that ore alone. Moon ore from other moons is never taxed, so that slice shows none. A filtered month is worked out from the ledger rather than the finalized summaries, which hold a month as one figure.
-- **Biweekly installs see a period at a time.** A switch above the filters steps back and forward a half month at a time, picks either half or the whole month, and never offers a period that has not started. The page opens on the half we are in, and a month gone by opens whole. The whole month shows each half's tax under Total Tax, and the total is the two added together, since each half is its own bill. Monthly installs see no change.
-- **My Mining follows your tax periods.** It opens on **This period**, with **Last period** beside it, both following your tax setting, so halves of the month on biweekly tax. The rolling windows are named for what they are: 7 days, 30 days and 12 months. Tax Paid and Tax Outstanding count the bills that cover the days shown, each counted whole, and a period with no bill yet says when its bill goes out instead of showing the estimate as owed. The last tile is what to pay next, whatever period is shown: the overdue total when anything is overdue, otherwise the next bill and when it is due. It replaces Sessions, which always said the same as Active Days.
-- Fixed: **Tax Paid and Tax Outstanding on My Mining only counted bills whose month started inside the period picked.** The last 30 days could leave out an overdue bill for the second half of the month before, and a week with no such bill showed that week's estimate as if it were owed.
-- **My Mining's Mining Trend can split each day by kind of ore.** A Total / By type switch above the chart stacks each day's moon ore, regular ore, ice, gas, abyssal and triglavian, and your browser remembers which you picked. The note under the chart now says what it shows: the value mined each day over the period picked, where it used to say quantity over a month.
-- **My Mining's Ore Distribution has the same switch.** By ore shows your top ten ores with the rest as one Other ores slice, so every slice is a share of everything you mined, and By type shows the same mining by kind of ore. Your browser remembers this one too.
-- Fixed: **the percentages in My Mining's Ore Distribution tooltips came out as NaN.** The values were added up as text, and they were only ever shares of the top ten ores.
-- **A character's ledger shows its tax.** Each row has the tax on it and the rate, from the same daily figures the bills are built from, so a row follows the settings that taxed it: the Moon Owner Corporation's for mining at our refineries, the miner's own corporation's for everything else, and guest rates for a character from outside. A **Tax on this mining** card lists what was taxed by kind of ore and rate, and what was not and why, such as ore the tax settings leave out or moon ore still waiting for a refinery's report. **Taxed only** narrows the page to the taxed rows, and the Tax column sorts.
-- **The character ledger has the same periods as the rest of the ledger.** This month and Last month, with This period and Last period on biweekly installs, a step back and forward, and either half or the whole month. Opened from the Mining Summary it shows the period the summary was on, and its totals gain an Estimated Tax.
-- Fixed: **a main opened from the Mining Summary's every-character view brought their alts along.** The row was for that one character, and now the page is too.
-- Fixed: **notes on My Mining, Tax Balances, an invoice's page and a theft incident were barely readable on dark themes.** They used AdminLTE's white callout, on which the plugin's light text all but disappears. They now have a panel of their own that reads the same on any SeAT theme, light or dark.
-- Fixed: **the event discount under Total Tax never showed** on the Mining Summary. Only the daily summaries keep it, and the page never read them for it.
-- A past month the Mining Summary works out from the ledger, which the At our moons view always does, says *From the ledger* rather than *Finalized*.
-- **The old ledger list page is gone.** Since before 1.0.0 the Mining Ledger page has been the summary, but the list it replaced stayed in the code, and no release ever linked to it. Its export, delete and bulk delete endpoints went with it, since nothing else called them. Opening a single ledger entry from a character's page works as before.
-
-### Dashboard
-
-- **Biweekly installs see the current tax period on the dashboards.** The member dashboard and both tabs of the director dashboard show a **Current Tax Period** card above Current Month, with the same boxes for the half of the month we are in. On the corporation tab, Tax Collected for a period not billed yet says when its bills go out. Monthly installs see no change, since the card would only repeat the month.
-- The tax box on the dashboards is called **Estimated Tax** on both, since it is the tax on the mining shown, worked out every day. The director's personal tab called it Tax Owed, and the member dashboard Tax ISK.
-- Fixed: **the mining tax banner at the top of the dashboards was barely readable on light themes.** It was a faint tint over the page with light text on it. It is now a panel of its own, red once a bill is late and amber before, that reads the same on any SeAT theme.
-
-### Tax Calculation
-
-- Fixed: **working out one character's tax used the calendar month and that character alone.** Calculate Taxes with a character picked, and `calculate-taxes --character_id`, added up the whole month for that one character, applied the thresholds to that figure, and looked for the bill starting on the 1st. On fortnightly periods the second half's bill was never looked at and the first half's could be offered the whole month's tax, and a main's figure left out their alts. It now works out the account the character belongs to, main and alts, for the period asked, exactly as the nightly calculation does: an issued invoice is left as it stands, and an account with no bill for that period yet gets one, as the nightly run would have made it. `--character_id` also follows `--recalculate` now, so an existing bill is only worked out again when asked.
-- Fixed: **`calculate-taxes --force` run on the 29th to the 31st could bill the month it was run in** on a monthly install, when the month before was shorter, instead of that month before.
-- Fixed: **a member who left could be taxed at guest rates for mining done as a member.** The daily tax figures used the corporation a character is in when a day is worked out, so a day rebuilt after they left, by late refinery data or a reprice, was re-rated at guest rates, and a bill not sent yet would carry that. Each day is now taxed under the corporation the character was in that day, from SeAT's corporation history; on the day they move they count as a member. Bills already sent keep what they charged.
-
-### Tax pages
-
-- **An invoice shows only what it taxed.** The Mining Breakdown on a bill's page lists the mining that carried tax, character by character and ore by ore, at the rate it was taxed at, where it used to list everything mined in the period, untaxed ore included. A new **Tax by category** card adds it up by kind of ore, moon ore by rarity from R4 to R64, with each one's share of the bill. The first box reads **Taxed Value**, with what was mined in the period under it. When the rows and the bill disagree, the page says by how much and, where it can tell, why: the minimum tax, an adjustment made by hand, a bill worked out before its period ended, or days worked out again after it went out.
-- Fixed: **an invoice's breakdown could disagree with the bill.** It merged an ore's taxed and untaxed mining into one line, at the rate of whichever came first, so a taxed ore could read 0%, and it counted every character on the account, even one with a bill of its own for the same period.
-- Fixed: **a failed wallet rescan or payment check showed `mining-manager::taxes.verification_error`** instead of a message.
-
-### Theft Detection
-
-- **Theft is now a guest mining your moons with a bill left unpaid too long, or at all when guest mining is switched off.** Two new settings under Features decide it. **Days Overdue Before Theft** is how far past its due date a bill can be (15 by default; before, any overdue bill counted). **Allow Guest Mining** is on by default. Switched off, guests are still billed at the guest rates, the guest rates card says guest mining is off, and any moon ore a guest mines at the moon owner's refineries from the next day on opens an incident. Switching it back on does not close incidents already raised; resolve those on the Theft Detection page. Members are never flagged.
-- **One incident per player.** A player is a SeAT account, main and alts, or the character alone when SeAT does not know it. The incident is named after the character caught mining, and each night the previous day's mining is added to it, each day once.
-- **`detect-theft` runs every night** instead of on the 1st and 15th. The old schedule entry is replaced on update.
-- Members with two or more overdue bills are no longer put on the theft list as tax delinquents. Their overdue bills are for the reminders and the outstanding digest. Incidents already raised that way stay, and come off the list once nothing on the account is overdue.
-- Fixed: **notifications for new theft incidents were never sent.** `detect-theft --notify` looked for incidents the scan never handed back, so only Active Theft alerts ever went out. New incidents now send Theft Detected, or Critical Theft when critical, with the reason in the message.
-- Fixed: **every scan raised another incident for the same miner and took it off the list straight away.** Incidents were tied to the scan's own fifteen days, so each run opened a new one, and the paid check only looked for bills inside those days, so it found none and marked them paid. A player now keeps one incident until nothing on their account is overdue.
-- Fixed: **an alt mining while their main's bill was overdue was never caught.** Bills sit under the main and were looked up under the miner. They are now looked up across the whole account.
-- Fixed: **the 6-hourly check could not see new mining.** It compared the day the mining happened, which is only a date, with the last six hours. It now goes by when the ledger recorded the mining, and says what the player has mined that day so far.
-- Fixed: **characters SeAT has no record of were treated as outsiders** whatever their corporation, and mining at refineries the moon owner does not own was counted. Characters are now placed by corporation, SeAT's affiliation first and the plugin's lookups after, and only the moon owner's refineries are watched, the same ones tax covers. A character nobody has placed yet is left out until the lookup places them.
-- Fixed: **running the Theft Detection tab on the Diagnostic page took players off the theft list.** It now only reads: the rules in force, who the next run would take off the list, and for one character, whether their mining would open an incident and why.
-- Fixed: **an incident's mining history showed no value or location.** It now lists every character the incident counts.
-- Fixed: **a member who left could be put on the theft list for mining done as a member.** Theft judged all of a player's recent mining by the corporation they are in now, so leaving made the days before look like a guest's. Only days mined from outside the member corporations count now, by the corporation the character was in that day.
-- The active thefts banner on the theft page says what it means: how many players on the list have been seen mining again.
-- The `mining.theft_detected` event sent to Manager Core carries a `reason`, `overdue_tax` or `guest_mining_off`, and its period is the mining the incident counts.
-- Incidents raised before this update only gain mining from the day it first runs.
-- The **Grace Period Before Overdue** setting on Tax Rates is now called **Payment Code Grace Period**, which is what it does: it lengthens how long payment codes stay valid, and dates bills saved before due dates were recorded. It never decided when a bill turns overdue or when mining counts as theft.
-
-### Moon Extractions
-
-- A cancelled extraction's moon rig record is no longer refreshed every two hours until the time its chunk would have arrived. The chunk never comes, so the record stays as it was when the cancellation was picked up.
-
-### Backup and Restore
-
-- Fixed: **`backup-data` left out fifteen of the plugin's tables**, so a backup could not bring back payment allocations, balances held, refunds, the planner's pulls and their history, blueprints, moon claims and the watchlist, the plugin's character lookups, or what the alerts remember having said, which would send them all again. It now takes every table the plugin owns. Backups made before this update restore as before, without those tables.
-- Tables keyed on something other than an id are written in one go instead of failing part way through and being tried again, and the manifest records the installed version instead of `dev-5.0`.
-
-### Settings
-
-- Fixed: **importing a settings export saved every json setting as text.** The export carries those values as they are stored and the import encoded them a second time, so after an import they no longer read back as what was exported, the notification type switches and their options among them. An import now saves each one exactly as it was exported. Exports were always right, so files made before this update import correctly now.
-- Fixed: **Reset to Defaults also wiped the plugin's own records** from the settings table: the cutover dates that keep the newer ore classes, wallet matching and part payments away from what came before them, and when the outstanding digest and other reminders last went out. After a reset a reprice could re-rate old mining under the newer ore classes, and the digest could go out again early. A reset now clears the settings and keeps those records.
-
-### Scheduled Commands
-
-- An old scheduled `verify-payments` run without `--auto-match`, left behind on installs that ran a version from before 1.0.0, is removed on update. It only reported what it would match, and it held the lock the real matching run needs five minutes later.
 
 ## [2.0.5] — 2026-10-19 — The Ecosystem Era: Rotations and Rigs
 
