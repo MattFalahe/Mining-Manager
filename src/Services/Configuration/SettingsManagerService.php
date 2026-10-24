@@ -259,8 +259,8 @@ class SettingsManagerService
     }
 
     /**
-     * Update or create a setting
-     * Now supports corporation-specific settings
+     * Update or create a setting, as the active corporation, in the place it
+     * is read from.
      *
      * @param string $key
      * @param mixed $value
@@ -589,10 +589,11 @@ class SettingsManagerService
     }
 
     /**
-     * Get tax rates for a specific corporation.
-     * If the character is a guest miner (not from any configured corporation),
-     * uses guest miner tax rates from the Moon Owner Corp config.
-     * Guest rate = 0 means actual 0% tax (no fallback to corp rates).
+     * Get tax rates for a character in the given corporation: the active
+     * corporation's rates for a member of any configured corporation. Anyone
+     * else is taxed by the Global profile under tax profiles, and before them
+     * at the guest rates from the Moon Owner's settings, where a guest rate
+     * of 0 means 0% rather than the member rate.
      *
      * @param int|null $characterCorporationId The corporation ID of the character being taxed
      * @return array
@@ -608,7 +609,7 @@ class SettingsManagerService
         }
 
         // Build list of "home" corporations: configured corps + moon owner corp
-        // Anyone NOT in this list is a guest miner
+        // Anyone NOT in this list is a non-member
         $homeCorporationIds = $this->getHomeCorporationIds();
 
         // If no corporations configured at all, treat everyone as corp member

@@ -5,10 +5,11 @@ namespace MiningManager\Services\Configuration;
 /**
  * Every setting the plugin keeps, and where each one applies.
  *
- * Until now a key's scope was decided by whichever code read it. The same key
- * could hold a global value and one per corporation, and different parts of
- * the plugin read different copies, so a value saved in one place could be
- * ignored by the code that used it. This list says it once, for every key.
+ * Before tax profiles a key's scope was decided by whichever code read it.
+ * The same key could hold a global value and one per corporation, and
+ * different parts of the plugin read different copies, so a value saved in
+ * one place could be ignored by the code that used it. This list says it
+ * once, for every key.
  *
  * - INSTALL: one value for the whole install, kept with no corporation.
  * - PROFILE: one value per tax profile. The Global profile, kept with no

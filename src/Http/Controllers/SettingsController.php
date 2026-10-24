@@ -647,10 +647,9 @@ class SettingsController extends Controller
     }
 
     /**
-     * Corporations the General tab offers for the moon owner and the
-     * corporation context: every player corporation a registered character is
-     * in, plus any corporation that already has its own settings or owns the
-     * moons, so a saved choice is always on the list.
+     * Corporations the Setup page offers for the Moon Owner and for adding:
+     * every player corporation a registered character is in, plus every
+     * configured corporation, so a saved choice is always on the list.
      *
      * SeAT 5 keeps a character's corporation in character_affiliations and
      * who owns a character in refresh_tokens. Beware the older columns: a

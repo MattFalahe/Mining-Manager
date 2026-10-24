@@ -776,8 +776,8 @@ class TaxCalculationService
     }
 
     /**
-     * Get tax rate for specific ore type.
-     * Now supports per-corporation tax rates (guest miner multiplier).
+     * Get tax rate for specific ore type, at non-members' rates for a
+     * character outside the configured corporations.
      *
      * @param int $typeId
      * @param int|null $characterCorpId Corporation ID of the character being taxed

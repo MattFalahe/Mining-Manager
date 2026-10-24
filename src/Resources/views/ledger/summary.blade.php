@@ -154,7 +154,7 @@
                         {{ trans('mining-manager::ledger.' . $scopeHint) }}
                     </p>
 
-                    {{-- Biweekly installs bill each half of the month on its own --}}
+                    {{-- While the Moon Owner bills twice a month, each half is billed on its own --}}
                     @if($periodNav)
                         <div class="d-flex flex-wrap align-items-center mb-3">
                             <div class="btn-group btn-group-sm mr-2 mb-1" role="group" aria-label="{{ trans('mining-manager::ledger.period') }}">

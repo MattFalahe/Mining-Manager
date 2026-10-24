@@ -455,8 +455,8 @@ class TaxController extends Controller
         $moonOwnerCorpId = $this->settingsService->getSetting('general.moon_owner_corporation_id');
         $currentMonth = now()->startOfMonth();
 
-        // Get ALL character IDs who mined this month (includes guests)
-        // Guests are taxed at guest rates via daily summaries, so they must be included
+        // Get ALL character IDs who mined this month, non-members included:
+        // the daily summaries tax them by the Global profile.
         $characterIds = MiningLedger::where('date', '>=', $currentMonth)
             ->distinct()
             ->pluck('character_id')

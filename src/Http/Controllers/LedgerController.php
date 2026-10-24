@@ -827,9 +827,9 @@ class LedgerController extends Controller
             (int) $this->settingsService->getSettingForCorporation('general.moon_owner_corporation_id', null) ?: null
         );
 
-        // A biweekly install bills each half of the month on its own, so the
-        // page shows one half or the whole month. It opens on the half we are
-        // in, and on the whole month for any month gone by.
+        // A Moon Owner billing twice a month bills each half of the month on
+        // its own, so the page shows one half or the whole month. It opens on
+        // the half we are in, and on the whole month for any month gone by.
         $periodHelper = app(TaxPeriodHelper::class);
         $biweekly = $periodHelper->periodTypeForMoonOwner() === 'biweekly';
         $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];
@@ -955,8 +955,8 @@ class LedgerController extends Controller
 
     /**
      * The half of the month a biweekly page shows: the one asked for, or the
-     * half we are in for this month and the whole month for one gone by. A
-     * monthly install always shows the whole month.
+     * half we are in for this month and the whole month for one gone by. On
+     * a monthly period the page always shows the whole month.
      */
     protected function shownHalf(Request $request, Carbon $monthDate, bool $biweekly): string
     {
@@ -994,7 +994,7 @@ class LedgerController extends Controller
      * started.
      *
      * @param \Closure $link (Carbon $month, string $half) => url
-     * @param array $halves The month's two [start, end] periods, none on a monthly install
+     * @param array $halves The month's two [start, end] periods, none on a monthly period
      * @return array{label: string, prev: string|null, next: string|null, choices: array<int, array{label: string, url: string|null, active: bool}>}
      */
     protected function periodNav(\Closure $link, Carbon $monthDate, string $half, array $halves, TaxPeriodHelper $periodHelper): array
@@ -1216,8 +1216,9 @@ class LedgerController extends Controller
             $sortDir = 'desc';
         }
 
-        // A biweekly install bills each half of the month on its own, so the
-        // page shows a half or the whole month, as the summary does.
+        // An account billed twice a month has each half of the month billed
+        // on its own, so the page shows a half or the whole month, as the
+        // summary does.
         $periodHelper = app(TaxPeriodHelper::class);
         $biweekly = $periodHelper->periodTypeForCharacter((int) $characterId, $monthDate) === 'biweekly';
         $halves = $biweekly ? $periodHelper->getPeriodsInMonth($monthDate, 'biweekly') : [];

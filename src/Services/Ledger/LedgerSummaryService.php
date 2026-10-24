@@ -270,10 +270,10 @@ class LedgerSummaryService
         $homeCorporationIds = $this->settingsService->getHomeCorporationIds();
 
         // The corporation the character was in that day, not the one they are
-        // in now. It decides member or guest rates, whether personal mining is
-        // taxed at all, and which corporation's events apply, so a member who
-        // leaves keeps a member's tax on the days they mined as one, however
-        // often those days are rebuilt afterwards.
+        // in now. It decides which profile taxes the day, whether personal
+        // mining is taxed at all, and which corporation's events apply, so a
+        // member who leaves keeps a member's tax on the days they mined as
+        // one, however often those days are rebuilt afterwards.
         $characterCorpId = app(CorporationOnDate::class)->forDay($characterId, $dateCarbon, $homeCorporationIds);
 
         // From the day after settings moved into tax profiles, a day is taxed
@@ -751,8 +751,8 @@ class LedgerSummaryService
     }
 
     /**
-     * Get tax rate for a specific ore type.
-     * Respects per-rarity moon ore rates and guest miner multiplier.
+     * Get tax rate for a specific ore type, by rarity for moon ore, and at
+     * non-members' rates for a character outside the configured corporations.
      *
      * Public, with shouldTaxType(), so the Extraction Simulator's income
      * estimate charges what an invoice would rather than keeping a copy.

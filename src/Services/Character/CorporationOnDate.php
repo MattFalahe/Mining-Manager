@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Mining is taxed, and judged as theft or not, as of the day it happened. Read
  * from the corporation a character is in now, a member who left would have
- * every day rebuilt after leaving re-rated as a guest's, mining they did as a
- * member included.
+ * every day rebuilt after leaving re-rated as a non-member's, mining they did
+ * as a member included.
  *
  * SeAT's corporation history comes first. When SeAT's affiliation already
  * shows a move the history has not caught up with, the move counts from the

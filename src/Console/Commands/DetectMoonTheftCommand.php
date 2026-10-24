@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Moon ore mined at the moon owner's refineries by characters outside every
  * configured corporation, while a bill on their account is more than the
- * allowed days overdue, or while guest mining is switched off.
+ * allowed days overdue, or at all while non-members may not mine.
  */
 class DetectMoonTheftCommand extends Command
 {

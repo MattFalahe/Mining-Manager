@@ -1190,8 +1190,8 @@ class NotificationService
      * additionalData into the single $data shape the theft formatters
      * consume (character_name, severity_label, ore_value, tax_owed,
      * detected_at_display, status_label, reason, new_mining_value,
-     * mining_date, last_activity, incident_url). All optional — missing keys
-     * get gracefully filtered.
+     * mining_date, last_activity, incident_url). All optional: a missing key
+     * is left out of the message.
      *
      * @param TheftIncident $incident
      * @param array $additionalData

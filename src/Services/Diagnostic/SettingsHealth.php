@@ -641,7 +641,7 @@ class SettingsHealth
                 }
 
                 // Every list the plugin keeps is an array or an object. Text
-                // here is a list encoded twice, as imports did before 2.1.0.
+                // here is a list encoded twice, as imports did before 3.0.0.
                 return is_string($decoded) ? 'a list encoded twice' : null;
             case 'integer':
             case 'float':

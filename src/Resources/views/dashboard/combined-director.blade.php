@@ -82,7 +82,7 @@
                         {{-- PERSONAL STATS TAB --}}
                         <div class="tab-pane fade show active" id="personal" role="tabpanel" aria-labelledby="personal-tab">
 
-                            {{-- CURRENT TAX PERIOD AND CURRENT MONTH PERSONAL STATISTICS: the half we are in first on a biweekly install --}}
+                            {{-- CURRENT TAX PERIOD AND CURRENT MONTH PERSONAL STATISTICS: the half we are in first when the viewer's account is billed twice a month --}}
                             @php
                                 $statSections = [];
                                 if (!empty($personalCurrentPeriodStats)) {
@@ -420,7 +420,7 @@
                             </div>
                             <div id="corp-tab-content" style="display: none;">
 
-                                {{-- CURRENT TAX PERIOD CORPORATION STATISTICS: biweekly installs only, shown once the tab's data says so --}}
+                                {{-- CURRENT TAX PERIOD CORPORATION STATISTICS: only while the Moon Owner bills twice a month, shown once the tab's data says so --}}
                                 <div class="row" id="corp-period-card" style="display: none;">
                                     <div class="col-12">
                                         <div class="card card-dark">

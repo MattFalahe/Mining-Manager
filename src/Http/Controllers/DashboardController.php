@@ -287,7 +287,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * AJAX endpoint for the Guest Miners tab.
+     * AJAX endpoint for the Non-member Miners tab.
      * Returns miners who used corp structures but are confirmed to be in other corporations.
      * Accepts optional ?month=YYYY-MM query parameter (defaults to current month).
      */
@@ -375,8 +375,8 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get character IDs of guest miners: people who mined at corp structures
-     * but are confirmed to be in a DIFFERENT corporation.
+     * Get character IDs of non-member miners: people who mined at corp
+     * structures but are confirmed to be outside every configured corporation.
      */
     private function getGuestMinerCharacterIds($corporationId, ?Carbon $monthDate = null)
     {

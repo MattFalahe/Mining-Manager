@@ -51,7 +51,7 @@
 <div class="mining-dashboard member-dashboard">
     @include('mining-manager::dashboard.partials._tax_banner')
     
-    {{-- CURRENT TAX PERIOD AND CURRENT MONTH STATISTICS: a biweekly install bills each half month on its own, so the half we are in comes first. A monthly install only sees the month. --}}
+    {{-- CURRENT TAX PERIOD AND CURRENT MONTH STATISTICS: an account billed twice a month has each half billed on its own, so the half we are in comes first. A monthly account only sees the month. --}}
     @php
         $statSections = [];
         if (!empty($currentPeriodStats)) {

@@ -109,7 +109,7 @@
                                 <span class="btn btn-outline-secondary disabled"><i class="fas fa-chevron-right"></i></span>
                             @endif
                         </div>
-                        {{-- Biweekly installs bill each half of the month on its own --}}
+                        {{-- An account billed twice a month has each half billed on its own --}}
                         @if($biweekly)
                             <div class="btn-group btn-group-sm mr-2 mb-1" role="group">
                                 @foreach($periodNav['choices'] as $choice)

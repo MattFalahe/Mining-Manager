@@ -21,8 +21,10 @@ use Carbon\Carbon;
  * Moon ore mined at the moon owner's refineries by a character outside every
  * configured corporation is theft when either a bill on the player's account
  * is more than "Days Overdue Before Theft" past its due date and still unpaid,
- * or guest mining is switched off. Members are never on the list: their
- * overdue bills are chased by the reminders and the outstanding digest.
+ * or non-members may not mine here: the Global profile's moon rates are all
+ * 100%, or before tax profiles, Allow Guest Mining was off. Members are never
+ * on the list: their overdue bills are chased by the reminders and the
+ * outstanding digest.
  *
  * A player is everyone on one SeAT account, or the character alone when SeAT
  * has no account for it. A player has one incident open at a time, named after
@@ -507,7 +509,7 @@ class TheftDetectionService
     /**
      * Add the whole days mined since each open incident was last counted.
      * Only while the mining is still theft: a player who has paid down to
-     * bills inside the allowed days is mining as a guest again.
+     * bills inside the allowed days is a paying non-member again.
      */
     protected function countOpenIncidents(array $rules, array $observers, Carbon $today): int
     {
@@ -746,7 +748,8 @@ class TheftDetectionService
 
     /**
      * Whether this player's outside characters mining here is theft today:
-     * guest mining is off, or a bill on the account is past its theft line.
+     * non-members may not mine, or a bill on the account is past its theft
+     * line.
      */
     protected function theftApplies(array $members, array $rules, Carbon $today): bool
     {
@@ -867,8 +870,8 @@ class TheftDetectionService
     }
 
     /**
-     * The moon owner's refineries. Tax only covers mining at these, so theft
-     * only does too.
+     * The moon owner's refineries. Non-members are only taxed for mining at
+     * these, so theft only watches these too.
      *
      * @return array<int, int>
      */
@@ -923,8 +926,8 @@ class TheftDetectionService
     /**
      * The rows mined on a day the character was outside the home
      * corporations. A member who leaves keeps a member's record for the days
-     * they mined as one: neither guest mining being off nor a bill they still
-     * owe makes those days theft.
+     * they mined as one: neither non-members being kept out nor a bill they
+     * still owe makes those days theft.
      */
     protected function onOutsideDays(Collection $rows, array $home): Collection
     {
