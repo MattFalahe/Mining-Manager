@@ -109,6 +109,7 @@ This release also brings tax periods to the ledger, My Mining and the dashboards
 
 - **Event mining follows the profiles of the miners it covers.** A corporation's event counts what that corporation's profile taxes, and an event open to everyone counts what any profile taxes. Each miner's discount is still worked out by their own profile. The event form offers the configured corporations.
 - The event form no longer offers options that did nothing: a participant limit, a mandatory flag, an organizer, and auto start, since an event always starts at its start time. Editing an event no longer offers to notify participants, which it never did.
+- Fixed: **an event's discount missed mining reported after the event ended.** A refinery reports a day's mining only once the day is over, so the last day of every moon event arrived after the event had closed and was taxed in full. On the other days the newest figures could be taxed in full too, as the import worked out a day before the event had recorded them. Events now keep gathering for four days after they end, and every day whose event mining changes has its tax worked out again at once. A day already on an issued bill keeps what it was billed. An event made more than 30 days before it ran was never gathered at all; it now is.
 
 ### Reports
 

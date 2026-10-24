@@ -43,13 +43,19 @@ use MiningManager\Services\Character\CorporationOnDate;
  * daily summaries place them; null corp means global.
  *
  * Called from:
- *   - UpdateMiningEventsCommand cron (for every active event, every tick)
+ *   - UpdateMiningEventsCommand cron (every tick, for every active event and
+ *     for one that ended in the last few days, whose last day's refinery data
+ *     only arrives after it has ended)
  *   - MiningEvent::saved observer (re-aggregate when scope is edited)
  *   - artisan mining-manager:backfill-event-records (one-off backfill)
  *
  * Idempotent by design: upserts on the composite natural key
  * (event_id, character_id, mining_date, mining_time, type_id, solar_system_id, observer_id).
  * Running every minute doesn't duplicate rows.
+ *
+ * Every day whose qualifying mining changed has its daily summary built
+ * again at the end of the run, so the discount reaches the day straight
+ * away. A day already billed keeps the tax it was billed at.
  */
 class EventMiningAggregator
 {
@@ -62,6 +68,13 @@ class EventMiningAggregator
      * @var SettingsManagerService
      */
     protected $settingsService;
+
+    /**
+     * The days this run changed, as 'character_id|Y-m-d' => [character_id, Y-m-d].
+     *
+     * @var array<string, array{0: int, 1: string}>
+     */
+    private array $changedDays = [];
 
     public function __construct(
         OreValuationService $valuationService,
@@ -78,13 +91,20 @@ class EventMiningAggregator
      * @param bool $fullRefresh If true, delete existing records for this event
      *                          before re-populating. Use when event scope has
      *                          been edited (location/corp/type/time changes).
-     * @return array ['created' => int, 'updated' => int, 'skipped' => int, 'deleted' => int]
+     * @return array ['created' => int, 'updated' => int, 'skipped' => int, 'deleted' => int, 'days' => int]
      */
     public function aggregate(MiningEvent $event, bool $fullRefresh = false): array
     {
         $deleted = 0;
+        $this->changedDays = [];
 
         if ($fullRefresh) {
+            // The days the old records covered are built again too, so a
+            // narrowed scope takes its discount back off them.
+            foreach (EventMiningRecord::where('event_id', $event->id)->get(['character_id', 'mining_date']) as $old) {
+                $this->changedDay((int) $old->character_id, $old->mining_date);
+            }
+
             $deleted = EventMiningRecord::where('event_id', $event->id)->delete();
             Log::info("Mining Manager: EventMiningAggregator full-refresh of event {$event->id} — deleted {$deleted} prior records");
         }
@@ -93,7 +113,7 @@ class EventMiningAggregator
 
         if (empty($allowedCategories)) {
             Log::warning("Mining Manager: EventMiningAggregator called for event {$event->id} with unknown type '{$event->type}' — no aggregation performed");
-            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => $this->buildChangedDays()];
         }
 
         // Narrow the event's ore-category set to what the plugin is
@@ -107,7 +127,7 @@ class EventMiningAggregator
 
         if (empty($allowedCategories)) {
             Log::info("Mining Manager: EventMiningAggregator event {$event->id} — every category for event type '{$event->type}' is untaxed per current tax_selector; nothing to aggregate");
-            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => $this->buildChangedDays()];
         }
 
         // Split categories by which source they come from.
@@ -120,7 +140,7 @@ class EventMiningAggregator
             fn($c) => !str_starts_with($c, 'moon_')
         ));
 
-        $totals = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted];
+        $totals = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'deleted' => $deleted, 'days' => 0];
 
         DB::transaction(function () use ($event, $moonCategories, $nonMoonCategories, &$totals) {
             if (!empty($moonCategories)) {
@@ -138,17 +158,82 @@ class EventMiningAggregator
             }
         });
 
+        $totals['days'] = $this->buildChangedDays();
+
         Log::info(sprintf(
-            "Mining Manager: EventMiningAggregator event %d (%s) — created %d, updated %d, skipped %d%s",
+            "Mining Manager: EventMiningAggregator event %d (%s) — created %d, updated %d, skipped %d, days built again %d%s",
             $event->id,
             $event->type,
             $totals['created'],
             $totals['updated'],
             $totals['skipped'],
+            $totals['days'],
             $deleted > 0 ? " (refreshed, deleted {$deleted} prior)" : ''
         ));
 
         return $totals;
+    }
+
+    /**
+     * Save a record only when what it holds changed, and note its day. Rows
+     * that read the same as last time are left alone, so a run every minute
+     * builds a day again only when its mining has moved.
+     */
+    private function saveIfChanged(EventMiningRecord $record): bool
+    {
+        if ($record->exists && !$record->isDirty()) {
+            return false;
+        }
+
+        $record->recorded_at = Carbon::now();
+        $record->save();
+        $this->changedDay((int) $record->character_id, $record->mining_date);
+
+        return true;
+    }
+
+    /**
+     * Note a day whose qualifying mining changed.
+     *
+     * @param mixed $date
+     */
+    private function changedDay(int $characterId, $date): void
+    {
+        $day = Carbon::parse($date)->toDateString();
+        $this->changedDays[$characterId . '|' . $day] = [$characterId, $day];
+    }
+
+    /**
+     * Build again the daily summaries of the days this run changed, so the
+     * discount reaches them now. The refinery import builds a day as soon as
+     * its rows arrive, before this has recorded them, and nothing else would
+     * build the day again: the nightly run only goes back to yesterday. A day an invoice covers keeps the tax it was billed at (see
+     * LedgerSummaryService), so this never changes a bill.
+     *
+     * @return int days built again
+     */
+    private function buildChangedDays(): int
+    {
+        $days = $this->changedDays;
+        $this->changedDays = [];
+
+        if (!$days) {
+            return 0;
+        }
+
+        $summaries = app(\MiningManager\Services\Ledger\LedgerSummaryService::class);
+        $built = 0;
+
+        foreach ($days as [$characterId, $day]) {
+            try {
+                $summaries->generateDailySummary($characterId, $day);
+                $built++;
+            } catch (\Throwable $e) {
+                Log::warning("Mining Manager: could not build character {$characterId}'s summary for {$day} again after its event mining changed: {$e->getMessage()}");
+            }
+        }
+
+        return $built;
     }
 
     /**
@@ -239,27 +324,26 @@ class EventMiningAggregator
                 continue;
             }
 
-            $record = EventMiningRecord::updateOrCreate(
-                [
-                    'event_id' => $event->id,
-                    'character_id' => $row->character_id,
-                    'mining_date' => $row->date,
-                    'mining_time' => '00:00:00',
-                    'type_id' => $row->type_id,
-                    'solar_system_id' => $row->solar_system_id,
-                    'observer_id' => $row->observer_id,
-                ],
-                [
-                    'ore_category' => $row->ore_category,
-                    'quantity' => $row->quantity,
-                    'unit_price' => $row->unit_price,
-                    'value_isk' => $row->total_value,
-                    'source' => EventMiningRecord::SOURCE_OBSERVER,
-                    'recorded_at' => Carbon::now(),
-                ]
-            );
+            $record = EventMiningRecord::firstOrNew([
+                'event_id' => $event->id,
+                'character_id' => $row->character_id,
+                'mining_date' => $row->date,
+                'mining_time' => '00:00:00',
+                'type_id' => $row->type_id,
+                'solar_system_id' => $row->solar_system_id,
+                'observer_id' => $row->observer_id,
+            ]);
+            $record->fill([
+                'ore_category' => $row->ore_category,
+                'quantity' => $row->quantity,
+                'unit_price' => $row->unit_price,
+                'value_isk' => $row->total_value,
+                'source' => EventMiningRecord::SOURCE_OBSERVER,
+            ]);
 
-            $record->wasRecentlyCreated ? $created++ : $updated++;
+            if ($this->saveIfChanged($record)) {
+                $record->wasRecentlyCreated ? $created++ : $updated++;
+            }
         }
 
         return ['created' => $created, 'updated' => $updated, 'skipped' => $skipped];
@@ -382,27 +466,26 @@ class EventMiningAggregator
                 ? $row->time->format('H:i:s')
                 : (string) $row->time;
 
-            $record = EventMiningRecord::updateOrCreate(
-                [
-                    'event_id' => $event->id,
-                    'character_id' => $row->character_id,
-                    'mining_date' => $row->date,
-                    'mining_time' => $miningTime,
-                    'type_id' => $row->type_id,
-                    'solar_system_id' => $row->solar_system_id,
-                    'observer_id' => null,
-                ],
-                [
-                    'ore_category' => $category,
-                    'quantity' => $row->quantity,
-                    'unit_price' => $unitPrice,
-                    'value_isk' => $totalValue,
-                    'source' => EventMiningRecord::SOURCE_CHARACTER_MINING,
-                    'recorded_at' => Carbon::now(),
-                ]
-            );
+            $record = EventMiningRecord::firstOrNew([
+                'event_id' => $event->id,
+                'character_id' => $row->character_id,
+                'mining_date' => $row->date,
+                'mining_time' => $miningTime,
+                'type_id' => $row->type_id,
+                'solar_system_id' => $row->solar_system_id,
+                'observer_id' => null,
+            ]);
+            $record->fill([
+                'ore_category' => $category,
+                'quantity' => $row->quantity,
+                'unit_price' => $unitPrice,
+                'value_isk' => $totalValue,
+                'source' => EventMiningRecord::SOURCE_CHARACTER_MINING,
+            ]);
 
-            $record->wasRecentlyCreated ? $created++ : $updated++;
+            if ($this->saveIfChanged($record)) {
+                $record->wasRecentlyCreated ? $created++ : $updated++;
+            }
         }
 
         return ['created' => $created, 'updated' => $updated, 'skipped' => $skipped];

@@ -2521,6 +2521,7 @@ docker compose -f docker-compose.yml -f docker-compose.mariadb.yml -f docker-com
                         <li><strong>Moon events shorter than 24h</strong> capture all of the overlapping day's moon mining. For precise tracking, align moon events to UTC day boundaries or multiples of 24h.</li>
                         <li><strong>Non-moon events</strong> benefit from SeAT's fetch-time granularity &mdash; a 4-hour gas event won't pull in gas mining from the same day that happened before or after the window (provided SeAT fetched within a reasonable cadence).</li>
                         <li>For competitive/incentive events where "did you participate?" matters more than exact timing, use the manual <strong>Join Event</strong> button as an opt-in filter &mdash; only characters who clicked Join get counted regardless of mining data.</li>
+                        <li><strong>Mining reported late still counts.</strong> A refinery reports a day's mining only after the day is over, so the last day of an event always arrives after it has ended. An event keeps gathering for four days after it ends, and each day its mining reaches has its tax worked out again at once. A day already on an issued bill keeps what it was billed.</li>
                     </ul>
                 </div>
             </div>
